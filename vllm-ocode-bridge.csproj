@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Projeto console simples (.NET 9) — sem pacotes NuGet externos.
+    Tudo que usamos vem da BCL: HttpListener (HTTP), System.Text.Json (JSON).
+    Objeto: bridge minima que FORCA o opencode a falar /v1/chat/completions
+    com o vLLM, ja que a chave de rota do opencode e ignorada.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>1591</NoWarn>
+    <RootNamespace>Qwen3Bridge</RootNamespace>
+    <AssemblyName>vllm-ocode-bridge</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TieredCompilation>true</TieredCompilation>
+  </PropertyGroup>
+
+</Project>
