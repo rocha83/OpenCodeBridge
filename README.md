@@ -23,7 +23,7 @@ traduz entre os dois protocolos nos dois sentidos.
 ### Como funciona
 
 ```
-opencode ──POST /v1/responses──▶ bridge :4143 ──POST /v1/chat/completions──▶ vLLM :4100
+opencode ──POST /v1/responses──▶ bridge :4124 ──POST /v1/chat/completions──▶ vLLM :4100
          ◀── eventos SSE response.* ──          ◀── chunks chat.completion ──
 ```
 
@@ -45,14 +45,14 @@ vllm serve /caminho/para/Qwen3-8B-AWQ \
   --reasoning-parser deepseek_r1
 
 # 2. Bridge
-dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
+dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 
 # 3. Provider do OpenCode (opencode.json)
 {
   "providers": {
     "openai": {
       "api": "openai-chat",
-      "settings": { "baseURL": "http://127.0.0.1:4143/v1" },
+      "settings": { "baseURL": "http://127.0.0.1:4124/v1" },
       "models": {
         "qwen3-8b-awq": {
           "tool_call": true,
@@ -68,7 +68,7 @@ dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 
 | Flag | Padrão | Descrição |
 |---|---|---|
-| `--port` | `4143` | Porta de escuta |
+| `--port` | `4124` | Porta de escuta |
 | `--listen` / `--host` | `127.0.0.1` | `0.0.0.0` expõe a bridge na rede |
 | `--upstream` | `http://127.0.0.1:4100` | URL base do vLLM |
 | `--model` | `qwen3-8b-awq` | Nome do modelo forçado upstream |
@@ -126,7 +126,7 @@ the two protocols in both directions.
 ### How it works
 
 ```
-opencode ──POST /v1/responses──▶ bridge :4143 ──POST /v1/chat/completions──▶ vLLM :4100
+opencode ──POST /v1/responses──▶ bridge :4124 ──POST /v1/chat/completions──▶ vLLM :4100
          ◀── response.* SSE events ──          ◀── chat.completion chunks ──
 ```
 
@@ -148,14 +148,14 @@ vllm serve /path/to/Qwen3-8B-AWQ \
   --reasoning-parser deepseek_r1
 
 # 2. Bridge
-dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
+dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 
 # 3. OpenCode provider (opencode.json)
 {
   "providers": {
     "openai": {
       "api": "openai-chat",
-      "settings": { "baseURL": "http://127.0.0.1:4143/v1" },
+      "settings": { "baseURL": "http://127.0.0.1:4124/v1" },
       "models": {
         "qwen3-8b-awq": {
           "tool_call": true,
@@ -171,7 +171,7 @@ dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 
 | Flag | Default | Description |
 |---|---|---|
-| `--port` | `4143` | Listen port |
+| `--port` | `4124` | Listen port |
 | `--listen` / `--host` | `127.0.0.1` | `0.0.0.0` exposes the bridge on the LAN |
 | `--upstream` | `http://127.0.0.1:4100` | vLLM base URL |
 | `--model` | `qwen3-8b-awq` | Model name forced upstream |
@@ -229,7 +229,7 @@ traduce entre ambos protocolos en ambas direcciones.
 ### ¿Cómo funciona?
 
 ```
-opencode ──POST /v1/responses──▶ bridge :4143 ──POST /v1/chat/completions──▶ vLLM :4100
+opencode ──POST /v1/responses──▶ bridge :4124 ──POST /v1/chat/completions──▶ vLLM :4100
          ◀── eventos SSE response.* ──          ◀── chunks chat.completion ──
 ```
 
@@ -251,14 +251,14 @@ vllm serve /ruta/a/Qwen3-8B-AWQ \
   --reasoning-parser deepseek_r1
 
 # 2. Bridge
-dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
+dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 
 # 3. Proveedor de OpenCode (opencode.json)
 {
   "providers": {
     "openai": {
       "api": "openai-chat",
-      "settings": { "baseURL": "http://127.0.0.1:4143/v1" },
+      "settings": { "baseURL": "http://127.0.0.1:4124/v1" },
       "models": {
         "qwen3-8b-awq": {
           "tool_call": true,
@@ -274,7 +274,7 @@ dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 
 | Flag | Por defecto | Descripción |
 |---|---|---|
-| `--port` | `4143` | Puerto de escucha |
+| `--port` | `4124` | Puerto de escucha |
 | `--listen` / `--host` | `127.0.0.1` | `0.0.0.0` expone el bridge en la red |
 | `--upstream` | `http://127.0.0.1:4100` | URL base de vLLM |
 | `--model` | `qwen3-8b-awq` | Nombre de modelo forzado upstream |
@@ -332,7 +332,7 @@ entre les deux protocoles dans les deux sens.
 ### Fonctionnement
 
 ```
-opencode ──POST /v1/responses──▶ bridge :4143 ──POST /v1/chat/completions──▶ vLLM :4100
+opencode ──POST /v1/responses──▶ bridge :4124 ──POST /v1/chat/completions──▶ vLLM :4100
          ◀── événements SSE response.* ──          ◀── chunks chat.completion ──
 ```
 
@@ -354,14 +354,14 @@ vllm serve /chemin/vers/Qwen3-8B-AWQ \
   --reasoning-parser deepseek_r1
 
 # 2. Bridge
-dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
+dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 
 # 3. Provider OpenCode (opencode.json)
 {
   "providers": {
     "openai": {
       "api": "openai-chat",
-      "settings": { "baseURL": "http://127.0.0.1:4143/v1" },
+      "settings": { "baseURL": "http://127.0.0.1:4124/v1" },
       "models": {
         "qwen3-8b-awq": {
           "tool_call": true,
@@ -377,7 +377,7 @@ dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 
 | Flag | Défaut | Description |
 |---|---|---|
-| `--port` | `4143` | Port d'écoute |
+| `--port` | `4124` | Port d'écoute |
 | `--listen` / `--host` | `127.0.0.1` | `0.0.0.0` expose le bridge sur le réseau |
 | `--upstream` | `http://127.0.0.1:4100` | URL de base de vLLM |
 | `--model` | `qwen3-8b-awq` | Nom de modèle forcé upstream |
@@ -438,7 +438,7 @@ liefert reinen Text, `finish_reason: stop` und keine Tool-Ausführung. Diese Bri
 ### Funktionsweise
 
 ```
-opencode ──POST /v1/responses──▶ bridge :4143 ──POST /v1/chat/completions──▶ vLLM :4100
+opencode ──POST /v1/responses──▶ bridge :4124 ──POST /v1/chat/completions──▶ vLLM :4100
          ◀── response.* SSE-Events ──          ◀── chat.completion-Chunks ──
 ```
 
@@ -460,14 +460,14 @@ vllm serve /pfad/zu/Qwen3-8B-AWQ \
   --reasoning-parser deepseek_r1
 
 # 2. Bridge
-dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
+dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 
 # 3. OpenCode-Provider (opencode.json)
 {
   "providers": {
     "openai": {
       "api": "openai-chat",
-      "settings": { "baseURL": "http://127.0.0.1:4143/v1" },
+      "settings": { "baseURL": "http://127.0.0.1:4124/v1" },
       "models": {
         "qwen3-8b-awq": {
           "tool_call": true,
@@ -483,7 +483,7 @@ dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 
 | Flag | Standard | Beschreibung |
 |---|---|---|
-| `--port` | `4143` | Hörport |
+| `--port` | `4124` | Hörport |
 | `--listen` / `--host` | `127.0.0.1` | `0.0.0.0` macht die Bridge im Netzwerk erreichbar |
 | `--upstream` | `http://127.0.0.1:4100` | Basis-URL von vLLM |
 | `--model` | `qwen3-8b-awq` | Upstream erzwungener Modellname |
