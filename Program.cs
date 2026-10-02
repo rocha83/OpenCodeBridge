@@ -32,7 +32,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace Qwen3Bridge;
+namespace Rochas.OpenCodeBridge;
 
 internal static partial class Program
 {

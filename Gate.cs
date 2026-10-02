@@ -14,7 +14,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace Qwen3Bridge;
+namespace Rochas.OpenCodeBridge;
 
 internal static class Gate
 {

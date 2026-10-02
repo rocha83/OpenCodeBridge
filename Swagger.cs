@@ -11,7 +11,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 
-namespace Qwen3Bridge;
+namespace Rochas.OpenCodeBridge;
 
 internal static partial class Program
 {

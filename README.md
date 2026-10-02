@@ -92,7 +92,7 @@ dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 ### Subcomando gate (integridade pós-tarefa)
 
 ```bash
-vllm-ocode-bridge.dll gate <repo> "<prompt>" [texto-obrigatório ...] [--config gate.json] [--review]
+Rochas.OpenCodeBridge.dll gate <repo> "<prompt>" [texto-obrigatório ...] [--config gate.json] [--review]
 ```
 
 Roda o agente pinado, exige commit novo, executa o build configurado e verifica
@@ -195,7 +195,7 @@ dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 ### Gate subcommand
 
 ```bash
-vllm-ocode-bridge.dll gate <repo> "<prompt>" [required-text ...] [--config gate.json] [--review]
+Rochas.OpenCodeBridge.dll gate <repo> "<prompt>" [required-text ...] [--config gate.json] [--review]
 ```
 
 Runs the pinned agent, requires a new commit, runs the configured build, checks
@@ -298,7 +298,7 @@ dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 ### Subcomando gate
 
 ```bash
-vllm-ocode-bridge.dll gate <repo> "<prompt>" [texto-obligatorio ...] [--config gate.json] [--review]
+Rochas.OpenCodeBridge.dll gate <repo> "<prompt>" [texto-obligatorio ...] [--config gate.json] [--review]
 ```
 
 Ejecuta el agente fijado, exige commit nuevo, corre el build configurado y verifica
@@ -401,7 +401,7 @@ dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 ### Sous-commande gate
 
 ```bash
-vllm-ocode-bridge.dll gate <repo> "<prompt>" [texte-obligatoire ...] [--config gate.json] [--review]
+Rochas.OpenCodeBridge.dll gate <repo> "<prompt>" [texte-obligatoire ...] [--config gate.json] [--review]
 ```
 
 Lance l'agent figé, exige un nouveau commit, exécute le build configuré et vérifie
@@ -507,7 +507,7 @@ dotnet run -- --port 4143 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 ### Gate-Subcommand
 
 ```bash
-vllm-ocode-bridge.dll gate <repo> "<prompt>" [pflichttext ...] [--config gate.json] [--review]
+Rochas.OpenCodeBridge.dll gate <repo> "<prompt>" [pflichttext ...] [--config gate.json] [--review]
 ```
 
 Führt den gepinnten Agenten aus, verlangt einen neuen Commit, führt den konfigurierten

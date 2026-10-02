@@ -23,5 +23,5 @@
 
 ## Ordem de boot p/ testes
 1. vLLM `:4100` (`sudo bash ~/Desktop/vllm-bridge/restart-vllm-tools.sh`, parser `hermes`).
-2. Bridge `:4143` (`nohup dotnet bin/Release/net9.0/vllm-ocode-bridge.dll --port 4143 ... &`).
+2. Bridge `:4143` (`nohup dotnet bin/Release/net9.0/Rochas.OpenCodeBridge.dll --port 4143 ... &`).
 3. `curl /api/status` nas duas portas antes de rodar o agente.

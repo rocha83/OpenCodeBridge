@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Rochas.OpenCodeBridge — ponte Responses <-> chat/completions p/ opencode + vLLM local.
+    Console .NET 9, sem pacotes NuGet externos (apenas BCL: HttpListener + System.Text.Json).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>1591</NoWarn>
+    <RootNamespace>Rochas.OpenCodeBridge</RootNamespace>
+    <AssemblyName>Rochas.OpenCodeBridge</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TieredCompilation>true</TieredCompilation>
+
+    <!-- Metadata NuGet (convencao Rochas.*, como Rochas.PDFGenerator) -->
+    <PackageId>Rochas.OpenCodeBridge</PackageId>
+    <Version>1.3.0</Version>
+    <Authors>Renato Rocha</Authors>
+    <Copyright>Renato Rocha</Copyright>
+    <Description>Bridge HTTP que traduz /v1/responses (opencode) para /v1/chat/completions (vLLM), com tool calling, thinking e streaming progressivo.</Description>
+    <PackageTags>opencode vllm qwen bridge responses chat-completions llm local-ai</PackageTags>
+    <RepositoryType>Git</RepositoryType>
+    <RepositoryUrl>https://github.com/rocha83/OpenCodeBridge</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/rocha83/OpenCodeBridge</PackageProjectUrl>
+    <PackageReleaseNotes>v1.3.0 - reasoning parser deepseek_r1, rename reasoning->reasoning_content, gate integrado, /api/metrics, README multilingue.</PackageReleaseNotes>
+  </PropertyGroup>
+
+</Project>
