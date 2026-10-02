@@ -11,6 +11,9 @@
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>1591</NoWarn>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageLicenseFile>GNUv2_License.txt</PackageLicenseFile>
+    <IncludeSymbols>true</IncludeSymbols>
     <RootNamespace>Rochas.OpenCodeBridge</RootNamespace>
     <AssemblyName>Rochas.OpenCodeBridge</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
@@ -28,5 +31,9 @@
     <PackageProjectUrl>https://github.com/rocha83/OpenCodeBridge</PackageProjectUrl>
     <PackageReleaseNotes>v1.3.0 - reasoning parser deepseek_r1, rename reasoning->reasoning_content, gate integrado, /api/metrics, README multilingue.</PackageReleaseNotes>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="GNUv2_License.txt" Pack="true" PackagePath="" />
+  </ItemGroup>
 
 </Project>
