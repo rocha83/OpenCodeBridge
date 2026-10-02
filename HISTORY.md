@@ -43,16 +43,17 @@
 - `AGENTS.md`: provider único (bridge), pinagem `--agent build --model openai/qwen3-8b-awq`,
   verificação via `/tmp/qwen3-bridge.log`.
 
-## E2E e portão (em andamento)
+## E2E e portão (concluído)
 - Ciclo arquivos/build/git/docker/curl-UA; demo DDD `PcssDemo` em `work/pcss-demo`.
 - Achado honesto: tools executam (provado via git+build), mas o 8B **não se autocorrige**
   (regressões, path errado, `bin/obj` commitado) → integridade via verificação externa.
-- `vllm-ocode-gate` (C#, genérico via `gate.json`): commit novo, forbid paths, mustContain,
+- **Gate integrado no mesmo projeto** como helper interno (`Gate.cs`, subcomando
+  `Rochas.OpenCodeBridge.dll gate ...`): commit novo, forbid paths, mustContain,
   build; modo `--review`: commit local livre, **push (=baseline) só com aprovação**,
-  rejeição faz `reset --soft`. Escopo Python descartado (`/tmp` só).
+  rejeição faz `reset --soft`. Projeto separado `vllm-ocode-gate` descontinuado.
 - Gate já capturou regressão real (FAIL determinístico em `node_modules/.bin` que o
   agente criou fora da tarefa — repo resetado para `6961acf`).
-
-## Pendente
 - `/api/metrics` ✅ (acumuladores + tps_out/tps_total; gate imprime METRICS).
+
+## Pendente (backlog não bloqueante)
 - Frentes docker (falha graciosa sem daemon), `curl` UA Firefox Win11, zip deliverable.
