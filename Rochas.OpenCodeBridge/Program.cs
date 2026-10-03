@@ -48,7 +48,7 @@ internal static partial class Program
     static int MaxTokens = 8192;                                   // teto de saida (config do opencode)
     static int ToolOutputLimit = 8000;                             // corte por resultado de tool (ctx 28672)
     static string LogPath = "/tmp/qwen3-bridge.log";
-    static readonly string Version = "1.4";
+    static readonly string Version = "1.5";
 
     // Perfil paralelo p/ Qwen2.5-Coder: com tool_choice "auto" ele improvisa
     // o call em texto (bloco ```json ou XML <response><function_call>);
@@ -602,7 +602,9 @@ internal static partial class Program
                 });
                 thinkOpen = true;
             }
-            if (!thinkOpen) return;   // modo "off": descarta o thinking
+            // Modo "off": sem item reasoning; o raciocinio vira texto comum.
+            if (!thinkOpen && Thinking != "events") { FlushMessage(text); return; }
+            if (!thinkOpen) return;
             thinkingText.Append(text);
             Emit("response.reasoning_summary_text.delta", new JsonObject
             {
@@ -1110,6 +1112,11 @@ internal static partial class Program
         var output = new JsonArray();
 
         // thinking primeiro (coerente com a ordem em que o modelo "pensou")
+        // Modo "off": sem item reasoning separado; o raciocinio vira texto
+        // comum no inicio da message (senao a resposta sai vazia quando o
+        // modelo pensa tudo e nao escreve nada fora do thinking).
+        if (Thinking != "events" && !string.IsNullOrWhiteSpace(thinking))
+            content = string.IsNullOrEmpty(content) ? thinking : thinking + "\n\n" + content;
         if (Thinking == "events" && !string.IsNullOrWhiteSpace(thinking))
         {
             output.Add(new JsonObject

@@ -73,6 +73,14 @@
 - Nota cognitiva: Coder cumpre mas é verborrágico (reescreve reports em loop);
   Qwen3 termina limpo. Coder de plantão só com `--model *coder*`.
 
+## Bridge v1.5 — thinking=off trafega como texto (2026-10-03)
+- Problema: com `--thinking off`, o Qwen3 emite tudo dentro do thinking e
+  a bridge descartava → resposta vazia. Agora `off` = sem item reasoning,
+  mas o texto do raciocínio é fundido no início da message (não-stream) ou
+  desviado para o stream de texto (SSE). Caminho Qwen3+events byte-idêntico.
+- Parâmetro: `--thinking off|events` (CLI) e `/api/config` (runtime).
+  Atestado: bateria comparativa 0.2 via `:4125` com `off` → message não-vazia.
+
 ## Suite de testes (Rochas.OpenCodeBridge.Test)
 - Console .NET 9 sem NuGet (BCL), na solution: 6 unit via HTTP na bridge
   (`/api/status|metrics`, `/v1/models`, `/api/translate` tools+namespace+stop,

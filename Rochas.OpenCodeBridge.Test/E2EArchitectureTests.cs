@@ -19,7 +19,7 @@ internal static class E2EArchitectureTests
                 ["content"] = new JsonArray(new JsonObject
                 {
                     ["type"] = "input_text",
-                    ["text"] = "ESP32 publica dor/mobilidade via MQTT. Desenhe em 3 bullets: ingestão idempotente, outbox + tópico mova.events-live, fallback in-memory + dead-letter."
+                    ["text"] = "ESP32 publica dor/mobilidade via MQTT. Desenhe em 3 bullets: ingestão idempotente, outbox + tópico app.events-live, fallback in-memory + dead-letter."
                 })
             })
         };
