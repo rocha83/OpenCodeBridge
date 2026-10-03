@@ -93,7 +93,13 @@ internal static partial class Program
             return Gate.Run(cliArgs[1..]);
 
         ParseArgs(cliArgs);                                        // 1.2 parse CLI
-        File.AppendAllText(LogPath, $"{{\"event\":\"start\",\"port\":{Port},\"upstream\":\"{Upstream}\",\"model\":\"{Model}\",\"thinking\":\"{Thinking}\"}}\n");
+        try
+        {
+            var logDir = Path.GetDirectoryName(LogPath);
+            if (!string.IsNullOrEmpty(logDir)) Directory.CreateDirectory(logDir);
+            File.AppendAllText(LogPath, $"{{\"event\":\"start\",\"port\":{Port},\"upstream\":\"{Upstream}\",\"model\":\"{Model}\",\"thinking\":\"{Thinking}\"}}\n");
+        }
+        catch { /* log de startup nunca derruba a bridge (ex.: /tmp owned by root) */ }
 
         // HttpListener e o servidor HTTP embutido da BCL (sem Kestrel/NuGet)
         using var listener = new HttpListener();
