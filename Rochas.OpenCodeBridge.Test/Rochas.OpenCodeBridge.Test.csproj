@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Rochas.OpenCodeBridge.Test — suite unit + e2e da bridge (sem NuGet externo,
+    so BCL: HttpClient + System.Text.Json). Runner console: exit 0 PASS, 1 FAIL.
+    Uso: dotnet run -c Release (flags: bridge URL, vllm URL, skip-e2e)
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Rochas.OpenCodeBridge.Test</RootNamespace>
+    <AssemblyName>Rochas.OpenCodeBridge.Test</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Description>Suite de testes unit + e2e da bridge Responses para chat-completions.</Description>
+  </PropertyGroup>
+
+</Project>

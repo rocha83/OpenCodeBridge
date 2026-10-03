@@ -57,3 +57,11 @@
 
 ## Pendente (backlog não bloqueante)
 - Frentes docker (falha graciosa sem daemon), `curl` UA Firefox Win11, zip deliverable.
+
+## Suite de testes (Rochas.OpenCodeBridge.Test)
+- Console .NET 9 sem NuGet (BCL), na solution: 6 unit via HTTP na bridge
+  (`/api/status|metrics`, `/v1/models`, `/api/translate` tools+namespace+stop,
+  `/api/convert` thinking+tools) + 5 e2e no modelo vivo (hermes forcado,
+  responses simples/com tools, stream SSE com sequence monotônico, review de
+  arquiteto senior). Exit 0 PASS / 1 FAIL.
+- Rodar: `dotnet run -c Release --project Rochas.OpenCodeBridge.Test -- [--skip-e2e]`
