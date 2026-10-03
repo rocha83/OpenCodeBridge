@@ -65,3 +65,7 @@
   responses simples/com tools, stream SSE com sequence monotônico, review de
   arquiteto senior). Exit 0 PASS / 1 FAIL.
 - Rodar: `dotnet run -c Release --project Rochas.OpenCodeBridge.Test -- [--skip-e2e]`
+- 2026-10-03: suite segmentada 1 classe/arquivo (TestContext + Program orquestrador +
+  UnitStatus/Translate/Convert + E2ETool/Stream/Architecture/Mitigation, 9 arquivos);
+  17 cenários (8 unit + 9 e2e: multi-namespace IoT, args inválidos, ciclo IoT→fila→push,
+  erro 4xx honesto, concorrência 3x); métodos en-US, comentários pt-BR. **17/17 verdes**.
