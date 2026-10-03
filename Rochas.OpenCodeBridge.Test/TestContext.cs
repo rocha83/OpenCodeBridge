@@ -12,6 +12,10 @@ internal static class TestContext
     public static string Vllm = "http://127.0.0.1:4100";
     public static bool SkipE2E;
     public static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(10) };
+
+    // Modelo servido pela bridge alvo (qwen3|coder): expectativas por perfil.
+    public static string ServedModel = "";
+    public static bool ServedIsCoder => ServedModel.Contains("coder", StringComparison.OrdinalIgnoreCase);
     static int Passed;
     static int Failed;
 

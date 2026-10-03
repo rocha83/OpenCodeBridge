@@ -20,6 +20,15 @@ internal static class Program
         }
         Console.WriteLine($"[test] bridge={TestContext.Bridge} vllm={TestContext.Vllm} skipE2E={TestContext.SkipE2E}");
 
+        // Descobre o modelo servido p/ ajustar as expectativas (qwen3|coder).
+        try
+        {
+            var st = TestContext.GetObj(TestContext.Bridge + "/api/status").GetAwaiter().GetResult();
+            TestContext.ServedModel = st["model"]?.GetValue<string>() ?? "";
+            Console.WriteLine($"[test] served={TestContext.ServedModel} coder={TestContext.ServedIsCoder}");
+        }
+        catch (Exception ex) { Console.WriteLine($"[test] sem status: {ex.Message}"); }
+
         // ---- unit (bridge, sem modelo)
         TestContext.Run("U-status", UnitStatusTests.Status);
         TestContext.Run("U-metrics", UnitStatusTests.Metrics);
@@ -33,7 +42,9 @@ internal static class Program
         // ---- e2e (modelo vivo)
         if (!TestContext.SkipE2E)
         {
-            TestContext.Run("E-vllm-tool-hermes", E2EToolTests.VllmToolHermes);
+            // Sonda direta do parser hermes no vLLM: so faz sentido no Qwen3.
+            if (!TestContext.ServedIsCoder) TestContext.Run("E-vllm-tool-hermes", E2EToolTests.VllmToolHermes);
+            else Console.WriteLine("[test] skip E-vllm-tool-hermes (perfil coder)");
             TestContext.Run("E-responses-simple", E2EToolTests.SimpleResponses);
             TestContext.Run("E-responses-tools", E2EToolTests.ToolResponses);
             TestContext.Run("E-stream-architect", E2EStreamTests.ArchitectStream);

@@ -48,7 +48,13 @@ internal static partial class Program
     static int MaxTokens = 8192;                                   // teto de saida (config do opencode)
     static int ToolOutputLimit = 8000;                             // corte por resultado de tool (ctx 28672)
     static string LogPath = "/tmp/qwen3-bridge.log";
-    static readonly string Version = "1.3";
+    static readonly string Version = "1.4";
+
+    // Perfil paralelo p/ Qwen2.5-Coder: com tool_choice "auto" ele improvisa
+    // o call em texto (bloco ```json ou XML <response><function_call>);
+    // com "required" emite tool_calls nativo (atestado no vLLM 0.19.1).
+    // Quando o Model nao contem "coder", o caminho Qwen3 fica byte-identico.
+    static bool IsCoder => Model.Contains("coder", StringComparison.OrdinalIgnoreCase);
 
     // Telemetria basica p/ a API de gerenciamento (/api/status)
     static DateTime StartedAt = DateTime.UtcNow;
@@ -426,7 +432,9 @@ internal static partial class Program
         if (tools is { Count: > 0 })
         {
             chat["tools"] = tools;
-            chat["tool_choice"] = "auto";   // o modelo decide se usa tool ou nao
+            // Qwen3 decide sozinho ("auto", bake-off 3/3); Coder precisa de
+            // "required" p/ emitir tool_calls nativo em vez de texto.
+            chat["tool_choice"] = IsCoder ? "required" : "auto";
         }
         // Stop sequences: repasse opcional (string ou array). ATENCAO: com
         // tools ativas, stop pode truncar o JSON da tool call no meio.

@@ -58,6 +58,21 @@
 ## Pendente (backlog não bloqueante)
 - Frentes docker (falha graciosa sem daemon), `curl` UA Firefox Win11, zip deliverable.
 
+## Bridge v1.4 — pipe paralelo p/ Qwen2.5-Coder (2026-10-03)
+- Problema: com `tool_choice "auto"` o Coder improvisa o call em texto
+  (bloco ```json `{"name":...}` ou XML `<response><function_call>`) e nada
+  executa; com `"required"` emite `tool_calls` nativo (atestado no vLLM).
+- Mudança mínima em `Program.cs`: `IsCoder` (Model contém "coder") +
+  `tool_choice = required` só nesse perfil; caminho Qwen3 byte-idêntico.
+- Suite `Rochas.OpenCodeBridge.Test` virou agnóstica ao perfil: lê o modelo
+  do `/api/status`; `E-vllm-tool-hermes` só no Qwen3; asserts de reasoning
+  e de texto-do-review condicionados ao perfil (Coder é non-thinking e com
+  `required` responde com call no 1º turno).
+- Atestado: suite **10/10** no Coder (vLLM 0.19.1 + `qwen3_coder`) e **11/11**
+  no Qwen3 selado; tarefa opencode E2E (calc.py criado+executado) PASS nos dois.
+- Nota cognitiva: Coder cumpre mas é verborrágico (reescreve reports em loop);
+  Qwen3 termina limpo. Coder de plantão só com `--model *coder*`.
+
 ## Suite de testes (Rochas.OpenCodeBridge.Test)
 - Console .NET 9 sem NuGet (BCL), na solution: 6 unit via HTTP na bridge
   (`/api/status|metrics`, `/v1/models`, `/api/translate` tools+namespace+stop,

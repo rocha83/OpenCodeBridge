@@ -40,8 +40,8 @@ internal static class UnitTranslateTests
         };
         var tr = await TestContext.PostObj(TestContext.Bridge + "/api/translate", body);
         var chat = tr["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request");
-        TestContext.Check(chat["model"]?.GetValue<string>() == "qwen3-8b-awq", "upstream forca model servido");
-        TestContext.Check(chat["tool_choice"]?.GetValue<string>() == "auto", "tool_choice auto");
+        TestContext.Check(chat["model"]?.GetValue<string>() == TestContext.ServedModel, "upstream forca model servido");
+        TestContext.Check(chat["tool_choice"]?.GetValue<string>() == (TestContext.ServedIsCoder ? "required" : "auto"), "tool_choice por perfil");
         var msgs = chat["messages"]?.AsArray() ?? throw new Exception("sem messages");
         TestContext.Check(msgs.Any(m => m?["role"]?.GetValue<string>() == "system"), "instructions vira system");
         TestContext.Check(msgs.Any(m => m?["role"]?.GetValue<string>() == "tool" && m?["tool_call_id"]?.GetValue<string>() == "call_hist1"), "tool preserva call_id");
