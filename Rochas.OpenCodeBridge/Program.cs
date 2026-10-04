@@ -784,6 +784,13 @@ internal static partial class Program
 
         // 4.1-4.4) Le o request Responses e monta o chat request
         var req = JsonNode.Parse(body)?.AsObject() ?? new JsonObject();
+        // Fail fast honesto: sem input nao ha o que traduzir — 400 aqui em
+        // vez de depender do upstream (vLLM nega, llama.cpp aceita e divaga).
+        if (req["input"] is not JsonArray arr || arr.Count == 0)
+        {
+            WriteJson(ctx, 400, new JsonObject { ["error"] = "input ausente ou vazio: Responses exige input com ao menos 1 mensagem" });
+            return;
+        }
         bool wantStream = req["stream"]?.GetValue<bool>() ?? false;
         var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out string thinking, out int toolCount);
 
