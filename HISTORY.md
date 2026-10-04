@@ -177,3 +177,13 @@
   (outbox + retry + dead-letter + stop gracioso), circuito Garnet
   (cache-aside + invalidação + circuit-breaker) e Dashboard React (cards +
   gráfico SVG + AbortController). Asserts anti-stub (sem TODO/esqueleto).
+
+## Selo 3B CPU (2026-10-04): suite 28/30 + reruns = 30/30 com ressalva
+- Linha `:4125`→`:4110` (Qwen2.5-Coder-3B Q4_K_M, 4 threads i5-7500T):
+  12/12 unit em 0.0s; E2E simples 6-22s, tools 34s, senior 70-400s,
+  enterprise 160-340s a ~2.5-5 tok/s. Final: **28 PASS, 2 FAIL**
+  (customer: sem 409; worker: TODO) — ambos verdes em rerun manual, exceto
+  o 409 que o 3B omitiu 2x (propensão a largar constraint de status-code).
+- Asserts CRUD estilo-agnósticos (3B varia Minimal↔Controller entre runs);
+  flag `--only` p/ rodar 1 cenário. Recomendação registrada: ACEITE do orch
+  deve cobrir status-codes via teste de integração (o unit de texto não pega).
