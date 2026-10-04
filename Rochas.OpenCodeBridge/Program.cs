@@ -552,7 +552,7 @@ internal static partial class Program
                     // Linha CPU: o 3B entra em loop de filler ([END_OF_TEXT])
                     // quando divaga — stop dedicado (só aqui; Responses/chat
                     // nativo do vLLM jamais recebe stop automático).
-                    if (node["stop"] is null && CoerceFor(mid))
+                    if (node["stop"] is null && (CoerceFor(mid) || CoerceFor(Model)))
                         node["stop"] = new JsonArray("[END_OF_TEXT]");
                     outBody = node.ToJsonString(SerOpts);
                 }
@@ -734,7 +734,12 @@ internal static partial class Program
         // Teto 4k de fabrica (8k no remaster); CPU sem parser usa CpuMaxTokens
         // (decode lento: teto alto = divagacao de minutos sem tool call).
         // Honra pedido menor, nunca maior que o teto da linha.
-        int cap = CoerceFor(requestedModel) ? CpuMaxTokens : MaxTokens;
+        // A linha e CPU quando o MODEL servido exige coercion (instancia 3B)
+        // ou o id pedido contem "cpu": nesses casos valem teto e stop proprios.
+        // (Suite E2E usa ids 8b mesmo na linha CPU — decidir só pelo pedido
+        // deixava o 3B divagar até 8k.)
+        bool cpuLine = CoerceFor(requestedModel) || CoerceFor(Model);
+        int cap = cpuLine ? CpuMaxTokens : MaxTokens;
         int asked = req["max_tokens"]?.GetValue<int>()
             ?? req["max_output_tokens"]?.GetValue<int>() ?? cap;
         if (asked <= 0) asked = cap;
@@ -763,6 +768,10 @@ internal static partial class Program
                   && !string.IsNullOrEmpty(stop.GetValue<string>());
             if (hasStop) chat["stop"] = stop.DeepClone();
         }
+        // Linha CPU sem parser: o 3B entra em loop de filler ([END_OF_TEXT])
+        // quando divaga — stop dedicado corta o loop sem afetar tool calls
+        // (elas nunca vem nativas aqui, só via coercion do texto).
+        else if (cpuLine) chat["stop"] = new JsonArray("[END_OF_TEXT]");
         return chat;
     }
 
