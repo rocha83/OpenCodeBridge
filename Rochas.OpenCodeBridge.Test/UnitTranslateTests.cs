@@ -65,7 +65,10 @@ internal static class UnitTranslateTests
         };
         var tr = await TestContext.PostObj(TestContext.Bridge + "/api/translate", body);
         var chat = tr["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request");
-        TestContext.Check(chat["stop"] is null, "stop nao repassado com tools (truncaria tool call)");
+        if (TestContext.ServedIsCoder)
+            TestContext.Check(chat["stop"]?.AsArray().Any(s => s?.GetValue<string>() == "[END_OF_TEXT]") == true, "linha CPU injeta stop anti-filler");
+        else
+            TestContext.Check(chat["stop"] is null, "stop nao repassado com tools (truncaria tool call)");
     }
 
     public static async Task TranslateMultiNamespace()
@@ -145,6 +148,8 @@ internal static class UnitTranslateTests
         TestContext.Check(cpuChat["max_tokens"]?.GetValue<int>() == System.Math.Min(8192, cpuCap), "cpu clampado em cpu_max_tokens, veio: " + cpuChat["max_tokens"]);
         var gpu = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq-build", 8192));
         var gpuChat = gpu["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request gpu");
-        TestContext.Check(gpuChat["max_tokens"]?.GetValue<int>() == System.Math.Min(8192, gpuCap), "gpu usa max_tokens, veio: " + gpuChat["max_tokens"]);
+        // Na linha CPU todo request vai p/ o llama: vale o teto CPU mesmo com id 8b.
+        int gpuExpect = TestContext.ServedIsCoder ? System.Math.Min(8192, cpuCap) : System.Math.Min(8192, gpuCap);
+        TestContext.Check(gpuChat["max_tokens"]?.GetValue<int>() == gpuExpect, "teto da linha servida, veio: " + gpuChat["max_tokens"]);
     }
 }
