@@ -462,10 +462,32 @@ internal static partial class Program
     /// <param name="body">Corpo original.</param>
     static void Passthrough(HttpListenerContext ctx, string body)
     {
+        // opencode 1.x fala chat/completions direto (sem /v1/responses): o id
+        // com sufixo de perfil (-plan/-build/-orch) precisa virar o Model
+        // servido, senao o vLLM responde 404. Temperatura do perfil entra
+        // quando o cliente nao informa nenhuma. llama.cpp aceita qualquer
+        // id, mas normalizar aqui mantem o log/telemetria coerentes.
+        string outBody = body;
+        try
+        {
+            var node = JsonNode.Parse(body)?.AsObject();
+            if (node is not null && node["model"]?.GetValue<string>() is string mid && mid != Model)
+            {
+                bool hasProfile = TryProfile(mid, out double profTemp, out _);
+                if (hasProfile || CoerceFor(mid))
+                {
+                    node["model"] = Model;
+                    if (node["temperature"] is null && !double.IsNaN(profTemp))
+                        node["temperature"] = profTemp;
+                    outBody = node.ToJsonString(SerOpts);
+                }
+            }
+        }
+        catch { outBody = body; }
         // Preserva o verbo original (GET p/ models, POST p/ completions).
         var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Upstream + ctx.Request.Url!.AbsolutePath);
         if (ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH")
-            forward.Content = new StringContent(body, Encoding.UTF8, "application/json");
+            forward.Content = new StringContent(outBody, Encoding.UTF8, "application/json");
         using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHeadersRead);
         ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
         ctx.Response.ContentType = upstreamResponse.Content.Headers.ContentType?.ToString() ?? "application/json";

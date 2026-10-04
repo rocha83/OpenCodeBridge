@@ -149,6 +149,9 @@
   linha CPU sem parser divaga minutos a ~5 tok/s com teto alto (3B rambleou
   1400+ tokens num `soma`); GPU segue com `MaxTokens` (8192).
 - Suite: `U-cpu-max-tokens-clamp` (dry-run `/api/translate`, sem modelo).
+- Passthrough mapeia id com perfil (`-plan/-build/-orch`) p/ o Model servido
+  (opencode 1.x fala chat/completions direto; sem isso o vLLM dava 404 nos
+  ids com sufixo) + injeta a temperatura do perfil quando o cliente omite.
 - Exemplos: `appsettings.4124.gpu-example.json`, `appsettings.4125.cpu-example.json`.
 - opencode 1.18.34 IGNORA o bloco `providers` (schema V1): config ativa usa
   `provider` + `npm @ai-sdk/openai-compatible` (`opencode.json`); formato
