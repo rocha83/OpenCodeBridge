@@ -121,3 +121,8 @@
 - `E2ESeniorTests.cs`: React corporativo (fetch concorrente + AbortController),
   bus de eventos no backend (outbox + idempotência), regras de ERP (borda
   fiscal) e ARM embarcado (DMA + STOP). **22/22 verdes** no selo.
+
+## Suite: retry em corpo vazio (2026-10-04, sem bump: segue 1.8)
+- Sob rajada, `/v1/responses` ocasionalmente devolve 200 vazio (keep-alive;
+  visto no Qwen3@36k e no Coder@52k: nao e pressao de VRAM — vLLM sem erros,
+  KV 0% idle). `PostObj` tenta 1x de novo apos 2s antes de falhar.

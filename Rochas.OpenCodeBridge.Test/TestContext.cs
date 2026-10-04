@@ -51,10 +51,20 @@ internal static class TestContext
     public static async Task<JsonObject> PostObj(string url, JsonNode body)
     {
         var t0 = DateTime.UtcNow;
-        using var res = await Http.PostAsync(url, new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"));
-        string text = await res.Content.ReadAsStringAsync();
-        if (!res.IsSuccessStatusCode) throw new Exception($"POST {url} -> {(int)res.StatusCode}: {text[..Math.Min(300, text.Length)]}");
-        var obj = JsonNode.Parse(text)?.AsObject() ?? throw new Exception("POST resposta nao-JSON");
+        for (int attempt = 0; ; attempt++)
+        {
+            using var res = await Http.PostAsync(url, new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"));
+            string text = await res.Content.ReadAsStringAsync();
+            // Corpo vazio com 200 sob rajada (keep-alive): 1 retry após 2s.
+            if (res.IsSuccessStatusCode && string.IsNullOrWhiteSpace(text) && attempt == 0)
+            {
+                Console.WriteLine($"  [retry] corpo vazio em {url}, tentando de novo...");
+                await Task.Delay(2000);
+                continue;
+            }
+            if (!res.IsSuccessStatusCode) throw new Exception($"POST {url} -> {(int)res.StatusCode}: {text[..Math.Min(300, text.Length)]}");
+            if (string.IsNullOrWhiteSpace(text)) throw new Exception($"POST {url} -> corpo vazio apos retry");
+            var obj = JsonNode.Parse(text)?.AsObject() ?? throw new Exception("POST resposta nao-JSON");
         int outTok = obj["usage"]?["output_tokens"]?.GetValue<int>() ?? 0;
         if (outTok > 0)
         {
