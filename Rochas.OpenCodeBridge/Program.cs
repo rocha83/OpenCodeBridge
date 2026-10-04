@@ -45,10 +45,10 @@ internal static partial class Program
     static string Model = "qwen3-8b-awq";                          // id servido pelo vLLM
     static string Thinking = "events";                             // "events" = mostra | "off" = descarta
     static double Temperature = 0.2;                                 // direto e objetivo (0.1-0.4); tool calling continua deterministico via tool_choice
-    static int MaxTokens = 8192;                                   // teto de saida (config do opencode)
+    static int MaxTokens = 4096;                                   // teto de saida padrao (fabrica 4k); pedido menor e honrado, nunca maior
     static int ToolOutputLimit = 8000;                             // corte por resultado de tool (ctx 28672)
     static string LogPath = "/tmp/qwen3-bridge.log";
-    static readonly string Version = "1.5";
+    static readonly string Version = "1.6";
 
     // Perfil paralelo p/ Qwen2.5-Coder: com tool_choice "auto" ele improvisa
     // o call em texto (bloco ```json ou XML <response><function_call>);
@@ -420,12 +420,17 @@ internal static partial class Program
         toolCount = tools?.Count ?? 0;
 
         // Monta o body do /v1/chat/completions
+        // Teto 4k de fabrica; honra pedido menor (chat max_tokens ou
+        // Responses max_output_tokens), nunca maior que o teto.
+        int asked = req["max_tokens"]?.GetValue<int>()
+            ?? req["max_output_tokens"]?.GetValue<int>() ?? MaxTokens;
+        if (asked <= 0) asked = MaxTokens;
         var chat = new JsonObject
         {
             ["model"] = Model,
             ["messages"] = messages,
             ["temperature"] = temperature,
-            ["max_tokens"] = MaxTokens,
+            ["max_tokens"] = Math.Min(asked, MaxTokens),
             ["stream"] = false,          // upstream sem stream: resposta unica, sintetizamos o SSE
             ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = Thinking == "events" }
         };

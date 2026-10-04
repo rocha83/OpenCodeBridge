@@ -92,3 +92,10 @@
   UnitStatus/Translate/Convert + E2ETool/Stream/Architecture/Mitigation, 9 arquivos);
   17 cenários (8 unit + 9 e2e: multi-namespace IoT, args inválidos, ciclo IoT→fila→push,
   erro 4xx honesto, concorrência 3x); métodos en-US, comentários pt-BR. **17/17 verdes**.
+
+## Bridge v1.6 — teto de saída 4k (2026-10-04)
+- `MaxTokens` padrão 8192→4096 (padrão de fábrica sem thinking); honra pedido
+  menor (`max_tokens`/`max_output_tokens`), nunca maior que o teto. Corta
+  loops verborrágicos e metade da latência pior-caso; truncamento real o
+  opencode contorna com follow-up (`finish_reason=length`).
+- Ajuste remoto já existia: `POST /api/config {"max_tokens": N}`.
