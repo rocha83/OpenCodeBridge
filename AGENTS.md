@@ -50,3 +50,8 @@
   (ou o Qwen3 pai) no merge.
 - Resposta de subagente sem evidência de execução = falha (repetir 1x,
   depois executar eu mesmo o slice).
+
+## Enunciado rígido p/ subagentes (1.5B e Qwen3-consigo-mesmo)
+- Vale para 1.5B **e** para subagentes do próprio Qwen3 com viés coder:
+  1 tarefa por prompt, imperativo curto, exemplo de saída incluído,
+  1 leitura + 1 escrita, verificação externa, temp 0.0.
