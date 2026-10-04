@@ -43,8 +43,10 @@
   (`--thinking events`, default); Coder não tem thinking — nada a desligar.
 - Conteúdo longo (>10k tokens) NÃO vai inteiro no prompt: fatiar em blocos
   com sobreposição e um índice (arquivo:início:fim) antes de delegar.
-- Subagente = perfil Coder: zero conversa, só ação — recebe slice + tarefa
-  + critério, devolve artefato + evidência de execução. Sem relatório,
-  sem resumo, sem pergunta de volta. Quem resume sou eu no merge.
+- Subagente = Qwen3 com viés Coder: o Qwen3 delega a subagentes DELE MESMO
+  instruídos a agir como Coder — zero conversa, só ação com tools: recebe
+  slice + tarefa + critério, devolve artefato + evidência de execução.
+  Sem relatório, sem resumo, sem pergunta de volta. Quem resume sou eu
+  (ou o Qwen3 pai) no merge.
 - Resposta de subagente sem evidência de execução = falha (repetir 1x,
   depois executar eu mesmo o slice).
