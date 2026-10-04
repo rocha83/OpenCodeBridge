@@ -126,3 +126,17 @@
 - Sob rajada, `/v1/responses` ocasionalmente devolve 200 vazio (keep-alive;
   visto no Qwen3@36k e no Coder@52k: nao e pressao de VRAM — vLLM sem erros,
   KV 0% idle). `PostObj` tenta 1x de novo apos 2s antes de falhar.
+
+## Bridge v1.9 — coerção texto→tool_calls p/ linha llama/CPU (2026-10-04)
+- LLM em CPU (llama.cpp) não tem parser server-side: cospe JSON em fences.
+  Nova camada (só perfil CPU): extrai ```json{"name"..} ou `<tool_call>` do
+  content e sintetiza `tool_calls` (non-stream + fecho do stream), removendo
+  os blocos consumidos. Loga `coerced` com count.
+- Chaveamento: `--coerce-text-tools true` ou auto quando o model contém
+  "cpu". **Linha vLLM (hermes/qwen3_coder/gemma4) intacta**: com tool_calls
+  nativos, a coerção nunca dispara.
+- Suite: `U-convert-coerced-text-call` (convert com model `*cpu*`).
+- Atestado: unit `U-convert-coerced-text-call` verde + evento `coerced`
+  observado ao vivo. E2E completo via opencode TRAVOU: system prompt de ~6k
+  tokens no prefill CPU (minutos) estoura timeouts do cliente (ASGI abort).
+  Ação real na CPU exige prompts curtos ou prefill menor — pendente.
