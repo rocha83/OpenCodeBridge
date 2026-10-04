@@ -11,6 +11,7 @@ internal static class TestContext
     public static string Bridge = "http://127.0.0.1:4124";
     public static string Vllm = "http://127.0.0.1:4100";
     public static bool SkipE2E;
+    public static string Only = "";
     public static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(10) };
 
     // Modelo servido pela bridge alvo (qwen3|coder): expectativas por perfil.
@@ -24,6 +25,11 @@ internal static class TestContext
 
     public static void Run(string name, Func<Task> fn)
     {
+        if (Only.Length > 0 && !name.Contains(Only, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"SKIP {name} (filtro --only)");
+            return;
+        }
         var t0 = DateTime.UtcNow;
         try
         {

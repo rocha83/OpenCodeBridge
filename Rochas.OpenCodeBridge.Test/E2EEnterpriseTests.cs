@@ -42,7 +42,11 @@ internal static class E2EEnterpriseTests
         string text = TextOf(r);
         TestContext.Check(text.Length > 500, "product com codigo util");
         CheckNoStub(text, "product");
-        TestContext.Check(text.Contains("MapPost") && text.Contains("MapDelete"), "product com endpoints");
+        // 3B varia Minimal API <-> Controller entre runs: aceita ambos os estilos.
+        bool hasCreate = text.Contains("MapPost") || text.Contains("HttpPost");
+        bool hasDelete = text.Contains("MapDelete") || text.Contains("HttpDelete");
+        bool hasRead = text.Contains("MapGet") || text.Contains("HttpGet");
+        TestContext.Check(hasCreate && hasDelete && hasRead, "product com endpoints CUD");
         Console.WriteLine($"  [info] product dapper={text.Contains("Dapper")} validacao={text.Contains("400")}");
     }
 
@@ -58,7 +62,7 @@ internal static class E2EEnterpriseTests
         string text = TextOf(r);
         TestContext.Check(text.Length > 500, "customer com codigo util");
         CheckNoStub(text, "customer");
-        TestContext.Check(text.Contains("409") && text.Contains("OFFSET", StringComparison.OrdinalIgnoreCase), "customer com conflito+paginacao");
+        TestContext.Check(text.Contains("409") && (text.Contains("OFFSET", StringComparison.OrdinalIgnoreCase) || text.Contains("Skip", StringComparison.OrdinalIgnoreCase)), "customer com conflito+paginacao");
         Console.WriteLine($"  [info] customer paginacao={text.Contains("pageSize")} email={text.Contains("Email")}");
     }
 

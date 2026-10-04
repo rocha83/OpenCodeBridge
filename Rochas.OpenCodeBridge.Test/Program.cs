@@ -17,6 +17,7 @@ internal static class Program
             if (args[i] == "--bridge" && i + 1 < args.Length) TestContext.Bridge = args[++i].TrimEnd('/');
             else if (args[i] == "--vllm" && i + 1 < args.Length) TestContext.Vllm = args[++i].TrimEnd('/');
             else if (args[i] == "--skip-e2e") TestContext.SkipE2E = true;
+            else if (args[i] == "--only" && i + 1 < args.Length) TestContext.Only = args[++i];
         }
         Console.WriteLine($"[test] bridge={TestContext.Bridge} vllm={TestContext.Vllm} skipE2E={TestContext.SkipE2E}");
 
