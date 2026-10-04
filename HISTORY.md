@@ -168,3 +168,12 @@
   `finish: tool_calls` em 33 tokens (antes: divagação até `length`).
 - Perfil `moe` (0.4/events): 6º modo `qwen3-8b-awq-moe`, híbrido geral com
   system prompt amplo próprio (opencode + Qwen CLI).
+
+## Bridge v2.1 — E2E enterprise C# + React (2026-10-04)
+- `E2EEnterpriseTests.cs`: 6 cenários com skills de backend e frontend —
+  CRUD simples Product (Minimal API + Dapper + bordas 400/404), CRUD Customer
+  (paginação OFFSET/FETCH + 409 email duplicado), CRUD composto SaleInvoice
+  header+detail em transação (baixa de estoque + rollback), BackgroundService
+  (outbox + retry + dead-letter + stop gracioso), circuito Garnet
+  (cache-aside + invalidação + circuit-breaker) e Dashboard React (cards +
+  gráfico SVG + AbortController). Asserts anti-stub (sem TODO/esqueleto).

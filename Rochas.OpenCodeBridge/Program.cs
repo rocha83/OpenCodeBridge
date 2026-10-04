@@ -49,7 +49,7 @@ internal static partial class Program
     static int CpuMaxTokens = 2048;                                // teto p/ upstream sem parser server-side (llama/CPU): decode ~5 tok/s, teto alto = divagacao de minutos. GPU usa MaxTokens.
     static int ToolOutputLimit = 8000;                             // corte por resultado de tool (ctx 28672)
     static string LogPath = "/tmp/qwen3-bridge.log";
-    static readonly string Version = "2.0";
+    static readonly string Version = "2.1";
 
     // Coerção texto->tool_calls p/ upstream sem parser server-side (llama.cpp
     // na CPU): extrai ```json{"name"..} ou <tool_call>..</tool_call> do content

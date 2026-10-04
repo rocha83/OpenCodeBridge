@@ -62,6 +62,12 @@ internal static class Program
             TestContext.Run("E-senior-bus", E2ESeniorTests.EventBusBackend);
             TestContext.Run("E-senior-erp", E2ESeniorTests.ErpRules);
             TestContext.Run("E-senior-arm", E2ESeniorTests.ArmIot);
+            TestContext.Run("E-ent-crud-product", E2EEnterpriseTests.CrudProduct);
+            TestContext.Run("E-ent-crud-customer", E2EEnterpriseTests.CrudCustomer);
+            TestContext.Run("E-ent-crud-saleinvoice", E2EEnterpriseTests.CrudSaleInvoice);
+            TestContext.Run("E-ent-worker", E2EEnterpriseTests.BackgroundWorker);
+            TestContext.Run("E-ent-garnet", E2EEnterpriseTests.GarnetCircuit);
+            TestContext.Run("E-ent-dashboard", E2EEnterpriseTests.ReactDashboard);
         }
 
         return TestContext.Summary();
