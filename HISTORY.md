@@ -116,3 +116,8 @@
   com `usage` (unit translate sem modelo nao tem usage: silencioso).
 - Medido: Coder-7B ~35-45 tok/s fim-a-fim; Qwen3-8B ~25-30 tok/s (thinking
   incluso — o custo 2x de tokens explica a "lentidao", nao o decode).
+
+## Suite +4 cenários sênior (2026-10-04, sem bump: segue 1.8)
+- `E2ESeniorTests.cs`: React corporativo (fetch concorrente + AbortController),
+  bus de eventos no backend (outbox + idempotência), regras de ERP (borda
+  fiscal) e ARM embarcado (DMA + STOP). **22/22 verdes** no selo.

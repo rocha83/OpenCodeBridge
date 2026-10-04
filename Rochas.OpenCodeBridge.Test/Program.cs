@@ -54,6 +54,10 @@ internal static class Program
             TestContext.Run("E-error-mitigation", E2EMitigationTests.ErrorMitigation);
             TestContext.Run("E-full-cycle-iot-queue-push", E2EArchitectureTests.FullCycleIotQueuePush);
             TestContext.Run("E-healthy-concurrency", E2EMitigationTests.HealthyConcurrency);
+            TestContext.Run("E-senior-react", E2ESeniorTests.ReactEnterprise);
+            TestContext.Run("E-senior-bus", E2ESeniorTests.EventBusBackend);
+            TestContext.Run("E-senior-erp", E2ESeniorTests.ErpRules);
+            TestContext.Run("E-senior-arm", E2ESeniorTests.ArmIot);
         }
 
         return TestContext.Summary();
