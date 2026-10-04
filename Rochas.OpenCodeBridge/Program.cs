@@ -61,13 +61,16 @@ internal static partial class Program
 
     // Perfis por sufixo no model (ex.: openai/qwen3-8b-awq-plan): plan =
     // thinking ligado + temp alta p/ planejar; build = thinking fundido +
-    // temp baixa p/ executar. Request sem sufixo usa os globais. O caminho
-    // Qwen3 padrao (sem sufixo) fica byte-identico.
+    // temp baixa p/ executar; orch = coordena 3B; moe = uso geral hibrido
+    // (Qwen3 decide sozinho quando delegar). Request sem sufixo usa os
+    // globais. O caminho Qwen3 padrao (sem sufixo) fica byte-identico.
     static readonly Dictionary<string, (double Temp, string Think)> Profiles =
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["plan"] = (0.6, "events"),
             ["build"] = (0.2, "off"),
+            ["orch"] = (0.2, "events"),
+            ["moe"] = (0.4, "events"),
         };
 
     /// <summary>Descobre o perfil pelo sufixo do model (-plan/-build).</summary>

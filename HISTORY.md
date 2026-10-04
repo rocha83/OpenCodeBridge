@@ -166,3 +166,5 @@
 - `stop: ["[END_OF_TEXT]"]` injetado na linha CPU (corta o loop de filler) +
   `CpuMaxTokens` limita o pior caso. Atestado ao vivo: `soma(17,25)` com
   `finish: tool_calls` em 33 tokens (antes: divagação até `length`).
+- Perfil `moe` (0.4/events): 6º modo `qwen3-8b-awq-moe`, híbrido geral com
+  system prompt amplo próprio (opencode + Qwen CLI).
