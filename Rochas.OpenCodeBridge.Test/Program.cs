@@ -39,6 +39,7 @@ internal static class Program
         TestContext.Run("U-convert-thinking-tools", UnitConvertTests.ConvertThinkingTools);
         TestContext.Run("U-translate-multi-namespace", UnitTranslateTests.TranslateMultiNamespace);
         TestContext.Run("U-translate-profiles", UnitTranslateTests.TranslateProfiles);
+        TestContext.Run("U-cpu-max-tokens-clamp", UnitTranslateTests.TranslateCpuMaxTokensClamp);
         TestContext.Run("U-convert-invalid-arguments", UnitConvertTests.ConvertInvalidArguments);
         TestContext.Run("U-convert-coerced-text-call", UnitConvertTests.ConvertCoercedTextCall);
 

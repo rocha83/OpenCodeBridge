@@ -46,9 +46,10 @@ internal static partial class Program
     static string Thinking = "events";                             // "events" = mostra | "off" = descarta
     static double Temperature = 0.2;                                 // direto e objetivo (0.1-0.4); tool calling continua deterministico via tool_choice
     static int MaxTokens = 4096;                                   // teto de saida padrao (fabrica 4k); pedido menor e honrado, nunca maior
+    static int CpuMaxTokens = 2048;                                // teto p/ upstream sem parser server-side (llama/CPU): decode ~5 tok/s, teto alto = divagacao de minutos. GPU usa MaxTokens.
     static int ToolOutputLimit = 8000;                             // corte por resultado de tool (ctx 28672)
     static string LogPath = "/tmp/qwen3-bridge.log";
-    static readonly string Version = "1.9";
+    static readonly string Version = "2.0";
 
     // Coerção texto->tool_calls p/ upstream sem parser server-side (llama.cpp
     // na CPU): extrai ```json{"name"..} ou <tool_call>..</tool_call> do content
@@ -96,6 +97,7 @@ internal static partial class Program
             if (cfg["thinking"]?.GetValue<string>() is string thinking && thinking is "events" or "off") Thinking = thinking;
             if (cfg["temperature"]?.GetValue<double>() is double temp) Temperature = temp;
             if (cfg["maxTokens"]?.GetValue<int>() is int mt && mt > 0) MaxTokens = mt;
+            if (cfg["cpuMaxTokens"]?.GetValue<int>() is int cmt && cmt > 0) CpuMaxTokens = cmt;
             if (cfg["logPath"]?.GetValue<string>() is string log && log.Length > 0) LogPath = log;
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
             if (cfg["profiles"]?.AsObject() is JsonObject profs)
@@ -238,6 +240,7 @@ internal static partial class Program
                 // Invariante: em locale pt-BR, Parse("0.7") quebraria sem isso
                 case "--temperature": Temperature = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); break;
                 case "--max-tokens": MaxTokens = int.Parse(cliArgs[i + 1]); break;
+                case "--cpu-max-tokens": CpuMaxTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--log": LogPath = cliArgs[i + 1]; break;
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
             }
@@ -343,7 +346,9 @@ internal static partial class Program
                     Temperature = tempValue;
                 if (req["max_tokens"]?.GetValue<int>() is int maxTokens && maxTokens > 0)
                     MaxTokens = maxTokens;
-                Log(new JsonObject { ["event"] = "config", ["thinking"] = Thinking, ["temperature"] = Temperature, ["max_tokens"] = MaxTokens });
+                if (req["cpu_max_tokens"]?.GetValue<int>() is int cpuMax && cpuMax > 0)
+                    CpuMaxTokens = cpuMax;
+                Log(new JsonObject { ["event"] = "config", ["thinking"] = Thinking, ["temperature"] = Temperature, ["max_tokens"] = MaxTokens, ["cpu_max_tokens"] = CpuMaxTokens });
                 WriteJson(ctx, 200, BuildStatus());
                 return;
             }
@@ -421,6 +426,7 @@ internal static partial class Program
         ["listen"] = Listen, ["port"] = Port,
         ["upstream"] = Upstream, ["model"] = Model, ["thinking"] = Thinking,
         ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
+        ["cpu_max_tokens"] = CpuMaxTokens,
         ["uptime_seconds"] = (long)(DateTime.UtcNow - StartedAt).TotalSeconds,
         ["total_requests"] = TotalRequests, ["failed_requests"] = FailedRequests
     };
@@ -527,17 +533,19 @@ internal static partial class Program
         toolCount = tools?.Count ?? 0;
 
         // Monta o body do /v1/chat/completions
-        // Teto 4k de fabrica; honra pedido menor (chat max_tokens ou
-        // Responses max_output_tokens), nunca maior que o teto.
+        // Teto 4k de fabrica (8k no remaster); CPU sem parser usa CpuMaxTokens
+        // (decode lento: teto alto = divagacao de minutos sem tool call).
+        // Honra pedido menor, nunca maior que o teto da linha.
+        int cap = CoerceFor(requestedModel) ? CpuMaxTokens : MaxTokens;
         int asked = req["max_tokens"]?.GetValue<int>()
-            ?? req["max_output_tokens"]?.GetValue<int>() ?? MaxTokens;
-        if (asked <= 0) asked = MaxTokens;
+            ?? req["max_output_tokens"]?.GetValue<int>() ?? cap;
+        if (asked <= 0) asked = cap;
         var chat = new JsonObject
         {
             ["model"] = Model,
             ["messages"] = messages,
             ["temperature"] = temperature,
-            ["max_tokens"] = Math.Min(asked, MaxTokens),
+            ["max_tokens"] = Math.Min(asked, cap),
             ["stream"] = false,          // upstream sem stream: resposta unica, sintetizamos o SSE
             ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = thinking == "events" }
         };

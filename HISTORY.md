@@ -140,3 +140,16 @@
   observado ao vivo. E2E completo via opencode TRAVOU: system prompt de ~6k
   tokens no prefill CPU (minutos) estoura timeouts do cliente (ASGI abort).
   Ação real na CPU exige prompts curtos ou prefill menor — pendente.
+
+## Bridge v2.0 — perfis plan/build/orch + teto CPU + 5 modos opencode (2026-10-04)
+- Perfis por sufixo no model (`-plan` 0.6/events, `-build` 0.2/off, `-orch`
+  0.2/events, parametrizáveis em `appsettings.json`): o 8B ganha o 5º modo
+  orquestrador (build que delega micro-enunciados a subagentes 3B).
+- `CpuMaxTokens` (padrão 2048, `--cpu-max-tokens`/`cpuMaxTokens`/`/api/config`):
+  linha CPU sem parser divaga minutos a ~5 tok/s com teto alto (3B rambleou
+  1400+ tokens num `soma`); GPU segue com `MaxTokens` (8192).
+- Suite: `U-cpu-max-tokens-clamp` (dry-run `/api/translate`, sem modelo).
+- Exemplos: `appsettings.4124.gpu-example.json`, `appsettings.4125.cpu-example.json`.
+- opencode 1.18.34 IGNORA o bloco `providers` (schema V1): config ativa usa
+  `provider` + `npm @ai-sdk/openai-compatible` (`opencode.json`); formato
+  `providers` fica em `opencode.v2.json` de reserva p/ o v2.

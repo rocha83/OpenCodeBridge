@@ -122,4 +122,29 @@ internal static class UnitTranslateTests
         var plain = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq"));
         TestContext.Check(plain["temperature"]?.GetValue<double>() == globalTemp, "sem sufixo usa global");
     }
+
+    public static async Task TranslateCpuMaxTokensClamp()
+    {
+        // Linha CPU (model com "cpu", sem parser server-side): teto proprio
+        // CpuMaxTokens limita divagacao (decode ~5 tok/s); GPU usa MaxTokens.
+        static JsonObject Body(string model, int ask) => new()
+        {
+            ["model"] = model,
+            ["max_tokens"] = ask,
+            ["input"] = new JsonArray(new JsonObject
+            {
+                ["type"] = "message", ["role"] = "user",
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = "oi" })
+            })
+        };
+        var status = await TestContext.GetObj(TestContext.Bridge + "/api/status");
+        int cpuCap = status["cpu_max_tokens"]?.GetValue<int>() ?? 2048;
+        int gpuCap = status["max_tokens"]?.GetValue<int>() ?? 8192;
+        var cpu = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("llama/qwen25-coder-3b-cpu-build", 8192));
+        var cpuChat = cpu["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request cpu");
+        TestContext.Check(cpuChat["max_tokens"]?.GetValue<int>() == System.Math.Min(8192, cpuCap), "cpu clampado em cpu_max_tokens, veio: " + cpuChat["max_tokens"]);
+        var gpu = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq-build", 8192));
+        var gpuChat = gpu["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request gpu");
+        TestContext.Check(gpuChat["max_tokens"]?.GetValue<int>() == System.Math.Min(8192, gpuCap), "gpu usa max_tokens, veio: " + gpuChat["max_tokens"]);
+    }
 }
