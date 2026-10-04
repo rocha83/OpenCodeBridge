@@ -159,7 +159,8 @@ internal static partial class Program
     // Marcadores de template que as vezes escapam para o texto final.
     static readonly Regex ReTemplate = new(@"<\|im_(start|end)\|>", RegexOptions.Compiled);
 
-    // Coerção: fenced ```json{"name":..} e tags <tool_call>..</tool_call>.
+    // Coerção: fenced ```json{"name":..}, tags <tool_call>..</tool_call> e
+    // o formato cru do 3B na CPU: <{"name": ..}}> (sem fences/tags).
     static readonly Regex ReFencedCall = new(@"```(?:json)?\s*(\{\s*""name""\s*:[\s\S]*?\})\s*```", RegexOptions.Compiled);
     static readonly Regex ReToolTag = new(@"<tool_call>([\s\S]*?)</tool_call(?:\|>)?", RegexOptions.Compiled);
 
@@ -171,7 +172,73 @@ internal static partial class Program
         foreach (Match m in ReToolTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
         if (list.Count == 0)
             foreach (Match m in ReFencedCall.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
+        if (list.Count == 0)
+            foreach (string json in ExtractAngleCalls(content, false)) TryAddTextCall(json, list);
+        if (list.Count == 0)
+        {
+            // Ultimo recurso: resposta INTEIRA e um objeto {"name":..} cru
+            // (3B alterna formatos entre runs). Exige "arguments" p/ nao
+            // confundir com codigo que mencione "name".
+            string t = content.TrimStart();
+            if (t.StartsWith("{\"name\"", StringComparison.Ordinal) && t.Contains("\"arguments\""))
+                foreach (string json in ExtractAngleCalls(t, true)) TryAddTextCall(json, list);
+        }
         return list;
+    }
+
+    /// <summary>Extrai chamadas no formato cru do 3B <c>&lt;{"name":..}&gt;</c> (ou objeto cru no inicio), com chaves balanceadas.</summary>
+    /// <summary>Extrai chamadas no formato cru do 3B: <c>&lt;{"name":..}&gt;</c> em qualquer posicao, ou objeto cru SOMENTE no inicio.</summary>
+    static List<string> ExtractAngleCalls(string content, bool bareStartOnly)
+    {
+        var out_ = new List<string>();
+        // Objeto cru: tenta uma vez na posicao 0 (conteudo ja vem trimado).
+        if (bareStartOnly)
+        {
+            if (content.Length > 0 && content[0] == '{' && TryBalanced(content, 0, out string one) && one.Contains("\"name\""))
+                out_.Add(one);
+            return out_;
+        }
+        int i = 0;
+        while (i < content.Length)
+        {
+            int lt = content.IndexOf('<', i);
+            if (lt < 0 || lt + 1 >= content.Length) break;
+            int j = lt + 1;
+            if (content[j] != '{') { i = j; continue; }
+            if (TryBalanced(content, j, out string one) && one.Contains("\"name\""))
+            { out_.Add(one); i = j + one.Length; }
+            else i = j + 1;
+        }
+        return out_;
+    }
+
+    /// <summary>Extrai objeto JSON com chaves balanceadas a partir de um <c>{</c> (respeita strings).</summary>
+    static bool TryBalanced(string s, int start, out string json)
+    {
+        json = "";
+        int depth = 0;
+        bool inStr = false, esc = false;
+        for (int k = start; k < s.Length; k++)
+        {
+            char c = s[k];
+            if (inStr)
+            {
+                if (esc) esc = false;
+                else if (c == '\\') esc = true;
+                else if (c == '"') inStr = false;
+            }
+            else
+            {
+                if (c == '"') inStr = true;
+                else if (c == '{') depth++;
+                else if (c == '}')
+                {
+                    depth--;
+                    if (depth == 0) { json = s.Substring(start, k - start + 1); return true; }
+                }
+            }
+        }
+        return false;
     }
 
     static void TryAddTextCall(string json, List<(string Name, string Arguments)> list)
@@ -479,16 +546,44 @@ internal static partial class Program
                     node["model"] = Model;
                     if (node["temperature"] is null && !double.IsNaN(profTemp))
                         node["temperature"] = profTemp;
+                    // Linha CPU: o 3B entra em loop de filler ([END_OF_TEXT])
+                    // quando divaga — stop dedicado (só aqui; Responses/chat
+                    // nativo do vLLM jamais recebe stop automático).
+                    if (node["stop"] is null && CoerceFor(mid))
+                        node["stop"] = new JsonArray("[END_OF_TEXT]");
                     outBody = node.ToJsonString(SerOpts);
                 }
             }
         }
         catch { outBody = body; }
         // Preserva o verbo original (GET p/ models, POST p/ completions).
+        // Linha CPU (llama sem parser server-side): forca upstream sem stream
+        // p/ coagir o texto em tool_calls e devolver SSE sintetizado — senao o
+        // opencode 1.x recebe texto puro, nenhuma tool executa e o agente entra
+        // em loop re-planejando. Linha GPU segue em streaming real.
+        bool isChat = ctx.Request.Url!.AbsolutePath.Contains("chat/completions");
+        bool coerceLine = CoerceFor(Model) && isChat
+            && ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH";
+        bool wantStream = false;
+        if (coerceLine)
+        {
+            try
+            {
+                var n2 = JsonNode.Parse(outBody)?.AsObject();
+                wantStream = n2?["stream"]?.GetValue<bool>() ?? false;
+                if (n2 is not null) { n2["stream"] = false; outBody = n2.ToJsonString(SerOpts); }
+            }
+            catch { wantStream = false; }
+        }
         var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Upstream + ctx.Request.Url!.AbsolutePath);
         if (ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH")
             forward.Content = new StringContent(outBody, Encoding.UTF8, "application/json");
         using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHeadersRead);
+        if (coerceLine && upstreamResponse.IsSuccessStatusCode)
+        {
+            CoercedChatResponse(ctx, upstreamResponse, wantStream);
+            return;
+        }
         ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
         ctx.Response.ContentType = upstreamResponse.Content.Headers.ContentType?.ToString() ?? "application/json";
         using var upstreamStream = upstreamResponse.Content.ReadAsStream();
@@ -518,6 +613,84 @@ internal static partial class Program
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
         }
+        ctx.Response.Close();
+    }
+
+    /// <summary>Resposta chat da linha CPU: coage texto em tool_calls e devolve JSON ou SSE sintetizado.</summary>
+    static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream)
+    {
+        string json;
+        using (var reader = new StreamReader(upstreamResponse.Content.ReadAsStream(), new UTF8Encoding(false)))
+            json = reader.ReadToEnd();
+        int coerced = 0;
+        try
+        {
+            var root = JsonNode.Parse(json)?.AsObject();
+            var msg = root?["choices"]?.AsArray().FirstOrDefault()?["message"]?.AsObject();
+            if (msg is not null && msg["tool_calls"] is null)
+            {
+                string content = msg["content"]?.GetValue<string>() ?? "";
+                var calls = ExtractTextToolCalls(content);
+                if (calls.Count > 0)
+                {
+                    var arr = new JsonArray();
+                    foreach (var (Name, Arguments) in calls)
+                        arr.Add(new JsonObject
+                        {
+                            ["index"] = arr.Count,
+                            ["id"] = "call_" + Guid.NewGuid().ToString("N")[..8],
+                            ["type"] = "function",
+                            ["function"] = new JsonObject { ["name"] = Name, ["arguments"] = Arguments }
+                        });
+                    msg["tool_calls"] = arr;
+                    var choices = root!["choices"]!.AsArray();
+                    if (choices[0]?.AsObject() is JsonObject first)
+                        first["finish_reason"] = "tool_calls";
+                    coerced = calls.Count;
+                    json = root!.ToJsonString(SerOpts);
+                }
+            }
+        }
+        catch { /* corpo inesperado: devolve cru */ }
+        Log(new JsonObject { ["event"] = "coerced-chat", ["model"] = Model, ["count"] = coerced });
+        if (!wantStream)
+        {
+            ctx.Response.StatusCode = 200;
+            ctx.Response.ContentType = "application/json; charset=utf-8";
+            var bytes = new UTF8Encoding(false).GetBytes(json);
+            ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            ctx.Response.Close();
+            return;
+        }
+        ctx.Response.StatusCode = 200;
+        ctx.Response.ContentType = "text/event-stream";
+        using var writer = new StreamWriter(ctx.Response.OutputStream, new UTF8Encoding(false)) { AutoFlush = true };
+        try
+        {
+            var root = JsonNode.Parse(json)?.AsObject();
+            var msg = root?["choices"]?.AsArray().FirstOrDefault();
+            string? finish = msg?["finish_reason"]?.GetValue<string>();
+            var m = msg?["message"]?.AsObject();
+            var delta = new JsonObject { ["role"] = "assistant" };
+            if (m?["content"]?.GetValue<string>() is string c && c.Length > 0) delta["content"] = c;
+            if (m?["tool_calls"] is JsonArray tc) delta["tool_calls"] = (JsonNode?)JsonNode.Parse(tc.ToJsonString(SerOpts));
+            var chunk = new JsonObject
+            {
+                ["id"] = root?["id"]?.GetValue<string>() ?? ("chatcmpl-" + Guid.NewGuid().ToString("N")[..8]),
+                ["object"] = "chat.completion.chunk",
+                ["created"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                ["model"] = Model,
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["index"] = 0, ["delta"] = delta, ["finish_reason"] = finish
+                })
+            };
+            writer.WriteLine("data: " + chunk.ToJsonString(SerOpts));
+            writer.WriteLine();
+            writer.WriteLine("data: [DONE]");
+            writer.WriteLine();
+        }
+        catch { writer.WriteLine("data: [DONE]"); writer.WriteLine(); }
         ctx.Response.Close();
     }
 

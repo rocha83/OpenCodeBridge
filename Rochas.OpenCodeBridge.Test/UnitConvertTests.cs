@@ -108,4 +108,55 @@ internal static class UnitConvertTests
         TestContext.Check(call?["name"]?.GetValue<string>() == "get_status", "nome extraido");
         TestContext.Check((call?["arguments"]?.GetValue<string>() ?? "").Contains("/tmp"), "args extraidos");
     }
+
+    public static async Task ConvertCoercedAngleCall()
+    {
+        // Formato cru do 3B na CPU (observado ao vivo): <{"name": ..}}> sem
+        // fences nem tags — tem que coagir igual.
+        var body = new JsonObject
+        {
+            ["model"] = "llama/qwen25-coder-3b-cpu-build",
+            ["completion"] = new JsonObject
+            {
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["message"] = new JsonObject
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = "<{\"name\": \"soma\", \"arguments\": {\"a\": 17, \"b\": 25}}}>\" 42"
+                    }
+                }),
+                ["usage"] = new JsonObject { ["prompt_tokens"] = 20, ["completion_tokens"] = 15 }
+            }
+        };
+        var r = await TestContext.PostObj(TestContext.Bridge + "/api/convert", body);
+        var output = r["output"]?.AsArray() ?? throw new Exception("sem output");
+        var call = output.FirstOrDefault(o => o?["type"]?.GetValue<string>() == "function_call")?.AsObject()
+            ?? throw new Exception("sem function_call coagida (angle)");
+        TestContext.Check(call?["name"]?.GetValue<string>() == "soma", "nome extraido (angle)");
+        TestContext.Check((call?["arguments"]?.GetValue<string>() ?? "").Contains("17"), "args extraidos (angle)");
+
+        // Objeto cru no inicio (outro formato do 3B entre runs).
+        var bare = new JsonObject
+        {
+            ["model"] = "llama/qwen25-coder-3b-cpu-build",
+            ["completion"] = new JsonObject
+            {
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["message"] = new JsonObject
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = "{\"name\": \"soma\", \"arguments\": {\"a\": 1, \"b\": 2}}\n[END_OF_TEXT]"
+                    }
+                }),
+                ["usage"] = new JsonObject { ["prompt_tokens"] = 20, ["completion_tokens"] = 15 }
+            }
+        };
+        var rb = await TestContext.PostObj(TestContext.Bridge + "/api/convert", bare);
+        var outb = rb["output"]?.AsArray() ?? throw new Exception("sem output (bare)");
+        var callb = outb.FirstOrDefault(o => o?["type"]?.GetValue<string>() == "function_call")?.AsObject()
+            ?? throw new Exception("sem function_call coagida (bare)");
+        TestContext.Check(callb?["name"]?.GetValue<string>() == "soma", "nome extraido (bare)");
+    }
 }

@@ -156,3 +156,13 @@
 - opencode 1.18.34 IGNORA o bloco `providers` (schema V1): config ativa usa
   `provider` + `npm @ai-sdk/openai-compatible` (`opencode.json`); formato
   `providers` fica em `opencode.v2.json` de reserva p/ o v2.
+
+## Bridge 2.0 — coerção no chat direto + formatos crus do 3B (2026-10-04)
+- opencode 1.x fala `chat/completions` direto: `Passthrough` agora mapeia id
+  com perfil p/ o Model servido (era 404 no vLLM) e a linha CPU força
+  `stream:false` + coage a resposta (SSE sintetizado quando pedido).
+- 3B alterna 4 formatos entre runs: fences, `<tool_call>`, `<{..}>` e objeto
+  cru — extrator com chaves balanceadas cobre todos (`coerced-chat` no log).
+- `stop: ["[END_OF_TEXT]"]` injetado na linha CPU (corta o loop de filler) +
+  `CpuMaxTokens` limita o pior caso. Atestado ao vivo: `soma(17,25)` com
+  `finish: tool_calls` em 33 tokens (antes: divagação até `length`).
