@@ -22,6 +22,6 @@ internal static class E2EMitigationTests
         var tasks = Enumerable.Range(0, 3).Select(_ => TestContext.GetObj(TestContext.Bridge + "/api/status")).ToArray();
         var all = await Task.WhenAll(tasks);
         TestContext.Check(all.All(s => s["status"]?.GetValue<string>() == "ok"), "3x status ok");
-        TestContext.Check(all.All(s => s["model"]?.GetValue<string>() == "qwen3-8b-awq"), "3x mesmo modelo");
+        TestContext.Check(all.All(s => s["model"]?.GetValue<string>() == TestContext.ServedModel), "3x mesmo modelo");
     }
 }

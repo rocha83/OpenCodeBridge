@@ -99,3 +99,20 @@
   loops verborrágicos e metade da latência pior-caso; truncamento real o
   opencode contorna com follow-up (`finish_reason=length`).
 - Ajuste remoto já existia: `POST /api/config {"max_tokens": N}`.
+
+## Bridge v1.7 — perfis plan/build + appsettings.json (2026-10-04)
+- Sufixo no model (`...-plan`, `...-build`): plan = temp 0.6 + thinking;
+  build = temp 0.2 + thinking fundido. Temperatura explicita no request
+  vence o perfil; sem sufixo valem os globais (Qwen3 padrao inalterado).
+- `appsettings.json` opcional ao lado do DLL (listen/port/upstream/model/
+  thinking/temperature/maxTokens/logPath/profiles); CLI vence o arquivo;
+  `/api/config` continua ajustando em runtime.
+- Uso: opencode com entradas `openai/qwen3-8b-awq-plan` (planejar) e
+  `...-build` (executar). Atestado via `/api/translate` (suite U nova).
+
+## Bridge v1.8 — tps em todo ciclo (2026-10-04)
+- Log da bridge: cada `/v1/responses` registra `input/output_tokens` + `tps_output`.
+- Suite: `PostObj` imprime `[tps] N tok / Ts = X tok/s <- url` em todo POST
+  com `usage` (unit translate sem modelo nao tem usage: silencioso).
+- Medido: Coder-7B ~35-45 tok/s fim-a-fim; Qwen3-8B ~25-30 tok/s (thinking
+  incluso — o custo 2x de tokens explica a "lentidao", nao o decode).

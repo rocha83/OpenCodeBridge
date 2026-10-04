@@ -48,7 +48,66 @@ internal static partial class Program
     static int MaxTokens = 4096;                                   // teto de saida padrao (fabrica 4k); pedido menor e honrado, nunca maior
     static int ToolOutputLimit = 8000;                             // corte por resultado de tool (ctx 28672)
     static string LogPath = "/tmp/qwen3-bridge.log";
-    static readonly string Version = "1.6";
+    static readonly string Version = "1.8";
+
+    // Perfis por sufixo no model (ex.: openai/qwen3-8b-awq-plan): plan =
+    // thinking ligado + temp alta p/ planejar; build = thinking fundido +
+    // temp baixa p/ executar. Request sem sufixo usa os globais. O caminho
+    // Qwen3 padrao (sem sufixo) fica byte-identico.
+    static readonly Dictionary<string, (double Temp, string Think)> Profiles =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["plan"] = (0.6, "events"),
+            ["build"] = (0.2, "off"),
+        };
+
+    /// <summary>Descobre o perfil pelo sufixo do model (-plan/-build).</summary>
+    static bool TryProfile(string requestedModel, out double profTemp, out string profThink)
+    {
+        profTemp = double.NaN; profThink = "";
+        if (string.IsNullOrEmpty(requestedModel)) return false;
+        foreach (var kv in Profiles)
+            if (requestedModel.EndsWith("-" + kv.Key, StringComparison.OrdinalIgnoreCase))
+            { profTemp = kv.Value.Temp; profThink = kv.Value.Think; return true; }
+        return false;
+    }
+
+    /// <summary>Arquivo opcional ao lado do DLL (CLI vence o arquivo).</summary>
+    static void LoadAppSettings()
+    {
+        try
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+            if (!File.Exists(path)) return;
+            var cfg = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+            if (cfg is null) return;
+            if (cfg["listen"]?.GetValue<string>() is string listen && listen.Length > 0) Listen = listen;
+            if (cfg["port"]?.GetValue<int>() is int port && port > 0) Port = port;
+            if (cfg["upstream"]?.GetValue<string>() is string up && up.Length > 0) Upstream = up.TrimEnd('/');
+            if (cfg["model"]?.GetValue<string>() is string model && model.Length > 0) Model = model;
+            if (cfg["thinking"]?.GetValue<string>() is string thinking && thinking is "events" or "off") Thinking = thinking;
+            if (cfg["temperature"]?.GetValue<double>() is double temp) Temperature = temp;
+            if (cfg["maxTokens"]?.GetValue<int>() is int mt && mt > 0) MaxTokens = mt;
+            if (cfg["logPath"]?.GetValue<string>() is string log && log.Length > 0) LogPath = log;
+            if (cfg["profiles"]?.AsObject() is JsonObject profs)
+                foreach (var kv in profs)
+                {
+                    var o = kv.Value?.AsObject();
+                    if (o is null) continue;
+                    double t = o["temperature"]?.GetValue<double>() ?? double.NaN;
+                    string th = o["thinking"]?.GetValue<string>() ?? "";
+                    Profiles.TryGetValue(kv.Key, out var cur);
+                    if (double.IsNaN(t)) t = cur.Temp != 0 ? cur.Temp : Temperature;
+                    if (th is not ("events" or "off")) th = cur.Think ?? Thinking;
+                    Profiles[kv.Key] = (t, th);
+                }
+            Log(new JsonObject { ["event"] = "appsettings", ["path"] = path });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[qwen3-bridge] appsettings ignorado: {ex.Message}");
+        }
+    }
 
     // Perfil paralelo p/ Qwen2.5-Coder: com tool_choice "auto" ele improvisa
     // o call em texto (bloco ```json ou XML <response><function_call>);
@@ -98,6 +157,7 @@ internal static partial class Program
         if (cliArgs.Length > 0 && cliArgs[0] == "gate")
             return Gate.Run(cliArgs[1..]);
 
+        LoadAppSettings();                                       // 1.1 arquivo (CLI vence)
         ParseArgs(cliArgs);                                        // 1.2 parse CLI
         try
         {
@@ -205,11 +265,12 @@ internal static partial class Program
                 // Dry-run: mostra o /v1/chat/completions que SERIA enviado ao
                 // vLLM, sem chamar o modelo. Util p/ depurar a traducao.
                 var req = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
-                var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out int toolCount);
+                var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out string thinking, out int toolCount);
                 WriteJson(ctx, 200, new JsonObject
                 {
                     ["requested_model"] = requestedModel,
                     ["temperature"] = temperature,
+                    ["thinking"] = thinking,
                     ["message_count"] = chat["messages"]!.AsArray().Count,
                     ["tool_count"] = toolCount,
                     ["chat_request"] = chat
@@ -223,10 +284,13 @@ internal static partial class Program
                 // sem chamar o modelo. Corpo: {model, temperature, completion}.
                 var req = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
                 var completion = req["completion"]?.AsObject() ?? req;
+                string reqModel = req["model"]?.GetValue<string>() ?? Model;
+                string reqThink = TryProfile(reqModel, out _, out string pThink) && pThink.Length > 0 ? pThink : Thinking;
                 var responseObj = ChatToResponses(
                     completion,
-                    req["model"]?.GetValue<string>() ?? Model,
-                    req["temperature"]?.GetValue<double>() ?? Temperature);
+                    reqModel,
+                    req["temperature"]?.GetValue<double>() ?? Temperature,
+                    reqThink);
                 WriteJson(ctx, 200, responseObj);
                 return;
             }
@@ -402,16 +466,21 @@ internal static partial class Program
     /// <param name="temperature">Temperatura efetiva.</param>
     /// <param name="toolCount">No. de tools convertidas.</param>
     /// <returns>Body p/ /v1/chat/completions.</returns>
-    static JsonObject BuildChatRequest(JsonObject req, out string requestedModel, out double temperature, out int toolCount)
+    static JsonObject BuildChatRequest(JsonObject req, out string requestedModel, out double temperature, out string thinking, out int toolCount)
     {
         // O opencode manda "openai/qwen3-8b-awq" mas o vLLM so conhece o id
         // servido ("qwen3-8b-awq") e responde 404 p/ outro id. Por isso o
         // upstream SEMPRE usa o Model configurado; o id original so volta
         // como eco no campo "model" da resposta.
         requestedModel = req["model"]?.GetValue<string>() ?? Model;
+        // Perfil (-plan/-build): temperatura+thinking do perfil; temperatura
+        // explicita no request vence o perfil; sem perfil valem os globais.
+        bool hasProfile = TryProfile(requestedModel, out double profTemp, out string profThink);
+        thinking = hasProfile && !string.IsNullOrEmpty(profThink) ? profThink : Thinking;
         // Temperatura: a do opencode tem prioridade; a da linha de comando
         // e so o padrao quando o request nao informa nenhuma.
-        temperature = req["temperature"]?.GetValue<double>() ?? Temperature;
+        temperature = req["temperature"]?.GetValue<double>()
+            ?? (hasProfile && !double.IsNaN(profTemp) ? profTemp : Temperature);
 
         // Converte a conversa Responses -> messages do formato chat
         var messages = InputToMessages(req["input"], req["instructions"]);
@@ -432,7 +501,7 @@ internal static partial class Program
             ["temperature"] = temperature,
             ["max_tokens"] = Math.Min(asked, MaxTokens),
             ["stream"] = false,          // upstream sem stream: resposta unica, sintetizamos o SSE
-            ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = Thinking == "events" }
+            ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = thinking == "events" }
         };
         if (tools is { Count: > 0 })
         {
@@ -463,12 +532,12 @@ internal static partial class Program
         // 4.1-4.4) Le o request Responses e monta o chat request
         var req = JsonNode.Parse(body)?.AsObject() ?? new JsonObject();
         bool wantStream = req["stream"]?.GetValue<bool>() ?? false;
-        var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out int toolCount);
+        var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out string thinking, out int toolCount);
 
         // Stream real sai por caminho proprio (sem a chamada unica abaixo).
         if (wantStream)
         {
-            HandleResponsesStream(ctx, chat, requestedModel, temperature, startedAt);
+            HandleResponsesStream(ctx, chat, requestedModel, temperature, thinking, startedAt);
             return;
         }
 
@@ -493,21 +562,22 @@ internal static partial class Program
 
         // 4.6) Converte a resposta chat -> objeto Responses
         var chatJson = JsonNode.Parse(responseBody)?.AsObject() ?? new JsonObject();
-        var responseObj = ChatToResponses(chatJson, requestedModel, temperature);
+        var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking);
 
         double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
+        int inTok = responseObj["usage"]?["input_tokens"]?.GetValue<int>() ?? 0;
+        int outTok = responseObj["usage"]?["output_tokens"]?.GetValue<int>() ?? 0;
         Log(new JsonObject
         {
             ["event"] = "response", ["model"] = requestedModel, ["stream"] = wantStream,
             ["message_count"] = chat["messages"]!.AsArray().Count, ["tool_count"] = toolCount,
             ["has_tool_call"] = responseObj["output"]!.AsArray().Any(i => i?["type"]?.GetValue<string>() == "function_call"),
             ["has_reasoning"] = responseObj["output"]!.AsArray().Any(i => i?["type"]?.GetValue<string>() == "reasoning"),
-            ["elapsed"] = Math.Round(elapsed, 2)
+            ["elapsed"] = Math.Round(elapsed, 2),
+            ["input_tokens"] = inTok, ["output_tokens"] = outTok,
+            ["tps_output"] = Math.Round(elapsed > 0 ? outTok / elapsed : 0, 1)
         });
-        AddMetrics(
-            responseObj["usage"]?["input_tokens"]?.GetValue<int>() ?? 0,
-            responseObj["usage"]?["output_tokens"]?.GetValue<int>() ?? 0,
-            elapsed);
+        AddMetrics(inTok, outTok, elapsed);
 
         // 4.7) Sem stream: devolve JSON direto.
         WriteJson(ctx, 200, responseObj);
@@ -520,7 +590,7 @@ internal static partial class Program
     /// <param name="temperature">Efetiva.</param>
     /// <param name="startedAt">Inicio p/ elapsed.</param>
     static void HandleResponsesStream(HttpListenerContext ctx, JsonObject chat,
-        string requestedModel, double temperature, DateTime startedAt)
+        string requestedModel, double temperature, string thinking, DateTime startedAt)
     {
         // Pede stream ao upstream (com usage no fim p/ fechar os tokens).
         chat["stream"] = true;
@@ -591,7 +661,7 @@ internal static partial class Program
         void FlushThinking(string text)
         {
             if (string.IsNullOrEmpty(text)) return;
-            if (!thinkOpen && Thinking == "events")
+            if (!thinkOpen && thinking == "events")
             {
                 reasoningId = "rs_" + NewId();
                 Emit("response.output_item.added", new JsonObject
@@ -608,7 +678,7 @@ internal static partial class Program
                 thinkOpen = true;
             }
             // Modo "off": sem item reasoning; o raciocinio vira texto comum.
-            if (!thinkOpen && Thinking != "events") { FlushMessage(text); return; }
+            if (!thinkOpen && thinking != "events") { FlushMessage(text); return; }
             if (!thinkOpen) return;
             thinkingText.Append(text);
             Emit("response.reasoning_summary_text.delta", new JsonObject
@@ -854,7 +924,7 @@ internal static partial class Program
             }),
             ["usage"] = new JsonObject { ["prompt_tokens"] = inputTokens, ["completion_tokens"] = outputTokens }
         };
-        var finalObj = ChatToResponses(synthetic, requestedModel, temperature);
+        var finalObj = ChatToResponses(synthetic, requestedModel, temperature, thinking);
         finalObj["id"] = respId;
         // Ids do completed precisam casar com os itens ja anunciados no stream.
         foreach (var outputNode in finalObj["output"]!.AsArray())
@@ -868,14 +938,17 @@ internal static partial class Program
         Emit("response.completed", new JsonObject
             { ["type"] = "response.completed", ["response"] = finalObj });
 
+        double liveElapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
         Log(new JsonObject
         {
             ["event"] = "response", ["mode"] = "live", ["model"] = requestedModel, ["stream"] = true,
             ["message_count"] = chat["messages"]!.AsArray().Count, ["tool_count"] = toolList.Count,
             ["has_tool_call"] = toolList.Count > 0, ["has_reasoning"] = thinkOpen,
-            ["elapsed"] = Math.Round((DateTime.UtcNow - startedAt).TotalSeconds, 2)
+            ["elapsed"] = Math.Round(liveElapsed, 2),
+            ["input_tokens"] = inputTokens, ["output_tokens"] = outputTokens,
+            ["tps_output"] = Math.Round(liveElapsed > 0 ? outputTokens / liveElapsed : 0, 1)
         });
-        AddMetrics(inputTokens, outputTokens, (DateTime.UtcNow - startedAt).TotalSeconds);
+        AddMetrics(inputTokens, outputTokens, liveElapsed);
         ctx.Response.Close();
     }
 
@@ -1073,8 +1146,9 @@ internal static partial class Program
     /// <param name="model">Model id p/ eco.</param>
     /// <param name="temperature">Efetiva.</param>
     /// <returns>Objeto Responses.</returns>
-    static JsonObject ChatToResponses(JsonObject chat, string model, double temperature)
+    static JsonObject ChatToResponses(JsonObject chat, string model, double temperature, string? thinkMode = null)
     {
+        thinkMode ??= Thinking;
         var choice = chat["choices"]?[0]?.AsObject() ?? new JsonObject();
         var message = choice["message"]?.AsObject() ?? new JsonObject();
 
@@ -1120,9 +1194,9 @@ internal static partial class Program
         // Modo "off": sem item reasoning separado; o raciocinio vira texto
         // comum no inicio da message (senao a resposta sai vazia quando o
         // modelo pensa tudo e nao escreve nada fora do thinking).
-        if (Thinking != "events" && !string.IsNullOrWhiteSpace(thinking))
+        if (thinkMode != "events" && !string.IsNullOrWhiteSpace(thinking))
             content = string.IsNullOrEmpty(content) ? thinking : thinking + "\n\n" + content;
-        if (Thinking == "events" && !string.IsNullOrWhiteSpace(thinking))
+        if (thinkMode == "events" && !string.IsNullOrWhiteSpace(thinking))
         {
             output.Add(new JsonObject
             {
@@ -1209,8 +1283,9 @@ internal static partial class Program
     /// <summary>Sintetiza o SSE Responses com sequence crescente.</summary>
     /// <param name="obj">Objeto Responses.</param>
     /// <returns>Bytes do evento-stream.</returns>
-    static byte[] BuildSse(JsonObject obj)
+    static byte[] BuildSse(JsonObject obj, string? thinkMode = null)
     {
+        thinkMode ??= Thinking;
         var sse = new StringBuilder();
         int sequence = 0;
 
@@ -1231,7 +1306,7 @@ internal static partial class Program
             var item = (JsonObject)originalItem.DeepClone();
             string type = item["type"]?.GetValue<string>() ?? "";
 
-            if (type == "reasoning" && Thinking == "events")
+            if (type == "reasoning" && thinkMode == "events")
             {
                 // Raciocinio: item aberto -> delta do resumo -> item fechado
                 string thinkingText = item["summary"]?[0]?["text"]?.GetValue<string>() ?? "";

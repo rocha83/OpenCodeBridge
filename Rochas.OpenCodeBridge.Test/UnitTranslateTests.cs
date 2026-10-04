@@ -95,4 +95,31 @@ internal static class UnitTranslateTests
         TestContext.Check(tools.Any(t => t?["function"]?["name"]?.GetValue<string>() == "read_sensor"), "sensor achatado");
         TestContext.Check(tools.Any(t => t?["function"]?["name"]?.GetValue<string>() == "publish_event"), "fila achatada");
     }
+
+    public static async Task TranslateProfiles()
+    {
+        // Perfis por sufixo: plan = temp alta + thinking; build = temp baixa
+        // sem thinking; sem sufixo valem os globais da bridge.
+        static JsonObject Body(string model) => new()
+        {
+            ["model"] = model,
+            ["input"] = new JsonArray(new JsonObject
+            {
+                ["type"] = "message", ["role"] = "user",
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = "oi" })
+            })
+        };
+        var status = await TestContext.GetObj(TestContext.Bridge + "/api/status");
+        double globalTemp = status["temperature"]?.GetValue<double>() ?? 0.2;
+        var plan = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq-plan"));
+        var planChat = plan["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request plan");
+        TestContext.Check(plan["temperature"]?.GetValue<double>() > globalTemp, "plan temp acima da global");
+        TestContext.Check(planChat["chat_template_kwargs"]?["enable_thinking"]?.GetValue<bool>() == true, "plan thinking on");
+        var build = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen2.5-coder-7b-build"));
+        var buildChat = build["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request build");
+        TestContext.Check(build["temperature"]?.GetValue<double>() <= globalTemp, "build temp abaixo da global");
+        TestContext.Check(buildChat["chat_template_kwargs"]?["enable_thinking"]?.GetValue<bool>() == false, "build thinking off");
+        var plain = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq"));
+        TestContext.Check(plain["temperature"]?.GetValue<double>() == globalTemp, "sem sufixo usa global");
+    }
 }

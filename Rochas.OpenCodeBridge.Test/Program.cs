@@ -37,6 +37,7 @@ internal static class Program
         TestContext.Run("U-translate-without-stop", UnitTranslateTests.TranslateWithoutStop);
         TestContext.Run("U-convert-thinking-tools", UnitConvertTests.ConvertThinkingTools);
         TestContext.Run("U-translate-multi-namespace", UnitTranslateTests.TranslateMultiNamespace);
+        TestContext.Run("U-translate-profiles", UnitTranslateTests.TranslateProfiles);
         TestContext.Run("U-convert-invalid-arguments", UnitConvertTests.ConvertInvalidArguments);
 
         // ---- e2e (modelo vivo)

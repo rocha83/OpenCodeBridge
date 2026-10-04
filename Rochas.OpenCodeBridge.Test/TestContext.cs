@@ -50,10 +50,18 @@ internal static class TestContext
 
     public static async Task<JsonObject> PostObj(string url, JsonNode body)
     {
+        var t0 = DateTime.UtcNow;
         using var res = await Http.PostAsync(url, new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"));
         string text = await res.Content.ReadAsStringAsync();
         if (!res.IsSuccessStatusCode) throw new Exception($"POST {url} -> {(int)res.StatusCode}: {text[..Math.Min(300, text.Length)]}");
-        return JsonNode.Parse(text)?.AsObject() ?? throw new Exception("POST resposta nao-JSON");
+        var obj = JsonNode.Parse(text)?.AsObject() ?? throw new Exception("POST resposta nao-JSON");
+        int outTok = obj["usage"]?["output_tokens"]?.GetValue<int>() ?? 0;
+        if (outTok > 0)
+        {
+            double secs = (DateTime.UtcNow - t0).TotalSeconds;
+            Console.WriteLine($"  [tps] {outTok} tok / {secs:F1}s = {(secs > 0 ? outTok / secs : 0):F1} tok/s <- {url}");
+        }
+        return obj;
     }
 
     public static JsonObject SomaToolResponses() => new()
