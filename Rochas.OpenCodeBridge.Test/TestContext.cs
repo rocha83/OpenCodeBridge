@@ -16,6 +16,9 @@ internal static class TestContext
     // Modelo servido pela bridge alvo (qwen3|coder): expectativas por perfil.
     public static string ServedModel = "";
     public static bool ServedIsCoder => ServedModel.Contains("coder", StringComparison.OrdinalIgnoreCase);
+    // Modo thinking da bridge (events|off): asserts de reasoning só em events.
+    public static string ServedThinking = "events";
+    public static bool WantsReasoning => ServedThinking == "events" && !ServedIsCoder;
     static int Passed;
     static int Failed;
 
@@ -72,6 +75,7 @@ internal static class TestContext
             Console.WriteLine($"  [tps] {outTok} tok / {secs:F1}s = {(secs > 0 ? outTok / secs : 0):F1} tok/s <- {url}");
         }
         return obj;
+        } // for: retry unico em corpo vazio
     }
 
     public static JsonObject SomaToolResponses() => new()

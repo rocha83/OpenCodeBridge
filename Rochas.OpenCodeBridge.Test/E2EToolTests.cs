@@ -55,7 +55,7 @@ internal static class E2EToolTests
         TestContext.Check(r["status"]?.GetValue<string>() == "completed", "response completed");
         var output = r["output"]?.AsArray() ?? throw new Exception("sem output");
         TestContext.Check(output.Any(o => o?["type"]?.GetValue<string>() == "message"), "tem message");
-        if (!TestContext.ServedIsCoder) TestContext.Check(output.Any(o => o?["type"]?.GetValue<string>() == "reasoning"), "tem reasoning (events)");
+        if (TestContext.WantsReasoning) TestContext.Check(output.Any(o => o?["type"]?.GetValue<string>() == "reasoning"), "tem reasoning (events)");
     }
 
     public static async Task ToolResponses()

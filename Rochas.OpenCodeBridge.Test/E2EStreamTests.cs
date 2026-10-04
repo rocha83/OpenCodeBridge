@@ -65,7 +65,7 @@ internal static class E2EStreamTests
         var r = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", body);
         TestContext.Check(r["status"]?.GetValue<string>() == "completed", "review completed");
         var output = r["output"]?.AsArray() ?? throw new Exception("sem output");
-        if (!TestContext.ServedIsCoder) TestContext.Check(output.Any(o => o?["type"]?.GetValue<string>() == "reasoning"), "review tem reasoning");
+        if (TestContext.WantsReasoning) TestContext.Check(output.Any(o => o?["type"]?.GetValue<string>() == "reasoning"), "review tem reasoning");
         var msg = output.FirstOrDefault(o => o?["type"]?.GetValue<string>() == "message")?.AsObject();
         string text = msg?["content"]?[0]?["text"]?.GetValue<string>() ?? "";
         bool hasCall = output.Any(o => o?["type"]?.GetValue<string>() == "function_call");

@@ -48,7 +48,15 @@ internal static partial class Program
     static int MaxTokens = 4096;                                   // teto de saida padrao (fabrica 4k); pedido menor e honrado, nunca maior
     static int ToolOutputLimit = 8000;                             // corte por resultado de tool (ctx 28672)
     static string LogPath = "/tmp/qwen3-bridge.log";
-    static readonly string Version = "1.8";
+    static readonly string Version = "1.9";
+
+    // Coerção texto->tool_calls p/ upstream sem parser server-side (llama.cpp
+    // na CPU): extrai ```json{"name"..} ou <tool_call>..</tool_call> do content
+    // e sintetiza tool_calls. Liga via --coerce-text-tools ou auto quando o
+    // model contém "cpu". Qwen3/AWQ (parsers nativos) ficam intactos.
+    static bool CoerceTextTools;
+    static bool CoerceFor(string modelId) => CoerceTextTools
+        || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false);
 
     // Perfis por sufixo no model (ex.: openai/qwen3-8b-awq-plan): plan =
     // thinking ligado + temp alta p/ planejar; build = thinking fundido +
@@ -89,6 +97,7 @@ internal static partial class Program
             if (cfg["temperature"]?.GetValue<double>() is double temp) Temperature = temp;
             if (cfg["maxTokens"]?.GetValue<int>() is int mt && mt > 0) MaxTokens = mt;
             if (cfg["logPath"]?.GetValue<string>() is string log && log.Length > 0) LogPath = log;
+            if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
             if (cfg["profiles"]?.AsObject() is JsonObject profs)
                 foreach (var kv in profs)
                 {
@@ -148,6 +157,34 @@ internal static partial class Program
     // Marcadores de template que as vezes escapam para o texto final.
     static readonly Regex ReTemplate = new(@"<\|im_(start|end)\|>", RegexOptions.Compiled);
 
+    // Coerção: fenced ```json{"name":..} e tags <tool_call>..</tool_call>.
+    static readonly Regex ReFencedCall = new(@"```(?:json)?\s*(\{\s*""name""\s*:[\s\S]*?\})\s*```", RegexOptions.Compiled);
+    static readonly Regex ReToolTag = new(@"<tool_call>([\s\S]*?)</tool_call(?:\|>)?", RegexOptions.Compiled);
+
+    /// <summary>Extrai tool calls de texto (fenced JSON ou tags) p/ coercão.</summary>
+    static List<(string Name, string Arguments)> ExtractTextToolCalls(string content)
+    {
+        var list = new List<(string, string)>();
+        if (string.IsNullOrEmpty(content)) return list;
+        foreach (Match m in ReToolTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
+        if (list.Count == 0)
+            foreach (Match m in ReFencedCall.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
+        return list;
+    }
+
+    static void TryAddTextCall(string json, List<(string Name, string Arguments)> list)
+    {
+        try
+        {
+            var o = JsonNode.Parse(json.Trim())?.AsObject();
+            if (o is null) return;
+            string name = o["name"]?.GetValue<string>() ?? "";
+            if (name.Length == 0) return;
+            list.Add((name, JsonToString(o["arguments"])));
+        }
+        catch { /* texto que parece call mas nao parseia: ignora */ }
+    }
+
     /// <summary>Ponto de entrada: le CLI, sobe o HttpListener e atende em loop.</summary>
     /// <param name="cliArgs">Argumentos --chave valor.</param>
     static int Main(string[] cliArgs)
@@ -202,6 +239,7 @@ internal static partial class Program
                 case "--temperature": Temperature = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); break;
                 case "--max-tokens": MaxTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--log": LogPath = cliArgs[i + 1]; break;
+                case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
             }
         }
     }
@@ -870,6 +908,14 @@ internal static partial class Program
             });
         }
 
+        // Coerção no fecho do stream (perfil CPU/llama): sem deltas de call,
+        // extrai do texto acumulado. vLLM nativo nao passa por aqui com calls.
+        if (CoerceFor(requestedModel) && toolAccum.Count == 0)
+        {
+            foreach (var (name, args) in ExtractTextToolCalls(contentText.ToString()))
+                toolAccum[toolAccum.Count] = ("call_" + NewId(), name, new StringBuilder(args));
+        }
+
         int callIndex = (thinkOpen ? 1 : 0) + (msgOpen ? 1 : 0);
         var toolList = new List<(string Id, string Name, string Arguments)>();
         foreach (var (_, acc) in toolAccum)
@@ -1179,6 +1225,20 @@ internal static partial class Program
                 string id = callObj["id"]?.GetValue<string>() ?? ("call_" + NewId());
                 var funcObj = callObj["function"]?.AsObject() ?? new JsonObject();
                 toolCalls.Add((id, funcObj["name"]?.GetValue<string>() ?? "", JsonToString(funcObj["arguments"])));
+            }
+        }
+        // Coerção (só perfil CPU/llama): sem tool_calls nativos, extrai do texto.
+        // Caminho vLLM (hermes/qwen3_coder/gemma4) nunca entra aqui com calls.
+        if (toolCalls.Count == 0 && CoerceFor(model))
+        {
+            foreach (var (name, args) in ExtractTextToolCalls(content))
+                toolCalls.Add(("call_" + NewId(), name, args));
+            if (toolCalls.Count > 0)
+            {
+                // Remove os blocos consumidos p/ nao duplicar texto + call.
+                content = ReToolTag.Replace(content, "");
+                content = ReFencedCall.Replace(content, "");
+                Log(new JsonObject { ["event"] = "coerced", ["model"] = model, ["count"] = toolCalls.Count });
             }
         }
 

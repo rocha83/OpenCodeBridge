@@ -25,7 +25,8 @@ internal static class Program
         {
             var st = TestContext.GetObj(TestContext.Bridge + "/api/status").GetAwaiter().GetResult();
             TestContext.ServedModel = st["model"]?.GetValue<string>() ?? "";
-            Console.WriteLine($"[test] served={TestContext.ServedModel} coder={TestContext.ServedIsCoder}");
+            TestContext.ServedThinking = st["thinking"]?.GetValue<string>() ?? "events";
+            Console.WriteLine($"[test] served={TestContext.ServedModel} coder={TestContext.ServedIsCoder} thinking={TestContext.ServedThinking}");
         }
         catch (Exception ex) { Console.WriteLine($"[test] sem status: {ex.Message}"); }
 
@@ -39,6 +40,7 @@ internal static class Program
         TestContext.Run("U-translate-multi-namespace", UnitTranslateTests.TranslateMultiNamespace);
         TestContext.Run("U-translate-profiles", UnitTranslateTests.TranslateProfiles);
         TestContext.Run("U-convert-invalid-arguments", UnitConvertTests.ConvertInvalidArguments);
+        TestContext.Run("U-convert-coerced-text-call", UnitConvertTests.ConvertCoercedTextCall);
 
         // ---- e2e (modelo vivo)
         if (!TestContext.SkipE2E)

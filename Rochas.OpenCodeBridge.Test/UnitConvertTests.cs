@@ -33,7 +33,7 @@ internal static class UnitConvertTests
         var r = await TestContext.PostObj(TestContext.Bridge + "/api/convert", body);
         var output = r["output"]?.AsArray() ?? throw new Exception("sem output");
         var reasoning = output.FirstOrDefault(o => o?["type"]?.GetValue<string>() == "reasoning");
-        TestContext.Check(reasoning is not null, "thinking vira item reasoning");
+        if (TestContext.WantsReasoning) TestContext.Check(reasoning is not null, "thinking vira item reasoning");
         var msg = output.FirstOrDefault(o => o?["type"]?.GetValue<string>() == "message")?.AsObject();
         string text = msg?["content"]?[0]?["text"]?.GetValue<string>() ?? "";
         TestContext.Check(!text.Contains("<think>"), "message limpa sem <think>");
@@ -79,5 +79,33 @@ internal static class UnitConvertTests
             // Falha honesta com mensagem de arguments também é mitigação válida.
             TestContext.Check(true, "rejeição honesta de arguments");
         }
+    }
+
+    public static async Task ConvertCoercedTextCall()
+    {
+        // Linha llama/CPU: texto com fenced call vira function_call quando o
+        // model id contém "cpu". Caminho vLLM (hermes & cia) jamais entra aqui.
+        var body = new JsonObject
+        {
+            ["model"] = "openai/qwen-cpu-3b",
+            ["completion"] = new JsonObject
+            {
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["message"] = new JsonObject
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = "```json\n{\"name\": \"get_status\", \"arguments\": {\"path\": \"/tmp\"}}\n```"
+                    }
+                }),
+                ["usage"] = new JsonObject { ["prompt_tokens"] = 20, ["completion_tokens"] = 15 }
+            }
+        };
+        var r = await TestContext.PostObj(TestContext.Bridge + "/api/convert", body);
+        var output = r["output"]?.AsArray() ?? throw new Exception("sem output");
+        var call = output.FirstOrDefault(o => o?["type"]?.GetValue<string>() == "function_call")?.AsObject()
+            ?? throw new Exception("sem function_call coagida");
+        TestContext.Check(call?["name"]?.GetValue<string>() == "get_status", "nome extraido");
+        TestContext.Check((call?["arguments"]?.GetValue<string>() ?? "").Contains("/tmp"), "args extraidos");
     }
 }
