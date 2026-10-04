@@ -37,3 +37,14 @@
 - Sem reescrita de arquivo gigante de uma vez; sem loop de fix infinito
   (máx 3 tentativas por artefato, depois humano assume).
 - Históricos: do fim ao começo, blocos de 8k.
+
+## Conteúdo longo + subagentes que só agem (2026-10-04)
+- Thinking é requisito: bridge sempre com thinking ligado p/ Qwen3
+  (`--thinking events`, default); Coder não tem thinking — nada a desligar.
+- Conteúdo longo (>10k tokens) NÃO vai inteiro no prompt: fatiar em blocos
+  com sobreposição e um índice (arquivo:início:fim) antes de delegar.
+- Subagente = perfil Coder: zero conversa, só ação — recebe slice + tarefa
+  + critério, devolve artefato + evidência de execução. Sem relatório,
+  sem resumo, sem pergunta de volta. Quem resume sou eu no merge.
+- Resposta de subagente sem evidência de execução = falha (repetir 1x,
+  depois executar eu mesmo o slice).
