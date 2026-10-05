@@ -1,14 +1,21 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
-## Protocolo orch 7 estágios (2026-10-05)
+## Protocolo orch 8 estágios (2026-10-05, corrigido 2026-10-05)
 - Agente `orch` (opencode, primary, modelo pinado `openai/qwen3-8b-awq-orch`):
-  system próprio em 7 estágios — 1) LER o plano; 2) IDENTIFICAR blocos de
+  system próprio em 8 estágios — 1) LER o plano; 2) IDENTIFICAR blocos de
   tarefas; 3) ELUCIDAR enunciado atômico técnico por bloco (1 leitura +
   1 escrita, critério de aceite, FORMATO EXATO da saída); 4) EXECUTAR via
-  `nohup opencode run --standalone --agent coder-3b ... > .out &`;
-  5) ACOMPANHAR com poll (`tail`, nunca `cat` cheio); 6) VALIDAR contra o
-  critério; 7) CONSOLIDAR só com todas verdes; 8) LIMPAR sessões dos workers
-  (`--session slice-<id>` determinístico + `DELETE /api/session/slice-<id>`).
+  `nohup opencode run --standalone --agent coder-3b --model llama-cpu/qwen2.5-coder-3b --title slice-<id> "<enunciado>" > .out 2>&1 &`
+  (SEM `--session` na criação — opencode v2.0.21 exige prefixo `ses_` e gera
+  o ID sozinho; `--session slice-<id>` falha com `Expected a string starting
+  with "ses"` — atestado em `/tmp/opencode/slices/slice-1.out`; capturar o
+  `ses_*` via `opencode session list --format json` filtrando por title);
+  5) ACOMPANHAR com poll (`cat` / `tail -n 20`, NUNCA `tail -f` — bloqueia a
+  tool e causa `Step interrupted`); 6) VALIDAR contra o critério;
+  7) CONSOLIDAR só com todas verdes; 8) LIMPAR sessões dos workers
+  (`opencode session delete ses_xxx` ou `DELETE /api/session/ses_xxx`,
+  NUNCA `/api/session/slice-<id>` — dá 400 `InvalidRequestError`; standalone
+  sempre persiste, sem flag efêmera na v2.0.21).
 - Trava por permissão (não só prompt): `orch` sem edit, sem tool `subagent`,
   só read/glob/grep + webfetch/websearch + shell. Tool `subagent` aparece
   mas sempre nega — o system manda não insistir.
@@ -21,8 +28,9 @@
 - `orch` off via override de deploy (`appsettings.4124.orch-off-example.json`
   copiado p/ `appsettings.json` ao lado do DLL), sem mudar o default events
   da 2.1 no código. `orch` delega fatias atômicas SOMENTE via
-  `nohup opencode run --standalone --agent coder-3b ... > .out &` + poll.
-  Linha 3B: bridge CPU `:4125` (thinking off) → llama.cpp `:4111`.
+  `nohup opencode run --standalone --agent coder-3b --title slice-<id> ... > .out 2>&1 &` + poll
+  (`cat`/`tail -n`, nunca `tail -f`) + limpeza via `opencode session delete ses_xxx`.
+  Linha 3B: bridge CPU `:4125` (thinking off) → llama.cpp `:4110`.
 
 ## Diagnóstico raiz
 - opencode v2.0.21 sempre chama `POST /v1/responses`; vLLM não faz parse de tools
