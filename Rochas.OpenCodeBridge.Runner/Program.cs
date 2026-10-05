@@ -23,10 +23,10 @@ namespace Rochas.OpenCodeBridge.Runner;
 
 internal static partial class Program
 {
-    // Comandos liberados pelo 1o token (fase 1: leitura + build/test).
+    // Comandos liberados pelo 1o token (padrao; appsettings.json do console substitui).
     static readonly HashSet<string> Allowed = new(StringComparer.Ordinal)
     {
-        "ls", "cat", "head", "tail", "echo", "grep", "find", "wc", "diff",
+        "ls", "cat", "head", "tail", "echo", "sed", "grep", "find", "wc", "diff",
         "file", "pwd", "date", "git", "dotnet", "python", "python3", "node",
         "npm", "curl",
     };
@@ -40,14 +40,58 @@ internal static partial class Program
         "exec", "eval", "su", "mkfifo",
     };
 
-    // systemctl/tee via sudo so nestes comandos inteiros exatos.
-    static readonly string[] SudoExact =
+    // systemctl/tee via sudo so nestes comandos inteiros exatos (appsettings substitui).
+    static readonly List<string> SudoExact = new()
     {
         "systemctl restart opencode-bridge.service",
         "systemctl restart opencode-bridge-cpu.service",
         "systemctl status opencode-bridge.service",
         "systemctl status opencode-bridge-cpu.service",
     };
+
+    // Escalares com padrao; appsettings ajusta, CLI vence o arquivo.
+    static string CfgBridge = "http://127.0.0.1:4125";
+    static string CfgModel = "qwen2.5-coder-3b-cpu";
+    static string CfgLog = "/tmp/runner-exec.log";
+    static string CfgTemp = "0.4";
+    static string CfgVerbosity = "normal";
+    static int CfgMaxTurns = 5;
+    static int CfgTimeoutS = 120;
+
+    /// <summary>appsettings.json ao lado do DLL: allow/sudoExact + escalares.</summary>
+    static void LoadSettings()
+    {
+        try
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+            if (!File.Exists(path)) return;
+            var cfg = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+            if (cfg is null) return;
+            if (cfg["allow"]?.AsArray() is JsonArray allow && allow.Count > 0)
+            {
+                Allowed.Clear();
+                foreach (var a in allow)
+                    if (a?.GetValue<string>() is string s && s.Length > 0) Allowed.Add(s);
+            }
+            if (cfg["sudoExact"]?.AsArray() is JsonArray sudo && sudo.Count > 0)
+            {
+                SudoExact.Clear();
+                foreach (var s in sudo)
+                    if (s?.GetValue<string>() is string t && t.Length > 0) SudoExact.Add(t);
+            }
+            if (cfg["bridge"]?.GetValue<string>() is string b && b.Length > 0) CfgBridge = b;
+            if (cfg["model"]?.GetValue<string>() is string m && m.Length > 0) CfgModel = m;
+            if (cfg["logPath"]?.GetValue<string>() is string l && l.Length > 0) CfgLog = l;
+            if (cfg["temperature"]?.GetValue<string>() is string tp && tp.Length > 0) CfgTemp = tp;
+            if (cfg["verbosity"]?.GetValue<string>() is string v && v.Length > 0) CfgVerbosity = v.ToLowerInvariant();
+            if (cfg["maxTurns"]?.GetValue<int>() is int turns && turns > 0) CfgMaxTurns = turns;
+            if (cfg["timeoutSeconds"]?.GetValue<int>() is int sec && sec > 0) CfgTimeoutS = sec;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[runner] appsettings ignorado: {ex.Message}");
+        }
+    }
 
     static readonly HttpClient Http = new() { Timeout = Timeout.InfiniteTimeSpan };
 
@@ -59,15 +103,16 @@ internal static partial class Program
             return 0;
         }
         if (args[0] != "exec" || args.Length < 2) { Console.Error.WriteLine("Uso: Runner exec \"<tarefa>\" [...]"); return 1; }
+        LoadSettings();
         string task = args[1];
-        string bridge = Flag(args, "--bridge", "http://127.0.0.1:4125");
-        string model = Flag(args, "--model", "qwen2.5-coder-3b-cpu");
+        string bridge = Flag(args, "--bridge", CfgBridge);
+        string model = Flag(args, "--model", CfgModel);
         string repo = Flag(args, "--repo", Directory.GetCurrentDirectory());
-        int maxTurns = int.TryParse(Flag(args, "--max-turns", "5"), out int mt) ? mt : 5;
-        int timeoutS = int.TryParse(Flag(args, "--timeout", "60"), out int ts) ? ts : 60;
-        string logPath = Flag(args, "--log", "/tmp/runner-exec.log");
-        string temp = Flag(args, "--temperature", "0.4");
-        string verbosity = Flag(args, "--verbosity", "normal").ToLowerInvariant();
+        int maxTurns = int.TryParse(Flag(args, "--max-turns", CfgMaxTurns.ToString()), out int mt) ? mt : CfgMaxTurns;
+        int timeoutS = int.TryParse(Flag(args, "--timeout", CfgTimeoutS.ToString()), out int ts) ? ts : CfgTimeoutS;
+        string logPath = Flag(args, "--log", CfgLog);
+        string temp = Flag(args, "--temperature", CfgTemp);
+        string verbosity = Flag(args, "--verbosity", CfgVerbosity).ToLowerInvariant();
         if (verbosity is not ("quiet" or "normal" or "verbose")) verbosity = "normal";
         return RunAsync(task, bridge.TrimEnd('/'), model, repo, maxTurns, timeoutS, logPath, verbosity, temp).GetAwaiter().GetResult();
     }
@@ -88,7 +133,7 @@ internal static partial class Program
             new JsonObject
             {
                 ["role"] = "system",
-                ["content"] = "Voce opera comandos via allowlist. Responda com texto curto OU com exatamente um bloco ```json {\"name\": \"<comando>\", \"arguments\": \"<args>\"}```. Comandos validos: ls, cat, head, tail, echo, grep, find, wc, diff, file, pwd, git, dotnet, python, node, npm, curl. NAO existe pipe nem redirecionamento: para filtrar use * no proprio comando (ex. ls docs/screenshots/*e2e-cs*). NUNCA invente arquivo: confira existencia com ls primeiro. Para contar, liste tudo e conte as linhas voce mesmo. Quando terminar, responda so o resultado final, sem fence.",
+                ["content"] = "Voce opera comandos via allowlist. Responda com texto curto OU com exatamente um bloco ```json {\"name\": \"<comando>\", \"arguments\": \"<args>\"}```. Comandos validos: ls, cat, head, tail, echo, grep, find, wc, diff, file, pwd, git, dotnet, python, node, npm, curl. NAO existe pipe nem redirecionamento: para filtrar use * no proprio comando (ex. ls docs/screenshots/*e2e-cs*). NUNCA use bash/sh/sudo generico: chame o comando direto no name, sem flags no name. Para filtrar use * no proprio comando (ex. ls docs/screenshots/*e2e-cs*). NUNCA invente arquivo: confira existencia com ls primeiro. Para contar, liste tudo e conte as linhas voce mesmo. Quando terminar, responda so o resultado final, sem fence.",
             },
             new JsonObject { ["role"] = "user", ["content"] = task },
         };
@@ -102,7 +147,9 @@ internal static partial class Program
             }
             if (!Validate(repo, name, arguments, out string why, out string[] argv))
             {
+                Audit(logPath, "blocked", name, arguments, why, turn);
                 Console.WriteLine($"BLOQUEADO (volta {turn}): {why}");
+                if (verbosity == "verbose") Console.WriteLine($"[recebido] name='{name}' arguments='{Truncate(arguments, 200)}'");
                 return 2;
             }
             string output = Execute(repo, argv, timeoutS);
@@ -155,7 +202,11 @@ internal static partial class Program
             if (obj is null) return false;
             name = obj["name"]?.GetValue<string>()?.Trim() ?? "";
             var argNode = obj["arguments"];
-            arguments = argNode is JsonValue v && v.TryGetValue<string>(out string? s) ? s : (argNode?.ToJsonString() ?? "");
+            string argText = argNode is JsonValue v && v.TryGetValue<string>(out string? s) ? s : (argNode?.ToJsonString() ?? "");
+            // 3B as vezes poe flags no name ("sed -i"): normaliza p/ 1o token.
+            int sp = name.IndexOfAny(new[] { ' ', '\t' });
+            if (sp > 0) { argText = (name[(sp + 1)..] + " " + argText).Trim(); name = name[..sp]; }
+            arguments = argText;
             return name.Length > 0;
         }
         catch { return false; }
@@ -300,7 +351,12 @@ internal static partial class Program
             proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
             proc.BeginOutputReadLine();
             proc.BeginErrorReadLine();
-            if (!proc.WaitForExit(timeoutS * 1000)) { try { proc.Kill(true); } catch { } return "TIMEOUT"; }
+            if (!proc.WaitForExit(timeoutS * 1000))
+            {
+                KillTree(proc.Id);
+                proc.WaitForExit(5000);
+                return "TIMEOUT (arvore morta via kill interno):\n" + Truncate(stdout.ToString().Trim(), 1000);
+            }
             string err = stderr.ToString().Trim();
             return stdout.ToString().Trim() + (err.Length > 0 ? "\n[stderr]\n" + err : "");
         }
@@ -351,6 +407,46 @@ internal static partial class Program
         int i = s.IndexOf('\n');
         return i < 0 ? s : s[..i];
     }
+
+    /// <summary>Mata a arvore em 3 niveis (interno do Runner, fora do allowlist do modelo).</summary>
+    static void KillTree(int pid)
+    {
+        try { Process.GetProcessById(pid).Kill(true); } catch { }
+        if (Alive(pid)) RunInternal("pkill", new[] { "-9", "-P", pid.ToString() });
+        if (Alive(pid)) RunInternal("kill", new[] { "-9", pid.ToString() });
+        if (Alive(pid)) RunInternal("sudo", new[] { "kill", "-9", pid.ToString() });
+        if (Alive(pid)) RunInternal("sudo", new[] { "pkill", "-9", "-P", pid.ToString() });
+    }
+
+    /// <summary>Processo ainda vivo (best-effort).</summary>
+    static bool Alive(int pid)
+    {
+        try { return !Process.GetProcessById(pid).HasExited; }
+        catch { return false; }
+    }
+
+    /// <summary>Roda binario interno de kill (caminho confiavel, nao vem do modelo).</summary>
+    static void RunInternal(string exe, string[] args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(exe)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = true,
+                UseShellExecute = false,
+            };
+            foreach (string a in args) psi.ArgumentList.Add(a);
+            using var proc = Process.Start(psi);
+            if (proc is null) return;
+            try { proc.StandardInput.Close(); } catch { }
+            proc.WaitForExit(5000);
+            try { if (!proc.HasExited) proc.Kill(); } catch { }
+        }
+        catch { /* kill ausente ou sem permissao: best-effort */ }
+    }
+
     static void Audit(string logPath, string evt, string command, string arguments, string output, int turn)
     {
         try
