@@ -161,7 +161,8 @@ internal static partial class Program
                 Console.WriteLine($"[volta {turn}] $ {name} {arguments} ({output.Length} bytes){FirstLine(drift)}");
             messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = text });
             int lines = output.Split('\n').Count(l => l.Trim().Length > 0);
-            messages.Add(new JsonObject { ["role"] = "user", ["content"] = $"Saida de `{name} {arguments}` (total: {lines} linhas):\n{Truncate(output, 4000)}\nEstado do repo:{drift}\nProssiga ou de o resultado final." });
+            string state = drift.Length > 0 ? $"\nEstado do repo:{drift}" : "";
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = $"Saida de `{name} {arguments}` (total: {lines} linhas):\n{Truncate(output, 4000)}{state}\nProssiga ou de o resultado final." });
         }
         Console.WriteLine($"LIMITE de {maxTurns} voltas atingido.");
         return 1;
@@ -366,9 +367,10 @@ internal static partial class Program
         }
     }
 
-    /// <summary>Drift do repo apos o comando: stat sempre, diff se pequeno.</summary>
+    /// <summary>Drift do repo apos o comando ("" se nao for repo git).</summary>
     static string GitDrift(string repo)
     {
+        if (Git(repo, "rev-parse --is-inside-work-tree") != "true") return "";
         string stat = Git(repo, "diff --stat");
         string untracked = Git(repo, "status --short");
         int files = untracked.Split('\n').Count(l => l.Trim().Length > 0);
