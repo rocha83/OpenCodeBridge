@@ -1,5 +1,15 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Selo orch thinking events (2026-10-05, reverte off)
+- `off` no `orch` causava loop de reads sem delegar (Qwen3-8B sem thinking vira
+  continuador guloso: após um read, o próximo read é sempre mais provável que o
+  salto p/ `shell nohup`; evidência `plan-20261004-md-backend-src-docs-atomic-code-implementation.json`
+  msgs 1–12: 10 reads seguidos, nenhum `nohup`, usuário precisou gritar `pare`).
+- Volta p/ `events` (default 2.1) em `/opt/opencode-bridge/appsettings.json` +
+  REGRA DE OURO no system do `orch` (`opencode.json`): ler APENAS o plano
+  (max 2 reads), NUNCA abrir implementação (tarefa dos workers). `AGENTS.md`
+  atualizado p/ `orch on (events)`.
+
 ## Protocolo orch 8 estágios (2026-10-05, corrigido 2026-10-05)
 - Agente `orch` (opencode, primary, modelo pinado `openai/qwen3-8b-awq-orch`):
   system próprio em 8 estágios — 1) LER o plano; 2) IDENTIFICAR blocos de
