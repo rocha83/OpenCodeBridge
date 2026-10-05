@@ -107,13 +107,14 @@ internal static partial class Program
             }
             string output = Execute(repo, argv, timeoutS);
             Audit(logPath, "exec", name, arguments, output, turn);
+            string drift = GitDrift(repo);
             if (verbosity == "verbose")
-                Console.WriteLine($"[volta {turn}] $ {name} {arguments}\n{Truncate(output, 2000)}");
+                Console.WriteLine($"[volta {turn}] $ {name} {arguments}\n{Truncate(output, 2000)}{drift}");
             else if (verbosity == "normal")
-                Console.WriteLine($"[volta {turn}] $ {name} {arguments} ({output.Length} bytes)");
+                Console.WriteLine($"[volta {turn}] $ {name} {arguments} ({output.Length} bytes){FirstLine(drift)}");
             messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = text });
             int lines = output.Split('\n').Count(l => l.Trim().Length > 0);
-            messages.Add(new JsonObject { ["role"] = "user", ["content"] = $"Saida de `{name} {arguments}` (total: {lines} linhas):\n{Truncate(output, 4000)}\nProssiga ou de o resultado final." });
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = $"Saida de `{name} {arguments}` (total: {lines} linhas):\n{Truncate(output, 4000)}\nEstado do repo:{drift}\nProssiga ou de o resultado final." });
         }
         Console.WriteLine($"LIMITE de {maxTurns} voltas atingido.");
         return 1;
@@ -309,7 +310,47 @@ internal static partial class Program
         }
     }
 
-    /// <summary>Trilha de auditoria: console recebe 1 linha util; disco, 1 JSONL enxuto por evento.</summary>
+    /// <summary>Drift do repo apos o comando: stat sempre, diff se pequeno.</summary>
+    static string GitDrift(string repo)
+    {
+        string stat = Git(repo, "diff --stat");
+        string untracked = Git(repo, "status --short");
+        int files = untracked.Split('\n').Count(l => l.Trim().Length > 0);
+        string head = $"\n[drift] {stat.Split('\n').Count(l => l.Contains('|'))} arquivos, {files} untracked";
+        if (stat.Length > 0 && stat.Length < 3000)
+            return head + "\n" + stat + (stat.Length < 1500 ? "\n" + Truncate(Git(repo, "diff"), 1500) : "");
+        return stat.Length > 0 ? head + "\n" + Truncate(stat, 500) : head;
+    }
+
+    /// <summary>Roda git interno (confiavel, fora do allowlist do modelo).</summary>
+    static string Git(string repo, string args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("git")
+            {
+                WorkingDirectory = repo,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = true,
+                UseShellExecute = false,
+            };
+            foreach (string a in args.Split(' ')) psi.ArgumentList.Add(a);
+            using var proc = Process.Start(psi);
+            if (proc is null) return "";
+            try { proc.StandardInput.Close(); } catch { }
+            string output = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit(15000);
+            return output.Trim();
+        }
+        catch { return ""; }
+    }
+
+    static string FirstLine(string s)
+    {
+        int i = s.IndexOf('\n');
+        return i < 0 ? s : s[..i];
+    }
     static void Audit(string logPath, string evt, string command, string arguments, string output, int turn)
     {
         try
