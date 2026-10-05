@@ -2,4 +2,6 @@
   <Project Path="Rochas.OpenCodeBridge/Rochas.OpenCodeBridge.csproj" />
   <Project Path="Rochas.OpenCodeBridge.Test/Rochas.OpenCodeBridge.Test.csproj" />
   <Project Path="Rochas.OpenCodeBridge.Runner/Rochas.OpenCodeBridge.Runner.csproj" />
+  <Project Path="Rochas.OpenCodeBridge.Web/Rochas.OpenCodeBridge.Web.csproj" />
+  <Project Path="Rochas.OpenCodeBridge.Web.Test/Rochas.OpenCodeBridge.Web.Test.csproj" />
 </Solution>

@@ -1,0 +1,5 @@
+﻿@model Rochas.OpenCodeBridge.Web.Models.Agent
+@{ Layout = "_Layout"; ViewData["Title"] = "Editar agente"; }
+<h5>Editar agente</h5>
+<form method="post">@await Html.PartialAsync("_AgentForm", Model)<button class="btn btn-primary">Salvar</button></form>
+

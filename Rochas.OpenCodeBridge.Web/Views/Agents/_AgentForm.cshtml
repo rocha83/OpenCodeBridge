@@ -1,0 +1,11 @@
+﻿@* Form de agente (partial). *@
+@model Rochas.OpenCodeBridge.Web.Models.Agent
+<input type="hidden" name="Id" value="@Model.Id" />
+<input name="Name" class="form-control mb-2" placeholder="Nome" value="@Model.Name" />
+<input name="Model" class="form-control mb-2" placeholder="Model (ex. qwen3-8b-awq)" value="@Model.Model" />
+<input name="BridgeUrl" class="form-control mb-2" placeholder="Bridge URL" value="@Model.BridgeUrl" />
+<div class="row"><div class="col"><input name="Temperature" class="form-control mb-2" value="@Model.Temperature" /></div>
+<div class="col"><input name="Thinking" class="form-control mb-2" value="@Model.Thinking" /></div></div>
+<textarea name="SystemPrompt" class="form-control mb-2" rows="3" placeholder="System prompt">@Model.SystemPrompt</textarea>
+<div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="Active" value="true" @(Model.Active ? "checked" : "") /><label class="form-check-label">Ativo</label></div>
+

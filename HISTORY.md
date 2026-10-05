@@ -247,3 +247,21 @@
 - Asserts CRUD estilo-agnósticos (3B varia Minimal↔Controller entre runs);
   flag `--only` p/ rodar 1 cenário. Recomendação registrada: ACEITE do orch
   deve cobrir status-codes via teste de integração (o unit de texto não pega).
+
+## Bridge Web — UI MVC black + DapperRepository + suite (2026-10-05)
+- Novo projeto `Rochas.OpenCodeBridge.Web` (MVC `net9.0`, Razor + Bootstrap 5.3.3 black):
+  login com cookie (PBKDF2, seed `admin@mova.com`/`Admin@123`), CRUDs `users` e
+  `agents` via `Rochas.DapperRepository 2.0.1` (`GenericRepository` + `Filterable`),
+  chat com thinking ao vivo no painel superior (SSE repassado por `/Chat/Stream`,
+  proxy do HttpListener que não manda CORS). SQLite `web.db` no boot (DDL via
+  `AppDb.Init`), `Microsoft.Data.Sqlite 9.0.20`.
+- Novo `Rochas.OpenCodeBridge.Web.Test` (console): unit (`U-hash-*`, `U-agent-*`)
+  + integração real (CRUD em sqlite temp `I-crud-*`; HTTP `I-http-*`: anônimo
+  redireciona, login admin, `/Chat` 200, `/Agents` 200, `/Chat/Stream` 404).
+- Build da solution Release: 0 warning(s) / 0 error(s). Suite: 14/14 PASS
+  (`dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --web
+  http://127.0.0.1:4130`).
+- Portado do `Rochas.OpenCodeBridge.Web` construído em `/usr/src/opencodebridge`
+  (sessão 2026-10-05, não commitada): normalizado `form.`/`model.` que os `sed`
+  haviam deixado incoerente e prefixo de linhas `N: ` dos arquivos Razor/CSS
+  (erro RZ2005 na primeira build portada).

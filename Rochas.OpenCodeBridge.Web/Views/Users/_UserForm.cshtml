@@ -1,0 +1,9 @@
+﻿@* Form de usuário (partial). *@
+@model Rochas.OpenCodeBridge.Web.Models.User
+<form method="post">
+  <input name="Name" class="form-control mb-2" placeholder="Nome" value="@Model.Name" />
+  <input name="Email" class="form-control mb-2" placeholder="Email" value="@Model.Email" />
+  <input name="password" type="password" class="form-control mb-2" placeholder="Senha" />
+  <button class="btn btn-primary">Salvar</button>
+</form>
+

@@ -1,0 +1,6 @@
+﻿@model Rochas.OpenCodeBridge.Web.Models.User
+@{ Layout = "_Layout"; ViewData["Title"] = "Novo usuário"; }
+<h5>Novo usuário</h5>
+@if (ViewBag.Error is not null) { <div class="alert alert-danger">@ViewBag.Error</div> }
+@await Html.PartialAsync("_UserForm", Model)
+

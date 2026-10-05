@@ -1,0 +1,12 @@
+﻿@model IEnumerable<Rochas.OpenCodeBridge.Web.Models.User>
+@{ Layout = "_Layout"; ViewData["Title"] = "Usuários"; }
+<h5>Usuários <a class="btn btn-sm btn-primary" href="/Users/Create">Novo</a></h5>
+<table class="table table-dark table-striped">
+<tr><th>Nome</th><th>Email</th><th>Ativo</th><th></th></tr>
+@foreach (var u in Model) {
+<tr><td>@u.Name</td><td>@u.Email</td><td>@(u.Active ? "sim" : "não")</td>
+<td><a class="btn btn-sm btn-outline-secondary" href="/Users/Toggle/@u.Id">Ativar/Desativar</a>
+<a class="btn btn-sm btn-outline-danger" href="/Users/Delete/@u.Id">Excluir</a></td></tr>
+}
+</table>
+

@@ -1,0 +1,9 @@
+﻿@* Seletor agente/modelo do chat (partial). *@
+@model IEnumerable<Rochas.OpenCodeBridge.Web.Models.Agent>
+<select id="agentId" class="form-select form-select-sm">
+@foreach (var a in Model)
+{
+  <option value="@a.Id">@a.Name — @a.Model</option>
+}
+</select>
+

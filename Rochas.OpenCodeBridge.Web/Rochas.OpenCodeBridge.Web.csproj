@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- Rochas.OpenCodeBridge.Web - UI MVC black p/ operar a bridge (login, CRUDs, chat com thinking ao vivo). -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Rochas.OpenCodeBridge.Web</RootNamespace>
+    <AssemblyName>Rochas.OpenCodeBridge.Web</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Description>UI web MVC (Razor + Bootstrap black) p/ bridge Responses: login SQLite, CRUDs via DapperRepository e chat com thinking em streaming.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.20" />
+    <PackageReference Include="Rochas.DapperRepository" Version="2.0.1" />
+  </ItemGroup>
+
+</Project>

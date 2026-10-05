@@ -1,0 +1,6 @@
+﻿@model Rochas.OpenCodeBridge.Web.Models.Agent
+@{ Layout = "_Layout"; ViewData["Title"] = "Novo agente"; }
+<h5>Novo agente</h5>
+@if (ViewBag.Error is not null) { <div class="alert alert-danger">@ViewBag.Error</div> }
+<form method="post">@await Html.PartialAsync("_AgentForm", Model)<button class="btn btn-primary">Salvar</button></form>
+

@@ -1,0 +1,40 @@
+﻿@{ Layout = "_Layout"; ViewData["Title"] = "Chat"; }
+<div class="row mb-2"><div class="col-md-6">@await Html.PartialAsync("_AgentSelect", (IEnumerable<Rochas.OpenCodeBridge.Web.Models.Agent>)ViewBag.Agents)</div></div>
+<div class="card mb-2"><div class="card-header">Agente <span id="caret"></span></div>
+<div class="card-body"><div id="thinking"></div><hr /><div id="answer"></div></div></div>
+<div class="input-group">
+<textarea id="prompt" class="form-control" rows="2" placeholder="Pergunte..."></textarea>
+<button id="send" class="btn btn-primary">Enviar</button>
+</div>
+@section Scripts {
+<script>
+const hist = [];
+document.getElementById('send').onclick = async () => {
+  const ta = document.getElementById('prompt');
+  if (!ta.value.trim()) return;
+  hist.push({ role: 'user', content: ta.value }); ta.value = '';
+  const th = document.getElementById('thinking'), an = document.getElementById('answer');
+  th.innerHTML = '<span class="caret"></span>'; an.textContent = '';
+  const res = await fetch('/Chat/Stream', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agentId: +document.getElementById('agentId').value, messages: hist.slice(-20) }) });
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let buf = '', full = '', think = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const parts = buf.split('\n\n'); buf = parts.pop();
+    for (const p of parts) {
+      const line = p.split('\n').find(l => l.startsWith('data:'));
+      if (!line || line.includes('[DONE]')) continue;
+      try {
+        const d = JSON.parse(line.slice(5)).choices[0].delta;
+        if (d.reasoning_content) { think += d.reasoning_content; th.innerHTML = think.replace(/</g, '&lt;') + '<span class="caret"></span>'; }
+        else if (d.content) { full += d.content; an.textContent = full; }
+      } catch (e) { /* chunk parcial: ignora */ }
+    }
+  }
+  hist.push({ role: 'assistant', content: full });
+};
+</script>
+}
