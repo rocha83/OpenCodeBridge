@@ -285,11 +285,14 @@ internal static partial class Program
                 WorkingDirectory = repo,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                RedirectStandardInput = true,
                 UseShellExecute = false,
             };
             foreach (string a in argv.Skip(1)) psi.ArgumentList.Add(a);
             using var proc = Process.Start(psi);
             if (proc is null) return "ERRO: processo nao iniciou";
+            try { proc.StandardInput.Close(); }
+            catch { /* stdin EOF: sem pipe, comando sem arquivo nao pendura */ }
             var stdout = new StringBuilder();
             var stderr = new StringBuilder();
             proc.OutputDataReceived += (_, e) => { if (e.Data is not null) stdout.AppendLine(e.Data); };
