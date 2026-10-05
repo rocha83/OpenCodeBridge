@@ -1,5 +1,18 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Runner: console executor com allowlist (2026-10-05)
+- `Rochas.OpenCodeBridge.Runner` (net9.0, BCL, zero warnings): loop via API
+  direta na linha CPU (prompt curto, sem harness do `run`) — chat -> fence
+  `{"name","arguments"}` -> valida -> executa -> devolve (max 5 voltas).
+- Segurança: deny padrão; allowlist 1o token + denylist de metacaracteres,
+  SEM `bash -c` (argv direto, cwd travado, timeout 60s, mata árvore); `sudo`
+  só por match exato (`restart opencode-bridge*`, `tee appsettings`); log
+  JSONL (`exec`, rotação 20MB) + `--verbosity quiet|normal|verbose`,
+  `--temperature` (0.4: temp 0.0 travava o 3B em resposta fixa).
+- Achados ao vivo: glob relativo resolvia no cwd errado (fix: base repo);
+  3B não conta linhas (fix: Runner anexa `total: N linhas`); fence sem tentar
+  (fix: temp > 0). Prova: `ls docs/screenshots/*e2e-cs*` -> **38**, confere.
+
 ## Selo orch thinking events (2026-10-05, reverte off)
 - `off` no `orch` causava loop de reads sem delegar (Qwen3-8B sem thinking vira
   continuador guloso: após um read, o próximo read é sempre mais provável que o
