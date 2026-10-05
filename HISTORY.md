@@ -7,7 +7,8 @@
   1 escrita, critério de aceite, FORMATO EXATO da saída); 4) EXECUTAR via
   `nohup opencode run --standalone --agent coder-3b ... > .out &`;
   5) ACOMPANHAR com poll (`tail`, nunca `cat` cheio); 6) VALIDAR contra o
-  critério; 7) CONSOLIDAR só com todas verdes.
+  critério; 7) CONSOLIDAR só com todas verdes; 8) LIMPAR sessões dos workers
+  (`--session slice-<id>` determinístico + `DELETE /api/session/slice-<id>`).
 - Trava por permissão (não só prompt): `orch` sem edit, sem tool `subagent`,
   só read/glob/grep + webfetch/websearch + shell. Tool `subagent` aparece
   mas sempre nega — o system manda não insistir.
