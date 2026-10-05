@@ -14,7 +14,7 @@
 //  vLLM — o MESMO caminho que ja funciona no qwen CLI. Depois converte a
 //  resposta (tool_calls + thinking) de volta para o formato Responses.
 //
-//  O QUE NAO ESTA AQUI (de proposito — heranca problematica do Qwen2.5-7B):
+//  O QUE NAO ESTA AQUI (de proposito — heranca problematica legada):
 //  coercion de paths, grounding, extracao de pseudo-tool-call em texto,
 //  retry com nudge, footer de tokens, strip agressivo de template.
 //  Se surgir algo especifico do Qwen3-8B, amadurecemos nesta versao.

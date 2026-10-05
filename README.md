@@ -70,24 +70,47 @@ dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 |---|---|---|
 | `--port` | `4124` | Porta de escuta |
 | `--listen` / `--host` | `127.0.0.1` | `0.0.0.0` expõe a bridge na rede |
-| `--upstream` | `http://127.0.0.1:4100` | URL base do vLLM |
+| `--upstream` | `http://127.0.0.1:4100` | URL base do vLLM (GPU) ou llama.cpp (CPU) |
 | `--model` | `qwen3-8b-awq` | Nome do modelo forçado upstream |
-| `--thinking` | `events` | `events` = repassa deltas de reasoning; `off` = descarta |
+| `--thinking` | `events` | `events` = repassa deltas de reasoning; `off` = sem item reasoning (texto fundido) |
 | `--temperature` | `0.2` | Valor do request vence a config; InvariantCulture |
-| `--max-tokens` | `8192` | Teto de tokens de saída |
-| `--log` | `/tmp/qwen3-bridge.log` | Log JSONL de eventos |
+| `--max-tokens` | `4096` | Teto de saída (GPU); pedido menor honrado, nunca maior |
+| `--cpu-max-tokens` | `2048` | Teto da linha CPU (llama.cpp ~5 tok/s; teto alto = divagação) |
+| `--coerce-text-tools` | auto (`true` se model contém `cpu`) | Coage JSON em texto → `tool_calls` (só linha CPU; vLLM intacta) |
+| `--log` | `/tmp/qwen3-bridge.log` | Log JSONL de eventos (`coerced`, `tps_output`) |
+
+### Perfis por sufixo no model
+
+| Sufixo | Temp | Thinking | Uso |
+|---|---|---|---|
+| `-plan` | `0.4` | `events` | Planejar |
+| `-build` | `0.2` | `off` | Executar |
+| `-orch` | `0.2` | `off` no deploy `:4124` (`events` no default 2.1) | Orquestrar workers 3B via `standalone` (sem edit, só ler/web/shell) |
+| `-moe` | `0.4` | `events` | Uso geral híbrido |
+| (sem sufixo) | `0.2` | `events` | Padrão Qwen3 |
+
+Temperatura explícita no request vence o perfil. `appsettings.json` ao lado do DLL (`port/upstream/model/thinking/temperature/maxTokens/cpuMaxTokens/logPath/profiles`) + exemplos `appsettings.4124.gpu-example.json` e `appsettings.4125.cpu-example.json`; `POST /api/config` ajusta em runtime.
+
+### Duas linhas (GPU + CPU)
+
+| Linha | Bridge | Upstream | Modelo |
+|---|---|---|---|
+| GPU | `:4124` | vLLM `:4100` (`hermes` + `deepseek_r1`) | `qwen3-8b-awq` (Qwen3-8B-AWQ) |
+| CPU | `:4125` | llama.cpp `:4110` | `qwen25-coder-3b-cpu` (Qwen2.5-Coder-3B) |
 
 ### Endpoints
 
 | Rota | Finalidade |
 |---|---|
 | `POST /v1/responses` | Tradução Responses ⇄ chat completions (thinking + tools + streaming) |
-| `POST /v1/chat/completions`, `/v1/completions` | Passthrough ao vLLM; renomeia `reasoning` → `reasoning_content` |
+| `POST /v1/chat/completions`, `/v1/completions` | Passthrough ao upstream; renomeia `reasoning` → `reasoning_content`; na CPU força `stream:false` + `stop: ["[END_OF_TEXT]"]` |
 | `GET /v1/models` | Passthrough |
 | `GET /api/status` | Contadores e config em tempo real |
 | `GET /api/metrics` | Throughput de tokens (tps_out / tps_total) |
-| `GET /api/config` | Config atual |
-| `GET /swagger` | Swagger UI autocontido (sem CDN) |
+| `POST /api/translate` | Dry-run Responses → chat (usado pela suite, sem chamar o modelo) |
+| `POST /api/convert` | Dry-run de conversão de resposta (thinking + tools + coerção) |
+| `POST /api/config` | Ajuste em runtime (`thinking`, `temperature`, `max_tokens`, `cpu_max_tokens`) |
+| `GET /swagger`, `GET /api/swagger.json` | Swagger UI autocontido (sem CDN) |
 
 ### Subcomando gate (integridade pós-tarefa)
 
@@ -105,6 +128,17 @@ livres, push (= nova baseline) só com aprovação; rejeição faz `git reset --
   venceu um bake-off 3/3; os parsers `qwen3_coder` e `qwen3_xml` falharam neste modelo).
 - OpenCode fixado com `--agent build --model openai/qwen3-8b-awq`.
 - Cada requisição gera uma linha JSON no log (`"model":"qwen3-8b-awq"`) — sem linha, sem modelo local.
+
+### Suite de testes (Qwen3-8B + Qwen2.5-Coder-3B)
+
+- Console .NET 9 sem NuGet (`Rochas.OpenCodeBridge.Test`): unit via HTTP na bridge
+  (`/api/status|metrics`, `/v1/models`, `/api/translate`, `/api/convert`) + E2E no
+  modelo vivo (`/v1/responses` com tools hermes, stream SSE, review sênior/enterprise).
+- A suite é agnóstica ao perfil: lê o modelo do `/api/status` e roda nas duas linhas —
+  **Qwen3-8B (GPU `:4124`→`:4100`)** e **Qwen2.5-Coder-3B (CPU `:4125`→`:4110`)**.
+  Selo: **28–30/30 na CPU** (reruns; `409` flaky no 3B) e verde cheia na GPU.
+- Rodar: `dotnet run -c Release --project Rochas.OpenCodeBridge.Test -- [--skip-e2e|--only <nome>]`.
+- Detalhes e protocolo orch de 8 estágios em `HISTORY.md`.
 
 ---
 
@@ -173,24 +207,47 @@ dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 |---|---|---|
 | `--port` | `4124` | Listen port |
 | `--listen` / `--host` | `127.0.0.1` | `0.0.0.0` exposes the bridge on the LAN |
-| `--upstream` | `http://127.0.0.1:4100` | vLLM base URL |
+| `--upstream` | `http://127.0.0.1:4100` | Upstream base URL (vLLM on GPU, llama.cpp on CPU) |
 | `--model` | `qwen3-8b-awq` | Model name forced upstream |
-| `--thinking` | `events` | `events` = forward reasoning deltas; `off` = drop them |
+| `--thinking` | `events` | `events` = forward reasoning deltas; `off` = no reasoning item (text fused) |
 | `--temperature` | `0.2` | Request value wins over config; parsed with InvariantCulture |
-| `--max-tokens` | `8192` | Max output tokens |
-| `--log` | `/tmp/qwen3-bridge.log` | JSONL event log |
+| `--max-tokens` | `4096` | Output cap (GPU); smaller requests honored, never larger |
+| `--cpu-max-tokens` | `2048` | CPU-line cap (llama.cpp ~5 tok/s; high cap = rambling) |
+| `--coerce-text-tools` | auto (`true` when model contains `cpu`) | Coerce text JSON → `tool_calls` (CPU line only; vLLM untouched) |
+| `--log` | `/tmp/qwen3-bridge.log` | JSONL event log (`coerced`, `tps_output`) |
+
+### Profiles by model suffix
+
+| Suffix | Temp | Thinking | Use |
+|---|---|---|---|
+| `-plan` | `0.4` | `events` | Planning |
+| `-build` | `0.2` | `off` | Executing |
+| `-orch` | `0.2` | `off` on `:4124` deploy (`events` in 2.1 default) | Orchestrating 3B workers via `standalone` (read/web/shell only) |
+| `-moe` | `0.4` | `events` | General hybrid use |
+| (no suffix) | `0.2` | `events` | Qwen3 default |
+
+Explicit request temperature wins over the profile. `appsettings.json` next to the DLL (`port/upstream/model/thinking/temperature/maxTokens/cpuMaxTokens/logPath/profiles`) + `appsettings.4124.gpu-example.json` and `appsettings.4125.cpu-example.json` samples; `POST /api/config` tunes at runtime.
+
+### Two lines (GPU + CPU)
+
+| Line | Bridge | Upstream | Model |
+|---|---|---|---|
+| GPU | `:4124` | vLLM `:4100` (`hermes` + `deepseek_r1`) | `qwen3-8b-awq` (Qwen3-8B-AWQ) |
+| CPU | `:4125` | llama.cpp `:4110` | `qwen25-coder-3b-cpu` (Qwen2.5-Coder-3B) |
 
 ### Endpoints
 
 | Route | Purpose |
 |---|---|
 | `POST /v1/responses` | Responses ⇄ chat completions translation (thinking + tools + streaming) |
-| `POST /v1/chat/completions`, `/v1/completions` | Passthrough to vLLM; renames `reasoning` → `reasoning_content` |
+| `POST /v1/chat/completions`, `/v1/completions` | Passthrough to upstream; renames `reasoning` → `reasoning_content`; on CPU forces `stream:false` + `stop: ["[END_OF_TEXT]"]` |
 | `GET /v1/models` | Passthrough |
 | `GET /api/status` | Live counters and config |
 | `GET /api/metrics` | Token throughput (tps_out / tps_total) |
-| `GET /api/config` | Current config |
-| `GET /swagger` | Self-contained Swagger UI (no CDN) |
+| `POST /api/translate` | Responses → chat dry-run (used by the suite, no model call) |
+| `POST /api/convert` | Response-conversion dry-run (thinking + tools + coercion) |
+| `POST /api/config` | Runtime tuning (`thinking`, `temperature`, `max_tokens`, `cpu_max_tokens`) |
+| `GET /swagger`, `GET /api/swagger.json` | Self-contained Swagger UI (no CDN) |
 
 ### Gate subcommand
 
@@ -208,6 +265,17 @@ push (= new baseline) only on explicit approval; rejection performs `git reset -
   a 3/3 bake-off; `qwen3_coder` and `qwen3_xml` parsers failed against this model).
 - OpenCode pinned with `--agent build --model openai/qwen3-8b-awq`.
 - Each request is logged as a JSON line (`"model":"qwen3-8b-awq"`) — no log line, no local model.
+
+### Test suite (Qwen3-8B + Qwen2.5-Coder-3B)
+
+- NuGet-free .NET 9 console (`Rochas.OpenCodeBridge.Test`): HTTP unit tests against the
+  bridge (`/api/status|metrics`, `/v1/models`, `/api/translate`, `/api/convert`) + live-model
+  E2E (`/v1/responses` with hermes tools, SSE stream, senior/enterprise review).
+- The suite is profile-agnostic: it reads the model from `/api/status` and runs on both
+  lines — **Qwen3-8B (GPU `:4124`→`:4100`)** and **Qwen2.5-Coder-3B (CPU `:4125`→`:4110`)**.
+  Seal: **28–30/30 on CPU** (reruns; `409` flaky on 3B) and full green on GPU.
+- Run: `dotnet run -c Release --project Rochas.OpenCodeBridge.Test -- [--skip-e2e|--only <name>]`.
+- Details and the 8-stage orch protocol in `HISTORY.md`.
 
 ---
 
@@ -278,9 +346,9 @@ dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 | `--listen` / `--host` | `127.0.0.1` | `0.0.0.0` expone el bridge en la red |
 | `--upstream` | `http://127.0.0.1:4100` | URL base de vLLM |
 | `--model` | `qwen3-8b-awq` | Nombre de modelo forzado upstream |
-| `--thinking` | `events` | `events` = reenvía deltas de reasoning; `off` = descarte |
+| `--thinking` | `events` | `events` = reenvía deltas; `off` = sin item reasoning (texto fundido) |
 | `--temperature` | `0.2` | El valor del request vence a la config; InvariantCulture |
-| `--max-tokens` | `8192` | Techo de tokens de salida |
+| `--max-tokens` | `4096` | Techo de salida (GPU); `--cpu-max-tokens` `2048` (CPU) |
 | `--log` | `/tmp/qwen3-bridge.log` | Log JSONL de eventos |
 
 ### Endpoints
@@ -381,9 +449,9 @@ dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 | `--listen` / `--host` | `127.0.0.1` | `0.0.0.0` expose le bridge sur le réseau |
 | `--upstream` | `http://127.0.0.1:4100` | URL de base de vLLM |
 | `--model` | `qwen3-8b-awq` | Nom de modèle forcé upstream |
-| `--thinking` | `events` | `events` = transmet les deltas de reasoning ; `off` = les ignore |
+| `--thinking` | `events` | `events` = transmet les deltas ; `off` = sans item reasoning (texte fusionné) |
 | `--temperature` | `0.2` | La valeur de la requête prime sur la config ; InvariantCulture |
-| `--max-tokens` | `8192` | Plafond de tokens de sortie |
+| `--max-tokens` | `4096` | Plafond de sortie (GPU) ; `--cpu-max-tokens` `2048` (CPU) |
 | `--log` | `/tmp/qwen3-bridge.log` | Journal d'événements JSONL |
 
 ### Endpoints
@@ -487,9 +555,9 @@ dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 | `--listen` / `--host` | `127.0.0.1` | `0.0.0.0` macht die Bridge im Netzwerk erreichbar |
 | `--upstream` | `http://127.0.0.1:4100` | Basis-URL von vLLM |
 | `--model` | `qwen3-8b-awq` | Upstream erzwungener Modellname |
-| `--thinking` | `events` | `events` = Reasoning-Deltas weiterreichen; `off` = verwerfen |
+| `--thinking` | `events` | `events` = Deltas weiterreichen; `off` = ohne Reasoning-Item (Text fusioniert) |
 | `--temperature` | `0.2` | Request-Wert hat Vorrang vor der Konfiguration; InvariantCulture |
-| `--max-tokens` | `8192` | Obergrenze der Ausgabetokens |
+| `--max-tokens` | `4096` | Ausgabelimit (GPU); `--cpu-max-tokens` `2048` (CPU) |
 | `--log` | `/tmp/qwen3-bridge.log` | JSONL-Ereignislog |
 
 ### Endpunkte

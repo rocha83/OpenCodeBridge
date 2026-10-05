@@ -38,7 +38,7 @@
 - Tentativas de chave de rota no `opencode.json` (`api`, `protocol`, `options.baseURL`…)
   todas ignoradas. Decisão: bridge tradutora em vez de caçar config.
 
-## Bridge v1.0 (mínima, sem herança do Qwen2.5-7B)
+## Bridge v1.0 (mínima, sem herança legada)
 - Console .NET 9, sem NuGet (só `HttpListener` + `System.Text.Json`).
 - Tradução pura Responses ⇄ chat/completions + thinking + tool calling.
 - Fora de escopo de propósito: coercion, grounding, pseudo-call, nudge, footer.
@@ -146,7 +146,7 @@
 - Log da bridge: cada `/v1/responses` registra `input/output_tokens` + `tps_output`.
 - Suite: `PostObj` imprime `[tps] N tok / Ts = X tok/s <- url` em todo POST
   com `usage` (unit translate sem modelo nao tem usage: silencioso).
-- Medido: Coder-7B ~35-45 tok/s fim-a-fim; Qwen3-8B ~25-30 tok/s (thinking
+- Medido: linha Coder em GPU ~35-45 tok/s fim-a-fim; Qwen3-8B ~25-30 tok/s (thinking
   incluso — o custo 2x de tokens explica a "lentidao", nao o decode).
 
 ## Suite +4 cenários sênior (2026-10-04, sem bump: segue 1.8)
