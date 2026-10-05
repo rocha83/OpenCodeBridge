@@ -1,5 +1,14 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Selo orch thinking off (2026-10-05)
+- Matriz final (não re-enunciar): `plan` 0.4/events (tudo), `build` 0.2/off
+  (tudo), `orch` 0.2/**off** (ler, web, shell; SEM edit, SEM subagents).
+- `orch` off via override de deploy (`appsettings.4124.orch-off-example.json`
+  copiado p/ `appsettings.json` ao lado do DLL), sem mudar o default events
+  da 2.1 no código. `orch` delega fatias atômicas SOMENTE via
+  `nohup opencode run --standalone --agent coder-3b ... > .out &` + poll.
+  Linha 3B: bridge CPU `:4125` (thinking off) → llama.cpp `:4111`.
+
 ## Diagnóstico raiz
 - opencode v2.0.21 sempre chama `POST /v1/responses`; vLLM não faz parse de tools
   nesse fluxo → texto puro, `finish_reason: stop`, `executed=False` em tudo.
