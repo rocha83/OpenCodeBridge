@@ -11,17 +11,12 @@
 
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h5 class="font-weight-bold text-lg-start mb-0">Sessões</h5>
-          <div>
-            <button type="button" class="btn btn-sm btn-info me-2" id="newSession" data-mdb-button-init data-mdb-ripple-init>Nova</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" id="clearSessions" data-mdb-button-init data-mdb-ripple-init>Limpar</button>
-          </div>
+          <button type="button" class="btn btn-sm btn-info" id="newSession" data-mdb-button-init data-mdb-ripple-init>Nova</button>
         </div>
 
         <div class="card">
           <div class="card-body">
-
             <ul class="list-unstyled mb-0" id="sessionList"></ul>
-
           </div>
         </div>
 
@@ -36,7 +31,7 @@
               <option value="@a.Id">@a.Name — @a.Model</option>
             }
           </select>
-          <div class="small text-muted mt-2"><span id="engineDot" class="dot"></span> <span id="engineTxt"></span></div>
+          <div class="small text-muted mt-2"><span id="engineDot" class="dot"></span> <span id="engineTxt">Aguardando...</span></div>
         </div>
 
         <ul class="list-unstyled" id="conv"></ul>
@@ -62,39 +57,80 @@
 const conv = document.getElementById('conv');
 const sessionList = document.getElementById('sessionList');
 const agentSel = document.getElementById('agentId');
-let sessions = JSON.parse(localStorage.getItem('bridge.sessions') || '[]');
-let currentId = null;
+const engineDot = document.getElementById('engineDot');
+const engineTxt = document.getElementById('engineTxt');
+let currentSessionId = null;
+let currentAgentId = null;
+
 const avatarUser = '<span class="rounded-circle d-flex align-self-start ms-3 shadow-1-strong bg-secondary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-user fa-2x text-white"></i></span>';
 const avatarAgent = '<span class="rounded-circle d-flex align-self-start me-3 shadow-1-strong bg-primary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-robot fa-2x text-white"></i></span>';
 
-function save() { localStorage.setItem('bridge.sessions', JSON.stringify(sessions)); }
-function current() { return sessions.find(s => s.id === currentId); }
-function esc(s) { return (s || '').replace(/</g, '&lt;'); }
+function esc(s) { return (s || '').replace(/</g, '<'); }
 
-function newSession() {
-  const s = { id: Date.now().toString(), agentId: +agentSel.value, title: 'Nova sessão', messages: [] };
-  sessions.unshift(s); currentId = s.id; save(); renderAll();
-}
-
-function renderSessions() {
+async function loadSessions() {
+  const r = await fetch('/Chat/Sessions');
+  const list = await r.json();
   sessionList.innerHTML = '';
-  sessions.forEach((s, i) => {
-    const last = s.messages.length ? s.messages[s.messages.length - 1].content : '';
+  list.forEach(s => {
     const li = document.createElement('li');
-    li.className = 'p-2 border-bottom' + (s.id === currentId ? ' bg-body-tertiary' : '');
+    li.className = 'p-2 border-bottom' + (s.id === currentSessionId ? ' bg-body-tertiary' : '');
+    const updated = new Date(s.updatedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
     li.innerHTML = `<a href="#!" class="d-flex justify-content-between text-decoration-none">
       <div class="d-flex flex-row">
         <span class="rounded-circle d-flex align-self-center me-3 shadow-1-strong bg-info justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-comments fa-2x text-white"></i></span>
         <div class="pt-1">
           <p class="fw-bold mb-0 text-truncate" style="max-width:200px">${esc(s.title)}</p>
-          <p class="small text-muted mb-0 text-truncate" style="max-width:200px">${esc(last)}</p>
+          <p class="small text-muted mb-0">${updated}</p>
         </div>
       </div>
-      <div class="pt-1"><span class="badge bg-info float-end">${s.messages.length}</span></div>
     </a>`;
-    li.querySelector('a').onclick = (e) => { e.preventDefault(); currentId = s.id; agentSel.value = s.agentId; renderAll(); };
+    li.querySelector('a').onclick = (e) => { e.preventDefault(); selectSession(s.id, s.agentId); };
     sessionList.appendChild(li);
   });
+}
+
+async function selectSession(id, agentId) {
+  currentSessionId = id;
+  currentAgentId = agentId;
+  agentSel.value = agentId;
+  await loadMessages(id);
+  await loadSessions(); // refresh highlight
+  checkEngine();
+}
+
+async function loadMessages(sessionId) {
+  const r = await fetch(`/Chat/Sessions/${sessionId}/Messages`);
+  const msgs = await r.json();
+  conv.innerHTML = '';
+  msgs.forEach(m => conv.appendChild(msgItem(m.role, m.thinking, m.content)));
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+async function createSession() {
+  const r = await fetch('/Chat/Sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agentId: +agentSel.value, title: 'Nova sessão' })
+  });
+  const s = await r.json();
+  currentSessionId = s.id;
+  currentAgentId = s.agentId;
+  agentSel.value = s.agentId;
+  await loadSessions();
+  conv.innerHTML = ''; // nova sessão limpa conversa
+}
+
+async function deleteAllSessions() {
+  if (!confirm('Excluir todas as sessões?')) return;
+  const r = await fetch('/Chat/Sessions');
+  const list = await r.json();
+  for (const s of list) {
+    await fetch(`/Chat/Sessions/${s.id}`, { method: 'DELETE' });
+  }
+  currentSessionId = null;
+  currentAgentId = null;
+  await loadSessions();
+  conv.innerHTML = '';
 }
 
 function msgItem(role, think, body) {
@@ -106,7 +142,7 @@ function msgItem(role, think, body) {
         <div class="card-header d-flex justify-content-between p-3">
           <p class="fw-bold mb-0">Você</p>
         </div>
-        <div class="card-body"><p class="mb-0 text-wrap">${body}</p></div>
+        <div class="card-body"><p class="mb-0 text-wrap">${esc(body)}</p></div>
       </div>
       ${avatarUser}`;
   } else {
@@ -116,77 +152,54 @@ function msgItem(role, think, body) {
         <div class="card-header d-flex justify-content-between p-3">
           <p class="fw-bold mb-0">Agente</p>
         </div>
-        <div class="card-body">${think ? `<p class="small text-muted mb-2">${think}</p><hr />` : ''}<p class="mb-0 ans text-wrap">${body}</p></div>
+        <div class="card-body">
+          ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
+          <p class="mb-0 ans text-wrap">${esc(body)}</p>
+        </div>
       </div>`;
   }
   return li;
 }
 
-function renderConv() {
-  conv.innerHTML = '';
-  const s = current(); if (!s) return;
-  s.messages.forEach(m => conv.appendChild(msgItem(m.role, esc(m.thinking), esc(m.content))));
-  window.scrollTo(0, document.body.scrollHeight);
-}
+agentSel.onchange = () => { currentAgentId = +agentSel.value; checkEngine(); };
 
-function renderAll() { renderSessions(); renderConv(); }
-
-agentSel.onchange = () => { const s = current(); if (s) { s.agentId = +agentSel.value; save(); } checkEngine(); };
 async function checkEngine() {
-  const dot = document.getElementById('engineDot'), txt = document.getElementById('engineTxt');
   try {
     const r = await fetch(`/Chat/Ping?agentId=${agentSel.value}`);
     const j = await r.json();
-    dot.className = 'dot' + (j.ok ? '' : ' err');
-    txt.textContent = j.ok ? 'Concluído!' : 'Desconectado';
-  } catch { dot.className = 'dot err'; txt.textContent = 'Desconectado'; }
+    engineDot.className = 'dot' + (j.ok ? '' : ' err');
+    engineTxt.textContent = j.ok ? 'Concluído!' : 'Desconectado';
+  } catch { engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado'; }
 }
-checkEngine();
-document.getElementById('newSession').onclick = newSession;
-document.getElementById('clearSessions').onclick = () => {
-  if (!confirm('Limpar todas as sessões?')) return;
-  sessions = []; currentId = null; save(); newSession();
-};
+
+document.getElementById('newSession').onclick = createSession;
+// Botão "Limpar" removido: deleção em lote via endpoint individual por enquanto
 
 document.getElementById('send').onclick = async () => {
   const ta = document.getElementById('prompt');
   if (!ta.value.trim()) return;
-  if (!current()) newSession();
-  const s = current();
+  if (!currentSessionId) await createSession();
   const text = ta.value; ta.value = '';
-  if (s.messages.length === 0) s.title = text.slice(0, 40);
-  s.messages.push({ role: 'user', content: text });
-  conv.appendChild(msgItem('user', '', esc(text)));
-  renderSessions();
 
-  const li = document.createElement('li');
-  li.className = 'd-flex justify-content-between mb-4';
-  li.innerHTML = `
-    ${avatarAgent}
-    <div class="card w-100">
-      <div class="card-header d-flex justify-content-between p-3">
-        <p class="fw-bold mb-0">Agente</p>
-      </div>
-      <div class="card-body">
-        <div class="d-flex align-items-start">
-          <span class="dot blink mt-1"></span>
-          <p class="small text-muted mb-0 typing ms-2"><span class="spinner-border spinner-border-sm"></span></p>
-        </div>
-        <hr /><p class="mb-0 ans text-wrap"></p>
-      </div>
-    </div>`;
-  conv.appendChild(li);
-  const thWrap = li.querySelector('.d-flex');
-  const dot = li.querySelector('.dot');
-  const thP = li.querySelector('p.small');
-  const anP = li.querySelector('.ans');
-  const engineDot = document.getElementById('engineDot');
-  const engineTxt = document.getElementById('engineTxt');
+  // Adiciona mensagem do usuário na UI imediatamente
+  conv.appendChild(msgItem('user', '', esc(text)));
+  window.scrollTo(0, document.body.scrollHeight);
+
+  // Prepara bolha do agente (só aparece quando chegar o primeiro content)
+  let agentLi = null;
+  let anP = null;
+  let think = '';
+  let full = '';
+  let agentBubbleCreated = false;
+
   engineDot.className = 'dot blink'; engineTxt.textContent = 'Pensando...';
-  let full = '', think = '';
+
   try {
-    const res = await fetch('/Chat/Stream', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agentId: s.agentId, messages: s.messages.slice(-20) }) });
+    const res = await fetch('/Chat/Stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: currentSessionId, agentId: currentAgentId, messages: [{ role: 'user', content: text }] })
+    });
     const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = '';
     for (;;) {
@@ -199,29 +212,67 @@ document.getElementById('send').onclick = async () => {
         if (!line || line.includes('[DONE]')) continue;
         try {
           const d = JSON.parse(line.slice(5)).choices[0].delta;
-          if (d.reasoning_content) { think += d.reasoning_content; thP.textContent = think; }
-          else if (d.content) { if (!full) { thP.classList.remove('typing'); anP.classList.add('typing'); } full += d.content; anP.textContent = full; }
+          if (d.reasoning_content) {
+            think += d.reasoning_content;
+            // Thinking não cria a bolha ainda, só atualiza indicador global
+          }
+          else if (d.content) {
+            if (!agentBubbleCreated) {
+              // Cria a bolha do agente na primeira chunk de content
+              agentLi = document.createElement('li');
+              agentLi.className = 'd-flex justify-content-between mb-4';
+              agentLi.innerHTML = `
+                ${avatarAgent}
+                <div class="card w-100">
+                  <div class="card-header d-flex justify-content-between p-3">
+                    <p class="fw-bold mb-0">Agente</p>
+                  </div>
+                  <div class="card-body">
+                    ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
+                    <p class="mb-0 ans text-wrap"></p>
+                  </div>
+                </div>`;
+              conv.appendChild(agentLi);
+              anP = agentLi.querySelector('.ans');
+              agentBubbleCreated = true;
+            }
+            full += d.content;
+            anP.textContent = full;
+          }
         } catch (e) { /* chunk parcial: ignora */ }
       }
       window.scrollTo(0, document.body.scrollHeight);
     }
   } catch (e) {
-    anP.textContent = 'erro: ' + e.message;
-    dot.className = 'dot err';
+    if (!agentBubbleCreated) {
+      // Cria bolha de erro se nem começou
+      agentLi = document.createElement('li');
+      agentLi.className = 'd-flex justify-content-between mb-4';
+      agentLi.innerHTML = `${avatarAgent}<div class="card w-100"><div class="card-body"><p class="mb-0 ans text-danger">Erro: ${esc(e.message)}</p></div></div>`;
+      conv.appendChild(agentLi);
+    } else {
+      anP.textContent = 'Erro: ' + e.message;
+    }
     engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
   }
-  if (dot.className === 'dot blink') dot.className = 'dot';
-  if (engineDot.className === 'dot blink') { engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!'; }
-  thP.classList.remove('typing');
-  anP.classList.remove('typing');
-  if (!think) thP.textContent = '';
-  s.messages.push({ role: 'assistant', content: full, thinking: think });
-  save(); renderSessions();
+  if (agentBubbleCreated) {
+    engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!';
+  }
   window.scrollTo(0, document.body.scrollHeight);
 };
 
-renderAll();
-if (!current() && sessions.length === 0) newSession();
-else if (!current() && sessions.length > 0) { currentId = sessions[0].id; renderAll(); }
+// Inicialização
+await loadSessions();
+checkEngine();
+if (!currentSessionId) {
+  // Seleciona a primeira sessão se houver, senão cria nova
+  const r = await fetch('/Chat/Sessions');
+  const list = await r.json();
+  if (list.length > 0) {
+    await selectSession(list[0].id, list[0].agentId);
+  } else {
+    await createSession();
+  }
+}
 </script>
 }

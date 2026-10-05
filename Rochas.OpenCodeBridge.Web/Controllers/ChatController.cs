@@ -130,7 +130,7 @@ public sealed class ChatController(
     {
         public int? SessionId { get; set; }
         public int AgentId { get; set; }
-        public List<ChatMsg> Messages { get; set; } = new(); // Se SessionId null, usa estas mensagens
+        public List<ChatMsg> Messages { get; set; } = new();
     }
 
     public sealed class ChatMsg
@@ -192,13 +192,60 @@ public sealed class ChatController(
             await sessionService.AddMessageAsync(session.Id.Value, "user", lastUser.Content, "", null, null);
         }
 
-        var (ok, error) = await bridge.StreamAsync(agent.BridgeUrl, agent.Model, agent.Temperature,
-            agent.SystemPrompt, messages, Response.Body, ct);
+        // Stream com captura da resposta do assistant
+        var assistantContent = new System.Text.StringBuilder();
+        var assistantThinking = new System.Text.StringBuilder();
+        int? promptTokens = null;
+        int? completionTokens = null;
 
-        // TODO: Parse usage do stream final para persistir tokens reais
-        // Por enquanto, persiste resposta assistant vazia (será preenchida via front ou webhook futuro)
-        if (ok && session is not null && req.Messages.Count > 0 && session.Id.HasValue)
+        var outputStream = Response.Body;
+        var buffer = new System.IO.MemoryStream();
+        var (ok, error) = await bridge.StreamAsync(agent.BridgeUrl, agent.Model, agent.Temperature,
+            agent.SystemPrompt, messages, buffer, ct);
+
+        // Processa buffer: repassa para Response.Body e captura assistant content + usage
+        buffer.Position = 0;
+        using var reader = new System.IO.StreamReader(buffer);
+        string? line;
+        while ((line = await reader.ReadLineAsync()) != null)
         {
+            // Repassa linha para cliente
+            var lineBytes = System.Text.Encoding.UTF8.GetBytes(line + "\n");
+            await outputStream.WriteAsync(lineBytes, ct);
+            await outputStream.FlushAsync(ct);
+
+            // Parsa SSE para capturar assistant content/thinking/usage
+            if (line.StartsWith("data: "))
+            {
+                var data = line[6..].Trim();
+                if (data == "[DONE]") continue;
+                try
+                {
+                    var chunk = JsonNode.Parse(data);
+                    var choices = chunk?["choices"]?.AsArray();
+                    if (choices?.Count > 0)
+                    {
+                        var delta = choices[0]?["delta"];
+                        if (delta?["reasoning_content"]?.GetValue<string>() is string rc)
+                            assistantThinking.Append(rc);
+                        if (delta?["content"]?.GetValue<string>() is string cc)
+                            assistantContent.Append(cc);
+                    }
+                    // usage vem no último chunk (ou em chunk separado)
+                    if (chunk?["usage"] is JsonObject usage)
+                    {
+                        promptTokens = usage["prompt_tokens"]?.GetValue<int>();
+                        completionTokens = usage["completion_tokens"]?.GetValue<int>();
+                    }
+                }
+                catch { /* ignora parse errors */ }
+            }
+        }
+
+        // Persiste resposta do assistant se há sessão
+        if (ok && session is not null && session.Id.HasValue && assistantContent.Length > 0)
+        {
+            await sessionService.AddMessageAsync(session.Id.Value, "assistant", assistantContent.ToString(), assistantThinking.ToString(), promptTokens, completionTokens);
             await sessionService.TouchAsync(session.Id.Value);
         }
 
