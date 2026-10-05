@@ -55,7 +55,7 @@ internal static partial class Program
     static string CfgLog = "/tmp/runner-exec.log";
     static string CfgTemp = "0.4";
     static string CfgVerbosity = "normal";
-    static int CfgMaxTurns = 5;
+    static int CfgMaxTurns = 1;
     static int CfgTimeoutS = 120;
 
     /// <summary>appsettings.json ao lado do DLL: allow/sudoExact + escalares.</summary>
@@ -153,7 +153,7 @@ internal static partial class Program
                 return 2;
             }
             string output = Execute(repo, argv, timeoutS);
-            Audit(logPath, "exec", name, arguments, output, turn);
+            Audit(logPath, "exec", name, arguments, output, turn, drift);
             string drift = GitDrift(repo);
             if (verbosity == "verbose")
                 Console.WriteLine($"[volta {turn}] $ {name} {arguments}\n{Truncate(output, 2000)}{drift}");
@@ -448,7 +448,7 @@ internal static partial class Program
         catch { /* kill ausente ou sem permissao: best-effort */ }
     }
 
-    static void Audit(string logPath, string evt, string command, string arguments, string output, int turn)
+    static void Audit(string logPath, string evt, string command, string arguments, string output, int turn, string drift = "")
     {
         try
         {
