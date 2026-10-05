@@ -6,6 +6,8 @@ body { background: #0b0d10; color: #e6e8eb; }
 .btn-primary { background: #2563eb; border-color: #2563eb; }
 #thinking { color: #8b949e; font-size: .85rem; white-space: pre-wrap; }
 #thinking .caret::after { content: "▍"; animation: blink 1s steps(1) infinite; }
-@@keyframes blink { 50% { opacity: 0; } }
+.typing::after { content: "▍"; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
 #answer { white-space: pre-wrap; }
+#conv p { white-space: pre-wrap; }
 #log { font-size: .8rem; color: #6e7681; max-height: 38vh; overflow-y: auto; }

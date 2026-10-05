@@ -1,40 +1,194 @@
 ﻿@{ Layout = "_Layout"; ViewData["Title"] = "Chat"; }
-<div class="row mb-2"><div class="col-md-6">@await Html.PartialAsync("_AgentSelect", (IEnumerable<Rochas.OpenCodeBridge.Web.Models.Agent>)ViewBag.Agents)</div></div>
-<div class="card mb-2"><div class="card-header">Agente <span id="caret"></span></div>
-<div class="card-body"><div id="thinking"></div><hr /><div id="answer"></div></div></div>
-<div class="input-group">
-<textarea id="prompt" class="form-control" rows="2" placeholder="Pergunte..."></textarea>
-<button id="send" class="btn btn-primary">Enviar</button>
-</div>
+@{
+    var agents = (IEnumerable<Rochas.OpenCodeBridge.Web.Models.Agent>)ViewBag.Agents;
+}
+<section>
+  <div class="container py-5">
+
+    <div class="row">
+
+      <div class="col-md-6 col-lg-5 col-xl-4 mb-4 mb-md-0">
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="font-weight-bold text-lg-start mb-0">Sessões</h5>
+          <button type="button" class="btn btn-sm btn-info" id="newSession" data-mdb-button-init data-mdb-ripple-init>Nova</button>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+
+            <ul class="list-unstyled mb-0" id="sessionList"></ul>
+
+          </div>
+        </div>
+
+      </div>
+
+      <div class="col-md-6 col-lg-7 col-xl-8">
+
+        <div class="mb-4">
+          <select id="agentId" class="form-select form-select-sm">
+            @foreach (var a in agents)
+            {
+              <option value="@a.Id">@a.Name — @a.Model</option>
+            }
+          </select>
+        </div>
+
+        <ul class="list-unstyled" id="conv"></ul>
+
+        <ul class="list-unstyled">
+          <li class="bg-body-tertiary mb-3 p-2 rounded">
+            <div data-mdb-input-init class="form-outline">
+              <textarea class="form-control" id="prompt" rows="4"></textarea>
+              <label class="form-label" for="prompt">Message</label>
+            </div>
+          </li>
+          <button type="button" data-mdb-button-init data-mdb-ripple-init class="btn btn-info btn-rounded float-end" id="send">Send</button>
+        </ul>
+
+      </div>
+
+    </div>
+
+  </div>
+</section>
 @section Scripts {
 <script>
-const hist = [];
+const conv = document.getElementById('conv');
+const sessionList = document.getElementById('sessionList');
+const agentSel = document.getElementById('agentId');
+let sessions = JSON.parse(localStorage.getItem('bridge.sessions') || '[]');
+let currentId = null;
+const AV = i => `https://mdbcdn.b-cdn.net/img/Photos/Avatars/avatar-${(i % 8) + 1}.webp`;
+
+function save() { localStorage.setItem('bridge.sessions', JSON.stringify(sessions)); }
+function current() { return sessions.find(s => s.id === currentId); }
+function esc(s) { return (s || '').replace(/</g, '&lt;'); }
+
+function newSession() {
+  const s = { id: Date.now().toString(), agentId: +agentSel.value, title: 'Nova sessão', messages: [] };
+  sessions.unshift(s); currentId = s.id; save(); renderAll();
+}
+
+function renderSessions() {
+  sessionList.innerHTML = '';
+  sessions.forEach((s, i) => {
+    const last = s.messages.length ? s.messages[s.messages.length - 1].content : '';
+    const li = document.createElement('li');
+    li.className = 'p-2 border-bottom' + (s.id === currentId ? ' bg-body-tertiary' : '');
+    li.innerHTML = `<a href="#!" class="d-flex justify-content-between text-decoration-none">
+      <div class="d-flex flex-row">
+        <img src="${AV(i)}" alt="avatar" class="rounded-circle d-flex align-self-center me-3 shadow-1-strong" width="60">
+        <div class="pt-1">
+          <p class="fw-bold mb-0 text-truncate" style="max-width:200px">${esc(s.title)}</p>
+          <p class="small text-muted mb-0 text-truncate" style="max-width:200px">${esc(last)}</p>
+        </div>
+      </div>
+      <div class="pt-1"><span class="badge bg-info float-end">${s.messages.length}</span></div>
+    </a>`;
+    li.querySelector('a').onclick = (e) => { e.preventDefault(); currentId = s.id; agentSel.value = s.agentId; renderAll(); };
+    sessionList.appendChild(li);
+  });
+}
+
+function msgItem(role, think, body) {
+  const li = document.createElement('li');
+  li.className = 'd-flex justify-content-between mb-4';
+  if (role === 'user') {
+    li.innerHTML = `
+      <div class="card w-100">
+        <div class="card-header d-flex justify-content-between p-3">
+          <p class="fw-bold mb-0">Você</p>
+        </div>
+        <div class="card-body"><p class="mb-0 text-wrap">${body}</p></div>
+      </div>
+      <img src="${AV(7)}" alt="avatar" class="rounded-circle d-flex align-self-start ms-3 shadow-1-strong" width="60">`;
+  } else {
+    li.innerHTML = `
+      <img src="${AV(6)}" alt="avatar" class="rounded-circle d-flex align-self-start me-3 shadow-1-strong" width="60">
+      <div class="card w-100">
+        <div class="card-header d-flex justify-content-between p-3">
+          <p class="fw-bold mb-0">Agente</p>
+        </div>
+        <div class="card-body">${think ? `<p class="small text-muted mb-2">${think}</p><hr />` : ''}<p class="mb-0 ans text-wrap">${body}</p></div>
+      </div>`;
+  }
+  return li;
+}
+
+function renderConv() {
+  conv.innerHTML = '';
+  const s = current(); if (!s) return;
+  s.messages.forEach(m => conv.appendChild(msgItem(m.role, esc(m.thinking), esc(m.content))));
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function renderAll() { renderSessions(); renderConv(); }
+
+agentSel.onchange = () => { const s = current(); if (s) { s.agentId = +agentSel.value; save(); } };
+document.getElementById('newSession').onclick = newSession;
+
 document.getElementById('send').onclick = async () => {
   const ta = document.getElementById('prompt');
   if (!ta.value.trim()) return;
-  hist.push({ role: 'user', content: ta.value }); ta.value = '';
-  const th = document.getElementById('thinking'), an = document.getElementById('answer');
-  th.innerHTML = '<span class="caret"></span>'; an.textContent = '';
-  const res = await fetch('/Chat/Stream', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agentId: +document.getElementById('agentId').value, messages: hist.slice(-20) }) });
-  const reader = res.body.getReader(), dec = new TextDecoder();
-  let buf = '', full = '', think = '';
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    const parts = buf.split('\n\n'); buf = parts.pop();
-    for (const p of parts) {
-      const line = p.split('\n').find(l => l.startsWith('data:'));
-      if (!line || line.includes('[DONE]')) continue;
-      try {
-        const d = JSON.parse(line.slice(5)).choices[0].delta;
-        if (d.reasoning_content) { think += d.reasoning_content; th.innerHTML = think.replace(/</g, '&lt;') + '<span class="caret"></span>'; }
-        else if (d.content) { full += d.content; an.textContent = full; }
-      } catch (e) { /* chunk parcial: ignora */ }
+  if (!current()) newSession();
+  const s = current();
+  const text = ta.value; ta.value = '';
+  if (s.messages.length === 0) s.title = text.slice(0, 40);
+  s.messages.push({ role: 'user', content: text });
+  conv.appendChild(msgItem('user', '', esc(text)));
+  renderSessions();
+
+  const li = document.createElement('li');
+  li.className = 'd-flex justify-content-between mb-4';
+  li.innerHTML = `
+    <img src="${AV(6)}" alt="avatar" class="rounded-circle d-flex align-self-start me-3 shadow-1-strong" width="60">
+    <div class="card w-100">
+      <div class="card-header d-flex justify-content-between p-3">
+        <p class="fw-bold mb-0">Agente</p>
+      </div>
+      <div class="card-body"><p class="small text-muted mb-2 typing"><span class="spinner-border spinner-border-sm"></span></p><hr /><p class="mb-0 ans text-wrap"></p></div>
+    </div>`;
+  conv.appendChild(li);
+  const thP = li.querySelector('p.small');
+  const anP = li.querySelector('.ans');
+  let full = '', think = '';
+
+  try {
+    const res = await fetch('/Chat/Stream', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId: s.agentId, messages: s.messages.slice(-20) }) });
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split('\n\n'); buf = parts.pop();
+      for (const p of parts) {
+        const line = p.split('\n').find(l => l.startsWith('data:'));
+        if (!line || line.includes('[DONE]')) continue;
+        try {
+          const d = JSON.parse(line.slice(5)).choices[0].delta;
+          if (d.reasoning_content) { think += d.reasoning_content; thP.textContent = think; }
+          else if (d.content) { if (!full) { thP.classList.remove('typing'); anP.classList.add('typing'); } full += d.content; anP.textContent = full; }
+        } catch (e) { /* chunk parcial: ignora */ }
+      }
+      window.scrollTo(0, document.body.scrollHeight);
     }
+  } catch (e) {
+    anP.textContent = 'erro: ' + e.message;
   }
-  hist.push({ role: 'assistant', content: full });
+  thP.classList.remove('typing');
+  anP.classList.remove('typing');
+  if (!think) { thP.nextElementSibling?.remove(); thP.remove(); }
+  s.messages.push({ role: 'assistant', content: full, thinking: think });
+  save(); renderSessions();
+  window.scrollTo(0, document.body.scrollHeight);
 };
+
+renderAll();
+if (!current() && sessions.length === 0) newSession();
+else if (!current() && sessions.length > 0) { currentId = sessions[0].id; renderAll(); }
 </script>
 }
