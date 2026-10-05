@@ -4,9 +4,15 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>@ViewData["Title"] - Bridge Web</title>
-<link href="https://cdn.jsdelivr.net/npm/mdb-ui-kit@6.4.2/css/mdb.min.css" rel="stylesheet" />
-<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet" />
+<link href="~/lib/mdb/mdb.min.css" rel="stylesheet" />
+<link href="~/lib/fontawesome/css/all.min.css" rel="stylesheet" />
 <link href="~/css/black.css" rel="stylesheet" />
+<script>
+  (function() {
+    var theme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-bs-theme', theme);
+  })();
+</script>
 </head>
 <body>
 <nav class="navbar navbar-expand navbar-dark topbar">
@@ -16,18 +22,33 @@
     {
       <div class="navbar-nav">
         <a class="nav-link" href="/Chat">Chat</a>
-        <a class="nav-link" href="/Agents">Agentes</a>
-        <a class="nav-link" href="/Users">Usuários</a>
+        @if ((User.FindFirst("IsAdmin")?.Value ?? "false").ToLower() == "true")
+        {
+          <a class="nav-link" href="/Agents">Agentes</a>
+          <a class="nav-link" href="/Users">Usuários</a>
+        }
       </div>
-      <form method="post" action="/Account/Logout" class="d-flex">
+      <form method="post" action="/Account/Logout" class="d-flex align-items-center">
         <span class="navbar-text me-2">@User.Identity.Name</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="themeToggle" title="Alternar tema">
+          <i class="fas fa-sun"></i>
+        </button>
         <button class="btn btn-sm btn-outline-secondary">Sair</button>
       </form>
     }
   </div>
 </nav>
 <main class="container-fluid py-3">@RenderBody()</main>
-<script src="https://cdn.jsdelivr.net/npm/mdb-ui-kit@6.4.2/js/mdb.umd.min.js"></script>
+<script src="~/lib/mdb/mdb.min.js"></script>
+<script>
+  document.getElementById('themeToggle')?.addEventListener('click', function() {
+    var html = document.documentElement;
+    var theme = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-bs-theme', theme);
+    localStorage.setItem('theme', theme);
+    this.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+  });
+</script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

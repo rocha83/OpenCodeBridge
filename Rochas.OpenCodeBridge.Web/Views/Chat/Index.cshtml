@@ -11,7 +11,10 @@
 
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h5 class="font-weight-bold text-lg-start mb-0">Sessões</h5>
-          <button type="button" class="btn btn-sm btn-info" id="newSession" data-mdb-button-init data-mdb-ripple-init>Nova</button>
+          <div>
+            <button type="button" class="btn btn-sm btn-info me-2" id="newSession" data-mdb-button-init data-mdb-ripple-init>Nova</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" id="clearSessions" data-mdb-button-init data-mdb-ripple-init>Limpar</button>
+          </div>
         </div>
 
         <div class="card">
@@ -33,15 +36,16 @@
               <option value="@a.Id">@a.Name — @a.Model</option>
             }
           </select>
+          <div class="small text-muted mt-2"><span id="engineDot" class="dot"></span> <span id="engineTxt"></span></div>
         </div>
 
         <ul class="list-unstyled" id="conv"></ul>
 
         <ul class="list-unstyled">
-          <li class="bg-body-tertiary mb-3 p-2 rounded">
-            <div data-mdb-input-init class="form-outline">
-              <textarea class="form-control" id="prompt" rows="4"></textarea>
-              <label class="form-label" for="prompt">Message</label>
+          <li class="mb-3">
+            <label class="form-label fw-bold" for="prompt">Pergunta ou Instrução</label>
+            <div data-mdb-input-init class="form-outline mb-3">
+              <textarea class="form-control bg-body-tertiary rounded-3" id="prompt" rows="4" style="border: 1px solid #2a323d !important;"></textarea>
             </div>
           </li>
           <button type="button" data-mdb-button-init data-mdb-ripple-init class="btn btn-info btn-rounded float-end" id="send">Send</button>
@@ -60,7 +64,8 @@ const sessionList = document.getElementById('sessionList');
 const agentSel = document.getElementById('agentId');
 let sessions = JSON.parse(localStorage.getItem('bridge.sessions') || '[]');
 let currentId = null;
-const AV = i => `https://mdbcdn.b-cdn.net/img/Photos/Avatars/avatar-${(i % 8) + 1}.webp`;
+const avatarUser = '<span class="rounded-circle d-flex align-self-start ms-3 shadow-1-strong bg-secondary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-user fa-2x text-white"></i></span>';
+const avatarAgent = '<span class="rounded-circle d-flex align-self-start me-3 shadow-1-strong bg-primary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-robot fa-2x text-white"></i></span>';
 
 function save() { localStorage.setItem('bridge.sessions', JSON.stringify(sessions)); }
 function current() { return sessions.find(s => s.id === currentId); }
@@ -79,7 +84,7 @@ function renderSessions() {
     li.className = 'p-2 border-bottom' + (s.id === currentId ? ' bg-body-tertiary' : '');
     li.innerHTML = `<a href="#!" class="d-flex justify-content-between text-decoration-none">
       <div class="d-flex flex-row">
-        <img src="${AV(i)}" alt="avatar" class="rounded-circle d-flex align-self-center me-3 shadow-1-strong" width="60">
+        <span class="rounded-circle d-flex align-self-center me-3 shadow-1-strong bg-info justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-comments fa-2x text-white"></i></span>
         <div class="pt-1">
           <p class="fw-bold mb-0 text-truncate" style="max-width:200px">${esc(s.title)}</p>
           <p class="small text-muted mb-0 text-truncate" style="max-width:200px">${esc(last)}</p>
@@ -103,10 +108,10 @@ function msgItem(role, think, body) {
         </div>
         <div class="card-body"><p class="mb-0 text-wrap">${body}</p></div>
       </div>
-      <img src="${AV(7)}" alt="avatar" class="rounded-circle d-flex align-self-start ms-3 shadow-1-strong" width="60">`;
+      ${avatarUser}`;
   } else {
     li.innerHTML = `
-      <img src="${AV(6)}" alt="avatar" class="rounded-circle d-flex align-self-start me-3 shadow-1-strong" width="60">
+      ${avatarAgent}
       <div class="card w-100">
         <div class="card-header d-flex justify-content-between p-3">
           <p class="fw-bold mb-0">Agente</p>
@@ -126,8 +131,22 @@ function renderConv() {
 
 function renderAll() { renderSessions(); renderConv(); }
 
-agentSel.onchange = () => { const s = current(); if (s) { s.agentId = +agentSel.value; save(); } };
+agentSel.onchange = () => { const s = current(); if (s) { s.agentId = +agentSel.value; save(); } checkEngine(); };
+async function checkEngine() {
+  const dot = document.getElementById('engineDot'), txt = document.getElementById('engineTxt');
+  try {
+    const r = await fetch(`/Chat/Ping?agentId=${agentSel.value}`);
+    const j = await r.json();
+    dot.className = 'dot' + (j.ok ? '' : ' err');
+    txt.textContent = j.ok ? 'Concluído!' : 'Desconectado';
+  } catch { dot.className = 'dot err'; txt.textContent = 'Desconectado'; }
+}
+checkEngine();
 document.getElementById('newSession').onclick = newSession;
+document.getElementById('clearSessions').onclick = () => {
+  if (!confirm('Limpar todas as sessões?')) return;
+  sessions = []; currentId = null; save(); newSession();
+};
 
 document.getElementById('send').onclick = async () => {
   const ta = document.getElementById('prompt');
@@ -143,18 +162,28 @@ document.getElementById('send').onclick = async () => {
   const li = document.createElement('li');
   li.className = 'd-flex justify-content-between mb-4';
   li.innerHTML = `
-    <img src="${AV(6)}" alt="avatar" class="rounded-circle d-flex align-self-start me-3 shadow-1-strong" width="60">
+    ${avatarAgent}
     <div class="card w-100">
       <div class="card-header d-flex justify-content-between p-3">
         <p class="fw-bold mb-0">Agente</p>
       </div>
-      <div class="card-body"><p class="small text-muted mb-2 typing"><span class="spinner-border spinner-border-sm"></span></p><hr /><p class="mb-0 ans text-wrap"></p></div>
+      <div class="card-body">
+        <div class="d-flex align-items-start">
+          <span class="dot blink mt-1"></span>
+          <p class="small text-muted mb-0 typing ms-2"><span class="spinner-border spinner-border-sm"></span></p>
+        </div>
+        <hr /><p class="mb-0 ans text-wrap"></p>
+      </div>
     </div>`;
   conv.appendChild(li);
+  const thWrap = li.querySelector('.d-flex');
+  const dot = li.querySelector('.dot');
   const thP = li.querySelector('p.small');
   const anP = li.querySelector('.ans');
+  const engineDot = document.getElementById('engineDot');
+  const engineTxt = document.getElementById('engineTxt');
+  engineDot.className = 'dot blink'; engineTxt.textContent = 'Pensando...';
   let full = '', think = '';
-
   try {
     const res = await fetch('/Chat/Stream', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agentId: s.agentId, messages: s.messages.slice(-20) }) });
@@ -178,10 +207,14 @@ document.getElementById('send').onclick = async () => {
     }
   } catch (e) {
     anP.textContent = 'erro: ' + e.message;
+    dot.className = 'dot err';
+    engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
   }
+  if (dot.className === 'dot blink') dot.className = 'dot';
+  if (engineDot.className === 'dot blink') { engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!'; }
   thP.classList.remove('typing');
   anP.classList.remove('typing');
-  if (!think) { thP.nextElementSibling?.remove(); thP.remove(); }
+  if (!think) thP.textContent = '';
   s.messages.push({ role: 'assistant', content: full, thinking: think });
   save(); renderSessions();
   window.scrollTo(0, document.body.scrollHeight);

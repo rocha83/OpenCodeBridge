@@ -5,7 +5,12 @@ using Rochas.OpenCodeBridge.Web.Data;
 using Rochas.OpenCodeBridge.Web.Models;
 using Rochas.OpenCodeBridge.Web.Services;
 
-var builder = WebApplication.CreateBuilder(args);
+var options = new WebApplicationOptions
+{
+    WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot"),
+    ContentRootPath = AppContext.BaseDirectory
+};
+var builder = WebApplication.CreateBuilder(options);
 builder.Services.AddControllersWithViews();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<BridgeClient>();
@@ -24,7 +29,7 @@ using (var scope = app.Services.CreateScope())
     var users = scope.ServiceProvider.GetRequiredService<GenericRepository<User>>();
     var existing = await users.Query(new User { Email = "admin@mova.com" });
     if (!existing.Any())
-        await users.Add(new User { Name = "Admin", Email = "admin@mova.com", PasswordHash = PasswordHasher.Hash("Admin@123") });
+        await users.Add(new User { Name = "Admin", Email = "admin@mova.com", PasswordHash = PasswordHasher.Hash("Admin@123"), IsAdmin = true });
 }
 
 app.UseStaticFiles();

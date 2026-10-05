@@ -16,4 +16,11 @@
     <PackageReference Include="Rochas.DapperRepository" Version="2.0.1" />
   </ItemGroup>
 
+  <Target Name="CopyWwwRoot" AfterTargets="Build">
+    <ItemGroup>
+      <WwFiles Include="wwwroot/**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WwFiles)" DestinationFolder="$(OutDir)wwwroot/%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

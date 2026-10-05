@@ -24,4 +24,7 @@ public sealed class User
 
     [Column("active")]
     public bool Active { get; set; } = true;
+
+    [Column("is_admin")]
+    public bool IsAdmin { get; set; } = false;
 }

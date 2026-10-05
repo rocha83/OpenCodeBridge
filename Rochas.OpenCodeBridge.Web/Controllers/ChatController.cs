@@ -9,13 +9,32 @@ namespace Rochas.OpenCodeBridge.Web.Controllers;
 
 // Chat: tela + proxy de stream p/ bridge (contorna falta de CORS no HttpListener).
 [Authorize]
-public sealed class ChatController(GenericRepository<Agent> agents, BridgeClient bridge) : Controller
+public sealed class ChatController(GenericRepository<Agent> agents, BridgeClient bridge, IHttpClientFactory http) : Controller
 {
     public async Task<IActionResult> Index()
     {
         var list = (await agents.Query(new Agent())).Where(a => a.Active).ToList();
         ViewBag.Agents = list;
         return View();
+    }
+
+    // Ping leve na bridge do agente p/ sinalizar conectividade da engine.
+    [HttpGet]
+    public async Task<IActionResult> Ping(int agentId)
+    {
+        var agent = await agents.Get(new Agent { Id = agentId });
+        if (agent is null) return Json(new { ok = false });
+        try
+        {
+            var client = http.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(3);
+            using var r = await client.GetAsync(agent.BridgeUrl.TrimEnd('/') + "/api/status");
+            return Json(new { ok = r.IsSuccessStatusCode });
+        }
+        catch
+        {
+            return Json(new { ok = false });
+        }
     }
 
     public sealed class ChatRequest

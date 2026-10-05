@@ -265,3 +265,27 @@
   (sessão 2026-10-05, não commitada): normalizado `form.`/`model.` que os `sed`
   haviam deixado incoerente e prefixo de linhas `N: ` dos arquivos Razor/CSS
   (erro RZ2005 na primeira build portada).
+
+## Bridge Web — MDB + temas + admin + reasoning indicator (2026-10-05)
+- Migração de Bootstrap 5.3.3 CDN para **MDB UI Kit 6.4.2** local (`wwwroot/lib/mdb/`,
+  `wwwroot/lib/fontawesome/`), `data-bs-theme="dark"` nativo + `black.css` override.
+- **Chat MDB-style**: lista de sessões à esquerda (avatares, badge count), área de conversa
+  com bolhas usuário/agente (ícones FA `fa-user`/`fa-robot`), input `form-outline` +
+  label "Pergunta ou Instrução", botão `btn-info btn-rounded float-end`.
+- **Sessões persistidas em localStorage** (demo): "Nova", "Limpar", seleção por clique,
+  título = 1ª mensagem truncada, contagem de mensagens.
+- **Streaming SSE "digitando"**: `fetch` + `ReadableStream` + `TextDecoder(stream:true)` —
+  reasoning e resposta atualizam `textContent` a cada chunk; caret `.typing` pisca.
+- **Indicador de engine** (global + por bolha): bolinha verde **piscando** enquanto
+  chega stream, verde **acesa** ao terminar, **vermelha parada** em erro.
+  Endpoint `GET /Chat/Ping?agentId=` (timeout 3s no `/api/status` da bridge)
+  atualiza ao trocar agente no dropdown.
+- **Tema dark/light**: botão na navbar (sol/lua) persiste em `localStorage`,
+  aplica `data-bs-theme` no `<html>` antes do paint (script inline no `<head>`).
+- **Flag `IsAdmin` em `User`**: seed `admin@mova.com` com `IsAdmin=true`; links
+  "Agentes"/"Usuários" só aparecem se `User.FindFirst("IsAdmin").Value == "true"`.
+- **Foco escuro**: `.form-control:focus` / `.form-select:focus` com
+  `border-color: #3b82f6` + `box-shadow` rgba suave (não mais azul vivo).
+- DDL `AppDb.Init`: migração `ALTER TABLE users ADD COLUMN is_admin` para DBs antigos.
+- Assets estáticos servidos via `WebApplicationOptions.WebRootPath` (independe de cwd).
+- Build Release: 0 warnings / 0 errors.
