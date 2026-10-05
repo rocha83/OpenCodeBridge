@@ -721,6 +721,7 @@ internal static partial class Program
     /// <param name="req">Request Responses.</param>
     /// <param name="requestedModel">Model id do cliente (eco).</param>
     /// <param name="temperature">Temperatura efetiva.</param>
+    /// <param name="thinking">Modo thinking efetivo.</param>
     /// <param name="toolCount">No. de tools convertidas.</param>
     /// <returns>Body p/ /v1/chat/completions.</returns>
     static JsonObject BuildChatRequest(JsonObject req, out string requestedModel, out double temperature, out string thinking, out int toolCount)
@@ -863,6 +864,7 @@ internal static partial class Program
     /// <param name="chat">Chat request ja montado.</param>
     /// <param name="requestedModel">Model id p/ eco.</param>
     /// <param name="temperature">Efetiva.</param>
+    /// <param name="thinking">Modo thinking efetivo.</param>
     /// <param name="startedAt">Inicio p/ elapsed.</param>
     static void HandleResponsesStream(HttpListenerContext ctx, JsonObject chat,
         string requestedModel, double temperature, string thinking, DateTime startedAt)
@@ -1428,6 +1430,7 @@ internal static partial class Program
     /// <param name="chat">Chat completion.</param>
     /// <param name="model">Model id p/ eco.</param>
     /// <param name="temperature">Efetiva.</param>
+    /// <param name="thinkMode">Modo thinking efetivo.</param>
     /// <returns>Objeto Responses.</returns>
     static JsonObject ChatToResponses(JsonObject chat, string model, double temperature, string? thinkMode = null)
     {
@@ -1579,6 +1582,7 @@ internal static partial class Program
     // ---------------------------------------------------------------------
     /// <summary>Sintetiza o SSE Responses com sequence crescente.</summary>
     /// <param name="obj">Objeto Responses.</param>
+    /// <param name="thinkMode">Modo thinking efetivo.</param>
     /// <returns>Bytes do evento-stream.</returns>
     static byte[] BuildSse(JsonObject obj, string? thinkMode = null)
     {
