@@ -300,7 +300,7 @@
   5. Qualidade & Deploy (testes integração/unit, gate, health-check, docs, tech debt)
 - Regras de execução para modelo 8B: uma tarefa por vez, não inventar, build+teste=done, fail fast, ordem sugerida.
 
-## Bridge Web — Fase 3 Persistência Server-Side (2026-10-05, em andamento)
+## Bridge Web — Fase 3 Persistência Server-Side (2026-10-05, CONCLUÍDA ✅)
 - **Models**: `Session` e `SessionMessage` com FKs e índices (`idx_sessions_user`, `idx_sessions_agent`, `idx_messages_session`, `idx_messages_created`).
 - **DDL**: `AppDb.Init` cria tabelas `sessions` + `session_messages` com `ON DELETE CASCADE`, migração `is_admin` mantida.
 - **SessionService**: CRUD completo (Create, GetByUser, Get, UpdateTitle, UpdateAgent, Delete, GetMessages, AddMessage, Count, Touch).
@@ -312,7 +312,8 @@
   - `GET /Chat/Sessions/{id}/Messages` → histórico paginado
   - `DELETE /Chat/Sessions/{id}` → deleta sessão + mensagens (cascata)
   - `PUT /Chat/Sessions/{id}/Title` / `PUT /Chat/Sessions/{id}/Agent` → updates
-  - `POST /Chat/Stream` → aceita `sessionId` opcional; carrega histórico via `SessionService.GetMessages` + `ContextWindow.BuildContext`; persiste mensagem do usuário antes do stream; toca `updated_at` ao final.
+  - `POST /Chat/Stream` → aceita `sessionId` opcional; carrega histórico via `SessionService.GetMessages` + `ContextWindow.BuildContext`; persiste mensagem do usuário antes do stream; captura resposta do assistant (content + thinking + usage) via buffer intermediário; persiste assistant message ao final.
+- **Front-end (Chat/Index.cshtml)**: remove `localStorage`; carrega sessões via `/Chat/Sessions`; seleção carrega mensagens via `/Chat/Sessions/{id}/Messages`; "Nova" → `POST /Chat/Sessions`; stream envia `sessionId`; bolha do agente só aparece no primeiro chunk de `content`; thinking vai para `<details>` colapsável; indicador global "Pensando..."/ "Concluído!"/ "Desconectado"; sem bolinha na bolha do agente.
 - **Validação**: login cria claim `NameIdentifier` com user ID; `CurrentUserId` propriedade no controller.
-- **Teste manual**: `curl /Chat/Sessions` → `[]`; `POST /Chat/Sessions` → `{"id":1,...}`; `GET /Chat/Sessions/1/Messages` → `[]`; `POST /Chat/Stream` com `sessionId=1` → SSE streaming OK (reasoning + content), mensagem user persistida.
+- **Teste manual**: `curl /Chat/Sessions` → `[]`; `POST /Chat/Sessions` → `{"id":1,...}`; `GET /Chat/Sessions/1/Messages` → `[]`; `POST /Chat/Stream` com `sessionId=1` → SSE streaming OK (reasoning + content), mensagem user + assistant persistida (thinking + content + usage).
 - Build Release: 0 warnings / 0 errors.
