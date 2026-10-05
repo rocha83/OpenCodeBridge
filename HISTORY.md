@@ -169,6 +169,11 @@
 - Perfil `moe` (0.4/events): 6º modo `qwen3-8b-awq-moe`, híbrido geral com
   system prompt amplo próprio (opencode + Qwen CLI).
 
+## Padrão de temperatura 0.4 (2026-10-05)
+- `plan` e `moe` Baixados de 0.6 para **0.4** em todos os lugares (perfis da
+  bridge, `appsettings` GPU/CPU, mint V2, Qwen entry 8B): equilíbrio entre
+  criatividade e determinismo. `build`/`orch` seguem 0.2; 3B segue padrão.
+
 ## Bridge v2.1 — E2E enterprise C# + React (2026-10-04)
 - `E2EEnterpriseTests.cs`: 6 cenários com skills de backend e frontend —
   CRUD simples Product (Minimal API + Dapper + bordas 400/404), CRUD Customer

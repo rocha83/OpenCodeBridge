@@ -67,10 +67,10 @@ internal static partial class Program
     static readonly Dictionary<string, (double Temp, string Think)> Profiles =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["plan"] = (0.6, "events"),
+            ["plan"] = (0.4, "events"),
             ["build"] = (0.2, "off"),
             ["orch"] = (0.2, "events"),
-            ["moe"] = (0.6, "events"),
+            ["moe"] = (0.4, "events"),
         };
 
     /// <summary>Descobre o perfil pelo sufixo do model (-plan/-build).</summary>
