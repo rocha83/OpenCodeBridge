@@ -1,5 +1,19 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Protocolo orch 7 estágios (2026-10-05)
+- Agente `orch` (opencode, primary, modelo pinado `openai/qwen3-8b-awq-orch`):
+  system próprio em 7 estágios — 1) LER o plano; 2) IDENTIFICAR blocos de
+  tarefas; 3) ELUCIDAR enunciado atômico técnico por bloco (1 leitura +
+  1 escrita, critério de aceite, FORMATO EXATO da saída); 4) EXECUTAR via
+  `nohup opencode run --standalone --agent coder-3b ... > .out &`;
+  5) ACOMPANHAR com poll (`tail`, nunca `cat` cheio); 6) VALIDAR contra o
+  critério; 7) CONSOLIDAR só com todas verdes.
+- Trava por permissão (não só prompt): `orch` sem edit, sem tool `subagent`,
+  só read/glob/grep + webfetch/websearch + shell. Tool `subagent` aparece
+  mas sempre nega — o system manda não insistir.
+- Orçamento 36k: fixo ~10k, ~2.5k/fatia (teto `cpuMaxTokens` 2048) → ~10
+  fatias/sessão. Poll leve + validação externa p/ não estourar.
+
 ## Selo orch thinking off (2026-10-05)
 - Matriz final (não re-enunciar): `plan` 0.4/events (tudo), `build` 0.2/off
   (tudo), `orch` 0.2/**off** (ler, web, shell; SEM edit, SEM subagents).
