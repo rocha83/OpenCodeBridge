@@ -161,8 +161,7 @@ internal static partial class Program
                 Console.WriteLine($"[volta {turn}] $ {name} {arguments} ({output.Length} bytes){FirstLine(drift)}");
             messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = text });
             int lines = output.Split('\n').Count(l => l.Trim().Length > 0);
-            string state = drift.Length > 0 ? $"\nEstado do repo:{drift}" : "";
-            messages.Add(new JsonObject { ["role"] = "user", ["content"] = $"Saida de `{name} {arguments}` (total: {lines} linhas):\n{Truncate(output, 4000)}{state}\nProssiga ou de o resultado final." });
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = $"Saida de `{name} {arguments}` (total: {lines} linhas):\n{Truncate(output, 4000)}\nProssiga ou de o resultado final." });
         }
         Console.WriteLine($"LIMITE de {maxTurns} voltas atingido.");
         return 1;
@@ -462,6 +461,7 @@ internal static partial class Program
                 ["arguments"] = Truncate(arguments, 300),
                 ["output_bytes"] = output.Length,
                 ["output_head"] = Truncate(output, 1000),
+                ["drift_stat"] = Truncate(drift, 500),
                 ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             }.ToJsonString() + "\n");
         }
