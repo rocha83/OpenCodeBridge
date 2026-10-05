@@ -14,8 +14,11 @@ var builder = WebApplication.CreateBuilder(options);
 builder.Services.AddControllersWithViews();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<BridgeClient>();
+builder.Services.AddScoped<SessionService>();
 builder.Services.AddScoped(_ => new GenericRepository<User>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 builder.Services.AddScoped(_ => new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+builder.Services.AddScoped(_ => new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+builder.Services.AddScoped(_ => new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(o => { o.LoginPath = "/Account/Login"; o.Cookie.Name = "bridge.web"; });
 builder.Services.AddAuthorization();

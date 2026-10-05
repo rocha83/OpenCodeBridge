@@ -207,6 +207,62 @@
 | **4** | UX Refinada | Bolha agente só após thinking, sem dot na bolha, acessibilidade, scroll inteligente, toast erros |
 | **5** | Qualidade & Deploy | Testes integração/unit, gate, health-check, docs, scripts deploy |
 
+## Fase 3.7 — Integração Real com Bridge + Mock para Demo (Obrigatório)
+
+### 3.7.1 Integração Real com Bridge (Produção)
+- **Arquivo:** `Rochas.OpenCodeBridge.Web/Services/BridgeClient.cs` (já existe, ajustar)
+- **Fluxo:** `Chat/Stream` recebe `sessionId` → monta histórico via `SessionService.GetMessagesAsync` + `ContextWindow.BuildContext` → chama `BridgeClient.StreamAsync(agent.BridgeUrl, agent.Model, agent.Temperature, agent.SystemPrompt, messages, Response.Body, ct)`
+- **Parsing SSE:** bridge já devolve chunks `data: {...}` com `choices[0].delta.reasoning_content` e `choices[0].delta.content` + final `usage` (se houver).
+- **Persistência:** ao final do stream, `SessionService.AddMessageAsync` com `prompt_tokens`/`completion_tokens` do `usage` se disponível.
+
+### 3.7.2 Mock de Modelo para Demo (Desenvolvimento / CI)
+- **Objetivo:** Permitir testar o chat **sem bridge real rodando** (CI, demo offline, dev sem GPU).
+- **Arquivo:** `Rochas.OpenCodeBridge.Web/Services/MockBridgeClient.cs` (novo), implementa mesma interface que `BridgeClient` (`StreamAsync`).
+- **Ativação:** Config `appsettings.json` → `"UseMockBridge": true` (ou env var `USE_MOCK_BRIDGE=1`). DI em `Program.cs` faz swap condicional.
+- **Comportamento do Mock:**
+  - Recebe `messages` (histórico) + `model` + `temperature` + `systemPrompt`.
+  - Simula latência: `await Task.Delay(Random.Shared.Next(300, 800))` antes de iniciar stream.
+  - Emite **thinking** (se modelo suporta) → chunks `reasoning_content` por ~1-2s (5-10 chunks).
+  - Emite **resposta** → chunks `content` por ~2-4s (10-20 chunks).
+  - Finaliza com `usage: { prompt_tokens: N, completion_tokens: M, total_tokens: N+M }`.
+  - **Mensagens mock variadas** (rotacionadas ou baseadas no último `user` content):
+    - Echo simples: `"Você disse: {lastUserMsg}. Isso é um mock."`
+    - Código: `` ```csharp\n// Mock response\nConsole.WriteLine("Hello");\n``` ``
+    - Reasoning simulado: `"Analisando a pergunta... identificando intenção... formulando resposta."`
+  - **Flag `thinking`:** se `agent.Thinking == "off"` → **não** emite `reasoning_content`, só `content`.
+  - **Erro simulado (opcional):** 1 em 20 calls → lança `HttpRequestException` para testar toast de erro.
+
+### 3.7.3 Configuração e DI
+- **appsettings.json:**
+  ```json
+  {
+    "UseMockBridge": false,
+    "MockBridge": {
+      "MinThinkingChunks": 3,
+      "MaxThinkingChunks": 8,
+      "MinContentChunks": 8,
+      "MaxContentChunks": 18,
+      "ErrorRate": 0.05
+    }
+  }
+  ```
+- **Program.cs:** `builder.Services.AddScoped<IBridgeClient>(sp => config.GetValue<bool>("UseMockBridge") ? sp.GetRequiredService<MockBridgeClient>() : sp.GetRequiredService<BridgeClient>());`
+- **Interface:** Extrair `IBridgeClient` de `BridgeClient` (método `StreamAsync` + props necessárias).
+
+### 3.7.4 Testes de Integração com Mock
+- **Arquivo:** `Rochas.OpenCodeBridge.Web.Test/Integration/ChatMockIntegrationTests.cs` (novo)
+- **Cenários:**
+  - `I-chat-mock-thinking-on`: agent com `thinking=events` → recebe `reasoning_content` + `content` + `usage`
+  - `I-chat-mock-thinking-off`: agent com `thinking=off` → **não** recebe `reasoning_content`, só `content`
+  - `I-chat-mock-error-rate`: 100 calls → ~5 erros simulados → toast aparece
+  - `I-chat-mock-latency`: mede tempo total < 5s (não travado)
+
+### 3.7.5 Aceite Fase 3.7
+- `dotnet build -c Release` → 0 warn/err
+- `USE_MOCK_BRIDGE=1 dotnet run ...` → chat funcional sem bridge real
+- `curl -X POST /Chat/Stream` com mock → SSE válido com thinking + content + usage
+- Teste `I-chat-mock-thinking-off` PASS (sem reasoning_content)
+
 ---
 
 ## Regras de Execução para o Modelo 8B (Executor)

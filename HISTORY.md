@@ -299,3 +299,20 @@
   4. UX Refinada (bolha agente pós-thinking, sem dot na bolha, a11y, scroll, toast)
   5. Qualidade & Deploy (testes integração/unit, gate, health-check, docs, tech debt)
 - Regras de execução para modelo 8B: uma tarefa por vez, não inventar, build+teste=done, fail fast, ordem sugerida.
+
+## Bridge Web — Fase 3 Persistência Server-Side (2026-10-05, em andamento)
+- **Models**: `Session` e `SessionMessage` com FKs e índices (`idx_sessions_user`, `idx_sessions_agent`, `idx_messages_session`, `idx_messages_created`).
+- **DDL**: `AppDb.Init` cria tabelas `sessions` + `session_messages` com `ON DELETE CASCADE`, migração `is_admin` mantida.
+- **SessionService**: CRUD completo (Create, GetByUser, Get, UpdateTitle, UpdateAgent, Delete, GetMessages, AddMessage, Count, Touch).
+- **ContextWindow**: `BuildContext(history, maxInputTokens=28672)` estima tokens via `chars/4`, retorna slice cronológico que cabe no orçamento Qwen3-8B.
+- **ChatController endpoints**:
+  - `GET /Chat/Sessions` → lista do usuário (ordenado updated_at DESC)
+  - `POST /Chat/Sessions` → cria sessão (`{agentId, title?}`), retorna id
+  - `GET /Chat/Sessions/{id}` → detalhe
+  - `GET /Chat/Sessions/{id}/Messages` → histórico paginado
+  - `DELETE /Chat/Sessions/{id}` → deleta sessão + mensagens (cascata)
+  - `PUT /Chat/Sessions/{id}/Title` / `PUT /Chat/Sessions/{id}/Agent` → updates
+  - `POST /Chat/Stream` → aceita `sessionId` opcional; carrega histórico via `SessionService.GetMessages` + `ContextWindow.BuildContext`; persiste mensagem do usuário antes do stream; toca `updated_at` ao final.
+- **Validação**: login cria claim `NameIdentifier` com user ID; `CurrentUserId` propriedade no controller.
+- **Teste manual**: `curl /Chat/Sessions` → `[]`; `POST /Chat/Sessions` → `{"id":1,...}`; `GET /Chat/Sessions/1/Messages` → `[]`; `POST /Chat/Stream` com `sessionId=1` → SSE streaming OK (reasoning + content), mensagem user persistida.
+- Build Release: 0 warnings / 0 errors.
