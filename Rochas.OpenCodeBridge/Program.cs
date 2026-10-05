@@ -70,7 +70,7 @@ internal static partial class Program
             ["plan"] = (0.6, "events"),
             ["build"] = (0.2, "off"),
             ["orch"] = (0.2, "events"),
-            ["moe"] = (0.4, "events"),
+            ["moe"] = (0.6, "events"),
         };
 
     /// <summary>Descobre o perfil pelo sufixo do model (-plan/-build).</summary>
@@ -581,10 +581,22 @@ internal static partial class Program
         var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Upstream + ctx.Request.Url!.AbsolutePath);
         if (ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH")
             forward.Content = new StringContent(outBody, Encoding.UTF8, "application/json");
+        // Linha CPU + stream: o opencode TUI aborta em 300s sem headers e o
+        // llama leva minutos no prefill — descarrega headers + heartbeat AGORA
+        // (comentário SSE, ignorado pelo parser) e só então chama o upstream.
+        bool headersSent = false;
+        if (coerceLine && wantStream)
+        {
+            ctx.Response.StatusCode = 200;
+            ctx.Response.ContentType = "text/event-stream";
+            ctx.Response.OutputStream.Write(new UTF8Encoding(false).GetBytes(": bridge working\n\n"));
+            ctx.Response.OutputStream.Flush();
+            headersSent = true;
+        }
         using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHeadersRead);
         if (coerceLine && upstreamResponse.IsSuccessStatusCode)
         {
-            CoercedChatResponse(ctx, upstreamResponse, wantStream);
+            CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent);
             return;
         }
         ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
@@ -620,7 +632,7 @@ internal static partial class Program
     }
 
     /// <summary>Resposta chat da linha CPU: coage texto em tool_calls e devolve JSON ou SSE sintetizado.</summary>
-    static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream)
+    static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream, bool headersSent = false)
     {
         string json;
         using (var reader = new StreamReader(upstreamResponse.Content.ReadAsStream(), new UTF8Encoding(false)))
@@ -665,8 +677,11 @@ internal static partial class Program
             ctx.Response.Close();
             return;
         }
-        ctx.Response.StatusCode = 200;
-        ctx.Response.ContentType = "text/event-stream";
+        if (!headersSent)
+        {
+            ctx.Response.StatusCode = 200;
+            ctx.Response.ContentType = "text/event-stream";
+        }
         using var writer = new StreamWriter(ctx.Response.OutputStream, new UTF8Encoding(false)) { AutoFlush = true };
         try
         {
