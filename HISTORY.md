@@ -289,3 +289,13 @@
 - DDL `AppDb.Init`: migração `ALTER TABLE users ADD COLUMN is_admin` para DBs antigos.
 - Assets estáticos servidos via `WebApplicationOptions.WebRootPath` (independe de cwd).
 - Build Release: 0 warnings / 0 errors.
+
+## Bridge Web — Scripts de deploy + plano 5 fases (2026-10-05)
+- Scripts adicionados ao repo: `deploy-web.sh` (build + testes + restart), `health-check.sh` (login + engine ping), `gate.sh` (gate + build + testes).
+- Plano detalhado `plan-web-001.md` com 5 fases granulares para execução por modelo 8B (ctx 36k):
+  1. Fundação & Infra (concluída)
+  2. Chat UX Core (concluída)
+  3. Persistência Server-Side (sessions/messages, ContextWindow, endpoints CRUD)
+  4. UX Refinada (bolha agente pós-thinking, sem dot na bolha, a11y, scroll, toast)
+  5. Qualidade & Deploy (testes integração/unit, gate, health-check, docs, tech debt)
+- Regras de execução para modelo 8B: uma tarefa por vez, não inventar, build+teste=done, fail fast, ordem sugerida.
