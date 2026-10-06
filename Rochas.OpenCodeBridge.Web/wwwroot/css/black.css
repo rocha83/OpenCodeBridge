@@ -1,31 +1,52 @@
 /* ===========================================
-   OpenCodeBridge.Web — Tema Black (MDB 6.4.2)
-   Overrides mínimos por cima do mdb.min.css + data-bs-theme="dark"
+   OpenCodeBridge.Web — Tema Obsidian Dark (MDB 6.4.2)
+   Paleta sutil inspirada no Obsidian: chumbo/graphite refinado
    =========================================== */
 
-/* Base: fundo preto profundo */
+/* ===== Paleta Obsidian =====
+   --bg-primary:       #1e1e1e  (fundo principal - chumbo suave)
+   --bg-secondary:     #252526  (cards, painéis - graphite)
+   --bg-tertiary:      #2d2d2d  (inputs, hover - chumbo médio)
+   --bg-hover:         #333333  (hover states)
+   --border-subtle:    #3a3a3a  (bordas discretas)
+   --border-focus:     #4a4a4a  (foco)
+   --text-primary:     #d4d4d4  (texto principal)
+   --text-secondary:   #9e9e9e  (texto muted)
+   --text-muted:       #7a7a7a  (labels, placeholders)
+   --accent-cyan:      #4ec9b0  (info, links - teal suave)
+   --accent-green:     #6a9955  (sucesso, online)
+   --accent-red:       #f44747  (erro, offline)
+   --accent-amber:     #dcdcaa  (warning)
+   --shadow-soft:      rgba(0,0,0,0.4)
+   ========================== */
+
 :root { color-scheme: dark; }
-html, body { background: #0b0d10 !important; color: #e6e8eb; }
 
-/* Navbar topbar */
-.topbar {
-  background: #101318 !important;
-  border-bottom: 1px solid #1f242c !important;
+/* Base: fundo chumbo suave (não preto puro) */
+html, body { 
+  background: #1e1e1e !important; 
+  color: #d4d4d4 !important; 
 }
-.topbar .navbar-brand { color: #e6e8eb !important; }
-.topbar .nav-link { color: #aab0b8 !important; }
-.topbar .nav-link:hover { color: #fff !important; }
-.topbar .navbar-text { color: #aab0b8 !important; }
 
-/* Cards e listas — estilo MDB dark */
+/* Navbar topbar - chumbo escuro */
+.topbar {
+  background: #1a1a1a !important;
+  border-bottom: 1px solid #3a3a3a !important;
+}
+.topbar .navbar-brand { color: #d4d4d4 !important; }
+.topbar .nav-link { color: #9e9e9e !important; }
+.topbar .nav-link:hover { color: #4ec9b0 !important; }
+.topbar .navbar-text { color: #9e9e9e !important; }
+
+/* Cards e listas — estilo graphite */
 .card, .list-group-item {
-  background: #12161c !important;
-  border-color: #232a34 !important;
-  color: #e6e8eb !important;
+  background: #252526 !important;
+  border-color: #3a3a3a !important;
+  color: #d4d4d4 !important;
 }
 .card-header {
-  background: #161b22 !important;
-  border-bottom: 1px solid #232a34 !important;
+  background: #2d2d2d !important;
+  border-bottom: 1px solid #3a3a3a !important;
 }
 .card-body { background: transparent !important; }
 
@@ -34,17 +55,17 @@ html, body { background: #0b0d10 !important; color: #e6e8eb; }
   transition: background 0.15s ease;
 }
 #sessionList .p-2.border-bottom:hover {
-  background: #1a1f2a !important;
+  background: #2d2d2d !important;
 }
 #sessionList .p-2.bg-body-tertiary {
-  background: #1a1f2a !important;
+  background: #2d2d2d !important;
 }
 #sessionList .badge {
   font-size: 0.7rem;
   padding: 0.25rem 0.5rem;
 }
 
-/* Avatar padrão (ícones FA no lugar de imagens) */
+/* Avatar padrão (ícones FA) */
 .avatar-icon {
   width: 60px;
   height: 60px;
@@ -52,54 +73,59 @@ html, body { background: #0b0d10 !important; color: #e6e8eb; }
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  background: #333333;
+  border-radius: 50%;
 }
-.avatar-icon i { font-size: 1.75rem; }
+.avatar-icon i { font-size: 1.75rem; color: #4ec9b0; }
 
-/* Formulários — MDB form-outline dark */
+/* Formulários — MDB form-outline dark refinado */
 .form-outline { position: relative; }
 .form-outline .form-control {
-  background: #0e1217 !important;
-  border: 1px solid #2a323d !important;
+  background: #1e1e1e !important;
+  border: 1px solid #3a3a3a !important;
   border-radius: 0.5rem !important;
-  color: #e6e8eb !important;
+  color: #d4d4d4 !important;
   padding: 0.75rem 1rem;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .form-outline .form-control:focus {
-  border-color: #3b82f6 !important;
-  box-shadow: 0 0 0 0.25rem rgba(59, 130, 246, 0.15) !important;
+  border-color: #4ec9b0 !important;
+  box-shadow: 0 0 0 0.25rem rgba(78, 201, 176, 0.15) !important;
 }
 .form-outline .form-label {
-  color: #8b949e !important;
+  color: #7a7a7a !important;
   font-weight: 500;
   margin-bottom: 0.25rem;
 }
 
-/* Botões — estilo MDB */
+/* Botões — estilo teal suave (Obsidian accent) */
 .btn-info {
-  background: #17a2b8 !important;
-  border-color: #17a2b8 !important;
-  color: #fff !important;
+  background: #4ec9b0 !important;
+  border-color: #4ec9b0 !important;
+  color: #1e1e1e !important;
 }
 .btn-info:hover, .btn-info:focus {
-  background: #138496 !important;
-  border-color: #117a8b !important;
+  background: #3db8a0 !important;
+  border-color: #3db8a0 !important;
 }
 .btn-info.btn-rounded { border-radius: 2rem !important; }
 .btn-outline-secondary {
-  border-color: #6c757d !important;
-  color: #6c757d !important;
+  border-color: #4a4a4a !important;
+  color: #9e9e9e !important;
 }
 .btn-outline-secondary:hover {
-  background: #6c757d !important;
-  color: #fff !important;
+  background: #333333 !important;
+  border-color: #4ec9b0 !important;
+  color: #4ec9b0 !important;
 }
 .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.8125rem; }
 
 /* Badge */
 .badge { font-weight: 500; }
-.badge.bg-info { background: #17a2b8 !important; }
-.badge.bg-danger { background: #dc3545 !important; }
+.badge.bg-info { background: #4ec9b0 !important; color: #1e1e1e !important; }
+.badge.bg-danger { background: #f44747 !important; }
+.badge.bg-success { background: #6a9955 !important; }
+.badge.bg-warning { background: #dcdcaa !important; color: #1e1e1e !important; }
 
 /* Indicador de engine (bolinha + texto) */
 .engine-indicator { display: inline-flex; align-items: center; gap: 0.375rem; }
@@ -108,12 +134,12 @@ html, body { background: #0b0d10 !important; color: #e6e8eb; }
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #2ea043;
+  background: #6a9955;
   flex-shrink: 0;
-  box-shadow: 0 0 6px #2ea043;
+  box-shadow: 0 0 8px #6a9955;
 }
 .dot.blink { animation: blink 1s steps(1) infinite; }
-.dot.err { background: #a40e26; box-shadow: 0 0 6px #a40e26; animation: none; }
+.dot.err { background: #f44747; box-shadow: 0 0 8px #f44747; animation: none; }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* Caret "digitando" */
@@ -121,34 +147,59 @@ html, body { background: #0b0d10 !important; color: #e6e8eb; }
   content: "▍";
   animation: blink 1s steps(1) infinite;
   margin-left: 2px;
+  color: #4ec9b0;
 }
 
 /* Conversa — bolhas */
 #conv { list-style: none; padding: 0; margin: 0; }
 #conv li { animation: fadeIn 0.2s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-#conv .card { box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+#conv .card { box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
 #conv .card-header { padding: 0.75rem 1rem; font-size: 0.875rem; }
 #conv .card-body { padding: 0.75rem 1rem; }
 #conv .ans { white-space: pre-wrap; word-break: break-word; }
-#conv details summary { cursor: pointer; user-select: none; }
+#conv details summary { cursor: pointer; user-select: none; color: #9e9e9e; }
 #conv details[open] summary { margin-bottom: 0.25rem; }
-#conv details p { margin: 0; font-size: 0.8125rem; line-height: 1.5; }
+#conv details p { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: #9e9e9e; }
 
-/* Scrollbar dark */
+/* Scrollbar chumbo */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #0b0d10; }
-::-webkit-scrollbar-thumb { background: #2a323d; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #3a424d; }
+::-webkit-scrollbar-track { background: #1e1e1e; }
+::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #4a4a4a; }
 
 /* Toast container */
 #toastContainer .toast {
   border-radius: 0.5rem;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
   backdrop-filter: blur(8px);
+  background: #252526 !important;
+  border: 1px solid #3a3a3a !important;
+  color: #d4d4d4 !important;
 }
-#toastContainer .toast-header { border-bottom: 1px solid rgba(255,255,255,0.1); }
+#toastContainer .toast-header { 
+  background: #2d2d2d !important; 
+  border-bottom: 1px solid #3a3a3a !important;
+  color: #d4d4d4 !important;
+}
 #toastContainer .toast-body { padding: 0.75rem 1rem; }
+#toastContainer .btn-close-white { filter: invert(1); }
+
+/* Dropdown (select) */
+.form-select {
+  background: #1e1e1e !important;
+  border: 1px solid #3a3a3a !important;
+  border-radius: 0.5rem !important;
+  color: #d4d4d4 !important;
+}
+.form-select:focus {
+  border-color: #4ec9b0 !important;
+  box-shadow: 0 0 0 0.25rem rgba(78, 201, 176, 0.15) !important;
+}
+.form-select option {
+  background: #252526;
+  color: #d4d4d4;
+}
 
 /* Tema Light overrides (quando data-bs-theme="light") */
 [data-bs-theme="light"] {
@@ -185,12 +236,15 @@ html, body { background: #0b0d10 !important; color: #e6e8eb; }
   box-shadow: 0 0 0 0.25rem rgba(13,110,253,0.15) !important;
 }
 [data-bs-theme="light"] .form-outline .form-label { color: #6c757d !important; }
-[data-bs-theme="light"] .avatar-icon { box-shadow: 0 0 0 1px rgba(0,0,0,0.05); }
+[data-bs-theme="light"] .avatar-icon { background: #e9ecef; }
+[data-bs-theme="light"] .avatar-icon i { color: #0d6efd; }
 [data-bs-theme="light"] #sessionList .p-2.border-bottom:hover { background: #f1f3f5 !important; }
 [data-bs-theme="light"] #sessionList .p-2.bg-body-tertiary { background: #e9ecef !important; }
 [data-bs-theme="light"] #conv .card { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 [data-bs-theme="light"] .dot { background: #198754; box-shadow: 0 0 6px #198754; }
 [data-bs-theme="light"] .dot.err { background: #dc3545; box-shadow: 0 0 6px #dc3545; }
+[data-bs-theme="light"] .btn-info { background: #0d6efd !important; border-color: #0d6efd !important; color: #fff !important; }
+[data-bs-theme="light"] .btn-info:hover { background: #0b5ed7 !important; border-color: #0a58ca !important; }
 
 /* Limpeza: remove regras legadas não usadas */
 #thinking, #answer, #log { display: none !important; }

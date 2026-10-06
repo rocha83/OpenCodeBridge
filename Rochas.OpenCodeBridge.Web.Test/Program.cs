@@ -30,6 +30,8 @@ internal static class Program
 
         UnitHash();
         UnitAgent();
+        UnitContextWindow();
+        UnitSessionService().GetAwaiter().GetResult();
         IntegrationCrud().GetAwaiter().GetResult();
         IntegrationHttp(web).GetAwaiter().GetResult();
         Integration.ChatIntegrationTests.RunAsync(web).GetAwaiter().GetResult();
@@ -54,6 +56,16 @@ internal static class Program
         var a = new Agent();
         Check(a.BridgeUrl == "http://127.0.0.1:4124", "U-agent-bridge");
         Check(a.Temperature == 0.2 && a.Active, "U-agent-defaults");
+    }
+
+    static void UnitContextWindow()
+    {
+        Rochas.OpenCodeBridge.Web.Test.Unit.ContextWindowTests.Run();
+    }
+
+    static async Task UnitSessionService()
+    {
+        await Rochas.OpenCodeBridge.Web.Test.Unit.SessionServiceTests.RunAsync();
     }
 
     // Integracao: CRUD real no sqlite temporario via GenericRepository.

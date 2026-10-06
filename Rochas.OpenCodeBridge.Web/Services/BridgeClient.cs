@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 namespace Rochas.OpenCodeBridge.Web.Services;
 
 // Proxy p/ bridge: monta chat completions e repassa o stream SSE cru.
-public sealed class BridgeClient(IHttpClientFactory http)
+public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
 {
     public async Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
         string systemPrompt, JsonArray messages, Stream output, CancellationToken ct)

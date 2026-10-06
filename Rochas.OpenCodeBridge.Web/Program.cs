@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.Options;
 using Rochas.DapperRepository;
 using Rochas.Data.Specification.Enums;
 using Rochas.OpenCodeBridge.Web.Data;
@@ -13,7 +14,16 @@ var options = new WebApplicationOptions
 var builder = WebApplication.CreateBuilder(options);
 builder.Services.AddControllersWithViews();
 builder.Services.AddHttpClient();
+builder.Services.Configure<MockBridgeOptions>(builder.Configuration.GetSection("MockBridge"));
+builder.Services.AddScoped<IBridgeClient>(sp =>
+{
+    var config = sp.GetRequiredService<IOptions<MockBridgeOptions>>().Value;
+    return config.UseMockBridge
+        ? sp.GetRequiredService<MockBridgeClient>()
+        : sp.GetRequiredService<BridgeClient>();
+});
 builder.Services.AddScoped<BridgeClient>();
+builder.Services.AddScoped<MockBridgeClient>();
 builder.Services.AddScoped<SessionService>();
 builder.Services.AddScoped(_ => new GenericRepository<User>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 builder.Services.AddScoped(_ => new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString));
