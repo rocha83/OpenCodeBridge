@@ -11,7 +11,10 @@
 
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h5 class="font-weight-bold text-lg-start mb-0">Sessões</h5>
-          <button type="button" class="btn btn-sm btn-info" id="newSession" data-mdb-button-init data-mdb-ripple-init>Nova</button>
+          <div>
+            <button type="button" class="btn btn-sm btn-info me-2" id="newSession" data-mdb-button-init data-mdb-ripple-init>Nova</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" id="clearSessions" data-mdb-button-init data-mdb-ripple-init>Limpar</button>
+          </div>
         </div>
 
         <div class="card">
@@ -359,5 +362,8 @@ let initPromise = (async () => {
 const sendBtn = document.getElementById('send');
 sendBtn.disabled = true;
 initPromise.then(() => { sendBtn.disabled = false; });
+
+document.getElementById('newSession').onclick = createSession;
+document.getElementById('clearSessions').onclick = deleteAllSessions;
 </script>
 }

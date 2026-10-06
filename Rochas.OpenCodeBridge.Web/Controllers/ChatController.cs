@@ -162,8 +162,7 @@ public sealed class ChatController(
 
         // Monta mensagens para a bridge
         var messages = new JsonArray();
-        if (!string.IsNullOrWhiteSpace(agent.SystemPrompt))
-            messages.Add(new JsonObject { ["role"] = "system", ["content"] = agent.SystemPrompt });
+        // NÃO adiciona system prompt aqui — o BridgeClient já faz isso via parâmetro
 
         // Contexto com janela de tokens
         var context = ContextWindow.BuildContext(history);

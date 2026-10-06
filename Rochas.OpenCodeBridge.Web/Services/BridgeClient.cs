@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace Rochas.OpenCodeBridge.Web.Services;
 
+// Agente no banco tem seu próprio SystemPrompt; a bridge é agnóstica.
 // Proxy p/ bridge: monta chat completions e repassa o stream SSE cru.
 public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
 {
