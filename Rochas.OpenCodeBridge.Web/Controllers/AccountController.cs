@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Rochas.DapperRepository;
 using Rochas.OpenCodeBridge.Web.Models;
-using Rochas.OpenCodeBridge.Web.Services;
 
 namespace Rochas.OpenCodeBridge.Web.Controllers;
 
@@ -21,12 +20,7 @@ public sealed class AccountController(GenericRepository<User> users) : Controlle
     {
         var found = await users.Query(new User { Email = (email ?? "").Trim().ToLowerInvariant() });
         var user = found.FirstOrDefault(u => u.Active);
-        // TEMP: login livre sem conferencia de senha (reativar depois).
-        // if (user is null || !PasswordHasher.Verify(password ?? "", user.PasswordHash))
-        // {
-        //     ViewBag.Error = "Credenciais inválidas.";
-        //     return View();
-        // }
+        // Login livre (sem verificação de senha) — TEMP.
         if (user is null)
         {
             user = new User { Name = "Admin", Email = (email ?? "admin@mova.com"), IsAdmin = true };

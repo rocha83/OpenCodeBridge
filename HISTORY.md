@@ -317,3 +317,17 @@
 - **Validação**: login cria claim `NameIdentifier` com user ID; `CurrentUserId` propriedade no controller.
 - **Teste manual**: `curl /Chat/Sessions` → `[]`; `POST /Chat/Sessions` → `{"id":1,...}`; `GET /Chat/Sessions/1/Messages` → `[]`; `POST /Chat/Stream` com `sessionId=1` → SSE streaming OK (reasoning + content), mensagem user + assistant persistida (thinking + content + usage).
 - Build Release: 0 warnings / 0 errors.
+
+## Bridge Web — Fase 4 UX Refinada + Testes Integração (2026-10-06)
+- **CSS `black.css` reescrito**: overrides MDB dark/light completos (cards, forms, buttons, badges, avatars, engine indicator, bolhas, scrollbar, toast, fade-in). Tema light via `[data-bs-theme="light"]` funcional.
+- **UX Chat**:
+  - Bolha agente só aparece no 1º chunk de `content` (não no thinking); thinking em `<details>` colapsável "Raciocínio".
+  - Indicador global (bolinha + texto): "Pensando..." (verde piscando) → "Concluído!" (verde) → "Desconectado" (vermelho) → "Aguardando..." (cinza idle).
+  - Toast MDB (canto inf. dir.) em erro de stream: "Erro ao conectar na engine..."
+  - Scroll inteligente: auto-scroll só se usuário no fundo (`scrollTop + clientHeight >= scrollHeight - 50`).
+  - Teclado: `Enter` envia, `Shift+Enter` quebra linha; foco retorna ao `prompt` após envio.
+  - `aria-live="polite"` no `#conv` para leitores de tela.
+- **Fix agent update**: `agents.Query(...).FirstOrDefault()` no lugar de `agents.Get(...)` (workaround DapperRepository).
+- **Limpeza**: removido dead code `PasswordHasher` comentado em `AccountController.Login`.
+- **Testes integração Chat** (`ChatIntegrationTests.cs`): 7 cenários (login redirect, admin links, sessions CRUD, stream SSE, ping engine) — **14/14 PASS** (unit + http + chat integration).
+- Build Release: 0 warnings / 0 errors.

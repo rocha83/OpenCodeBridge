@@ -102,7 +102,7 @@ public sealed class ChatController(
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
-        var agent = await agents.Get(new Agent { Id = req.AgentId });
+        var agent = (await agents.Query(new Agent { Id = req.AgentId })).FirstOrDefault();
         if (agent is null || !agent.Active) return BadRequest("Agente inválido");
         await sessionService.UpdateAgentAsync(id, req.AgentId);
         return Ok();

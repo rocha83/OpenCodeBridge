@@ -32,6 +32,7 @@ internal static class Program
         UnitAgent();
         IntegrationCrud().GetAwaiter().GetResult();
         IntegrationHttp(web).GetAwaiter().GetResult();
+        Integration.ChatIntegrationTests.RunAsync(web).GetAwaiter().GetResult();
 
         Console.WriteLine(Failures == 0 ? "[test] PASS" : $"[test] FAIL={Failures}");
         return Failures == 0 ? 0 : 1;

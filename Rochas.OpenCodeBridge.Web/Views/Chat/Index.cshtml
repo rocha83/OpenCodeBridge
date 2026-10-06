@@ -34,7 +34,7 @@
           <div class="small text-muted mt-2"><span id="engineDot" class="dot"></span> <span id="engineTxt">Aguardando...</span></div>
         </div>
 
-        <ul class="list-unstyled" id="conv"></ul>
+        <ul class="list-unstyled" id="conv" aria-live="polite" aria-atomic="false"></ul>
 
         <ul class="list-unstyled">
           <li class="mb-3">
@@ -52,6 +52,8 @@
 
   </div>
 </section>
+<!-- MDB Toast container for errors -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1080;" id="toastContainer"></div>
 @section Scripts {
 <script>
 const conv = document.getElementById('conv');
@@ -59,6 +61,7 @@ const sessionList = document.getElementById('sessionList');
 const agentSel = document.getElementById('agentId');
 const engineDot = document.getElementById('engineDot');
 const engineTxt = document.getElementById('engineTxt');
+const toastContainer = document.getElementById('toastContainer');
 let currentSessionId = null;
 let currentAgentId = null;
 
@@ -66,6 +69,36 @@ const avatarUser = '<span class="rounded-circle d-flex align-self-start ms-3 sha
 const avatarAgent = '<span class="rounded-circle d-flex align-self-start me-3 shadow-1-strong bg-primary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-robot fa-2x text-white"></i></span>';
 
 function esc(s) { return (s || '').replace(/</g, '<'); }
+
+function showToast(message, type = 'danger') {
+  const id = 'toast-' + Date.now();
+  const bg = type === 'danger' ? 'bg-danger' : (type === 'success' ? 'bg-success' : 'bg-info');
+  const icon = type === 'danger' ? 'fa-circle-exclamation' : (type === 'success' ? 'fa-circle-check' : 'fa-circle-info');
+  const toastHtml = `
+    <div id="${id}" class="toast ${bg} text-white" role="alert" aria-live="assertive" aria-atomic="true" data-mdb-delay="5000">
+      <div class="toast-header ${bg} text-white border-0">
+        <i class="fas ${icon} me-2"></i>
+        <strong class="me-auto">Bridge Web</strong>
+        <button type="button" class="btn-close btn-close-white" data-mdb-dismiss="toast" aria-label="Close"></button>
+      </div>
+      <div class="toast-body">${esc(message)}</div>
+    </div>`;
+  toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+  const toastEl = document.getElementById(id);
+  if (toastEl) {
+    const toast = new mdb.Toast(toastEl);
+    toast.show();
+    toastEl.addEventListener('hidden.mdb.toast', () => toastEl.remove());
+  }
+}
+
+function isScrolledToBottom() {
+  return conv.scrollTop + conv.clientHeight >= conv.scrollHeight - 50;
+}
+
+function scrollToBottom() {
+  conv.scrollTo({ top: conv.scrollHeight, behavior: 'smooth' });
+}
 
 async function loadSessions() {
   const r = await fetch('/Chat/Sessions');
@@ -94,16 +127,17 @@ async function selectSession(id, agentId) {
   currentAgentId = agentId;
   agentSel.value = agentId;
   await loadMessages(id);
-  await loadSessions(); // refresh highlight
+  await loadSessions();
   checkEngine();
 }
 
 async function loadMessages(sessionId) {
   const r = await fetch(`/Chat/Sessions/${sessionId}/Messages`);
   const msgs = await r.json();
+  const wasAtBottom = isScrolledToBottom();
   conv.innerHTML = '';
   msgs.forEach(m => conv.appendChild(msgItem(m.role, m.thinking, m.content)));
-  window.scrollTo(0, document.body.scrollHeight);
+  if (wasAtBottom) scrollToBottom();
 }
 
 async function createSession() {
@@ -117,7 +151,7 @@ async function createSession() {
   currentAgentId = s.agentId;
   agentSel.value = s.agentId;
   await loadSessions();
-  conv.innerHTML = ''; // nova sessão limpa conversa
+  conv.innerHTML = '';
 }
 
 async function deleteAllSessions() {
@@ -173,17 +207,29 @@ async function checkEngine() {
 }
 
 document.getElementById('newSession').onclick = createSession;
-// Botão "Limpar" removido: deleção em lote via endpoint individual por enquanto
+
+const promptEl = document.getElementById('prompt');
+promptEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    document.getElementById('send').click();
+  }
+});
+
+promptEl.addEventListener('blur', () => {
+  // Opcional: re-focar após envio (feito no send.onclick)
+});
 
 document.getElementById('send').onclick = async () => {
   const ta = document.getElementById('prompt');
   if (!ta.value.trim()) return;
   if (!currentSessionId) await createSession();
   const text = ta.value; ta.value = '';
+  ta.focus(); // mantém foco no input
 
   // Adiciona mensagem do usuário na UI imediatamente
   conv.appendChild(msgItem('user', '', esc(text)));
-  window.scrollTo(0, document.body.scrollHeight);
+  if (isScrolledToBottom()) scrollToBottom();
 
   // Prepara bolha do agente (só aparece quando chegar o primeiro content)
   let agentLi = null;
@@ -200,6 +246,8 @@ document.getElementById('send').onclick = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId: currentSessionId, agentId: currentAgentId, messages: [{ role: 'user', content: text }] })
     });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
     const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = '';
     for (;;) {
@@ -241,7 +289,7 @@ document.getElementById('send').onclick = async () => {
           }
         } catch (e) { /* chunk parcial: ignora */ }
       }
-      window.scrollTo(0, document.body.scrollHeight);
+      if (isScrolledToBottom()) scrollToBottom();
     }
   } catch (e) {
     if (!agentBubbleCreated) {
@@ -254,11 +302,12 @@ document.getElementById('send').onclick = async () => {
       anP.textContent = 'Erro: ' + e.message;
     }
     engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
+    showToast('Erro ao conectar na engine. Verifique se a bridge está online.', 'danger');
   }
   if (agentBubbleCreated) {
     engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!';
   }
-  window.scrollTo(0, document.body.scrollHeight);
+  if (isScrolledToBottom()) scrollToBottom();
 };
 
 // Inicialização
