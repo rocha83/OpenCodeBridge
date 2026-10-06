@@ -244,6 +244,7 @@ document.getElementById('send').onclick = async () => {
   let think = '';
   let full = '';
   let agentBubbleCreated = false;
+  let thinkingEl = null;  // elemento para mostrar thinking live
 
   engineDot.className = 'dot blink'; engineTxt.textContent = 'Pensando...';
 
@@ -269,7 +270,11 @@ document.getElementById('send').onclick = async () => {
           const d = JSON.parse(line.slice(5)).choices[0].delta;
           if (d.reasoning_content) {
             think += d.reasoning_content;
-            // Thinking não cria a bolha ainda, só atualiza indicador global
+            // Atualiza thinking live no indicador global + painel lateral se bubble existe
+            engineTxt.textContent = 'Pensando... ' + think.slice(-80);
+            if (agentBubbleCreated && thinkingEl) {
+              thinkingEl.textContent = think;
+            }
           }
           else if (d.content) {
             if (!agentBubbleCreated) {
@@ -283,12 +288,13 @@ document.getElementById('send').onclick = async () => {
                     <p class="fw-bold mb-0">Agente</p>
                   </div>
                   <div class="card-body">
-                    ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
+                    ${think ? `<div class="thinking-live small text-muted mb-2" style="font-style:italic;color:#4ec9b0;max-height:100px;overflow:auto;">${esc(think)}</div>` : ''}
                     <p class="mb-0 ans text-wrap"></p>
                   </div>
                 </div>`;
               conv.appendChild(agentLi);
               anP = agentLi.querySelector('.ans');
+              thinkingEl = agentLi.querySelector('.thinking-live');
               agentBubbleCreated = true;
             }
             full += d.content;
