@@ -317,18 +317,24 @@ document.getElementById('send').onclick = async () => {
   if (isScrolledToBottom()) scrollToBottom();
 };
 
-// Inicialização
-await loadSessions();
-checkEngine();
-if (!currentSessionId) {
-  // Seleciona a primeira sessão se houver, senão cria nova
-  const r = await fetch('/Chat/Sessions');
-  const list = await r.json();
-  if (list.length > 0) {
-    await selectSession(list[0].id, list[0].agentId);
-  } else {
-    await createSession();
+// Inicialização - garante sessão ativa antes de permitir envio
+let initPromise = (async () => {
+  await loadSessions();
+  checkEngine();
+  if (!currentSessionId) {
+    const r = await fetch('/Chat/Sessions');
+    const list = await r.json();
+    if (list.length > 0) {
+      await selectSession(list[0].id, list[0].agentId);
+    } else {
+      await createSession();
+    }
   }
-}
+})();
+
+// Desabilita send até inicialização completa
+const sendBtn = document.getElementById('send');
+sendBtn.disabled = true;
+initPromise.then(() => { sendBtn.disabled = false; });
 </script>
 }
