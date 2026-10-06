@@ -238,7 +238,7 @@ document.getElementById('send').onclick = async () => {
   conv.appendChild(msgItem('user', '', esc(text)));
   if (isScrolledToBottom()) scrollToBottom();
 
-  // Prepara bolha do agente (só aparece quando chegar o primeiro content)
+  // Prepara bolha do agente (cria no primeiro reasoning_content OU content)
   let agentLi = null;
   let anP = null;
   let think = '';
@@ -270,15 +270,11 @@ document.getElementById('send').onclick = async () => {
           const d = JSON.parse(line.slice(5)).choices[0].delta;
           if (d.reasoning_content) {
             think += d.reasoning_content;
-            // Atualiza thinking live no indicador global + painel lateral se bubble existe
+            // Atualiza thinking live no indicador global
             engineTxt.textContent = 'Pensando... ' + think.slice(-80);
-            if (agentBubbleCreated && thinkingEl) {
-              thinkingEl.textContent = think;
-            }
-          }
-          else if (d.content) {
+            
+            // Cria bolha do agente no PRIMEIRO reasoning_content se ainda não existe
             if (!agentBubbleCreated) {
-              // Cria a bolha do agente na primeira chunk de content
               agentLi = document.createElement('li');
               agentLi.className = 'd-flex justify-content-between mb-4';
               agentLi.innerHTML = `
@@ -288,13 +284,34 @@ document.getElementById('send').onclick = async () => {
                     <p class="fw-bold mb-0">Agente</p>
                   </div>
                   <div class="card-body">
-                    ${think ? `<div class="thinking-live small text-muted mb-2" style="font-style:italic;color:#4ec9b0;max-height:100px;overflow:auto;">${esc(think)}</div>` : ''}
+                    <div class="thinking-live small text-muted mb-2" style="font-style:italic;color:#4ec9b0;max-height:100px;overflow:auto;min-height:1.2em;">${esc(think)}</div>
+                  </div>
+                </div>`;
+              conv.appendChild(agentLi);
+              thinkingEl = agentLi.querySelector('.thinking-live');
+              agentBubbleCreated = true;
+            } else if (thinkingEl) {
+              // Atualiza thinking live na bolha existente
+              thinkingEl.textContent = think;
+            }
+          }
+          else if (d.content) {
+            if (!agentBubbleCreated) {
+              // Fallback: cria na primeira content se não houve reasoning
+              agentLi = document.createElement('li');
+              agentLi.className = 'd-flex justify-content-between mb-4';
+              agentLi.innerHTML = `
+                ${avatarAgent}
+                <div class="card w-100">
+                  <div class="card-header d-flex justify-content-between p-3">
+                    <p class="fw-bold mb-0">Agente</p>
+                  </div>
+                  <div class="card-body">
                     <p class="mb-0 ans text-wrap"></p>
                   </div>
                 </div>`;
               conv.appendChild(agentLi);
               anP = agentLi.querySelector('.ans');
-              thinkingEl = agentLi.querySelector('.thinking-live');
               agentBubbleCreated = true;
             }
             full += d.content;

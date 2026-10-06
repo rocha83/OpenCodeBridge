@@ -1,16 +1,34 @@
 using Microsoft.Data.Sqlite;
+using System.IO;
 
 namespace Rochas.OpenCodeBridge.Web.Data;
 
 // Bootstrap do SQLite (DDL + seed admin). DapperRepository cuida do CRUD.
+// Usa banco compartilhado na raiz da solução bridge para persistência unificada.
 public static class AppDb
 {
-    public static string Path { get; private set; } = "web.db";
-    public static string ConnectionString => $"Data Source={Path};Cache=Shared";
+    private static string _dbPath;
+    public static string Path 
+    { 
+        get => _dbPath; 
+        private set => _dbPath = value; 
+    }
+    
+    public static string ConnectionString => $"Data Source={_dbPath};Cache=Shared";
 
-    public static void Init(string path)
+    // Caminho padrão: banco compartilhado na raiz da solução bridge
+    private static string DefaultPath => System.IO.Path.GetFullPath(
+        System.IO.Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Rochas.OpenCodeBridge", "bridge.db"));
+
+    public static void Init(string path = null)
     {
-        Path = path;
+        Path = path ?? DefaultPath;
+        
+        // Garante diretório
+        var dir = System.IO.Path.GetDirectoryName(Path);
+        if (!System.IO.Directory.Exists(dir))
+            System.IO.Directory.CreateDirectory(dir);
+
         using var conn = new SqliteConnection(ConnectionString);
         conn.Open();
         using var cmd = conn.CreateCommand();
