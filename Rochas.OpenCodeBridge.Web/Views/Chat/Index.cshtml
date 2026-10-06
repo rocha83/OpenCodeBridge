@@ -223,9 +223,16 @@ promptEl.addEventListener('blur', () => {
 document.getElementById('send').onclick = async () => {
   const ta = document.getElementById('prompt');
   if (!ta.value.trim()) return;
-  if (!currentSessionId) await createSession();
+  if (!currentSessionId) {
+    // Se não há sessão, tenta criar uma
+    await createSession();
+    if (!currentSessionId) {
+      showToast('Nenhuma sessão disponível. Recarregue a página.', 'warning');
+      return;
+    }
+  }
   const text = ta.value; ta.value = '';
-  ta.focus(); // mantém foco no input
+  ta.focus();
 
   // Adiciona mensagem do usuário na UI imediatamente
   conv.appendChild(msgItem('user', '', esc(text)));
