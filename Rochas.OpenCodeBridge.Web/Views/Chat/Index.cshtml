@@ -288,10 +288,12 @@ document.getElementById('send').onclick = async () => {
                   </div>
                   <div class="card-body">
                     <div class="thinking-live small text-muted mb-2" style="font-style:italic;color:#4ec9b0;max-height:100px;overflow:auto;min-height:1.2em;">${esc(think)}</div>
+                    <p class="mb-0 ans text-wrap"></p>
                   </div>
                 </div>`;
               conv.appendChild(agentLi);
               thinkingEl = agentLi.querySelector('.thinking-live');
+              anP = agentLi.querySelector('.ans');
               agentBubbleCreated = true;
             } else if (thinkingEl) {
               // Atualiza thinking live na bolha existente
