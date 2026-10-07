@@ -331,3 +331,17 @@
 - **Limpeza**: removido dead code `PasswordHasher` comentado em `AccountController.Login`.
 - **Testes integração Chat** (`ChatIntegrationTests.cs`): 7 cenários (login redirect, admin links, sessions CRUD, stream SSE, ping engine) — **14/14 PASS** (unit + http + chat integration).
 - Build Release: 0 warnings / 0 errors.
+
+## Bridge Web — Fase 5 UX Polish + Cancel Request (2026-10-07)
+- **Cancelar requisição em andamento**: botão "Cancelar" (ícone X vermelho) aparece durante streaming; usa `AbortController` para cancelar `fetch` in-flight; botão some ao cancelar/concluir/erro.
+- **UX loading states**: 
+  - Botão "Enviar" → spinner + "Enviando..." + desabilitado durante request
+  - Input desabilitado durante envio
+  - Indicador "Processando..." com spinner abaixo do input
+  - Re-habilita input/botão imediatamente após request iniciado (não espera resposta)
+  - Em erro: toast "Erro ao conectar na engine", reabilita botão/input
+  - Sucesso: botão "Send" restaurado, label "Concluído!" no engine indicator
+- **Limpeza Cancel button**: removido do DOM ao concluir/cancelar/erro
+- **Sessão persistida**: `selectSession` carrega histórico via `/Chat/Sessions/{id}/Messages`; streaming usa `sessionId`; mensagens user+assistant persistidas com thinking+content
+- Build Release: 0 warnings / 0 errors.
+- Testes: 37/37 PASS (unit + integration)
