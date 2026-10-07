@@ -16,6 +16,10 @@
     <PackageReference Include="Rochas.DapperRepository" Version="2.0.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Rochas.OpenCodeBridge.Runner\Rochas.OpenCodeBridge.Runner.csproj" />
+  </ItemGroup>
+
   <Target Name="CopyWwwRoot" AfterTargets="Build">
     <ItemGroup>
       <WwFiles Include="wwwroot/**/*" />

@@ -15,6 +15,7 @@ public sealed class ChatController(
     GenericRepository<Agent> agents,
     SessionService sessionService,
     BridgeClient bridge,
+    ToolExecutor toolExecutor,
     IHttpClientFactory http) : Controller
 {
     private int CurrentUserId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
@@ -249,5 +250,19 @@ public sealed class ChatController(
         }
 
         if (!ok && !Response.HasStarted) Response.StatusCode = 502;
+    }
+
+    // POST /Chat/Tool - Executa tool no servidor
+    [HttpPost("/Chat/Tool")]
+    public async Task<IActionResult> ExecuteTool([FromBody] ToolRequest request)
+    {
+        var result = toolExecutor.Execute(request.Name, request.Arguments);
+        return Json(new { success = result.Success, output = result.Output, error = result.Error });
+    }
+
+    public sealed class ToolRequest
+    {
+        public string Name { get; set; } = "";
+        public string Arguments { get; set; } = "";
     }
 }

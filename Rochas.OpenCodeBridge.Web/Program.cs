@@ -25,6 +25,10 @@ builder.Services.AddScoped<IBridgeClient>(sp =>
 builder.Services.AddScoped<BridgeClient>();
 builder.Services.AddScoped<MockBridgeClient>();
 builder.Services.AddScoped<SessionService>();
+builder.Services.AddScoped<ToolExecutor>(sp => new ToolExecutor(
+    repoPath: AppContext.BaseDirectory,
+    logPath: Path.Combine(AppContext.BaseDirectory, "tool-executor.log"),
+    verbosity: "normal"));
 builder.Services.AddScoped(_ => new GenericRepository<User>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 builder.Services.AddScoped(_ => new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 builder.Services.AddScoped(_ => new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString));
