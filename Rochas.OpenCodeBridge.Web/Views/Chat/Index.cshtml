@@ -235,6 +235,36 @@ document.getElementById('send').onclick = async () => {
     }
   }
   const text = ta.value; ta.value = '';
+  
+  // Disable input and button during processing
+  ta.disabled = true;
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...';
+
+  // Add Cancel button
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn btn-sm btn-outline-danger ms-2';
+  cancelBtn.id = 'cancelBtn';
+  cancelBtn.innerHTML = '<i class="fas fa-times me-1"></i>Cancelar';
+  cancelBtn.style.display = 'none';
+  sendBtn.parentNode.insertBefore(cancelBtn, sendBtn.nextSibling);
+  
+  // AbortController for cancellation
+  const abortController = new AbortController();
+  cancelBtn.style.display = 'inline-block';
+  cancelBtn.onclick = () => {
+    abortController.abort();
+    cancelBtn.style.display = 'none';
+  };
+  
+  // Add processing indicator near input
+  const indicator = document.createElement('div');
+  indicator.id = 'processing-indicator';
+  indicator.className = 'small text-muted mt-1';
+  indicator.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Processando...';
+  ta.parentNode.appendChild(indicator);
+
   ta.focus();
 
   // Adiciona mensagem do usuário na UI imediatamente
@@ -255,9 +285,17 @@ document.getElementById('send').onclick = async () => {
     const res = await fetch('/Chat/Stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: currentSessionId, agentId: currentAgentId, messages: [{ role: 'user', content: text }] })
+      body: JSON.stringify({ sessionId: currentSessionId, agentId: currentAgentId, messages: [{ role: 'user', content: text }] }), signal: abortController.signal
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    
+    // Re-enable input/button immediately after successful request start
+    ta.disabled = false;
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = 'Send';
+    document.getElementById('processing-indicator')?.remove();
+    document.getElementById('cancelBtn')?.remove();
+    ta.focus();
 
     const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = '';
@@ -337,10 +375,16 @@ document.getElementById('send').onclick = async () => {
       anP.textContent = 'Erro: ' + e.message;
     }
     engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
+    ta.disabled = false;
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = 'Send';
+    document.getElementById('processing-indicator')?.remove();
+    document.getElementById('cancelBtn')?.remove();
     showToast('Erro ao conectar na engine. Verifique se a bridge está online.', 'danger');
   }
   if (agentBubbleCreated) {
     engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!';
+    document.getElementById('cancelBtn')?.remove();
   }
   if (isScrolledToBottom()) scrollToBottom();
 };
