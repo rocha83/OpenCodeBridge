@@ -448,3 +448,8 @@
 - Approve bar virou editor (revisar/editar/remover/adicionar tarefas antes de rodar;
   humano via UI no futuro, elucidado pelo agente hoje).
 - Suite: **77/77 PASS**, build Release 0 erros.
+
+## Bridge Web — Fase 8d Retry com refinamento (2026-10-09)
+- Ciclo: falha sem conteúdo útil volta ao 8b que reescreve o enunciado e re-dispara
+  (máx. `Orchestration:MaxTaskRetries`, padrão 2; tudo persistido como mensagens).
+- Suite: **78/78 PASS**, build Release 0 erros.

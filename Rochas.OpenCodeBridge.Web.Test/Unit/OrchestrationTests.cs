@@ -7,6 +7,7 @@ using Rochas.Data.Specification.Enums;
 using Rochas.DapperRepository;
 using Rochas.OpenCodeBridge.Web.Data;
 using Rochas.OpenCodeBridge.Web.Models;
+using Microsoft.Extensions.Options;
 using Rochas.OpenCodeBridge.Web.Services;
 
 namespace Rochas.OpenCodeBridge.Web.Test.Unit;
@@ -80,8 +81,9 @@ internal static class OrchestrationTests
         ExecutorTools().GetAwaiter().GetResult();
         DecomposeRetry().GetAwaiter().GetResult();
         SplitPhases().GetAwaiter().GetResult();
+        RefineRetry().GetAwaiter().GetResult();
 
-        System.Console.WriteLine($"=== Orchestration Unit: {11 - Failures}/11 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== Orchestration Unit: {12 - Failures}/12 PASS, {Failures} FAIL ===");
         return Failures;
     }
 
@@ -143,7 +145,8 @@ internal static class OrchestrationTests
         var fake = new FakeBridge();
         var svc = new OrchestrationService(fake, new SessionService(sessions, sessions, messages, messages),
             new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString),
-            new ToolExecutor(System.IO.Path.GetTempPath(), System.IO.Path.Combine(System.IO.Path.GetTempPath(), "orch-tools.log")));
+            new ToolExecutor(System.IO.Path.GetTempPath(), System.IO.Path.Combine(System.IO.Path.GetTempPath(), "orch-tools.log")),
+            Options.Create(new OrchestrationOptions { MaxTaskRetries = 1 }));
         return (svc, fake, db);
     }
 
@@ -262,7 +265,8 @@ var r = await svc.OrchestrateAsync(created.Id ?? 0, user.Id ?? 0, "construa algo
             var created = (await sessions.Query(new Session { UserId = user.Id ?? 0 })).OrderByDescending(x => x.Id ?? 0).First();
             var svc = new OrchestrationService(script,
                 new SessionService(sessions, sessions, messages, messages), agents,
-                new ToolExecutor(System.IO.Path.GetTempPath(), System.IO.Path.Combine(System.IO.Path.GetTempPath(), "orchr.log")));
+                new ToolExecutor(System.IO.Path.GetTempPath(), System.IO.Path.Combine(System.IO.Path.GetTempPath(), "orchr.log")),
+                Options.Create(new OrchestrationOptions { MaxTaskRetries = 1 }));
 
             var preview = await svc.PreviewAsync(created.Id ?? 0, user.Id ?? 0, "faça coisas", CancellationToken.None);
             Check(preview.Ok && preview.Tasks.Count == 3, "U-orch-decompose-retry");
@@ -304,8 +308,7 @@ var r = await svc.OrchestrateAsync(created.Id ?? 0, user.Id ?? 0, "construa algo
     }
 
     private static async System.Threading.Tasks.Task SplitPhases()
-    {
-        // Executores sem síntese + síntese posterior do rastro (protocolo do swap).
+    {        // Executores sem síntese + síntese posterior do rastro (protocolo do swap).
         var (svc, fake, db) = Setup();
         try
         {
@@ -328,8 +331,7 @@ var r = await svc.OrchestrateAsync(created.Id ?? 0, user.Id ?? 0, "construa algo
             };
             // Preview persiste a divisão; RunApproved sem síntese; Synthesize lê do rastro.
             await svc.PreviewAsync(created.Id ?? 0, user.Id ?? 0, "ignore", CancellationToken.None);
-            var run = await svc.RunApprovedAsync(created.Id ?? 0, user.Id ?? 0, tasks, CancellationToken.None, synthesize: false);
-            var synth = await svc.SynthesizeAsync(created.Id ?? 0, user.Id ?? 0, CancellationToken.None);
+            var run = await svc.RunApprovedAsync(created.Id ?? 0, user.Id ?? 0, tasks, CancellationToken.None, synthesize: false);            var synth = await svc.SynthesizeAsync(created.Id ?? 0, user.Id ?? 0, CancellationToken.None);
             var msgs = await new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString)
                 .Query(new SessionMessage { SessionId = created.Id });
 bool execDone = msgs.Any(m => m.Content.Contains("[Executor 1] Concluído"))
@@ -337,6 +339,45 @@ bool execDone = msgs.Any(m => m.Content.Contains("[Executor 1] Concluído"))
             bool final = msgs.Any(m => m.Content == "sintese-final");
             System.Console.WriteLine($"DBG split execDone={execDone} final={final} nmsgs={msgs.Count}");
             Check(run.Ok && run.Synthesis == "" && synth.Ok && execDone && final, "U-orch-split-phases");
+        }
+        finally
+        {
+            try { System.IO.File.Delete(db); } catch { }
+        }
+    }
+
+    private static async System.Threading.Tasks.Task RefineRetry()
+    {
+        // Executor vazio -> refinamento no orch -> re-disparo com novo prompt.
+        // Fila: [exec-vazio, prompt-refinado, exec-bom].
+        var db = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"orchr-{System.Guid.NewGuid():N}.db");
+        AppDb.Init(db);
+        try
+        {
+            var script = new ScriptedBridge(new[] { "", "prompt refinado", "resultado bom" });
+            var sessions = new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            var messages = new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            var agents = new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            await agents.Add(new Agent { Name = "o6", Model = "m1" });
+            await agents.Add(new Agent { Name = "e6", Model = "m2" });
+            var orch = (await agents.Query(new Agent())).First(a => a.Name == "o6");
+            var exec = (await agents.Query(new Agent())).First(a => a.Name == "e6");
+            var users = new GenericRepository<User>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            await users.Add(new User { Name = "u6", Email = "u6@u.com", PasswordHash = "h" });
+            var user = (await users.Query(new User())).First(u => u.Email == "u6@u.com");
+            await sessions.Add(new Session { UserId = user.Id ?? 0, AgentId = orch.Id ?? 0, ExecutorAgentId = exec.Id, Title = "t" });
+            var created = (await sessions.Query(new Session { UserId = user.Id ?? 0 })).OrderByDescending(x => x.Id ?? 0).First();
+            var svc = new OrchestrationService(script,
+                new SessionService(sessions, sessions, messages, messages), agents,
+                new ToolExecutor(System.IO.Path.GetTempPath(), System.IO.Path.Combine(System.IO.Path.GetTempPath(), "orchr6.log")),
+                Options.Create(new OrchestrationOptions { MaxTaskRetries = 1 }));
+            var tasks = new List<OrchestrationService.SubTask> { new("Tarefa R", "faça R") };
+            var run = await svc.RunApprovedAsync(created.Id ?? 0, user.Id ?? 0, tasks, CancellationToken.None, synthesize: false);
+            var msgs = await new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString)
+                .Query(new SessionMessage { SessionId = created.Id });
+            bool refined = msgs.Any(m => m.Content.Contains("Refinando tarefa 1"));
+            bool recovered = msgs.Any(m => m.Content.Contains("resultado bom"));
+            Check(run.Ok && refined && recovered, "U-orch-refine-retry");
         }
         finally
         {

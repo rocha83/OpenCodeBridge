@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Options;
 using Rochas.Data.Specification.Interfaces;
 using Rochas.OpenCodeBridge.Web.Models;
 
@@ -11,13 +12,15 @@ public sealed class OrchestrationService(
     IBridgeClient bridge,
     ISessionService sessions,
     IGenericRepository<Agent> agents,
-    IToolExecutor tools) : IOrchestrationService
+    IToolExecutor tools,
+    IOptions<OrchestrationOptions> orchestrationOptions) : IOrchestrationService
 {
     private const int MaxTasks = 16;
     private const int MaxParallel = 3;
     private const int MaxToolTurns = 5;
     private const int MaxDecomposeTries = 3;
     private const int MinTasks = 2;
+    private readonly int _maxTaskRetries = Math.Max(0, orchestrationOptions.Value.MaxTaskRetries);
 
     // Orch: divide o pedido em subtarefas técnicas. JSON estrito.
     // Trilhas paralelas: backend x frontend, com contratos explícitos.
@@ -51,6 +54,12 @@ public sealed class OrchestrationService(
     private const string SynthesisSystem =
         "Você é o orquestrador. Sintetize os resultados dos executores abaixo em resposta " +
         "final direta ao usuário, em pt-BR. Se algum executor falhou, diga o que faltou.";
+
+    // Orch: reescreve enunciado que falhou, mais restrito e à prova do erro visto.
+    private const string RefineSystem =
+        "Você é o orquestrador. A subtarefa abaixo FALHOU no executor; reescreva o enunciado " +
+        "de forma mais restrita e à prova do erro, mantendo o mesmo objetivo. Responda SOMENTE " +
+        "com o novo prompt (texto puro, sem JSON nem markdown).";
 
     public async Task<OrchestrateResult> OrchestrateAsync(int sessionId, int userId, string text, CancellationToken ct)
     {
@@ -188,7 +197,7 @@ public sealed class OrchestrationService(
             {
                 await sessions.AddMessageAsync(sessionId, "assistant",
                     $"[Executor {i + 1}] Iniciado: {task.Title}", "", null, null);
-                results[i] = await RunExecutorTaskAsync(sessionId, i, task, exec, ct);
+                results[i] = await RunExecutorTaskAsync(sessionId, i, task, orch, exec, ct);
                 await sessions.AddMessageAsync(sessionId, "assistant",
                     $"[Executor {i + 1}] Concluído: {task.Title}\n{Truncate(results[i], 2000)}", "", null, null);
             }
@@ -259,10 +268,33 @@ public sealed class OrchestrationService(
     }
 
     // Executor com tools no modo build (loop como o Stream); no modo plan, texto puro.
-    private async Task<string> RunExecutorTaskAsync(int sessionId, int index, SubTask task, Agent exec, CancellationToken ct)
+    // Ciclo com retry: falha sem conteúdo útil volta ao orch para refinamento
+    // (máx. Orchestration:MaxTaskRetries), com re-disparo do enunciado corrigido.
+    private async Task<string> RunExecutorTaskAsync(int sessionId, int index, SubTask task, Agent orch, Agent exec, CancellationToken ct)
+    {
+        string prompt = task.Prompt;
+        for (int attempt = 0; attempt <= _maxTaskRetries; attempt++)
+        {
+            string result = await AttemptExecutorTaskAsync(sessionId, index, prompt, exec, ct);
+            if (!IsFailure(result) || attempt == _maxTaskRetries) return result;
+            await sessions.AddMessageAsync(sessionId, "assistant",
+                $"[Orquestrador] Refinando tarefa {index + 1} após falha (tentativa {attempt + 1})...", "", null, null);
+            var refined = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model,
+                PlanTemp(orch), RefineSystem,
+                new JsonArray { new JsonObject { ["role"] = "user", ["content"] = $"Tarefa: {task.Title}\nEnunciado: {prompt}\nEvidência da falha:\n{Truncate(result, 1000)}" } }, ct);
+            if (!refined.Ok || string.IsNullOrWhiteSpace(refined.Content)) return result;
+            prompt = refined.Content.Trim();
+        }
+        return $"[Executor {index + 1}] FALHOU após {_maxTaskRetries + 1} tentativa(s)";
+    }
+
+    private static bool IsFailure(string result) =>
+        string.IsNullOrWhiteSpace(result) || result.Contains("[Executor ") && result.Contains("FALHOU");
+
+    private async Task<string> AttemptExecutorTaskAsync(int sessionId, int index, string prompt, Agent exec, CancellationToken ct)
     {
         bool build = (exec.Mode ?? "build") != "plan";
-        var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = task.Prompt } };
+        var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = prompt } };
         var collected = new System.Text.StringBuilder();
         for (int turn = 0; turn < (build ? MaxToolTurns : 1); turn++)
         {

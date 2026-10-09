@@ -39,6 +39,7 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddHttpClient();
 builder.Services.Configure<MockBridgeOptions>(builder.Configuration.GetSection("MockBridge"));
 builder.Services.Configure<DiagnosticOptions>(builder.Configuration.GetSection("Diagnostics"));
+builder.Services.Configure<OrchestrationOptions>(builder.Configuration.GetSection("Orchestration"));
 builder.Services.AddSingleton<IDiagnosticTelemetry, DiagnosticTelemetry>();
 builder.Services.AddScoped<IBridgeClient>(sp =>
 {
