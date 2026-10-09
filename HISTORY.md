@@ -383,4 +383,4 @@
   (`BuildTool`/`BuildParam`/`ToolParam`).
 - Teto 2000 chars nos retornos `role: tool` do loop (paridade OpenCode).
 - E2E real validado: modelo chamou `shell`, listou diretório, truncou e respondeu pt-BR.
-- Suite: **63/63 PASS** (7+10+23+6+15+2 novos checks de economia).
+- Suite: **61/61 PASS** (7+10+23+6+15).
