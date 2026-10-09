@@ -422,3 +422,11 @@
   marcadas (sem tabela nova), parse em `SessionTaskPanel` testável.
 - Verificado ao vivo na sessão 173 (faixa verde): 1 tarefa done + synthesized.
 - Suite: **70/70 PASS**, build Release 0 erros.
+
+## Bridge Web — Fase 8 Híbridos: modos, 2 fases, tools no executor (2026-10-09)
+- `Agent.Mode` (plan/build) + `Role`; executor filtra pelo modo do orch (front+400).
+- Plan: temp 0.4, `GetTools("plan")` só read/grep/glob, backstop no executor.
+- Pipe em 2 fases: `POST /Chat/Decompose` (preview) + `POST /Chat/OrchestrateApproved`.
+- Executor build com loop de tools (5 turnos, teto 2000); plan sem tools.
+- Decompose atômico (mín. 4, máx. 8) + retry até 3x por critério de aceite.
+- Suite: **75/75 PASS**, build Release 0 erros. E2E com modelos: pendente.

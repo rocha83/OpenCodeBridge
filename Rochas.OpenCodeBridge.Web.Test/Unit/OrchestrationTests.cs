@@ -51,6 +51,23 @@ internal static class OrchestrationTests
             System.Text.Json.JsonSerializer.Serialize(s);
     }
 
+    // Bridge roteirizada: fila de respostas de conteúdo (para testar retry de decomposição).
+    private sealed class ScriptedBridge : IBridgeClient
+    {
+        private readonly Queue<string> _script;
+        public ScriptedBridge(IEnumerable<string> contents) => _script = new Queue<string>(contents);
+        public Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
+            string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
+            bool includeTools = true, JsonArray? tools = null)
+        {
+            string content = _script.Count > 0 ? _script.Dequeue() : "fim";
+            string sse = $"data: {{\"choices\":[{{\"delta\":{{\"content\":{System.Text.Json.JsonSerializer.Serialize(content)}}},\"finish_reason\":\"stop\"}}]}}\n\ndata: [DONE]\n\n";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(sse);
+            output.Write(bytes, 0, bytes.Length);
+            return Task.FromResult((true, ""));
+        }
+    }
+
     internal static int Run()
     {
         ParseValid();
@@ -60,8 +77,9 @@ internal static class OrchestrationTests
         PipelineNoExecutor().GetAwaiter().GetResult();
         TwoPhases().GetAwaiter().GetResult();
         ExecutorTools().GetAwaiter().GetResult();
+        DecomposeRetry().GetAwaiter().GetResult();
 
-        System.Console.WriteLine($"=== Orchestration Unit: {8 - Failures}/8 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== Orchestration Unit: {9 - Failures}/9 PASS, {Failures} FAIL ===");
         return Failures;
     }
 
@@ -196,6 +214,45 @@ var r = await svc.OrchestrateAsync(created.Id ?? 0, user.Id ?? 0, "construa algo
             bool approved = msgs.Any(m => m.Content.Contains("aprovada"));
             bool final = msgs.Any(m => m.Content == "sintese-final");
             Check(preview.Ok && preview.Tasks.Count == 2 && run.Ok && approved && final, "U-orch-two-phases");
+        }
+        finally
+        {
+            try { System.IO.File.Delete(db); } catch { }
+        }
+    }
+
+    private static async System.Threading.Tasks.Task DecomposeRetry()
+    {
+        // 1ª resposta sem JSON válido, 2ª com 3 tarefas: o retry deve aceitar a 2ª.
+        // 3ª resposta (síntese) para concluir o pipeline.
+        string db = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"orchr-{System.Guid.NewGuid():N}.db");
+        AppDb.Init(db);
+        try
+        {
+            var script = new ScriptedBridge(new[]
+            {
+                "vou responder em prosa, sem json",
+                "{\"tasks\":[{\"title\":\"A\",\"prompt\":\"p1\"},{\"title\":\"B\",\"prompt\":\"p2\"},{\"title\":\"C\",\"prompt\":\"p3\"}]}",
+                "sintese-ok",
+            });
+            var sessions = new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            var messages = new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            var agents = new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            await agents.Add(new Agent { Name = "or", Model = "m1" });
+            await agents.Add(new Agent { Name = "ex", Model = "m2" });
+            var orch = (await agents.Query(new Agent())).First(a => a.Name == "or");
+            var exec = (await agents.Query(new Agent())).First(a => a.Name == "ex");
+            var users = new GenericRepository<User>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            await users.Add(new User { Name = "ur", Email = "ur@u.com", PasswordHash = "h" });
+            var user = (await users.Query(new User())).First(u => u.Email == "ur@u.com");
+            await sessions.Add(new Session { UserId = user.Id ?? 0, AgentId = orch.Id ?? 0, ExecutorAgentId = exec.Id, Title = "t" });
+            var created = (await sessions.Query(new Session { UserId = user.Id ?? 0 })).OrderByDescending(x => x.Id ?? 0).First();
+            var svc = new OrchestrationService(script,
+                new SessionService(sessions, sessions, messages, messages), agents,
+                new ToolExecutor(System.IO.Path.GetTempPath(), System.IO.Path.Combine(System.IO.Path.GetTempPath(), "orchr.log")));
+
+            var preview = await svc.PreviewAsync(created.Id ?? 0, user.Id ?? 0, "faça coisas", CancellationToken.None);
+            Check(preview.Ok && preview.Tasks.Count == 3, "U-orch-decompose-retry");
         }
         finally
         {

@@ -12,18 +12,21 @@ public sealed class OrchestrationService(
     IGenericRepository<Agent> agents,
     IToolExecutor tools) : IOrchestrationService
 {
-    private const int MaxTasks = 5;
+    private const int MaxTasks = 8;
     private const int MaxParallel = 2;
     private const int MaxToolTurns = 5;
+    private const int MaxDecomposeTries = 3;
+    private const int MinTasks = 2;
 
     // Orch: divide o pedido em subtarefas técnicas. JSON estrito.
     // Trilhas paralelas: backend x frontend, com contratos explícitos.
     private const string DecomposeSystem =
-        "Você é o orquestrador. Decomponha o pedido do usuário em 2 a 5 subtarefas " +
+        "Você é o orquestrador. Decomponha o pedido do usuário em NO MÍNIMO 4 subtarefas " +
         "ATÔMICAS (1 ação verificável cada: 'crie a classe X com propósito Y', 'compile o " +
         "projeto', 'leia o arquivo Z'), independentes e autocontidas para agentes executores " +
         "trabalhando EM PARALELO, inclusive offline (cada prompt carrega todo o contexto: " +
-        "caminhos, comandos, saída esperada com exemplo e critério de aceite). " +
+        "caminhos, comandos, saída esperada com exemplo e critério de aceite). É PROIBIDO " +
+        "devolver 1 tarefa ecoando o pedido: divida para conquistar o limite do executor. " +
         "Organize em trilhas: BACKEND (C#/.NET, DDD) e FRONTEND (web); se houver dependência " +
         "(ex.: contratos, DTOs, entidades), emita-a como subtarefa própria e referencie-a nas " +
         "dependentes. Cada prompt deve trazer interfaces e contratos explícitos para fluir sem " +
@@ -154,11 +157,18 @@ public sealed class OrchestrationService(
 
     private async Task<List<SubTask>> DecomposeAsync(Agent orch, string text, CancellationToken ct)
     {
-        var r = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model, PlanTemp(orch),
-            DecomposeSystem,
-            new JsonArray { new JsonObject { ["role"] = "user", ["content"] = text } }, ct);
-        var tasks = ParseTasks(r.Ok ? r.Content : "");
-        if (tasks.Count > 0) return tasks;
+        // Critério de aceite: >= MinTasks tarefas distintas; tenta até MaxDecomposeTries.
+        for (int attempt = 1; attempt <= MaxDecomposeTries; attempt++)
+        {
+            string ask = attempt == 1 ? text
+                : text + $"\n\nSua decomposição anterior foi insuficiente (tente de novo com MAIS granularidade: tentativa {attempt}).";
+            var r = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model, PlanTemp(orch),
+                DecomposeSystem,
+                new JsonArray { new JsonObject { ["role"] = "user", ["content"] = ask } }, ct);
+            var tasks = ParseTasks(r.Ok ? r.Content : "");
+            if (tasks.Count >= MinTasks && tasks.Select(t => t.Prompt).Distinct().Count() == tasks.Count)
+                return tasks;
+        }
         // Fallback honesto: sem decomposição válida, 1 tarefa com o pedido integral.
         return new List<SubTask> { new("Pedido integral", text) };
     }
