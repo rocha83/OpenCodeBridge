@@ -8,21 +8,27 @@ namespace Rochas.OpenCodeBridge.Web.Services;
 // chamada (JsonNode tem um só pai — cache estático quebraria o loop).
 public static class ToolDefinitions
 {
-    public static JsonArray GetTools()
+    // mode "plan": só leitura e navegação (sem escrita nem execução).
+    public static JsonArray GetTools(string? mode = null)
     {
-        return new JsonArray(
-            BuildTool("shell", "Executa comando shell no workspace. Retorna stdout/stderr.",
-                new[] { BuildParam("command", "string", "Comando (ex.: 'ls -la').", true) }),
-            BuildTool("read", "Lê arquivo de texto do workspace.",
-                new[] { BuildParam("path", "string", "Caminho do arquivo.", true), BuildParam("offset", "integer", "Linha inicial (0-based).", false), BuildParam("limit", "integer", "Máx. linhas (padrão 2000).", false) }),
-            BuildTool("write", "Escreve arquivo (cria diretórios).",
-                new[] { BuildParam("path", "string", "Caminho do arquivo.", true), BuildParam("content", "string", "Conteúdo.", true) }),
-            BuildTool("edit", "Substitui texto exato no arquivo.",
-                new[] { BuildParam("path", "string", "Caminho do arquivo.", true), BuildParam("oldString", "string", "Texto exato a achar.", true), BuildParam("newString", "string", "Substituto.", true), BuildParam("replaceAll", "boolean", "Trocar todas (padrão false).", false) }),
-            BuildTool("grep", "Busca regex nos arquivos. Retorna arquivo:linha:texto.",
-                new[] { BuildParam("pattern", "string", "Regex ou texto.", true), BuildParam("path", "string", "Diretório (padrão raiz).", false), BuildParam("include", "string", "Glob de filtro (ex.: '*.cs').", false) }),
-            BuildTool("glob", "Lista caminhos por padrão glob.",
-                new[] { BuildParam("pattern", "string", "Glob (ex.: '**/*.cs').", true), BuildParam("path", "string", "Diretório (padrão raiz).", false) }));
+        bool plan = mode == "plan";
+        var tools = new JsonArray();
+        if (!plan)
+            tools.Add(BuildTool("shell", "Executa comando shell no workspace. Retorna stdout/stderr.",
+                new[] { BuildParam("command", "string", "Comando (ex.: 'ls -la').", true) }));
+        tools.Add(BuildTool("read", "Lê arquivo de texto do workspace.",
+            new[] { BuildParam("path", "string", "Caminho do arquivo.", true), BuildParam("offset", "integer", "Linha inicial (0-based).", false), BuildParam("limit", "integer", "Máx. linhas (padrão 2000).", false) }));
+        if (!plan)
+            tools.Add(BuildTool("write", "Escreve arquivo (cria diretórios).",
+                new[] { BuildParam("path", "string", "Caminho do arquivo.", true), BuildParam("content", "string", "Conteúdo.", true) }));
+        if (!plan)
+            tools.Add(BuildTool("edit", "Substitui texto exato no arquivo.",
+                new[] { BuildParam("path", "string", "Caminho do arquivo.", true), BuildParam("oldString", "string", "Texto exato a achar.", true), BuildParam("newString", "string", "Substituto.", true), BuildParam("replaceAll", "boolean", "Trocar todas (padrão false).", false) }));
+        tools.Add(BuildTool("grep", "Busca regex nos arquivos. Retorna arquivo:linha:texto.",
+            new[] { BuildParam("pattern", "string", "Regex ou texto.", true), BuildParam("path", "string", "Diretório (padrão raiz).", false), BuildParam("include", "string", "Glob de filtro (ex.: '*.cs').", false) }));
+        tools.Add(BuildTool("glob", "Lista caminhos por padrão glob.",
+            new[] { BuildParam("pattern", "string", "Glob (ex.: '**/*.cs').", true), BuildParam("path", "string", "Diretório (padrão raiz).", false) }));
+        return tools;
     }
 
     private sealed record ToolParam(string Name, string Type, string Description, bool Required);

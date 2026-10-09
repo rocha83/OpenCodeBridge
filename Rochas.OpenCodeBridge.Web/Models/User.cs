@@ -9,7 +9,7 @@ namespace Rochas.OpenCodeBridge.Web.Models;
 public sealed class User
 {
     [Key]
-    public int Id { get; set; }
+    public int? Id { get; set; }
 
     [Filterable]
     [Column("name")]

@@ -9,7 +9,8 @@ namespace Rochas.OpenCodeBridge.Web.Services;
 public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
 {
     public async Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
-        string systemPrompt, JsonArray messages, Stream output, CancellationToken ct)
+        string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
+        bool includeTools = true, JsonArray? tools = null)
     {
         try
         {
@@ -25,9 +26,12 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
                 ["temperature"] = temperature,
                 ["max_tokens"] = 2048,
                 ["stream"] = true,
-                ["tools"] = ToolDefinitions.GetTools(),
-                ["tool_choice"] = "auto"
             };
+            if (includeTools)
+            {
+                body["tools"] = (JsonNode?)tools?.DeepClone() ?? ToolDefinitions.GetTools();
+                body["tool_choice"] = "auto";
+            }
             var client = http.CreateClient();
             client.Timeout = Timeout.InfiniteTimeSpan;
             using var res = await client.PostAsync(bridgeUrl.TrimEnd('/') + "/v1/chat/completions",

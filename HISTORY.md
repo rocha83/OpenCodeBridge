@@ -414,3 +414,11 @@
 - Nota: `mkdir/ping/while/watch` seguem fora do allowlist (correto); `write` já
   cria diretórios. Workspace raiz = pasta do binário (sugestão futura: config).
 - Suite: **63/63 PASS**, build Release 0 erros.
+
+## Bridge Web — Fase 7 Painel de tarefas 3B (2026-10-09)
+- Sidebar direita "Tarefas 3B": lista da decomposição com badges
+  (pendente/executando/concluída) + selo de síntese; polling 5s + refresh a cada
+  carregamento. Fonte: `GET /Chat/Sessions/{id}/Tasks` derivado das mensagens
+  marcadas (sem tabela nova), parse em `SessionTaskPanel` testável.
+- Verificado ao vivo na sessão 173 (faixa verde): 1 tarefa done + synthesized.
+- Suite: **70/70 PASS**, build Release 0 erros.

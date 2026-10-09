@@ -9,7 +9,7 @@ namespace Rochas.OpenCodeBridge.Web.Models;
 public sealed class Agent
 {
     [Key]
-    public int Id { get; set; }
+    public int? Id { get; set; }
 
     [Column("name")]
     public string Name { get; set; } = "";
@@ -28,6 +28,12 @@ public sealed class Agent
 
     [Column("system_prompt")]
     public string SystemPrompt { get; set; } = "";
+
+    [Column("role")]
+    public string Role { get; set; } = "";
+
+    [Column("mode")]
+    public string Mode { get; set; } = "build";
 
     [Column("active")]
     public bool Active { get; set; } = true;

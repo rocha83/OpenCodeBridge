@@ -110,13 +110,16 @@ internal static class SessionServiceTests
 
     private static async Task UpdateAgentAsync(SessionService s)
     {
+        var agentsRepo = new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+        await agentsRepo.Add(new Agent { Name = "Second Agent", Model = "m2" });
+        var second = (await agentsRepo.Query(new Agent { Name = "Second Agent" })).FirstOrDefault();
         var list = await new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString).Query(new Session { UserId = 1 });
         var first = list.FirstOrDefault();
-        if (first?.Id is int id)
+        if (first?.Id is int id && second?.Id is int execId)
         {
-            await s.UpdateAgentAsync(id, 2);
+            await s.UpdateAgentAsync(id, execId);
             var updated = await s.GetAsync(id, 1);
-            Check(updated?.AgentId == 2, "UpdateAgentAsync works");
+            Check(updated?.AgentId == execId, "UpdateAgentAsync works");
         }
     }
 

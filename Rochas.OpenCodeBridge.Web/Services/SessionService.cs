@@ -18,9 +18,9 @@ public sealed class SessionService(
     private readonly IGenericRepository<SessionMessage> _messages = messages;
     private readonly IPersistenceRepository<SessionMessage> _messagesWrite = messagesWrite;
 
-    public async Task<Session> CreateAsync(int userId, int agentId, string title)
+    public async Task<Session> CreateAsync(int userId, int agentId, string title, int? executorAgentId = null)
     {
-        var s = new Session { UserId = userId, AgentId = agentId, Title = title };
+        var s = new Session { UserId = userId, AgentId = agentId, ExecutorAgentId = executorAgentId, Title = title };
         await _sessionsWrite.Add(s);
         // Obter o ID gerado (last_insert_rowid)
         var created = await _sessions.Query(new Session { UserId = userId, AgentId = agentId, Title = title });
@@ -58,6 +58,17 @@ public sealed class SessionService(
         if (s is not null)
         {
             s.AgentId = agentId;
+            s.UpdatedAt = System.DateTime.UtcNow;
+            await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
+        }
+    }
+
+    public async Task UpdateExecutorAsync(int sessionId, int? executorAgentId)
+    {
+        var s = await _sessions.Get(new Session { Id = (int?)sessionId });
+        if (s is not null)
+        {
+            s.ExecutorAgentId = executorAgentId;
             s.UpdatedAt = System.DateTime.UtcNow;
             await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
         }

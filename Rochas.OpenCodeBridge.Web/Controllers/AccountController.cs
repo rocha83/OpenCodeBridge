@@ -25,7 +25,7 @@ public sealed class AccountController(IGenericRepository<User> users) : Controll
         {
             user = new User { Name = "Admin", Email = (email ?? "admin@mova.com"), IsAdmin = true };
         }
-        var claims = new[] { new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), new Claim(ClaimTypes.Name, user.Name), new Claim(ClaimTypes.Email, user.Email), new Claim("IsAdmin", user.IsAdmin.ToString()) };
+        var claims = new[] { new Claim(ClaimTypes.NameIdentifier, (user.Id ?? 0).ToString()), new Claim(ClaimTypes.Name, user.Name), new Claim(ClaimTypes.Email, user.Email), new Claim("IsAdmin", user.IsAdmin.ToString()) };
         await HttpContext.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
         return RedirectToAction("Index", "Chat");
     }

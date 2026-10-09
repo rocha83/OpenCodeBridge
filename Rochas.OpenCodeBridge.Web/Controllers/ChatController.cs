@@ -31,7 +31,7 @@ public sealed class ChatController(
     [HttpGet("/Chat/Ping")]
     public async Task<IActionResult> Ping(int agentId)
     {
-        var agent = await agents.Get(new Agent { Id = agentId });
+        var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == agentId);
         if (agent is null) return Json(new { ok = false });
         try
         {
@@ -52,17 +52,26 @@ public sealed class ChatController(
     public async Task<IActionResult> GetSessions()
     {
         var list = await sessionService.GetByUserAsync(CurrentUserId);
-        return Json(list.Select(s => new { s.Id, s.AgentId, s.Title, s.CreatedAt, s.UpdatedAt }));
+        return Json(list.Select(s => new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, s.CreatedAt, s.UpdatedAt }));
     }
 
     [HttpPost("/Chat/Sessions")]
     public async Task<IActionResult> CreateSession([FromBody] CreateSessionRequest req)
     {
-        var agent = await agents.Get(new Agent { Id = req.AgentId });
+        var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.AgentId);
         if (agent is null || !agent.Active) return BadRequest("Agente inválido");
+        int? execId = req.ExecutorAgentId;
+        if (execId.HasValue)
+        {
+            if (execId.Value == req.AgentId) return BadRequest("Executor deve diferir do orquestrador");
+            var exec = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == execId.Value);
+            if (exec is null || !exec.Active) return BadRequest("Executor inválido");
+            if ((exec.Mode ?? "build") != (agent.Mode ?? "build"))
+                return BadRequest("Orquestrador e executor devem estar no mesmo modo (plan ou build)");
+        }
         var title = string.IsNullOrWhiteSpace(req.Title) ? "Nova sessão" : req.Title;
-        var s = await sessionService.CreateAsync(CurrentUserId, req.AgentId, title);
-        return Json(new { s.Id, s.AgentId, s.Title, s.CreatedAt });
+        var s = await sessionService.CreateAsync(CurrentUserId, req.AgentId, title, execId);
+        return Json(new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, s.CreatedAt });
     }
 
     [HttpGet("/Chat/Sessions/{id:int}")]
@@ -70,7 +79,7 @@ public sealed class ChatController(
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
-        return Json(new { s.Id, s.AgentId, s.Title, s.CreatedAt, s.UpdatedAt });
+        return Json(new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, s.CreatedAt, s.UpdatedAt });
     }
 
     [HttpGet("/Chat/Sessions/{id:int}/Messages")]
@@ -80,6 +89,23 @@ public sealed class ChatController(
         if (s is null) return NotFound();
         var msgs = await sessionService.GetMessagesAsync(id, limit);
         return Json(msgs.Select(m => new { m.Id, m.Role, m.Content, m.Thinking, m.PromptTokens, m.CompletionTokens, m.CreatedAt }));
+    }
+
+    // GET /Chat/Sessions/{id}/Tasks - painel de acompanhamento da decomposição
+    // (derivado das mensagens marcadas; sem tabela nova).
+    [HttpGet("/Chat/Sessions/{id:int}/Tasks")]
+    public async Task<IActionResult> GetSessionTasks(int id)
+    {
+        var s = await sessionService.GetAsync(id, CurrentUserId);
+        if (s is null) return NotFound();
+        var msgs = await sessionService.GetMessagesAsync(id, 200);
+        var items = msgs.Select(m => (m.Role, m.Content)).ToList();
+        var tasks = SessionTaskPanel.Parse(items);
+        return Json(new
+        {
+            tasks = tasks.Select(t => new { index = t.Index, title = t.Title, status = t.Status }),
+            synthesized = SessionTaskPanel.Synthesized(items, tasks.Count),
+        });
     }
 
     [HttpDelete("/Chat/Sessions/{id:int}")]
@@ -103,15 +129,100 @@ public sealed class ChatController(
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
-        var agent = (await agents.Query(new Agent { Id = req.AgentId })).FirstOrDefault();
+        var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.AgentId);
         if (agent is null || !agent.Active) return BadRequest("Agente inválido");
         await sessionService.UpdateAgentAsync(id, req.AgentId);
         return Ok();
     }
 
+    [HttpPut("/Chat/Sessions/{id:int}/Executor")]
+    public async Task<IActionResult> UpdateSessionExecutor(int id, [FromBody] UpdateExecutorRequest req)
+    {
+        var s = await sessionService.GetAsync(id, CurrentUserId);
+        if (s is null) return NotFound();
+        if (req.ExecutorAgentId.HasValue)
+        {
+            if (req.ExecutorAgentId.Value == s.AgentId) return BadRequest("Executor deve diferir do orquestrador");
+            var exec = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.ExecutorAgentId.Value);
+            if (exec is null || !exec.Active) return BadRequest("Executor inválido");
+            var orch = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == s.AgentId);
+            if (orch is not null && (exec.Mode ?? "build") != (orch.Mode ?? "build"))
+                return BadRequest("Orquestrador e executor devem estar no mesmo modo (plan ou build)");
+        }
+        await sessionService.UpdateExecutorAsync(id, req.ExecutorAgentId);
+        return Ok();
+    }
+
+    // POST /Chat/Orchestrate - pipeline híbrido (orch decompõe, executores em paralelo).
+    [HttpPost("/Chat/Orchestrate")]
+    public async Task<IActionResult> Orchestrate([FromBody] OrchestrateRequest req, [FromServices] IOrchestrationService orch, CancellationToken ct)
+    {
+        if (req.SessionId <= 0 || string.IsNullOrWhiteSpace(req.Text))
+            return BadRequest("Sessão e texto obrigatórios");
+        var s = await sessionService.GetAsync(req.SessionId, CurrentUserId);
+        if (s is null) return NotFound();
+        if (!s.ExecutorAgentId.HasValue) return BadRequest("Sessão sem executor selecionado");
+        var result = await orch.OrchestrateAsync(req.SessionId, CurrentUserId, req.Text, ct);
+        if (!result.Ok) return BadRequest(result.Error);
+        return Json(new { synthesis = result.Synthesis, taskCount = result.TaskCount });
+    }
+
+    // POST /Chat/Decompose - fase 1: só decompõe e persiste o preview (pipe só após aprovar).
+    [HttpPost("/Chat/Decompose")]
+    public async Task<IActionResult> Decompose([FromBody] OrchestrateRequest req, [FromServices] IOrchestrationService orch, CancellationToken ct)
+    {
+        if (req.SessionId <= 0 || string.IsNullOrWhiteSpace(req.Text))
+            return BadRequest("Sessão e texto obrigatórios");
+        var s = await sessionService.GetAsync(req.SessionId, CurrentUserId);
+        if (s is null) return NotFound();
+        if (!s.ExecutorAgentId.HasValue) return BadRequest("Sessão sem executor selecionado");
+        var result = await orch.PreviewAsync(req.SessionId, CurrentUserId, req.Text, ct);
+        if (!result.Ok) return BadRequest(result.Error);
+        return Json(new { tasks = result.Tasks.Select(t => new { title = t.Title, prompt = t.Prompt }) });
+    }
+
+    // POST /Chat/OrchestrateApproved - fase 2: executa tarefas aprovadas + sintetiza.
+    [HttpPost("/Chat/OrchestrateApproved")]
+    public async Task<IActionResult> OrchestrateApproved([FromBody] OrchestrateApprovedRequest req, [FromServices] IOrchestrationService orch, CancellationToken ct)
+    {
+        if (req.SessionId <= 0 || req.Tasks is null || req.Tasks.Count == 0)
+            return BadRequest("Sessão e tarefas aprovadas obrigatórias");
+        var s = await sessionService.GetAsync(req.SessionId, CurrentUserId);
+        if (s is null) return NotFound();
+        if (!s.ExecutorAgentId.HasValue) return BadRequest("Sessão sem executor selecionado");
+        if (req.Tasks.Count > 5) return BadRequest("Máximo 5 tarefas");
+        var tasks = req.Tasks
+            .Where(t => !string.IsNullOrWhiteSpace(t.Prompt))
+            .Select(t => new OrchestrationService.SubTask(
+                string.IsNullOrWhiteSpace(t.Title) ? "Tarefa" : t.Title.Trim(), t.Prompt))
+            .ToList();
+        var result = await orch.RunApprovedAsync(req.SessionId, CurrentUserId, tasks, ct);
+        if (!result.Ok) return BadRequest(result.Error);
+        return Json(new { synthesis = result.Synthesis, taskCount = result.TaskCount });
+    }
+
+    public sealed class OrchestrateRequest
+    {
+        public int SessionId { get; set; }
+        public string Text { get; set; } = "";
+    }
+
+    public sealed class OrchestrateApprovedRequest
+    {
+        public int SessionId { get; set; }
+        public List<ApprovedTask> Tasks { get; set; } = new();
+    }
+
+    public sealed class ApprovedTask
+    {
+        public string Title { get; set; } = "";
+        public string Prompt { get; set; } = "";
+    }
+
     public sealed class CreateSessionRequest
     {
         public int AgentId { get; set; }
+        public int? ExecutorAgentId { get; set; }
         public string Title { get; set; } = "";
     }
 
@@ -123,6 +234,11 @@ public sealed class ChatController(
     public sealed class UpdateAgentRequest
     {
         public int AgentId { get; set; }
+    }
+
+    public sealed class UpdateExecutorRequest
+    {
+        public int? ExecutorAgentId { get; set; }
     }
 
     // ---- Stream com sessão + tool calling ----
@@ -151,7 +267,7 @@ public sealed class ChatController(
         {
             session = await sessionService.GetAsync(req.SessionId.Value, CurrentUserId);
             if (session is null) { Response.StatusCode = 404; return; }
-            agent = await agents.Get(new Agent { Id = session.AgentId });
+            agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == session.AgentId);
             if (agent is null || !agent.Active) { Response.StatusCode = 404; return; }
             history = await sessionService.GetMessagesAsync(req.SessionId.Value);
         }
@@ -252,12 +368,14 @@ public sealed class ChatController(
 
         while (!ct.IsCancellationRequested)
         {
-            var tools = ToolDefinitions.GetTools();
+            // Modo plan: tools de leitura/navegação + temp 0.4.
+            bool plan = agent.Mode == "plan";
+            var tools = ToolDefinitions.GetTools(plan ? "plan" : null);
             var body = new JsonObject
             {
                 ["model"] = agent.Model,
                 ["messages"] = BuildMessages(messages),
-                ["temperature"] = agent.Temperature,
+                ["temperature"] = plan ? 0.4 : agent.Temperature,
                 ["max_tokens"] = 2048,
                 ["stream"] = true,
                 ["tools"] = tools,
@@ -389,7 +507,7 @@ public sealed class ChatController(
             foreach (var (id, name, args) in toolCalls)
             {
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
-                var result = toolExecutor.Execute(name, args);
+                var result = toolExecutor.Execute(name, args, 120, agent.Mode);
                 await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct);
                 string content = result.Success ? result.Output : $"Error: {result.Error}";
                 if (content.Length > 2000) content = content[..2000] + "\n[truncado]";

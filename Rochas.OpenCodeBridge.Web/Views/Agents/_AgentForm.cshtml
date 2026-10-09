@@ -6,6 +6,15 @@
 <input name="BridgeUrl" class="form-control mb-2" placeholder="Bridge URL" value="@Model.BridgeUrl" />
 <div class="row"><div class="col"><input name="Temperature" class="form-control mb-2" value="@Model.Temperature" /></div>
 <div class="col"><input name="Thinking" class="form-control mb-2" value="@Model.Thinking" /></div></div>
-<textarea name="SystemPrompt" class="form-control mb-2" rows="3" placeholder="System prompt">@Model.SystemPrompt</textarea>
+<select name="Mode" class="form-select mb-2" title="Modo de atuação">
+  <option value="build" selected="@(Model.Mode != "plan")">Modo: build (execução total)</option>
+  <option value="plan" selected="@(Model.Mode == "plan")">Modo: plan (só leitura/navegação, temp 0.4)</option>
+</select>
+<textarea name="SystemPrompt" class="form-control mb-2" rows="6" placeholder="System prompt — orquestrador: como decompor; executor: enunciado rígido">@Model.SystemPrompt</textarea>
+<select name="Role" class="form-select mb-2">
+  <option value="" selected="@(string.IsNullOrEmpty(Model.Role))">Papel: nenhum (chat simples)</option>
+  <option value="orchestrator" selected="@(Model.Role == "orchestrator")">Orquestrador</option>
+  <option value="executor" selected="@(Model.Role == "executor")">Executor</option>
+</select>
 <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="Active" value="true" @(Model.Active ? "checked" : "") /><label class="form-check-label">Ativo</label></div>
 

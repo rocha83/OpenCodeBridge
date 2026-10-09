@@ -50,6 +50,7 @@ builder.Services.AddScoped<IBridgeClient>(sp =>
 builder.Services.AddScoped<BridgeClient>();
 builder.Services.AddScoped<MockBridgeClient>();
 builder.Services.AddScoped<ISessionService, SessionService>();
+builder.Services.AddScoped<IOrchestrationService, OrchestrationService>();
 builder.Services.AddSingleton<IPasswordHasher, PasswordHasherService>();
 builder.Services.AddScoped<IToolHandler, ShellToolHandler>();
 builder.Services.AddScoped<IToolHandler, ReadToolHandler>();

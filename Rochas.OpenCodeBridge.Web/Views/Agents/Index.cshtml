@@ -2,9 +2,9 @@
 @{ Layout = "_Layout"; ViewData["Title"] = "Agentes"; }
 <h5>Agentes <a class="btn btn-sm btn-primary" href="/Agents/Create">Novo</a></h5>
 <table class="table table-dark table-striped">
-<tr><th>Nome</th><th>Model</th><th>Bridge</th><th>Temp</th><th>Thinking</th><th>Ativo</th><th></th></tr>
+<tr><th>Nome</th><th>Model</th><th>Bridge</th><th>Papel</th><th>Modo</th><th>Temp</th><th>Thinking</th><th>Ativo</th><th></th></tr>
 @foreach (var a in Model) {
-<tr><td>@a.Name</td><td>@a.Model</td><td>@a.BridgeUrl</td><td>@a.Temperature</td><td>@a.Thinking</td><td>@(a.Active ? "sim" : "não")</td>
+<tr><td>@a.Name</td><td>@a.Model</td><td>@a.BridgeUrl</td><td>@(string.IsNullOrEmpty(a.Role) ? "—" : a.Role)</td><td>@(string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode)</td><td>@a.Temperature</td><td>@a.Thinking</td><td>@(a.Active ? "sim" : "não")</td>
 <td><a class="btn btn-sm btn-outline-secondary" href="/Agents/Edit/@a.Id">Editar</a>
 <a class="btn btn-sm btn-outline-danger" href="/Agents/Delete/@a.Id">Excluir</a></td></tr>
 }

@@ -34,13 +34,17 @@ namespace Rochas.OpenCodeBridge.Web.Services
             yield return new GlobToolHandler();
         }
 
-        public ToolResult Execute(string name, string arguments, int timeoutSeconds = 120)
+        public ToolResult Execute(string name, string arguments, int timeoutSeconds = 120, string? mode = null)
         {
             if (string.IsNullOrWhiteSpace(name))
                 return ToolResult.Fail("tool sem nome");
 
             // Nomes alternativos do shell caem no handler "shell".
             string key = name is "bash" or "sh" ? "shell" : name;
+
+            // Modo plan: só leitura e navegação (retaguarda; o anúncio já filtra).
+            if (mode == "plan" && (key is "shell" or "write" or "edit"))
+                return ToolResult.Fail($"modo plan: tool '{key}' indisponível (só leitura e navegação)");
 
             if (!_handlers.TryGetValue(key, out IToolHandler? handler))
                 return ToolResult.Fail($"tool '{name}' não suportada");

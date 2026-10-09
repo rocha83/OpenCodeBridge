@@ -7,7 +7,7 @@
 
     <div class="row">
 
-      <div class="col-md-6 col-lg-5 col-xl-4 mb-4 mb-md-0">
+      <div class="col-md-6 col-lg-4 col-xl-3 mb-4 mb-md-0">
 
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h5 class="font-weight-bold text-lg-start mb-0">Sessões</h5>
@@ -25,13 +25,20 @@
 
       </div>
 
-      <div class="col-md-6 col-lg-7 col-xl-8">
+      <div class="col-md-6 col-lg-8 col-xl-6">
 
         <div class="mb-4">
-          <select id="agentId" class="form-select form-select-sm">
+          <select id="agentId" class="form-select form-select-sm" title="Orquestrador">
             @foreach (var a in agents)
             {
-              <option value="@a.Id">@a.Name — @a.Model</option>
+              <option value="@a.Id" data-mode="@(string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode)">@a.Name — @a.Model</option>
+            }
+          </select>
+          <select id="executorId" class="form-select form-select-sm mt-2" title="Executor (opcional)">
+            <option value="">Executor: nenhum (chat simples)</option>
+            @foreach (var a in agents)
+            {
+              <option value="@a.Id" data-mode="@(string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode)" selected="@(a.Role == "executor")">@a.Name — @a.Model</option>
             }
           </select>
           <div class="small text-muted mt-2"><span id="engineDot" class="dot"></span> <span id="engineTxt">Aguardando...</span></div>
@@ -51,6 +58,22 @@
 
       </div>
 
+      <div class="col-md-12 col-lg-12 col-xl-3">
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="font-weight-bold text-lg-start mb-0">Tarefas 3B</h5>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <ul class="list-unstyled mb-0" id="taskList">
+              <li class="small text-muted">Sem decomposição nesta sessão.</li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+
     </div>
 
   </div>
@@ -62,11 +85,14 @@
 const conv = document.getElementById('conv');
 const sessionList = document.getElementById('sessionList');
 const agentSel = document.getElementById('agentId');
+const execSel = document.getElementById('executorId');
 const engineDot = document.getElementById('engineDot');
 const engineTxt = document.getElementById('engineTxt');
 const toastContainer = document.getElementById('toastContainer');
 let currentSessionId = null;
 let currentAgentId = null;
+let currentExecutorId = null;
+const execIdOrNull = () => execSel.value ? +execSel.value : null;
 
 const avatarUser = '<span class="rounded-circle d-flex align-self-start ms-3 shadow-1-strong bg-secondary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-user fa-2x text-white"></i></span>';
 const avatarAgent = '<span class="rounded-circle d-flex align-self-start me-3 shadow-1-strong bg-primary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-robot fa-2x text-white"></i></span>';
@@ -140,15 +166,20 @@ async function loadSessions() {
         </div>
       </div>
     </a>`;
-    li.querySelector('a').onclick = (e) => { e.preventDefault(); selectSession(s.id, s.agentId); };
+    li.querySelector('a').onclick = (e) => { e.preventDefault(); selectSession(s.id, s.agentId, s.executorAgentId); };
     sessionList.appendChild(li);
   });
 }
 
-async function selectSession(id, agentId) {
+async function selectSession(id, agentId, executorAgentId) {
   currentSessionId = id;
   currentAgentId = agentId;
   agentSel.value = agentId;
+  currentExecutorId = executorAgentId ?? null;
+  pendingTasks = null;
+  hideApproveBar();
+  filterExecutors();
+  execSel.value = currentExecutorId ?? '';
   await loadMessages(id);
   await loadSessions();
   checkEngine();
@@ -161,18 +192,59 @@ async function loadMessages(sessionId) {
   conv.innerHTML = '';
   msgs.forEach(m => conv.appendChild(msgItem(m.role, m.thinking, m.content)));
   if (wasAtBottom) scrollToBottom();
+  await loadTasks(sessionId);
 }
+
+// Painel lateral: decomposição + status das mini-tarefas dos executores
+async function loadTasks(sessionId) {
+  const list = document.getElementById('taskList');
+  try {
+    const r = await fetch(`/Chat/Sessions/${sessionId}/Tasks`);
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j.tasks || !j.tasks.length) {
+      list.innerHTML = '<li class="small text-muted">Sem decomposição nesta sessão.</li>';
+      return;
+    }
+    list.innerHTML = '';
+    j.tasks.forEach(t => {
+      const li = document.createElement('li');
+      li.className = 'mb-2';
+      const badge = t.status === 'done'
+        ? '<span class="badge bg-success">concluída</span>'
+        : t.status === 'running'
+          ? '<span class="badge bg-info"><span class="spinner-border spinner-border-sm me-1"></span>executando</span>'
+          : '<span class="badge bg-secondary">pendente</span>';
+      li.innerHTML = `<div class="small fw-bold">${t.index}. ${esc(t.title)}</div><div class="mt-1">${badge}</div>`;
+      list.appendChild(li);
+    });
+    if (j.synthesized) {
+      const li = document.createElement('li');
+      li.className = 'mt-2';
+      li.innerHTML = '<span class="badge bg-primary">síntese pronta</span>';
+      list.appendChild(li);
+    }
+  } catch { /* painel opcional: ignora */ }
+}
+
+// Atualiza o painel a cada 5s enquanto há sessão ativa
+setInterval(() => { if (currentSessionId) loadTasks(currentSessionId); }, 5000);
 
 async function createSession() {
   const r = await fetch('/Chat/Sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agentId: +agentSel.value, title: 'Nova sessão' })
+    body: JSON.stringify({ agentId: +agentSel.value, executorAgentId: execIdOrNull(), title: 'Nova sessão' })
   });
   const s = await r.json();
   currentSessionId = s.id;
   currentAgentId = s.agentId;
   agentSel.value = s.agentId;
+  currentExecutorId = s.executorAgentId ?? null;
+  pendingTasks = null;
+  hideApproveBar();
+  filterExecutors();
+  execSel.value = currentExecutorId ?? '';
   await loadSessions();
   conv.innerHTML = '';
 }
@@ -186,6 +258,7 @@ async function deleteAllSessions() {
   }
   currentSessionId = null;
   currentAgentId = null;
+  currentExecutorId = null;
   await loadSessions();
   conv.innerHTML = '';
 }
@@ -218,7 +291,37 @@ function msgItem(role, think, body) {
   return li;
 }
 
-agentSel.onchange = () => { currentAgentId = +agentSel.value; checkEngine(); };
+agentSel.onchange = () => { currentAgentId = +agentSel.value; filterExecutors(); checkEngine(); };
+
+// Executor lista só o mesmo modo do orquestrador (plan com plan, build com build)
+function orchMode() {
+  const opt = agentSel.selectedOptions[0];
+  return opt ? (opt.dataset.mode || 'build') : 'build';
+}
+function filterExecutors() {
+  const mode = orchMode();
+  let visible = 0;
+  [...execSel.options].forEach(o => {
+    if (!o.value) return;
+    const show = (o.dataset.mode || 'build') === mode;
+    o.hidden = !show;
+    if (show) visible++;
+  });
+  if (execSel.value && execSel.selectedOptions[0]?.hidden) execSel.value = '';
+  execSel.disabled = visible === 0;
+}
+
+execSel.onchange = async () => {
+  currentExecutorId = execIdOrNull();
+  if (!currentSessionId) return;
+  const r = await fetch(`/Chat/Sessions/${currentSessionId}/Executor`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ executorAgentId: currentExecutorId })
+  });
+  if (!r.ok) showToast('Executor inválido para esta sessão.', 'warning');
+  await loadSessions();
+};
 
 async function checkEngine() {
   try {
@@ -243,6 +346,102 @@ promptEl.addEventListener('blur', () => {
   // Opcional: re-focar após envio (feito no send.onclick)
 });
 
+// Modo híbrido em 2 fases: 1) decompõe e mostra preview; 2) aprova e executa.
+// Pipe completa só após aprovação.
+let pendingTasks = null;
+async function sendOrchestrated(text) {
+  const ta = document.getElementById('prompt');
+  ta.disabled = true;
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Decompondo...';
+  engineDot.className = 'dot blink'; engineTxt.textContent = 'Orquestrador dividindo...';
+  try {
+    const r = await fetch('/Chat/Decompose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: currentSessionId, text })
+    });
+    if (!r.ok) {
+      const err = await r.text();
+      showToast('Decomposição falhou: ' + err, 'danger');
+      engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
+      return;
+    }
+    const j = await r.json();
+    pendingTasks = j.tasks;
+    await loadMessages(currentSessionId);
+    await loadSessions();
+    showApproveBar(j.tasks);
+    engineDot.className = 'dot'; engineTxt.textContent = 'Aguardando aprovação';
+  } catch (e) {
+    showToast('Erro na decomposição: ' + e.message, 'danger');
+    engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
+  } finally {
+    ta.disabled = false;
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = 'ENVIAR';
+    ta.focus();
+    if (isScrolledToBottom()) scrollToBottom();
+  }
+}
+
+function showApproveBar(tasks) {
+  hideApproveBar();
+  const bar = document.createElement('div');
+  bar.id = 'approve-bar';
+  bar.className = 'd-flex justify-content-between align-items-center mt-2 mb-2 p-2 rounded border border-info';
+  const titles = tasks.map((t, i) => `${i + 1}. ${t.title}`).join(' · ');
+  bar.innerHTML = `<span class="small">Orquestrador propôs ${tasks.length} tarefa(s): ${esc(titles)}</span>`;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-sm btn-info ms-2';
+  btn.textContent = 'Aprovar e executar';
+  btn.onclick = approveAndRun;
+  bar.appendChild(btn);
+  const ta = document.getElementById('prompt');
+  ta.parentNode.parentNode.insertBefore(bar, ta.parentNode.nextSibling);
+}
+
+function hideApproveBar() {
+  document.getElementById('approve-bar')?.remove();
+}
+
+async function approveAndRun() {
+  if (!pendingTasks || !pendingTasks.length) return;
+  hideApproveBar();
+  const ta = document.getElementById('prompt');
+  ta.disabled = true;
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Executando...';
+  engineDot.className = 'dot blink'; engineTxt.textContent = 'Executores em paralelo...';
+  try {
+    const r = await fetch('/Chat/OrchestrateApproved', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: currentSessionId, tasks: pendingTasks })
+    });
+    if (!r.ok) {
+      const err = await r.text();
+      showToast('Execução falhou: ' + err, 'danger');
+      engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
+      return;
+    }
+    pendingTasks = null;
+    await loadMessages(currentSessionId);
+    await loadSessions();
+    engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!';
+  } catch (e) {
+    showToast('Erro na execução: ' + e.message, 'danger');
+    engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
+  } finally {
+    ta.disabled = false;
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = 'ENVIAR';
+    ta.focus();
+    if (isScrolledToBottom()) scrollToBottom();
+  }
+}
+
 document.getElementById('send').onclick = async () => {
   const ta = document.getElementById('prompt');
   if (!ta.value.trim()) return;
@@ -255,8 +454,12 @@ document.getElementById('send').onclick = async () => {
     }
   }
   const text = ta.value; ta.value = '';
-  
-  // Disable input and button during processing
+
+  // Modo híbrido: com executor selecionado, pipeline orch -> executores -> síntese
+  if (currentExecutorId) {
+    await sendOrchestrated(text);
+    return;
+  }
   ta.disabled = true;
   sendBtn.disabled = true;
   sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...';
@@ -448,7 +651,7 @@ let initPromise = (async () => {
     const r = await fetch('/Chat/Sessions');
     const list = await r.json();
     if (list.length > 0) {
-      await selectSession(list[0].id, list[0].agentId);
+      await selectSession(list[0].id, list[0].agentId, list[0].executorAgentId);
     } else {
       await createSession();
     }

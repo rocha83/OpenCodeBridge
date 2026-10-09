@@ -17,6 +17,9 @@ public sealed class Session
     [Column("agent_id")]
     public int AgentId { get; set; }
 
+    [Column("executor_agent_id")]
+    public int? ExecutorAgentId { get; set; }
+
     [Column("title")]
     public string Title { get; set; } = "";
 

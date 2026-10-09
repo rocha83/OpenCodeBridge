@@ -20,7 +20,8 @@ public sealed class MockBridgeClient : IBridgeClient
     }
 
     public async Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
-        string systemPrompt, JsonArray messages, Stream output, CancellationToken ct)
+        string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
+        bool includeTools = true, JsonArray? tools = null)
     {
         try
         {
