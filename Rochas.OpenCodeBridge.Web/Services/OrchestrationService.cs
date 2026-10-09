@@ -82,7 +82,7 @@ public sealed class OrchestrationService(
     }
 
     // Fase 2: executa tarefas aprovadas + sintetiza (sem redecompor).
-    public async Task<OrchestrateResult> RunApprovedAsync(int sessionId, int userId, List<SubTask> tasks, CancellationToken ct)
+    public async Task<OrchestrateResult> RunApprovedAsync(int sessionId, int userId, List<SubTask> tasks, CancellationToken ct, bool synthesize = true)
     {
         var session = await sessions.GetAsync(sessionId, userId);
         if (session is null) return new OrchestrateResult(false, "", "Sessão não encontrada", 0);
@@ -97,7 +97,54 @@ public sealed class OrchestrationService(
             $"[Orquestrador] Executando {tasks.Count} tarefa(s) aprovada(s)...", "", null, null);
         var lastUser = (await sessions.GetMessagesAsync(sessionId, 50)).LastOrDefault(m => m.Role == "user");
         return await RunTasksAsync(sessionId, session, agents.Orch, agents.Exec,
-            lastUser?.Content ?? "", tasks, ct);
+            lastUser?.Content ?? "", tasks, ct, synthesize);
+    }
+
+    // Fase 3: sintetiza a partir do rastro persistido (para rodar com outro
+    // modelo em memória após os executores).
+    public async Task<OrchestrateResult> SynthesizeAsync(int sessionId, int userId, CancellationToken ct)
+    {
+        var session = await sessions.GetAsync(sessionId, userId);
+        if (session is null) return new OrchestrateResult(false, "", "Sessão não encontrada", 0);
+
+        var agents = await ResolveAgentsAsync(session);
+        if (agents is null) return new OrchestrateResult(false, "", "Orquestrador ou executor inválido", 0);
+
+        var history = await sessions.GetMessagesAsync(sessionId, 200);
+        var lastUser = history.LastOrDefault(m => m.Role == "user");
+        var decomp = history.Select(m => m.Content ?? "")
+            .LastOrDefault(c => c.Contains("[Orquestrador] Dividi em"));
+        if (decomp is null) return new OrchestrateResult(false, "", "Sem decomposição persistida", 0);
+        // O preview persistido é texto humano ("1. Título"); prompts não são
+        // necessários na síntese (só títulos + resultados).
+        var titles = decomp.Split('\n')
+            .Select(l =>
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(l.Trim(), @"^(\d+)\.\s*(.+)$");
+                return m.Success ? m.Groups[2].Value.Trim() : null;
+            })
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Cast<string>()
+            .ToList();
+        if (titles.Count == 0) return new OrchestrateResult(false, "", "Sem tarefas parseáveis", 0);
+        var tasks = titles.Select(t => new SubTask(t, "")).ToList();
+
+        var results = tasks.Select((t, i) =>
+        {
+            var done = history.Select(m => m.Content ?? "")
+                .LastOrDefault(c => c.Contains($"[Executor {i + 1}] Concluído"));
+            return done is null ? "[sem resultado persistido]" : done;
+        }).ToList();
+        var dump = string.Join("\n\n", tasks.Select((t, i) => $"## Tarefa {i + 1}: {t.Title}\n{results[i]}"));
+        var synth = await BridgeHelper.ChatAsync(bridge, agents.Orch.BridgeUrl, agents.Orch.Model,
+            PlanTemp(agents.Orch), SynthesisSystem,
+            new JsonArray { new JsonObject { ["role"] = "user", ["content"] = $"Pedido: {lastUser?.Content ?? ""}\n\nResultados:\n{dump}" } }, ct);
+        if (!synth.Ok) return new OrchestrateResult(false, "", $"Síntese falhou: {synth.Error}", tasks.Count);
+
+        await sessions.AddMessageAsync(sessionId, "assistant", synth.Content,
+            synth.Thinking, synth.PromptTokens, synth.CompletionTokens);
+        await sessions.TouchAsync(sessionId);
+        return new OrchestrateResult(true, synth.Content, "", tasks.Count);
     }
 
     private async Task<AgentPair?> ResolveAgentsAsync(Session session)
@@ -121,7 +168,7 @@ public sealed class OrchestrationService(
         string.Join("\n", tasks.Select((t, i) => $"{i + 1}. {t.Title}"));
 
     private async Task<OrchestrateResult> RunTasksAsync(int sessionId, Session session,
-        Agent orch, Agent exec, string text, List<SubTask> tasks, CancellationToken ct)
+        Agent orch, Agent exec, string text, List<SubTask> tasks, CancellationToken ct, bool synthesize = true)
     {
 
         var results = new string[tasks.Count];
@@ -144,6 +191,11 @@ public sealed class OrchestrationService(
         }));
 
         var dump = string.Join("\n\n", tasks.Select((t, i) => $"## Tarefa {i + 1}: {t.Title}\n{results[i]}"));
+        if (!synthesize)
+        {
+            await sessions.TouchAsync(sessionId);
+            return new OrchestrateResult(true, "", "", tasks.Count);
+        }
         var synth = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model,
             PlanTemp(orch), SynthesisSystem,
             new JsonArray { new JsonObject { ["role"] = "user", ["content"] = $"Pedido: {text}\n\nResultados:\n{dump}" } }, ct);

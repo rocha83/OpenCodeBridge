@@ -430,3 +430,14 @@
 - Executor build com loop de tools (5 turnos, teto 2000); plan sem tools.
 - Decompose atômico (mín. 4, máx. 8) + retry até 3x por critério de aceite.
 - Suite: **75/75 PASS**, build Release 0 erros. E2E com modelos: pendente.
+
+## Bridge Web — Fase 8b Split swap + modos (2026-10-09)
+- `RunApprovedAsync(synthesize:false)` + `POST /Chat/Synthesize`: executores e
+  síntese em memórias distintas (protocolo do swap 8B->3B->8B).
+- `Agent.Mode` + `Role` (migração, form, lista); executor filtra pelo modo do orch;
+  mismatch dá 400. Plan: temp 0.4, tools read/grep/glob, backstop no executor.
+- `IBridgeClient.StreamAsync` com `tools` opcional; orquestração em texto puro.
+- Decompose atômico (mín. 4, máx. 8) + retry 3x por critério de aceite.
+- Fixes: `Agent`/`User`.Id anuláveis (Dapper gravava 0 literal), `Get` por Id
+  instável contornado com Query+tLINQ, FKs valem (Cache=Shared).
+- Suite: **76/76 PASS**, build Release 0 erros.

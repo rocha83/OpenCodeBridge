@@ -196,7 +196,19 @@ public sealed class ChatController(
             .Select(t => new OrchestrationService.SubTask(
                 string.IsNullOrWhiteSpace(t.Title) ? "Tarefa" : t.Title.Trim(), t.Prompt))
             .ToList();
-        var result = await orch.RunApprovedAsync(req.SessionId, CurrentUserId, tasks, ct);
+        var result = await orch.RunApprovedAsync(req.SessionId, CurrentUserId, tasks, ct, req.Synthesize);
+        if (!result.Ok) return BadRequest(result.Error);
+        return Json(new { synthesis = result.Synthesis, taskCount = result.TaskCount });
+    }
+
+    // POST /Chat/Synthesize - fase 3: sintetiza do rastro (outro modelo em memória).
+    [HttpPost("/Chat/Synthesize")]
+    public async Task<IActionResult> Synthesize([FromBody] SynthesizeRequest req, [FromServices] IOrchestrationService orch, CancellationToken ct)
+    {
+        if (req.SessionId <= 0) return BadRequest("Sessão obrigatória");
+        var s = await sessionService.GetAsync(req.SessionId, CurrentUserId);
+        if (s is null) return NotFound();
+        var result = await orch.SynthesizeAsync(req.SessionId, CurrentUserId, ct);
         if (!result.Ok) return BadRequest(result.Error);
         return Json(new { synthesis = result.Synthesis, taskCount = result.TaskCount });
     }
@@ -211,6 +223,12 @@ public sealed class ChatController(
     {
         public int SessionId { get; set; }
         public List<ApprovedTask> Tasks { get; set; } = new();
+        public bool Synthesize { get; set; } = true;
+    }
+
+    public sealed class SynthesizeRequest
+    {
+        public int SessionId { get; set; }
     }
 
     public sealed class ApprovedTask

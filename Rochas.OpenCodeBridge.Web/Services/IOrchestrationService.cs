@@ -9,7 +9,10 @@ public interface IOrchestrationService
     // Fase 1: só decompõe e persiste o preview (pipe completa só após aprovar).
     Task<DecomposeResult> PreviewAsync(int sessionId, int userId, string text, CancellationToken ct);
     // Fase 2: executa tarefas aprovadas (sem redecompor nem duplicar a msg do usuário).
-    Task<OrchestrateResult> RunApprovedAsync(int sessionId, int userId, List<OrchestrationService.SubTask> tasks, CancellationToken ct);
+    // synthesize=false: só executores (p/ trocar o modelo em memória; síntese depois).
+    Task<OrchestrateResult> RunApprovedAsync(int sessionId, int userId, List<OrchestrationService.SubTask> tasks, CancellationToken ct, bool synthesize = true);
+    // Fase 3: sintetiza a partir do rastro persistido (executores já rodaram).
+    Task<OrchestrateResult> SynthesizeAsync(int sessionId, int userId, CancellationToken ct);
 }
 
 public sealed record OrchestrateResult(bool Ok, string Synthesis, string Error, int TaskCount);
