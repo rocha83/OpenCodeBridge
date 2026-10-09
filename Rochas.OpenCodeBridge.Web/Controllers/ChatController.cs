@@ -264,9 +264,13 @@ public sealed class ChatController(
                 ["tool_choice"] = "auto"
             };
 
-            // Repasse ao vivo (sem buffer total).
-            using var res = await client.PostAsync(agent.BridgeUrl.TrimEnd('/') + "/v1/chat/completions",
-                new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
+            // Repasse ao vivo (sem buffer total): ResponseHeadersRead ou o PostAsync
+            // espera o corpo inteiro antes de entregar qualquer linha.
+            using var bridgeReq = new HttpRequestMessage(HttpMethod.Post, agent.BridgeUrl.TrimEnd('/') + "/v1/chat/completions")
+            {
+                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
+            };
+            using var res = await client.SendAsync(bridgeReq, HttpCompletionOption.ResponseHeadersRead, ct);
 
             if (!res.IsSuccessStatusCode)
             {

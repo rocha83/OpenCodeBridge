@@ -398,3 +398,9 @@
   (primeiro byte ~3,8s vs ~13s+ antes); bolha nasce no primeiro `content` e o
   efeito palavra-por-palavra (~20/s + caret) ritma o fluxo real.
 - Suite: **62/62 PASS**, build Release 0 erros.
+
+## Bridge Web — Fase 6f Streaming de verdade (2026-10-08)
+- Causa raiz do "digitando não funciona": `PostAsync` bufferizava o corpo inteiro;
+  troca por `SendAsync` + `ResponseHeadersRead`. Comprovado: 576 chunks de 0,1s a
+  16,2s (antes: tudo de uma vez ao fim). `CopyToAsync` já havia saído antes.
+- Suite: **62/62 PASS**, build Release 0 erros.
