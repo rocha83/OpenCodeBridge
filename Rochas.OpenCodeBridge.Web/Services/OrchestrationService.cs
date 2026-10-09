@@ -16,11 +16,11 @@ public sealed class OrchestrationService(
     IOptions<OrchestrationOptions> orchestrationOptions) : IOrchestrationService
 {
     private const int MaxTasks = 16;
-    private const int MaxParallel = 3;
     private const int MaxToolTurns = 5;
     private const int MaxDecomposeTries = 3;
     private const int MinTasks = 2;
     private readonly int _maxTaskRetries = Math.Max(0, orchestrationOptions.Value.MaxTaskRetries);
+    private readonly int _maxParallel = Math.Clamp(orchestrationOptions.Value.MaxParallel, 1, 8);
 
     // Orch: divide o pedido em subtarefas técnicas. JSON estrito.
     // Trilhas paralelas: backend x frontend, com contratos explícitos.
@@ -189,7 +189,7 @@ public sealed class OrchestrationService(
     {
 
         var results = new string[tasks.Count];
-        using var gate = new SemaphoreSlim(MaxParallel);
+        using var gate = new SemaphoreSlim(_maxParallel);
         await Task.WhenAll(tasks.Select(async (task, i) =>
         {
             await gate.WaitAsync(ct);
