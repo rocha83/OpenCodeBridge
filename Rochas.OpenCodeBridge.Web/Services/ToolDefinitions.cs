@@ -201,40 +201,8 @@ public static class ToolDefinitions
             }
         });
 
-        // task tool - spawn subagent
-        tools.Add(new JsonObject
-        {
-            ["type"] = "function",
-            ["function"] = new JsonObject
-            {
-                ["name"] = "task",
-                ["description"] = "Spawn a subagent to perform a complex multi-step task. Use for research, exploration, or large tasks.",
-                ["parameters"] = new JsonObject
-                {
-                    ["type"] = "object",
-                    ["properties"] = new JsonObject
-                    {
-                        ["agent"] = new JsonObject
-                        {
-                            ["type"] = "string",
-                            ["enum"] = new JsonArray("explore", "general"),
-                            ["description"] = "Type of subagent: 'explore' for codebase exploration, 'general' for research/tasks"
-                        },
-                        ["description"] = new JsonObject
-                        {
-                            ["type"] = "string",
-                            ["description"] = "Short 3-5 word label for the task"
-                        },
-                        ["prompt"] = new JsonObject
-                        {
-                            ["type"] = "string",
-                            ["description"] = "Detailed task instructions for the subagent"
-                        }
-                    },
-                    ["required"] = new JsonArray("agent", "description", "prompt")
-                }
-            }
-        });
+        // task tool - REMOVIDO: sem executor implementado, não anunciar ao modelo.
+        // (Reintroduzir aqui + handler dedicado quando houver subagentes.)
 
         return tools;
     }

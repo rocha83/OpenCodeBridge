@@ -3,14 +3,14 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Rochas.DapperRepository;
+using Rochas.Data.Specification.Interfaces;
 using Rochas.OpenCodeBridge.Web.Models;
 
 namespace Rochas.OpenCodeBridge.Web.Controllers;
 
 // Login/logout com cookie (sem Identity). Comentarios pt-BR.
 [AllowAnonymous]
-public sealed class AccountController(GenericRepository<User> users) : Controller
+public sealed class AccountController(IGenericRepository<User> users) : Controller
 {
     [HttpGet]
     public IActionResult Login() => View();

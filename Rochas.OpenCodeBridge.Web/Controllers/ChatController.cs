@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Rochas.DapperRepository;
+using Rochas.Data.Specification.Interfaces;
 using Rochas.OpenCodeBridge.Web.Models;
 using Rochas.OpenCodeBridge.Web.Services;
 using System.Security.Claims;
@@ -13,9 +13,9 @@ namespace Rochas.OpenCodeBridge.Web.Controllers;
 // Chat: tela + proxy de stream p/ bridge (contorna falta de CORS no HttpListener).
 [Authorize]
 public sealed class ChatController(
-    GenericRepository<Agent> agents,
-    SessionService sessionService,
-    ToolExecutor toolExecutor,
+    IGenericRepository<Agent> agents,
+    ISessionService sessionService,
+    IToolExecutor toolExecutor,
     IHttpClientFactory http) : Controller
 {
     private int CurrentUserId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
@@ -287,10 +287,14 @@ public sealed class ChatController(
 
             while ((line = await reader.ReadLineAsync()) != null)
             {
-                // Repassa linha para cliente
-                var lineBytes = System.Text.Encoding.UTF8.GetBytes(line + "\n");
-                await outputStream.WriteAsync(lineBytes, ct);
-                await outputStream.FlushAsync(ct);
+                // Segura o [DONE] da bridge: o DONE do cliente sai após persistir.
+                bool isDone = line.StartsWith("data: ") && line[6..].Trim() == "[DONE]";
+                if (!isDone)
+                {
+                    var lineBytes = System.Text.Encoding.UTF8.GetBytes(line + "\n");
+                    await outputStream.WriteAsync(lineBytes, ct);
+                    await outputStream.FlushAsync(ct);
+                }
 
                 // Parsa SSE para capturar assistant content/thinking/tool_calls/usage
                 if (line.StartsWith("data: "))
@@ -401,6 +405,11 @@ public sealed class ChatController(
             await sessionService.AddMessageAsync(session.Id.Value, "assistant", assistantContent.ToString(), assistantThinking.ToString(), promptTokens, completionTokens);
             await sessionService.TouchAsync(session.Id.Value);
         }
+
+        // DONE próprio após persistir: elimina race do cliente ler histórico cedo.
+        var doneBytes = Encoding.UTF8.GetBytes("data: [DONE]\n\n");
+        await outputStream.WriteAsync(doneBytes, ct);
+        await outputStream.FlushAsync(ct);
     }
 
     // POST /Chat/Tool - Executa tool no servidor

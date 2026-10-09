@@ -345,3 +345,26 @@
 - **Sessão persistida**: `selectSession` carrega histórico via `/Chat/Sessions/{id}/Messages`; streaming usa `sessionId`; mensagens user+assistant persistidas com thinking+content
 - Build Release: 0 warnings / 0 errors.
 - Testes: 37/37 PASS (unit + integration)
+
+## Bridge Web — Fase 6 Executor único + DI total + UX + Diagnóstico (2026-10-08)
+- **Executor único (DDD)**: `ToolExecutor` virou despachante atrás de `IToolExecutor`;
+  handlers `IToolHandler` por tool (`Shell/Read/Write/Edit/Grep/Glob`) com trava de
+  workspace (`WorkspaceGuard`), runner de processos com timeout+kill (`ProcessRunner`)
+  e `ToolResult` como objeto de valor. `task` removida do `ToolDefinitions`
+  (anunciar só o que executa). Registro via `AddScoped` no `Program.cs`.
+- **DI projeto-todo (interfaces do pacote)**: controllers e `SessionService` dependem de
+  `IGenericRepository<T>` + `IPersistenceRepository<T>` (Rochas.Data.Specification),
+  `ISessionService`, `IToolExecutor`, `IPasswordHasher`; `ContextWindow` segue estático
+  puro (sem dependência a injetar, 7/7 testes). Padrão segue README do DapperRepository.
+- **Fixes reais achados por evidência**: race stdout vazio no runner (`WaitForExit`
+  duplo); race `[DONE]` antes de persistir o assistant (DONE próprio após persistir);
+  `SessionService.cs` reescrito com EF estranho revertido (quebrava build).
+- **Chat UX**: label branca, `ENVIAR`, "Processando" como linha da conversa até o fim,
+  resposta palavra por palavra (JS puro + caret CSS), thinking em `<details>` fechado.
+- **Diagnóstico**: Serilog (Console + tabela `logs` em `diagnostics.db`), middleware com
+  tempo/status + Referer/IP bem-vindos, `Rochas.Telemetry` (`ComponentObserver` nas
+  tools + `ServiceObserver` com snapshots), modo on/off (`Diagnostics:Enabled` ou env
+  `DIAGNOSTICS_ENABLED=1`), `GET /Chat/Diagnostics` autenticado.
+- **Higiene**: symlink `wwwroot/*.iso` removido (era lixo apontando p/ VMachine).
+- **Suite: 42/42 PASS** (7 ContextWindow + 10 SessionService + 11 ToolExecutor + 14 Chat),
+  `dotnet build slnx -c Release` 0 erros; warnings só os 4 pré-existentes.

@@ -1,24 +1,27 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Rochas.DapperRepository;
-using Rochas.Data.Specification.Enums;
+using Rochas.Data.Specification.Interfaces;
 using Rochas.OpenCodeBridge.Web.Models;
 
 namespace Rochas.OpenCodeBridge.Web.Services;
 
 // Serviço de sessões de chat (CRUD + mensagens). Comentários pt-BR.
 public sealed class SessionService(
-    GenericRepository<Session> sessionsRepo,
-    GenericRepository<SessionMessage> messagesRepo)
+    IGenericRepository<Session> sessions,
+    IPersistenceRepository<Session> sessionsWrite,
+    IGenericRepository<SessionMessage> messages,
+    IPersistenceRepository<SessionMessage> messagesWrite) : ISessionService
 {
-    private readonly GenericRepository<Session> _sessions = sessionsRepo;
-    private readonly GenericRepository<SessionMessage> _messages = messagesRepo;
+    private readonly IGenericRepository<Session> _sessions = sessions;
+    private readonly IPersistenceRepository<Session> _sessionsWrite = sessionsWrite;
+    private readonly IGenericRepository<SessionMessage> _messages = messages;
+    private readonly IPersistenceRepository<SessionMessage> _messagesWrite = messagesWrite;
 
     public async Task<Session> CreateAsync(int userId, int agentId, string title)
     {
         var s = new Session { UserId = userId, AgentId = agentId, Title = title };
-        await _sessions.Add(s);
+        await _sessionsWrite.Add(s);
         // Obter o ID gerado (last_insert_rowid)
         var created = await _sessions.Query(new Session { UserId = userId, AgentId = agentId, Title = title });
         return created.OrderByDescending(x => x.Id ?? 0).First();
@@ -45,7 +48,7 @@ public sealed class SessionService(
         {
             s.Title = title;
             s.UpdatedAt = System.DateTime.UtcNow;
-            await _sessions.Update(s, new Session { Id = (int?)sessionId });
+            await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
         }
     }
 
@@ -56,7 +59,7 @@ public sealed class SessionService(
         {
             s.AgentId = agentId;
             s.UpdatedAt = System.DateTime.UtcNow;
-            await _sessions.Update(s, new Session { Id = (int?)sessionId });
+            await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
         }
     }
 
@@ -66,7 +69,7 @@ public sealed class SessionService(
         if (s is not null)
         {
             // Mensagens deletadas em cascata via FK ON DELETE CASCADE
-            await _sessions.Remove(new Session { Id = (int?)sessionId });
+            await _sessionsWrite.Remove(new Session { Id = (int?)sessionId });
         }
     }
 
@@ -88,7 +91,7 @@ public sealed class SessionService(
             PromptTokens = promptTokens,
             CompletionTokens = completionTokens
         };
-        await _messages.Add(msg);
+        await _messagesWrite.Add(msg);
     }
 
     public async Task<int> CountMessagesAsync(int sessionId)
@@ -104,7 +107,7 @@ public sealed class SessionService(
         if (s is not null)
         {
             s.UpdatedAt = System.DateTime.UtcNow;
-            await _sessions.Update(s, new Session { Id = (int?)sessionId });
+            await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
         }
     }
 }

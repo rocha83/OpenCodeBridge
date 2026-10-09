@@ -1,13 +1,13 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Rochas.DapperRepository;
+using Rochas.Data.Specification.Interfaces;
 using Rochas.OpenCodeBridge.Web.Models;
 
 namespace Rochas.OpenCodeBridge.Web.Controllers;
 
 // CRUD de agentes/modelos via GenericRepository. Comentarios pt-BR.
 [Authorize]
-public sealed class AgentsController(GenericRepository<Agent> agents) : Controller
+public sealed class AgentsController(IGenericRepository<Agent> agents, IPersistenceRepository<Agent> agentsWrite) : Controller
 {
     public async Task<IActionResult> Index()
         => View(await agents.Query(new Agent()));
@@ -24,7 +24,7 @@ public sealed class AgentsController(GenericRepository<Agent> agents) : Controll
             ViewBag.Error = "Nome e model obrigatórios.";
             return View(form);
         }
-        await agents.Add(form);
+        await agentsWrite.Add(form);
         return RedirectToAction("Index");
     }
 
@@ -37,13 +37,13 @@ public sealed class AgentsController(GenericRepository<Agent> agents) : Controll
     [HttpPost]
     public async Task<IActionResult> Edit(Agent form)
     {
-        await agents.Update(form, new Agent { Id = form.Id });
+        await agentsWrite.Update(form, new Agent { Id = form.Id });
         return RedirectToAction("Index");
     }
 
     public async Task<IActionResult> Delete(int id)
     {
-        await agents.Remove(new Agent { Id = id });
+        await agentsWrite.Remove(new Agent { Id = id });
         return RedirectToAction("Index");
     }
 }

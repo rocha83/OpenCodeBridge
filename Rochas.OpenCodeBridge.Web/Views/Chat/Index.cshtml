@@ -41,12 +41,12 @@
 
         <ul class="list-unstyled">
           <li class="mb-3">
-            <label class="form-label fw-bold" for="prompt">Pergunta ou Instrução</label>
+            <label class="form-label fw-bold text-white" for="prompt">Pergunta ou Instrução</label>
             <div data-mdb-input-init class="form-outline mb-3">
               <textarea class="form-control bg-body-tertiary rounded-3" id="prompt" rows="4" style="border: 1px solid #2a323d !important;"></textarea>
             </div>
           </li>
-          <button type="button" data-mdb-button-init data-mdb-ripple-init class="btn btn-info btn-rounded float-end" id="send">Send</button>
+          <button type="button" data-mdb-button-init data-mdb-ripple-init class="btn btn-info btn-rounded float-end" id="send">ENVIAR</button>
         </ul>
 
       </div>
@@ -256,28 +256,56 @@ document.getElementById('send').onclick = async () => {
   cancelBtn.onclick = () => {
     abortController.abort();
     cancelBtn.style.display = 'none';
+    document.getElementById('processing-indicator')?.remove();
+    stopTypewriter();
   };
   
-  // Add processing indicator near input
-  const indicator = document.createElement('div');
-  indicator.id = 'processing-indicator';
-  indicator.className = 'small text-muted mt-1';
-  indicator.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Processando...';
-  ta.parentNode.appendChild(indicator);
-
   ta.focus();
 
   // Adiciona mensagem do usuário na UI imediatamente
   conv.appendChild(msgItem('user', '', esc(text)));
+
+  // Indicador "Processando" como linha da conversa (com margem), ativo até finalizar
+  const indicator = document.createElement('li');
+  indicator.id = 'processing-indicator';
+  indicator.className = 'd-flex justify-content-end mt-2 mb-3';
+  indicator.innerHTML = '<span class="small text-muted"><i class="fas fa-spinner fa-spin me-1"></i>Processando...</span>';
+  conv.appendChild(indicator);
   if (isScrolledToBottom()) scrollToBottom();
 
-  // Prepara bolha do agente (cria no primeiro reasoning_content OU content)
+  // Prepara bolha do agente (cria no primeiro content; thinking vai em accordion ao final)
   let agentLi = null;
   let anP = null;
   let think = '';
   let full = '';
   let agentBubbleCreated = false;
-  let thinkingEl = null;  // elemento para mostrar thinking live
+
+  // Efeito "digitando" palavra por palavra (JS puro)
+  let shownWords = 0;
+  let typeTimer = null;
+  function renderWords() {
+    if (!anP) return;
+    const parts = full.split(/(\s+)/);
+    shownWords = Math.min(shownWords, parts.length);
+    anP.textContent = parts.slice(0, shownWords).join('');
+  }
+  function drainWords() {
+    if (!anP) return;
+    const total = full.split(/(\s+)/).length;
+    const backlog = total - shownWords;
+    if (backlog <= 0) return;
+    shownWords += backlog > 60 ? 8 : backlog > 20 ? 4 : 2;
+    renderWords();
+  }
+  function startTypewriter() {
+    if (typeTimer) return;
+    if (anP) anP.classList.add('typing');
+    typeTimer = setInterval(drainWords, 70);
+  }
+  function stopTypewriter() {
+    if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
+    if (anP) { shownWords = full.split(/(\s+)/).length; renderWords(); anP.classList.remove('typing'); }
+  }
 
   engineDot.className = 'dot blink'; engineTxt.textContent = 'Pensando...';
 
@@ -290,10 +318,10 @@ document.getElementById('send').onclick = async () => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     
     // Re-enable input/button immediately after successful request start
+    // (o "Processando" permanece até o fim do stream)
     ta.disabled = false;
     sendBtn.disabled = false;
-    sendBtn.innerHTML = 'Send';
-    document.getElementById('processing-indicator')?.remove();
+    sendBtn.innerHTML = 'ENVIAR';
     document.getElementById('cancelBtn')?.remove();
     ta.focus();
 
@@ -310,37 +338,13 @@ document.getElementById('send').onclick = async () => {
         try {
           const d = JSON.parse(line.slice(5)).choices[0].delta;
           if (d.reasoning_content) {
+            // Thinking acumula silencioso (sem bolha ao vivo); vai em accordion fechado ao final
             think += d.reasoning_content;
-            // Atualiza thinking live no indicador global
-            engineTxt.textContent = 'Pensando... ' + think.slice(-80);
-            
-            // Cria bolha do agente no PRIMEIRO reasoning_content se ainda não existe
-            if (!agentBubbleCreated) {
-              agentLi = document.createElement('li');
-              agentLi.className = 'd-flex justify-content-between mb-4';
-              agentLi.innerHTML = `
-                ${avatarAgent}
-                <div class="card w-100">
-                  <div class="card-header d-flex justify-content-between p-3">
-                    <p class="fw-bold mb-0">Agente</p>
-                  </div>
-                  <div class="card-body">
-                    <div class="thinking-live small text-muted mb-2" style="font-style:italic;color:#4ec9b0;max-height:100px;overflow:auto;min-height:1.2em;">${esc(think)}</div>
-                    <p class="mb-0 ans text-wrap"></p>
-                  </div>
-                </div>`;
-              conv.appendChild(agentLi);
-              thinkingEl = agentLi.querySelector('.thinking-live');
-              anP = agentLi.querySelector('.ans');
-              agentBubbleCreated = true;
-            } else if (thinkingEl) {
-              // Atualiza thinking live na bolha existente
-              thinkingEl.textContent = think;
-            }
+            engineTxt.textContent = 'Pensando...';
           }
           else if (d.content) {
             if (!agentBubbleCreated) {
-              // Fallback: cria na primeira content se não houve reasoning
+              // Cria a bolha na primeira content (sem thinking ao vivo)
               agentLi = document.createElement('li');
               agentLi.className = 'd-flex justify-content-between mb-4';
               agentLi.innerHTML = `
@@ -358,7 +362,7 @@ document.getElementById('send').onclick = async () => {
               agentBubbleCreated = true;
             }
             full += d.content;
-            anP.textContent = full;
+            startTypewriter();
           }
         } catch (e) { /* chunk parcial: ignora */ }
       }
@@ -377,14 +381,33 @@ document.getElementById('send').onclick = async () => {
     engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
     ta.disabled = false;
     sendBtn.disabled = false;
-    sendBtn.innerHTML = 'Send';
+    sendBtn.innerHTML = 'ENVIAR';
+    stopTypewriter();
     document.getElementById('processing-indicator')?.remove();
     document.getElementById('cancelBtn')?.remove();
     showToast('Erro ao conectar na engine. Verifique se a bridge está online.', 'danger');
   }
   if (agentBubbleCreated) {
+    // Flush final do efeito + accordion de thinking fechado + remove "Processando"
+    stopTypewriter();
+    if (think.trim() && anP) {
+      const det = document.createElement('details');
+      det.className = 'mb-2';
+      const sum = document.createElement('summary');
+      sum.className = 'small text-muted';
+      sum.textContent = 'Raciocínio';
+      const p = document.createElement('p');
+      p.className = 'small text-muted';
+      p.textContent = think;
+      det.appendChild(sum);
+      det.appendChild(p);
+      anP.parentNode.insertBefore(det, anP);
+    }
+    document.getElementById('processing-indicator')?.remove();
     engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!';
     document.getElementById('cancelBtn')?.remove();
+  } else {
+    document.getElementById('processing-indicator')?.remove();
   }
   if (isScrolledToBottom()) scrollToBottom();
 };

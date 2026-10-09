@@ -42,7 +42,7 @@ internal static class SessionServiceTests
 
             var sessionsRepo = new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString);
             var messagesRepo = new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString);
-            var svc = new SessionService(sessionsRepo, messagesRepo);
+            var svc = new SessionService(sessionsRepo, sessionsRepo, messagesRepo, messagesRepo);
 
             await CreateSessionAsync(svc, testUserId, testAgentId);
             await GetByUserAsync(svc, testUserId);
@@ -89,10 +89,9 @@ internal static class SessionServiceTests
         var first = list.FirstOrDefault();
         if (first?.Id is int id)
         {
-            var got = await new SessionService(
-                new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString),
-                new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString)
-            ).GetAsync(id, userId);
+            var sessionsRepo2 = new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            var messagesRepo2 = new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            var got = await new SessionService(sessionsRepo2, sessionsRepo2, messagesRepo2, messagesRepo2).GetAsync(id, userId);
             Check(got is not null && got.Id == id, "GetAsync finds by id+user");
         }
     }

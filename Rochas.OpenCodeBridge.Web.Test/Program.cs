@@ -32,6 +32,7 @@ internal static class Program
         UnitAgent();
         UnitContextWindow();
         UnitSessionService().GetAwaiter().GetResult();
+        Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ToolExecutorTests.Run();
         IntegrationCrud().GetAwaiter().GetResult();
         IntegrationHttp(web).GetAwaiter().GetResult();
         Integration.ChatIntegrationTests.RunAsync(web).GetAwaiter().GetResult();
