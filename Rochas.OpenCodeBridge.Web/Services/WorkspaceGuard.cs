@@ -9,7 +9,9 @@ internal static class WorkspaceGuard
         why = "";
         try
         {
-            string baseRoot = Path.GetFullPath(root);
+            // AppContext.BaseDirectory termina com separador: normaliza para o
+            // prefixo não virar "//" e negar tudo dentro do workspace.
+            string baseRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             string candidate = Path.GetFullPath(Path.Combine(baseRoot, path ?? ""));
             if (candidate != baseRoot && !candidate.StartsWith(baseRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
             {

@@ -26,6 +26,7 @@ internal static class ToolExecutorTests
             BashAlias(exec);
             ReadWriteEditRoundtrip(exec);
             TraversalDenied(exec, ctx);
+            TrailingSlashRoot();
             GrepFinds(exec);
             GlobFinds(exec);
             EdgeCases(exec);
@@ -35,7 +36,7 @@ internal static class ToolExecutorTests
             try { Directory.Delete(root, true); } catch { }
         }
 
-        System.Console.WriteLine($"=== ToolExecutor Unit: {23 - Failures}/23 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== ToolExecutor Unit: {24 - Failures}/24 PASS, {Failures} FAIL ===");
         return Failures;
     }
 
@@ -97,6 +98,25 @@ internal static class ToolExecutorTests
     {
         var r = exec.Execute("read", "{\"path\": \"../fora.txt\"}");
         Check(!r.Success && r.Error.Contains("workspace"), "U-tool-traversal");
+    }
+
+    private static void TrailingSlashRoot()
+    {
+        // Regressão: AppContext.BaseDirectory termina com separador; nada dentro
+        // do workspace pode ser negado por causa disso.
+        string root = Path.Combine(Path.GetTempPath(), $"tools-slash-{System.Guid.NewGuid():N}") + Path.DirectorySeparatorChar;
+        Directory.CreateDirectory(root);
+        try
+        {
+            var exec = new ToolExecutor(root, Path.Combine(root, "audit.log"));
+            var w = exec.Execute("write", "{\"path\": \"./dentro.txt\", \"content\": \"ok\"}");
+            var g = exec.Execute("glob", "{\"pattern\": \"*.txt\", \"path\": \".\"}");
+            Check(w.Success && g.Success, "U-tool-trailing-slash");
+        }
+        finally
+        {
+            try { Directory.Delete(root.TrimEnd(Path.DirectorySeparatorChar), true); } catch { }
+        }
     }
 
     private static void GrepFinds(ToolExecutor exec)

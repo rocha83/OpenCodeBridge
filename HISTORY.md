@@ -404,3 +404,13 @@
   troca por `SendAsync` + `ResponseHeadersRead`. Comprovado: 576 chunks de 0,1s a
   16,2s (antes: tudo de uma vez ao fim). `CopyToAsync` já havia saído antes.
 - Suite: **62/62 PASS**, build Release 0 erros.
+
+## Bridge Web — Fase 6g Fix workspace guard (2026-10-08)
+- Causa das falhas de escrita: `AppContext.BaseDirectory` termina com `/` e a
+  checagem de prefixo virava `//` — negava TUDO dentro do workspace
+  (`./x`, `.`, `./src/x`). Fix: `TrimEnd` dos separadores + regressão
+  `U-tool-trailing-slash`. Tentativas fora (`/home/...`) seguem negadas (correto).
+- Verificado E2E via `/Chat/Tool` (write+read OK).
+- Nota: `mkdir/ping/while/watch` seguem fora do allowlist (correto); `write` já
+  cria diretórios. Workspace raiz = pasta do binário (sugestão futura: config).
+- Suite: **63/63 PASS**, build Release 0 erros.
