@@ -293,15 +293,17 @@ document.getElementById('send').onclick = async () => {
   conv.appendChild(indicator);
   if (isScrolledToBottom()) scrollToBottom();
 
-  // Prepara bolha do agente (cria no primeiro content; thinking vai em accordion ao final)
+  // Prepara bolha do agente (TEMP teste: cria no primeiro reasoning com thinking ao vivo)
   let agentLi = null;
   let anP = null;
+  let thinkingEl = null; // TEMP teste: thinking "digitando" na bolha
   let think = '';
   let full = '';
   let agentBubbleCreated = false;
 
-  // Efeito "digitando" palavra por palavra (JS puro)
+  // Efeito "digitando" palavra por palavra (JS puro) — resposta e thinking (TEMP teste)
   let shownWords = 0;
+  let thinkShown = 0;
   let typeTimer = null;
   function renderWords() {
     if (!anP) return;
@@ -309,13 +311,26 @@ document.getElementById('send').onclick = async () => {
     shownWords = Math.min(shownWords, parts.length);
     anP.textContent = parts.slice(0, shownWords).join('');
   }
+  function renderThink() {
+    if (!thinkingEl) return;
+    const parts = think.split(/(\s+)/);
+    thinkShown = Math.min(thinkShown, parts.length);
+    thinkingEl.textContent = parts.slice(0, thinkShown).join('');
+  }
   function drainWords() {
-    if (!anP) return;
-    const total = full.split(/(\s+)/).length;
-    const backlog = total - shownWords;
+    if (!anP && !thinkingEl) return;
+    const total = full.split(/(\s+)/).length + think.split(/(\s+)/).length;
+    const shown = shownWords + thinkShown;
+    const backlog = total - shown;
     if (backlog <= 0) return;
     // Ritmo legível (~20 palavras/s); acelera só sob grande acúmulo
-    shownWords += backlog > 100 ? 10 : backlog > 40 ? 5 : 2;
+    const step = backlog > 100 ? 10 : backlog > 40 ? 5 : 2;
+    const thinkTotal = think.split(/(\s+)/).length;
+    const thinkBacklog = thinkTotal - thinkShown;
+    const toThink = Math.min(thinkBacklog, step);
+    thinkShown += toThink;
+    shownWords += Math.min(full.split(/(\s+)/).length - shownWords, step - toThink);
+    renderThink();
     renderWords();
   }
   function startTypewriter() {
@@ -326,6 +341,7 @@ document.getElementById('send').onclick = async () => {
   function stopTypewriter() {
     if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
     if (anP) { shownWords = full.split(/(\s+)/).length; renderWords(); anP.classList.remove('typing'); }
+    if (thinkingEl) { thinkShown = think.split(/(\s+)/).length; renderThink(); thinkingEl.classList.remove('typing'); }
   }
 
   engineDot.className = 'dot blink'; engineTxt.textContent = 'Pensando...';
@@ -366,9 +382,30 @@ document.getElementById('send').onclick = async () => {
           }
           const d = evt.choices[0].delta;
           if (d.reasoning_content) {
-            // Thinking acumula silencioso (sem bolha ao vivo); vai em accordion fechado ao final
+            // TEMP teste: thinking ao vivo "digitando" na bolha desde o 1º chunk
             think += d.reasoning_content;
             engineTxt.textContent = 'Pensando...';
+            if (!agentBubbleCreated) {
+              agentLi = document.createElement('li');
+              agentLi.className = 'd-flex justify-content-between mb-4';
+              agentLi.innerHTML = `
+                ${avatarAgent}
+                <div class="card w-100">
+                  <div class="card-header d-flex justify-content-between p-3">
+                    <p class="fw-bold mb-0">Agente</p>
+                  </div>
+                  <div class="card-body">
+                    <div class="thinking-live small mb-2" style="font-style:italic;color:#4ec9b0;max-height:100px;overflow:auto;min-height:1.2em;"></div>
+                    <p class="mb-0 ans text-wrap"></p>
+                  </div>
+                </div>`;
+              conv.appendChild(agentLi);
+              thinkingEl = agentLi.querySelector('.thinking-live');
+              anP = agentLi.querySelector('.ans');
+              agentBubbleCreated = true;
+              thinkingEl.classList.add('typing');
+            }
+            startTypewriter();
           }
           else if (d.content) {
             if (!agentBubbleCreated) {
@@ -416,21 +453,9 @@ document.getElementById('send').onclick = async () => {
     showToast('Erro ao conectar na engine. Verifique se a bridge está online.', 'danger');
   }
   if (agentBubbleCreated) {
-    // Flush final do efeito + accordion de thinking fechado + remove "Processando"
+    // Flush final do efeito + remove "Processando"
+    // TEMP teste: thinking-live já exibiu tudo; accordion final desativado
     stopTypewriter();
-    if (think.trim() && anP) {
-      const det = document.createElement('details');
-      det.className = 'mb-2';
-      const sum = document.createElement('summary');
-      sum.className = 'small text-muted';
-      sum.textContent = 'Raciocínio';
-      const p = document.createElement('p');
-      p.className = 'small text-muted';
-      p.textContent = think;
-      det.appendChild(sum);
-      det.appendChild(p);
-      anP.parentNode.insertBefore(det, anP);
-    }
     document.getElementById('processing-indicator')?.remove();
     engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!';
     document.getElementById('cancelBtn')?.remove();
