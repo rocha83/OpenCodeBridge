@@ -314,13 +314,14 @@ document.getElementById('send').onclick = async () => {
     const total = full.split(/(\s+)/).length;
     const backlog = total - shownWords;
     if (backlog <= 0) return;
-    shownWords += backlog > 60 ? 8 : backlog > 20 ? 4 : 2;
+    // Ritmo legível (~20 palavras/s); acelera só sob grande acúmulo
+    shownWords += backlog > 100 ? 10 : backlog > 40 ? 5 : 2;
     renderWords();
   }
   function startTypewriter() {
     if (typeTimer) return;
     if (anP) anP.classList.add('typing');
-    typeTimer = setInterval(drainWords, 70);
+    typeTimer = setInterval(drainWords, 90);
   }
   function stopTypewriter() {
     if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
