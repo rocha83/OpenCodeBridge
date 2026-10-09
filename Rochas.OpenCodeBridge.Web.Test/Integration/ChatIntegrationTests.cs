@@ -35,8 +35,9 @@ internal static class ChatIntegrationTests
         Check(await StreamSseWithSession(), "I-chat-stream-sse");
         Check(await PingEngine(), "I-chat-ping-engine");
         Check(await DiagnosticsEndpoint(), "I-chat-diagnostics");
+        Check(await ToolProgressEvents(), "I-chat-tool-progress");
 
-        Console.WriteLine($"=== Chat Integration: {15 - Failures}/15 PASS, {Failures} FAIL ===");
+        Console.WriteLine($"=== Chat Integration: {16 - Failures}/16 PASS, {Failures} FAIL ===");
     }
 
     private static void Check(bool ok, string name)
@@ -158,5 +159,39 @@ internal static class ChatIntegrationTests
         // Formato vale com diagnóstico on/off; conteúdo varia com o modo.
         var resp = await Http.GetFromJsonAsync<JsonObject>($"{WebBase}/Chat/Diagnostics");
         return resp?.ContainsKey("enabled") == true && resp?["snapshots"] is JsonArray;
+    }
+
+    private static async Task<bool> ToolProgressEvents()
+    {
+        // Pede um ls: o servidor deve emitir tool_start + tool_done no SSE.
+        var createResp = await Http.PostAsJsonAsync($"{WebBase}/Chat/Sessions", new { agentId = 1, title = "Progress Test" });
+        if (!createResp.IsSuccessStatusCode) return false;
+        var session = await createResp.Content.ReadFromJsonAsync<JsonObject>();
+        var id = session?["id"]?.GetValue<int>();
+        if (id == null || id <= 0) return false;
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{WebBase}/Chat/Stream");
+        req.Content = JsonContent.Create(new { sessionId = id, agentId = 1, messages = new[] { new { role = "user", content = "liste os arquivos com ls" } } });
+        using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+        if (!resp.IsSuccessStatusCode) return false;
+
+        using var stream = await resp.Content.ReadAsStreamAsync();
+        using var reader = new System.IO.StreamReader(stream);
+        string? line;
+        bool started = false, done = false;
+        while ((line = await reader.ReadLineAsync()) != null)
+        {
+            if (!line.StartsWith("data: ")) continue;
+            var data = line[6..].Trim();
+            if (data == "[DONE]") break;
+            try
+            {
+                var evt = JsonNode.Parse(data)?.AsObject();
+                if (evt?["progress"]?.GetValue<string>() == "tool_start") started = true;
+                if (evt?["progress"]?.GetValue<string>() == "tool_done") done = true;
+            }
+            catch { }
+        }
+        return started && done;
     }
 }

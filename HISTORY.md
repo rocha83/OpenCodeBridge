@@ -384,3 +384,11 @@
 - Teto 2000 chars nos retornos `role: tool` do loop (paridade OpenCode).
 - E2E real validado: modelo chamou `shell`, listou diretório, truncou e respondeu pt-BR.
 - Suite: **61/61 PASS** (7+10+23+6+15).
+
+## Bridge Web — Fase 6d Progresso de tools na UI (2026-10-08)
+- Servidor emite SSE `{"progress":"tool_start"|"tool_done","name","ok?"}` com flush
+  imediato ao redor de cada `Execute` (antes o `CopyToAsync` escondia a execução).
+- UI: linha `Executando [nome]...` piscando → `[nome] executado.` (ou `falhou.`),
+  mantida como histórico sutil do que rodou.
+- Teste `I-chat-tool-progress` (modelo real via `ls`): start+done observados.
+- Suite: **62/62 PASS** (7+10+23+6+16), build Release 0 erros.

@@ -382,10 +382,13 @@ public sealed class ChatController(
             messages.Add(assistantMsg);
 
             // Executa cada tool e adiciona resultado às mensagens (teto 2000 chars:
-            // output longo volta truncado para não estourar o contexto do loop)
+            // output longo volta truncado para não estourar o contexto do loop).
+            // Progresso vai ao cliente em tempo real para a UI indicar execução.
             foreach (var (id, name, args) in toolCalls)
             {
+                await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
                 var result = toolExecutor.Execute(name, args);
+                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct);
                 string content = result.Success ? result.Output : $"Error: {result.Error}";
                 if (content.Length > 2000) content = content[..2000] + "\n[truncado]";
                 var toolResult = new JsonObject
@@ -413,6 +416,16 @@ public sealed class ChatController(
         var doneBytes = Encoding.UTF8.GetBytes("data: [DONE]\n\n");
         await outputStream.WriteAsync(doneBytes, ct);
         await outputStream.FlushAsync(ct);
+    }
+
+    // Evento de progresso ao cliente (a UI mostra "Executando [tool]..." / "[tool] executado").
+    private static async Task WriteProgressAsync(System.IO.Stream output, string stage, string name, bool? ok, CancellationToken ct)
+    {
+        var evt = new JsonObject { ["progress"] = stage, ["name"] = name };
+        if (ok.HasValue) evt["ok"] = ok.Value;
+        var bytes = Encoding.UTF8.GetBytes("data: " + evt.ToJsonString() + "\n\n");
+        await output.WriteAsync(bytes, ct);
+        await output.FlushAsync(ct);
     }
 
     // POST /Chat/Tool - Executa tool no servidor

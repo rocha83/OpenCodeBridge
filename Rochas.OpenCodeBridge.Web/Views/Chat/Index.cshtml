@@ -99,6 +99,26 @@ function isScrolledToBottom() {
   return conv.scrollTop + conv.clientHeight >= conv.scrollHeight - 50;
 }
 
+// Linha de status de tool: "Executando [nome]..." piscando -> "[nome] executado."
+function toolStatus(name, running, ok) {
+  if (running) {
+    const li = document.createElement('li');
+    li.className = 'd-flex justify-content-start mt-1 mb-1 tool-status';
+    li.dataset.tool = name;
+    li.innerHTML = `<span class="small text-muted"><span class="dot blink me-1"></span>Executando ${esc(name)}...</span>`;
+    conv.appendChild(li);
+  } else {
+    const items = conv.querySelectorAll('.tool-status');
+    let li = null;
+    items.forEach(el => { if (el.dataset.tool === name) li = el; });
+    if (li) {
+      li.innerHTML = `<span class="small text-muted">${esc(name)} ${ok === false ? 'falhou.' : 'executado.'}</span>`;
+      li.classList.remove('tool-status');
+    }
+  }
+  if (isScrolledToBottom()) scrollToBottom();
+}
+
 function scrollToBottom() {
   conv.scrollTo({ top: conv.scrollHeight, behavior: 'smooth' });
 }
@@ -336,7 +356,14 @@ document.getElementById('send').onclick = async () => {
         const line = p.split('\n').find(l => l.startsWith('data:'));
         if (!line || line.includes('[DONE]')) continue;
         try {
-          const d = JSON.parse(line.slice(5)).choices[0].delta;
+          const evt = JSON.parse(line.slice(5));
+          if (evt.progress) {
+            // Progresso de tool vindo do servidor
+            if (evt.progress === 'tool_start') toolStatus(evt.name, true);
+            else if (evt.progress === 'tool_done') toolStatus(evt.name, false, evt.ok);
+            continue;
+          }
+          const d = evt.choices[0].delta;
           if (d.reasoning_content) {
             // Thinking acumula silencioso (sem bolha ao vivo); vai em accordion fechado ao final
             think += d.reasoning_content;
