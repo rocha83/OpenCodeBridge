@@ -180,7 +180,7 @@ public sealed class ChatController(
         if (!s.ExecutorAgentId.HasValue) return BadRequest("Sessão sem executor selecionado");
         var result = await orch.PreviewAsync(req.SessionId, CurrentUserId, req.Text, ct);
         if (!result.Ok) return BadRequest(result.Error);
-        return Json(new { tasks = result.Tasks.Select(t => new { title = t.Title, prompt = t.Prompt, etaMin = t.EtaMin }) });
+        return Json(new { tasks = result.Tasks.Select(t => new { title = t.Title, prompt = t.Prompt, etaMin = t.EtaMin, needsTools = t.NeedsTools }) });
     }
 
     // POST /Chat/OrchestrateApproved - fase 2: executa tarefas aprovadas + sintetiza.
@@ -196,7 +196,7 @@ public sealed class ChatController(
         var tasks = req.Tasks
             .Where(t => !string.IsNullOrWhiteSpace(t.Prompt))
             .Select(t => new OrchestrationService.SubTask(
-                string.IsNullOrWhiteSpace(t.Title) ? "Tarefa" : t.Title.Trim(), t.Prompt, t.EtaMin))
+                string.IsNullOrWhiteSpace(t.Title) ? "Tarefa" : t.Title.Trim(), t.Prompt, t.EtaMin, t.NeedsTools))
             .ToList();
         var result = await orch.RunApprovedAsync(req.SessionId, CurrentUserId, tasks, ct, req.Synthesize);
         if (!result.Ok) return BadRequest(result.Error);
@@ -259,6 +259,7 @@ public sealed class ChatController(
         public string Title { get; set; } = "";
         public string Prompt { get; set; } = "";
         public double EtaMin { get; set; }
+        public bool NeedsTools { get; set; }
     }
 
     public sealed class CreateSessionRequest

@@ -82,8 +82,9 @@ internal static class OrchestrationTests
         DecomposeRetry().GetAwaiter().GetResult();
         SplitPhases().GetAwaiter().GetResult();
         RefineRetry().GetAwaiter().GetResult();
+        NeedsToolsRetry().GetAwaiter().GetResult();
 
-        System.Console.WriteLine($"=== Orchestration Unit: {12 - Failures}/12 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== Orchestration Unit: {13 - Failures}/13 PASS, {Failures} FAIL ===");
         return Failures;
     }
 
@@ -378,6 +379,44 @@ bool execDone = msgs.Any(m => m.Content.Contains("[Executor 1] Concluído"))
             bool refined = msgs.Any(m => m.Content.Contains("Refinando tarefa 1"));
             bool recovered = msgs.Any(m => m.Content.Contains("resultado bom"));
             Check(run.Ok && refined && recovered, "U-orch-refine-retry");
+        }
+        finally
+        {
+            try { System.IO.File.Delete(db); } catch { }
+        }
+    }
+
+    private static async System.Threading.Tasks.Task NeedsToolsRetry()
+    {
+        // Tarefa que exige tools mas o executor responde em prosa: refina 1x.
+        var db = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"orchn-{System.Guid.NewGuid():N}.db");
+        AppDb.Init(db);
+        try
+        {
+            var script = new ScriptedBridge(new[] { "prosa sem tools", "prompt refinado", "prosa de novo" });
+            var sessions = new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            var messages = new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            var agents = new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            await agents.Add(new Agent { Name = "o7", Model = "m1" });
+            await agents.Add(new Agent { Name = "e7", Model = "m2" });
+            var orch = (await agents.Query(new Agent())).First(a => a.Name == "o7");
+            var exec = (await agents.Query(new Agent())).First(a => a.Name == "e7");
+            var users = new GenericRepository<User>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            await users.Add(new User { Name = "u7", Email = "u7@u.com", PasswordHash = "h" });
+            var user = (await users.Query(new User())).First(u => u.Email == "u7@u.com");
+            await sessions.Add(new Session { UserId = user.Id ?? 0, AgentId = orch.Id ?? 0, ExecutorAgentId = exec.Id, Title = "t" });
+            var created = (await sessions.Query(new Session { UserId = user.Id ?? 0 })).OrderByDescending(x => x.Id ?? 0).First();
+            var svc = new OrchestrationService(script,
+                new SessionService(sessions, sessions, messages, messages), agents,
+                new ToolExecutor(System.IO.Path.GetTempPath(), System.IO.Path.Combine(System.IO.Path.GetTempPath(), "orchn.log")),
+                Options.Create(new OrchestrationOptions { MaxTaskRetries = 1 }));
+            var tasks = new List<OrchestrationService.SubTask> { new("Tarefa N", "use tools", 0, true) };
+            var run = await svc.RunApprovedAsync(created.Id ?? 0, user.Id ?? 0, tasks, CancellationToken.None, synthesize: false);
+            var msgs = await new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString)
+                .Query(new SessionMessage { SessionId = created.Id });
+            bool refined = msgs.Any(m => m.Content.Contains("Refinando tarefa 1"));
+            bool evidence = msgs.Any(m => m.Content.Contains("nenhuma ferramenta foi chamada"));
+            Check(run.Ok && refined && evidence, "U-orch-needs-tools");
         }
         finally
         {

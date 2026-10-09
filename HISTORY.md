@@ -469,3 +469,9 @@
 - Ressalva honesta: 0 usos reais de tool nesta rodada (tudo em prosa, sem
   pseudo-tools); granular+retry segue como rede de segurança.
 - Suite: **78/78 PASS**, build Release 0 erros.
+
+## Bridge Web — Fase 9b needsTools exigível (2026-10-09)
+- Subtarefas com `needsTools`: sem nenhuma chamada de tool, entra no ciclo de
+  refinamento (evidência registrada). Prompt, endpoint, approve e teste cobrem.
+- Suite unit: **63/63 PASS**; 2 falhas de integração são ambientais (8B fora do
+  ar durante o swap p/ 3B), sem relação com a mudança.

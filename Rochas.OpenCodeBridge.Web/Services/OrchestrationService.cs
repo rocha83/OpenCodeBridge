@@ -39,8 +39,10 @@ public sealed class OrchestrationService(
         "(ex.: contratos, DTOs, entidades), emita-a como subtarefa própria e referencie-a nas " +
         "dependentes. Cada prompt deve trazer interfaces e contratos explícitos para fluir sem " +
         "espera entre trilhas. O executor gera cerca de {0} tok/s: estime os minutos de cada " +
-        "tarefa no campo etaMin. Responda SOMENTE com JSON, sem markdown nem texto extra: " +
-        "{\"tasks\":[{\"title\":\"verbo de ação curto\",\"prompt\":\"instrução completa para o executor\",\"etaMin\":3}]}.";
+        "tarefa no campo etaMin. Marque needsTools:true nas tarefas que EXIGEM ferramentas " +
+        "(ler/escrever arquivos, shell, buscas); false nas de resposta em prosa. Responda SOMENTE " +
+        "com JSON, sem markdown nem texto extra: " +
+        "{\"tasks\":[{\"title\":\"verbo de ação curto\",\"prompt\":\"instrução completa para o executor\",\"etaMin\":3,\"needsTools\":true}]}.";
 
     // Executor: enunciado rígido (1 tarefa, artefato + evidência, sem conversa).
     // Catálogo explícito: o 3B inventa tools se não souber os nomes válidos.
@@ -267,7 +269,8 @@ public sealed class OrchestrationService(
                 .Select(o => new SubTask(
                     o!["title"]?.GetValue<string>() is string t && !string.IsNullOrWhiteSpace(t) ? t.Trim() : "Tarefa",
                     o!["prompt"]!.GetValue<string>(),
-                    o!["etaMin"]?.GetValue<double>() ?? 0))
+                    o!["etaMin"]?.GetValue<double>() ?? 0,
+                    o!["needsTools"]?.GetValue<bool>() ?? false))
                 .Take(MaxTasks)
                 .ToList();
         }
@@ -285,8 +288,11 @@ public sealed class OrchestrationService(
         string prompt = task.Prompt;
         for (int attempt = 0; attempt <= _maxTaskRetries; attempt++)
         {
-            string result = await AttemptExecutorTaskAsync(sessionId, index, prompt, exec, ct);
-            if (!IsFailure(result) || attempt == _maxTaskRetries) return result;
+            var (result, toolCalls) = await AttemptExecutorTaskAsync(sessionId, index, prompt, exec, ct);
+            bool toolsMissing = task.NeedsTools && toolCalls == 0;
+            if (toolsMissing)
+                result += "\n[Evidência: nenhuma ferramenta foi chamada, embora exigida.]";
+            if ((!IsFailure(result) && !toolsMissing) || attempt == _maxTaskRetries) return result;
             await sessions.AddMessageAsync(sessionId, "assistant",
                 $"[Orquestrador] Refinando tarefa {index + 1} após falha (tentativa {attempt + 1})...", "", null, null);
             var refined = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model,
@@ -301,17 +307,18 @@ public sealed class OrchestrationService(
     private static bool IsFailure(string result) =>
         string.IsNullOrWhiteSpace(result) || result.Contains("[Executor ") && result.Contains("FALHOU");
 
-    private async Task<string> AttemptExecutorTaskAsync(int sessionId, int index, string prompt, Agent exec, CancellationToken ct)
+    private async Task<(string Result, int ToolCalls)> AttemptExecutorTaskAsync(int sessionId, int index, string prompt, Agent exec, CancellationToken ct)
     {
         bool build = (exec.Mode ?? "build") != "plan";
         var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = prompt } };
         var collected = new System.Text.StringBuilder();
+        int toolCalls = 0;
         for (int turn = 0; turn < (build ? MaxToolTurns : 1); turn++)
         {
             var t = await BridgeHelper.ChatTurnAsync(bridge, exec.BridgeUrl, exec.Model,
                 PlanTemp(exec), ExecutorSystem, history,
                 build ? ToolDefinitions.GetTools(exec.Mode) : null, ct);
-            if (!t.Ok) return $"[Executor {index + 1}] FALHOU: {t.Error}";
+            if (!t.Ok) return ($"[Executor {index + 1}] FALHOU: {t.Error}", toolCalls);
             collected.Append(t.Content);
             if (t.Calls.Count == 0)
             {
@@ -322,6 +329,7 @@ public sealed class OrchestrationService(
                     await sessions.AddMessageAsync(sessionId, "assistant",
                         $"[Executor {index + 1}] Recuperado bloco {rname} do texto; executando...", "", null, null);
                     var recovered = tools.Execute(rname, rargs, 120, exec.Mode);
+                    toolCalls++;
                     string rcontent = recovered.Success ? recovered.Output : $"Error: {recovered.Error}";
                     if (rcontent.Length > 2000) rcontent = rcontent[..2000] + "\n[truncado]";
                     history.Add(new JsonObject { ["role"] = "assistant", ["content"] = t.Content });
@@ -352,6 +360,7 @@ public sealed class OrchestrationService(
             history.Add(assistantMsg);
             foreach (var call in t.Calls)
             {
+                toolCalls++;
                 var result = tools.Execute(call.Name, call.Args, 120, exec.Mode);
                 await sessions.AddMessageAsync(sessionId, "assistant",
                     $"[Executor {index + 1}] Executou {call.Name}: " +
@@ -366,7 +375,7 @@ public sealed class OrchestrationService(
                 });
             }
         }
-        return collected.ToString();
+        return (collected.ToString(), toolCalls);
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "\n[truncado]";
@@ -393,5 +402,5 @@ public sealed class OrchestrationService(
         return false;
     }
 
-    public sealed record SubTask(string Title, string Prompt, double EtaMin = 0);
+    public sealed record SubTask(string Title, string Prompt, double EtaMin = 0, bool NeedsTools = false);
 }
