@@ -475,3 +475,8 @@
   refinamento (evidência registrada). Prompt, endpoint, approve e teste cobrem.
 - Suite unit: **63/63 PASS**; 2 falhas de integração são ambientais (8B fora do
   ar durante o swap p/ 3B), sem relação com a mudança.
+
+## Bridge Web — Fase 9c Subdivisão recursiva (2026-10-09)
+- Falha no executor (depth 0) -> 8b subdivide em 2-4 micro-tarefas e re-executa
+  (profundidade máx. 1); se inviável, cai no refinamento de prompt. Tudo persistido.
+- Suite: **80/80 PASS**, build Release 0 erros.

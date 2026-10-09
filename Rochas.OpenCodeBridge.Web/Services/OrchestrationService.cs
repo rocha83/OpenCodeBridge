@@ -66,6 +66,14 @@ public sealed class OrchestrationService(
         "de forma mais restrita e à prova do erro, mantendo o mesmo objetivo. Responda SOMENTE " +
         "com o novo prompt (texto puro, sem JSON nem markdown).";
 
+    // Orch: subdivide tarefa que falhou em micro-subtarefas ainda menores.
+    private const string SplitSystem =
+        "Você é o orquestrador. A subtarefa abaixo FALHOU no executor por ser grande demais; " +
+        "divida-a em 2 a 4 MICRO-subtarefas ainda menores, cada uma com 1 ação verificável, " +
+        "autocontidas (caminhos, comandos, saída esperada, critério de aceite). Responda SOMENTE " +
+        "com JSON, sem markdown nem texto extra: " +
+        "{\"tasks\":[{\"title\":\"verbo curto\",\"prompt\":\"instrução completa\"}]}.";
+
     public async Task<OrchestrateResult> OrchestrateAsync(int sessionId, int userId, string text, CancellationToken ct)
     {
         var session = await sessions.GetAsync(sessionId, userId);
@@ -285,6 +293,15 @@ public sealed class OrchestrationService(
     // (máx. Orchestration:MaxTaskRetries), com re-disparo do enunciado corrigido.
     private async Task<string> RunExecutorTaskAsync(int sessionId, int index, SubTask task, Agent orch, Agent exec, CancellationToken ct)
     {
+        return await RunExecutorTaskAsync(sessionId, index, task, orch, exec, ct, depth: 0);
+    }
+
+    // Ciclo com retry: falha sem conteúdo útil volta ao orch para refinamento
+    // (máx. Orchestration:MaxTaskRetries), com re-disparo do enunciado corrigido.
+    // Na 1ª falha (depth 0): tenta SUBDIVIDIR em micro-tarefas e executá-las;
+    // persistindo tudo. Profundidade máxima 1 (sem explosão).
+    private async Task<string> RunExecutorTaskAsync(int sessionId, int index, SubTask task, Agent orch, Agent exec, CancellationToken ct, int depth)
+    {
         string prompt = task.Prompt;
         for (int attempt = 0; attempt <= _maxTaskRetries; attempt++)
         {
@@ -293,6 +310,11 @@ public sealed class OrchestrationService(
             if (toolsMissing)
                 result += "\n[Evidência: nenhuma ferramenta foi chamada, embora exigida.]";
             if ((!IsFailure(result) && !toolsMissing) || attempt == _maxTaskRetries) return result;
+            if (depth == 0)
+            {
+                string? split = await TrySplitAsync(sessionId, index, task, prompt, result, orch, exec, ct, depth);
+                if (split is not null) return split;
+            }
             await sessions.AddMessageAsync(sessionId, "assistant",
                 $"[Orquestrador] Refinando tarefa {index + 1} após falha (tentativa {attempt + 1})...", "", null, null);
             var refined = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model,
@@ -302,6 +324,30 @@ public sealed class OrchestrationService(
             prompt = refined.Content.Trim();
         }
         return $"[Executor {index + 1}] FALHOU após {_maxTaskRetries + 1} tentativa(s)";
+    }
+
+    // Subdivide a tarefa falha em micro-tarefas, executa e combina. Null se inviável.
+    private async Task<string?> TrySplitAsync(int sessionId, int index, SubTask task, string prompt,
+        string evidence, Agent orch, Agent exec, CancellationToken ct, int depth)
+    {
+        var r = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model, PlanTemp(orch),
+            SplitSystem,
+            new JsonArray { new JsonObject { ["role"] = "user", ["content"] = $"Tarefa: {task.Title}\nEnunciado: {prompt}\nEvidência da falha:\n{Truncate(evidence, 1000)}" } }, ct);
+        var subs = ParseTasks(r.Ok ? r.Content : "");
+        if (subs.Count < 2) return null;
+        subs = subs.Take(4).ToList();
+        await sessions.AddMessageAsync(sessionId, "assistant",
+            $"[Orquestrador] Subdividindo tarefa {index + 1} em {subs.Count} micro-tarefas...", "", null, null);
+        var parts = new List<string>();
+        bool allOk = true;
+        foreach (var sub in subs)
+        {
+            string part = await RunExecutorTaskAsync(sessionId, index, sub, orch, exec, ct, depth + 1);
+            if (IsFailure(part)) allOk = false;
+            parts.Add($"### {sub.Title}\n{part}");
+        }
+        if (!allOk) return null;
+        return string.Join("\n\n", parts);
     }
 
     private static bool IsFailure(string result) =>
