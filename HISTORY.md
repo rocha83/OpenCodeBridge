@@ -376,3 +376,11 @@
   `/Chat/Diagnostics` exercitados; fora: tetos de tamanho, sudo-exato-allow,
   RegisterError, POSTs de Users/Agents (gap pré-existente).
 - Sem `dotnet test`/`coverlet` neste repo (runner console próprio); contagem por asserts.
+
+## Bridge Web — Fase 6c Economia de contexto (2026-10-08)
+- `ToolDefinitions` enxuto (2737→2134 chars, ~684→~533 tokens/request): descrições
+  curtas, tipos/required preservados; helpers com nomes legíveis
+  (`BuildTool`/`BuildParam`/`ToolParam`).
+- Teto 2000 chars nos retornos `role: tool` do loop (paridade OpenCode).
+- E2E real validado: modelo chamou `shell`, listou diretório, truncou e respondeu pt-BR.
+- Suite: **63/63 PASS** (7+10+23+6+15+2 novos checks de economia).

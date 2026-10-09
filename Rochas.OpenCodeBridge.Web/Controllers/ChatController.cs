@@ -381,15 +381,18 @@ public sealed class ChatController(
             }
             messages.Add(assistantMsg);
 
-            // Executa cada tool e adiciona resultado às mensagens
+            // Executa cada tool e adiciona resultado às mensagens (teto 2000 chars:
+            // output longo volta truncado para não estourar o contexto do loop)
             foreach (var (id, name, args) in toolCalls)
             {
                 var result = toolExecutor.Execute(name, args);
+                string content = result.Success ? result.Output : $"Error: {result.Error}";
+                if (content.Length > 2000) content = content[..2000] + "\n[truncado]";
                 var toolResult = new JsonObject
                 {
                     ["role"] = "tool",
                     ["tool_call_id"] = id,
-                    ["content"] = result.Success ? result.Output : $"Error: {result.Error}"
+                    ["content"] = content
                 };
                 messages.Add(toolResult);
             }
