@@ -461,3 +461,11 @@
 - Sonda `POST /Chat/Executors/{id}/Probe` (fallback chars/4 sem usage); t/s do 3B CPU ~1-7.
 - ETA por tarefa (`etaMin`) no plano, no approve, no painel (total) e nos testes.
 - Suite: **78/78 PASS**, build Release 0 erros.
+
+## Bridge Web — Fase 9 Bateria 3B-GPU, 100% verde (2026-10-09)
+- Swap 8B->3B (Qwen2.5-Coder-3B BF16, :4101, bridge :4126, agente Coder 3B GPU).
+- Marrom v3 (10 tarefas) e preta v3 (12 tarefas): 100% concluídas, 0 falhas,
+  0 refinamentos necessários; sínteses 8B persistidas (1734/1859 chars).
+- Ressalva honesta: 0 usos reais de tool nesta rodada (tudo em prosa, sem
+  pseudo-tools); granular+retry segue como rede de segurança.
+- Suite: **78/78 PASS**, build Release 0 erros.
