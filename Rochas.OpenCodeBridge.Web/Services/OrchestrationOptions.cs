@@ -5,6 +5,6 @@ public sealed class OrchestrationOptions
 {
     // Quantas vezes um enunciado pode voltar ao orch para refinamento após falha.
     public int MaxTaskRetries { get; set; } = 2;
-    // Executores simultâneos (GPU paraleliza; CPU llama serializa: use 1-2).
-    public int MaxParallel { get; set; } = 3;
+    // Executores simultâneos (0 = núcleos da CPU; GPU paraleliza, CPU llama serializa).
+    public int MaxParallel { get; set; } = 0;
 }

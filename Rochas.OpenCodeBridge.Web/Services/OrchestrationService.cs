@@ -20,7 +20,9 @@ public sealed class OrchestrationService(
     private const int MaxDecomposeTries = 3;
     private const int MinTasks = 2;
     private readonly int _maxTaskRetries = Math.Max(0, orchestrationOptions.Value.MaxTaskRetries);
-    private readonly int _maxParallel = Math.Clamp(orchestrationOptions.Value.MaxParallel, 1, 8);
+    private readonly int _maxParallel = Math.Clamp(
+        orchestrationOptions.Value.MaxParallel <= 0 ? Environment.ProcessorCount : orchestrationOptions.Value.MaxParallel,
+        1, 16);
 
     // Orch: divide o pedido em subtarefas técnicas. JSON estrito.
     // Trilhas paralelas: backend x frontend, com contratos explícitos.
