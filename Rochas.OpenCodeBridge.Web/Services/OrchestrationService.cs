@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Rochas.Data.Specification.Interfaces;
 using Rochas.OpenCodeBridge.Web.Models;
 
@@ -12,8 +13,8 @@ public sealed class OrchestrationService(
     IGenericRepository<Agent> agents,
     IToolExecutor tools) : IOrchestrationService
 {
-    private const int MaxTasks = 8;
-    private const int MaxParallel = 2;
+    private const int MaxTasks = 16;
+    private const int MaxParallel = 3;
     private const int MaxToolTurns = 5;
     private const int MaxDecomposeTries = 3;
     private const int MinTasks = 2;
@@ -21,12 +22,14 @@ public sealed class OrchestrationService(
     // Orch: divide o pedido em subtarefas técnicas. JSON estrito.
     // Trilhas paralelas: backend x frontend, com contratos explícitos.
     private const string DecomposeSystem =
-        "Você é o orquestrador. Decomponha o pedido do usuário em NO MÍNIMO 4 subtarefas " +
+        "Você é o orquestrador. Decomponha o pedido do usuário em subtarefas " +
         "ATÔMICAS (1 ação verificável cada: 'crie a classe X com propósito Y', 'compile o " +
         "projeto', 'leia o arquivo Z'), independentes e autocontidas para agentes executores " +
         "trabalhando EM PARALELO, inclusive offline (cada prompt carrega todo o contexto: " +
-        "caminhos, comandos, saída esperada com exemplo e critério de aceite). É PROIBIDO " +
-        "devolver 1 tarefa ecoando o pedido: divida para conquistar o limite do executor. " +
+        "caminhos, comandos, saída esperada com exemplo e critério de aceite). Escalone a " +
+        "quantidade ao escopo: no mínimo 6; 8+ em escopos médios (CRUD + CI/CD); 12+ em " +
+        "ecossistemas (portal + barramento + dados + ML). É PROIBIDO devolver 1 tarefa " +
+        "ecoando o pedido: divida para conquistar o limite do executor. " +
         "Organize em trilhas: BACKEND (C#/.NET, DDD) e FRONTEND (web); se houver dependência " +
         "(ex.: contratos, DTOs, entidades), emita-a como subtarefa própria e referencie-a nas " +
         "dependentes. Cada prompt deve trazer interfaces e contratos explícitos para fluir sem " +
@@ -34,9 +37,14 @@ public sealed class OrchestrationService(
         "{\"tasks\":[{\"title\":\"verbo de ação curto\",\"prompt\":\"instrução completa para o executor\"}]}.";
 
     // Executor: enunciado rígido (1 tarefa, artefato + evidência, sem conversa).
+    // Catálogo explícito: o 3B inventa tools se não souber os nomes válidos.
     private const string ExecutorSystem =
         "Você é o executor. Execute exatamente a tarefa recebida, de forma direta e técnica. " +
         "Responda com o artefato pedido seguido de evidência curta do que foi feito. " +
+        "Ferramentas VÁLIDAS (use SOMENTE estas, via chamada de função): shell (comando), " +
+        "read (path, offset, limit), write (path, content), edit (path, oldString, newString), " +
+        "grep (pattern, path, include), glob (pattern, path). É PROIBIDO inventar outras " +
+        "ferramentas (como build, copy, expose): se nenhuma servir, responda em prosa. " +
         "Sem conversa, sem perguntas de volta.";
 
     // Orch: síntese final em pt-BR a partir dos resultados.
@@ -263,7 +271,28 @@ public sealed class OrchestrationService(
                 build ? ToolDefinitions.GetTools(exec.Mode) : null, ct);
             if (!t.Ok) return $"[Executor {index + 1}] FALHOU: {t.Error}";
             collected.Append(t.Content);
-            if (t.Calls.Count == 0) break;
+            if (t.Calls.Count == 0)
+            {
+                // Recuperação tolerante: 3B escreve pseudo-tool em texto em vez de
+                // chamar; se o bloco cita tool conhecida, executa de verdade 1x.
+                if (build && TryRecoverPseudoTool(t.Content, out string rname, out string rargs))
+                {
+                    await sessions.AddMessageAsync(sessionId, "assistant",
+                        $"[Executor {index + 1}] Recuperado bloco {rname} do texto; executando...", "", null, null);
+                    var recovered = tools.Execute(rname, rargs, 120, exec.Mode);
+                    string rcontent = recovered.Success ? recovered.Output : $"Error: {recovered.Error}";
+                    if (rcontent.Length > 2000) rcontent = rcontent[..2000] + "\n[truncado]";
+                    history.Add(new JsonObject { ["role"] = "assistant", ["content"] = t.Content });
+                    history.Add(new JsonObject
+                    {
+                        ["role"] = "tool",
+                        ["tool_call_id"] = $"recovered-{index}-{turn}",
+                        ["content"] = rcontent,
+                    });
+                    continue;
+                }
+                break;
+            }
             var assistantMsg = new JsonObject
             {
                 ["role"] = "assistant",
@@ -299,6 +328,28 @@ public sealed class OrchestrationService(
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "\n[truncado]";
+
+    // Detecta ```json {"name":"<tool conhecida>","arguments":{...}|"..."} ``` no texto.
+    public static bool TryRecoverPseudoTool(string content, out string name, out string args)
+    {
+        name = "";
+        args = "";
+        if (string.IsNullOrEmpty(content)) return false;
+        var known = new HashSet<string>(StringComparer.Ordinal) { "shell", "read", "write", "edit", "grep", "glob" };
+        foreach (Match m in Regex.Matches(content, "```(?:json)?\\s*(\\{.+?\\})\\s*```", RegexOptions.Singleline))
+        {
+            JsonObject? obj;
+            try { obj = JsonNode.Parse(m.Groups[1].Value)?.AsObject(); }
+            catch { continue; }
+            string n = obj?["name"]?.GetValue<string>() ?? "";
+            if (!known.Contains(n)) continue;
+            var a = obj?["arguments"];
+            name = n;
+            args = a is JsonObject ? a.ToJsonString() : a?.GetValue<string>() ?? "";
+            return true;
+        }
+        return false;
+    }
 
     public sealed record SubTask(string Title, string Prompt);
 }

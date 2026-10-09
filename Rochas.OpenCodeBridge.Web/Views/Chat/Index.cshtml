@@ -389,17 +389,54 @@ function showApproveBar(tasks) {
   hideApproveBar();
   const bar = document.createElement('div');
   bar.id = 'approve-bar';
-  bar.className = 'd-flex justify-content-between align-items-center mt-2 mb-2 p-2 rounded border border-info';
-  const titles = tasks.map((t, i) => `${i + 1}. ${t.title}`).join(' · ');
-  bar.innerHTML = `<span class="small">Orquestrador propôs ${tasks.length} tarefa(s): ${esc(titles)}</span>`;
+  bar.className = 'mt-2 mb-2 p-2 rounded border border-info';
+  bar.innerHTML = `<div class="small fw-bold mb-2">Orquestrador propôs ${tasks.length} tarefa(s) — revise e aprove:</div>`;
+  const list = document.createElement('div');
+  list.id = 'approve-list';
+  bar.appendChild(list);
+  const renderTask = (t, i) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'mb-2 p-2 rounded border border-secondary';
+    wrap.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <span class="small fw-bold">Tarefa ${i + 1}</span>
+        <button type="button" class="btn btn-sm btn-outline-danger">Remover</button>
+      </div>
+      <input class="form-control form-control-sm mb-1 task-title" value="${esc(t.title)}" />
+      <textarea class="form-control form-control-sm task-prompt" rows="3">${esc(t.prompt)}</textarea>`;
+    wrap.querySelector('button').onclick = () => wrap.remove();
+    list.appendChild(wrap);
+  };
+  tasks.forEach(renderTask);
+  const row = document.createElement('div');
+  row.className = 'd-flex justify-content-end gap-2 mt-2';
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'btn btn-sm btn-outline-info';
+  add.textContent = '+ Tarefa';
+  add.onclick = () => renderTask({ title: '', prompt: '' }, list.children.length);
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'btn btn-sm btn-info ms-2';
+  btn.className = 'btn btn-sm btn-info';
   btn.textContent = 'Aprovar e executar';
   btn.onclick = approveAndRun;
-  bar.appendChild(btn);
+  row.appendChild(add);
+  row.appendChild(btn);
+  bar.appendChild(row);
   const ta = document.getElementById('prompt');
   ta.parentNode.parentNode.insertBefore(bar, ta.parentNode.nextSibling);
+}
+
+function collectApprovedTasks() {
+  const list = document.getElementById('approve-list');
+  if (!list) return pendingTasks;
+  const out = [];
+  list.querySelectorAll(':scope > div').forEach(w => {
+    const title = w.querySelector('.task-title')?.value.trim() ?? '';
+    const prompt = w.querySelector('.task-prompt')?.value.trim() ?? '';
+    if (prompt) out.push({ title: title || 'Tarefa', prompt });
+  });
+  return out;
 }
 
 function hideApproveBar() {
@@ -407,7 +444,12 @@ function hideApproveBar() {
 }
 
 async function approveAndRun() {
-  if (!pendingTasks || !pendingTasks.length) return;
+  const tasks = collectApprovedTasks();
+  if (!tasks || !tasks.length) {
+    showToast('Nenhuma tarefa para executar.', 'warning');
+    return;
+  }
+  pendingTasks = tasks;
   hideApproveBar();
   const ta = document.getElementById('prompt');
   ta.disabled = true;

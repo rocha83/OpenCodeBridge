@@ -72,6 +72,7 @@ internal static class OrchestrationTests
     {
         ParseValid();
         ParseFallback();
+        RecoverPseudoTool();
         PlanToolsFilter();
         PipelineHybrid().GetAwaiter().GetResult();
         PipelineNoExecutor().GetAwaiter().GetResult();
@@ -80,7 +81,7 @@ internal static class OrchestrationTests
         DecomposeRetry().GetAwaiter().GetResult();
         SplitPhases().GetAwaiter().GetResult();
 
-        System.Console.WriteLine($"=== Orchestration Unit: {10 - Failures}/10 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== Orchestration Unit: {11 - Failures}/11 PASS, {Failures} FAIL ===");
         return Failures;
     }
 
@@ -100,6 +101,17 @@ internal static class OrchestrationTests
     {
         var tasks = OrchestrationService.ParseTasks("sem json nenhum");
         Check(tasks.Count == 0, "U-orch-parse-fallback");
+    }
+
+    private static void RecoverPseudoTool()
+    {
+        bool ok = OrchestrationService.TryRecoverPseudoTool(
+            "texto\n```json\n{\"name\": \"shell\", \"arguments\": {\"command\": \"ls\"}}\n```\nfim",
+            out string name, out string args);
+        bool no = !OrchestrationService.TryRecoverPseudoTool(
+            "```json\n{\"name\": \"build\", \"arguments\": {}}\n```",
+            out string _, out string _);
+        Check(ok && name == "shell" && args.Contains("ls") && no, "U-orch-recover-pseudo");
     }
 
     private static void PlanToolsFilter()

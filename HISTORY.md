@@ -441,3 +441,10 @@
 - Fixes: `Agent`/`User`.Id anuláveis (Dapper gravava 0 literal), `Get` por Id
   instável contornado com Query+tLINQ, FKs valem (Cache=Shared).
 - Suite: **76/76 PASS**, build Release 0 erros.
+
+## Bridge Web — Fase 8c Anti-alucinação + editor de tarefas (2026-10-09)
+- Executor lista tools válidas no prompt + proíbe inventar; recuperação tolerante:
+  bloco pseudo-tool com nome conhecido vira execução real (1x).
+- Approve bar virou editor (revisar/editar/remover/adicionar tarefas antes de rodar;
+  humano via UI no futuro, elucidado pelo agente hoje).
+- Suite: **77/77 PASS**, build Release 0 erros.

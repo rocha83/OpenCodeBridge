@@ -190,7 +190,7 @@ public sealed class ChatController(
         var s = await sessionService.GetAsync(req.SessionId, CurrentUserId);
         if (s is null) return NotFound();
         if (!s.ExecutorAgentId.HasValue) return BadRequest("Sessão sem executor selecionado");
-        if (req.Tasks.Count > 5) return BadRequest("Máximo 5 tarefas");
+        if (req.Tasks.Count > 16) return BadRequest("Máximo 16 tarefas");
         var tasks = req.Tasks
             .Where(t => !string.IsNullOrWhiteSpace(t.Prompt))
             .Select(t => new OrchestrationService.SubTask(
