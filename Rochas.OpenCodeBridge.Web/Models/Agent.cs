@@ -15,16 +15,16 @@ public sealed class Agent
     public string Name { get; set; } = "";
 
     [Column("model")]
-    public string Model { get; set; } = "qwen3-8b-awq";
+    public string Model { get; set; } = "";
 
     [Column("bridge_url")]
-    public string BridgeUrl { get; set; } = "http://127.0.0.1:4124";
+    public string BridgeUrl { get; set; } = "";
 
     [Column("temperature")]
-    public double Temperature { get; set; } = 0.2;
+    public double Temperature { get; set; }
 
     [Column("thinking")]
-    public string Thinking { get; set; } = "events";
+    public string Thinking { get; set; } = "";
 
     [Column("system_prompt")]
     public string SystemPrompt { get; set; } = "";
@@ -33,8 +33,14 @@ public sealed class Agent
     public string Role { get; set; } = "";
 
     [Column("mode")]
-    public string Mode { get; set; } = "build";
+    public string Mode { get; set; } = "";
+
+    [Column("measured_tps")]
+    public double MeasuredTps { get; set; }
 
     [Column("active")]
-    public bool Active { get; set; } = true;
+    public bool Active { get; set; }
+
+    // Normaliza vazio (linhas antigas) para build.
+    public static string EffectiveMode(Agent a) => string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode;
 }

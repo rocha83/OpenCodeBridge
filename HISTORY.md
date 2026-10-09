@@ -453,3 +453,11 @@
 - Ciclo: falha sem conteúdo útil volta ao 8b que reescreve o enunciado e re-dispara
   (máx. `Orchestration:MaxTaskRetries`, padrão 2; tudo persistido como mensagens).
 - Suite: **78/78 PASS**, build Release 0 erros.
+
+## Bridge Web — Fase 8e Defaults zerados + sonda t/s (2026-10-09)
+- Causa raiz de updates fantasmas: parser Dapper inclui props não-default no WHERE;
+  defaults não-vazios do Agent/User envenenavam filtros (provado pelo SQL gerado).
+  Fix: defaults zerados + `EffectiveMode` + seed admin ativo + Create com defaults.
+- Sonda `POST /Chat/Executors/{id}/Probe` (fallback chars/4 sem usage); t/s do 3B CPU ~1-7.
+- ETA por tarefa (`etaMin`) no plano, no approve, no painel (total) e nos testes.
+- Suite: **78/78 PASS**, build Release 0 erros.

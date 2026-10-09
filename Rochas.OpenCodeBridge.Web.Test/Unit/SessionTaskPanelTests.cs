@@ -36,12 +36,13 @@ internal static class SessionTaskPanelTests
         var msgs = new[]
         {
             ("user", "faça"),
-            ("assistant", "[Orquestrador] Dividi em 2 tarefa(s):\n1. Tarefa A\n2. Tarefa B"),
+            ("assistant", "[Orquestrador] Dividi em 2 tarefa(s):\n1. Tarefa A (~3 min)\n2. Tarefa B"),
             ("assistant", "[Executor 1] Iniciado: Tarefa A"),
             ("assistant", "[Executor 1] Concluído: Tarefa A\nok"),
         };
         var tasks = SessionTaskPanel.Parse(msgs);
-        Check(tasks.Count == 2 && tasks[0].Status == "done" && tasks[1].Status == "pending", "U-task-mixed");
+        Check(tasks.Count == 2 && tasks[0].Status == "done" && tasks[1].Status == "pending"
+            && tasks[0].Title == "Tarefa A" && tasks[0].EtaMin == 3, "U-task-mixed");
     }
 
     private static void Synthesized()

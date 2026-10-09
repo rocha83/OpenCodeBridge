@@ -38,8 +38,9 @@ public sealed class OrchestrationService(
         "Organize em trilhas: BACKEND (C#/.NET, DDD) e FRONTEND (web); se houver dependência " +
         "(ex.: contratos, DTOs, entidades), emita-a como subtarefa própria e referencie-a nas " +
         "dependentes. Cada prompt deve trazer interfaces e contratos explícitos para fluir sem " +
-        "espera entre trilhas. Responda SOMENTE com JSON, sem markdown nem texto extra: " +
-        "{\"tasks\":[{\"title\":\"verbo de ação curto\",\"prompt\":\"instrução completa para o executor\"}]}.";
+        "espera entre trilhas. O executor gera cerca de {0} tok/s: estime os minutos de cada " +
+        "tarefa no campo etaMin. Responda SOMENTE com JSON, sem markdown nem texto extra: " +
+        "{\"tasks\":[{\"title\":\"verbo de ação curto\",\"prompt\":\"instrução completa para o executor\",\"etaMin\":3}]}.";
 
     // Executor: enunciado rígido (1 tarefa, artefato + evidência, sem conversa).
     // Catálogo explícito: o 3B inventa tools se não souber os nomes válidos.
@@ -77,8 +78,8 @@ public sealed class OrchestrationService(
         var agents = await ResolveAgentsAsync(session);
         if (agents is null) return new OrchestrateResult(false, "", "Orquestrador ou executor inválido", 0);
 
-        var tasks = await DecomposeAsync(agents.Orch, text, ct);
-        await sessions.AddMessageAsync(sessionId, "assistant", DivisionText(tasks), "", null, null);
+        var tasks = await DecomposeAsync(agents.Orch, agents.Exec, text, ct);
+        await sessions.AddMessageAsync(sessionId, "assistant", DivisionText(tasks, ExecTps(agents.Exec)), "", null, null);
         return await RunTasksAsync(sessionId, session, agents.Orch, agents.Exec, text, tasks, ct);
     }
 
@@ -94,8 +95,8 @@ public sealed class OrchestrationService(
         if (agents is null) return new DecomposeResult(false, new List<SubTask>(), "Orquestrador ou executor inválido");
 
         await sessions.AddMessageAsync(sessionId, "user", text, "", null, null);
-        var tasks = await DecomposeAsync(agents.Orch, text, ct);
-        await sessions.AddMessageAsync(sessionId, "assistant", DivisionText(tasks), "", null, null);
+        var tasks = await DecomposeAsync(agents.Orch, agents.Exec, text, ct);
+        await sessions.AddMessageAsync(sessionId, "assistant", DivisionText(tasks, ExecTps(agents.Exec)), "", null, null);
         await sessions.TouchAsync(sessionId);
         return new DecomposeResult(true, tasks, "");
     }
@@ -182,9 +183,14 @@ public sealed class OrchestrationService(
     // Modo plan: temperatura 0.4 nos modelos (leitura/navegação, sem pressa criativa).
     private static double PlanTemp(Agent a) => a.Mode == "plan" ? 0.4 : a.Temperature;
 
-    private static string DivisionText(List<SubTask> tasks) =>
-        "[Orquestrador] Dividi em " + tasks.Count + " tarefa(s):\n" +
-        string.Join("\n", tasks.Select((t, i) => $"{i + 1}. {t.Title}"));
+    private static double ExecTps(Agent exec) => exec.MeasuredTps > 0 ? exec.MeasuredTps : 7;
+
+    private static string DivisionText(List<SubTask> tasks, double tps)
+    {
+        string total = tasks.Sum(t => t.EtaMin) > 0 ? $" (total ~{tasks.Sum(t => t.EtaMin):0.#} min a {tps:0.#} tok/s)" : "";
+        return "[Orquestrador] Dividi em " + tasks.Count + " tarefa(s)" + total + ":\n" +
+            string.Join("\n", tasks.Select((t, i) => $"{i + 1}. {t.Title}" + (t.EtaMin > 0 ? $" (~{t.EtaMin:0.#} min)" : "")));
+    }
 
     private async Task<OrchestrateResult> RunTasksAsync(int sessionId, Session session,
         Agent orch, Agent exec, string text, List<SubTask> tasks, CancellationToken ct, bool synthesize = true)
@@ -226,15 +232,16 @@ public sealed class OrchestrationService(
         return new OrchestrateResult(true, synth.Content, "", tasks.Count);
     }
 
-    private async Task<List<SubTask>> DecomposeAsync(Agent orch, string text, CancellationToken ct)
+    private async Task<List<SubTask>> DecomposeAsync(Agent orch, Agent exec, string text, CancellationToken ct)
     {
+        string system = DecomposeSystem.Replace("{0}", (exec.MeasuredTps > 0 ? exec.MeasuredTps : 7).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture));
         // Critério de aceite: >= MinTasks tarefas distintas; tenta até MaxDecomposeTries.
         for (int attempt = 1; attempt <= MaxDecomposeTries; attempt++)
         {
             string ask = attempt == 1 ? text
                 : text + $"\n\nSua decomposição anterior foi insuficiente (tente de novo com MAIS granularidade: tentativa {attempt}).";
             var r = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model, PlanTemp(orch),
-                DecomposeSystem,
+                system,
                 new JsonArray { new JsonObject { ["role"] = "user", ["content"] = ask } }, ct);
             var tasks = ParseTasks(r.Ok ? r.Content : "");
             if (tasks.Count >= MinTasks && tasks.Select(t => t.Prompt).Distinct().Count() == tasks.Count)
@@ -259,7 +266,8 @@ public sealed class OrchestrationService(
                 .Where(o => o is not null && !string.IsNullOrWhiteSpace(o["prompt"]?.GetValue<string>()))
                 .Select(o => new SubTask(
                     o!["title"]?.GetValue<string>() is string t && !string.IsNullOrWhiteSpace(t) ? t.Trim() : "Tarefa",
-                    o!["prompt"]!.GetValue<string>()))
+                    o!["prompt"]!.GetValue<string>(),
+                    o!["etaMin"]?.GetValue<double>() ?? 0))
                 .Take(MaxTasks)
                 .ToList();
         }
@@ -385,5 +393,5 @@ public sealed class OrchestrationService(
         return false;
     }
 
-    public sealed record SubTask(string Title, string Prompt);
+    public sealed record SubTask(string Title, string Prompt, double EtaMin = 0);
 }

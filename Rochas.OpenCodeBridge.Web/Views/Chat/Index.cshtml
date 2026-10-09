@@ -207,6 +207,7 @@ async function loadTasks(sessionId) {
       return;
     }
     list.innerHTML = '';
+    let totalEta = 0;
     j.tasks.forEach(t => {
       const li = document.createElement('li');
       li.className = 'mb-2';
@@ -215,9 +216,17 @@ async function loadTasks(sessionId) {
         : t.status === 'running'
           ? '<span class="badge bg-info"><span class="spinner-border spinner-border-sm me-1"></span>executando</span>'
           : '<span class="badge bg-secondary">pendente</span>';
-      li.innerHTML = `<div class="small fw-bold">${t.index}. ${esc(t.title)}</div><div class="mt-1">${badge}</div>`;
+      const eta = t.etaMin > 0 ? ` <span class="text-muted">~${t.etaMin} min</span>` : '';
+      if (t.etaMin > 0) totalEta += t.etaMin;
+      li.innerHTML = `<div class="small fw-bold">${t.index}. ${esc(t.title)}${eta}</div><div class="mt-1">${badge}</div>`;
       list.appendChild(li);
     });
+    if (totalEta > 0) {
+      const li = document.createElement('li');
+      li.className = 'mt-1 mb-2';
+      li.innerHTML = `<span class="small text-muted">Total estimado: ~${Math.round(totalEta * 10) / 10} min</span>`;
+      list.appendChild(li);
+    }
     if (j.synthesized) {
       const li = document.createElement('li');
       li.className = 'mt-2';
@@ -397,13 +406,15 @@ function showApproveBar(tasks) {
   const renderTask = (t, i) => {
     const wrap = document.createElement('div');
     wrap.className = 'mb-2 p-2 rounded border border-secondary';
+    const eta = t.etaMin > 0 ? ` <span class="text-muted">(~${t.etaMin} min)</span>` : '';
     wrap.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-1">
-        <span class="small fw-bold">Tarefa ${i + 1}</span>
+        <span class="small fw-bold">Tarefa ${i + 1}${eta}</span>
         <button type="button" class="btn btn-sm btn-outline-danger">Remover</button>
       </div>
       <input class="form-control form-control-sm mb-1 task-title" value="${esc(t.title)}" />
       <textarea class="form-control form-control-sm task-prompt" rows="3">${esc(t.prompt)}</textarea>`;
+    wrap.dataset.eta = t.etaMin || 0;
     wrap.querySelector('button').onclick = () => wrap.remove();
     list.appendChild(wrap);
   };
@@ -434,7 +445,7 @@ function collectApprovedTasks() {
   list.querySelectorAll(':scope > div').forEach(w => {
     const title = w.querySelector('.task-title')?.value.trim() ?? '';
     const prompt = w.querySelector('.task-prompt')?.value.trim() ?? '';
-    if (prompt) out.push({ title: title || 'Tarefa', prompt });
+    if (prompt) out.push({ title: title || 'Tarefa', prompt, etaMin: parseFloat(w.dataset.eta) || 0 });
   });
   return out;
 }

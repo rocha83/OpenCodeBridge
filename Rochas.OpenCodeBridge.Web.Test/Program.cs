@@ -57,9 +57,10 @@ internal static class Program
     // Unit: defaults do Agent apontam p/ linha GPU.
     static void UnitAgent()
     {
+        // Defaults zerados de propósito: props não-default poluem o WHERE do Dapper.
         var a = new Agent();
-        Check(a.BridgeUrl == "http://127.0.0.1:4124", "U-agent-bridge");
-        Check(a.Temperature == 0.2 && a.Active, "U-agent-defaults");
+        Check(a.BridgeUrl == "" && a.Model == "" && a.Temperature == 0 && !a.Active, "U-agent-blank-defaults");
+        Check(Agent.EffectiveMode(a) == "build", "U-agent-effective-mode");
     }
 
     static void UnitContextWindow()

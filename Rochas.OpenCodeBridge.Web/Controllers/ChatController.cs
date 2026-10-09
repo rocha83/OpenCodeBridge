@@ -14,6 +14,7 @@ namespace Rochas.OpenCodeBridge.Web.Controllers;
 [Authorize]
 public sealed class ChatController(
     IGenericRepository<Agent> agents,
+    IPersistenceRepository<Agent> agentsWrite,
     ISessionService sessionService,
     IToolExecutor toolExecutor,
     IHttpClientFactory http) : Controller
@@ -66,7 +67,7 @@ public sealed class ChatController(
             if (execId.Value == req.AgentId) return BadRequest("Executor deve diferir do orquestrador");
             var exec = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == execId.Value);
             if (exec is null || !exec.Active) return BadRequest("Executor inválido");
-            if ((exec.Mode ?? "build") != (agent.Mode ?? "build"))
+            if (Agent.EffectiveMode(exec) != Agent.EffectiveMode(agent))
                 return BadRequest("Orquestrador e executor devem estar no mesmo modo (plan ou build)");
         }
         var title = string.IsNullOrWhiteSpace(req.Title) ? "Nova sessão" : req.Title;
@@ -103,7 +104,8 @@ public sealed class ChatController(
         var tasks = SessionTaskPanel.Parse(items);
         return Json(new
         {
-            tasks = tasks.Select(t => new { index = t.Index, title = t.Title, status = t.Status }),
+            tasks = tasks.Select(t => new { index = t.Index, title = t.Title, status = t.Status, etaMin = t.EtaMin }),
+            totalEtaMin = Math.Round(tasks.Sum(t => t.EtaMin), 1),
             synthesized = SessionTaskPanel.Synthesized(items, tasks.Count),
         });
     }
@@ -146,7 +148,7 @@ public sealed class ChatController(
             var exec = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.ExecutorAgentId.Value);
             if (exec is null || !exec.Active) return BadRequest("Executor inválido");
             var orch = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == s.AgentId);
-            if (orch is not null && (exec.Mode ?? "build") != (orch.Mode ?? "build"))
+            if (orch is not null && Agent.EffectiveMode(exec) != Agent.EffectiveMode(orch))
                 return BadRequest("Orquestrador e executor devem estar no mesmo modo (plan ou build)");
         }
         await sessionService.UpdateExecutorAsync(id, req.ExecutorAgentId);
@@ -178,7 +180,7 @@ public sealed class ChatController(
         if (!s.ExecutorAgentId.HasValue) return BadRequest("Sessão sem executor selecionado");
         var result = await orch.PreviewAsync(req.SessionId, CurrentUserId, req.Text, ct);
         if (!result.Ok) return BadRequest(result.Error);
-        return Json(new { tasks = result.Tasks.Select(t => new { title = t.Title, prompt = t.Prompt }) });
+        return Json(new { tasks = result.Tasks.Select(t => new { title = t.Title, prompt = t.Prompt, etaMin = t.EtaMin }) });
     }
 
     // POST /Chat/OrchestrateApproved - fase 2: executa tarefas aprovadas + sintetiza.
@@ -194,7 +196,7 @@ public sealed class ChatController(
         var tasks = req.Tasks
             .Where(t => !string.IsNullOrWhiteSpace(t.Prompt))
             .Select(t => new OrchestrationService.SubTask(
-                string.IsNullOrWhiteSpace(t.Title) ? "Tarefa" : t.Title.Trim(), t.Prompt))
+                string.IsNullOrWhiteSpace(t.Title) ? "Tarefa" : t.Title.Trim(), t.Prompt, t.EtaMin))
             .ToList();
         var result = await orch.RunApprovedAsync(req.SessionId, CurrentUserId, tasks, ct, req.Synthesize);
         if (!result.Ok) return BadRequest(result.Error);
@@ -211,6 +213,27 @@ public sealed class ChatController(
         var result = await orch.SynthesizeAsync(req.SessionId, CurrentUserId, ct);
         if (!result.Ok) return BadRequest(result.Error);
         return Json(new { synthesis = result.Synthesis, taskCount = result.TaskCount });
+    }
+
+    // POST /Chat/Executors/{id}/Probe - mede tok/s do executor e grava em measured_tps.
+    [HttpPost("/Chat/Executors/{id:int}/Probe")]
+    public async Task<IActionResult> ProbeExecutor(int id, [FromServices] IBridgeClient bridge, CancellationToken ct)
+    {
+        var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == id);
+        if (agent is null || !agent.Active) return NotFound();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var r = await BridgeHelper.ChatAsync(bridge, agent.BridgeUrl, agent.Model, agent.Temperature,
+            "Responda somente: ok",
+            new JsonArray { new JsonObject { ["role"] = "user", ["content"] = "Responda somente: ok" } }, ct);
+        sw.Stop();
+        int total = (r.PromptTokens ?? 0) + (r.CompletionTokens ?? 0);
+        if (total <= 0) total = Math.Max(1, r.Content.Length / 4);
+        if (!r.Ok || sw.Elapsed.TotalSeconds <= 0)
+            return BadRequest("Sonda falhou: " + r.Error);
+        double tps = total / sw.Elapsed.TotalSeconds;
+        agent.MeasuredTps = Math.Round(tps, 1);
+        await agentsWrite.Update(agent, new Agent { Id = agent.Id });
+        return Json(new { tps = agent.MeasuredTps });
     }
 
     public sealed class OrchestrateRequest
@@ -235,6 +258,7 @@ public sealed class ChatController(
     {
         public string Title { get; set; } = "";
         public string Prompt { get; set; } = "";
+        public double EtaMin { get; set; }
     }
 
     public sealed class CreateSessionRequest

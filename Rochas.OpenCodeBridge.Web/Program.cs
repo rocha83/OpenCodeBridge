@@ -90,7 +90,7 @@ using (var scope = app.Services.CreateScope())
     var passwords = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
     var existing = await users.Query(new User { Email = "admin@mova.com" });
     if (!existing.Any())
-        await users.Add(new User { Name = "Admin", Email = "admin@mova.com", PasswordHash = passwords.Hash("Admin@123"), IsAdmin = true });
+        await users.Add(new User { Name = "Admin", Email = "admin@mova.com", PasswordHash = passwords.Hash("Admin@123"), IsAdmin = true, Active = true });
 }
 
 app.UseStaticFiles();

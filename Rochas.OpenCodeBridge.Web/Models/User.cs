@@ -23,7 +23,7 @@ public sealed class User
     public string PasswordHash { get; set; } = "";
 
     [Column("active")]
-    public bool Active { get; set; } = true;
+    public bool Active { get; set; }
 
     [Column("is_admin")]
     public bool IsAdmin { get; set; } = false;
