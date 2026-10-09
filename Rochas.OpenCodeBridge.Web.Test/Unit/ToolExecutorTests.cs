@@ -28,13 +28,14 @@ internal static class ToolExecutorTests
             TraversalDenied(exec, ctx);
             GrepFinds(exec);
             GlobFinds(exec);
+            EdgeCases(exec);
         }
         finally
         {
             try { Directory.Delete(root, true); } catch { }
         }
 
-        System.Console.WriteLine($"=== ToolExecutor Unit: {11 - Failures}/11 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== ToolExecutor Unit: {23 - Failures}/23 PASS, {Failures} FAIL ===");
         return Failures;
     }
 
@@ -109,5 +110,44 @@ internal static class ToolExecutorTests
     {
         var r = exec.Execute("glob", "{\"pattern\": \"*.txt\"}");
         Check(r.Success && r.Output.Contains("g.txt"), "U-tool-glob");
+    }
+
+    // Casos de borda (cobertura dos handlers).
+    internal static void EdgeCases(ToolExecutor exec)
+    {
+        var tools = ToolDefinitions.GetTools();
+        bool hasTask = tools.Any(t => (t as System.Text.Json.Nodes.JsonObject)?["function"]?["name"]?.GetValue<string>() == "task");
+        Check(tools.Count == 6 && !hasTask, "U-tool-definitions");        var missing = exec.Execute("read", "{\"path\": \"nao-existe.txt\"}");
+        Check(!missing.Success && missing.Error.Contains("não encontrado"), "U-tool-read-missing");
+
+        exec.Execute("write", "{\"path\": \"sub/ninho.txt\", \"content\": \"l1\\nl2\\nl3\\nl4\"}");
+        var slice = exec.Execute("read", "{\"path\": \"sub/ninho.txt\", \"offset\": 1, \"limit\": 2}");
+        Check(slice.Success && slice.Output == "l2\nl3", "U-tool-read-slice");
+
+        var empty = exec.Execute("grep", "{\"pattern\": \"zzzz-nao-existe\"}");
+        Check(empty.Success && empty.Output.Contains("sem resultados"), "U-tool-grep-empty");
+
+        var badre = exec.Execute("grep", "{\"pattern\": \"([\"}");
+        Check(!badre.Success && badre.Error.Contains("regex"), "U-tool-grep-badregex");
+
+        var noglob = exec.Execute("glob", "{\"pattern\": \"*.qqq-sem-match\"}");
+        Check(noglob.Success && noglob.Output.Contains("sem resultados"), "U-tool-glob-empty");
+
+        exec.Execute("write", "{\"path\": \"m.txt\", \"content\": \"a a a\"}");
+        var all = exec.Execute("edit", "{\"path\": \"m.txt\", \"oldString\": \"a\", \"newString\": \"b\", \"replaceAll\": true}");
+        var after = exec.Execute("read", "{\"path\": \"m.txt\"}");
+        Check(all.Success && after.Output == "b b b", "U-tool-edit-replaceall");
+
+        var sudo = exec.Execute("shell", "{\"command\": \"sudo ls /root\"}");
+        Check(!sudo.Success && sudo.Error.Contains("lista exata"), "U-tool-sudo-denied");
+
+        var abs = exec.Execute("read", "{\"path\": \"/etc/hostname\"}");
+        Check(!abs.Success && abs.Error.Contains("workspace"), "U-tool-traversal-abs");
+
+        var noMatch = exec.Execute("edit", "{\"path\": \"m.txt\", \"oldString\": \"qqq-sem-match\", \"newString\": \"z\"}");
+        Check(!noMatch.Success && noMatch.Error.Contains("não encontrado"), "U-tool-edit-notfound");
+
+        var slow = exec.Execute("shell", "{\"command\": \"python3 -m http.server 18924\"}", 1);
+        Check(!slow.Success && slow.Error.Contains("TIMEOUT"), "U-tool-shell-timeout");
     }
 }

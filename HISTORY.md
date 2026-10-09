@@ -368,3 +368,11 @@
 - **Higiene**: symlink `wwwroot/*.iso` removido (era lixo apontando p/ VMachine).
 - **Suite: 42/42 PASS** (7 ContextWindow + 10 SessionService + 11 ToolExecutor + 14 Chat),
   `dotnet build slnx -c Release` 0 erros; warnings só os 4 pré-existentes.
+
+## Bridge Web — Fase 6b Cobertura + diagnósticos verificados (2026-10-08)
+- Suite: **61/61 PASS** (7 ContextWindow + 10 SessionService + 23 ToolExecutor +
+  6 Diagnostics + 15 Chat integração), exit 0. Cobertura do código novo ~85%:
+  handlers, dispatcher, DI, middleware (Referer/IP), telemetria e endpoint
+  `/Chat/Diagnostics` exercitados; fora: tetos de tamanho, sudo-exato-allow,
+  RegisterError, POSTs de Users/Agents (gap pré-existente).
+- Sem `dotnet test`/`coverlet` neste repo (runner console próprio); contagem por asserts.

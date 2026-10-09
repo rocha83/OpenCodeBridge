@@ -34,8 +34,9 @@ internal static class ChatIntegrationTests
         Check(await SessionsCrud(), "I-chat-sessions-crud");
         Check(await StreamSseWithSession(), "I-chat-stream-sse");
         Check(await PingEngine(), "I-chat-ping-engine");
+        Check(await DiagnosticsEndpoint(), "I-chat-diagnostics");
 
-        Console.WriteLine($"=== Chat Integration: {14 - Failures}/14 PASS, {Failures} FAIL ===");
+        Console.WriteLine($"=== Chat Integration: {15 - Failures}/15 PASS, {Failures} FAIL ===");
     }
 
     private static void Check(bool ok, string name)
@@ -150,5 +151,12 @@ internal static class ChatIntegrationTests
     {
         var resp = await Http.GetFromJsonAsync<JsonObject>($"{WebBase}/Chat/Ping?agentId=1");
         return resp?["ok"]?.GetValue<bool>() == true;
+    }
+
+    private static async Task<bool> DiagnosticsEndpoint()
+    {
+        // Formato vale com diagnóstico on/off; conteúdo varia com o modo.
+        var resp = await Http.GetFromJsonAsync<JsonObject>($"{WebBase}/Chat/Diagnostics");
+        return resp?.ContainsKey("enabled") == true && resp?["snapshots"] is JsonArray;
     }
 }
