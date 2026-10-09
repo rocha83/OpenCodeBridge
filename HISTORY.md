@@ -392,3 +392,9 @@
   mantida como histórico sutil do que rodou.
 - Teste `I-chat-tool-progress` (modelo real via `ls`): start+done observados.
 - Suite: **62/62 PASS** (7+10+23+6+16), build Release 0 erros.
+
+## Bridge Web — Fase 6e Streaming real (2026-10-08)
+- Removido `CopyToAsync` do `StreamWithTools`: linhas da bridge repassadas ao vivo
+  (primeiro byte ~3,8s vs ~13s+ antes); bolha nasce no primeiro `content` e o
+  efeito palavra-por-palavra (~20/s + caret) ritma o fluxo real.
+- Suite: **62/62 PASS**, build Release 0 erros.

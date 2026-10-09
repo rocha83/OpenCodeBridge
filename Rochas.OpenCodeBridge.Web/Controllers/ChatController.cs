@@ -264,7 +264,7 @@ public sealed class ChatController(
                 ["tool_choice"] = "auto"
             };
 
-            var buffer = new System.IO.MemoryStream();
+            // Repasse ao vivo (sem buffer total).
             using var res = await client.PostAsync(agent.BridgeUrl.TrimEnd('/') + "/v1/chat/completions",
                 new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
 
@@ -274,12 +274,10 @@ public sealed class ChatController(
                 return;
             }
 
+            // Repasse ao vivo: cada linha da bridge vai ao cliente asim que chega
+            // (sem CopyToAsync — buffer total matava o efeito "digitando").
             using var stream = await res.Content.ReadAsStreamAsync(ct);
-            await stream.CopyToAsync(buffer, ct);
-
-            // Processa buffer: repassa para Response.Body e captura tool_calls
-            buffer.Position = 0;
-            using var reader = new System.IO.StreamReader(buffer);
+            using var reader = new System.IO.StreamReader(stream);
             string? line;
             // Accumulate tool calls by index (arguments split across chunks)
             var toolCallAccum = new Dictionary<int, (string Id, string Name, StringBuilder Args)>();
