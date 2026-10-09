@@ -480,3 +480,9 @@
 - Falha no executor (depth 0) -> 8b subdivide em 2-4 micro-tarefas e re-executa
   (profundidade máx. 1); se inviável, cai no refinamento de prompt. Tudo persistido.
 - Suite: **80/80 PASS**, build Release 0 erros.
+
+## Bridge Web — Fase 9d Contenção + coabitação (2026-10-09)
+- Tempestade contida: 1 split por tarefa + filhos sem refine (84 refinos -> limitado).
+- Coabitação 8B (0.75/16k) + 3B-AWQ (0.24->offload CPU, 4k): 10,9GB, ambos no ar.
+  3B-AWQ responde em ~2s (mais rápido que BF16).
+- Suite: **80/80 PASS**, build Release 0 erros.

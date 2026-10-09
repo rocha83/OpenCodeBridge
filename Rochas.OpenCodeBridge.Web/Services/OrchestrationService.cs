@@ -298,20 +298,24 @@ public sealed class OrchestrationService(
 
     // Ciclo com retry: falha sem conteúdo útil volta ao orch para refinamento
     // (máx. Orchestration:MaxTaskRetries), com re-disparo do enunciado corrigido.
-    // Na 1ª falha (depth 0): tenta SUBDIVIDIR em micro-tarefas e executá-las;
-    // persistindo tudo. Profundidade máxima 1 (sem explosão).
+    // Na 1ª falha (depth 0): UMA subdivisão em micro-tarefas; o resto é só refine.
+    // Profundidade máxima 1 e 1 split por tarefa (sem tempestade).
     private async Task<string> RunExecutorTaskAsync(int sessionId, int index, SubTask task, Agent orch, Agent exec, CancellationToken ct, int depth)
     {
+        // Filhos de split (depth>=1): tentativa única, sem refine (contém a tempestade).
+        int maxAttempts = depth == 0 ? _maxTaskRetries : 0;
         string prompt = task.Prompt;
-        for (int attempt = 0; attempt <= _maxTaskRetries; attempt++)
+        bool splitTried = false;
+        for (int attempt = 0; attempt <= maxAttempts; attempt++)
         {
             var (result, toolCalls) = await AttemptExecutorTaskAsync(sessionId, index, prompt, exec, ct);
             bool toolsMissing = task.NeedsTools && toolCalls == 0;
             if (toolsMissing)
                 result += "\n[Evidência: nenhuma ferramenta foi chamada, embora exigida.]";
             if ((!IsFailure(result) && !toolsMissing) || attempt == _maxTaskRetries) return result;
-            if (depth == 0)
+            if (depth == 0 && !splitTried)
             {
+                splitTried = true;
                 string? split = await TrySplitAsync(sessionId, index, task, prompt, result, orch, exec, ct, depth);
                 if (split is not null) return split;
             }
@@ -323,7 +327,7 @@ public sealed class OrchestrationService(
             if (!refined.Ok || string.IsNullOrWhiteSpace(refined.Content)) return result;
             prompt = refined.Content.Trim();
         }
-        return $"[Executor {index + 1}] FALHOU após {_maxTaskRetries + 1} tentativa(s)";
+        return $"[Executor {index + 1}] FALHOU após {maxAttempts + 1} tentativa(s)";
     }
 
     // Subdivide a tarefa falha em micro-tarefas, executa e combina. Null se inviável.
