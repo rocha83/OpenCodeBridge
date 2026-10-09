@@ -4,6 +4,7 @@ using Rochas.DapperRepository;
 using Rochas.OpenCodeBridge.Web.Models;
 using Rochas.OpenCodeBridge.Web.Services;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -14,7 +15,6 @@ namespace Rochas.OpenCodeBridge.Web.Controllers;
 public sealed class ChatController(
     GenericRepository<Agent> agents,
     SessionService sessionService,
-    BridgeClient bridge,
     ToolExecutor toolExecutor,
     IHttpClientFactory http) : Controller
 {
@@ -125,7 +125,7 @@ public sealed class ChatController(
         public int AgentId { get; set; }
     }
 
-    // ---- Stream com sessão ----
+    // ---- Stream com sessão + tool calling ----
 
     public sealed class StreamRequest
     {
@@ -192,64 +192,215 @@ public sealed class ChatController(
             await sessionService.AddMessageAsync(session.Id.Value, "user", lastUser.Content, "", null, null);
         }
 
-        // Stream com captura da resposta do assistant
+        // Stream com tool calling loop
+        await StreamWithTools(agent, messages, session, ct);
+    }
+
+    private async Task StreamWithTools(Agent agent, JsonArray messages, Session? session, CancellationToken ct)
+    {
+        var outputStream = Response.Body;
+        var client = http.CreateClient();
+        client.Timeout = Timeout.InfiniteTimeSpan;
+
         var assistantContent = new System.Text.StringBuilder();
         var assistantThinking = new System.Text.StringBuilder();
         int? promptTokens = null;
         int? completionTokens = null;
 
-        var outputStream = Response.Body;
-        var buffer = new System.IO.MemoryStream();
-        var (ok, error) = await bridge.StreamAsync(agent.BridgeUrl, agent.Model, agent.Temperature,
-            agent.SystemPrompt, messages, buffer, ct);
-
-        // Processa buffer: repassa para Response.Body e captura assistant content + usage
-        buffer.Position = 0;
-        using var reader = new System.IO.StreamReader(buffer);
-        string? line;
-        while ((line = await reader.ReadLineAsync()) != null)
+        // Helper to build fresh messages array from values (avoids JsonNode parent issues)
+        JsonArray BuildMessages(JsonArray src)
         {
-            // Repassa linha para cliente
-            var lineBytes = System.Text.Encoding.UTF8.GetBytes(line + "\n");
-            await outputStream.WriteAsync(lineBytes, ct);
-            await outputStream.FlushAsync(ct);
-
-            // Parsa SSE para capturar assistant content/thinking/usage
-            if (line.StartsWith("data: "))
+            var dst = new JsonArray();
+            foreach (var node in src)
             {
-                var data = line[6..].Trim();
-                if (data == "[DONE]") continue;
-                try
+                if (node is JsonObject obj)
                 {
-                    var chunk = JsonNode.Parse(data);
-                    var choices = chunk?["choices"]?.AsArray();
-                    if (choices?.Count > 0)
+                    var clone = new JsonObject();
+                    foreach (var kv in obj)
                     {
-                        var delta = choices[0]?["delta"];
-                        if (delta?["reasoning_content"]?.GetValue<string>() is string rc)
-                            assistantThinking.Append(rc);
-                        if (delta?["content"]?.GetValue<string>() is string cc)
-                            assistantContent.Append(cc);
+                        var val = kv.Value;
+                        if (val is JsonArray arr)
+                        {
+                            // Rebuild array from values
+                            var newArr = new JsonArray();
+                            foreach (var item in arr)
+                            {
+                                if (item is JsonObject itemObj)
+                                {
+                                    var itemClone = new JsonObject();
+                                    foreach (var ikv in itemObj)
+                                        itemClone[ikv.Key] = ikv.Value?.DeepClone();
+                                    newArr.Add(itemClone);
+                                }
+                                else
+                                {
+                                    newArr.Add(item?.DeepClone());
+                                }
+                            }
+                            clone[kv.Key] = newArr;
+                        }
+                        else
+                        {
+                            clone[kv.Key] = val?.DeepClone();
+                        }
                     }
-                    // usage vem no último chunk (ou em chunk separado)
-                    if (chunk?["usage"] is JsonObject usage)
-                    {
-                        promptTokens = usage["prompt_tokens"]?.GetValue<int>();
-                        completionTokens = usage["completion_tokens"]?.GetValue<int>();
-                    }
+                    dst.Add(clone);
                 }
-                catch { /* ignora parse errors */ }
             }
+            return dst;
         }
 
-        // Persiste resposta do assistant se há sessão
-        if (ok && session is not null && session.Id.HasValue && assistantContent.Length > 0)
+        while (!ct.IsCancellationRequested)
+        {
+            var tools = ToolDefinitions.GetTools();
+            var body = new JsonObject
+            {
+                ["model"] = agent.Model,
+                ["messages"] = BuildMessages(messages),
+                ["temperature"] = agent.Temperature,
+                ["max_tokens"] = 2048,
+                ["stream"] = true,
+                ["tools"] = tools,
+                ["tool_choice"] = "auto"
+            };
+
+            var buffer = new System.IO.MemoryStream();
+            using var res = await client.PostAsync(agent.BridgeUrl.TrimEnd('/') + "/v1/chat/completions",
+                new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
+
+            if (!res.IsSuccessStatusCode)
+            {
+                if (!Response.HasStarted) Response.StatusCode = 502;
+                return;
+            }
+
+            using var stream = await res.Content.ReadAsStreamAsync(ct);
+            await stream.CopyToAsync(buffer, ct);
+
+            // Processa buffer: repassa para Response.Body e captura tool_calls
+            buffer.Position = 0;
+            using var reader = new System.IO.StreamReader(buffer);
+            string? line;
+            // Accumulate tool calls by index (arguments split across chunks)
+            var toolCallAccum = new Dictionary<int, (string Id, string Name, StringBuilder Args)>();
+            string? finishReason = null;
+
+            while ((line = await reader.ReadLineAsync()) != null)
+            {
+                // Repassa linha para cliente
+                var lineBytes = System.Text.Encoding.UTF8.GetBytes(line + "\n");
+                await outputStream.WriteAsync(lineBytes, ct);
+                await outputStream.FlushAsync(ct);
+
+                // Parsa SSE para capturar assistant content/thinking/tool_calls/usage
+                if (line.StartsWith("data: "))
+                {
+                    var data = line[6..].Trim();
+                    if (data == "[DONE]") continue;
+                    try
+                    {
+                        var chunk = JsonNode.Parse(data);
+                        var choices = chunk?["choices"]?.AsArray();
+                        if (choices?.Count > 0)
+                        {
+                            var delta = choices[0]?["delta"];
+                            if (delta?["reasoning_content"]?.GetValue<string>() is string rc)
+                                assistantThinking.Append(rc);
+                            if (delta?["content"]?.GetValue<string>() is string cc)
+                                assistantContent.Append(cc);
+
+                            // Captura tool_calls
+                            if (delta?["tool_calls"] is JsonArray tcArr)
+                            {
+                                foreach (var tc in tcArr)
+                                {
+                                    var tcObj = tc?.AsObject();
+                                    if (tcObj is null) continue;
+                                    var index = tcObj["index"]?.GetValue<int>() ?? 0;
+                                    var id = tcObj["id"]?.GetValue<string>() ?? "";
+                                    var fn = tcObj["function"]?.AsObject();
+                                    if (fn is null) continue;
+                                    var name = fn["name"]?.GetValue<string>() ?? "";
+                                    var argsChunk = fn["arguments"]?.GetValue<string>() ?? "";
+                                    
+                                    if (!toolCallAccum.TryGetValue(index, out var existing))
+                                    {
+                                        existing = (id, name, new StringBuilder());
+                                        toolCallAccum[index] = existing;
+                                    }
+                                    if (id.Length > 0) existing.Id = id;
+                                    if (name.Length > 0) existing.Name = name;
+                                    existing.Args.Append(argsChunk);
+                                }
+                            }
+
+                            finishReason = choices[0]?["finish_reason"]?.GetValue<string>();
+                        }
+                        if (chunk?["usage"] is JsonObject usage)
+                        {
+                            promptTokens = usage["prompt_tokens"]?.GetValue<int>();
+                            completionTokens = usage["completion_tokens"]?.GetValue<int>();
+                        }
+                    }
+                    catch { /* ignora parse errors */ }
+                }
+            }
+
+            // Se não houve tool_calls ou finish_reason != tool_calls, terminamos
+            if (toolCallAccum.Count == 0 || finishReason != "tool_calls")
+            {
+                break;
+            }
+
+            // Converte accumulated tool calls para lista
+            var toolCalls = toolCallAccum.Values
+                .Where(t => !string.IsNullOrEmpty(t.Id) && !string.IsNullOrEmpty(t.Name))
+                .Select(t => (t.Id, t.Name, t.Args.ToString()))
+                .ToList();
+
+            // Adiciona mensagem do assistant com tool_calls para o histórico (necessário para o modelo ver suas próprias chamadas)
+            var assistantMsg = new JsonObject
+            {
+                ["role"] = "assistant",
+                ["content"] = assistantContent.Length > 0 ? assistantContent.ToString() : "",
+                ["tool_calls"] = new JsonArray()
+            };
+            var tcArray = (JsonArray)assistantMsg["tool_calls"]!;
+            foreach (var (id, name, args) in toolCalls)
+            {
+                tcArray.Add(new JsonObject
+                {
+                    ["id"] = id,
+                    ["type"] = "function",
+                    ["function"] = new JsonObject { ["name"] = name, ["arguments"] = args }
+                });
+            }
+            messages.Add(assistantMsg);
+
+            // Executa cada tool e adiciona resultado às mensagens
+            foreach (var (id, name, args) in toolCalls)
+            {
+                var result = toolExecutor.Execute(name, args);
+                var toolResult = new JsonObject
+                {
+                    ["role"] = "tool",
+                    ["tool_call_id"] = id,
+                    ["content"] = result.Success ? result.Output : $"Error: {result.Error}"
+                };
+                messages.Add(toolResult);
+            }
+
+            // Reseta para próxima iteração
+            assistantContent.Clear();
+            assistantThinking.Clear();
+        }
+
+        // Persiste resposta final do assistant se há sessão
+        if (session is not null && session.Id.HasValue && assistantContent.Length > 0)
         {
             await sessionService.AddMessageAsync(session.Id.Value, "assistant", assistantContent.ToString(), assistantThinking.ToString(), promptTokens, completionTokens);
             await sessionService.TouchAsync(session.Id.Value);
         }
-
-        if (!ok && !Response.HasStarted) Response.StatusCode = 502;
     }
 
     // POST /Chat/Tool - Executa tool no servidor

@@ -25,6 +25,8 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
                 ["temperature"] = temperature,
                 ["max_tokens"] = 2048,
                 ["stream"] = true,
+                ["tools"] = ToolDefinitions.GetTools(),
+                ["tool_choice"] = "auto"
             };
             var client = http.CreateClient();
             client.Timeout = Timeout.InfiniteTimeSpan;

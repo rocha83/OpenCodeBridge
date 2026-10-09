@@ -14,6 +14,7 @@ namespace Rochas.OpenCodeBridge.Web.Services
             "ls", "cat", "head", "tail", "echo", "sed", "grep", "find", "wc", "diff",
             "file", "pwd", "date", "git", "dotnet", "python", "python3", "node",
             "npm", "curl", "head", "tail", "wc", "diff", "file",
+            "shell", "bash", "sh",
         };
 
         private static readonly List<string> SudoExact = new()
@@ -103,20 +104,44 @@ namespace Rochas.OpenCodeBridge.Web.Services
                 why = "sudo fora da lista exata"; return false;
             }
 
-            if (!new[] { "ls", "cat", "head", "tail", "echo", "sed", "grep", "find", "wc", "diff", "file", "pwd", "date", "git", "dotnet", "python", "python3", "node", "npm", "curl", "head", "tail", "wc", "diff", "file" }.Contains(name))
+            // Handle shell/bash/sh: execute the arguments as a shell command
+            if (name is "shell" or "bash" or "sh")
+            {
+                // Parse JSON arguments to extract "command" field
+                string command = arguments;
+                try
+                {
+                    var argsObj = JsonNode.Parse(arguments)?.AsObject();
+                    if (argsObj is not null && argsObj["command"]?.GetValue<string>() is string cmd && !string.IsNullOrWhiteSpace(cmd))
+                        command = cmd;
+                }
+                catch { /* not JSON, use as-is */ }
+
+                if (string.IsNullOrWhiteSpace(command))
+                    return Fail("shell comando vazio", out why, out argv);
+                // Use bash -c to execute the command string
+                argv = new[] { "bash", "-c", command };
+                return true;
+            }
+
+            if (!new[] { "ls", "cat", "head", "tail", "echo", "sed", "grep", "find", "wc", "diff", "file", "pwd", "date", "git", "dotnet", "python", "python3", "node", "npm", "curl", "head", "tail", "wc", "diff", "file", "shell", "bash", "sh" }.Contains(name))
             {
                 return Fail($"comando '{name}' fora do allowlist", out why, out argv);
             }
 
             string low = " " + arguments + " ";
-            foreach (char c in new[] { ';', '&', '|', '>', '<', '$', '`', '!', '\r', '\n' })
-                if (arguments.Contains(c)) return Fail($"metacaractere '{c}' negado", out why, out argv);
-
-            foreach (string bad in new[] { "rm", "kill", "pkill", "killall", "reboot", "shutdown", "halt", "mkfs", "dd", "fdisk", "mount", "systemctl", "service", "crontab", "ssh", "scp", "wget", "chmod", "chown", "nohup", "setsid", "disown", "exec", "eval", "su", "mkfifo" })
+            // Skip metacharacter and bad token checks for shell/bash/sh (they need shell syntax)
+            if (name is not ("shell" or "bash" or "sh"))
             {
-                string pattern = $@"[\s\""]{Regex.Escape(bad)}[\s\""]";
-                if (Regex.IsMatch(" " + arguments + " ", pattern, RegexOptions.IgnoreCase))
-                    return Fail($"token '{bad}' negado", out why, out argv);
+                foreach (char c in new[] { ';', '&', '|', '>', '<', '$', '`', '!', '\r', '\n' })
+                    if (arguments.Contains(c)) return Fail($"metacaractere '{c}' negado", out why, out argv);
+
+                foreach (string bad in new[] { "rm", "kill", "pkill", "killall", "reboot", "shutdown", "halt", "mkfs", "dd", "fdisk", "mount", "systemctl", "service", "crontab", "ssh", "scp", "wget", "chmod", "chown", "nohup", "setsid", "disown", "exec", "eval", "su", "mkfifo" })
+                {
+                    string pattern = $@"[\s\""]{Regex.Escape(bad)}[\s\""]";
+                    if (Regex.IsMatch(" " + arguments + " ", pattern, RegexOptions.IgnoreCase))
+                        return Fail($"token '{bad}' negado", out why, out argv);
+                }
             }
 
             var sudoParts = SplitArgs(arguments);
