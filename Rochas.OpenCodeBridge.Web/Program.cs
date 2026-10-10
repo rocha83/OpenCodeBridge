@@ -94,6 +94,10 @@ using (var scope = app.Services.CreateScope())
     var existing = await users.Query(new User { Email = "admin@mova.com" });
     if (!existing.Any())
         await users.Add(new User { Name = "Admin", Email = "admin@mova.com", PasswordHash = passwords.Hash("Admin@123"), IsAdmin = true, Active = true });
+    // Usuário isolado da bateria de integração (sessões de teste nunca na UI do admin).
+    var etest = await users.Query(new User { Email = "teste@e2e.local" });
+    if (!etest.Any())
+        await users.Add(new User { Name = "E2E", Email = "teste@e2e.local", PasswordHash = passwords.Hash("Teste@123"), IsAdmin = false, Active = true });
 }
 
 app.UseStaticFiles();

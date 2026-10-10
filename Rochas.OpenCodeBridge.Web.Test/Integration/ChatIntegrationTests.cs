@@ -20,6 +20,7 @@ internal static class ChatIntegrationTests
     private static string WebBase = "http://127.0.0.1:4130";
     private static CookieContainer Cookies = new();
     private static int Failures;
+    private static readonly List<int> CreatedSessions = new();
 
     internal static async Task RunAsync(string webBase)
     {
@@ -37,6 +38,12 @@ internal static class ChatIntegrationTests
         Check(await DiagnosticsEndpoint(), "I-chat-diagnostics");
         Check(await ToolProgressEvents(), "I-chat-tool-progress");
 
+        // Não suja a UI real: apaga as sessões criadas pelos testes.
+        foreach (int sid in CreatedSessions.Distinct())
+        {
+            try { await Http.DeleteAsync($"{WebBase}/Chat/Sessions/{sid}"); } catch { }
+        }
+
         Console.WriteLine($"=== Chat Integration: {16 - Failures}/16 PASS, {Failures} FAIL ===");
     }
 
@@ -48,8 +55,9 @@ internal static class ChatIntegrationTests
 
     private static async Task<bool> LoginAdmin()
     {
+        // Bateria isolada no usuário de teste (nunca polui as sessões do admin na UI).
         var resp = await Http.PostAsync($"{WebBase}/Account/Login",
-            new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("email", "admin@mova.com"), new KeyValuePair<string, string>("password", "x") }));
+            new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("email", "teste@e2e.local"), new KeyValuePair<string, string>("password", "x") }));
         return resp.StatusCode == HttpStatusCode.Redirect;
     }
 
@@ -62,7 +70,12 @@ internal static class ChatIntegrationTests
 
     private static async Task<bool> AdminSeesAgentsUsersLinks()
     {
-        var html = await Http.GetStringAsync($"{WebBase}/Chat");
+        // Links de admin exigem o admin de verdade (bateria roda no usuário de teste).
+        using var admin = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, CookieContainer = new CookieContainer() });
+        var login = await admin.PostAsync($"{WebBase}/Account/Login",
+            new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("email", "admin@mova.com"), new KeyValuePair<string, string>("password", "x") }));
+        if (login.StatusCode != HttpStatusCode.Redirect) return false;
+        var html = await admin.GetStringAsync($"{WebBase}/Chat");
         return html.Contains("/Agents") && html.Contains("/Users");
     }
 
@@ -110,6 +123,7 @@ internal static class ChatIntegrationTests
         var session = await createResp.Content.ReadFromJsonAsync<JsonObject>();
         var id = session?["id"]?.GetValue<int>();
         if (id == null || id <= 0) return false;
+        CreatedSessions.Add(id.Value);
 
         // Stream
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{WebBase}/Chat/Stream");
@@ -169,6 +183,7 @@ internal static class ChatIntegrationTests
         var session = await createResp.Content.ReadFromJsonAsync<JsonObject>();
         var id = session?["id"]?.GetValue<int>();
         if (id == null || id <= 0) return false;
+        CreatedSessions.Add(id.Value);
 
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{WebBase}/Chat/Stream");
         req.Content = JsonContent.Create(new { sessionId = id, agentId = 1, messages = new[] { new { role = "user", content = "liste os arquivos com ls" } } });

@@ -127,12 +127,13 @@ function isScrolledToBottom() {
   return conv.scrollTop + conv.clientHeight >= conv.scrollHeight - 50;
 }
 
-// Linha de status de tool: "Executando [nome]..." piscando -> details "concluído/falhou" + retorno.
-function toolStatus(name, running, ok, result) {
+// Linha de status de tool: "Executando [nome]..." piscando -> details "concluído/falhou em Xs" + retorno.
+function toolStatus(name, running, ok, result, ms) {
   if (running) {
     const li = document.createElement('li');
     li.className = 'd-flex justify-content-start mt-1 mb-1 tool-status';
     li.dataset.tool = name;
+    li.dataset.t0 = Date.now();
     li.innerHTML = `<span class="small text-muted"><span class="dot blink me-1"></span>Executando ${esc(name)}...</span>`;
     conv.appendChild(li);
   } else {
@@ -140,9 +141,11 @@ function toolStatus(name, running, ok, result) {
     let li = null;
     items.forEach(el => { if (el.dataset.tool === name) li = el; });
     if (li) {
+      const secs = ms > 0 ? (ms / 1000) : Math.max(0, (Date.now() - (+li.dataset.t0 || Date.now())) / 1000);
+      const when = ` em ${secs < 10 ? secs.toFixed(1) : Math.round(secs)}s`;
       const state = ok === false ? 'falhou' : 'concluído';
       const body = result ? `<pre class="small text-muted mt-1 mb-0" style="white-space:pre-wrap">${esc(result)}</pre>` : '';
-      li.innerHTML = `<details class="small text-muted"><summary>${esc(name)} ${state}.</summary>${body}</details>`;
+      li.innerHTML = `<details class="small text-muted"><summary>${esc(name)} ${state}${when}.</summary>${body}</details>`;
       li.classList.remove('tool-status');
     }
   }
@@ -636,7 +639,7 @@ document.getElementById('send').onclick = async () => {
           if (evt.progress) {
             // Progresso de tool vindo do servidor
             if (evt.progress === 'tool_start') toolStatus(evt.name, true);
-            else if (evt.progress === 'tool_done') toolStatus(evt.name, false, evt.ok, evt.result || '');
+            else if (evt.progress === 'tool_done') toolStatus(evt.name, false, evt.ok, evt.result || '', evt.ms || 0);
             continue;
           }
           const d = evt.choices[0].delta;

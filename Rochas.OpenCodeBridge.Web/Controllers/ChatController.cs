@@ -565,7 +565,7 @@ public sealed class ChatController(
                                 sr.Success, sr.Success ? sr.Output : sr.Error ?? "", ssw.ElapsedMilliseconds);
                         string so = sr.Success ? sr.Output : $"Error: {sr.Error}";
                         if (so.Length > 1000) so = so[..1000] + "\n[truncado]";
-                        await WriteProgressAsync(outputStream, "tool_done", st.Tool, sr.Success, ct, so);
+                        await WriteProgressAsync(outputStream, "tool_done", st.Tool, sr.Success, ct, so, ssw.ElapsedMilliseconds);
                         rep.Append($"\n- {st.Echo} => {(sr.Success ? "ok" : "FALHOU")}: {so.Replace("\n", " / ")}");
                     }
                     messages.Add(new JsonObject { ["role"] = "user", ["content"] = rep.ToString() });
@@ -616,7 +616,7 @@ public sealed class ChatController(
                         result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds);
                 string content = result.Success ? result.Output : $"Error: {result.Error}";
                 if (content.Length > 2000) content = content[..2000] + "\n[truncado]";
-                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, content);
+                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, content, sw.ElapsedMilliseconds);
                 var toolResult = new JsonObject
                 {
                     ["role"] = "tool",
@@ -645,10 +645,11 @@ public sealed class ChatController(
     }
 
     // Evento de progresso ao cliente (a UI mostra "Executando [tool]..." / details com retorno).
-    private static async Task WriteProgressAsync(System.IO.Stream output, string stage, string name, bool? ok, CancellationToken ct, string result = "")
+    private static async Task WriteProgressAsync(System.IO.Stream output, string stage, string name, bool? ok, CancellationToken ct, string result = "", long ms = 0)
     {
         var evt = new JsonObject { ["progress"] = stage, ["name"] = name };
         if (ok.HasValue) evt["ok"] = ok.Value;
+        if (ms > 0) evt["ms"] = ms;
         if (!string.IsNullOrEmpty(result)) evt["result"] = result.Length > 1000 ? result[..1000] + "\n[truncado]" : result;
         var bytes = Encoding.UTF8.GetBytes("data: " + evt.ToJsonString() + "\n\n");
         await output.WriteAsync(bytes, ct);

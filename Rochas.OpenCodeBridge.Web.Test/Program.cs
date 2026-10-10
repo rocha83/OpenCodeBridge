@@ -39,19 +39,29 @@ internal static class Program
             if (args[i] == "--belts") belts.AddRange(args[i + 1].Split(',', StringSplitOptions.RemoveEmptyEntries));
         }
         ui = args.Contains("--ui");
+        bool unitsOnly = args.Contains("--units-only");
+        bool integrationOnly = args.Contains("--integration-only");
+        bool skipUnits = args.Contains("--skip-units");
+        bool skipIntegration = args.Contains("--skip-integration");
         if (exec > 0) Ui.BeltUiTests.SetExecOverride(exec);
 
-        UnitHash();
-        UnitAgent();
-        UnitContextWindow();
-        UnitSessionService().GetAwaiter().GetResult();
-        Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ToolExecutorTests.Run();
-        Failures += Rochas.OpenCodeBridge.Web.Test.Unit.DiagnosticsTests.Run();
-        Failures += Rochas.OpenCodeBridge.Web.Test.Unit.OrchestrationTests.Run();
-        Failures += Rochas.OpenCodeBridge.Web.Test.Unit.SessionTaskPanelTests.Run();
-        IntegrationCrud().GetAwaiter().GetResult();
-        IntegrationHttp(web).GetAwaiter().GetResult();
-        Integration.ChatIntegrationTests.RunAsync(web).GetAwaiter().GetResult();
+        if (!integrationOnly && !skipUnits)
+        {
+            UnitHash();
+            UnitAgent();
+            UnitContextWindow();
+            UnitSessionService().GetAwaiter().GetResult();
+            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ToolExecutorTests.Run();
+            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.DiagnosticsTests.Run();
+            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.OrchestrationTests.Run();
+            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.SessionTaskPanelTests.Run();
+            IntegrationCrud().GetAwaiter().GetResult();
+        }
+        if (!unitsOnly && !skipIntegration)
+        {
+            IntegrationHttp(web).GetAwaiter().GetResult();
+            Integration.ChatIntegrationTests.RunAsync(web).GetAwaiter().GetResult();
+        }
         if (ui)
             Failures += Ui.BeltUiTests.RunAsync(web, belts.ToArray(), mode, phase).GetAwaiter().GetResult();
 

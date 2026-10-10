@@ -210,13 +210,18 @@ public static class BeltUiTests
     {
         try
         {
+            Console.WriteLine($"[ui] {belt.Key}: goto chat");
             await page.GotoAsync(page.Url.Split("/Chat")[0] + "/Chat");
             await page.WaitForSelectorAsync("#conv, #prompt, select#agentId", new PageWaitForSelectorOptions { Timeout = 15000 });
+            Console.WriteLine($"[ui] {belt.Key}: agente plan");
             await page.SelectOptionAsync("select#agentId", PlanOrchestratorId.ToString());
+            Console.WriteLine($"[ui] {belt.Key}: nova sessao");
             await page.ClickAsync("#newSession");
             await page.WaitForTimeoutAsync(1500);
+            Console.WriteLine($"[ui] {belt.Key}: enviando enunciado");
             await page.FillAsync("#prompt", belt.Prompt);
             await page.ClickAsync("#send");
+            Console.WriteLine($"[ui] {belt.Key}: aguardando engine");
             bool done = false;
             var deadline = DateTime.UtcNow.AddMinutes(20);
             while (DateTime.UtcNow < deadline)
@@ -234,7 +239,7 @@ public static class BeltUiTests
             try { conv = await page.InnerTextAsync("#conv"); } catch { }
             string file = $"/tmp/opencode/conv_{belt.Key}_{DateTime.Now:HHmmss}.txt";
             try { await File.WriteAllTextAsync(file, conv); } catch { }
-            bool toolsUi = conv.Contains("Executando") && (conv.Contains("concluído") || conv.Contains("falhou") || conv.Contains("[exec]"));
+            bool toolsUi = (await page.QuerySelectorAllAsync("#conv details")).Count > 0;
             int msgs = 0, calls = 0;
             try
             {
