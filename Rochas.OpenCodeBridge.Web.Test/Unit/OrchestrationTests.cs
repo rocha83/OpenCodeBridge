@@ -38,9 +38,11 @@ internal static class OrchestrationTests
             {
                 string content = systemPrompt.Contains("Decomponha")
                     ? "{\"tasks\":[{\"title\":\"Tarefa A\",\"prompt\":\"faça A\"},{\"title\":\"Tarefa B\",\"prompt\":\"[usetools] faça B\"}]}"
-                    : systemPrompt.Contains("Sintetize")
-                        ? "sintese-final"
-                        : "artefato-executado";
+                    : systemPrompt.Contains("revisor")
+                        ? "{\"verdicts\":[{\"index\":1,\"verdict\":\"APROVADA\",\"reason\":\"ok\",\"fixedPrompt\":\"\"},{\"index\":2,\"verdict\":\"REJEITADA\",\"reason\":\"vazio\",\"fixedPrompt\":\"refaça B\"}]}"
+                        : systemPrompt.Contains("Sintetize")
+                            ? "sintese-final"
+                            : "artefato-executado";
                 sse = $"data: {{\"choices\":[{{\"delta\":{{\"content\":{JsonEncode(content)}}},\"finish_reason\":\"stop\"}}]}}\n\ndata: [DONE]\n\n";
             }
             var bytes = System.Text.Encoding.UTF8.GetBytes(sse);
@@ -85,8 +87,10 @@ internal static class OrchestrationTests
         RefineRetry().GetAwaiter().GetResult();
         SplitRetry().GetAwaiter().GetResult();
         NeedsToolsRetry().GetAwaiter().GetResult();
+        ReviewDisabled().GetAwaiter().GetResult();
+        ReviewEnabled().GetAwaiter().GetResult();
 
-        System.Console.WriteLine($"=== Orchestration Unit: {17 - Failures}/17 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== Orchestration Unit: {19 - Failures}/19 PASS, {Failures} FAIL ===");
         return Failures;
     }
 
@@ -151,7 +155,7 @@ internal static class OrchestrationTests
         }
     }
 
-    private static (OrchestrationService svc, FakeBridge fake, string db) Setup()
+    private static (OrchestrationService svc, FakeBridge fake, string db) Setup(OrchestrationOptions? opts = null)
     {
         string db = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"orch-{System.Guid.NewGuid():N}.db");
         AppDb.Init(db);
@@ -161,7 +165,7 @@ internal static class OrchestrationTests
         var svc = new OrchestrationService(fake, new SessionService(sessions, sessions, messages, messages),
             new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString),
             new ToolExecutor(System.IO.Path.GetTempPath(), System.IO.Path.Combine(System.IO.Path.GetTempPath(), "orch-tools.log")),
-            Options.Create(new OrchestrationOptions { MaxTaskRetries = 1 }));
+            Options.Create(opts ?? new OrchestrationOptions { MaxTaskRetries = 1 }));
         return (svc, fake, db);
     }
 
@@ -475,6 +479,54 @@ bool execDone = msgs.Any(m => m.Content.Contains("[Executor 1] Concluído"))
             bool split = msgs.Any(m => m.Content.Contains("Subdividindo tarefa 1 em 2"));
             bool combined = msgs.Any(m => m.Content.Contains("micro-um") && m.Content.Contains("micro-dois"));
             Check(run.Ok && split && combined, "U-orch-split-retry");
+        }
+        finally
+        {
+            try { System.IO.File.Delete(db); } catch { }
+        }
+    }
+
+    private static async System.Threading.Tasks.Task ReviewDisabled()
+    {
+        var (svc, fake, db) = Setup();
+        try
+        {
+            var r = await svc.ReviewAsync(1, 1, CancellationToken.None);
+            Check(!r.Ok && r.Error.Contains("desabilitada") && fake.SystemsSeen.Count == 0, "U-orch-review-disabled");
+        }
+        finally
+        {
+            try { System.IO.File.Delete(db); } catch { }
+        }
+    }
+
+    private static async System.Threading.Tasks.Task ReviewEnabled()
+    {
+        var (svc, fake, db) = Setup(new OrchestrationOptions { MaxTaskRetries = 1, EnableReview = true });
+        try
+        {
+            var agents = new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            await agents.Add(new Agent { Name = "o8", Model = "m1" });
+            await agents.Add(new Agent { Name = "e8", Model = "m2" });
+            var orch = (await agents.Query(new Agent())).First(a => a.Name == "o8");
+            var exec = (await agents.Query(new Agent())).First(a => a.Name == "e8");
+            var users = new GenericRepository<User>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            await users.Add(new User { Name = "u8", Email = "u8@u.com", PasswordHash = "h" });
+            var user = (await users.Query(new User())).First(u => u.Email == "u8@u.com");
+            var sessions = new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            var messages = new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString);
+            await sessions.Add(new Session { UserId = user.Id ?? 0, AgentId = orch.Id ?? 0, ExecutorAgentId = exec.Id, Title = "t" });
+            var created = (await sessions.Query(new Session { UserId = user.Id ?? 0 })).OrderByDescending(x => x.Id ?? 0).First();
+            var preview = await svc.PreviewAsync(created.Id ?? 0, user.Id ?? 0, "construa algo", CancellationToken.None);
+            var run = await svc.RunApprovedAsync(created.Id ?? 0, user.Id ?? 0,
+                preview.Tasks.Select(t => new OrchestrationService.SubTask(t.Title, t.Prompt)).ToList(),
+                CancellationToken.None, synthesize: false);
+            var review = await svc.ReviewAsync(created.Id ?? 0, user.Id ?? 0, CancellationToken.None);
+            var msgs = await messages.Query(new SessionMessage { SessionId = created.Id });
+            bool marked = msgs.Any(m => m.Content.Contains("[Revisor]"));
+            Check(preview.Ok && run.Ok && review.Ok && review.Approved == 1 && review.Total == 2
+                && review.Rejected.Count == 1 && review.Rejected[0].Prompt == "refaça B" && marked,
+                "U-orch-review-enabled");
         }
         finally
         {

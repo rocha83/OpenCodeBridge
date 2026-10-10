@@ -13,7 +13,11 @@ public interface IOrchestrationService
     Task<OrchestrateResult> RunApprovedAsync(int sessionId, int userId, List<OrchestrationService.SubTask> tasks, CancellationToken ct, bool synthesize = true);
     // Fase 3: sintetiza a partir do rastro persistido (executores já rodaram).
     Task<OrchestrateResult> SynthesizeAsync(int sessionId, int userId, CancellationToken ct);
+    // Revisao em lote (pos-execucao): o orch aprova/rejeita cada resultado e propoe
+    // enunciado corrigido para as rejeitadas. Inativa por padrao (EnableReview).
+    Task<ReviewResult> ReviewAsync(int sessionId, int userId, CancellationToken ct);
 }
 
 public sealed record OrchestrateResult(bool Ok, string Synthesis, string Error, int TaskCount);
 public sealed record DecomposeResult(bool Ok, List<OrchestrationService.SubTask> Tasks, string Error);
+public sealed record ReviewResult(bool Ok, List<OrchestrationService.SubTask> Rejected, string Error, int Approved, int Total);

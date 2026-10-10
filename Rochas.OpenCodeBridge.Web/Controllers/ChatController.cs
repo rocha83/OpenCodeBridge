@@ -215,6 +215,23 @@ public sealed class ChatController(
         return Json(new { synthesis = result.Synthesis, taskCount = result.TaskCount });
     }
 
+    // POST /Chat/Review - revisao em lote pos-execucao (inativa por padrao: EnableReview).
+    [HttpPost("/Chat/Review")]
+    public async Task<IActionResult> Review([FromBody] SynthesizeRequest req, [FromServices] IOrchestrationService orch, CancellationToken ct)
+    {
+        if (req.SessionId <= 0) return BadRequest("Sessão obrigatória");
+        var s = await sessionService.GetAsync(req.SessionId, CurrentUserId);
+        if (s is null) return NotFound();
+        var result = await orch.ReviewAsync(req.SessionId, CurrentUserId, ct);
+        if (!result.Ok) return BadRequest(result.Error);
+        return Json(new
+        {
+            rejected = result.Rejected.Select(t => new { title = t.Title, prompt = t.Prompt, etaMin = t.EtaMin, needsTools = t.NeedsTools }),
+            approved = result.Approved,
+            total = result.Total,
+        });
+    }
+
     // POST /Chat/Executors/{id}/Probe - mede tok/s do executor e grava em measured_tps.
     [HttpPost("/Chat/Executors/{id:int}/Probe")]
     public async Task<IActionResult> ProbeExecutor(int id, [FromServices] IBridgeClient bridge, CancellationToken ct)

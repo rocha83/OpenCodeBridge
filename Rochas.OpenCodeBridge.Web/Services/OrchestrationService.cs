@@ -92,6 +92,14 @@ public sealed class OrchestrationService(
         "com JSON, sem markdown nem texto extra: " +
         "{\"tasks\":[{\"title\":\"verbo curto\",\"prompt\":\"instrução completa\"}]}.";
 
+    // Revisor: julga em lote os resultados dos executores (pos-execucao, 1 chamada).
+    private const string ReviewSystem =
+        "Você é o revisor. Para cada tarefa abaixo, julgue o resultado do executor: APROVADA " +
+        "se cumpre o objetivo com evidência, REJEITADA se vazio, em prosa sem ato executivo ou " +
+        "fora do escopo. Para REJEITADA, proponha enunciado corrigido (mesmo objetivo, mais " +
+        "restrito). Responda SOMENTE com JSON, sem markdown nem texto extra: " +
+        "{\"verdicts\":[{\"index\":1,\"verdict\":\"APROVADA\",\"reason\":\"motivo curto\",\"fixedPrompt\":\"\"}]}.";
+
     public async Task<OrchestrateResult> OrchestrateAsync(int sessionId, int userId, string text, CancellationToken ct)
     {
         var session = await sessions.GetAsync(sessionId, userId);
@@ -193,6 +201,81 @@ public sealed class OrchestrationService(
             synth.Thinking, synth.PromptTokens, synth.CompletionTokens);
         await sessions.TouchAsync(sessionId);
         return new OrchestrateResult(true, synth.Content, "", tasks.Count);
+    }
+
+    // Revisao em lote (pos-execucao): 1 chamada ao orch julga todos os resultados.
+    // Inativa por padrao (Orchestration:EnableReview=false): retorna !Ok sem chamar modelo.
+    public async Task<ReviewResult> ReviewAsync(int sessionId, int userId, CancellationToken ct)
+    {
+        if (!orchestrationOptions.Value.EnableReview)
+            return new ReviewResult(false, new List<SubTask>(), "Revisão desabilitada (Orchestration:EnableReview)", 0, 0);
+        var session = await sessions.GetAsync(sessionId, userId);
+        if (session is null) return new ReviewResult(false, new List<SubTask>(), "Sessão não encontrada", 0, 0);
+
+        var agents = await ResolveAgentsAsync(session);
+        if (agents is null) return new ReviewResult(false, new List<SubTask>(), "Orquestrador ou executor inválido", 0, 0);
+
+        var history = await sessions.GetMessagesAsync(sessionId, 200);
+        var decomp = history.Select(m => m.Content ?? "")
+            .LastOrDefault(c => c.Contains("[Orquestrador] Dividi em"));
+        if (decomp is null) return new ReviewResult(false, new List<SubTask>(), "Sem decomposição persistida", 0, 0);
+        var titles = decomp.Split('\n')
+            .Select(l =>
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(l.Trim(), @"^(\d+)\.\s*(.+)$");
+                return m.Success ? SessionTaskPanel.CleanTitle(m.Groups[2].Value) : null;
+            })
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Cast<string>()
+            .ToList();
+        if (titles.Count == 0) return new ReviewResult(false, new List<SubTask>(), "Sem tarefas parseáveis", 0, 0);
+
+        var dump = new System.Text.StringBuilder();
+        for (int i = 0; i < titles.Count; i++)
+        {
+            var done = history.Select(m => m.Content ?? "")
+                .LastOrDefault(c => c.Contains($"[Executor {i + 1}] Concluído"));
+            string result = done is null ? "[sem resultado persistido]" : done;
+            if (result.Length > 3000) result = result[..3000];
+            dump.AppendLine($"--- Tarefa {i + 1}: {titles[i]} ---").AppendLine(result);
+        }
+        var review = await BridgeHelper.ChatAsync(bridge, agents.Orch.BridgeUrl, agents.Orch.Model,
+            PlanTemp(agents.Orch), ReviewSystem,
+            new JsonArray { new JsonObject { ["role"] = "user", ["content"] = dump.ToString() } }, ct);
+        if (!review.Ok) return new ReviewResult(false, new List<SubTask>(), $"Revisão falhou: {review.Error}", 0, titles.Count);
+
+        var rejected = new List<SubTask>();
+        int approved = 0;
+        try
+        {
+            string content = review.Content;
+            int s = content.IndexOf('{'), e = content.LastIndexOf('}');
+            using var doc = System.Text.Json.JsonDocument.Parse(s >= 0 && e > s ? content.Substring(s, e - s + 1) : "{}");
+            foreach (var v in doc.RootElement.GetProperty("verdicts").EnumerateArray())
+            {
+                int idx = v.TryGetProperty("index", out var ix) ? ix.GetInt32() - 1 : -1;
+                string vd = v.TryGetProperty("verdict", out var vv) ? (vv.GetString() ?? "") : "";
+                string reason = v.TryGetProperty("reason", out var rr) ? (rr.GetString() ?? "") : "";
+                if (idx < 0 || idx >= titles.Count) continue;
+                if (vd.Contains("REJEITADA", StringComparison.OrdinalIgnoreCase))
+                {
+                    string fixed_ = v.TryGetProperty("fixedPrompt", out var fp) && fp.GetString()?.Length > 0
+                        ? fp.GetString()! : "";
+                    rejected.Add(new SubTask(titles[idx], fixed_, 3, NeedsTools: true));
+                    await sessions.AddMessageAsync(sessionId, "assistant",
+                        $"[Revisor] tarefa {idx + 1} REJEITADA: {reason}", "", null, null);
+                }
+                else approved++;
+            }
+        }
+        catch
+        {
+            return new ReviewResult(false, new List<SubTask>(), "Revisão ilegível (sem JSON de vereditos)", 0, titles.Count);
+        }
+        await sessions.AddMessageAsync(sessionId, "assistant",
+            $"[Revisor] {approved}/{titles.Count} aprovadas, {rejected.Count} rejeitadas.", "", null, null);
+        await sessions.TouchAsync(sessionId);
+        return new ReviewResult(true, rejected, "", approved, titles.Count);
     }
 
     private async Task<AgentPair?> ResolveAgentsAsync(Session session)

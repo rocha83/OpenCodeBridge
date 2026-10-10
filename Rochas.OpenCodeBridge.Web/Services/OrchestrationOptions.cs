@@ -10,4 +10,7 @@ public sealed class OrchestrationOptions
     // tok/s assumido quando o executor nunca foi sondado e roda em CPU
     // (llama). Na CPU a ETA correta depende disto: GPU chuta 7, CPU 2.5.
     public double CpuDefaultTps { get; set; } = 2.5;
+    // Revisao em lote do 8B sobre os resultados (pos-execucao, via /Chat/Review).
+    // Inativa por padrao: o fluxo segue decompose -> aprova -> executa -> sintetiza.
+    public bool EnableReview { get; set; } = false;
 }
