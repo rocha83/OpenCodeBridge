@@ -1,5 +1,23 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## 8B autônomo + sidebar Executor + lições + ETA CPU (2026-10-09)
+- 8B cuida de quase tudo: `DecomposeSystem` agora diz que o pedido chega SUCINTO
+  pela UI do opencodebridge e o 8B ALONGA o descritivo + SUBDIVIDE (colabora nos
+  dois lados: decompor e refinar/sintetizar). Enunciado futuro vem da UI, não do Muse.
+- Sidebar renomeada `Tarefas 3B` -> `Tarefas do Executor`; cada item mostra resumo
+  do enunciado (1 linha, 160 chars, persistido na mensagem de divisão) + chips das
+  tools executadas (`[Executor i] Executou X`), além de título/ETA/status.
+- `refinement_lessons` (tabela simples): refine/split/tool_denied/needs_tools com
+  detalhe curto; últimas 5 entram no prompt de refinamento (anti-repetição dos 9
+  ciclos da preta). Best-effort: nunca quebra o pipeline.
+- Barreira de escopo: tool fora do JsonArray agora responde `Não permitido...`
+  (antes `não suportada`) e vira lição `tool_denied` que aperta o system do 3B.
+- ETA correta na CPU: `ResolveTps` público e testado — sondado vence; sem sonda,
+  CPU (llama/:4125) usa `Orchestration:CpuDefaultTps` (2.5) e GPU usa 7.
+  `DecomposeSystem` exige minutos REAIS (task com tools em CPU >= 5 min).
+- Testes: `U-orch-cpu-tps/gpu-tps/probed-tps`, `U-task-summary-tools/legacy/cleantitle`;
+  `SessionTaskPanel.CleanTitle` reaproveitado na síntese (títulos limpos).
+
 ## Runner: console executor com allowlist (2026-10-05)
 - `Rochas.OpenCodeBridge.Runner` (net9.0, BCL, zero warnings): loop via API
   direta na linha CPU (prompt curto, sem harness do `run`) — chat -> fence

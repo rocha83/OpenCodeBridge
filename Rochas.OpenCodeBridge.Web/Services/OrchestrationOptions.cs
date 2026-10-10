@@ -7,4 +7,7 @@ public sealed class OrchestrationOptions
     public int MaxTaskRetries { get; set; } = 2;
     // Executores simultâneos (0 = núcleos da CPU; GPU paraleliza, CPU llama serializa).
     public int MaxParallel { get; set; } = 0;
+    // tok/s assumido quando o executor nunca foi sondado e roda em CPU
+    // (llama). Na CPU a ETA correta depende disto: GPU chuta 7, CPU 2.5.
+    public double CpuDefaultTps { get; set; } = 2.5;
 }

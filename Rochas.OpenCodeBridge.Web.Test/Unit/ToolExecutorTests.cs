@@ -70,7 +70,7 @@ internal static class ToolExecutorTests
     private static void UnknownTool(ToolExecutor exec)
     {
         var r = exec.Execute("task", "{\"agent\": \"general\"}");
-        Check(!r.Success && r.Error.Contains("não suportada"), "U-tool-unknown");
+        Check(!r.Success && r.Error.Contains("Não permitido"), "U-tool-unknown");
     }
 
     private static void BashAlias(ToolExecutor exec)

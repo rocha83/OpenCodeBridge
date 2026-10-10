@@ -13,22 +13,32 @@ public sealed class OrchestrationService(
     ISessionService sessions,
     IGenericRepository<Agent> agents,
     IToolExecutor tools,
-    IOptions<OrchestrationOptions> orchestrationOptions) : IOrchestrationService
+    IOptions<OrchestrationOptions> orchestrationOptions,
+    IGenericRepository<RefinementLesson>? lessonQuery = null,
+    IPersistenceRepository<RefinementLesson>? lessonWrite = null) : IOrchestrationService
 {
     private const int MaxTasks = 16;
     private const int MaxToolTurns = 5;
     private const int MaxDecomposeTries = 3;
     private const int MinTasks = 2;
     private readonly int _maxTaskRetries = Math.Max(0, orchestrationOptions.Value.MaxTaskRetries);
+    private readonly double _cpuDefaultTps = orchestrationOptions.Value.CpuDefaultTps > 0
+        ? orchestrationOptions.Value.CpuDefaultTps : 2.5;
     private readonly int _maxParallel = Math.Clamp(
         orchestrationOptions.Value.MaxParallel <= 0 ? Environment.ProcessorCount : orchestrationOptions.Value.MaxParallel,
         1, 16);
 
     // Orch: divide o pedido em subtarefas técnicas. JSON estrito.
     // Trilhas paralelas: backend x frontend, com contratos explícitos.
+    // Autonomia: o pedido chega SUCINTO pela interface do opencodebridge (antes
+    // vinha do Muse nos testes); o orquestrador ALONGA o descritivo, compreende o
+    // domínio e EXPANDE o cognitivo ao segmentar — colabora nos dois lados
+    // (decompor e depois refinar/sintetizar), sem depender do humano no meio.
     private const string DecomposeSystem =
-        "Você é o orquestrador. Decomponha o pedido do usuário em subtarefas " +
-        "ATÔMICAS (1 ação verificável cada: 'crie a classe X com propósito Y', 'compile o " +
+        "Você é o orquestrador (modelo 8B supervisor). Decomponha o pedido: ele chega " +
+        "SUCINTO pela interface do opencodebridge; seu papel é ALONGAR o descritivo com " +
+        "entendimento do domínio e das regras de negócio, e SUBDIVIDIR em subtarefas ATÔMICAS " +
+        "(1 ação verificável cada: 'crie a classe X com propósito Y', 'compile o " +
         "projeto', 'leia o arquivo Z'), independentes e autocontidas para agentes executores " +
         "trabalhando EM PARALELO, inclusive offline (cada prompt carrega todo o contexto: " +
         "caminhos, comandos, saída esperada com exemplo e critério de aceite). Escalone a " +
@@ -39,20 +49,25 @@ public sealed class OrchestrationService(
         "(ex.: contratos, DTOs, entidades), emita-a como subtarefa própria e referencie-a nas " +
         "dependentes. Cada prompt deve trazer interfaces e contratos explícitos para fluir sem " +
         "espera entre trilhas. O executor gera cerca de {0} tok/s: estime os minutos de cada " +
-        "tarefa no campo etaMin. Marque needsTools:true nas tarefas que EXIGEM ferramentas " +
+        "tarefa no campo etaMin (minutos REAIS nessa velocidade; em CPU seja conservador: " +
+        "tarefa com tools sempre >= 5 min). Marque needsTools:true nas tarefas que EXIGEM ferramentas " +
         "(ler/escrever arquivos, shell, buscas); false nas de resposta em prosa. Responda SOMENTE " +
         "com JSON, sem markdown nem texto extra: " +
         "{\"tasks\":[{\"title\":\"verbo de ação curto\",\"prompt\":\"instrução completa para o executor\",\"etaMin\":3,\"needsTools\":true}]}.";
 
     // Executor: enunciado rígido (1 tarefa, artefato + evidência, sem conversa).
     // Catálogo explícito: o 3B inventa tools se não souber os nomes válidos.
+    // Barreira: tool fora do JsonArray é barrada com "Não permitido" e vira lição
+    // que aperta este system prompt progressivamente.
     private const string ExecutorSystem =
         "Você é o executor. Execute exatamente a tarefa recebida, de forma direta e técnica. " +
         "Responda com o artefato pedido seguido de evidência curta do que foi feito. " +
         "Ferramentas VÁLIDAS (use SOMENTE estas, via chamada de função): shell (comando), " +
         "read (path, offset, limit), write (path, content), edit (path, oldString, newString), " +
         "grep (pattern, path, include), glob (pattern, path). É PROIBIDO inventar outras " +
-        "ferramentas (como build, copy, expose): se nenhuma servir, responda em prosa. " +
+        "ferramentas (como build, copy, expose) ou chamar tool fora do escopo da tarefa: " +
+        "a tentativa é BARRADA com 'Não permitido' e registrada como lição que aperta " +
+        "este prompt. Se nenhuma tool válida servir, responda em prosa. " +
         "Sem conversa, sem perguntas de volta.";
 
     // Orch: síntese final em pt-BR a partir dos resultados.
@@ -61,9 +76,12 @@ public sealed class OrchestrationService(
         "final direta ao usuário, em pt-BR. Se algum executor falhou, diga o que faltou.";
 
     // Orch: reescreve enunciado que falhou, mais restrito e à prova do erro visto.
+    // O erro vira lição aprendida (tabela refinement_lessons) que ajusta o system
+    // prompt progressivamente; repetição da mesma assinatura = granular mais.
     private const string RefineSystem =
         "Você é o orquestrador. A subtarefa abaixo FALHOU no executor; reescreva o enunciado " +
-        "de forma mais restrita e à prova do erro, mantendo o mesmo objetivo. Responda SOMENTE " +
+        "de forma mais restrita e à prova do erro, mantendo o mesmo objetivo. Se a falha se " +
+        "repetir com a mesma assinatura, SUBDIVIDA em vez de só reescrever. Responda SOMENTE " +
         "com o novo prompt (texto puro, sem JSON nem markdown).";
 
     // Orch: subdivide tarefa que falhou em micro-subtarefas ainda menores.
@@ -151,7 +169,7 @@ public sealed class OrchestrationService(
             .Select(l =>
             {
                 var m = System.Text.RegularExpressions.Regex.Match(l.Trim(), @"^(\d+)\.\s*(.+)$");
-                return m.Success ? m.Groups[2].Value.Trim() : null;
+                return m.Success ? SessionTaskPanel.CleanTitle(m.Groups[2].Value) : null;
             })
             .Where(t => !string.IsNullOrWhiteSpace(t))
             .Cast<string>()
@@ -193,13 +211,63 @@ public sealed class OrchestrationService(
     // Modo plan: temperatura 0.4 nos modelos (leitura/navegação, sem pressa criativa).
     private static double PlanTemp(Agent a) => a.Mode == "plan" ? 0.4 : a.Temperature;
 
-    private static double ExecTps(Agent exec) => exec.MeasuredTps > 0 ? exec.MeasuredTps : 7;
+    // ETA correta por engine: sondado vale; sem sonda, CPU (llama/:4125) usa
+    // CpuDefaultTps (lenta) e GPU usa 7. Sem isto a ETA na CPU sai otimista.
+    // Pública para cobertura em teste (garante na GPU o que a CPU usará).
+    public static double ResolveTps(Agent exec, double cpuDefaultTps) =>
+        exec.MeasuredTps > 0 ? exec.MeasuredTps
+        : IsCpuExecutor(exec) ? (cpuDefaultTps > 0 ? cpuDefaultTps : 2.5) : 7;
+
+    private double ExecTps(Agent exec) => ResolveTps(exec, _cpuDefaultTps);
+
+    private static bool IsCpuExecutor(Agent exec) =>
+        (exec.BridgeUrl ?? "").Contains(":4125") ||
+        (exec.BridgeUrl ?? "").Contains("llama", StringComparison.OrdinalIgnoreCase) ||
+        (exec.Model ?? "").Contains("cpu", StringComparison.OrdinalIgnoreCase);
 
     private static string DivisionText(List<SubTask> tasks, double tps)
     {
         string total = tasks.Sum(t => t.EtaMin) > 0 ? $" (total ~{tasks.Sum(t => t.EtaMin):0.#} min a {tps:0.#} tok/s)" : "";
         return "[Orquestrador] Dividi em " + tasks.Count + " tarefa(s)" + total + ":\n" +
-            string.Join("\n", tasks.Select((t, i) => $"{i + 1}. {t.Title}" + (t.EtaMin > 0 ? $" (~{t.EtaMin:0.#} min)" : "")));
+            string.Join("\n", tasks.Select((t, i) => $"{i + 1}. {t.Title}" + (t.EtaMin > 0 ? $" (~{t.EtaMin:0.#} min)" : "") + $" — enunciado: {OneLine(t.Prompt, 160)}"));
+    }
+
+    // Resumo de uma linha do enunciado para a sidebar ("Tarefas do Executor").
+    private static string OneLine(string s, int max)
+    {
+        string one = (s ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
+        one = System.Text.RegularExpressions.Regex.Replace(one, @"\s+", " ");
+        return one.Length <= max ? one : one[..max].TrimEnd() + "…";
+    }
+
+    // Lição aprendida: registra alucinação/erro para ajuste progressivo do prompt.
+    private async Task RecordLessonAsync(int sessionId, int taskIndex, string kind, string detail)
+    {
+        if (lessonWrite is null) return;
+        try
+        {
+            string d = (detail ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
+            if (d.Length > 500) d = d[..500];
+            await lessonWrite.Add(new RefinementLesson
+            {
+                SessionId = sessionId, TaskIndex = taskIndex, Kind = kind, Detail = d
+            });
+        }
+        catch { /* lição é acessória: nunca quebra o pipeline */ }
+    }
+
+    private async Task<string> RecentLessonsAsync(int sessionId)
+    {
+        if (lessonQuery is null) return "";
+        try
+        {
+            var all = await lessonQuery.Query(new RefinementLesson { SessionId = sessionId });
+            var last = all.OrderByDescending(l => l.Id ?? 0).Take(5).ToList();
+            if (last.Count == 0) return "";
+            return "Lições recentes desta sessão (não repita estes erros):\n" +
+                string.Join("\n", last.Select(l => $"- [{l.Kind}] {l.Detail}"));
+        }
+        catch { return ""; }
     }
 
     private async Task<OrchestrateResult> RunTasksAsync(int sessionId, Session session,
@@ -244,7 +312,7 @@ public sealed class OrchestrationService(
 
     private async Task<List<SubTask>> DecomposeAsync(Agent orch, Agent exec, string text, CancellationToken ct)
     {
-        string system = DecomposeSystem.Replace("{0}", (exec.MeasuredTps > 0 ? exec.MeasuredTps : 7).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture));
+        string system = DecomposeSystem.Replace("{0}", ExecTps(exec).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture));
         // Critério de aceite: >= MinTasks tarefas distintas; tenta até MaxDecomposeTries.
         for (int attempt = 1; attempt <= MaxDecomposeTries; attempt++)
         {
@@ -311,7 +379,11 @@ public sealed class OrchestrationService(
             var (result, toolCalls) = await AttemptExecutorTaskAsync(sessionId, index, prompt, exec, ct);
             bool toolsMissing = task.NeedsTools && toolCalls == 0;
             if (toolsMissing)
+            {
                 result += "\n[Evidência: nenhuma ferramenta foi chamada, embora exigida.]";
+                await RecordLessonAsync(sessionId, index + 1, "needs_tools",
+                    $"{task.Title}: respondeu em prosa sem chamar tools");
+            }
             if ((!IsFailure(result) && !toolsMissing) || attempt == _maxTaskRetries) return result;
             if (depth == 0 && !splitTried)
             {
@@ -321,11 +393,14 @@ public sealed class OrchestrationService(
             }
             await sessions.AddMessageAsync(sessionId, "assistant",
                 $"[Orquestrador] Refinando tarefa {index + 1} após falha (tentativa {attempt + 1})...", "", null, null);
+            string lessons = await RecentLessonsAsync(sessionId);
             var refined = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model,
                 PlanTemp(orch), RefineSystem,
-                new JsonArray { new JsonObject { ["role"] = "user", ["content"] = $"Tarefa: {task.Title}\nEnunciado: {prompt}\nEvidência da falha:\n{Truncate(result, 1000)}" } }, ct);
+                new JsonArray { new JsonObject { ["role"] = "user", ["content"] = $"Tarefa: {task.Title}\nEnunciado: {prompt}\nEvidência da falha:\n{Truncate(result, 1000)}" + (lessons == "" ? "" : $"\n\n{lessons}") } }, ct);
             if (!refined.Ok || string.IsNullOrWhiteSpace(refined.Content)) return result;
             prompt = refined.Content.Trim();
+            await RecordLessonAsync(sessionId, index + 1, "refine",
+                $"{task.Title}: {OneLine(result, 200)} => reescrito");
         }
         return $"[Executor {index + 1}] FALHOU após {maxAttempts + 1} tentativa(s)";
     }
@@ -342,6 +417,8 @@ public sealed class OrchestrationService(
         subs = subs.Take(4).ToList();
         await sessions.AddMessageAsync(sessionId, "assistant",
             $"[Orquestrador] Subdividindo tarefa {index + 1} em {subs.Count} micro-tarefas...", "", null, null);
+        await RecordLessonAsync(sessionId, index + 1, "split",
+            $"{task.Title}: grande demais, subdividida em {subs.Count}");
         var parts = new List<string>();
         bool allOk = true;
         foreach (var sub in subs)
@@ -412,6 +489,9 @@ public sealed class OrchestrationService(
             {
                 toolCalls++;
                 var result = tools.Execute(call.Name, call.Args, 120, exec.Mode);
+                if (!result.Success && (result.Error.Contains("Não permitido") || result.Error.Contains("não suportada") || result.Error.Contains("indisponível")))
+                    await RecordLessonAsync(sessionId, index + 1, "tool_denied",
+                        $"{OneLine(prompt, 80)}: tentou '{call.Name}' fora do escopo");
                 await sessions.AddMessageAsync(sessionId, "assistant",
                     $"[Executor {index + 1}] Executou {call.Name}: " +
                     (result.Success ? "ok" : $"falhou ({result.Error})"), "", null, null);

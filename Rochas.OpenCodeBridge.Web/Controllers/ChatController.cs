@@ -104,7 +104,7 @@ public sealed class ChatController(
         var tasks = SessionTaskPanel.Parse(items);
         return Json(new
         {
-            tasks = tasks.Select(t => new { index = t.Index, title = t.Title, status = t.Status, etaMin = t.EtaMin }),
+            tasks = tasks.Select(t => new { index = t.Index, title = t.Title, status = t.Status, etaMin = t.EtaMin, promptSummary = t.PromptSummary, toolCalls = t.ToolCalls }),
             totalEtaMin = Math.Round(tasks.Sum(t => t.EtaMin), 1),
             synthesized = SessionTaskPanel.Synthesized(items, tasks.Count),
         });

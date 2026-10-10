@@ -61,7 +61,7 @@
       <div class="col-md-12 col-lg-12 col-xl-3">
 
         <div class="d-flex justify-content-between align-items-center mb-3">
-          <h5 class="font-weight-bold text-lg-start mb-0">Tarefas 3B</h5>
+          <h5 class="font-weight-bold text-lg-start mb-0">Tarefas do Executor</h5>
         </div>
 
         <div class="card">
@@ -218,7 +218,11 @@ async function loadTasks(sessionId) {
           : '<span class="badge bg-secondary">pendente</span>';
       const eta = t.etaMin > 0 ? ` <span class="text-muted">~${t.etaMin} min</span>` : '';
       if (t.etaMin > 0) totalEta += t.etaMin;
-      li.innerHTML = `<div class="small fw-bold">${t.index}. ${esc(t.title)}${eta}</div><div class="mt-1">${badge}</div>`;
+      const summary = t.promptSummary ? `<div class="small text-muted mt-1">${esc(t.promptSummary)}</div>` : '';
+      const tools = (t.toolCalls && t.toolCalls.length)
+        ? `<div class="mt-1">${t.toolCalls.map(c => `<span class="badge bg-dark me-1">${esc(c)}</span>`).join('')}</div>`
+        : '';
+      li.innerHTML = `<div class="small fw-bold">${t.index}. ${esc(t.title)}${eta}</div>${summary}${tools}<div class="mt-1">${badge}</div>`;
       list.appendChild(li);
     });
     if (totalEta > 0) {

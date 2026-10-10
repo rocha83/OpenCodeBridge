@@ -76,6 +76,9 @@ builder.Services.AddScoped(_ => new GenericRepository<User>(DatabaseEngine.SQLit
 builder.Services.AddScoped(_ => new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 builder.Services.AddScoped(_ => new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 builder.Services.AddScoped(_ => new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+builder.Services.AddScoped<IGenericRepository<RefinementLesson>>(sp => sp.GetRequiredService<GenericRepository<RefinementLesson>>());
+builder.Services.AddScoped<IPersistenceRepository<RefinementLesson>>(sp => sp.GetRequiredService<GenericRepository<RefinementLesson>>());
+builder.Services.AddScoped(_ => new GenericRepository<RefinementLesson>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(o => { o.LoginPath = "/Account/Login"; o.Cookie.Name = "bridge.web"; });
 builder.Services.AddAuthorization();

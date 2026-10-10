@@ -80,13 +80,26 @@ internal static class OrchestrationTests
         TwoPhases().GetAwaiter().GetResult();
         ExecutorTools().GetAwaiter().GetResult();
         DecomposeRetry().GetAwaiter().GetResult();
+        CpuEtaTps();
         SplitPhases().GetAwaiter().GetResult();
         RefineRetry().GetAwaiter().GetResult();
         SplitRetry().GetAwaiter().GetResult();
         NeedsToolsRetry().GetAwaiter().GetResult();
 
-        System.Console.WriteLine($"=== Orchestration Unit: {14 - Failures}/14 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== Orchestration Unit: {17 - Failures}/17 PASS, {Failures} FAIL ===");
         return Failures;
+    }
+
+    // ETA correta na CPU: sem sonda, executor CPU usa CpuDefaultTps, GPU usa 7,
+    // sondado sempre vence. Garante na GPU o que a CPU usará depois.
+    private static void CpuEtaTps()
+    {
+        var cpu = new Agent { BridgeUrl = "http://127.0.0.1:4125", Model = "qwen25-coder-3b-cpu-build" };
+        var gpu = new Agent { BridgeUrl = "http://127.0.0.1:4124", Model = "qwen3-8b-awq-build" };
+        var probed = new Agent { BridgeUrl = "http://127.0.0.1:4125", Model = "cpu", MeasuredTps = 3.1 };
+        Check(OrchestrationService.ResolveTps(cpu, 2.5) == 2.5, "U-orch-cpu-tps");
+        Check(OrchestrationService.ResolveTps(gpu, 2.5) == 7, "U-orch-gpu-tps");
+        Check(OrchestrationService.ResolveTps(probed, 2.5) == 3.1, "U-orch-probed-tps");
     }
 
     private static void Check(bool ok, string name)
@@ -130,7 +143,7 @@ internal static class OrchestrationTests
             var exec = new ToolExecutor(root, System.IO.Path.Combine(root, "audit.log"));
             var denied = exec.Execute("shell", "{\"command\": \"echo x\"}", 30, "plan");
             var allowed = exec.Execute("glob", "{\"pattern\": \"*.cs\"}", 30, "plan");
-            Check(!denied.Success && denied.Error.Contains("modo plan") && allowed.Success, "U-orch-plan-backstop");
+            Check(!denied.Success && denied.Error.Contains("Não permitido") && allowed.Success, "U-orch-plan-backstop");
         }
         finally
         {
