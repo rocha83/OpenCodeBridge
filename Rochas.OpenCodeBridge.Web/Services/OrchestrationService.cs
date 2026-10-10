@@ -131,7 +131,16 @@ public sealed class OrchestrationService(
         if (agents is null) return new DecomposeResult(false, new List<SubTask>(), "Orquestrador ou executor inválido");
 
         await sessions.AddMessageAsync(sessionId, "user", text, "", null, null);
-        var tasks = await DecomposeAsync(agents.Orch, agents.Exec, text, ct);
+        // Historico recente p/ decompor com o contexto alinhado na sessao (executor
+        // escolhido no meio do caminho pega a conversa toda, nao so o texto novo).
+        var prior = (await sessions.GetMessagesAsync(sessionId, 20))
+            .Where(m => m.Role is "user" or "assistant")
+            .Select(m => $"{(m.Role == "user" ? "Usuario" : "Agente")}: {m.Content ?? ""}")
+            .ToList();
+        string context = prior.Count > 1
+            ? "Contexto da conversa ate aqui:\n" + string.Join("\n", prior.Take(prior.Count - 1)) + "\n\nPedido atual: "
+            : "";
+        var tasks = await DecomposeAsync(agents.Orch, agents.Exec, context + text, ct);
         await sessions.AddMessageAsync(sessionId, "assistant", DivisionText(tasks, ExecTps(agents.Exec)), "", null, null);
         await sessions.TouchAsync(sessionId);
         return new DecomposeResult(true, tasks, "");
