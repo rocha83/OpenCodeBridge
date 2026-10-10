@@ -53,7 +53,10 @@ public sealed class OrchestrationService(
         "tarefa com tools sempre >= 5 min). Marque needsTools:true nas tarefas que EXIGEM ferramentas " +
         "(ler/escrever arquivos, shell, buscas); false nas de resposta em prosa. Responda SOMENTE " +
         "com JSON, sem markdown nem texto extra: " +
-        "{\"tasks\":[{\"title\":\"verbo de ação curto\",\"prompt\":\"instrução completa para o executor\",\"etaMin\":3,\"needsTools\":true}]}.";
+        "{\"tasks\":[{\"title\":\"verbo de ação curto\",\"prompt\":\"instrução completa para o executor\",\"etaMin\":3,\"needsTools\":true}]}." +
+        " Ao sugerir valores de exemplo para campos com validação (CPF, CNPJ, e-mail, regex, " +
+        "faixas), confira a validade antes: cite SOMENTE exemplos que passam na própria regra " +
+        "(dígitos verificadores calculados, regex que casa, faixa que existe).";
 
     // Regra de script (só quando o executor é build): cada prompt traz um script bash
     // com os comandos exatos (shebang + set -euo pipefail, só allowlist, sem placeholder).
@@ -63,7 +66,11 @@ public sealed class OrchestrationService(
         "pwd date git dotnet python3 curl, e write/read/edit via blocos descritivos). PROIBIDO " +
         "bash -c aninhado, mkdir -p encadeado, pipes com efeito colateral, echo com '>' " +
         "(use write), comandos fictícios e placeholder. Script denso (limite 4k chars; se " +
-        "estourar, divida a tarefa em 2).";
+        "estourar, divida a tarefa em 2). Artefatos .NET: gere comandos dotnet/C#; " +
+        "PROIBIDO trocar o stack (sem Flask, mysql ou similares, salvo pedido explícito). " +
+        "Aspas: feche toda string aberta no mesmo bloco; PROIBIDO python3 -c multilinha " +
+        "com redirect — conteúdo de arquivo vai em bloco descritivo para write; no script, " +
+        "só comandos simples de verificação.";
 
     // Executor: enunciado rígido (1 tarefa, artefato + evidência, sem conversa).
     // Catálogo explícito: o 4B pode inventar tools se não souber os nomes válidos.
@@ -135,6 +142,7 @@ public sealed class OrchestrationService(
 
         var (tasks, thinking) = await DecomposeAsync(agents.Orch, agents.Exec, text, ct);
         await sessions.AddMessageAsync(sessionId, "assistant", DivisionText(tasks, ExecTps(agents.Exec)), ShowThink(thinking), null, null);
+        await sessions.AddMessageAsync(sessionId, "assistant", FullPromptsText(tasks), "", null, null);
         return await RunTasksAsync(sessionId, session, agents.Orch, agents.Exec, text, tasks, ct);
     }
 
@@ -161,6 +169,7 @@ public sealed class OrchestrationService(
             : "";
         var (tasks, thinking) = await DecomposeAsync(agents.Orch, agents.Exec, context + text, ct);
         await sessions.AddMessageAsync(sessionId, "assistant", DivisionText(tasks, ExecTps(agents.Exec)), ShowThink(thinking), null, null);
+        await sessions.AddMessageAsync(sessionId, "assistant", FullPromptsText(tasks), "", null, null);
         await sessions.TouchAsync(sessionId);
         return new DecomposeResult(true, tasks, "");
     }
@@ -328,6 +337,16 @@ public sealed class OrchestrationService(
         orchestrationOptions.Value.ReviewTemperature > 0
             ? orchestrationOptions.Value.ReviewTemperature : 0.1;
 
+    // Decomposição: expansão criativa pede temperatura de thinking (Qwen: 0.6).
+    private double DecomposeTemp() =>
+        orchestrationOptions.Value.DecomposeTemperature > 0
+            ? orchestrationOptions.Value.DecomposeTemperature : 0.6;
+
+    // Thinking parametrizado na análise/decompose (default events; "off" no teste).
+    private bool? DecomposeThinkingFlag() =>
+        orchestrationOptions.Value.DecomposeThinking == "off" ? false
+        : orchestrationOptions.Value.DecomposeThinking == "events" ? true : null;
+
     // ETA correta por engine: sondado vale; sem sonda, CPU (llama/:4125) usa
     // CpuDefaultTps (lenta) e GPU usa 7. Sem isto a ETA na CPU sai otimista.
     // Pública para cobertura em teste (garante na GPU o que a CPU usará).
@@ -348,6 +367,13 @@ public sealed class OrchestrationService(
         return "[Orquestrador] Dividi em " + tasks.Count + " tarefa(s)" + total + ":\n" +
             string.Join("\n", tasks.Select((t, i) => $"{i + 1}. {t.Title}" + (t.EtaMin > 0 ? $" (~{t.EtaMin:0.#} min)" : "") + $" — enunciado: {OneLine(t.Prompt, 160)}"));
     }
+
+    // Enunciados ÍNTEGROS por tarefa (auditoria no sqlite: o DivisionText acima
+    // resume em 160 chars p/ leitura na UI; aqui vai o prompt completo que o
+    // executor recebe, sem corte — permite auditar exemplos e scripts depois).
+    private static string FullPromptsText(List<SubTask> tasks) =>
+        "[Orquestrador] Enunciados completos das " + tasks.Count + " tarefa(s):\n" +
+        string.Join("\n\n", tasks.Select((t, i) => $"## Tarefa {i + 1}: {t.Title}\n{t.Prompt}"));
 
     // Resumo de uma linha do enunciado para a sidebar ("Tarefas do Executor").
     private static string OneLine(string s, int max)
@@ -453,9 +479,9 @@ public sealed class OrchestrationService(
         {
             string ask = attempt == 1 ? text
                 : text + $"\n\nSua decomposição anterior foi insuficiente (tente de novo com MAIS granularidade: tentativa {attempt}).";
-            var r = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model, PlanTemp(orch),
+            var r = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model, DecomposeTemp(),
                 system,
-                new JsonArray { new JsonObject { ["role"] = "user", ["content"] = ask } }, ct, maxTokens: 8192);
+                new JsonArray { new JsonObject { ["role"] = "user", ["content"] = ask } }, ct, maxTokens: 8192, enableThinking: DecomposeThinkingFlag());
             if (!string.IsNullOrWhiteSpace(r.Thinking)) thinking = r.Thinking;
             var tasks = ParseTasks(r.Ok ? r.Content : "");
             if (tasks.Count >= MinTasks && tasks.Select(t => t.Prompt).Distinct().Count() == tasks.Count)
@@ -583,7 +609,7 @@ public sealed class OrchestrationService(
             string system = Sys(exec, build ? ExecutorSystem : ExecutorSystem + PlanNoActSuffix);
             var t = await BridgeHelper.ChatTurnAsync(bridge, exec.BridgeUrl, exec.Model,
                 PlanTemp(exec), system, history,
-                ToolDefinitions.GetTools("build"), ct);
+                ToolDefinitions.GetTools("build"), ct, enableThinking: false);
             if (!t.Ok) return ($"[Executor {index + 1}] FALHOU: {t.Error}", toolCalls);
             collected.Append(t.Content);
             if (t.Calls.Count == 0)

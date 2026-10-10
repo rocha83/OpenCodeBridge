@@ -23,7 +23,7 @@ internal static class OrchestrationTests
         private int _toolCallsServed;
         public Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
             string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
-            bool includeTools = true, JsonArray? tools = null, int maxTokens = 2048)
+            bool includeTools = true, JsonArray? tools = null, int maxTokens = 2048, bool? enableThinking = null)
         {
             SystemsSeen.Add(systemPrompt);
             string lastUser = messages.OfType<System.Text.Json.Nodes.JsonObject>()
@@ -61,7 +61,7 @@ internal static class OrchestrationTests
         public ScriptedBridge(IEnumerable<string> contents) => _script = new Queue<string>(contents);
         public Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
             string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
-            bool includeTools = true, JsonArray? tools = null, int maxTokens = 2048)
+            bool includeTools = true, JsonArray? tools = null, int maxTokens = 2048, bool? enableThinking = null)
         {
             string content = _script.Count > 0 ? _script.Dequeue() : "fim";
             string sse = $"data: {{\"choices\":[{{\"delta\":{{\"content\":{System.Text.Json.JsonSerializer.Serialize(content)}}},\"finish_reason\":\"stop\"}}]}}\n\ndata: [DONE]\n\n";

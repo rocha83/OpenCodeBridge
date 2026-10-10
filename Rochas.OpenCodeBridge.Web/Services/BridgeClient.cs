@@ -10,7 +10,7 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
 {
     public async Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
         string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
-        bool includeTools = true, JsonArray? tools = null, int maxTokens = 2048)
+        bool includeTools = true, JsonArray? tools = null, int maxTokens = 2048, bool? enableThinking = null)
     {
         try
         {
@@ -32,6 +32,10 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
                 body["tools"] = (JsonNode?)tools?.DeepClone() ?? ToolDefinitions.GetTools();
                 body["tool_choice"] = "auto";
             }
+            // Corta o mimetismo <think> na fonte (executores non-thinking): sem isto o
+            // template default emite as tags como texto e o StripThink limpa depois.
+            if (enableThinking.HasValue)
+                body["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = enableThinking.Value };
             var client = http.CreateClient();
             client.Timeout = Timeout.InfiniteTimeSpan;
             using var res = await client.PostAsync(bridgeUrl.TrimEnd('/') + "/v1/chat/completions",

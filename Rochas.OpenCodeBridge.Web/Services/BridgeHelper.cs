@@ -11,12 +11,12 @@ public static class BridgeHelper
     public sealed record ChatTurn(bool Ok, string Content, string Thinking, int? PromptTokens, int? CompletionTokens, List<ToolCall> Calls, string Error);
 
     public static async Task<ChatResult> ChatAsync(IBridgeClient bridge, string bridgeUrl, string model,
-        double temperature, string systemPrompt, JsonArray messages, CancellationToken ct, int maxTokens = 2048)
+        double temperature, string systemPrompt, JsonArray messages, CancellationToken ct, int maxTokens = 2048, bool? enableThinking = null)
     {
         using var buffer = new MemoryStream();
         // Orquestração é texto puro (sem tools): JSON de decomposição e artefatos
         // não podem se perder em tool_calls ignoradas.
-        var (ok, error) = await bridge.StreamAsync(bridgeUrl, model, temperature, systemPrompt, messages, buffer, ct, includeTools: false, maxTokens: maxTokens);
+        var (ok, error) = await bridge.StreamAsync(bridgeUrl, model, temperature, systemPrompt, messages, buffer, ct, includeTools: false, maxTokens: maxTokens, enableThinking: enableThinking);
         if (!ok) return new ChatResult(false, "", "", null, null, error);
 
         buffer.Position = 0;
@@ -44,16 +44,23 @@ public static class BridgeHelper
                 completionTokens = usage["completion_tokens"]?.GetValue<int>();
             }
         }
-        return new ChatResult(true, content.ToString(), thinking.ToString(), promptTokens, completionTokens, "");
+        // Mitigação do desvio reasoning/content (espelha a bridge /v1/responses:
+        // "raciocínio vira texto comum" com thinking off): o parser do serve pode
+        // despejar a resposta no canal reasoning quando o template não emite
+        // <think>; sem isto o decompose enxergaria conteúdo vazio.
+        string txt = content.ToString(), thk = thinking.ToString();
+        if (enableThinking == false && string.IsNullOrWhiteSpace(txt) && !string.IsNullOrWhiteSpace(thk))
+            txt = thk;
+        return new ChatResult(true, txt, thk, promptTokens, completionTokens, "");
     }
 
     // Volta com tool_calls acumuladas (para loops de execução por subtarefa).
     public static async Task<ChatTurn> ChatTurnAsync(IBridgeClient bridge, string bridgeUrl, string model,
-        double temperature, string systemPrompt, JsonArray messages, JsonArray? tools, CancellationToken ct)
+        double temperature, string systemPrompt, JsonArray messages, JsonArray? tools, CancellationToken ct, bool? enableThinking = null)
     {
         using var buffer = new MemoryStream();
         var (ok, error) = await bridge.StreamAsync(bridgeUrl, model, temperature, systemPrompt, messages, buffer, ct,
-            includeTools: tools is not null, tools: tools);
+            includeTools: tools is not null, tools: tools, enableThinking: enableThinking);
         if (!ok) return new ChatTurn(false, "", "", null, null, new List<ToolCall>(), error);
 
         buffer.Position = 0;
