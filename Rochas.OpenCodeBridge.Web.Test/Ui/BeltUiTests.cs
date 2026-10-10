@@ -26,19 +26,19 @@ public static class BeltUiTests
     private static readonly Belt[] Belts =
     {
         new("azul", "Faixa AZUL E2E",
-            "Especifique um CRUD de reembolsos corporativos: modelo de dados com campos, regras de aprovacao por faixa de valor e os endpoints necessarios. Premissas: backend .NET C#, frontend em MVC Razor.",
+            "Especifique um CRUD de reembolsos corporativos: modelo de dados com campos, regras de aprovacao por faixa de valor e os endpoints necessarios. Premissas: backend .NET C#, frontend em MVC Razor. Divida em scripts sh em fases enumeradas por escopo (backend: domínio, infraestrutura, serviços; frontend).",
             4, 30),
         new("verde", "Faixa VERDE E2E",
-            "Defina as regras de validacao de CPF e CNPJ para cadastro de clientes e fornecedores: digitos verificadores, rejeicao de sequencias repetidas e numeros de teste conhecidos, aceitacao com e sem mascara, obrigatoriedade por tipo de pessoa (PF exige CPF, PJ exige CNPJ), e de 2 exemplos validos e 1 invalido de cada. Inclua calculo de distancia haversiana entre dois CEPs a partir de base local de CEP com campos lat/lng (amostra embutida no enunciado, sem rede), com 1 exemplo calculado.",
+            "Defina as regras de validacao de CPF e CNPJ para cadastro de clientes e fornecedores: digitos verificadores, rejeicao de sequencias repetidas e numeros de teste conhecidos, aceitacao com e sem mascara, obrigatoriedade por tipo de pessoa (PF exige CPF, PJ exige CNPJ), e de 2 exemplos validos e 1 invalido de cada. Inclua calculo de distancia haversiana entre dois CEPs a partir de base local de CEP com campos lat/lng (amostra embutida no enunciado, sem rede), com 1 exemplo calculado. Divida em scripts sh em fases enumeradas por escopo (backend: domínio, infraestrutura, serviços; frontend).",
             4, 30),
         new("roxa", "Faixa ROXA E2E",
-            "Defina validacao e mascaras para e-mail, telefone BR com DDD e CEP: regras, regex de cada um e 2 exemplos validos de cada.",
+            "Defina validacao e mascaras para e-mail, telefone BR com DDD e CEP: regras, regex de cada um e 2 exemplos validos de cada. Divida em scripts sh em fases enumeradas por escopo (backend: domínio, infraestrutura, serviços; frontend).",
             5, 30),
         new("marrom", "Faixa MARROM E2E",
-            "Especifique um CRUD de reembolsos corporativos: modelo de dados com campos, regras de aprovacao por faixa de valor, endpoints necessarios, e pipeline CI/CD com Docker (Dockerfile multi-stage e compose para subir api+db).",
+            "Especifique um CRUD de reembolsos corporativos: modelo de dados com campos, regras de aprovacao por faixa de valor, endpoints necessarios, e pipeline CI/CD com Docker (Dockerfile multi-stage e compose para subir api+db). Divida em scripts sh em fases enumeradas por escopo (backend: domínio, infraestrutura, serviços; frontend).",
             4, 90),
         new("preta", "Faixa PRETA E2E",
-            "Arquitetura de ecossistema (divida em cerca de 14 subtarefas): Portal do Colaborador (ponto eletronico, reembolsos, organograma) integrado via barramento de eventos assincrono a outros sistemas (folha, ERP); APIs REST do portal; pipeline de Big Data com ML: regressao para previsao de gastos, classificacao de reembolsos suspeitos e rede neural (perceptron multicamadas) para deteccao de anomalias em ponto eletronico. Premissas: backend .NET C#, frontend do portal em React.js.",
+            "Arquitetura de ecossistema (divida em cerca de 14 subtarefas): Portal do Colaborador (ponto eletronico, reembolsos, organograma) integrado via barramento de eventos assincrono a outros sistemas (folha, ERP); APIs REST do portal; pipeline de Big Data com ML: regressao para previsao de gastos, classificacao de reembolsos suspeitos e rede neural (perceptron multicamadas) para deteccao de anomalias em ponto eletronico. Premissas: backend .NET C#, frontend do portal em React.js. Divida em scripts sh em fases enumeradas por escopo (backend: domínio, infraestrutura, serviços; frontend).",
             5, 120),
     };
 
@@ -94,6 +94,7 @@ public static class BeltUiTests
                 failures += phase switch
                 {
                     "decompose" => await DecomposeBeltAsync(api, belt),
+                    "batch" => await BatchBeltAsync(api, page, belt),
                     "plan" => await PlanBeltAsync(api, belt),
                     "reviewplan" => await ReviewPlanAsync(api, belt),
                     "execute" => await ExecuteBeltAsync(api, belt),
@@ -174,21 +175,99 @@ public static class BeltUiTests
         Console.WriteLine($"[ui] {key}: {n} scripts .sh salvos em {dir} ({bad} com erro de sintaxe)");
     }
 
-    // Anexo: o 8B (sempre em plan) conhece as tools para detalhar o enunciado dos workers.
-    private const string ToolsAnnex =
-        " Ferramentas dos executores: shell (comando, cwd travado), read (path, offset, limit), " +
-        "write (path, content), edit (path, oldString, newString), grep (pattern, path), glob (pattern). " +
-        "Detalhe cada tarefa com a ferramenta exata, argumentos e ACEITE em comando executável.";
-    // Anexo: quem executa (p/ calibrar granularidade e complexidade).
-    private const string WorkersAnnex =
-        " Executores: 2 instâncias Qwen2.5-Coder-3B-AWQ na GPU (ctx 16k, thinking desligado). " +
-        "Modelos pequenos: micro-enunciados curtos, 1 ação verificável, sem ambiguidade.";
-    // Anexo: script bash por tarefa (executores rodam em build; fallback: tools).
-    private const string ScriptAnnex =
-        " Para CADA tarefa, inclua no prompt um script bash (shebang + set -euo pipefail) " +
-        "usando SOMENTE: ls cat head tail echo sed grep find wc diff file pwd date git dotnet " +
-        "python3 curl. PROIBIDO bash -c aninhado, mkdir -p encadeado, pipes com efeito colateral, " +
-        "comandos fictícios (python3 -m ...) e placeholder. Os executores rodam o script em build.";
+    // Fase batch VIA FRONT UI (/Chat): agente plan, enunciado da faixa, fences da conversa.
+    private static async Task<int> BatchBeltAsync(HttpClient api, IPage page, Belt belt)
+    {
+        try
+        {
+            await page.GotoAsync(api.BaseAddress + "Chat");
+            await page.WaitForSelectorAsync("#conv, #prompt, select#agentId", new PageWaitForSelectorOptions { Timeout = 15000 });
+            await page.SelectOptionAsync("select#agentId", PlanOrchestratorId.ToString());
+            await page.ClickAsync("#newSession");
+            await page.WaitForTimeoutAsync(1500);
+            await page.FillAsync("#prompt", belt.Prompt);
+            await page.ClickAsync("#send");
+            // Aguarda o fim do stream pelo indicador (teto 20 min).
+            bool done = false;
+            var deadline = DateTime.UtcNow.AddMinutes(20);
+            while (DateTime.UtcNow < deadline)
+            {
+                try
+                {
+                    string txt = await page.InnerTextAsync("#engineTxt");
+                    if (txt.Contains("Conclu", StringComparison.OrdinalIgnoreCase)) { done = true; break; }
+                }
+                catch { }
+                await page.WaitForTimeoutAsync(10000);
+            }
+            if (!done) { Console.WriteLine($"[ui] FAIL {belt.Key}: stream sem concluir"); return 1; }
+            string conv = await page.InnerTextAsync("#conv");
+            string convFile = $"/tmp/opencode/conv_{belt.Key}_{DateTime.Now:HHmmss}.txt";
+            await File.WriteAllTextAsync(convFile, conv);
+            Console.WriteLine($"[ui] {belt.Key}: conversa {conv.Length} chars ({convFile})");
+            // Artefato via API (texto cru, newlines intactos — a UI colapsa).
+            string rawText = "";
+            try
+            {
+                using var sres = await api.GetAsync("Chat/Sessions");
+                sres.EnsureSuccessStatusCode();
+                using var sdoc = JsonDocument.Parse(await sres.Content.ReadAsStringAsync());
+                int sid = sdoc.RootElement.EnumerateArray().First().GetProperty("id").GetInt32();
+                using var mres = await api.GetAsync($"Chat/Sessions/{sid}/Messages?limit=20");
+                mres.EnsureSuccessStatusCode();
+                using var mdoc = JsonDocument.Parse(await mres.Content.ReadAsStringAsync());
+                rawText = mdoc.RootElement.EnumerateArray().LastOrDefault(m =>
+                    m.TryGetProperty("role", out var r) && r.GetString() == "assistant"
+                    && m.TryGetProperty("content", out var c) && c.GetString()?.Length > 0)
+                    .TryGetProperty("content", out var cc) ? cc.GetString() ?? "" : "";
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ui] {belt.Key}: sem texto cru ({ex.Message.Split('\n')[0]}), usando UI");
+                rawText = conv;
+            }
+            var blocks = System.Text.RegularExpressions.Regex.Matches(
+                    rawText, "```(?:sh|bash)[^\\n\\r]*[\\r\\n]+(.*?)(?:```|$)",
+                    System.Text.RegularExpressions.RegexOptions.Singleline)
+                .Select(m => m.Groups[1].Value.Trim())
+                .Where(b => b.Length > 0).ToList();
+            string dir = $"/tmp/opencode/scripts/{belt.Key}";
+            Directory.CreateDirectory(dir);
+            int bad = 0;
+            string[] markers = ["aqui você colocaria", "aqui voce colocaria", "colocaria", "ex.:", "TODO", "placeholder", "dotnet new controller", "python3 -m"];
+            bool HasPlaceholder(string text) =>
+                markers.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase));
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                string path = Path.Combine(dir, $"fase_{i + 1:00}.sh");
+                File.WriteAllText(path, blocks[i] + "\n");
+                var psi = new System.Diagnostics.ProcessStartInfo("bash", $"-n \"{path}\"")
+                {
+                    RedirectStandardError = true,
+                };
+                using var p = System.Diagnostics.Process.Start(psi)!;
+                string err = p.StandardError.ReadToEnd();
+                p.WaitForExit(15000);
+                if (p.ExitCode != 0)
+                {
+                    bad++;
+                    Console.WriteLine($"[ui] {belt.Key}: fase {i + 1} erro de sintaxe: {err.Split('\n')[0]}");
+                }
+                else if (HasPlaceholder(blocks[i]))
+                {
+                    bad++;
+                    Console.WriteLine($"[ui] {belt.Key}: fase {i + 1} com placeholder (reprovada)");
+                }
+            }
+            Console.WriteLine($"[ui] {(blocks.Count > 0 && bad == 0 ? "PASS" : "FAIL")} {belt.Key}: {blocks.Count} fences na UI ({bad} erro)");
+            return blocks.Count > 0 && bad == 0 ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ui] FAIL {belt.Key}: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+            return 1;
+        }
+    }
 
     // Fase decompose (8B no ar): cria sessao build, decompoe, salva tarefas em arquivo.
     private static async Task<int> DecomposeBeltAsync(HttpClient api, Belt belt)
@@ -522,10 +601,11 @@ public static class BeltUiTests
 
     private static async Task<List<(string Title, string Prompt, double EtaMin)>> DecomposeTasksAsync(HttpClient api, Belt belt, int sessionId, string? text = null)
     {
+        string ask = text ?? belt.Prompt;
         for (int dt = 1; dt <= 2; dt++)
         {
             string tasksJson = await PostAsync(api, "Chat/Decompose",
-                JsonSerializer.Serialize(new { sessionId, text = text ?? belt.Prompt }), "tasks");
+                JsonSerializer.Serialize(new { sessionId, text = ask }), "tasks");
             using var tasksDoc = JsonDocument.Parse(tasksJson);
             var arr = tasksDoc.RootElement.EnumerateArray().ToArray();
             bool ok = arr.Length is >= 4 and <= 16

@@ -431,7 +431,9 @@ public sealed class ChatController(
             return dst;
         }
 
-        while (!ct.IsCancellationRequested)
+        // Teto anti-giro: modelo perdido chamando tools sem fim (visto 22 turnos/18min).
+        int toolTurns = 0;
+        while (!ct.IsCancellationRequested && toolTurns < 8)
         {
             // Modo plan: tools de leitura/navegação + temp 0.4.
             bool plan = agent.Mode == "plan";
@@ -441,7 +443,7 @@ public sealed class ChatController(
                 ["model"] = agent.Model,
                 ["messages"] = BuildMessages(messages),
                 ["temperature"] = plan ? 0.4 : agent.Temperature,
-                ["max_tokens"] = 2048,
+                ["max_tokens"] = 8192,
                 ["stream"] = true,
                 ["tools"] = tools,
                 ["tool_choice"] = "auto"
@@ -458,6 +460,12 @@ public sealed class ChatController(
             if (!res.IsSuccessStatusCode)
             {
                 if (!Response.HasStarted) Response.StatusCode = 502;
+                try
+                {
+                    string sent = body.ToJsonString();
+                    Console.WriteLine($"[loop400] upstream {(int)res.StatusCode} sentLen={sent.Length} head={sent[..Math.Min(1200, sent.Length)]}");
+                }
+                catch { }
                 return;
             }
 
@@ -538,7 +546,39 @@ public sealed class ChatController(
             // Se não houve tool_calls ou finish_reason != tool_calls, terminamos
             if (toolCallAccum.Count == 0 || finishReason != "tool_calls")
             {
-                break;
+                // Coerção texto→tool (mesma do executor): modelo pequeno cospe fence
+                // ```json {"name":"<conhecida>","arguments":...} em vez de tool_calls.
+                if (toolCallAccum.Count == 0
+                    && OrchestrationService.TryRecoverPseudoTool(assistantContent.ToString(), out string rname, out string rargs))
+                {
+                    string rid = "call_" + Guid.NewGuid().ToString("N")[..12];
+                    toolCallAccum[0] = (rid, rname, new System.Text.StringBuilder(rargs));
+                    finishReason = "tool_calls";
+                    Console.WriteLine($"[coerced] {rname} recuperado de fence em texto");
+                }
+                else if (toolCallAccum.Count == 0)
+                {
+                    // Interpretador de sugeridos: compõe comandos dos blocos ```sh do texto.
+                    var steps = SuggestedCommands.Extract(assistantContent.ToString());
+                    if (steps.Count == 0) break;
+                    var rep = new System.Text.StringBuilder("[exec]");
+                    foreach (var st in steps)
+                    {
+                        await WriteProgressAsync(outputStream, "tool_start", st.Tool, null, ct);
+                        var sr = toolExecutor.Execute(st.Tool, st.Args, 120, agent.Mode);
+                        await WriteProgressAsync(outputStream, "tool_done", st.Tool, sr.Success, ct);
+                        string so = sr.Success ? sr.Output : $"Error: {sr.Error}";
+                        if (so.Length > 1000) so = so[..1000] + "\n[truncado]";
+                        rep.Append($"\n- {st.Echo} => {(sr.Success ? "ok" : "FALHOU")}: {so.Replace("\n", " / ")}");
+                        Console.WriteLine($"[suggested] {st.Tool} ok={sr.Success} {st.Echo[..Math.Min(80, st.Echo.Length)]}");
+                    }
+                    messages.Add(new JsonObject { ["role"] = "user", ["content"] = rep.ToString() });
+                    assistantContent.Clear();
+                    assistantThinking.Clear();
+                    toolTurns++;
+                    continue;
+                }
+                else break;
             }
 
             // Converte accumulated tool calls para lista
@@ -573,6 +613,14 @@ public sealed class ChatController(
             {
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
                 var result = toolExecutor.Execute(name, args, 120, agent.Mode);
+                try
+                {
+                    string a = (args ?? "").Replace("\n", "\\n");
+                    string e = (result.Success ? result.Output : result.Error ?? "") ?? "";
+                    e = e.Replace("\n", "\\n");
+                    Console.WriteLine($"[toolcall] {name} ok={result.Success} args={a[..Math.Min(220, a.Length)]} err={e[..Math.Min(220, e.Length)]}");
+                }
+                catch { }
                 await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct);
                 string content = result.Success ? result.Output : $"Error: {result.Error}";
                 if (content.Length > 2000) content = content[..2000] + "\n[truncado]";
@@ -588,6 +636,7 @@ public sealed class ChatController(
             // Reseta para próxima iteração
             assistantContent.Clear();
             assistantThinking.Clear();
+            toolTurns++;
         }
 
         // Persiste resposta final do assistant se há sessão

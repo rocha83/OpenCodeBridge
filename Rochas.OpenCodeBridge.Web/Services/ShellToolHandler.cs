@@ -13,7 +13,7 @@ public sealed class ShellToolHandler : IToolHandler
     {
         "ls", "cat", "head", "tail", "echo", "sed", "grep", "find", "wc", "diff",
         "file", "pwd", "date", "git", "dotnet", "python", "python3", "node",
-        "npm", "curl", "shell", "bash", "sh",
+        "npm", "curl", "shell", "bash", "sh", "mkdir", "touch",
     };
 
     private static readonly string[] DeniedTokens =
@@ -34,9 +34,76 @@ public sealed class ShellToolHandler : IToolHandler
 
     public ToolResult Handle(string argumentsJson, ToolContext context)
     {
-        if (!TryBuildArgv(argumentsJson, out string[] argv, out string why))
-            return ToolResult.Fail(why);
-        return ProcessRunner.Run(argv[0], argv[1..], context.WorkspaceRoot, context.TimeoutSeconds);
+        string command = ExtractCommand(argumentsJson);
+        var parts = SplitChain(command);
+        if (parts.Count <= 1)
+        {
+            if (!TryBuildArgv(argumentsJson, out string[] argv, out string why))
+                return ToolResult.Fail(why);
+            return ProcessRunner.Run(argv[0], argv[1..], context.WorkspaceRoot, context.TimeoutSeconds);
+        }
+        // Cadeia com semântica set -e: roda em sequência, para no 1º erro, cd persiste.
+        string dir = context.WorkspaceRoot;
+        var sb = new StringBuilder();
+        foreach (string raw in parts)
+        {
+            string p = raw.Trim();
+            if (p.Length == 0) continue;
+            if (p == "cd" || p.StartsWith("cd "))
+            {
+                string target = p.Length > 2 ? p[2..].Trim().Trim('"', '\'') : ".";
+                if (string.IsNullOrWhiteSpace(target)) target = ".";
+                if (!WorkspaceGuard.TryResolve(dir, target, out string nd, out string whyCd))
+                    return ToolResult.Fail(whyCd);
+                if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, nd, out _, out _))
+                    return ToolResult.Fail("cd fora do workspace");
+                dir = nd;
+                continue;
+            }
+            if (!TryBuildArgvFromCommand(p, out string[] argv, out string why))
+                return ToolResult.Fail(sb.Length > 0 ? sb.ToString() + "\n" + why : why);
+            var r = ProcessRunner.Run(argv[0], argv[1..], dir, context.TimeoutSeconds);
+            if (!string.IsNullOrWhiteSpace(r.Output)) sb.AppendLine(r.Output.TrimEnd());
+            if (!r.Success)
+                return ToolResult.Fail((sb.Length > 0 ? sb.ToString() + "\n" : "") + (r.Error ?? "falha"));
+        }
+        return ToolResult.Ok(sb.ToString().TrimEnd());
+    }
+
+    // Divide em comandos top-level por && e ; (respeita aspas; & solitário continua negado).
+    private static List<string> SplitChain(string command)
+    {
+        var parts = new List<string>();
+        var cur = new StringBuilder();
+        char quote = '\0';
+        for (int i = 0; i < command.Length; i++)
+        {
+            char c = command[i];
+            if (quote != '\0')
+            {
+                cur.Append(c);
+                if (c == quote) quote = '\0';
+            }
+            else if (c is '"' or '\'')
+            {
+                quote = c;
+                cur.Append(c);
+            }
+            else if (c == ';')
+            {
+                parts.Add(cur.ToString());
+                cur.Clear();
+            }
+            else if (c == '&' && i + 1 < command.Length && command[i + 1] == '&')
+            {
+                parts.Add(cur.ToString());
+                cur.Clear();
+                i++;
+            }
+            else cur.Append(c);
+        }
+        parts.Add(cur.ToString());
+        return parts;
     }
 
     private static bool TryBuildArgv(string arguments, out string[] argv, out string why)
@@ -46,6 +113,13 @@ public sealed class ShellToolHandler : IToolHandler
 
         // Extrai "command" quando o modelo manda JSON {"command": "..."}.
         string command = ExtractCommand(arguments);
+        return TryBuildArgvFromCommand(command, out argv, out why);
+    }
+
+    private static bool TryBuildArgvFromCommand(string command, out string[] argv, out string why)
+    {
+        why = "";
+        argv = Array.Empty<string>();
 
         // sudo só por match exato da lista.
         if (FirstToken(command) == "sudo")

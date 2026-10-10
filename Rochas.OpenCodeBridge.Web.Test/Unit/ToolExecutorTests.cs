@@ -62,9 +62,11 @@ internal static class ToolExecutorTests
     {
         var h = new ShellToolHandler();
         var ctx = new ToolContext { WorkspaceRoot = Path.GetTempPath(), TimeoutSeconds = 30 };
-        // Chamada direta ao handler com comando cru (sem JSON): name=ls + ';' deve negar.
-        var r = h.Handle("ls /tmp; echo x", ctx);
-        Check(!r.Success && r.Error.Contains("metacaractere"), "U-tool-shell-metachar");
+        // Cadeia com ';' executa em sequência (set -e); pipe continua negado.
+        var r = h.Handle("echo a; echo b", ctx);
+        Check(r.Success && r.Output.Contains("a") && r.Output.Contains("b"), "U-tool-shell-chain");
+        var p = h.Handle("echo x | cat", ctx);
+        Check(!p.Success && p.Error.Contains("metacaractere"), "U-tool-shell-metachar");
     }
 
     private static void UnknownTool(ToolExecutor exec)
@@ -130,6 +132,8 @@ internal static class ToolExecutorTests
     {
         var r = exec.Execute("glob", "{\"pattern\": \"*.txt\"}");
         Check(r.Success && r.Output.Contains("g.txt"), "U-tool-glob");
+        var rr = exec.Execute("glob", "{\"pattern\": \"**/*.txt\"}");
+        Check(rr.Success && rr.Output.Contains("g.txt"), "U-tool-glob-starstar");
     }
 
     // Casos de borda (cobertura dos handlers).
