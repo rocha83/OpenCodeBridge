@@ -15,10 +15,11 @@ public static class BeltUiTests
     private const string Win11FirefoxUa =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0";
 
-    // Orquestrador 8B (id 1 build / id 6 plan) + executores (2 plan CPU, 4/5 build GPU).
+    // Orquestrador 8B (id 1 build / id 6 plan) + executores (2 plan CPU, 4/5 build GPU, 7/8 plan GPU).
     private const int BuildOrchestratorId = 1;
     private const int PlanOrchestratorId = 6;
     private const int PlanExecutorId = 2;
+    private static int PlanGpuExecutor(string key) => key == "roxa" || key == "preta" ? 8 : 7;
 
     private sealed record Belt(string Key, string Title, string Prompt, int ExecutorId, int TimeoutMin);
 
@@ -93,6 +94,8 @@ public static class BeltUiTests
                 failures += phase switch
                 {
                     "decompose" => await DecomposeBeltAsync(api, belt),
+                    "plan" => await PlanBeltAsync(api, belt),
+                    "reviewplan" => await ReviewPlanAsync(api, belt),
                     "execute" => await ExecuteBeltAsync(api, belt),
                     "review" => await ReviewBeltAsync(api, belt),
                     _ => await RunBeltAsync(api, web, belt, build),
@@ -121,6 +124,13 @@ public static class BeltUiTests
     }
 
     private static string TaskFile(string key) => $"/tmp/opencode/belt_{key}.json";
+    private static string BuildFile(string key) => $"/tmp/opencode/belt_{key}_build.json";
+
+    // Anexo: o 8B (sempre em plan) conhece as tools para detalhar o enunciado dos workers.
+    private const string ToolsAnnex =
+        " Ferramentas dos executores: shell (comando, cwd travado), read (path, offset, limit), " +
+        "write (path, content), edit (path, oldString, newString), grep (pattern, path), glob (pattern). " +
+        "Detalhe cada tarefa com a ferramenta exata, argumentos e ACEITE em comando executável.";
 
     // Fase decompose (8B no ar): cria sessao build, decompoe, salva tarefas em arquivo.
     private static async Task<int> DecomposeBeltAsync(HttpClient api, Belt belt)
@@ -128,7 +138,7 @@ public static class BeltUiTests
         try
         {
             int sessionId = await CreateSessionAsync(api, BuildOrchestratorId, belt.ExecutorId, belt.Title + " Build");
-            var approved = await DecomposeTasksAsync(api, belt, sessionId);
+            var approved = await DecomposeTasksAsync(api, belt, sessionId, belt.Prompt + ToolsAnnex);
             if (approved.Count == 0) return 1;
             var file = new
             {
@@ -148,12 +158,147 @@ public static class BeltUiTests
         }
     }
 
+    // Fase plan (3B GPU em modo plan, sem tools): descreve o desenvolvimento de cada tarefa.
+    private static async Task<int> PlanBeltAsync(HttpClient api, Belt belt)
+    {
+        try
+        {
+            int sessionId = await CreateSessionAsync(api, PlanOrchestratorId, PlanGpuExecutor(belt.Key), belt.Title + " Plan");
+            using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(TaskFile(belt.Key)));
+            var payload = doc.RootElement.GetProperty("tasks").EnumerateArray().Select(t => new
+            {
+                title = t.GetProperty("title").GetString(),
+                prompt = t.GetProperty("prompt").GetString(),
+                etaMin = t.GetProperty("etaMin").GetDouble(),
+                needsTools = false,
+            }).ToArray();
+            await PostAsync(api, "Chat/OrchestrateApproved",
+                JsonSerializer.Serialize(new { sessionId, tasks = payload, synthesize = false }), "taskCount");
+            bool done = await WaitTasksDoneAsync(api, "", sessionId, payload.Length, belt.TimeoutMin);
+            Console.WriteLine($"[ui] {(done ? "PASS" : "FAIL")} {belt.Key}: plan {payload.Length} descricoes (sessao {sessionId})");
+            if (done)
+            {
+                using var tdoc = JsonDocument.Parse(await File.ReadAllTextAsync(TaskFile(belt.Key)));
+                using var ms = new MemoryStream();
+                using (var w = new Utf8JsonWriter(ms))
+                {
+                    w.WriteStartObject();
+                    foreach (var p in tdoc.RootElement.EnumerateObject())
+                    {
+                        if (p.Name == "planSessionId") continue;
+                        p.WriteTo(w);
+                    }
+                    w.WriteNumber("planSessionId", sessionId);
+                    w.WriteEndObject();
+                }
+                await File.WriteAllBytesAsync(TaskFile(belt.Key), ms.ToArray());
+            }
+            return done ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ui] FAIL {belt.Key}: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+            return 1;
+        }
+    }
+
+    // Fase reviewplan (8B de volta): revisa as descricoes do plan e grava o arquivo de build
+    // com enunciados corrigidos (aprovadas mantem o original).
+    private static async Task<int> ReviewPlanAsync(HttpClient api, Belt belt)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(TaskFile(belt.Key)));
+            int sessionId = doc.RootElement.GetProperty("sessionId").GetInt32();
+            int planSessionId = doc.RootElement.GetProperty("planSessionId").GetInt32();
+            var tasks = doc.RootElement.GetProperty("tasks").EnumerateArray().ToArray();
+
+            using var res = await api.GetAsync($"Chat/Sessions/{planSessionId}/Messages?limit=200");
+            string raw = await res.Content.ReadAsStringAsync();
+            res.EnsureSuccessStatusCode();
+            using var msgs = JsonDocument.Parse(raw);
+            var assistants = msgs.RootElement.EnumerateArray()
+                .Where(m => m.TryGetProperty("role", out var r) && r.GetString() == "assistant")
+                .Select(m => m.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "")
+                .ToList();
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("Voce e o revisor. Para cada descricao de desenvolvimento abaixo, responda APROVADA se descreve acao tecnica verificavel, REJEITADA se vaga ou sem aceite, com enunciado corrigido.");
+            sb.AppendLine("Responda SOMENTE JSON: [{\"index\":1,\"verdict\":\"APROVADA\",\"reason\":\"...\",\"fixedPrompt\":\"...\"}]");
+            for (int i = 0; i < tasks.Length; i++)
+            {
+                string title = tasks[i].GetProperty("title").GetString() ?? "";
+                string mark = $"[Executor {i + 1}] Concluído";
+                string result = assistants.LastOrDefault(c => c.Contains(mark)) ?? "(sem descricao)";
+                sb.AppendLine($"--- Tarefa {i + 1}: {title} ---");
+                sb.AppendLine(result.Length > 3000 ? result[..3000] : result);
+            }
+            var verdicts = await AskReviewAsync(sb.ToString());
+
+            var buildTasks = new List<object>();
+            int approved = 0;
+            foreach (var (t, i) in tasks.Select((t, i) => (t, i)))
+            {
+                var v = verdicts.Where(x => x.Index == i + 1).FirstOrDefault();
+                bool found = v.Index == i + 1;
+                bool ok = found && v.Verdict.Contains("APROVADA", StringComparison.OrdinalIgnoreCase);
+                string prompt = (!ok && found && v.Fixed.Length > 0)
+                    ? v.Fixed : (t.GetProperty("prompt").GetString() ?? "");
+                if (ok) approved++;
+                else Console.WriteLine($"[ui] {belt.Key}: plan tarefa {i + 1} REJEITADA: {(found ? v.Reason : "sem veredito")}");
+                buildTasks.Add(new
+                {
+                    title = t.GetProperty("title").GetString(),
+                    prompt,
+                    etaMin = t.GetProperty("etaMin").GetDouble(),
+                });
+            }
+            await File.WriteAllTextAsync(BuildFile(belt.Key), JsonSerializer.Serialize(new
+            {
+                sessionId,
+                tasks = buildTasks.ToArray(),
+            }));
+            Console.WriteLine($"[ui] PASS {belt.Key}: reviewplan {approved}/{tasks.Length} aprovadas");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ui] FAIL {belt.Key}: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+            return 1;
+        }
+    }
+
+    // Uma chamada de revisao ao 8B via bridge direta (fora do swap: 8B no ar).
+    private static async Task<List<(int Index, string Verdict, string Reason, string Fixed)>> AskReviewAsync(string content)
+    {
+        using var bridge = new HttpClient { Timeout = TimeSpan.FromMinutes(15) };
+        using var rres = await bridge.PostAsync("http://127.0.0.1:4124/v1/chat/completions",
+            new StringContent(JsonSerializer.Serialize(new
+            {
+                model = "qwen3-8b-awq",
+                max_tokens = 2048,
+                messages = new[] { new { role = "user", content } },
+            }), System.Text.Encoding.UTF8, "application/json"));
+        string rtext = await rres.Content.ReadAsStringAsync();
+        rres.EnsureSuccessStatusCode();
+        string verdict = JsonDocument.Parse(rtext).RootElement
+            .GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "[]";
+        int s = verdict.IndexOf('['), e = verdict.LastIndexOf(']');
+        using var ver = JsonDocument.Parse(s >= 0 && e > s ? verdict.Substring(s, e - s + 1) : "[]");
+        return ver.RootElement.EnumerateArray().Select(v => (
+            Index: v.TryGetProperty("index", out var ix) ? ix.GetInt32() : -1,
+            Verdict: v.TryGetProperty("verdict", out var vv) ? (vv.GetString() ?? "") : "",
+            Reason: v.TryGetProperty("reason", out var rr) ? (rr.GetString() ?? "") : "",
+            Fixed: v.TryGetProperty("fixedPrompt", out var fp) ? (fp.GetString() ?? "") : "")).ToList();
+    }
+
     // Fase execute (3B no ar, 8B fora): aprova com needsTools e aguarda conclusao, sem sintetizar.
     private static async Task<int> ExecuteBeltAsync(HttpClient api, Belt belt)
     {
         try
         {
-            using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(TaskFile(belt.Key)));
+            string file = File.Exists(BuildFile(belt.Key)) ? BuildFile(belt.Key) : TaskFile(belt.Key);
+            using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(file));
             int sessionId = doc.RootElement.GetProperty("sessionId").GetInt32();
             var payload = doc.RootElement.GetProperty("tasks").EnumerateArray().Select(t => new
             {
@@ -279,12 +424,12 @@ public static class BeltUiTests
         throw new InvalidOperationException("criar sessao falhou 3x");
     }
 
-    private static async Task<List<(string Title, string Prompt, double EtaMin)>> DecomposeTasksAsync(HttpClient api, Belt belt, int sessionId)
+    private static async Task<List<(string Title, string Prompt, double EtaMin)>> DecomposeTasksAsync(HttpClient api, Belt belt, int sessionId, string? text = null)
     {
         for (int dt = 1; dt <= 2; dt++)
         {
             string tasksJson = await PostAsync(api, "Chat/Decompose",
-                JsonSerializer.Serialize(new { sessionId, text = belt.Prompt }), "tasks");
+                JsonSerializer.Serialize(new { sessionId, text = text ?? belt.Prompt }), "tasks");
             using var tasksDoc = JsonDocument.Parse(tasksJson);
             var arr = tasksDoc.RootElement.EnumerateArray().ToArray();
             bool ok = arr.Length is >= 4 and <= 16
