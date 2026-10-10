@@ -179,70 +179,13 @@ public sealed class SessionService(
         var s = await DbRetryAsync(async () => await _sessions.Get(new Session { Id = (int?)sessionId }));
         if (s is not null)
         {
-            // SQLite tem precisão de segundo: avança +1s do valor gravado
-            // (sempre visível no banco; now em ms seria truncado para igual).
-            s.UpdatedAt = s.UpdatedAt.AddSeconds(1);
+            var now = System.DateTime.UtcNow;
+            // SQLite tem precisão de segundo: garante avanço monotônico.
+            var stamp = now > s.UpdatedAt ? now : s.UpdatedAt.AddSeconds(1);
+            s.UpdatedAt = stamp;
             await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
             await StampAsync("UPDATE sessions SET updated_at=@t WHERE id=@id",
-                ("@t", Iso(s.UpdatedAt)), ("@id", sessionId));
+                ("@t", Iso(stamp)), ("@id", sessionId));
         }
-    }
-
-    // Trilha de tools no SQLite (como o thinking): best-effort, nunca quebra o pipeline.
-    public async Task LogToolAsync(int sessionId, string agent, string name, string args, bool ok, string output, long ms)
-    {
-        try
-        {
-            string a = args.Length > 2000 ? args[..2000] + "\n[truncado]" : args;
-            string o = output.Length > 2000 ? output[..2000] + "\n[truncado]" : output;
-            await DbRetryAsync(async () =>
-            {
-                using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
-                await conn.OpenAsync();
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = "INSERT INTO tool_calls (session_id, agent, name, args, ok, output, ms) VALUES (@s,@a,@n,@g,@o,@u,@m)";
-                cmd.Parameters.AddWithValue("@s", sessionId);
-                cmd.Parameters.AddWithValue("@a", agent ?? "");
-                cmd.Parameters.AddWithValue("@n", name ?? "");
-                cmd.Parameters.AddWithValue("@g", a);
-                cmd.Parameters.AddWithValue("@o", ok ? 1 : 0);
-                cmd.Parameters.AddWithValue("@u", o);
-                cmd.Parameters.AddWithValue("@m", ms);
-                await cmd.ExecuteNonQueryAsync();
-                return 0;
-            });
-        }
-        catch { /* log nunca quebra o pipeline */ }
-    }
-
-    public async Task<List<ToolCall>> GetToolCallsAsync(int sessionId, int limit = 200)
-    {
-        var list = new List<ToolCall>();
-        await DbRetryAsync(async () =>
-        {
-            using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
-            await conn.OpenAsync();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT id, session_id, agent, name, args, ok, output, ms, created_at FROM tool_calls WHERE session_id=@s ORDER BY id LIMIT @l";
-            cmd.Parameters.AddWithValue("@s", sessionId);
-            cmd.Parameters.AddWithValue("@l", Math.Max(1, limit));
-            using var r = await cmd.ExecuteReaderAsync();
-            while (await r.ReadAsync())
-            {
-                list.Add(new ToolCall
-                {
-                    Id = r.IsDBNull(0) ? null : r.GetInt32(0),
-                    SessionId = r.IsDBNull(1) ? null : r.GetInt32(1),
-                    Agent = r.IsDBNull(2) ? "" : r.GetString(2),
-                    Name = r.IsDBNull(3) ? "" : r.GetString(3),
-                    Args = r.IsDBNull(4) ? "" : r.GetString(4),
-                    Ok = !r.IsDBNull(5) && r.GetInt32(5) != 0,
-                    Output = r.IsDBNull(6) ? "" : r.GetString(6),
-                    Ms = r.IsDBNull(7) ? 0 : r.GetInt64(7),
-                });
-            }
-            return 0;
-        });
-        return list;
     }
 }

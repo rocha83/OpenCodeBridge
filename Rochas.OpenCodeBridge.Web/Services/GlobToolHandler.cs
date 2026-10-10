@@ -24,16 +24,9 @@ public sealed class GlobToolHandler : IToolHandler
             return ToolResult.Fail(why);
         if (!Directory.Exists(baseDir)) return ToolResult.Fail($"diretório não encontrado: '{subdir}'");
 
-        // "**" é recursão (AllDirectories já desce): vira "*" para o matcher do .NET,
-        // que trataria "**" como nome literal de diretório e falharia.
-        string pat = pattern.Trim();
-        while (pat.StartsWith("**/")) pat = pat[3..];
-        while (pat.StartsWith("**")) pat = pat[2..];
-        if (pat.Length == 0) pat = "*";
-
         try
         {
-            string[] hits = Directory.GetFileSystemEntries(baseDir, pat, SearchOption.AllDirectories);
+            string[] hits = Directory.GetFileSystemEntries(baseDir, pattern.Trim(), SearchOption.AllDirectories);
             string[] rel = hits
                 .Select(h => Path.GetRelativePath(Path.GetFullPath(context.WorkspaceRoot), h))
                 .OrderBy(h => h, StringComparer.Ordinal)

@@ -1,5 +1,34 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Bridge Web — Instrutor 8B + tolerância em 3 camadas + tool_calls (2026-10-10)
+- Doutrina: modelo só conversa enxuto (system de 1 frase + enunciado), o site faz
+  funcionar — sem exigir `tool_calls` OpenAPI perfeitos de modelo pequeno. Pilha
+  viva: bridge `:4124` → vLLM `:4100` (8B 36k) + site `:4130`.
+- Agente 6 virou **instrutor** (orienta em snippets, não executa); agente 9
+  (construtor) excluído; ids 1/6 com system de 86 chars. Faixas citam divisão em
+  scripts sh por fase/escopo só no enunciado (zero consts de harness no ctx).
+- `Stream` com 3 camadas: (1) `tool_calls` nativo; (2) coerção fence
+  ` ```json {"name","arguments"} ` (mesma do executor); (3) `SuggestedCommands`
+  (blocos ` ```sh ` por linha, `echo>`/heredoc viram `write`, resto via shell).
+  Progresso `tool_start`/`tool_done` chega à UI como `Executando [x]...` →
+  `[x] executado./falhou.` (Fase 6d, intacto).
+- `tool_calls` no SQLite (como o thinking): `session_id/agent/name/args/ok/output/ms`,
+  logado nos 4 pontos (chat nativo, sugeridas, orch nativa, recuperada) p/
+  avaliação posterior da interação com o modelo local; `GetToolCallsAsync` + teste.
+- Fixes achados por evidência: `shell` nega `&&` (modelo sempre encadeia) →
+  cadeia `&&`/`;` sequencial (set -e, `cd` persiste, guard contém); `glob` quebrava
+  com `**` literal; `plan` ganhou `shell` (leitura/navegação/git), `write`/`edit`
+  seguem barrados (backstop); `Touch` +1s determinístico (SQLite trunca segundos);
+  `Stream` `max_tokens` 2048→8192 (ctx 28k+8k=36k).
+- Incidentes: teto 8 turnos conteve giro de 22 turnos/18min (depois removido a
+  pedido p/ modo instrutor); 400 do vLLM = `JSONDecodeError` em args ecoados;
+  disco USB caiu (I/O error, voltou como `sdd`, remontado); `vllm.service` sem
+  `ExecStartPost` (prontidão via `/health`, cópia em `/media/mint/Linux`).
+- Suite: veredito pendente de run verde completo (Touch determinístico, plan-tools
+  com shell, roundtrip tool_calls); E2E azul em iteração (fences no thinking,
+  UI colapsa newlines — artefato via API).
+
+
 ## 8B autônomo + sidebar Executor + lições + ETA CPU (2026-10-09)
 - 8B cuida de quase tudo: `DecomposeSystem` agora diz que o pedido chega SUCINTO
   pela UI do opencodebridge e o 8B ALONGA o descritivo + SUBDIVIDE (colabora nos

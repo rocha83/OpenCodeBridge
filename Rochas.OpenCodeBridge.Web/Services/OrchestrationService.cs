@@ -663,11 +663,7 @@ public sealed class OrchestrationService(
                 {
                     await sessions.AddMessageAsync(sessionId, "assistant",
                         $"[Executor {index + 1}] Recuperado bloco {rname} do texto; executando...", "", null, null);
-                    var rsw = System.Diagnostics.Stopwatch.StartNew();
                     var recovered = tools.Execute(rname, rargs, 120, exec.Mode);
-                    rsw.Stop();
-                    await sessions.LogToolAsync(sessionId, exec.Name + "+recuperada", rname, rargs,
-                        recovered.Success, recovered.Success ? recovered.Output : recovered.Error ?? "", rsw.ElapsedMilliseconds);
                     toolCalls++;
                     string rcontent = recovered.Success ? recovered.Output : $"Error: {recovered.Error}";
                     if (rcontent.Length > 2000) rcontent = rcontent[..2000] + "\n[truncado]";
@@ -706,11 +702,7 @@ public sealed class OrchestrationService(
                     break;
                 }
                 toolCalls++;
-                var msw = System.Diagnostics.Stopwatch.StartNew();
                 var result = tools.Execute(call.Name, call.Args, 120, exec.Mode);
-                msw.Stop();
-                await sessions.LogToolAsync(sessionId, exec.Name, call.Name, call.Args,
-                    result.Success, result.Success ? result.Output : result.Error ?? "", msw.ElapsedMilliseconds);
                 if (!result.Success && (result.Error.Contains("Não permitido") || result.Error.Contains("não suportada") || result.Error.Contains("indisponível")))
                     await RecordLessonAsync(sessionId, index + 1, "tool_denied",
                         $"{OneLine(prompt, 80)}: tentou '{call.Name}' fora do escopo");

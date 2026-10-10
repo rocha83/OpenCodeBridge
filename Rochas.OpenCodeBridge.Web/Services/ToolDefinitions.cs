@@ -8,13 +8,14 @@ namespace Rochas.OpenCodeBridge.Web.Services;
 // chamada (JsonNode tem um só pai — cache estático quebraria o loop).
 public static class ToolDefinitions
 {
-    // mode "plan": leitura + navegação shell/git (sem escrita: write/edit fora).
+    // mode "plan": só leitura e navegação (sem escrita nem execução).
     public static JsonArray GetTools(string? mode = null)
     {
         bool plan = mode == "plan";
         var tools = new JsonArray();
-        tools.Add(BuildTool("shell", "Executa comando shell no workspace. Retorna stdout/stderr.",
-            new[] { BuildParam("command", "string", "Comando (ex.: 'ls -la').", true) }));
+        if (!plan)
+            tools.Add(BuildTool("shell", "Executa comando shell no workspace. Retorna stdout/stderr.",
+                new[] { BuildParam("command", "string", "Comando (ex.: 'ls -la').", true) }));
         tools.Add(BuildTool("read", "Lê arquivo de texto do workspace.",
             new[] { BuildParam("path", "string", "Caminho do arquivo.", true), BuildParam("offset", "integer", "Linha inicial (0-based).", false), BuildParam("limit", "integer", "Máx. linhas (padrão 2000).", false) }));
         if (!plan)

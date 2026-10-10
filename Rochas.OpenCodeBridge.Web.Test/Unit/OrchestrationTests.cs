@@ -148,17 +148,16 @@ internal static class OrchestrationTests
     private static void PlanToolsFilter()
     {        var plan = ToolDefinitions.GetTools("plan");
         var names = plan.Select(t => (t as System.Text.Json.Nodes.JsonObject)?["function"]?["name"]?.GetValue<string>()).ToList();
-        Check(plan.Count == 4 && names.Contains("shell") && !names.Contains("write") && !names.Contains("edit")
+        Check(plan.Count == 3 && !names.Contains("shell") && !names.Contains("write") && !names.Contains("edit")
             && names.Contains("read") && names.Contains("grep") && names.Contains("glob"), "U-orch-plan-tools");
         string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"plan-{System.Guid.NewGuid():N}");
         System.IO.Directory.CreateDirectory(root);
         try
         {
             var exec = new ToolExecutor(root, System.IO.Path.Combine(root, "audit.log"));
-            var nav = exec.Execute("shell", "{\"command\": \"echo x\"}", 30, "plan");
-            var denied = exec.Execute("write", "{\"path\": \"a.txt\", \"content\": \"x\"}", 30, "plan");
+            var denied = exec.Execute("shell", "{\"command\": \"echo x\"}", 30, "plan");
             var allowed = exec.Execute("glob", "{\"pattern\": \"*.cs\"}", 30, "plan");
-            Check(nav.Success && !denied.Success && denied.Error.Contains("Não permitido") && allowed.Success, "U-orch-plan-backstop");
+            Check(!denied.Success && denied.Error.Contains("Não permitido") && allowed.Success, "U-orch-plan-backstop");
         }
         finally
         {

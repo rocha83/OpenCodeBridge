@@ -91,15 +91,14 @@ public static class BeltUiTests
             using var api = BuildApiClient(web, await context.CookiesAsync());
 
             foreach (var belt in wanted)
-                failures += phase switch
+                switch (phase)
                 {
-                    "decompose" => await DecomposeBeltAsync(api, belt),
-                    "plan" => await PlanBeltAsync(api, belt),
-                    "reviewplan" => await ReviewPlanAsync(api, belt),
-                    "execute" => await ExecuteBeltAsync(api, belt),
-                    "review" => await ReviewBeltAsync(api, belt),
-                    _ => await RunBeltAsync(api, web, belt, build),
-                };
+                    case "plan": failures += await PlanBeltAsync(api, belt); break;
+                    case "reviewplan": failures += await ReviewPlanAsync(api, belt); break;
+                    case "execute": failures += await ExecuteBeltAsync(api, belt); break;
+                    case "review": failures += await ReviewBeltAsync(api, belt); break;
+                    default: Console.WriteLine($"[ui] FAIL fase desconhecida ou desativada: {phase}"); failures++; break;
+                }
         }
         catch (Exception ex)
         {
@@ -173,6 +172,22 @@ public static class BeltUiTests
         }
         Console.WriteLine($"[ui] {key}: {n} scripts .sh salvos em {dir} ({bad} com erro de sintaxe)");
     }
+
+    // Anexo: o 8B (sempre em plan) conhece as tools para detalhar o enunciado dos workers.
+    private const string ToolsAnnex =
+        " Ferramentas dos executores: shell (comando, cwd travado), read (path, offset, limit), " +
+        "write (path, content), edit (path, oldString, newString), grep (pattern, path), glob (pattern). " +
+        "Detalhe cada tarefa com a ferramenta exata, argumentos e ACEITE em comando executável.";
+    // Anexo: quem executa (p/ calibrar granularidade e complexidade).
+    private const string WorkersAnnex =
+        " Executores: 2 instâncias Qwen2.5-Coder-3B-AWQ na GPU (ctx 16k, thinking desligado). " +
+        "Modelos pequenos: micro-enunciados curtos, 1 ação verificável, sem ambiguidade.";
+    // Anexo: script bash por tarefa (executores rodam em build; fallback: tools).
+    private const string ScriptAnnex =
+        " Para CADA tarefa, inclua no prompt um script bash (shebang + set -euo pipefail) " +
+        "usando SOMENTE: ls cat head tail echo sed grep find wc diff file pwd date git dotnet " +
+        "python3 curl. PROIBIDO bash -c aninhado, mkdir -p encadeado, pipes com efeito colateral, " +
+        "comandos fictícios (python3 -m ...) e placeholder. Os executores rodam o script em build.";
 
     // Fase decompose (8B no ar): cria sessao build, decompoe, salva tarefas em arquivo.
     private static async Task<int> DecomposeBeltAsync(HttpClient api, Belt belt)
@@ -506,11 +521,10 @@ public static class BeltUiTests
 
     private static async Task<List<(string Title, string Prompt, double EtaMin)>> DecomposeTasksAsync(HttpClient api, Belt belt, int sessionId, string? text = null)
     {
-        string ask = text ?? belt.Prompt;
         for (int dt = 1; dt <= 2; dt++)
         {
             string tasksJson = await PostAsync(api, "Chat/Decompose",
-                JsonSerializer.Serialize(new { sessionId, text = ask }), "tasks");
+                JsonSerializer.Serialize(new { sessionId, text = text ?? belt.Prompt }), "tasks");
             using var tasksDoc = JsonDocument.Parse(tasksJson);
             var arr = tasksDoc.RootElement.EnumerateArray().ToArray();
             bool ok = arr.Length is >= 4 and <= 16

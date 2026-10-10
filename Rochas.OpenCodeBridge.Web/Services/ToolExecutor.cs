@@ -42,9 +42,9 @@ namespace Rochas.OpenCodeBridge.Web.Services
             // Nomes alternativos do shell caem no handler "shell".
             string key = name is "bash" or "sh" ? "shell" : name;
 
-            // Modo plan: leitura + navegação shell (retaguarda; o anúncio já filtra).
-            if (mode == "plan" && (key is "write" or "edit"))
-                return ToolResult.Fail($"Não permitido em modo plan: tool '{key}' indisponível (sem escrita)");
+            // Modo plan: só leitura e navegação (retaguarda; o anúncio já filtra).
+            if (mode == "plan" && (key is "shell" or "write" or "edit"))
+                return ToolResult.Fail($"Não permitido em modo plan: tool '{key}' indisponível (só leitura e navegação)");
 
             if (!_handlers.TryGetValue(key, out IToolHandler? handler))
                 return ToolResult.Fail($"Não permitido: tool '{name}' fora do escopo permitido (válidas: shell, read, write, edit, grep, glob)");
