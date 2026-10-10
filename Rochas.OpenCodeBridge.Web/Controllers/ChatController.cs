@@ -431,9 +431,9 @@ public sealed class ChatController(
             return dst;
         }
 
-        // Teto anti-giro: modelo perdido chamando tools sem fim (visto 22 turnos/18min).
+        // Sem teto de turnos no modo instrutor (o harness limita por timeout).
         int toolTurns = 0;
-        while (!ct.IsCancellationRequested && toolTurns < 8)
+        while (!ct.IsCancellationRequested)
         {
             // Modo plan: tools de leitura/navegação + temp 0.4.
             bool plan = agent.Mode == "plan";
@@ -565,7 +565,12 @@ public sealed class ChatController(
                     foreach (var st in steps)
                     {
                         await WriteProgressAsync(outputStream, "tool_start", st.Tool, null, ct);
+                        var ssw = System.Diagnostics.Stopwatch.StartNew();
                         var sr = toolExecutor.Execute(st.Tool, st.Args, 120, agent.Mode);
+                        ssw.Stop();
+                        if (session?.Id is int sidSug)
+                            await sessionService.LogToolAsync(sidSug, agent.Name + "+sugerida", st.Tool, st.Args,
+                                sr.Success, sr.Success ? sr.Output : sr.Error ?? "", ssw.ElapsedMilliseconds);
                         await WriteProgressAsync(outputStream, "tool_done", st.Tool, sr.Success, ct);
                         string so = sr.Success ? sr.Output : $"Error: {sr.Error}";
                         if (so.Length > 1000) so = so[..1000] + "\n[truncado]";
@@ -612,7 +617,12 @@ public sealed class ChatController(
             foreach (var (id, name, args) in toolCalls)
             {
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 var result = toolExecutor.Execute(name, args, 120, agent.Mode);
+                sw.Stop();
+                if (session?.Id is int sidLog)
+                    await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
+                        result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds);
                 try
                 {
                     string a = (args ?? "").Replace("\n", "\\n");

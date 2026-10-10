@@ -45,10 +45,12 @@ public static class AppDb
             CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, agent_id INTEGER NOT NULL, executor_agent_id INTEGER, title TEXT NOT NULL DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id), FOREIGN KEY(agent_id) REFERENCES agents(id));
             CREATE TABLE IF NOT EXISTS session_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, thinking TEXT NOT NULL DEFAULT '', prompt_tokens INTEGER, completion_tokens INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE);
             CREATE TABLE IF NOT EXISTS refinement_lessons (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, task_index INTEGER NOT NULL DEFAULT 0, kind TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE);
+            CREATE TABLE IF NOT EXISTS tool_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, agent TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '', args TEXT NOT NULL DEFAULT '', ok INTEGER NOT NULL DEFAULT 0, output TEXT NOT NULL DEFAULT '', ms INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE);
             CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
             CREATE INDEX IF NOT EXISTS idx_messages_session ON session_messages(session_id);
             CREATE INDEX IF NOT EXISTS idx_messages_created ON session_messages(created_at);
+            CREATE INDEX IF NOT EXISTS idx_toolcalls_session ON tool_calls(session_id);
             """;
         cmd.ExecuteNonQuery();
 

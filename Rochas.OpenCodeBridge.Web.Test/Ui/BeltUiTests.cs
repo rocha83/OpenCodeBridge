@@ -94,7 +94,6 @@ public static class BeltUiTests
                 failures += phase switch
                 {
                     "decompose" => await DecomposeBeltAsync(api, belt),
-                    "batch" => await BatchBeltAsync(api, page, belt),
                     "plan" => await PlanBeltAsync(api, belt),
                     "reviewplan" => await ReviewPlanAsync(api, belt),
                     "execute" => await ExecuteBeltAsync(api, belt),
@@ -173,100 +172,6 @@ public static class BeltUiTests
             }
         }
         Console.WriteLine($"[ui] {key}: {n} scripts .sh salvos em {dir} ({bad} com erro de sintaxe)");
-    }
-
-    // Fase batch VIA FRONT UI (/Chat): agente plan, enunciado da faixa, fences da conversa.
-    private static async Task<int> BatchBeltAsync(HttpClient api, IPage page, Belt belt)
-    {
-        try
-        {
-            await page.GotoAsync(api.BaseAddress + "Chat");
-            await page.WaitForSelectorAsync("#conv, #prompt, select#agentId", new PageWaitForSelectorOptions { Timeout = 15000 });
-            await page.SelectOptionAsync("select#agentId", PlanOrchestratorId.ToString());
-            await page.ClickAsync("#newSession");
-            await page.WaitForTimeoutAsync(1500);
-            await page.FillAsync("#prompt", belt.Prompt);
-            await page.ClickAsync("#send");
-            // Aguarda o fim do stream pelo indicador (teto 20 min).
-            bool done = false;
-            var deadline = DateTime.UtcNow.AddMinutes(20);
-            while (DateTime.UtcNow < deadline)
-            {
-                try
-                {
-                    string txt = await page.InnerTextAsync("#engineTxt");
-                    if (txt.Contains("Conclu", StringComparison.OrdinalIgnoreCase)) { done = true; break; }
-                }
-                catch { }
-                await page.WaitForTimeoutAsync(10000);
-            }
-            if (!done) { Console.WriteLine($"[ui] FAIL {belt.Key}: stream sem concluir"); return 1; }
-            string conv = await page.InnerTextAsync("#conv");
-            string convFile = $"/tmp/opencode/conv_{belt.Key}_{DateTime.Now:HHmmss}.txt";
-            await File.WriteAllTextAsync(convFile, conv);
-            Console.WriteLine($"[ui] {belt.Key}: conversa {conv.Length} chars ({convFile})");
-            // Artefato via API (texto cru, newlines intactos — a UI colapsa).
-            string rawText = "";
-            try
-            {
-                using var sres = await api.GetAsync("Chat/Sessions");
-                sres.EnsureSuccessStatusCode();
-                using var sdoc = JsonDocument.Parse(await sres.Content.ReadAsStringAsync());
-                int sid = sdoc.RootElement.EnumerateArray().First().GetProperty("id").GetInt32();
-                using var mres = await api.GetAsync($"Chat/Sessions/{sid}/Messages?limit=20");
-                mres.EnsureSuccessStatusCode();
-                using var mdoc = JsonDocument.Parse(await mres.Content.ReadAsStringAsync());
-                rawText = mdoc.RootElement.EnumerateArray().LastOrDefault(m =>
-                    m.TryGetProperty("role", out var r) && r.GetString() == "assistant"
-                    && m.TryGetProperty("content", out var c) && c.GetString()?.Length > 0)
-                    .TryGetProperty("content", out var cc) ? cc.GetString() ?? "" : "";
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ui] {belt.Key}: sem texto cru ({ex.Message.Split('\n')[0]}), usando UI");
-                rawText = conv;
-            }
-            var blocks = System.Text.RegularExpressions.Regex.Matches(
-                    rawText, "```(?:sh|bash)[^\\n\\r]*[\\r\\n]+(.*?)(?:```|$)",
-                    System.Text.RegularExpressions.RegexOptions.Singleline)
-                .Select(m => m.Groups[1].Value.Trim())
-                .Where(b => b.Length > 0).ToList();
-            string dir = $"/tmp/opencode/scripts/{belt.Key}";
-            Directory.CreateDirectory(dir);
-            int bad = 0;
-            string[] markers = ["aqui você colocaria", "aqui voce colocaria", "colocaria", "ex.:", "TODO", "placeholder", "dotnet new controller", "python3 -m"];
-            bool HasPlaceholder(string text) =>
-                markers.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase));
-            for (int i = 0; i < blocks.Count; i++)
-            {
-                string path = Path.Combine(dir, $"fase_{i + 1:00}.sh");
-                File.WriteAllText(path, blocks[i] + "\n");
-                var psi = new System.Diagnostics.ProcessStartInfo("bash", $"-n \"{path}\"")
-                {
-                    RedirectStandardError = true,
-                };
-                using var p = System.Diagnostics.Process.Start(psi)!;
-                string err = p.StandardError.ReadToEnd();
-                p.WaitForExit(15000);
-                if (p.ExitCode != 0)
-                {
-                    bad++;
-                    Console.WriteLine($"[ui] {belt.Key}: fase {i + 1} erro de sintaxe: {err.Split('\n')[0]}");
-                }
-                else if (HasPlaceholder(blocks[i]))
-                {
-                    bad++;
-                    Console.WriteLine($"[ui] {belt.Key}: fase {i + 1} com placeholder (reprovada)");
-                }
-            }
-            Console.WriteLine($"[ui] {(blocks.Count > 0 && bad == 0 ? "PASS" : "FAIL")} {belt.Key}: {blocks.Count} fences na UI ({bad} erro)");
-            return blocks.Count > 0 && bad == 0 ? 0 : 1;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[ui] FAIL {belt.Key}: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
-            return 1;
-        }
     }
 
     // Fase decompose (8B no ar): cria sessao build, decompoe, salva tarefas em arquivo.
