@@ -541,7 +541,8 @@ public static class BeltUiTests
         return el.ValueKind == JsonValueKind.String ? el.GetString() ?? "" : el.GetRawText();
     }
 
-    // Poll do painel /Tasks ate todas done (ou timeout por faixa).
+    // Poll ate todas done (ou timeout por faixa): painel /Tasks + marcadores nas mensagens
+    // (sessoes plan/execute nao tem mensagem de decompose; o painel volta vazio).
     private static async Task<bool> WaitTasksDoneAsync(HttpClient api, string web, int sessionId, int total, int timeoutMin)
     {
         var deadline = DateTime.UtcNow.AddMinutes(timeoutMin);
@@ -555,8 +556,17 @@ public static class BeltUiTests
                 using var doc = JsonDocument.Parse(raw);
                 var list = doc.RootElement.GetProperty("tasks").EnumerateArray().ToArray();
                 int done = list.Count(t => t.TryGetProperty("status", out var s) && s.GetString() == "done");
-                Console.WriteLine($"[ui] poll sessao {sessionId}: {done}/{list.Length} done");
-                if (list.Length >= total && done >= list.Length && list.Length > 0) return true;
+                if (list.Length > 0)
+                {
+                    Console.WriteLine($"[ui] poll sessao {sessionId}: {done}/{list.Length} done");
+                    if (done >= list.Length && list.Length > 0) return true;
+                }
+                else
+                {
+                    done = await CountDoneAsync(api, sessionId);
+                    Console.WriteLine($"[ui] poll sessao {sessionId}: {done}/{total} concluidas (mensagens)");
+                    if (done >= total && total > 0) return true;
+                }
             }
             catch (Exception ex)
             {
@@ -565,5 +575,17 @@ public static class BeltUiTests
             await Task.Delay(TimeSpan.FromSeconds(30));
         }
         return false;
+    }
+
+    // Conta [Executor i] Concluído nas mensagens (fonte da verdade p/ sessoes sem decompose).
+    private static async Task<int> CountDoneAsync(HttpClient api, int sessionId)
+    {
+        using var res = await api.GetAsync($"Chat/Sessions/{sessionId}/Messages?limit=200");
+        string raw = await res.Content.ReadAsStringAsync();
+        res.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(raw);
+        return doc.RootElement.EnumerateArray()
+            .Count(m => m.TryGetProperty("role", out var r) && r.GetString() == "assistant"
+                && (m.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "").Contains("Concluído"));
     }
 }
