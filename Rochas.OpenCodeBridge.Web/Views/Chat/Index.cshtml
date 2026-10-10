@@ -127,8 +127,8 @@ function isScrolledToBottom() {
   return conv.scrollTop + conv.clientHeight >= conv.scrollHeight - 50;
 }
 
-// Linha de status de tool: "Executando [nome]..." piscando -> "[nome] executado."
-function toolStatus(name, running, ok) {
+// Linha de status de tool: "Executando [nome]..." piscando -> details "concluído/falhou" + retorno.
+function toolStatus(name, running, ok, result) {
   if (running) {
     const li = document.createElement('li');
     li.className = 'd-flex justify-content-start mt-1 mb-1 tool-status';
@@ -140,7 +140,9 @@ function toolStatus(name, running, ok) {
     let li = null;
     items.forEach(el => { if (el.dataset.tool === name) li = el; });
     if (li) {
-      li.innerHTML = `<span class="small text-muted">${esc(name)} ${ok === false ? 'falhou.' : 'executado.'}</span>`;
+      const state = ok === false ? 'falhou' : 'concluído';
+      const body = result ? `<pre class="small text-muted mt-1 mb-0" style="white-space:pre-wrap">${esc(result)}</pre>` : '';
+      li.innerHTML = `<details class="small text-muted"><summary>${esc(name)} ${state}.</summary>${body}</details>`;
       li.classList.remove('tool-status');
     }
   }
@@ -634,7 +636,7 @@ document.getElementById('send').onclick = async () => {
           if (evt.progress) {
             // Progresso de tool vindo do servidor
             if (evt.progress === 'tool_start') toolStatus(evt.name, true);
-            else if (evt.progress === 'tool_done') toolStatus(evt.name, false, evt.ok);
+            else if (evt.progress === 'tool_done') toolStatus(evt.name, false, evt.ok, evt.result || '');
             continue;
           }
           const d = evt.choices[0].delta;

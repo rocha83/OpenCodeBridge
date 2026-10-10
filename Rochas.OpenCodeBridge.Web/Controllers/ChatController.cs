@@ -97,6 +97,16 @@ public sealed class ChatController(
         return Json(msgs.Select(m => new { m.Id, m.Role, m.Content, m.Thinking, m.PromptTokens, m.CompletionTokens, m.CreatedAt }));
     }
 
+    // GET /Chat/Sessions/{id}/ToolCalls - trilha de tools p/ avaliação posterior.
+    [HttpGet("/Chat/Sessions/{id:int}/ToolCalls")]
+    public async Task<IActionResult> GetSessionToolCalls(int id, int limit = 200)
+    {
+        var s = await sessionService.GetAsync(id, CurrentUserId);
+        if (s is null) return NotFound();
+        var calls = await sessionService.GetToolCallsAsync(id, limit);
+        return Json(calls.Select(c => new { c.Id, c.Agent, c.Name, c.Args, c.Ok, c.Output, c.Ms, c.CreatedAt }));
+    }
+
     // GET /Chat/Sessions/{id}/Tasks - painel de acompanhamento da decomposição
     // (derivado das mensagens marcadas; sem tabela nova).
     [HttpGet("/Chat/Sessions/{id:int}/Tasks")]
@@ -538,6 +548,31 @@ public sealed class ChatController(
             // Se não houve tool_calls ou finish_reason != tool_calls, terminamos
             if (toolCallAccum.Count == 0 || finishReason != "tool_calls")
             {
+                // Interpretador de sugeridos: compõe comandos dos blocos ```sh do texto.
+                if (toolCallAccum.Count == 0)
+                {
+                    var steps = SuggestedCommands.Extract(assistantContent.ToString());
+                    if (steps.Count == 0) break;
+                    var rep = new System.Text.StringBuilder("[exec]");
+                    foreach (var st in steps)
+                    {
+                        await WriteProgressAsync(outputStream, "tool_start", st.Tool, null, ct);
+                        var ssw = System.Diagnostics.Stopwatch.StartNew();
+                        var sr = toolExecutor.Execute(st.Tool, st.Args, 120, null);
+                        ssw.Stop();
+                        if (session?.Id is int sidSug)
+                            await sessionService.LogToolAsync(sidSug, agent.Name + "+sugerida", st.Tool, st.Args,
+                                sr.Success, sr.Success ? sr.Output : sr.Error ?? "", ssw.ElapsedMilliseconds);
+                        string so = sr.Success ? sr.Output : $"Error: {sr.Error}";
+                        if (so.Length > 1000) so = so[..1000] + "\n[truncado]";
+                        await WriteProgressAsync(outputStream, "tool_done", st.Tool, sr.Success, ct, so);
+                        rep.Append($"\n- {st.Echo} => {(sr.Success ? "ok" : "FALHOU")}: {so.Replace("\n", " / ")}");
+                    }
+                    messages.Add(new JsonObject { ["role"] = "user", ["content"] = rep.ToString() });
+                    assistantContent.Clear();
+                    assistantThinking.Clear();
+                    continue;
+                }
                 break;
             }
 
@@ -572,10 +607,16 @@ public sealed class ChatController(
             foreach (var (id, name, args) in toolCalls)
             {
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
-                var result = toolExecutor.Execute(name, args, 120, agent.Mode);
-                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct);
+                // Trunfo: o modelo vê plan (anunciado), o executor roda build (pode tudo).
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var result = toolExecutor.Execute(name, args, 120, null);
+                sw.Stop();
+                if (session?.Id is int sidLog)
+                    await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
+                        result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds);
                 string content = result.Success ? result.Output : $"Error: {result.Error}";
                 if (content.Length > 2000) content = content[..2000] + "\n[truncado]";
+                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, content);
                 var toolResult = new JsonObject
                 {
                     ["role"] = "tool",
@@ -603,11 +644,12 @@ public sealed class ChatController(
         await outputStream.FlushAsync(ct);
     }
 
-    // Evento de progresso ao cliente (a UI mostra "Executando [tool]..." / "[tool] executado").
-    private static async Task WriteProgressAsync(System.IO.Stream output, string stage, string name, bool? ok, CancellationToken ct)
+    // Evento de progresso ao cliente (a UI mostra "Executando [tool]..." / details com retorno).
+    private static async Task WriteProgressAsync(System.IO.Stream output, string stage, string name, bool? ok, CancellationToken ct, string result = "")
     {
         var evt = new JsonObject { ["progress"] = stage, ["name"] = name };
         if (ok.HasValue) evt["ok"] = ok.Value;
+        if (!string.IsNullOrEmpty(result)) evt["result"] = result.Length > 1000 ? result[..1000] + "\n[truncado]" : result;
         var bytes = Encoding.UTF8.GetBytes("data: " + evt.ToJsonString() + "\n\n");
         await output.WriteAsync(bytes, ct);
         await output.FlushAsync(ct);

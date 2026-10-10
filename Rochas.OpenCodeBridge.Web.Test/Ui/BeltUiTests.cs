@@ -91,14 +91,18 @@ public static class BeltUiTests
             using var api = BuildApiClient(web, await context.CookiesAsync());
 
             foreach (var belt in wanted)
+            {
+                Console.WriteLine($"[ui] faixa {belt.Key}: enunciado: {belt.Prompt}");
                 switch (phase)
                 {
+                    case "batch": failures += await UiChatSendAsync(api, page, belt); break;
                     case "plan": failures += await PlanBeltAsync(api, belt); break;
                     case "reviewplan": failures += await ReviewPlanAsync(api, belt); break;
                     case "execute": failures += await ExecuteBeltAsync(api, belt); break;
                     case "review": failures += await ReviewBeltAsync(api, belt); break;
                     default: Console.WriteLine($"[ui] FAIL fase desconhecida ou desativada: {phase}"); failures++; break;
                 }
+            }
         }
         catch (Exception ex)
         {
@@ -173,22 +177,6 @@ public static class BeltUiTests
         Console.WriteLine($"[ui] {key}: {n} scripts .sh salvos em {dir} ({bad} com erro de sintaxe)");
     }
 
-    // Anexo: o 8B (sempre em plan) conhece as tools para detalhar o enunciado dos workers.
-    private const string ToolsAnnex =
-        " Ferramentas dos executores: shell (comando, cwd travado), read (path, offset, limit), " +
-        "write (path, content), edit (path, oldString, newString), grep (pattern, path), glob (pattern). " +
-        "Detalhe cada tarefa com a ferramenta exata, argumentos e ACEITE em comando executável.";
-    // Anexo: quem executa (p/ calibrar granularidade e complexidade).
-    private const string WorkersAnnex =
-        " Executores: 2 instâncias Qwen2.5-Coder-3B-AWQ na GPU (ctx 16k, thinking desligado). " +
-        "Modelos pequenos: micro-enunciados curtos, 1 ação verificável, sem ambiguidade.";
-    // Anexo: script bash por tarefa (executores rodam em build; fallback: tools).
-    private const string ScriptAnnex =
-        " Para CADA tarefa, inclua no prompt um script bash (shebang + set -euo pipefail) " +
-        "usando SOMENTE: ls cat head tail echo sed grep find wc diff file pwd date git dotnet " +
-        "python3 curl. PROIBIDO bash -c aninhado, mkdir -p encadeado, pipes com efeito colateral, " +
-        "comandos fictícios (python3 -m ...) e placeholder. Os executores rodam o script em build.";
-
     // Fase decompose (8B no ar): cria sessao build, decompoe, salva tarefas em arquivo.
     private static async Task<int> DecomposeBeltAsync(HttpClient api, Belt belt)
     {
@@ -208,6 +196,70 @@ public static class BeltUiTests
             Console.WriteLine($"[ui] PASS {belt.Key}: decompose {approved.Count} tarefas (sessao {sessionId})");
             SaveScripts(belt.Key, approved);
             return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ui] FAIL {belt.Key}: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+            return 1;
+        }
+    }
+
+    // Envio mínimo via UI: agente plan, enunciado puro; a UI mostra diálogo + tools.
+    // Certifica: tools na conversa (UI) + diálogo persistido (Messages) + calls (ToolCalls).
+    private static async Task<int> UiChatSendAsync(HttpClient api, IPage page, Belt belt)
+    {
+        try
+        {
+            await page.GotoAsync(page.Url.Split("/Chat")[0] + "/Chat");
+            await page.WaitForSelectorAsync("#conv, #prompt, select#agentId", new PageWaitForSelectorOptions { Timeout = 15000 });
+            await page.SelectOptionAsync("select#agentId", PlanOrchestratorId.ToString());
+            await page.ClickAsync("#newSession");
+            await page.WaitForTimeoutAsync(1500);
+            await page.FillAsync("#prompt", belt.Prompt);
+            await page.ClickAsync("#send");
+            bool done = false;
+            var deadline = DateTime.UtcNow.AddMinutes(20);
+            while (DateTime.UtcNow < deadline)
+            {
+                try
+                {
+                    string txt = await page.InnerTextAsync("#engineTxt");
+                    if (txt.Contains("Conclu", StringComparison.OrdinalIgnoreCase)
+                        || txt.Contains("Desconect", StringComparison.OrdinalIgnoreCase)) { done = txt.Contains("Conclu"); break; }
+                }
+                catch { }
+                await page.WaitForTimeoutAsync(10000);
+            }
+            string conv = "";
+            try { conv = await page.InnerTextAsync("#conv"); } catch { }
+            string file = $"/tmp/opencode/conv_{belt.Key}_{DateTime.Now:HHmmss}.txt";
+            try { await File.WriteAllTextAsync(file, conv); } catch { }
+            bool toolsUi = conv.Contains("Executando") && (conv.Contains("concluído") || conv.Contains("falhou") || conv.Contains("[exec]"));
+            int msgs = 0, calls = 0;
+            try
+            {
+                using var sres = await api.GetAsync("Chat/Sessions");
+                sres.EnsureSuccessStatusCode();
+                using var sdoc = JsonDocument.Parse(await sres.Content.ReadAsStringAsync());
+                int sid = sdoc.RootElement.EnumerateArray().First().GetProperty("id").GetInt32();
+                using var mres = await api.GetAsync($"Chat/Sessions/{sid}/Messages?limit=20");
+                if (mres.IsSuccessStatusCode)
+                    using (var mdoc = JsonDocument.Parse(await mres.Content.ReadAsStringAsync()))
+                        msgs = mdoc.RootElement.EnumerateArray().Count(m =>
+                            m.TryGetProperty("role", out var r) && r.GetString() == "assistant"
+                            && m.TryGetProperty("content", out var c) && (c.GetString()?.Length ?? 0) > 0);
+                using var tres = await api.GetAsync($"Chat/Sessions/{sid}/ToolCalls?limit=200");
+                if (tres.IsSuccessStatusCode)
+                    using (var tdoc = JsonDocument.Parse(await tres.Content.ReadAsStringAsync()))
+                        calls = tdoc.RootElement.EnumerateArray().Count();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ui] {belt.Key}: sem API ({ex.Message.Split('\n')[0]})");
+            }
+            bool ok = done && conv.Length > 0 && toolsUi && msgs > 0;
+            Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: conversa {conv.Length} chars, toolsUi={toolsUi}, msgs={msgs}, toolcalls={calls} ({file})");
+            return ok ? 0 : 1;
         }
         catch (Exception ex)
         {

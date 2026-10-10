@@ -54,8 +54,9 @@ internal static class SessionServiceTests
             await AddMessageAsync(svc, testUserId, testAgentId);
             await CountMessagesAsync(svc, testUserId, testAgentId);
             await TouchAsync(svc, testUserId, testAgentId);
+            await ToolCallAsync(svc, testUserId, testAgentId);
 
-            System.Console.WriteLine($"=== SessionService Unit: {10 - Failures}/10 PASS, {Failures} FAIL ===");
+            System.Console.WriteLine($"=== SessionService Unit: {11 - Failures}/11 PASS, {Failures} FAIL ===");
         }
         finally
         {
@@ -169,6 +170,19 @@ internal static class SessionServiceTests
             await s.AddMessageAsync(id, "user", "a", "", null, null);
             await s.AddMessageAsync(id, "assistant", "b", "", null, null);
             Check(await s.CountMessagesAsync(id) == 2, "CountMessagesAsync after adds");
+        }
+    }
+
+    private static async Task ToolCallAsync(SessionService s, int userId, int agentId)
+    {
+        var session = await s.CreateAsync(userId, agentId, "Tool Log");
+        if (session.Id is int id)
+        {
+            await s.LogToolAsync(id, "agente-teste", "shell", "{\"command\": \"echo oi\"}", true, "oi", 12);
+            await s.LogToolAsync(id, "agente-teste", "write", "{\"path\": \"x\"}", false, "negado", 3);
+            var calls = await s.GetToolCallsAsync(id);
+            Check(calls.Count == 2 && calls[0].Name == "shell" && calls[0].Ok && calls[0].Ms == 12
+                && calls[1].Name == "write" && !calls[1].Ok, "ToolCallAsync log+query");
         }
     }
 

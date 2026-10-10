@@ -16,4 +16,6 @@ public interface ISessionService
     Task AddMessageAsync(int sessionId, string role, string content, string thinking, int? promptTokens, int? completionTokens);
     Task<int> CountMessagesAsync(int sessionId);
     Task TouchAsync(int sessionId);
+    Task LogToolAsync(int sessionId, string agent, string name, string args, bool ok, string output, long ms);
+    Task<List<ToolCall>> GetToolCallsAsync(int sessionId, int limit = 200);
 }
