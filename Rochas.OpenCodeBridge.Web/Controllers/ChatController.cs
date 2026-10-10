@@ -170,84 +170,7 @@ public sealed class ChatController(
         return Ok();
     }
 
-    // POST /Chat/Orchestrate - pipeline híbrido (orch decompõe, executores em paralelo).
-    [HttpPost("/Chat/Orchestrate")]
-    public async Task<IActionResult> Orchestrate([FromBody] OrchestrateRequest req, [FromServices] IOrchestrationService orch, CancellationToken ct)
-    {
-        if (req.SessionId <= 0 || string.IsNullOrWhiteSpace(req.Text))
-            return BadRequest("Sessão e texto obrigatórios");
-        var s = await sessionService.GetAsync(req.SessionId, CurrentUserId);
-        if (s is null) return NotFound();
-        if (!s.ExecutorAgentId.HasValue) return BadRequest("Sessão sem executor selecionado");
-        var result = await orch.OrchestrateAsync(req.SessionId, CurrentUserId, req.Text, ct);
-        if (!result.Ok) return BadRequest(result.Error);
-        return Json(new { synthesis = result.Synthesis, taskCount = result.TaskCount });
-    }
-
-    // POST /Chat/Decompose - fase 1: só decompõe e persiste o preview (pipe só após aprovar).
-    [HttpPost("/Chat/Decompose")]
-    public async Task<IActionResult> Decompose([FromBody] OrchestrateRequest req, [FromServices] IOrchestrationService orch, CancellationToken ct)
-    {
-        if (req.SessionId <= 0 || string.IsNullOrWhiteSpace(req.Text))
-            return BadRequest("Sessão e texto obrigatórios");
-        var s = await sessionService.GetAsync(req.SessionId, CurrentUserId);
-        if (s is null) return NotFound();
-        if (!s.ExecutorAgentId.HasValue) return BadRequest("Sessão sem executor selecionado");
-        var result = await orch.PreviewAsync(req.SessionId, CurrentUserId, req.Text, ct);
-        if (!result.Ok) return BadRequest(result.Error);
-        return Json(new { tasks = result.Tasks.Select(t => new { title = t.Title, prompt = t.Prompt, etaMin = t.EtaMin, needsTools = t.NeedsTools }) });
-    }
-
-    // POST /Chat/OrchestrateApproved - fase 2: executa tarefas aprovadas + sintetiza.
-    [HttpPost("/Chat/OrchestrateApproved")]
-    public async Task<IActionResult> OrchestrateApproved([FromBody] OrchestrateApprovedRequest req, [FromServices] IOrchestrationService orch, CancellationToken ct)
-    {
-        if (req.SessionId <= 0 || req.Tasks is null || req.Tasks.Count == 0)
-            return BadRequest("Sessão e tarefas aprovadas obrigatórias");
-        var s = await sessionService.GetAsync(req.SessionId, CurrentUserId);
-        if (s is null) return NotFound();
-        if (!s.ExecutorAgentId.HasValue) return BadRequest("Sessão sem executor selecionado");
-        if (req.Tasks.Count > 16) return BadRequest("Máximo 16 tarefas");
-        var tasks = req.Tasks
-            .Where(t => !string.IsNullOrWhiteSpace(t.Prompt))
-            .Select(t => new OrchestrationService.SubTask(
-                string.IsNullOrWhiteSpace(t.Title) ? "Tarefa" : t.Title.Trim(), t.Prompt, t.EtaMin, t.NeedsTools))
-            .ToList();
-        var result = await orch.RunApprovedAsync(req.SessionId, CurrentUserId, tasks, ct, req.Synthesize);
-        if (!result.Ok) return BadRequest(result.Error);
-        return Json(new { synthesis = result.Synthesis, taskCount = result.TaskCount });
-    }
-
-    // POST /Chat/Synthesize - fase 3: sintetiza do rastro (outro modelo em memória).
-    [HttpPost("/Chat/Synthesize")]
-    public async Task<IActionResult> Synthesize([FromBody] SynthesizeRequest req, [FromServices] IOrchestrationService orch, CancellationToken ct)
-    {
-        if (req.SessionId <= 0) return BadRequest("Sessão obrigatória");
-        var s = await sessionService.GetAsync(req.SessionId, CurrentUserId);
-        if (s is null) return NotFound();
-        var result = await orch.SynthesizeAsync(req.SessionId, CurrentUserId, ct);
-        if (!result.Ok) return BadRequest(result.Error);
-        return Json(new { synthesis = result.Synthesis, taskCount = result.TaskCount });
-    }
-
-    // POST /Chat/Review - revisao em lote pos-execucao (inativa por padrao: EnableReview).
-    [HttpPost("/Chat/Review")]
-    public async Task<IActionResult> Review([FromBody] SynthesizeRequest req, [FromServices] IOrchestrationService orch, CancellationToken ct)
-    {
-        if (req.SessionId <= 0) return BadRequest("Sessão obrigatória");
-        var s = await sessionService.GetAsync(req.SessionId, CurrentUserId);
-        if (s is null) return NotFound();
-        var result = await orch.ReviewAsync(req.SessionId, CurrentUserId, ct);
-        if (!result.Ok) return BadRequest(result.Error);
-        return Json(new
-        {
-            rejected = result.Rejected.Select(t => new { title = t.Title, prompt = t.Prompt, etaMin = t.EtaMin, needsTools = t.NeedsTools }),
-            approved = result.Approved,
-            total = result.Total,
-        });
-    }
-
-    // POST /Chat/Executors/{id}/Probe - mede tok/s do executor e grava em measured_tps.
+    // POST /Chat/Executors/{id}/Probe - mede tok/s do agente e grava em measured_tps.
     [HttpPost("/Chat/Executors/{id:int}/Probe")]
     public async Task<IActionResult> ProbeExecutor(int id, [FromServices] IBridgeClient bridge, CancellationToken ct)
     {
@@ -451,7 +374,7 @@ public sealed class ChatController(
                 ["model"] = agent.Model,
                 ["messages"] = BuildMessages(messages),
                 ["temperature"] = plan ? 0.4 : agent.Temperature,
-                ["max_tokens"] = 2048,
+                ["max_tokens"] = 8192,
                 ["stream"] = true,
                 ["tools"] = tools,
                 ["tool_choice"] = "auto"
