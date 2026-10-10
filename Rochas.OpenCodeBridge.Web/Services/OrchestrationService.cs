@@ -55,6 +55,16 @@ public sealed class OrchestrationService(
         "com JSON, sem markdown nem texto extra: " +
         "{\"tasks\":[{\"title\":\"verbo de ação curto\",\"prompt\":\"instrução completa para o executor\",\"etaMin\":3,\"needsTools\":true}]}.";
 
+    // Regra de script (só quando o executor é build): cada prompt traz um script bash
+    // com os comandos exatos (shebang + set -euo pipefail, só allowlist, sem placeholder).
+    private const string DecomposeScriptRule =
+        " Para CADA tarefa, inclua no prompt um script bash pronto (```sh com shebang e " +
+        "set -euo pipefail, SOMENTE comandos: ls cat head tail echo sed grep find wc diff file " +
+        "pwd date git dotnet python3 curl, e write/read/edit via blocos descritivos). PROIBIDO " +
+        "bash -c aninhado, mkdir -p encadeado, pipes com efeito colateral, echo com '>' " +
+        "(use write), comandos fictícios e placeholder. Script denso (limite 4k chars; se " +
+        "estourar, divida a tarefa em 2).";
+
     // Executor: enunciado rígido (1 tarefa, artefato + evidência, sem conversa).
     // Catálogo explícito: o 4B pode inventar tools se não souber os nomes válidos.
     // Barreira: tool fora do JsonArray é barrada com "Não permitido" e vira lição
@@ -105,7 +115,8 @@ public sealed class OrchestrationService(
         "Você é o revisor. Para cada tarefa abaixo, julgue o resultado do executor: APROVADA " +
         "se cumpre o objetivo com evidência, REJEITADA se vazio, em prosa sem ato executivo ou " +
         "fora do escopo. Para REJEITADA, proponha enunciado corrigido (mesmo objetivo, mais " +
-        "restrito). Responda SOMENTE com JSON, sem markdown nem texto extra: " +
+        "restrito). Seja BREVE: reason com no máximo 1 linha, fixedPrompt com no máximo 3 linhas. " +
+        "NENHUMA prosa fora do JSON (divagação invalida a revisão). Responda SOMENTE com JSON: " +
         "{\"verdicts\":[{\"index\":1,\"verdict\":\"APROVADA\",\"reason\":\"motivo curto\",\"fixedPrompt\":\"\"}]}.";
 
     public async Task<OrchestrateResult> OrchestrateAsync(int sessionId, int userId, string text, CancellationToken ct)
@@ -210,7 +221,7 @@ public sealed class OrchestrationService(
         }).ToList();
         var dump = string.Join("\n\n", tasks.Select((t, i) => $"## Tarefa {i + 1}: {t.Title}\n{results[i]}"));
         var synth = await BridgeHelper.ChatAsync(bridge, agents.Orch.BridgeUrl, agents.Orch.Model,
-            PlanTemp(agents.Orch), SynthesisSystem,
+            PlanTemp(agents.Orch), Sys(agents.Orch, SynthesisSystem),
             new JsonArray { new JsonObject { ["role"] = "user", ["content"] = $"Pedido: {lastUser?.Content ?? ""}\n\nResultados:\n{dump}" } }, ct);
         if (!synth.Ok) return new OrchestrateResult(false, "", $"Síntese falhou: {synth.Error}", tasks.Count);
 
@@ -257,7 +268,7 @@ public sealed class OrchestrationService(
             dump.AppendLine($"--- Tarefa {i + 1}: {titles[i]} ---").AppendLine(result);
         }
         var review = await BridgeHelper.ChatAsync(bridge, agents.Orch.BridgeUrl, agents.Orch.Model,
-            PlanTemp(agents.Orch), ReviewSystem,
+            ReviewTemp(), Sys(agents.Orch, ReviewSystem),
             new JsonArray { new JsonObject { ["role"] = "user", ["content"] = dump.ToString() } }, ct);
         if (!review.Ok) return new ReviewResult(false, new List<SubTask>(), $"Revisão falhou: {review.Error}", 0, titles.Count);
 
@@ -311,6 +322,12 @@ public sealed class OrchestrationService(
     // Modo plan: temperatura 0.4 nos modelos (leitura/navegação, sem pressa criativa).
     private static double PlanTemp(Agent a) => a.Mode == "plan" ? 0.4 : a.Temperature;
 
+    // Julgamento: temperatura baixa (~0.1) para obedecer ao JSON sem divagar.
+    // Decompose/planejamento é criativo (0.4); revisão é determinística.
+    private double ReviewTemp() =>
+        orchestrationOptions.Value.ReviewTemperature > 0
+            ? orchestrationOptions.Value.ReviewTemperature : 0.1;
+
     // ETA correta por engine: sondado vale; sem sonda, CPU (llama/:4125) usa
     // CpuDefaultTps (lenta) e GPU usa 7. Sem isto a ETA na CPU sai otimista.
     // Pública para cobertura em teste (garante na GPU o que a CPU usará).
@@ -350,6 +367,11 @@ public sealed class OrchestrationService(
     // Thinking do orch na UI (colapsavel): vazio quando ShowThinking=false.
     private string ShowThink(string? thinking) =>
         orchestrationOptions.Value.ShowThinking ? (thinking ?? "") : "";
+
+    // System prompt do agente (quando preenchido) prefixa o system fixo da fase.
+    // Sem isto, Agent.SystemPrompt e letra morta (nunca lido em nenhum fluxo).
+    private static string Sys(Agent agent, string phase) =>
+        string.IsNullOrWhiteSpace(agent.SystemPrompt) ? phase : agent.SystemPrompt + "\n" + phase;
 
     // Lição aprendida: registra alucinação/erro para ajuste progressivo do prompt.
     private async Task RecordLessonAsync(int sessionId, int taskIndex, string kind, string detail)
@@ -423,7 +445,8 @@ public sealed class OrchestrationService(
 
     private async Task<(List<SubTask> Tasks, string Thinking)> DecomposeAsync(Agent orch, Agent exec, string text, CancellationToken ct)
     {
-        string system = DecomposeSystem.Replace("{0}", ExecTps(exec).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture));
+        string system = Sys(orch, DecomposeSystem.Replace("{0}", ExecTps(exec).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))
+            + ((exec.Mode ?? "build") != "plan" ? DecomposeScriptRule : ""));
         string thinking = "";
         // Critério de aceite: >= MinTasks tarefas distintas; tenta até MaxDecomposeTries.
         for (int attempt = 1; attempt <= MaxDecomposeTries; attempt++)
@@ -432,7 +455,7 @@ public sealed class OrchestrationService(
                 : text + $"\n\nSua decomposição anterior foi insuficiente (tente de novo com MAIS granularidade: tentativa {attempt}).";
             var r = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model, PlanTemp(orch),
                 system,
-                new JsonArray { new JsonObject { ["role"] = "user", ["content"] = ask } }, ct);
+                new JsonArray { new JsonObject { ["role"] = "user", ["content"] = ask } }, ct, maxTokens: 8192);
             if (!string.IsNullOrWhiteSpace(r.Thinking)) thinking = r.Thinking;
             var tasks = ParseTasks(r.Ok ? r.Content : "");
             if (tasks.Count >= MinTasks && tasks.Select(t => t.Prompt).Distinct().Count() == tasks.Count)
@@ -508,7 +531,7 @@ public sealed class OrchestrationService(
                 $"[Orquestrador] Refinando tarefa {index + 1} após falha (tentativa {attempt + 1})...", "", null, null);
             string lessons = await RecentLessonsAsync(sessionId);
             var refined = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model,
-                PlanTemp(orch), RefineSystem,
+                PlanTemp(orch), Sys(orch, RefineSystem),
                 new JsonArray { new JsonObject { ["role"] = "user", ["content"] = $"Tarefa: {task.Title}\nEnunciado: {prompt}\nEvidência da falha:\n{Truncate(result, 1000)}" + (lessons == "" ? "" : $"\n\n{lessons}") } }, ct);
             if (!refined.Ok || string.IsNullOrWhiteSpace(refined.Content)) return result;
             prompt = refined.Content.Trim();
@@ -523,7 +546,7 @@ public sealed class OrchestrationService(
         string evidence, Agent orch, Agent exec, CancellationToken ct, int depth)
     {
         var r = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model, PlanTemp(orch),
-            SplitSystem,
+            Sys(orch, SplitSystem),
             new JsonArray { new JsonObject { ["role"] = "user", ["content"] = $"Tarefa: {task.Title}\nEnunciado: {prompt}\nEvidência da falha:\n{Truncate(evidence, 1000)}" } }, ct);
         var subs = ParseTasks(r.Ok ? r.Content : "");
         if (subs.Count < 2) return null;
@@ -557,7 +580,7 @@ public sealed class OrchestrationService(
         {
             // Plan recebe o JsonArray cheio (escopo conhecido) com vedacao de agir;
             // build recebe o array do modo e executa de verdade.
-            string system = build ? ExecutorSystem : ExecutorSystem + PlanNoActSuffix;
+            string system = Sys(exec, build ? ExecutorSystem : ExecutorSystem + PlanNoActSuffix);
             var t = await BridgeHelper.ChatTurnAsync(bridge, exec.BridgeUrl, exec.Model,
                 PlanTemp(exec), system, history,
                 ToolDefinitions.GetTools("build"), ct);

@@ -23,7 +23,7 @@ internal static class OrchestrationTests
         private int _toolCallsServed;
         public Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
             string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
-            bool includeTools = true, JsonArray? tools = null)
+            bool includeTools = true, JsonArray? tools = null, int maxTokens = 2048)
         {
             SystemsSeen.Add(systemPrompt);
             string lastUser = messages.OfType<System.Text.Json.Nodes.JsonObject>()
@@ -61,7 +61,7 @@ internal static class OrchestrationTests
         public ScriptedBridge(IEnumerable<string> contents) => _script = new Queue<string>(contents);
         public Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
             string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
-            bool includeTools = true, JsonArray? tools = null)
+            bool includeTools = true, JsonArray? tools = null, int maxTokens = 2048)
         {
             string content = _script.Count > 0 ? _script.Dequeue() : "fim";
             string sse = $"data: {{\"choices\":[{{\"delta\":{{\"content\":{System.Text.Json.JsonSerializer.Serialize(content)}}},\"finish_reason\":\"stop\"}}]}}\n\ndata: [DONE]\n\n";
@@ -98,7 +98,7 @@ internal static class OrchestrationTests
     // sondado sempre vence. Garante na GPU o que a CPU usará depois.
     private static void CpuEtaTps()
     {
-        var cpu = new Agent { BridgeUrl = "http://127.0.0.1:4125", Model = "qwen25-coder-3b-cpu-build" };
+        var cpu = new Agent { BridgeUrl = "http://127.0.0.1:4125", Model = "qwen3-4b-awq-build" };
         var gpu = new Agent { BridgeUrl = "http://127.0.0.1:4124", Model = "qwen3-8b-awq-build" };
         var probed = new Agent { BridgeUrl = "http://127.0.0.1:4125", Model = "cpu", MeasuredTps = 3.1 };
         Check(OrchestrationService.ResolveTps(cpu, 2.5) == 2.5, "U-orch-cpu-tps");

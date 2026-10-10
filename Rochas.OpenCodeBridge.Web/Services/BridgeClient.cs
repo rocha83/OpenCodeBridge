@@ -10,7 +10,7 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
 {
     public async Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
         string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
-        bool includeTools = true, JsonArray? tools = null)
+        bool includeTools = true, JsonArray? tools = null, int maxTokens = 2048)
     {
         try
         {
@@ -24,7 +24,7 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
                 ["model"] = model,
                 ["messages"] = all,
                 ["temperature"] = temperature,
-                ["max_tokens"] = 2048,
+                ["max_tokens"] = maxTokens,
                 ["stream"] = true,
             };
             if (includeTools)

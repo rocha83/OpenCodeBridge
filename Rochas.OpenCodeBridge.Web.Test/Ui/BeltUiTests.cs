@@ -125,6 +125,54 @@ public static class BeltUiTests
 
     private static string TaskFile(string key) => $"/tmp/opencode/belt_{key}.json";
     private static string BuildFile(string key) => $"/tmp/opencode/belt_{key}_build.json";
+    private static string ExecFile(string key) => $"/tmp/opencode/belt_{key}_exec.json";
+
+    // Extrai blocos ```sh|bash dos prompts para .sh auditaveis em disco + valida sintaxe (bash -n).
+    private static void SaveScripts(string key, List<(string Title, string Prompt, double EtaMin)> tasks)
+    {
+        string dir = $"/tmp/opencode/scripts/{key}";
+        Directory.CreateDirectory(dir);
+        int n = 0, bad = 0;
+        foreach (var (t, i) in tasks.Select((t, i) => (t, i)))
+        {
+            var blocks = System.Text.RegularExpressions.Regex.Matches(
+                t.Prompt, "```(?:sh|bash)\\s*\\n(.*?)```",
+                System.Text.RegularExpressions.RegexOptions.Singleline)
+                .Select(m => m.Groups[1].Value.Trim()).ToList();
+            if (blocks.Count == 0)
+            {
+                // Fallback: script sem fence (a partir do shebang ate o fim do prompt).
+                int at = t.Prompt.IndexOf("#!/bin/bash", StringComparison.Ordinal);
+                if (at >= 0) blocks.Add(t.Prompt[at..].Trim());
+            }
+            foreach (string body in blocks)
+            {
+                string path = Path.Combine(dir, $"tarefa_{i + 1:00}.sh");
+                File.WriteAllText(path, "#!/bin/bash\nset -euo pipefail\n" + body + "\n");
+                n++;
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo("bash", $"-n \"{path}\"")
+                    {
+                        RedirectStandardError = true,
+                    };
+                    using var p = System.Diagnostics.Process.Start(psi)!;
+                    string err = p.StandardError.ReadToEnd();
+                    p.WaitForExit(15000);
+                    if (p.ExitCode != 0)
+                    {
+                        bad++;
+                        Console.WriteLine($"[ui] {key}: tarefa {i + 1} script com erro de sintaxe: {err.Split('\n')[0]}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ui] {key}: bash -n indisponível ({ex.Message.Split('\n')[0]})");
+                }
+            }
+        }
+        Console.WriteLine($"[ui] {key}: {n} scripts .sh salvos em {dir} ({bad} com erro de sintaxe)");
+    }
 
     // Anexo: o 8B (sempre em plan) conhece as tools para detalhar o enunciado dos workers.
     private const string ToolsAnnex =
@@ -148,7 +196,7 @@ public static class BeltUiTests
         try
         {
             int sessionId = await CreateSessionAsync(api, BuildOrchestratorId, belt.ExecutorId, belt.Title + " Build");
-            var approved = await DecomposeTasksAsync(api, belt, sessionId, belt.Prompt + ToolsAnnex + WorkersAnnex + ScriptAnnex);
+            var approved = await DecomposeTasksAsync(api, belt, sessionId);
             if (approved.Count == 0) return 1;
             var file = new
             {
@@ -159,6 +207,7 @@ public static class BeltUiTests
             };
             await File.WriteAllTextAsync(TaskFile(belt.Key), JsonSerializer.Serialize(file));
             Console.WriteLine($"[ui] PASS {belt.Key}: decompose {approved.Count} tarefas (sessao {sessionId})");
+            SaveScripts(belt.Key, approved);
             return 0;
         }
         catch (Exception ex)
@@ -234,14 +283,14 @@ public static class BeltUiTests
 
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("Voce e o revisor. Para cada descricao de desenvolvimento abaixo, responda APROVADA se descreve acao tecnica verificavel, REJEITADA se vaga ou sem aceite, com enunciado corrigido.");
-            sb.AppendLine("Responda SOMENTE JSON: [{\"index\":1,\"verdict\":\"APROVADA\",\"reason\":\"...\",\"fixedPrompt\":\"...\"}]");
+            sb.AppendLine("Seja BREVE: reason 1 linha, fixedPrompt 3 linhas max. NENHUMA prosa fora do JSON. Responda SOMENTE JSON: [{\"index\":1,\"verdict\":\"APROVADA\",\"reason\":\"...\",\"fixedPrompt\":\"...\"}]");
             for (int i = 0; i < tasks.Length; i++)
             {
                 string title = tasks[i].GetProperty("title").GetString() ?? "";
                 string mark = $"[Executor {i + 1}] Concluído";
                 string result = assistants.LastOrDefault(c => c.Contains(mark)) ?? "(sem descricao)";
                 sb.AppendLine($"--- Tarefa {i + 1}: {title} ---");
-                sb.AppendLine(result.Length > 3000 ? result[..3000] : result);
+                sb.AppendLine(result.Length > 1500 ? result[..1500] : result);
             }
             var verdicts = await AskReviewAsync(sb.ToString());
 
@@ -286,6 +335,7 @@ public static class BeltUiTests
             new StringContent(JsonSerializer.Serialize(new
             {
                 model = "qwen3-8b-awq",
+                temperature = 0.1,
                 max_tokens = 4096,
                 messages = new[] { new { role = "user", content } },
             }), System.Text.Encoding.UTF8, "application/json"));
@@ -318,7 +368,11 @@ public static class BeltUiTests
         return out_;
     }
 
-    // Fase execute (3B no ar, 8B fora): aprova com needsTools e aguarda conclusao, sem sintetizar.
+    // Fase execute (workers no ar, 8B fora): aprova com needsTools e aguarda conclusao, sem sintetizar.
+    // --exec ID: força um executor unico (1×modelo full); vazio = alternado 4/5 por faixa.
+    private static int ExecOverride = 0;
+
+    public static void SetExecOverride(int id) => ExecOverride = id;
     private static async Task<int> ExecuteBeltAsync(HttpClient api, Belt belt)
     {
         try
@@ -326,6 +380,12 @@ public static class BeltUiTests
             string file = File.Exists(BuildFile(belt.Key)) ? BuildFile(belt.Key) : TaskFile(belt.Key);
             using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(file));
             int sessionId = doc.RootElement.GetProperty("sessionId").GetInt32();
+            if (ExecOverride > 0)
+            {
+                // 1×modelo: nova sessao build com o executor unico.
+                sessionId = await CreateSessionAsync(api, BuildOrchestratorId, ExecOverride, belt.Title + " Build 1x");
+                Console.WriteLine($"[ui] {belt.Key}: sessao build unica {sessionId} (executor {ExecOverride})");
+            }
             var payload = doc.RootElement.GetProperty("tasks").EnumerateArray().Select(t => new
             {
                 title = t.GetProperty("title").GetString(),
@@ -336,7 +396,9 @@ public static class BeltUiTests
             await PostAsync(api, "Chat/OrchestrateApproved",
                 JsonSerializer.Serialize(new { sessionId, tasks = payload, synthesize = false }), "taskCount");
             bool done = await WaitTasksDoneAsync(api, "", sessionId, payload.Length, belt.TimeoutMin);
-            Console.WriteLine($"[ui] {(done ? "PASS" : "FAIL")} {belt.Key}: {payload.Length} tarefas executadas");
+            Console.WriteLine($"[ui] {(done ? "PASS" : "FAIL")} {belt.Key}: {payload.Length} tarefas executadas (sessao {sessionId})");
+            if (done)
+                await File.WriteAllTextAsync(ExecFile(belt.Key), JsonSerializer.Serialize(new { sessionId }));
             return done ? 0 : 1;
         }
         catch (Exception ex)
@@ -353,6 +415,13 @@ public static class BeltUiTests
         {
             using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(TaskFile(belt.Key)));
             int sessionId = doc.RootElement.GetProperty("sessionId").GetInt32();
+            // Build rodou em sessao propria (--exec): revisa nela.
+            try
+            {
+                using var exec = JsonDocument.Parse(await File.ReadAllTextAsync(ExecFile(belt.Key)));
+                sessionId = exec.RootElement.GetProperty("sessionId").GetInt32();
+            }
+            catch { }
             var tasks = doc.RootElement.GetProperty("tasks").EnumerateArray().ToArray();
 
             using var res = await api.GetAsync($"Chat/Sessions/{sessionId}/Messages?limit=200");
@@ -366,14 +435,14 @@ public static class BeltUiTests
 
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("Voce e o revisor. Para cada tarefa abaixo, responda APROVADA ou REJEITADA + motivo curto + enunciado corrigido se rejeitada.");
-            sb.AppendLine("Responda SOMENTE JSON: [{\"index\":1,\"verdict\":\"APROVADA\",\"reason\":\"...\",\"fixedPrompt\":\"...\"}]");
+            sb.AppendLine("Seja BREVE: reason 1 linha, fixedPrompt 3 linhas max. NENHUMA prosa fora do JSON. Responda SOMENTE JSON: [{\"index\":1,\"verdict\":\"APROVADA\",\"reason\":\"...\",\"fixedPrompt\":\"...\"}]");
             for (int i = 0; i < tasks.Length; i++)
             {
                 string title = tasks[i].GetProperty("title").GetString() ?? "";
                 string mark = $"[Executor {i + 1}] Concluído";
                 string result = byRole.LastOrDefault(c => c.Contains(mark)) ?? "(sem resultado)";
                 sb.AppendLine($"--- Tarefa {i + 1}: {title} ---");
-                sb.AppendLine(result.Length > 3000 ? result[..3000] : result);
+                sb.AppendLine(result.Length > 1500 ? result[..1500] : result);
             }
 
             using var bridge = new HttpClient { Timeout = TimeSpan.FromMinutes(15) };
@@ -381,6 +450,7 @@ public static class BeltUiTests
                 new StringContent(JsonSerializer.Serialize(new
                 {
                     model = "qwen3-8b-awq",
+                    temperature = 0.1,
                     max_tokens = 4096,
                     messages = new[] { new { role = "user", content = sb.ToString() } },
                 }), System.Text.Encoding.UTF8, "application/json"));

@@ -13,6 +13,8 @@ usando SOMENTE comandos autorizados: ls cat head tail echo sed grep find wc diff
 git dotnet python3 curl + write/read/edit via blocos descritivos. SEM bash -c aninhado, SEM
 mkdir -p encadeado, SEM pipes com efeito colateral, SEM python3 -m fictício, SEM placeholder.
 O script vai no campo prompt da tarefa; os executores 3B o rodam em modo build (fallback: tools).
+Limite de saída: resuma denso; se o script passar de 4k chars, divida a tarefa em 2
+(parte 1 e parte 2).
 ```
 
 ## Executor build — GPU (ids 4/5) e CPU (futuro)
@@ -39,5 +41,7 @@ executa, apenas especifica COMO será feito para o executor build. Seja concreto
 ## Notas
 
 - Executores sempre com `thinking: off` (performance); thinking só no 8B (`ShowThinking`).
-- `temperature`: plan 0.4, build 0.2.
+- `temperature`: decompose/plan 0.4 (criativo, expande o sucinto), review 0.1
+  (`Orchestration:ReviewTemperature`, julgador determinístico — evita a divagação
+  que estourou 15 min/veredito perdido nas 5 faixas), build 0.2.
 - Regras 1–4 do build valem também quando o enunciado vem scriptado: script primeiro, tools no fallback.

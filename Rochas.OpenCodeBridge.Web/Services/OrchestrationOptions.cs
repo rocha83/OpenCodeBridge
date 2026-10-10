@@ -18,4 +18,7 @@ public sealed class OrchestrationOptions
     // Thinking do orch (decompose/sintese/revisao) visivel na UI em <details>.
     // Ligado por padrao: desligar economiza contexto persistido.
     public bool ShowThinking { get; set; } = true;
+    // Temperatura do julgamento (review/reviewplan): baixa para obedecer ao
+    // formato JSON sem divagar. Decompose/planejamento segue em 0.4 (criativo).
+    public double ReviewTemperature { get; set; } = 0.1;
 }

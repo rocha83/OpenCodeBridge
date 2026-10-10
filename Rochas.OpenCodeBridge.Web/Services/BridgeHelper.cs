@@ -11,12 +11,12 @@ public static class BridgeHelper
     public sealed record ChatTurn(bool Ok, string Content, string Thinking, int? PromptTokens, int? CompletionTokens, List<ToolCall> Calls, string Error);
 
     public static async Task<ChatResult> ChatAsync(IBridgeClient bridge, string bridgeUrl, string model,
-        double temperature, string systemPrompt, JsonArray messages, CancellationToken ct)
+        double temperature, string systemPrompt, JsonArray messages, CancellationToken ct, int maxTokens = 2048)
     {
         using var buffer = new MemoryStream();
         // Orquestração é texto puro (sem tools): JSON de decomposição e artefatos
         // não podem se perder em tool_calls ignoradas.
-        var (ok, error) = await bridge.StreamAsync(bridgeUrl, model, temperature, systemPrompt, messages, buffer, ct, includeTools: false);
+        var (ok, error) = await bridge.StreamAsync(bridgeUrl, model, temperature, systemPrompt, messages, buffer, ct, includeTools: false, maxTokens: maxTokens);
         if (!ok) return new ChatResult(false, "", "", null, null, error);
 
         buffer.Position = 0;
