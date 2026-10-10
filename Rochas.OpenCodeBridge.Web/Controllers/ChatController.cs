@@ -17,9 +17,14 @@ public sealed class ChatController(
     IPersistenceRepository<Agent> agentsWrite,
     ISessionService sessionService,
     IToolExecutor toolExecutor,
-    IHttpClientFactory http) : Controller
+    IHttpClientFactory http,
+    Microsoft.Extensions.Options.IOptions<Services.OrchestrationOptions> orchOptions) : Controller
 {
     private int CurrentUserId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+
+    // GET /Chat/Config - flags de UX da orquestracao (aprovacao direta etc).
+    [HttpGet("/Chat/Config")]
+    public IActionResult Config() => Json(new { directApprove = orchOptions.Value.DirectApprove });
 
     public async Task<IActionResult> Index()
     {

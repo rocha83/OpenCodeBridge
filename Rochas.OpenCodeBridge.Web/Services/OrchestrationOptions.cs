@@ -13,4 +13,7 @@ public sealed class OrchestrationOptions
     // Revisao em lote do 8B sobre os resultados (pos-execucao, via /Chat/Review).
     // Inativa por padrao: o fluxo segue decompose -> aprova -> executa -> sintetiza.
     public bool EnableReview { get; set; } = false;
+    // Aprovar direto: sem editor na UI (decompose ja dispara a execucao).
+    // Inativo por padrao: a UI mostra a barra de aprovacao para revisao humana.
+    public bool DirectApprove { get; set; } = false;
 }

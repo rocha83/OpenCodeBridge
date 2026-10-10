@@ -92,6 +92,8 @@ const toastContainer = document.getElementById('toastContainer');
 let currentSessionId = null;
 let currentAgentId = null;
 let currentExecutorId = null;
+let uiConfig = { directApprove: false };
+fetch('/Chat/Config').then(r => r.json()).then(j => { uiConfig.directApprove = !!j.directApprove; }).catch(() => {});
 const execIdOrNull = () => execSel.value ? +execSel.value : null;
 
 const avatarUser = '<span class="rounded-circle d-flex align-self-start ms-3 shadow-1-strong bg-secondary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-user fa-2x text-white"></i></span>';
@@ -384,6 +386,11 @@ async function sendOrchestrated(text) {
     pendingTasks = j.tasks;
     await loadMessages(currentSessionId);
     await loadSessions();
+    if (uiConfig.directApprove) {
+      engineTxt.textContent = 'Aprovação direta...';
+      await approveAndRun();
+      return;
+    }
     showApproveBar(j.tasks);
     engineDot.className = 'dot'; engineTxt.textContent = 'Aguardando aprovação';
   } catch (e) {
@@ -417,7 +424,11 @@ function showApproveBar(tasks) {
         <button type="button" class="btn btn-sm btn-outline-danger">Remover</button>
       </div>
       <input class="form-control form-control-sm mb-1 task-title" value="${esc(t.title)}" />
-      <textarea class="form-control form-control-sm task-prompt" rows="3">${esc(t.prompt)}</textarea>`;
+      <textarea class="form-control form-control-sm task-prompt" rows="3">${esc(t.prompt)}</textarea>
+      <div class="form-check mt-1">
+        <input class="form-check-input task-tools" type="checkbox" ${t.needsTools ? 'checked' : ''} />
+        <label class="form-check-label small">Usar ferramentas</label>
+      </div>`;
     wrap.dataset.eta = t.etaMin || 0;
     wrap.querySelector('button').onclick = () => wrap.remove();
     list.appendChild(wrap);
@@ -449,7 +460,8 @@ function collectApprovedTasks() {
   list.querySelectorAll(':scope > div').forEach(w => {
     const title = w.querySelector('.task-title')?.value.trim() ?? '';
     const prompt = w.querySelector('.task-prompt')?.value.trim() ?? '';
-    if (prompt) out.push({ title: title || 'Tarefa', prompt, etaMin: parseFloat(w.dataset.eta) || 0 });
+    const needsTools = w.querySelector('.task-tools')?.checked ?? false;
+    if (prompt) out.push({ title: title || 'Tarefa', prompt, etaMin: parseFloat(w.dataset.eta) || 0, needsTools });
   });
   return out;
 }
@@ -481,6 +493,7 @@ async function approveAndRun() {
       const err = await r.text();
       showToast('Execução falhou: ' + err, 'danger');
       engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
+      if (pendingTasks && pendingTasks.length) showApproveBar(pendingTasks);
       return;
     }
     pendingTasks = null;
