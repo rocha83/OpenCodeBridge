@@ -56,7 +56,7 @@ public sealed class OrchestrationService(
         "{\"tasks\":[{\"title\":\"verbo de ação curto\",\"prompt\":\"instrução completa para o executor\",\"etaMin\":3,\"needsTools\":true}]}.";
 
     // Executor: enunciado rígido (1 tarefa, artefato + evidência, sem conversa).
-    // Catálogo explícito: o 3B inventa tools se não souber os nomes válidos.
+    // Catálogo explícito: o 4B pode inventar tools se não souber os nomes válidos.
     // Barreira: tool fora do JsonArray é barrada com "Não permitido" e vira lição
     // que aperta este system prompt progressivamente.
     private const string ExecutorSystem =
@@ -69,6 +69,14 @@ public sealed class OrchestrationService(
         "a tentativa é BARRADA com 'Não permitido' e registrada como lição que aperta " +
         "este prompt. Se nenhuma tool válida servir, responda em prosa. " +
         "Sem conversa, sem perguntas de volta.";
+
+    // Restricao do modo plan: recebe o JsonArray cheio (conhecimento do escopo),
+    // mas NAO age: retorna a implementacao em texto puro, sem chamar tools.
+    private const string PlanNoActSuffix =
+        " MODO PLAN: você conhece as ferramentas acima, mas está PROIBIDO de chamá-las. " +
+        "Retorne a implementação COMPLETA em texto: código/roteiro passo a passo com arquivos, " +
+        "comandos e ACEITE — como se fosse executar, porém sem tool_calls. Sem 'Não permitido', " +
+        "sem recusar por falta de tool.";
 
     // Orch: síntese final em pt-BR a partir dos resultados.
     private const string SynthesisSystem =
@@ -114,8 +122,8 @@ public sealed class OrchestrationService(
         var agents = await ResolveAgentsAsync(session);
         if (agents is null) return new OrchestrateResult(false, "", "Orquestrador ou executor inválido", 0);
 
-        var tasks = await DecomposeAsync(agents.Orch, agents.Exec, text, ct);
-        await sessions.AddMessageAsync(sessionId, "assistant", DivisionText(tasks, ExecTps(agents.Exec)), "", null, null);
+        var (tasks, thinking) = await DecomposeAsync(agents.Orch, agents.Exec, text, ct);
+        await sessions.AddMessageAsync(sessionId, "assistant", DivisionText(tasks, ExecTps(agents.Exec)), ShowThink(thinking), null, null);
         return await RunTasksAsync(sessionId, session, agents.Orch, agents.Exec, text, tasks, ct);
     }
 
@@ -140,8 +148,8 @@ public sealed class OrchestrationService(
         string context = prior.Count > 1
             ? "Contexto da conversa ate aqui:\n" + string.Join("\n", prior.Take(prior.Count - 1)) + "\n\nPedido atual: "
             : "";
-        var tasks = await DecomposeAsync(agents.Orch, agents.Exec, context + text, ct);
-        await sessions.AddMessageAsync(sessionId, "assistant", DivisionText(tasks, ExecTps(agents.Exec)), "", null, null);
+        var (tasks, thinking) = await DecomposeAsync(agents.Orch, agents.Exec, context + text, ct);
+        await sessions.AddMessageAsync(sessionId, "assistant", DivisionText(tasks, ExecTps(agents.Exec)), ShowThink(thinking), null, null);
         await sessions.TouchAsync(sessionId);
         return new DecomposeResult(true, tasks, "");
     }
@@ -332,6 +340,17 @@ public sealed class OrchestrationService(
         return one.Length <= max ? one : one[..max].TrimEnd() + "…";
     }
 
+    // Descarta blocos <think>...</think> vazados no conteudo (Qwen3 com thinking off
+    // ainda emite a tag como texto; o thinking real viaja em campo separado).
+    private static string StripThink(string s) =>
+        System.Text.RegularExpressions.Regex.Replace(s ?? "",
+            @"<think>.*?</think>", "", System.Text.RegularExpressions.RegexOptions.Singleline
+            | System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+
+    // Thinking do orch na UI (colapsavel): vazio quando ShowThinking=false.
+    private string ShowThink(string? thinking) =>
+        orchestrationOptions.Value.ShowThinking ? (thinking ?? "") : "";
+
     // Lição aprendida: registra alucinação/erro para ajuste progressivo do prompt.
     private async Task RecordLessonAsync(int sessionId, int taskIndex, string kind, string detail)
     {
@@ -377,7 +396,7 @@ public sealed class OrchestrationService(
                     $"[Executor {i + 1}] Iniciado: {task.Title}", "", null, null);
                 results[i] = await RunExecutorTaskAsync(sessionId, i, task, orch, exec, ct);
                 await sessions.AddMessageAsync(sessionId, "assistant",
-                    $"[Executor {i + 1}] Concluído: {task.Title}\n{Truncate(results[i], 2000)}", "", null, null);
+                    $"[Executor {i + 1}] Concluído: {task.Title}\n{Truncate(StripThink(results[i]), 2000)}", "", null, null);
             }
             finally
             {
@@ -402,9 +421,10 @@ public sealed class OrchestrationService(
         return new OrchestrateResult(true, synth.Content, "", tasks.Count);
     }
 
-    private async Task<List<SubTask>> DecomposeAsync(Agent orch, Agent exec, string text, CancellationToken ct)
+    private async Task<(List<SubTask> Tasks, string Thinking)> DecomposeAsync(Agent orch, Agent exec, string text, CancellationToken ct)
     {
         string system = DecomposeSystem.Replace("{0}", ExecTps(exec).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture));
+        string thinking = "";
         // Critério de aceite: >= MinTasks tarefas distintas; tenta até MaxDecomposeTries.
         for (int attempt = 1; attempt <= MaxDecomposeTries; attempt++)
         {
@@ -413,12 +433,13 @@ public sealed class OrchestrationService(
             var r = await BridgeHelper.ChatAsync(bridge, orch.BridgeUrl, orch.Model, PlanTemp(orch),
                 system,
                 new JsonArray { new JsonObject { ["role"] = "user", ["content"] = ask } }, ct);
+            if (!string.IsNullOrWhiteSpace(r.Thinking)) thinking = r.Thinking;
             var tasks = ParseTasks(r.Ok ? r.Content : "");
             if (tasks.Count >= MinTasks && tasks.Select(t => t.Prompt).Distinct().Count() == tasks.Count)
-                return tasks;
+                return (tasks, thinking);
         }
         // Fallback honesto: sem decomposição válida, 1 tarefa com o pedido integral.
-        return new List<SubTask> { new("Pedido integral", text) };
+        return (new List<SubTask> { new("Pedido integral", text) }, thinking);
     }
 
     public static List<SubTask> ParseTasks(string content)
@@ -534,14 +555,17 @@ public sealed class OrchestrationService(
         int toolCalls = 0;
         for (int turn = 0; turn < (build ? MaxToolTurns : 1); turn++)
         {
+            // Plan recebe o JsonArray cheio (escopo conhecido) com vedacao de agir;
+            // build recebe o array do modo e executa de verdade.
+            string system = build ? ExecutorSystem : ExecutorSystem + PlanNoActSuffix;
             var t = await BridgeHelper.ChatTurnAsync(bridge, exec.BridgeUrl, exec.Model,
-                PlanTemp(exec), ExecutorSystem, history,
-                build ? ToolDefinitions.GetTools(exec.Mode) : null, ct);
+                PlanTemp(exec), system, history,
+                ToolDefinitions.GetTools("build"), ct);
             if (!t.Ok) return ($"[Executor {index + 1}] FALHOU: {t.Error}", toolCalls);
             collected.Append(t.Content);
             if (t.Calls.Count == 0)
             {
-                // Recuperação tolerante: 3B escreve pseudo-tool em texto em vez de
+                // Recuperação tolerante: o 4B escreve pseudo-tool em texto em vez de
                 // chamar; se o bloco cita tool conhecida, executa de verdade 1x.
                 if (build && TryRecoverPseudoTool(t.Content, out string rname, out string rargs))
                 {
@@ -579,6 +603,12 @@ public sealed class OrchestrationService(
             history.Add(assistantMsg);
             foreach (var call in t.Calls)
             {
+                // Plan: vedacao de agir — ignora tool_calls e encerra no texto.
+                if (!build)
+                {
+                    collected.Append($"\n[Ferramenta {call.Name} conhecida, não executada em modo plan.]");
+                    break;
+                }
                 toolCalls++;
                 var result = tools.Execute(call.Name, call.Args, 120, exec.Mode);
                 if (!result.Success && (result.Error.Contains("Não permitido") || result.Error.Contains("não suportada") || result.Error.Contains("indisponível")))

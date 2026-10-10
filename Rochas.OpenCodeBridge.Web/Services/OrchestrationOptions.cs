@@ -15,4 +15,7 @@ public sealed class OrchestrationOptions
     public bool EnableReview { get; set; } = false;
     // Aprovar direto: sem editor na UI (decompose ja dispara a execucao).
     public bool DirectApprove { get; set; } = false;
+    // Thinking do orch (decompose/sintese/revisao) visivel na UI em <details>.
+    // Ligado por padrao: desligar economiza contexto persistido.
+    public bool ShowThinking { get; set; } = true;
 }

@@ -31,6 +31,13 @@ public static class AppDb
 
         using var conn = new SqliteConnection(ConnectionString);
         conn.Open();
+        // Concorrencia sob executores paralelos: WAL + NORMAL evita SafeHandle/disposed
+        // e NREs transitórios do rollback-journal em writes simultâneos.
+        using (var prag = conn.CreateCommand())
+        {
+            prag.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=10000;";
+            prag.ExecuteNonQuery();
+        }
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, is_admin INTEGER NOT NULL DEFAULT 0);

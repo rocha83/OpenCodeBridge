@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Rochas.Data.Specification.Interfaces;
+using Rochas.OpenCodeBridge.Web.Data;
 using Rochas.OpenCodeBridge.Web.Models;
 
 namespace Rochas.OpenCodeBridge.Web.Services;
@@ -18,27 +19,77 @@ public sealed class SessionService(
     private readonly IGenericRepository<SessionMessage> _messages = messages;
     private readonly IPersistenceRepository<SessionMessage> _messagesWrite = messagesWrite;
 
+    // Contorno das limitações do SQLite sob acesso concorrente (leitores do polling +
+    // escritores dos executores): retry com backoff só em falhas transitórias de handle
+    // (SafeHandle null, stmt descartado, busy/locked). Não mascara erro de SQL ou schema.
+    private static bool IsTransientDb(Exception ex) =>
+        ex is ObjectDisposedException
+        || ex is ArgumentNullException
+        || (ex is Microsoft.Data.Sqlite.SqliteException se
+            && (se.SqliteErrorCode == 5 || se.SqliteErrorCode == 6)); // busy, locked
+
+    private static async Task<T> DbRetryAsync<T>(Func<Task<T>> op, int tries = 5)
+    {
+        for (int i = 1; ; i++)
+        {
+            try { return await op(); }
+            catch (Exception ex) when (i < tries && IsTransientDb(ex))
+            {
+                await Task.Delay(100 * i * i);
+            }
+        }
+    }
+
+    private static Task DbRetryAsync(Func<Task> op, int tries = 5) =>
+        DbRetryAsync(async () => { await op(); return 0; }, tries);
+
+    // WORKAROUND (remover quando SqlWrapper>=1.5.1 chegar via DapperRepository):
+    // o parser emite DateTime como data em UPDATE (hotfix rocha83/SqlWrapper 1.5.1).
+    // Carimbo com precisão de hora via SQL direto.
+    private static async Task StampAsync(string sql, params (string Name, object Value)[] args)
+    {
+        await DbRetryAsync(async () =>
+        {
+            using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = sql;
+            foreach (var (name, value) in args)
+                cmd.Parameters.AddWithValue(name, value);
+            await cmd.ExecuteNonQueryAsync();
+            return 0;
+        });
+    }
+
+    private static string Iso(System.DateTime dt) =>
+        dt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss");
+
     public async Task<Session> CreateAsync(int userId, int agentId, string title, int? executorAgentId = null)
     {
         var now = System.DateTime.UtcNow;
         var s = new Session { UserId = userId, AgentId = agentId, ExecutorAgentId = executorAgentId, Title = title, CreatedAt = now, UpdatedAt = now };
-        await _sessionsWrite.Add(s);
+        await DbRetryAsync(async () => await _sessionsWrite.Add(s));
         // Obter o ID gerado (last_insert_rowid)
-        var created = await _sessions.Query(new Session { UserId = userId, AgentId = agentId, Title = title });
-        return created.OrderByDescending(x => x.Id ?? 0).First();
+        var created = await DbRetryAsync(async () => await _sessions.Query(new Session { UserId = userId, AgentId = agentId, Title = title }));
+        var first = created.OrderByDescending(x => x.Id ?? 0).First();
+        await StampAsync("UPDATE sessions SET created_at=@c, updated_at=@u WHERE id=@id",
+            ("@c", Iso(now)), ("@u", Iso(now)), ("@id", first.Id ?? 0));
+        first.CreatedAt = now;
+        first.UpdatedAt = now;
+        return first;
     }
 
     public async Task<List<Session>> GetByUserAsync(int userId)
     {
         var filter = new Session { UserId = userId };
-        var list = await _sessions.Query(filter);
+        var list = await DbRetryAsync(async () => await _sessions.Query(filter));
         return list.OrderByDescending(x => x.UpdatedAt).ToList();
     }
 
     public async Task<Session?> GetAsync(int sessionId, int userId)
     {
         var filter = new Session { Id = (int?)sessionId, UserId = userId };
-        var list = await _sessions.Query(filter);
+        var list = await DbRetryAsync(async () => await _sessions.Query(filter));
         return list.FirstOrDefault();
     }
 
@@ -48,8 +99,11 @@ public sealed class SessionService(
         if (s is not null)
         {
             s.Title = title;
-            s.UpdatedAt = System.DateTime.UtcNow;
+            var stamp = System.DateTime.UtcNow;
+            s.UpdatedAt = stamp;
             await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
+            await StampAsync("UPDATE sessions SET updated_at=@t WHERE id=@id",
+                ("@t", Iso(stamp)), ("@id", sessionId));
         }
     }
 
@@ -59,8 +113,11 @@ public sealed class SessionService(
         if (s is not null)
         {
             s.AgentId = agentId;
-            s.UpdatedAt = System.DateTime.UtcNow;
+            var stamp = System.DateTime.UtcNow;
+            s.UpdatedAt = stamp;
             await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
+            await StampAsync("UPDATE sessions SET updated_at=@t WHERE id=@id",
+                ("@t", Iso(stamp)), ("@id", sessionId));
         }
     }
 
@@ -70,8 +127,11 @@ public sealed class SessionService(
         if (s is not null)
         {
             s.ExecutorAgentId = executorAgentId;
-            s.UpdatedAt = System.DateTime.UtcNow;
+            var stamp = System.DateTime.UtcNow;
+            s.UpdatedAt = stamp;
             await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
+            await StampAsync("UPDATE sessions SET updated_at=@t WHERE id=@id",
+                ("@t", Iso(stamp)), ("@id", sessionId));
         }
     }
 
@@ -88,7 +148,7 @@ public sealed class SessionService(
     public async Task<List<SessionMessage>> GetMessagesAsync(int sessionId, int limit = 50)
     {
         var filter = new SessionMessage { SessionId = sessionId };
-        var list = await _messages.Query(filter);
+        var list = await DbRetryAsync(async () => await _messages.Query(filter));
         return list.OrderBy(x => x.CreatedAt).TakeLast(limit).ToList();
     }
 
@@ -104,7 +164,7 @@ public sealed class SessionService(
             CompletionTokens = completionTokens,
             CreatedAt = System.DateTime.UtcNow
         };
-        await _messagesWrite.Add(msg);
+        await DbRetryAsync(async () => await _messagesWrite.Add(msg));
     }
 
     public async Task<int> CountMessagesAsync(int sessionId)
@@ -116,11 +176,16 @@ public sealed class SessionService(
 
     public async Task TouchAsync(int sessionId)
     {
-        var s = await _sessions.Get(new Session { Id = (int?)sessionId });
+        var s = await DbRetryAsync(async () => await _sessions.Get(new Session { Id = (int?)sessionId }));
         if (s is not null)
         {
-            s.UpdatedAt = System.DateTime.UtcNow;
+            var now = System.DateTime.UtcNow;
+            // SQLite tem precisão de segundo: garante avanço monotônico.
+            var stamp = now > s.UpdatedAt ? now : s.UpdatedAt.AddSeconds(1);
+            s.UpdatedAt = stamp;
             await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
+            await StampAsync("UPDATE sessions SET updated_at=@t WHERE id=@id",
+                ("@t", Iso(stamp)), ("@id", sessionId));
         }
     }
 }

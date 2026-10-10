@@ -131,6 +131,11 @@ public static class BeltUiTests
         " Ferramentas dos executores: shell (comando, cwd travado), read (path, offset, limit), " +
         "write (path, content), edit (path, oldString, newString), grep (pattern, path), glob (pattern). " +
         "Detalhe cada tarefa com a ferramenta exata, argumentos e ACEITE em comando executável.";
+    // Anexo: quem executa (p/ calibrar granularidade e complexidade).
+    private const string WorkersAnnex =
+        " Executores: 2 instâncias Qwen3-4B-AWQ na GPU (ctx 12k, thinking desligado, ~30 t/s). " +
+        "São maiores e mais coerentes que os 3B anteriores: pode elevar um pouco a complexidade " +
+        "e o tamanho de cada micro-enunciado, mantendo 1 ação verificável por tarefa.";
 
     // Fase decompose (8B no ar): cria sessao build, decompoe, salva tarefas em arquivo.
     private static async Task<int> DecomposeBeltAsync(HttpClient api, Belt belt)
@@ -138,7 +143,7 @@ public static class BeltUiTests
         try
         {
             int sessionId = await CreateSessionAsync(api, BuildOrchestratorId, belt.ExecutorId, belt.Title + " Build");
-            var approved = await DecomposeTasksAsync(api, belt, sessionId, belt.Prompt + ToolsAnnex);
+            var approved = await DecomposeTasksAsync(api, belt, sessionId, belt.Prompt + ToolsAnnex + WorkersAnnex);
             if (approved.Count == 0) return 1;
             var file = new
             {
@@ -276,20 +281,36 @@ public static class BeltUiTests
             new StringContent(JsonSerializer.Serialize(new
             {
                 model = "qwen3-8b-awq",
-                max_tokens = 2048,
+                max_tokens = 4096,
                 messages = new[] { new { role = "user", content } },
             }), System.Text.Encoding.UTF8, "application/json"));
         string rtext = await rres.Content.ReadAsStringAsync();
         rres.EnsureSuccessStatusCode();
         string verdict = JsonDocument.Parse(rtext).RootElement
             .GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "[]";
+        try { await File.WriteAllTextAsync("/tmp/opencode/review_raw.txt", verdict); } catch { }
         int s = verdict.IndexOf('['), e = verdict.LastIndexOf(']');
-        using var ver = JsonDocument.Parse(s >= 0 && e > s ? verdict.Substring(s, e - s + 1) : "[]");
-        return ver.RootElement.EnumerateArray().Select(v => (
-            Index: v.TryGetProperty("index", out var ix) ? ix.GetInt32() : -1,
-            Verdict: v.TryGetProperty("verdict", out var vv) ? (vv.GetString() ?? "") : "",
-            Reason: v.TryGetProperty("reason", out var rr) ? (rr.GetString() ?? "") : "",
-            Fixed: v.TryGetProperty("fixedPrompt", out var fp) ? (fp.GetString() ?? "") : "")).ToList();
+        string array = s >= 0 && e > s ? verdict.Substring(s, e - s + 1) : "[]";
+        // Modelo emite escapes invalidos (ex.: \w de regex): escapa backslash solitaria.
+        array = System.Text.RegularExpressions.Regex.Replace(array, @"\\(?![\""\\/bfnrtu])", @"\\");
+        List<(int Index, string Verdict, string Reason, string Fixed)> out_ = new();
+        try
+        {
+            using var ver = JsonDocument.Parse(array);
+            out_ = ver.RootElement.EnumerateArray().Select(v => (
+                Index: v.TryGetProperty("index", out var ix) ? ix.GetInt32() : -1,
+                Verdict: v.TryGetProperty("verdict", out var vv) ? (vv.GetString() ?? "") : "",
+                Reason: v.TryGetProperty("reason", out var rr) ? (rr.GetString() ?? "") : "",
+                Fixed: v.TryGetProperty("fixedPrompt", out var fp) ? (fp.GetString() ?? "") : "")).ToList();
+        }
+        catch
+        {
+            // Fallback: extrai vereditos por regex, um a um (ignora objetos quebrados).
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(array,
+                @"\{[^{}]*""index""\s*:\s*(\d+)[^{}]*""verdict""\s*:\s*""(APROVADA|REJEITADA)""[^{}]*\}"))
+                out_.Add((int.Parse(m.Groups[1].Value), m.Groups[2].Value, "", ""));
+        }
+        return out_;
     }
 
     // Fase execute (3B no ar, 8B fora): aprova com needsTools e aguarda conclusao, sem sintetizar.
@@ -355,7 +376,7 @@ public static class BeltUiTests
                 new StringContent(JsonSerializer.Serialize(new
                 {
                     model = "qwen3-8b-awq",
-                    max_tokens = 2048,
+                    max_tokens = 4096,
                     messages = new[] { new { role = "user", content = sb.ToString() } },
                 }), System.Text.Encoding.UTF8, "application/json"));
             string rtext = await rres.Content.ReadAsStringAsync();
@@ -527,18 +548,28 @@ public static class BeltUiTests
     }
 
     // POST JSON autenticado (cookie do browser) com extrato de campo camelCase.
+    // Retry 1x em 500 (race transitória no Dapper sob polling concorrente).
     private static async Task<string> PostAsync(HttpClient api, string path, string body, string field)
     {
-        using var res = await api.PostAsync(path,
-            new StringContent(body, System.Text.Encoding.UTF8, "application/json"));
-        string text = await res.Content.ReadAsStringAsync();
-        if (!res.IsSuccessStatusCode)
-            throw new InvalidOperationException(((int)res.StatusCode) + " " + text[..Math.Min(200, text.Length)]);
-        using var doc = JsonDocument.Parse(text);
-        var el = doc.RootElement;
-        foreach (var part in field.Split('.'))
-            el = el.GetProperty(part);
-        return el.ValueKind == JsonValueKind.String ? el.GetString() ?? "" : el.GetRawText();
+        for (int attempt = 1; attempt <= 2; attempt++)
+        {
+            using var res = await api.PostAsync(path,
+                new StringContent(body, System.Text.Encoding.UTF8, "application/json"));
+            string text = await res.Content.ReadAsStringAsync();
+            if (res.IsSuccessStatusCode)
+            {
+                using var doc = JsonDocument.Parse(text);
+                var el = doc.RootElement;
+                foreach (var part in field.Split('.'))
+                    el = el.GetProperty(part);
+                return el.ValueKind == JsonValueKind.String ? el.GetString() ?? "" : el.GetRawText();
+            }
+            if (attempt == 2)
+                throw new InvalidOperationException(((int)res.StatusCode) + " " + text[..Math.Min(200, text.Length)]);
+            Console.WriteLine($"[ui] retry POST {path} ({attempt})");
+            await Task.Delay(5000);
+        }
+        throw new InvalidOperationException("inalcançável");
     }
 
     // Poll ate todas done (ou timeout por faixa): painel /Tasks + marcadores nas mensagens
@@ -572,7 +603,7 @@ public static class BeltUiTests
             {
                 Console.WriteLine($"[ui] poll sessao {sessionId}: {ex.Message.Split('\n')[0]}");
             }
-            await Task.Delay(TimeSpan.FromSeconds(30));
+            await Task.Delay(TimeSpan.FromSeconds(60));
         }
         return false;
     }
