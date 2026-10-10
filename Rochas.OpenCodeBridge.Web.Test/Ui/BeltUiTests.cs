@@ -15,27 +15,28 @@ public static class BeltUiTests
     private const string Win11FirefoxUa =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0";
 
-    // Orquestrador 8B (id 1) + executores 3B GPU em build (ids 4 e 5, alternados).
-    private const int OrchestratorId = 1;
+    // Orquestrador 8B (id 1 build / id 6 plan) + executores (2 plan CPU, 4/5 build GPU).
+    private const int BuildOrchestratorId = 1;
+    private const int PlanOrchestratorId = 6;
     private const int PlanExecutorId = 2;
 
     private sealed record Belt(string Key, string Title, string Prompt, int ExecutorId, int TimeoutMin);
 
     private static readonly Belt[] Belts =
     {
-        new("azul", "Faixa AZUL (E2E)",
+        new("azul", "Faixa AZUL E2E",
             "Especifique um CRUD de reembolsos corporativos: modelo de dados com campos, regras de aprovacao por faixa de valor e os endpoints necessarios.",
             4, 30),
-        new("verde", "Faixa VERDE (E2E)",
+        new("verde", "Faixa VERDE E2E",
             "Defina as regras de validacao de CPF e CNPJ (digitos verificadores) e de 2 exemplos validos de cada.",
             4, 30),
-        new("roxa", "Faixa ROXA (E2E)",
+        new("roxa", "Faixa ROXA E2E",
             "Defina validacao e mascaras para e-mail, telefone BR com DDD e CEP: regras, regex de cada um e 2 exemplos validos de cada.",
             5, 30),
-        new("marrom", "Faixa MARROM (E2E)",
+        new("marrom", "Faixa MARROM E2E",
             "Especifique um CRUD de reembolsos corporativos: modelo de dados com campos, regras de aprovacao por faixa de valor, endpoints necessarios, e pipeline CI/CD com Docker (Dockerfile multi-stage e compose para subir api+db).",
             4, 90),
-        new("preta", "Faixa PRETA (E2E)",
+        new("preta", "Faixa PRETA E2E",
             "Arquitetura de ecossistema (divida em cerca de 14 subtarefas): Portal do Colaborador (ponto eletronico, reembolsos, organograma) integrado via barramento de eventos assincrono a outros sistemas (folha, ERP); APIs REST do portal; pipeline de Big Data com ML: regressao para previsao de gastos, classificacao de reembolsos suspeitos e rede neural (perceptron multicamadas) para deteccao de anomalias em ponto eletronico.",
             5, 120),
     };
@@ -69,8 +70,10 @@ public static class BeltUiTests
         await page.GotoAsync(web + "/Account/Login");
         await page.FillAsync("input[name=email]", "admin@mova.com");
         await page.FillAsync("input[name=password]", "e2e");
-        await page.ClickAsync("button[type=submit], input[type=submit]");
-        await page.WaitForURLAsync("**/Chat**", new PageWaitForURLOptions { Timeout = 15000 });
+        await page.ClickAsync("form button:has-text('Entrar')");
+        await page.WaitForURLAsync(url => !url.Contains("/Account/Login"), new PageWaitForURLOptions { Timeout = 15000 });
+        await page.GotoAsync(web + "/Chat");
+        await page.WaitForSelectorAsync("#conv, #prompt, select#agentId", new PageWaitForSelectorOptions { Timeout = 15000 });
         Console.WriteLine("[ui] PASS login + /Chat (UA Win11, Firefox)");
 
         foreach (var belt in wanted)
@@ -81,13 +84,28 @@ public static class BeltUiTests
 
     private static async Task<int> RunBeltAsync(IPage page, string web, Belt belt, bool build)
     {
+        int orch = build ? BuildOrchestratorId : PlanOrchestratorId;
         int executor = build ? belt.ExecutorId : PlanExecutorId;
         try
         {
-            // Cria sessao via UI: orch 1 + executor do modo.
-            int sessionId = int.Parse(await FetchAsync(page, web, "/Chat/Sessions", "POST",
-                JsonSerializer.Serialize(new { agentId = OrchestratorId, executorAgentId = executor, title = belt.Title }),
-                "id"));
+            // Cria sessao via UI: orch + executor do modo (retry: Query Dapper tem race transitoria).
+            int sessionId = 0;
+            for (int attempt = 1; attempt <= 3; attempt++)
+            {
+                try
+                {
+                    sessionId = int.Parse(await FetchAsync(page, web, "/Chat/Sessions", "POST",
+                        JsonSerializer.Serialize(new { agentId = orch, executorAgentId = executor, title = belt.Title }),
+                        "id"));
+                    break;
+                }
+                catch when (attempt < 3)
+                {
+                    Console.WriteLine($"[ui] {belt.Key}: retry criar sessao ({attempt})");
+                    await Task.Delay(2000);
+                }
+            }
+            if (sessionId <= 0) throw new InvalidOperationException("criar sessao falhou 3x");
             Console.WriteLine($"[ui] {belt.Key}: sessao {sessionId} (executor {executor})");
 
             // Decompose: 8B amplia o entendimento e segmenta em tarefas atomicas.
