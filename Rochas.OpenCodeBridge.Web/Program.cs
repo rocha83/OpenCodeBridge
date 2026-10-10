@@ -39,7 +39,6 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddHttpClient();
 builder.Services.Configure<MockBridgeOptions>(builder.Configuration.GetSection("MockBridge"));
 builder.Services.Configure<DiagnosticOptions>(builder.Configuration.GetSection("Diagnostics"));
-builder.Services.Configure<OrchestrationOptions>(builder.Configuration.GetSection("Orchestration"));
 builder.Services.AddSingleton<IDiagnosticTelemetry, DiagnosticTelemetry>();
 builder.Services.AddScoped<IBridgeClient>(sp =>
 {
@@ -51,7 +50,6 @@ builder.Services.AddScoped<IBridgeClient>(sp =>
 builder.Services.AddScoped<BridgeClient>();
 builder.Services.AddScoped<MockBridgeClient>();
 builder.Services.AddScoped<ISessionService, SessionService>();
-builder.Services.AddScoped<IOrchestrationService, OrchestrationService>();
 builder.Services.AddSingleton<IPasswordHasher, PasswordHasherService>();
 builder.Services.AddScoped<IToolHandler, ShellToolHandler>();
 builder.Services.AddScoped<IToolHandler, ReadToolHandler>();
@@ -59,6 +57,7 @@ builder.Services.AddScoped<IToolHandler, WriteToolHandler>();
 builder.Services.AddScoped<IToolHandler, EditToolHandler>();
 builder.Services.AddScoped<IToolHandler, GrepToolHandler>();
 builder.Services.AddScoped<IToolHandler, GlobToolHandler>();
+builder.Services.AddScoped<IToolHandler>(sp => new SubagentToolHandler(sp.GetRequiredService<IBridgeClient>()));
 builder.Services.AddScoped<IToolExecutor>(sp => new ToolExecutor(
     sp.GetServices<IToolHandler>(),
     repoPath: AppContext.BaseDirectory,

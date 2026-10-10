@@ -139,7 +139,7 @@ internal static class ToolExecutorTests
     {
         var tools = ToolDefinitions.GetTools();
         bool hasTask = tools.Any(t => (t as System.Text.Json.Nodes.JsonObject)?["function"]?["name"]?.GetValue<string>() == "task");
-        Check(tools.Count == 6 && !hasTask, "U-tool-definitions");        var missing = exec.Execute("read", "{\"path\": \"nao-existe.txt\"}");
+        Check(tools.Count == 7 && !hasTask, "U-tool-definitions");        var missing = exec.Execute("read", "{\"path\": \"nao-existe.txt\"}");
         Check(!missing.Success && missing.Error.Contains("não encontrado"), "U-tool-read-missing");
 
         exec.Execute("write", "{\"path\": \"sub/ninho.txt\", \"content\": \"l1\\nl2\\nl3\\nl4\"}");

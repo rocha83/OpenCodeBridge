@@ -13,14 +13,15 @@ public sealed class ShellToolHandler : IToolHandler
     {
         "ls", "cat", "head", "tail", "echo", "sed", "grep", "find", "wc", "diff",
         "file", "pwd", "date", "git", "dotnet", "python", "python3", "node",
-        "npm", "curl", "shell", "bash", "sh", "mkdir", "touch",
+        "npm", "curl", "wget", "shell", "bash", "sh", "mkdir", "touch",
+        "bc", "expr", "awk",
     };
 
     private static readonly string[] DeniedTokens =
     {
         "rm", "kill", "pkill", "killall", "reboot", "shutdown", "halt",
         "mkfs", "dd", "fdisk", "mount", "systemctl", "service", "crontab",
-        "ssh", "scp", "wget", "chmod", "chown", "nohup", "setsid", "disown",
+        "ssh", "scp", "chmod", "chown", "nohup", "setsid", "disown",
         "exec", "eval", "su", "mkfifo",
     };
 

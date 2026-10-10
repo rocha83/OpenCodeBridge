@@ -664,7 +664,7 @@ public sealed class OrchestrationService(
                     await sessions.AddMessageAsync(sessionId, "assistant",
                         $"[Executor {index + 1}] Recuperado bloco {rname} do texto; executando...", "", null, null);
                     var rsw = System.Diagnostics.Stopwatch.StartNew();
-                    var recovered = tools.Execute(rname, rargs, 120, exec.Mode);
+                    var recovered = tools.Execute(rname, rargs, 120, exec.Mode, exec);
                     rsw.Stop();
                     await sessions.LogToolAsync(sessionId, exec.Name + "+recuperada", rname, rargs,
                         recovered.Success, recovered.Success ? recovered.Output : recovered.Error ?? "", rsw.ElapsedMilliseconds);
@@ -707,7 +707,7 @@ public sealed class OrchestrationService(
                 }
                 toolCalls++;
                 var msw = System.Diagnostics.Stopwatch.StartNew();
-                var result = tools.Execute(call.Name, call.Args, 120, exec.Mode);
+                var result = tools.Execute(call.Name, call.Args, 120, exec.Mode, exec);
                 msw.Stop();
                 await sessions.LogToolAsync(sessionId, exec.Name, call.Name, call.Args,
                     result.Success, result.Success ? result.Output : result.Error ?? "", msw.ElapsedMilliseconds);

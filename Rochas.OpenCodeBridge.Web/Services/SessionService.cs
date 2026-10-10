@@ -179,9 +179,12 @@ public sealed class SessionService(
         var s = await DbRetryAsync(async () => await _sessions.Get(new Session { Id = (int?)sessionId }));
         if (s is not null)
         {
-            // SQLite tem precisão de segundo: avança +1s do valor gravado
-            // (sempre visível no banco; now em ms seria truncado para igual).
-            s.UpdatedAt = s.UpdatedAt.AddSeconds(1);
+            // Precisão de segundo do SQLite + relógio pode saltar (dual-boot/RTC):
+            // trunca o now (determinístico p/ teste) e nunca deixa futuro para trás.
+            var now = System.DateTime.UtcNow;
+            var sec = new System.DateTime(now.Ticks - now.Ticks % System.TimeSpan.TicksPerSecond, System.DateTimeKind.Utc);
+            var stamp = sec > s.UpdatedAt ? sec : (s.UpdatedAt > now ? sec : s.UpdatedAt.AddSeconds(1));
+            s.UpdatedAt = stamp;
             await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
             await StampAsync("UPDATE sessions SET updated_at=@t WHERE id=@id",
                 ("@t", Iso(s.UpdatedAt)), ("@id", sessionId));

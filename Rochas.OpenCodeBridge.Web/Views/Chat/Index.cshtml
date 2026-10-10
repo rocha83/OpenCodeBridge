@@ -163,7 +163,7 @@ async function loadSessions() {
   list.forEach(s => {
     const li = document.createElement('li');
     li.className = 'p-2 border-bottom' + (s.id === currentSessionId ? ' bg-body-tertiary' : '');
-    const updated = new Date(s.updatedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    const updated = new Date(s.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
     li.innerHTML = `<a href="#!" class="d-flex justify-content-between text-decoration-none">
       <div class="d-flex flex-row">
         <span class="rounded-circle d-flex align-self-center me-3 shadow-1-strong bg-info justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-comments fa-2x text-white"></i></span>

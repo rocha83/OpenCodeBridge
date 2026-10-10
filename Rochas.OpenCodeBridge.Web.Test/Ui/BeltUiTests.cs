@@ -214,7 +214,7 @@ public static class BeltUiTests
             await page.GotoAsync(page.Url.Split("/Chat")[0] + "/Chat");
             await page.WaitForSelectorAsync("#conv, #prompt, select#agentId", new PageWaitForSelectorOptions { Timeout = 15000 });
             Console.WriteLine($"[ui] {belt.Key}: agente plan");
-            await page.SelectOptionAsync("select#agentId", PlanOrchestratorId.ToString());
+            await page.SelectOptionAsync("select#agentId", "1");
             Console.WriteLine($"[ui] {belt.Key}: nova sessao");
             await page.ClickAsync("#newSession");
             await page.WaitForTimeoutAsync(1500);
@@ -239,7 +239,7 @@ public static class BeltUiTests
             try { conv = await page.InnerTextAsync("#conv"); } catch { }
             string file = $"/tmp/opencode/conv_{belt.Key}_{DateTime.Now:HHmmss}.txt";
             try { await File.WriteAllTextAsync(file, conv); } catch { }
-            bool toolsUi = (await page.QuerySelectorAllAsync("#conv details")).Count > 0;
+            bool toolsUi = conv.Contains("executado com sucesso") || conv.Contains("falhou");
             int msgs = 0, calls = 0;
             try
             {
@@ -262,7 +262,7 @@ public static class BeltUiTests
             {
                 Console.WriteLine($"[ui] {belt.Key}: sem API ({ex.Message.Split('\n')[0]})");
             }
-            bool ok = done && conv.Length > 0 && toolsUi && msgs > 0;
+            bool ok = done && conv.Length > 0 && toolsUi && msgs > 0 && calls > 0;
             Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: conversa {conv.Length} chars, toolsUi={toolsUi}, msgs={msgs}, toolcalls={calls} ({file})");
             return ok ? 0 : 1;
         }

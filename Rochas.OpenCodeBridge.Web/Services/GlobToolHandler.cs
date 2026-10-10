@@ -24,9 +24,28 @@ public sealed class GlobToolHandler : IToolHandler
             return ToolResult.Fail(why);
         if (!Directory.Exists(baseDir)) return ToolResult.Fail($"diretório não encontrado: '{subdir}'");
 
+        // "**" é recursão (AllDirectories já desce): "src/**" vira busca "*" em src,
+        // "**/*.cs" vira "*.cs" na raiz. O matcher do .NET trataria "**" como nome
+        // literal de diretório e falharia.
+        string pat = pattern.Trim();
+        string searchDir = baseDir;
+        int star = pat.IndexOf("**", StringComparison.Ordinal);
+        if (star >= 0)
+        {
+            string extra = pat[..star].Trim().TrimEnd('/', '\\');
+            string tail = pat[(star + 2)..].Trim().TrimStart('/', '\\');
+            if (tail.StartsWith("*")) tail = tail[1..].TrimStart('/', '\\');
+            pat = string.IsNullOrWhiteSpace(tail) ? "*" : tail;
+            if (!string.IsNullOrWhiteSpace(extra) && extra.IndexOf('*') < 0)
+            {
+                searchDir = Path.Combine(baseDir, extra);
+                if (!Directory.Exists(searchDir)) return ToolResult.Fail($"diretório não encontrado: '{subdir}{Path.DirectorySeparatorChar}{extra}'");
+            }
+        }
+
         try
         {
-            string[] hits = Directory.GetFileSystemEntries(baseDir, pattern.Trim(), SearchOption.AllDirectories);
+            string[] hits = Directory.GetFileSystemEntries(searchDir, pat, SearchOption.AllDirectories);
             string[] rel = hits
                 .Select(h => Path.GetRelativePath(Path.GetFullPath(context.WorkspaceRoot), h))
                 .OrderBy(h => h, StringComparer.Ordinal)

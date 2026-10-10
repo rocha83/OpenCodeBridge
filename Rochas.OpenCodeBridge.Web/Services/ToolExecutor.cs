@@ -34,7 +34,7 @@ namespace Rochas.OpenCodeBridge.Web.Services
             yield return new GlobToolHandler();
         }
 
-        public ToolResult Execute(string name, string arguments, int timeoutSeconds = 120, string? mode = null)
+        public ToolResult Execute(string name, string arguments, int timeoutSeconds = 120, string? mode = null, Models.Agent? agent = null)
         {
             if (string.IsNullOrWhiteSpace(name))
                 return ToolResult.Fail("tool sem nome");
@@ -47,9 +47,17 @@ namespace Rochas.OpenCodeBridge.Web.Services
                 return ToolResult.Fail($"Não permitido em modo plan: tool '{key}' indisponível (só leitura e navegação)");
 
             if (!_handlers.TryGetValue(key, out IToolHandler? handler))
-                return ToolResult.Fail($"Não permitido: tool '{name}' fora do escopo permitido (válidas: shell, read, write, edit, grep, glob)");
+                return ToolResult.Fail($"Não permitido: tool '{name}' fora do escopo permitido (válidas: shell, read, write, edit, grep, glob, subagent)");
 
-            var context = new ToolContext { WorkspaceRoot = _repoPath, TimeoutSeconds = timeoutSeconds };
+            var context = new ToolContext
+            {
+                WorkspaceRoot = _repoPath,
+                TimeoutSeconds = timeoutSeconds,
+                AgentName = agent?.Name ?? "",
+                BridgeUrl = agent?.BridgeUrl ?? "",
+                Model = agent?.Model ?? "",
+                Temperature = agent?.Temperature ?? 0.4,
+            };
             ToolResult result;
             try
             {

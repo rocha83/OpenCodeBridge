@@ -54,11 +54,15 @@ public sealed class ChatController(
 
     // ---- Sessions CRUD ----
 
+    // Datas UTC com designador Z (o SQLite devolve Unspecified; sem Z o browser lê como local).
+    private static string Utc(System.DateTime dt) =>
+        System.DateTime.SpecifyKind(dt, System.DateTimeKind.Utc).ToString("yyyy-MM-ddTHH:mm:ssZ");
+
     [HttpGet("/Chat/Sessions")]
     public async Task<IActionResult> GetSessions()
     {
         var list = await sessionService.GetByUserAsync(CurrentUserId);
-        return Json(list.Select(s => new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, s.CreatedAt, s.UpdatedAt }));
+        return Json(list.Select(s => new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, CreatedAt = Utc(s.CreatedAt), UpdatedAt = Utc(s.UpdatedAt) }));
     }
 
     [HttpPost("/Chat/Sessions")]
@@ -77,7 +81,7 @@ public sealed class ChatController(
         }
         var title = string.IsNullOrWhiteSpace(req.Title) ? "Nova sessão" : req.Title;
         var s = await sessionService.CreateAsync(CurrentUserId, req.AgentId, title, execId);
-        return Json(new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, s.CreatedAt });
+        return Json(new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, CreatedAt = Utc(s.CreatedAt) });
     }
 
     [HttpGet("/Chat/Sessions/{id:int}")]
@@ -85,7 +89,7 @@ public sealed class ChatController(
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
-        return Json(new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, s.CreatedAt, s.UpdatedAt });
+        return Json(new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, CreatedAt = Utc(s.CreatedAt), UpdatedAt = Utc(s.UpdatedAt) });
     }
 
     [HttpGet("/Chat/Sessions/{id:int}/Messages")]
@@ -94,7 +98,7 @@ public sealed class ChatController(
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
         var msgs = await sessionService.GetMessagesAsync(id, limit);
-        return Json(msgs.Select(m => new { m.Id, m.Role, m.Content, m.Thinking, m.PromptTokens, m.CompletionTokens, m.CreatedAt }));
+        return Json(msgs.Select(m => new { m.Id, m.Role, m.Content, m.Thinking, m.PromptTokens, m.CompletionTokens, CreatedAt = Utc(m.CreatedAt) }));
     }
 
     // GET /Chat/Sessions/{id}/ToolCalls - trilha de tools p/ avaliação posterior.
@@ -481,7 +485,7 @@ public sealed class ChatController(
                     {
                         await WriteProgressAsync(outputStream, "tool_start", st.Tool, null, ct);
                         var ssw = System.Diagnostics.Stopwatch.StartNew();
-                        var sr = toolExecutor.Execute(st.Tool, st.Args, 120, null);
+                        var sr = toolExecutor.Execute(st.Tool, st.Args, 120, null, agent);
                         ssw.Stop();
                         if (session?.Id is int sidSug)
                             await sessionService.LogToolAsync(sidSug, agent.Name + "+sugerida", st.Tool, st.Args,
@@ -532,7 +536,7 @@ public sealed class ChatController(
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
                 // Trunfo: o modelo vê plan (anunciado), o executor roda build (pode tudo).
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                var result = toolExecutor.Execute(name, args, 120, null);
+                var result = toolExecutor.Execute(name, args, 120, null, agent);
                 sw.Stop();
                 if (session?.Id is int sidLog)
                     await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
