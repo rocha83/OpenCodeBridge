@@ -133,9 +133,14 @@ public static class BeltUiTests
         "Detalhe cada tarefa com a ferramenta exata, argumentos e ACEITE em comando executável.";
     // Anexo: quem executa (p/ calibrar granularidade e complexidade).
     private const string WorkersAnnex =
-        " Executores: 2 instâncias Qwen3-4B-AWQ na GPU (ctx 12k, thinking desligado, ~30 t/s). " +
-        "São maiores e mais coerentes que os 3B anteriores: pode elevar um pouco a complexidade " +
-        "e o tamanho de cada micro-enunciado, mantendo 1 ação verificável por tarefa.";
+        " Executores: 2 instâncias Qwen2.5-Coder-3B-AWQ na GPU (ctx 16k, thinking desligado). " +
+        "Modelos pequenos: micro-enunciados curtos, 1 ação verificável, sem ambiguidade.";
+    // Anexo: script bash por tarefa (executores rodam em build; fallback: tools).
+    private const string ScriptAnnex =
+        " Para CADA tarefa, inclua no prompt um script bash (shebang + set -euo pipefail) " +
+        "usando SOMENTE: ls cat head tail echo sed grep find wc diff file pwd date git dotnet " +
+        "python3 curl. PROIBIDO bash -c aninhado, mkdir -p encadeado, pipes com efeito colateral, " +
+        "comandos fictícios (python3 -m ...) e placeholder. Os executores rodam o script em build.";
 
     // Fase decompose (8B no ar): cria sessao build, decompoe, salva tarefas em arquivo.
     private static async Task<int> DecomposeBeltAsync(HttpClient api, Belt belt)
@@ -143,7 +148,7 @@ public static class BeltUiTests
         try
         {
             int sessionId = await CreateSessionAsync(api, BuildOrchestratorId, belt.ExecutorId, belt.Title + " Build");
-            var approved = await DecomposeTasksAsync(api, belt, sessionId, belt.Prompt + ToolsAnnex + WorkersAnnex);
+            var approved = await DecomposeTasksAsync(api, belt, sessionId, belt.Prompt + ToolsAnnex + WorkersAnnex + ScriptAnnex);
             if (approved.Count == 0) return 1;
             var file = new
             {
