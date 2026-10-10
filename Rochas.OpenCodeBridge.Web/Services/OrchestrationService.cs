@@ -484,14 +484,57 @@ public sealed class OrchestrationService(
                 new JsonArray { new JsonObject { ["role"] = "user", ["content"] = ask } }, ct, maxTokens: 8192, enableThinking: DecomposeThinkingFlag());
             if (!string.IsNullOrWhiteSpace(r.Thinking)) thinking = r.Thinking;
             var tasks = ParseTasks(r.Ok ? r.Content : "");
-            if (tasks.Count >= MinTasks && tasks.Select(t => t.Prompt).Distinct().Count() == tasks.Count)
+            int distinct = tasks.Select(t => t.Prompt).Distinct().Count();
+            if (tasks.Count >= MinTasks && distinct == tasks.Count)
                 return (tasks, thinking);
+            // Observabilidade do retry: tentativas recusadas não persistem no chat;
+            // vão para o site.log com o motivo (contagem / duplicadas / vazio).
+            Console.WriteLine($"[decompose] tentativa {attempt} recusada: ok={r.Ok} tarefas={tasks.Count} distintas={distinct} conteúdo={r.Content.Length} chars");
         }
         // Fallback honesto: sem decomposição válida, 1 tarefa com o pedido integral.
         return (new List<SubTask> { new("Pedido integral", text) }, thinking);
     }
 
     public static List<SubTask> ParseTasks(string content)
+    {
+        var byJson = ParseTasksJson(content);
+        if (byJson.Count > 0) return byJson;
+        return ParseTasksNumbered(content);
+    }
+
+    // Lista numerada em prosa ("1. Título" + linhas de instrução até o próximo
+    // número): o contrato legível sem dialeto de formato. Blocos de código
+    // entram inteiros no prompt da tarefa.
+    public static List<SubTask> ParseTasksNumbered(string content)
+    {
+        var tasks = new List<SubTask>();
+        string? title = null;
+        var body = new System.Text.StringBuilder();
+        void Flush()
+        {
+            if (!string.IsNullOrWhiteSpace(title) && body.ToString().Trim().Length > 0)
+                tasks.Add(new SubTask(title.Trim().Trim('*', '`', ' '), body.ToString().Trim(), 0, NeedsTools: false));
+        }
+        foreach (var raw in (content ?? "").Split('\n'))
+        {
+            string line = raw.Trim();
+            var m = Regex.Match(line, @"^(?:tarefa\s+)?(\d+)[\.\)\:\-]\s*(.+)$", RegexOptions.IgnoreCase);
+            if (m.Success && line.Length < 300)
+            {
+                Flush();
+                title = m.Groups[2].Value;
+                body.Clear();
+            }
+            else if (title is not null)
+            {
+                body.AppendLine(raw.TrimEnd());
+            }
+        }
+        Flush();
+        return tasks.Take(MaxTasks).ToList();
+    }
+
+    private static List<SubTask> ParseTasksJson(string content)
     {
         try
         {

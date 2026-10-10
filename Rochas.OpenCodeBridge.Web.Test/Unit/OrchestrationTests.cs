@@ -75,6 +75,7 @@ internal static class OrchestrationTests
     {
         ParseValid();
         ParseFallback();
+        ParseNumbered();
         RecoverPseudoTool();
         PlanToolsFilter();
         PipelineHybrid().GetAwaiter().GetResult();
@@ -90,7 +91,7 @@ internal static class OrchestrationTests
         ReviewDisabled().GetAwaiter().GetResult();
         ReviewEnabled().GetAwaiter().GetResult();
 
-        System.Console.WriteLine($"=== Orchestration Unit: {19 - Failures}/19 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== Orchestration Unit: {20 - Failures}/20 PASS, {Failures} FAIL ===");
         return Failures;
     }
 
@@ -122,6 +123,15 @@ internal static class OrchestrationTests
     {
         var tasks = OrchestrationService.ParseTasks("sem json nenhum");
         Check(tasks.Count == 0, "U-orch-parse-fallback");
+    }
+
+    private static void ParseNumbered()
+    {
+        var tasks = OrchestrationService.ParseTasks(
+            "1. Criar entidade\nCrie a entidade via write. ACEITE: dotnet build.\n```sh\n#!/bin/bash\ndotnet build\n```\n2. Criar endpoint\nCrie o controller via write.");
+        Check(tasks.Count == 2 && tasks[0].Title == "Criar entidade"
+            && tasks[0].Prompt.Contains("dotnet build") && tasks[1].Title == "Criar endpoint",
+            "U-orch-parse-numbered");
     }
 
     private static void RecoverPseudoTool()

@@ -26,10 +26,10 @@ public static class BeltUiTests
     private static readonly Belt[] Belts =
     {
         new("azul", "Faixa AZUL E2E",
-            "Especifique um CRUD de reembolsos corporativos: modelo de dados com campos, regras de aprovacao por faixa de valor e os endpoints necessarios.",
+            "Especifique um CRUD de reembolsos corporativos: modelo de dados com campos, regras de aprovacao por faixa de valor e os endpoints necessarios. Premissas: backend .NET C#, frontend em MVC Razor.",
             4, 30),
         new("verde", "Faixa VERDE E2E",
-            "Defina as regras de validacao de CPF e CNPJ (digitos verificadores) e de 2 exemplos validos de cada.",
+            "Defina as regras de validacao de CPF e CNPJ para cadastro de clientes e fornecedores: digitos verificadores, rejeicao de sequencias repetidas e numeros de teste conhecidos, aceitacao com e sem mascara, obrigatoriedade por tipo de pessoa (PF exige CPF, PJ exige CNPJ), e de 2 exemplos validos e 1 invalido de cada. Inclua calculo de distancia haversiana entre dois CEPs a partir de base local de CEP com campos lat/lng (amostra embutida no enunciado, sem rede), com 1 exemplo calculado.",
             4, 30),
         new("roxa", "Faixa ROXA E2E",
             "Defina validacao e mascaras para e-mail, telefone BR com DDD e CEP: regras, regex de cada um e 2 exemplos validos de cada.",
@@ -38,7 +38,7 @@ public static class BeltUiTests
             "Especifique um CRUD de reembolsos corporativos: modelo de dados com campos, regras de aprovacao por faixa de valor, endpoints necessarios, e pipeline CI/CD com Docker (Dockerfile multi-stage e compose para subir api+db).",
             4, 90),
         new("preta", "Faixa PRETA E2E",
-            "Arquitetura de ecossistema (divida em cerca de 14 subtarefas): Portal do Colaborador (ponto eletronico, reembolsos, organograma) integrado via barramento de eventos assincrono a outros sistemas (folha, ERP); APIs REST do portal; pipeline de Big Data com ML: regressao para previsao de gastos, classificacao de reembolsos suspeitos e rede neural (perceptron multicamadas) para deteccao de anomalias em ponto eletronico.",
+            "Arquitetura de ecossistema (divida em cerca de 14 subtarefas): Portal do Colaborador (ponto eletronico, reembolsos, organograma) integrado via barramento de eventos assincrono a outros sistemas (folha, ERP); APIs REST do portal; pipeline de Big Data com ML: regressao para previsao de gastos, classificacao de reembolsos suspeitos e rede neural (perceptron multicamadas) para deteccao de anomalias em ponto eletronico. Premissas: backend .NET C#, frontend do portal em React.js.",
             5, 120),
     };
 
