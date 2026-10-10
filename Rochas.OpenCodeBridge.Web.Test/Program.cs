@@ -27,11 +27,13 @@ internal static class Program
         string web = "http://127.0.0.1:4130";
         bool ui = false;
         string mode = "plan";
+        string phase = "full";
         var belts = new List<string>();
         for (int i = 0; i + 1 < args.Length; i++)
         {
             if (args[i] == "--web") web = args[i + 1];
             if (args[i] == "--mode") mode = args[i + 1];
+            if (args[i] == "--phase") phase = args[i + 1];
             if (args[i] == "--belts") belts.AddRange(args[i + 1].Split(',', StringSplitOptions.RemoveEmptyEntries));
         }
         ui = args.Contains("--ui");
@@ -48,7 +50,7 @@ internal static class Program
         IntegrationHttp(web).GetAwaiter().GetResult();
         Integration.ChatIntegrationTests.RunAsync(web).GetAwaiter().GetResult();
         if (ui)
-            Failures += Ui.BeltUiTests.RunAsync(web, belts.ToArray(), mode).GetAwaiter().GetResult();
+            Failures += Ui.BeltUiTests.RunAsync(web, belts.ToArray(), mode, phase).GetAwaiter().GetResult();
 
         Console.WriteLine(Failures == 0 ? "[test] PASS" : $"[test] FAIL={Failures}");
         return Failures == 0 ? 0 : 1;

@@ -20,7 +20,8 @@ public sealed class SessionService(
 
     public async Task<Session> CreateAsync(int userId, int agentId, string title, int? executorAgentId = null)
     {
-        var s = new Session { UserId = userId, AgentId = agentId, ExecutorAgentId = executorAgentId, Title = title };
+        var now = System.DateTime.UtcNow;
+        var s = new Session { UserId = userId, AgentId = agentId, ExecutorAgentId = executorAgentId, Title = title, CreatedAt = now, UpdatedAt = now };
         await _sessionsWrite.Add(s);
         // Obter o ID gerado (last_insert_rowid)
         var created = await _sessions.Query(new Session { UserId = userId, AgentId = agentId, Title = title });
@@ -100,7 +101,8 @@ public sealed class SessionService(
             Content = content,
             Thinking = thinking,
             PromptTokens = promptTokens,
-            CompletionTokens = completionTokens
+            CompletionTokens = completionTokens,
+            CreatedAt = System.DateTime.UtcNow
         };
         await _messagesWrite.Add(msg);
     }
