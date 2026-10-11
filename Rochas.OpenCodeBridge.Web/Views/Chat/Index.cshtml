@@ -283,8 +283,6 @@ async function selectSession(id, agentId, executorAgentId) {
   currentAgentId = agentId;
   agentSel.value = agentId;
   currentExecutorId = executorAgentId ?? null;
-  pendingTasks = null;
-  hideApproveBar();
   filterExecutors();
   execSel.value = currentExecutorId ?? '';
   await loadMessages(id);
@@ -372,8 +370,6 @@ async function createSession() {
   currentAgentId = s.agentId;
   agentSel.value = s.agentId;
   currentExecutorId = s.executorAgentId ?? null;
-  pendingTasks = null;
-  hideApproveBar();
   filterExecutors();
   execSel.value = currentExecutorId ?? '';
   await loadSessions();
@@ -489,157 +485,6 @@ promptEl.addEventListener('blur', () => {
   // Opcional: re-focar após envio (feito no send.onclick)
 });
 
-// Modo híbrido em 2 fases: 1) decompõe e mostra preview; 2) aprova e executa.
-// Pipe completa só após aprovação.
-let pendingTasks = null;
-async function sendOrchestrated(text) {
-  const ta = document.getElementById('prompt');
-  ta.disabled = true;
-  sendBtn.disabled = true;
-  sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Decompondo...';
-  engineDot.className = 'dot blink'; engineTxt.textContent = 'Orquestrador dividindo...';
-  try {
-    const r = await fetch('/Chat/Decompose', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: currentSessionId, text })
-    });
-    if (!r.ok) {
-      const err = await r.text();
-      showToast('Decomposição falhou: ' + err, 'danger');
-      engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
-      return;
-    }
-    const j = await r.json();
-    pendingTasks = j.tasks;
-    await loadMessages(currentSessionId);
-    await loadSessions();
-    if (uiConfig.directApprove) {
-      engineTxt.textContent = 'Aprovação direta...';
-      await approveAndRun();
-      return;
-    }
-    showApproveBar(j.tasks);
-    engineDot.className = 'dot'; engineTxt.textContent = 'Aguardando aprovação';
-  } catch (e) {
-    showToast('Erro na decomposição: ' + e.message, 'danger');
-    engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
-  } finally {
-    ta.disabled = false;
-    sendBtn.disabled = false;
-    sendBtn.innerHTML = 'ENVIAR';
-    ta.focus();
-    if (isScrolledToBottom()) scrollToBottom();
-  }
-}
-
-function showApproveBar(tasks) {
-  hideApproveBar();
-  const bar = document.createElement('div');
-  bar.id = 'approve-bar';
-  bar.className = 'mt-2 mb-2 p-2 rounded border border-info';
-  bar.innerHTML = `<div class="small fw-bold mb-2">Orquestrador propôs ${tasks.length} tarefa(s) — revise e aprove:</div>`;
-  const list = document.createElement('div');
-  list.id = 'approve-list';
-  bar.appendChild(list);
-  const renderTask = (t, i) => {
-    const wrap = document.createElement('div');
-    wrap.className = 'mb-2 p-2 rounded border border-secondary';
-    const eta = t.etaMin > 0 ? ` <span class="text-muted">(~${t.etaMin} min)</span>` : '';
-    wrap.innerHTML = `
-      <div class="d-flex justify-content-between align-items-center mb-1">
-        <span class="small fw-bold">Tarefa ${i + 1}${eta}</span>
-        <button type="button" class="btn btn-sm btn-outline-danger">Remover</button>
-      </div>
-      <input class="form-control form-control-sm mb-1 task-title" value="${esc(t.title)}" />
-      <textarea class="form-control form-control-sm task-prompt" rows="3">${esc(t.prompt)}</textarea>
-      <div class="form-check mt-1">
-        <input class="form-check-input task-tools" type="checkbox" ${t.needsTools ? 'checked' : ''} />
-        <label class="form-check-label small">Usar ferramentas</label>
-      </div>`;
-    wrap.dataset.eta = t.etaMin || 0;
-    wrap.querySelector('button').onclick = () => wrap.remove();
-    list.appendChild(wrap);
-  };
-  tasks.forEach(renderTask);
-  const row = document.createElement('div');
-  row.className = 'd-flex justify-content-end gap-2 mt-2';
-  const add = document.createElement('button');
-  add.type = 'button';
-  add.className = 'btn btn-sm btn-outline-info';
-  add.textContent = '+ Tarefa';
-  add.onclick = () => renderTask({ title: '', prompt: '' }, list.children.length);
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'btn btn-sm btn-info';
-  btn.textContent = 'Aprovar e executar';
-  btn.onclick = approveAndRun;
-  row.appendChild(add);
-  row.appendChild(btn);
-  bar.appendChild(row);
-  const ta = document.getElementById('prompt');
-  ta.parentNode.parentNode.insertBefore(bar, ta.parentNode.nextSibling);
-}
-
-function collectApprovedTasks() {
-  const list = document.getElementById('approve-list');
-  if (!list) return pendingTasks;
-  const out = [];
-  list.querySelectorAll(':scope > div').forEach(w => {
-    const title = w.querySelector('.task-title')?.value.trim() ?? '';
-    const prompt = w.querySelector('.task-prompt')?.value.trim() ?? '';
-    const needsTools = w.querySelector('.task-tools')?.checked ?? false;
-    if (prompt) out.push({ title: title || 'Tarefa', prompt, etaMin: parseFloat(w.dataset.eta) || 0, needsTools });
-  });
-  return out;
-}
-
-function hideApproveBar() {
-  document.getElementById('approve-bar')?.remove();
-}
-
-async function approveAndRun() {
-  const tasks = collectApprovedTasks();
-  if (!tasks || !tasks.length) {
-    showToast('Nenhuma tarefa para executar.', 'warning');
-    return;
-  }
-  pendingTasks = tasks;
-  hideApproveBar();
-  const ta = document.getElementById('prompt');
-  ta.disabled = true;
-  sendBtn.disabled = true;
-  sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Executando...';
-  engineDot.className = 'dot blink'; engineTxt.textContent = 'Executores em paralelo...';
-  try {
-    const r = await fetch('/Chat/OrchestrateApproved', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: currentSessionId, tasks: pendingTasks })
-    });
-    if (!r.ok) {
-      const err = await r.text();
-      showToast('Execução falhou: ' + err, 'danger');
-      engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
-      if (pendingTasks && pendingTasks.length) showApproveBar(pendingTasks);
-      return;
-    }
-    pendingTasks = null;
-    await loadMessages(currentSessionId);
-    await loadSessions();
-    engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!';
-  } catch (e) {
-    showToast('Erro na execução: ' + e.message, 'danger');
-    engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
-  } finally {
-    ta.disabled = false;
-    sendBtn.disabled = false;
-    sendBtn.innerHTML = 'ENVIAR';
-    ta.focus();
-    if (isScrolledToBottom()) scrollToBottom();
-  }
-}
-
 document.getElementById('send').onclick = async () => {
   const ta = document.getElementById('prompt');
   if (!ta.value.trim()) return;
@@ -653,11 +498,6 @@ document.getElementById('send').onclick = async () => {
   }
   const text = ta.value; ta.value = '';
 
-  // Modo híbrido: com executor selecionado, pipeline orch -> executores -> síntese
-  if (currentExecutorId) {
-    await sendOrchestrated(text);
-    return;
-  }
   ta.disabled = true;
   sendBtn.disabled = true;
   sendBtn.innerHTML = 'Enviado';
