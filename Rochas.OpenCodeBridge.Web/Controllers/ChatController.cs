@@ -404,8 +404,10 @@ public sealed class ChatController(
         while (!ct.IsCancellationRequested)
         {
             // Agente: leitura (read/grep), navegação (glob) e disparo (subagent). Sem execução/escrita.
+            // Executor não delega: sem "subagent" anunciado (nem em pensamento).
             bool plan = agent.Mode == "plan";
-            var allowed = new HashSet<string> { "read", "grep", "glob", "subagent" };
+            var allowed = new HashSet<string> { "read", "grep", "glob", "fetch", "git", "subagent" };
+            if (agent.Role == "executor") allowed.Remove("subagent");
             var tools = new JsonArray();
             foreach (var t in ToolDefinitions.GetTools())
             {
@@ -417,10 +419,10 @@ public sealed class ChatController(
                 ["model"] = agent.Model,
                 ["messages"] = BuildMessages(messages),
                 ["temperature"] = plan ? 0.4 : agent.Temperature,
-                ["max_tokens"] = 8192,
                 ["stream"] = true,
                 ["tools"] = tools,
-                ["tool_choice"] = "auto"
+                ["tool_choice"] = "auto",
+                ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = true },
             };
 
             // Repasse ao vivo (sem buffer total): ResponseHeadersRead ou o PostAsync
@@ -543,13 +545,15 @@ public sealed class ChatController(
             messages.Add(assistantMsg);
 
             // Persiste o texto do turno ao fechar (o que a bolha já exibiu),
-            // sem esperar o fim do loop com as tools.
-            if (session?.Id is int sidTurn && assistantContent.Length > 0)
+            // sem esperar o fim do loop com as tools. Turno só-com-espaço e sem
+            // thinking não grava (evita bolhas vazias no reload).
+            string turnText = assistantContent.ToString().Trim();
+            if (session?.Id is int sidTurn && (turnText.Length > 0 || assistantThinking.Length > 0))
             {
                 try
                 {
                     await sessionService.AddMessageAsync(sidTurn, "assistant",
-                        assistantContent.ToString(), assistantThinking.ToString(), null, null);
+                        turnText, assistantThinking.ToString(), null, null);
                     await sessionService.TouchAsync(sidTurn);
                 }
                 catch { /* histórico best-effort */ }
@@ -562,7 +566,7 @@ public sealed class ChatController(
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
                 // Trunfo: o modelo vê plan (anunciado), o executor roda build (pode tudo).
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                var result = toolExecutor.Execute(name, args, 120, null, agent);
+                var result = toolExecutor.Execute(name, args, 300, null, agent);
                 sw.Stop();
                 if (session?.Id is int sidLog)
                     await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
@@ -580,8 +584,11 @@ public sealed class ChatController(
                             sthink = sbody.Substring(si + "<SUBTHINK>".Length, ei - si - "<SUBTHINK>".Length).Trim();
                             sbody = (sbody[..si] + sbody[(ei + "</SUBTHINK>".Length)..]).Trim();
                         }
-                        await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null);
-                        await sessionService.TouchAsync(sidSub);
+                        if (sbody.Length > 0 || sthink.Length > 0)
+                        {
+                            await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null);
+                            await sessionService.TouchAsync(sidSub);
+                        }
                     }
                     catch { /* histórico best-effort: nunca quebra o pipeline */ }
                 }
@@ -602,10 +609,11 @@ public sealed class ChatController(
             assistantThinking.Clear();
         }
 
-        // Persiste resposta final do assistant se há sessão (content ou thinking).
-        if (session is not null && session.Id.HasValue && (assistantContent.Length > 0 || assistantThinking.Length > 0))
+        // Persiste resposta final do assistant se há sessão (texto real ou thinking).
+        string finalText = assistantContent.ToString().Trim();
+        if (session is not null && session.Id.HasValue && (finalText.Length > 0 || assistantThinking.Length > 0))
         {
-            await sessionService.AddMessageAsync(session.Id.Value, "assistant", assistantContent.ToString(), assistantThinking.ToString(), promptTokens, completionTokens);
+            await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens);
             await sessionService.TouchAsync(session.Id.Value);
         }
 
