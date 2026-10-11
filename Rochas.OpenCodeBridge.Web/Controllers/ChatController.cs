@@ -307,7 +307,7 @@ public sealed class ChatController(
         // Contexto com janela de tokens (subagent gravado como histórico vira user p/ bridge).
         var context = ContextWindow.BuildContext(history);
         foreach (var m in context)
-            messages.Add(new JsonObject { ["role"] = m.Role == "subagent" ? "user" : m.Role, ["content"] = m.Content });
+            messages.Add(new JsonObject { ["role"] = m.Role == "subagent" ? "assistant" : m.Role, ["content"] = m.Content });
 
         // Mensagens novas do request (se sem sessão) ou última mensagem do usuário
         if (!req.SessionId.HasValue)
