@@ -3,16 +3,17 @@ using System.Text.Json.Nodes;
 
 namespace Rochas.OpenCodeBridge.Web.Services;
 
-// Handler da tool "subagent": delega uma subtarefa ao MESMO modelo (sem tools,
-// só texto — sem recursão por construção) e devolve a resposta + thinking.
-// É assim que o 8B abre subagentes dele mesmo; aparece na UI como qualquer tool.
+// Handler da tool "subagent": delega uma subtarefa ao MESMO modelo (sem recursão
+// por construção: executor interno sem "subagent") e devolve resposta + thinking.
+// Experimento: sub com write/edit/shell anunciadas; shell travado em validação
+// (bash -n), zip ou navegação — ver SubShellAllowed. Aparece na UI como tool.
 public sealed class SubagentToolHandler : IToolHandler
 {
     public string ToolName => "subagent";
 
     private const double FixedTemperature = 0.4;
     private const string SubagentSystem =
-        "Você é um agente desenvolvedor senior .net c# que nao dialoga, compoe script shell sh para implementacao do enunciado em batch";
+        "Você é um agente desenvolvedor senior .net c# que nao dialoga, compoe script shell sh para implementacao do enunciado em batch, ao final escreva o script na pasta atual com a tool write, valide a sintaxe com a tool shell usando 'bash -n <arquivo>', porém não execute o script";
 
     private readonly IBridgeClient _bridge;
 
@@ -22,6 +23,69 @@ public sealed class SubagentToolHandler : IToolHandler
     }
 
     public ToolResult Handle(string argumentsJson, ToolContext context)
+    {
+        return HandleInner(argumentsJson, context);
+    }
+
+    private static bool SubShellAllowed(string argsJson)
+    {
+        string cmd = "";
+        try { cmd = JsonNode.Parse(argsJson)?.AsObject()?["command"]?.GetValue<string>() ?? ""; }
+        catch { cmd = argsJson ?? ""; }
+        cmd = cmd.Trim();
+        if (cmd.StartsWith("bash -n ", StringComparison.Ordinal)) return true;
+        string first = cmd.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+        return first is "zip" or "unzip" or "ls" or "cat" or "pwd" or "head" or "tail" or "wc" or "file";
+    }
+
+    private static JsonArray SubTools()
+    {
+        static JsonObject Param(string name, string type, string desc, bool req) =>
+            new() { ["name"] = name, ["type"] = type, ["description"] = desc, ["required"] = req };
+        static JsonObject Tool(string name, string desc, params JsonObject[] pars)
+        {
+            var props = new JsonObject();
+            var required = new JsonArray();
+            foreach (var p in pars)
+            {
+                props[p["name"]!.GetValue<string>()] = new JsonObject
+                {
+                    ["type"] = p["type"]!.GetValue<string>(),
+                    ["description"] = p["description"]!.GetValue<string>(),
+                };
+                if (p["required"]!.GetValue<bool>()) required.Add(p["name"]!.GetValue<string>());
+            }
+            return new JsonObject
+            {
+                ["type"] = "function",
+                ["function"] = new JsonObject
+                {
+                    ["name"] = name,
+                    ["description"] = desc,
+                    ["parameters"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = props,
+                        ["required"] = required,
+                    },
+                },
+            };
+        }
+        return new JsonArray
+        {
+            Tool("write", "Escreve arquivo no workspace (pasta atual).",
+                Param("path", "string", "Nome do arquivo (ex.: 'fase1.sh').", true),
+                Param("content", "string", "Conteúdo integral.", true)),
+            Tool("edit", "Edita trecho de arquivo existente.",
+                Param("path", "string", "Arquivo.", true),
+                Param("oldString", "string", "Trecho exato.", true),
+                Param("newString", "string", "Substituto.", true)),
+            Tool("shell", "SÓ validação ('bash -n <arquivo>'), compactação (zip/unzip) ou navegação (ls/cat/pwd). NÃO executa scripts.",
+                Param("command", "string", "Comando (ex.: 'bash -n fase1.sh').", true)),
+        };
+    }
+
+    private ToolResult HandleInner(string argumentsJson, ToolContext context)
     {
         JsonObject? obj;
         try { obj = JsonNode.Parse(argumentsJson)?.AsObject(); }
@@ -46,8 +110,10 @@ public sealed class SubagentToolHandler : IToolHandler
                 ToolExecutor.DefaultHandlers().Where(h => h.ToolName != "subagent"),
                 context.WorkspaceRoot, "/tmp/tool-executor-sub.log");
             var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = prompt.Trim() } };
-            // Sub só gera texto (sem tools anunciadas): mantém o executor só como retaguarda.
-            JsonArray? tools = null;
+            // Sub com tools anunciadas (experimento): write, edit e shell.
+            // Trava: shell do sub só valida (`bash -n`), compacta (zip/unzip) ou
+            // navega (ls/cat/pwd); nada executa — ver SubShellAllowed.
+            JsonArray? tools = SubTools();
             var collected = new StringBuilder();
             string subthink = "";
             for (int turn = 0; turn < 3; turn++)
@@ -81,6 +147,19 @@ public sealed class SubagentToolHandler : IToolHandler
                             ["role"] = "tool",
                             ["tool_call_id"] = c.Id,
                             ["content"] = "ignorado: subagente não delega.",
+                        });
+                        continue;
+                    }
+                    // Trava do experimento: shell do sub não executa.
+                    if (c.Name is "shell" or "bash" or "sh" && !SubShellAllowed(c.Args))
+                    {
+                        const string msg = "negado: shell do subagente só valida ('bash -n <arquivo>'), compacta (zip/unzip) ou navega (ls/cat/pwd); não execute scripts.";
+                        collected.AppendLine($"[shell] FALHOU: {msg}");
+                        history.Add(new JsonObject
+                        {
+                            ["role"] = "tool",
+                            ["tool_call_id"] = c.Id,
+                            ["content"] = "Error: " + msg,
                         });
                         continue;
                     }

@@ -14,7 +14,7 @@ public sealed class ShellToolHandler : IToolHandler
         "ls", "cat", "head", "tail", "echo", "sed", "grep", "find", "wc", "diff",
         "file", "pwd", "date", "git", "dotnet", "python", "python3", "node",
         "npm", "curl", "wget", "shell", "bash", "sh", "mkdir", "touch",
-        "bc", "expr", "awk",
+        "bc", "expr", "awk", "zip", "unzip",
     };
 
     private static readonly string[] DeniedTokens =

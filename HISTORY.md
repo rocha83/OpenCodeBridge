@@ -651,3 +651,11 @@
 ## Bridge Web — Fase 11g 100% do sub (2026-10-11)
 - Corpo do sub sobrescrevia os 100% durante a digitação: repõe
   `Raciocínio 100%` ao concluir o corpo. Suite UI: **23/23 PASS**.
+
+## Bridge Web — Fase 12 Subagente com tools (2026-10-11)
+- Experimento: sub anuncia `write`/`edit`/`shell`; prompt manda escrever o
+  script na pasta atual e validar com `bash -n` sem executar. Trava
+  `SubShellAllowed` (só `bash -n`, zip/unzip, navegação). `zip`/`unzip` no
+  allowlist do shell. Workspace do sub = `bin` do site (contido).
+- Suite UI: **23/23 PASS**. Units: 2 FAIL pré-existentes (`U-tool-definitions`,
+  `U-orch-plan-tools` — anúncio tem 7, teste espera 5; falham sem a mudança).
