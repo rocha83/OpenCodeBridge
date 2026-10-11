@@ -724,3 +724,10 @@
 - UI: Sessões acima dos botões; grupo Nova|Compactar|Limpar; dropdowns com
   cores no tema light; bolinha vermelha ao cancelar.
 - Suite UI: **24/24 PASS**. Units: **PASS**.
+
+## Bridge Web — Fase 14 ls via tools, sem glob (2026-10-11)
+- Filtro `allowed` nem anunciava `shell` (só lia ToolDefinitions): agora
+  anuncia `shell` e não anuncia mais `glob` (handler segue executando se
+  chamado). Prompt do principal revertido (sem preferência textual).
+- UI: Sessões acima dos botões; dropdowns claros no tema light.
+- Suite UI: **24/24 PASS**. Units: **PASS**.

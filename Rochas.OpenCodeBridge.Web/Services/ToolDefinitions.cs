@@ -19,8 +19,6 @@ public static class ToolDefinitions
             new[] { BuildParam("path", "string", "Caminho do arquivo.", true), BuildParam("offset", "integer", "Linha inicial (0-based).", false), BuildParam("limit", "integer", "Máx. linhas (padrão 2000).", false) }));
         tools.Add(BuildTool("grep", "Busca regex nos arquivos. Retorna arquivo:linha:texto.",
             new[] { BuildParam("pattern", "string", "Regex ou texto.", true), BuildParam("path", "string", "Diretório (padrão raiz).", false), BuildParam("include", "string", "Glob de filtro (ex.: '*.cs').", false) }));
-        tools.Add(BuildTool("glob", "Lista caminhos por padrão glob.",
-            new[] { BuildParam("pattern", "string", "Glob (ex.: '**/*.cs').", true), BuildParam("path", "string", "Diretório (padrão raiz).", false) }));
         tools.Add(BuildTool("fetch", "GET HTTP somente-leitura (curl sem execução). Retorna o corpo como texto.",
             new[] { BuildParam("url", "string", "URL http(s) absoluta.", true), BuildParam("maxChars", "integer", "Teto de chars (padrão 12000).", false) }));
         tools.Add(BuildTool("git", "Git somente-leitura: status/log/diff/show/branch. Sem commit/push/checkout.",

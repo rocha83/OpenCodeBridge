@@ -148,8 +148,8 @@ internal static class OrchestrationTests
     private static void PlanToolsFilter()
     {        var plan = ToolDefinitions.GetTools("plan");
         var names = plan.Select(t => (t as System.Text.Json.Nodes.JsonObject)?["function"]?["name"]?.GetValue<string>()).ToList();
-        Check(plan.Count == 7 && names.Contains("shell") && !names.Contains("write") && !names.Contains("edit")
-            && names.Contains("read") && names.Contains("grep") && names.Contains("glob"), "U-orch-plan-tools");
+        Check(plan.Count == 6 && names.Contains("shell") && !names.Contains("write") && !names.Contains("edit") && !names.Contains("glob")
+            && names.Contains("read") && names.Contains("grep"), "U-orch-plan-tools");
         string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"plan-{System.Guid.NewGuid():N}");
         System.IO.Directory.CreateDirectory(root);
         try
