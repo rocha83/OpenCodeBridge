@@ -631,3 +631,9 @@
   (~2,6k chars) congelava em ~8%. Novo: progressão assintótica
   `100*n/(n+2000)` (50% aos 2000 chars), sempre mexe por chunk e fecha 100%.
 - Suite UI: **23/23 PASS** com o novo cálculo.
+
+## Bridge Web — Fase 11d Percentual contínuo (2026-10-11)
+- `%` não congela mais no fim do thinking: acumula thinking+conteúdo
+  (`thinkPct(think+full)` no agente; sub atualiza no typewriter do corpo).
+  Remove `thinkFrozen`. Fecha 100% no DONE como antes.
+- Suite UI: **23/23 PASS** com o contínuo.

@@ -211,6 +211,7 @@ function toolStatus(name, running, ok, result, ms, args) {
           const timer = setInterval(() => {
             shown = Math.min(shown + 4, words.length);
             p.textContent = words.slice(0, shown).join('');
+            if (psum) psum.textContent = `Raciocínio ${thinkPct(think.length + p.textContent.length)}%`;
             if (isScrolledToBottom()) scrollToBottom();
             if (shown >= words.length) { clearInterval(timer); p.classList.remove('typing'); }
           }, 90);
@@ -564,7 +565,6 @@ document.getElementById('send').onclick = async () => {
   let thinkDet = null;
   let thinkP = null;
   let thinkSum = null;
-  let thinkFrozen = false;
   let thinkLive = false;
   let full = '';
   let agentBubbleCreated = false;
@@ -679,7 +679,7 @@ document.getElementById('send').onclick = async () => {
             }
             if (thinkP) thinkP.classList.add('typing');
             thinkP.textContent = think;
-            if (thinkSum && !thinkFrozen) thinkSum.textContent = `Raciocínio ${thinkPct(think.length)}%`;
+            if (thinkSum) thinkSum.textContent = `Raciocínio ${thinkPct(think.length + full.length)}%`;
             thinkP.scrollTop = thinkP.scrollHeight;
             engineTxt.textContent = 'Pensando...';
           }
@@ -691,9 +691,10 @@ document.getElementById('send').onclick = async () => {
             else full = full.replace(/^\s+/, '');
             // Bolha só quando há texto real (deltas iniciais de espaço não abrem quadro vazio).
             if (!agentBubbleCreated && full.trim()) ensureAgentBubble();
-            // Thinking encerrou: congela o %, fecha e o texto começa abaixo.
-            thinkFrozen = true;
+            // Thinking encerrou: fecha o accordion, mas o % segue subindo com o
+            // conteúdo (chars acumulados) até 100% no DONE — nunca congela.
             if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); }
+            if (thinkSum) thinkSum.textContent = `Raciocínio ${thinkPct(think.length + full.length)}%`;
             startTypewriter();
           }
         } catch (e) { /* chunk parcial: ignora */ }
