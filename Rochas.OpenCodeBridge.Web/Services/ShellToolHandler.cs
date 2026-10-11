@@ -71,7 +71,8 @@ public sealed class ShellToolHandler : IToolHandler
         return ToolResult.Ok(sb.ToString().TrimEnd());
     }
 
-    // Divide em comandos top-level por && e ; (respeita aspas; & solitário continua negado).
+    // Divide em comandos top-level por && e ; (respeita aspas e escapes \";
+    // & solitário continua negado).
     private static List<string> SplitChain(string command)
     {
         var parts = new List<string>();
@@ -80,6 +81,12 @@ public sealed class ShellToolHandler : IToolHandler
         for (int i = 0; i < command.Length; i++)
         {
             char c = command[i];
+            if (c == '\\' && i + 1 < command.Length)
+            {
+                cur.Append(c);
+                cur.Append(command[++i]);
+                continue;
+            }
             if (quote != '\0')
             {
                 cur.Append(c);
@@ -155,9 +162,12 @@ public sealed class ShellToolHandler : IToolHandler
         }
 
         // Demais comandos: sem shell, com checagens de metacaracteres e tokens.
+        // Trechos entre aspas vão literais por argv (sem interpretador): só contam
+        // metacaracteres fora de aspas. SplitChain já separou && e ; top-level.
         string rest = command.Length > name.Length ? command[name.Length..] : "";
+        string bare = StripQuoted(rest);
         foreach (char c in new[] { ';', '&', '|', '>', '<', '$', '`', '!', '\r', '\n' })
-            if (rest.Contains(c))
+            if (bare.Contains(c))
             {
                 why = $"metacaractere '{c}' negado";
                 return false;
@@ -186,6 +196,25 @@ public sealed class ShellToolHandler : IToolHandler
         }
         catch { /* não é JSON: usa cru */ }
         return (arguments ?? "").Trim();
+    }
+
+    // Devolve só o fora-de-aspas (para checagem de metacaracteres; o citado vai literal).
+    private static string StripQuoted(string s)
+    {
+        var sb = new StringBuilder();
+        char quote = '\0';
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            if (c == '\\' && i + 1 < s.Length) { i++; continue; }
+            if (quote != '\0')
+            {
+                if (c == quote) quote = '\0';
+            }
+            else if (c is '"' or '\'') quote = c;
+            else sb.Append(c);
+        }
+        return sb.ToString();
     }
 
     private static string FirstToken(string command)

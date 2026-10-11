@@ -10,7 +10,7 @@ public sealed class SubagentToolHandler : IToolHandler
 {
     public string ToolName => "subagent";
 
-    private const int DefaultMaxTokens = 2048;
+    private const int DefaultMaxTokens = 8192;
     private const int MaxOutputChars = 4000;
     private const double FixedTemperature = 0.4;
     private const string SubagentSystem =
@@ -51,14 +51,14 @@ public sealed class SubagentToolHandler : IToolHandler
             var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = prompt.Trim() } };
             var tools = ToolDefinitions.GetTools();
             var collected = new StringBuilder();
-            string thinking = "";
+            string subthink = "";
             for (int turn = 0; turn < 3; turn++)
             {
                 var t = BridgeHelper.ChatTurnAsync(_bridge, context.BridgeUrl, context.Model,
                     FixedTemperature, SubagentSystem, history, tools, cts.Token, enableThinking: true)
                     .GetAwaiter().GetResult();
                 if (!t.Ok) return ToolResult.Fail($"subagente falhou: {t.Error}");
-                if (!string.IsNullOrWhiteSpace(t.Thinking)) thinking = t.Thinking;
+                if (!string.IsNullOrWhiteSpace(t.Thinking)) subthink = t.Thinking;
                 if (!string.IsNullOrWhiteSpace(t.Content)) collected.AppendLine(t.Content);
                 if (t.Calls.Count == 0) break;
                 history.Add(new JsonObject
@@ -76,7 +76,6 @@ public sealed class SubagentToolHandler : IToolHandler
                 {
                     var r = inner.Execute(c.Name, c.Args, 60);
                     string o = r.Success ? r.Output : $"Error: {r.Error}";
-                    if (o.Length > 1000) o = o[..1000] + "\n[truncado]";
                     collected.AppendLine($"[{c.Name}] {(r.Success ? "ok" : "FALHOU")}: {o.Replace("\n", " / ")}");
                     history.Add(new JsonObject
                     {
@@ -87,9 +86,11 @@ public sealed class SubagentToolHandler : IToolHandler
                 }
             }
             string text = collected.ToString().Trim();
-            if (!string.IsNullOrWhiteSpace(thinking))
-                text += "\n\n[Raciocínio do subagente]\n" + thinking.Trim();
-            if (text.Length > MaxOutputChars) text = text[..MaxOutputChars] + "\n[truncado]";
+            if (!string.IsNullOrWhiteSpace(subthink))
+            {
+                string th = subthink.Trim();
+                text += "\n<SUBTHINK>" + th + "</SUBTHINK>";
+            }
             if (string.IsNullOrWhiteSpace(text)) return ToolResult.Fail("subagente vazio");
             return ToolResult.Ok(text);
         }

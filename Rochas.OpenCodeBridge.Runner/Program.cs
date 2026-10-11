@@ -480,7 +480,7 @@ internal static partial class Program
         catch { /* best-effort */ }
     }
 
-    static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "\n[truncado]";
+    static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
 
     [GeneratedRegex("```(?:json)?\\s*(\\{.*?\\})\\s*```", RegexOptions.Singleline)]
     private static partial Regex FenceRegex();

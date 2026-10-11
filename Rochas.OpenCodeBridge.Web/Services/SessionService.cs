@@ -196,8 +196,8 @@ public sealed class SessionService(
     {
         try
         {
-            string a = args.Length > 2000 ? args[..2000] + "\n[truncado]" : args;
-            string o = output.Length > 2000 ? output[..2000] + "\n[truncado]" : output;
+            string a = args;
+            string o = output;
             await DbRetryAsync(async () =>
             {
                 using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);

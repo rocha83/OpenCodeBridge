@@ -10,6 +10,8 @@ using System.Text.Json.Nodes;
 
 namespace Rochas.OpenCodeBridge.Web.Controllers;
 
+using System.Collections.Concurrent;
+
 // Chat: tela + proxy de stream p/ bridge (contorna falta de CORS no HttpListener).
 [Authorize]
 public sealed class ChatController(
@@ -21,6 +23,25 @@ public sealed class ChatController(
     Microsoft.Extensions.Options.IOptions<Services.OrchestrationOptions> orchOptions) : Controller
 {
     private int CurrentUserId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+
+    // Streams ativos por sessão p/ Parar via API (além do abort do fetch).
+    private static readonly ConcurrentDictionary<int, CancellationTokenSource> ActiveStreams = new();
+
+    public sealed class StopRequest
+    {
+        public int? SessionId { get; set; }
+    }
+
+    [HttpPost("/Chat/Stop")]
+    public IActionResult Stop([FromBody] StopRequest req)
+    {
+        if (req.SessionId.HasValue && ActiveStreams.TryGetValue(req.SessionId.Value, out var cts))
+        {
+            try { cts.Cancel(); } catch { }
+            return Json(new { ok = true });
+        }
+        return Json(new { ok = false });
+    }
 
     // GET /Chat/Config - flags de UX da orquestracao (aprovacao direta etc).
     [HttpGet("/Chat/Config")]
@@ -283,10 +304,10 @@ public sealed class ChatController(
         var messages = new JsonArray();
         // NÃO adiciona system prompt aqui — o BridgeClient já faz isso via parâmetro
 
-        // Contexto com janela de tokens
+        // Contexto com janela de tokens (subagent gravado como histórico vira user p/ bridge).
         var context = ContextWindow.BuildContext(history);
         foreach (var m in context)
-            messages.Add(new JsonObject { ["role"] = m.Role, ["content"] = m.Content });
+            messages.Add(new JsonObject { ["role"] = m.Role == "subagent" ? "user" : m.Role, ["content"] = m.Content });
 
         // Mensagens novas do request (se sem sessão) ou última mensagem do usuário
         if (!req.SessionId.HasValue)
@@ -310,8 +331,20 @@ public sealed class ChatController(
             await sessionService.AddMessageAsync(session.Id.Value, "user", lastUser.Content, "", null, null);
         }
 
-        // Stream com tool calling loop
-        await StreamWithTools(agent, messages, session, ct);
+        // Stream com tool calling loop (cancelável via /Chat/Stop + abort do fetch).
+        if (session is not null && session.Id.HasValue)
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            ActiveStreams[session.Id.Value] = linked;
+            try { await StreamWithTools(agent, messages, session, linked.Token); }
+            catch (OperationCanceledException) { /* Parar via API ou abort do fetch */ }
+            finally { ActiveStreams.TryRemove(session.Id.Value, out _); }
+        }
+        else
+        {
+            try { await StreamWithTools(agent, messages, session, ct); }
+            catch (OperationCanceledException) { }
+        }
     }
 
     private async Task StreamWithTools(Agent agent, JsonArray messages, Session? session, CancellationToken ct)
@@ -490,9 +523,9 @@ public sealed class ChatController(
                         if (session?.Id is int sidSug)
                             await sessionService.LogToolAsync(sidSug, agent.Name + "+sugerida", st.Tool, st.Args,
                                 sr.Success, sr.Success ? sr.Output : sr.Error ?? "", ssw.ElapsedMilliseconds);
-                        string so = sr.Success ? sr.Output : $"Error: {sr.Error}";
-                        if (so.Length > 1000) so = so[..1000] + "\n[truncado]";
-                        await WriteProgressAsync(outputStream, "tool_done", st.Tool, sr.Success, ct, so, ssw.ElapsedMilliseconds);
+                        string soFull = sr.Success ? sr.Output : $"Error: {sr.Error}";
+                        string so = soFull;
+                        await WriteProgressAsync(outputStream, "tool_done", st.Tool, sr.Success, ct, soFull, ssw.ElapsedMilliseconds);
                         rep.Append($"\n- {st.Echo} => {(sr.Success ? "ok" : "FALHOU")}: {so.Replace("\n", " / ")}");
                     }
                     messages.Add(new JsonObject { ["role"] = "user", ["content"] = rep.ToString() });
@@ -528,8 +561,7 @@ public sealed class ChatController(
             }
             messages.Add(assistantMsg);
 
-            // Executa cada tool e adiciona resultado às mensagens (teto 2000 chars:
-            // output longo volta truncado para não estourar o contexto do loop).
+            // Executa cada tool e adiciona resultado às mensagens.
             // Progresso vai ao cliente em tempo real para a UI indicar execução.
             foreach (var (id, name, args) in toolCalls)
             {
@@ -541,9 +573,27 @@ public sealed class ChatController(
                 if (session?.Id is int sidLog)
                     await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
                         result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds);
-                string content = result.Success ? result.Output : $"Error: {result.Error}";
-                if (content.Length > 2000) content = content[..2000] + "\n[truncado]";
-                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, content, sw.ElapsedMilliseconds);
+                // Retorno do subagente entra na árvore da sessão (bolha Sub Agente no reload).
+                if (session?.Id is int sidSub && name == "subagent" && result.Success)
+                {
+                    try
+                    {
+                        string sbody = result.Output ?? "", sthink = "";
+                        int si = sbody.IndexOf("<SUBTHINK>", StringComparison.Ordinal);
+                        int ei = sbody.IndexOf("</SUBTHINK>", StringComparison.Ordinal);
+                        if (si >= 0 && ei > si)
+                        {
+                            sthink = sbody.Substring(si + "<SUBTHINK>".Length, ei - si - "<SUBTHINK>".Length).Trim();
+                            sbody = (sbody[..si] + sbody[(ei + "</SUBTHINK>".Length)..]).Trim();
+                        }
+                        await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null);
+                        await sessionService.TouchAsync(sidSub);
+                    }
+                    catch { /* histórico best-effort: nunca quebra o pipeline */ }
+                }
+                string contentFull = result.Success ? result.Output : $"Error: {result.Error}";
+                string content = contentFull;
+                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds);
                 var toolResult = new JsonObject
                 {
                     ["role"] = "tool",
@@ -558,8 +608,8 @@ public sealed class ChatController(
             assistantThinking.Clear();
         }
 
-        // Persiste resposta final do assistant se há sessão
-        if (session is not null && session.Id.HasValue && assistantContent.Length > 0)
+        // Persiste resposta final do assistant se há sessão (content ou thinking).
+        if (session is not null && session.Id.HasValue && (assistantContent.Length > 0 || assistantThinking.Length > 0))
         {
             await sessionService.AddMessageAsync(session.Id.Value, "assistant", assistantContent.ToString(), assistantThinking.ToString(), promptTokens, completionTokens);
             await sessionService.TouchAsync(session.Id.Value);
@@ -577,7 +627,7 @@ public sealed class ChatController(
         var evt = new JsonObject { ["progress"] = stage, ["name"] = name };
         if (ok.HasValue) evt["ok"] = ok.Value;
         if (ms > 0) evt["ms"] = ms;
-        if (!string.IsNullOrEmpty(result)) evt["result"] = result.Length > 1000 ? result[..1000] + "\n[truncado]" : result;
+        if (!string.IsNullOrEmpty(result)) evt["result"] = result;
         var bytes = Encoding.UTF8.GetBytes("data: " + evt.ToJsonString() + "\n\n");
         await output.WriteAsync(bytes, ct);
         await output.FlushAsync(ct);

@@ -1312,7 +1312,7 @@ internal static partial class Program
             {
                 string callId = entry["call_id"]?.GetValue<string>() ?? entry["id"]?.GetValue<string>() ?? "";
                 string resultText = ExtractText(entry["output"] ?? entry["result"] ?? entry["content"]);
-                if (resultText.Length > ToolOutputLimit) resultText = resultText[..ToolOutputLimit] + "\n[truncado]";
+                if (resultText.Length > ToolOutputLimit) resultText = resultText[..ToolOutputLimit];
                 messages.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = callId, ["content"] = resultText });
             }
             // Outros tipos (reasoning, item_reference, calls ainda nao executados)

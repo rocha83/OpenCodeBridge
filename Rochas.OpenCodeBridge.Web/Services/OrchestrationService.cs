@@ -670,7 +670,6 @@ public sealed class OrchestrationService(
                         recovered.Success, recovered.Success ? recovered.Output : recovered.Error ?? "", rsw.ElapsedMilliseconds);
                     toolCalls++;
                     string rcontent = recovered.Success ? recovered.Output : $"Error: {recovered.Error}";
-                    if (rcontent.Length > 2000) rcontent = rcontent[..2000] + "\n[truncado]";
                     history.Add(new JsonObject { ["role"] = "assistant", ["content"] = t.Content });
                     history.Add(new JsonObject
                     {
@@ -718,7 +717,6 @@ public sealed class OrchestrationService(
                     $"[Executor {index + 1}] Executou {call.Name}: " +
                     (result.Success ? "ok" : $"falhou ({result.Error})"), "", null, null);
                 string content = result.Success ? result.Output : $"Error: {result.Error}";
-                if (content.Length > 2000) content = content[..2000] + "\n[truncado]";
                 history.Add(new JsonObject
                 {
                     ["role"] = "tool",
@@ -730,7 +728,7 @@ public sealed class OrchestrationService(
         return (collected.ToString(), toolCalls);
     }
 
-    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "\n[truncado]";
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
 
     // Detecta ```json {"name":"<tool conhecida>","arguments":{...}|"..."} ``` no texto.
     public static bool TryRecoverPseudoTool(string content, out string name, out string args)

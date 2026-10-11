@@ -65,6 +65,9 @@ internal static class ToolExecutorTests
         // Cadeia com ';' executa em sequência (set -e); pipe continua negado.
         var r = h.Handle("echo a; echo b", ctx);
         Check(r.Success && r.Output.Contains("a") && r.Output.Contains("b"), "U-tool-shell-chain");
+        // ';' dentro de aspas (ex.: script sed) não é separador nem motivo de nega.
+        var q = h.Handle("echo \"a;b\"", ctx);
+        Check(q.Success && q.Output.Contains("a;b"), "U-tool-shell-quoted");
         var p = h.Handle("echo x | cat", ctx);
         Check(!p.Success && p.Error.Contains("metacaractere"), "U-tool-shell-metachar");
     }
@@ -139,7 +142,8 @@ internal static class ToolExecutorTests
     {
         var tools = ToolDefinitions.GetTools();
         bool hasTask = tools.Any(t => (t as System.Text.Json.Nodes.JsonObject)?["function"]?["name"]?.GetValue<string>() == "task");
-        Check(tools.Count == 7 && !hasTask, "U-tool-definitions");        var missing = exec.Execute("read", "{\"path\": \"nao-existe.txt\"}");
+        var names = tools.Select(t => (t as System.Text.Json.Nodes.JsonObject)?["function"]?["name"]?.GetValue<string>()).ToList();
+        Check(tools.Count == 5 && !hasTask && names.Contains("shell") && names.Contains("subagent") && !names.Contains("write") && !names.Contains("edit"), "U-tool-definitions");        var missing = exec.Execute("read", "{\"path\": \"nao-existe.txt\"}");
         Check(!missing.Success && missing.Error.Contains("não encontrado"), "U-tool-read-missing");
 
         exec.Execute("write", "{\"path\": \"sub/ninho.txt\", \"content\": \"l1\\nl2\\nl3\\nl4\"}");
