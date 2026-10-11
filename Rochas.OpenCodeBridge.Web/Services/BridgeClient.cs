@@ -10,7 +10,7 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
 {
     public async Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
         string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
-        bool includeTools = true, JsonArray? tools = null, int maxTokens = 2048, bool? enableThinking = null)
+        bool includeTools = true, JsonArray? tools = null, int? maxTokens = null, bool? enableThinking = null)
     {
         try
         {
@@ -24,9 +24,9 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
                 ["model"] = model,
                 ["messages"] = all,
                 ["temperature"] = temperature,
-                ["max_tokens"] = maxTokens,
                 ["stream"] = true,
             };
+            if (maxTokens.HasValue) body["max_tokens"] = maxTokens.Value;
             if (includeTools)
             {
                 body["tools"] = (JsonNode?)tools?.DeepClone() ?? ToolDefinitions.GetTools();

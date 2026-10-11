@@ -4,7 +4,7 @@ namespace Rochas.OpenCodeBridge.Web.Services;
 public sealed class ToolContext
 {
     public string WorkspaceRoot { get; init; } = "";
-    public int TimeoutSeconds { get; init; } = 120;
+    public int TimeoutSeconds { get; init; } = 300;
     public string AgentName { get; init; } = "";
     public string BridgeUrl { get; init; } = "";
     public string Model { get; init; } = "";

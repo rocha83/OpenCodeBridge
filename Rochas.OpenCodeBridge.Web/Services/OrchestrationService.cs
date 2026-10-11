@@ -273,7 +273,6 @@ public sealed class OrchestrationService(
             var done = history.Select(m => m.Content ?? "")
                 .LastOrDefault(c => c.Contains($"[Executor {i + 1}] Concluído"));
             string result = done is null ? "[sem resultado persistido]" : done;
-            if (result.Length > 3000) result = result[..3000];
             dump.AppendLine($"--- Tarefa {i + 1}: {titles[i]} ---").AppendLine(result);
         }
         var review = await BridgeHelper.ChatAsync(bridge, agents.Orch.BridgeUrl, agents.Orch.Model,
@@ -379,8 +378,7 @@ public sealed class OrchestrationService(
     private static string OneLine(string s, int max)
     {
         string one = (s ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
-        one = System.Text.RegularExpressions.Regex.Replace(one, @"\s+", " ");
-        return one.Length <= max ? one : one[..max].TrimEnd() + "…";
+        return System.Text.RegularExpressions.Regex.Replace(one, @"\s+", " ");
     }
 
     // Descarta blocos <think>...</think> vazados no conteudo (Qwen3 com thinking off
@@ -406,7 +404,6 @@ public sealed class OrchestrationService(
         try
         {
             string d = (detail ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
-            if (d.Length > 500) d = d[..500];
             await lessonWrite.Add(new RefinementLesson
             {
                 SessionId = sessionId, TaskIndex = taskIndex, Kind = kind, Detail = d
@@ -728,7 +725,7 @@ public sealed class OrchestrationService(
         return (collected.ToString(), toolCalls);
     }
 
-    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
+    private static string Truncate(string s, int max) => s;
 
     // Detecta ```json {"name":"<tool conhecida>","arguments":{...}|"..."} ``` no texto.
     public static bool TryRecoverPseudoTool(string content, out string name, out string args)

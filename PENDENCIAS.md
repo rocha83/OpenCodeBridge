@@ -10,3 +10,7 @@
 - Unit/integração com `MockBridgeClient` cobrindo: persistência da árvore
   (user → tools → assistant), acordeões de thinking/subagente, `tool_calls`
   no SQLite por sessão. Hoje só o E2E cobre — lacuna assumida.
+
+## Remover após testes
+- `cap200` (teto de 200 linhas na EXIBIÇÃO do thinking, `Index.cshtml`):
+  exibição volta integral; gravação já é integral.

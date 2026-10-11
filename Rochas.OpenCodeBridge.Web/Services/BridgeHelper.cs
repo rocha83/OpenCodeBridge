@@ -11,7 +11,7 @@ public static class BridgeHelper
     public sealed record ChatTurn(bool Ok, string Content, string Thinking, int? PromptTokens, int? CompletionTokens, List<ToolCall> Calls, string Error);
 
     public static async Task<ChatResult> ChatAsync(IBridgeClient bridge, string bridgeUrl, string model,
-        double temperature, string systemPrompt, JsonArray messages, CancellationToken ct, int maxTokens = 2048, bool? enableThinking = null)
+        double temperature, string systemPrompt, JsonArray messages, CancellationToken ct, int maxTokens = 8192, bool? enableThinking = null)
     {
         using var buffer = new MemoryStream();
         // Orquestração é texto puro (sem tools): JSON de decomposição e artefatos
@@ -56,11 +56,11 @@ public static class BridgeHelper
 
     // Volta com tool_calls acumuladas (para loops de execução por subtarefa).
     public static async Task<ChatTurn> ChatTurnAsync(IBridgeClient bridge, string bridgeUrl, string model,
-        double temperature, string systemPrompt, JsonArray messages, JsonArray? tools, CancellationToken ct, bool? enableThinking = null)
+        double temperature, string systemPrompt, JsonArray messages, JsonArray? tools, CancellationToken ct, bool? enableThinking = null, int? maxTokens = null)
     {
         using var buffer = new MemoryStream();
         var (ok, error) = await bridge.StreamAsync(bridgeUrl, model, temperature, systemPrompt, messages, buffer, ct,
-            includeTools: tools is not null, tools: tools, enableThinking: enableThinking);
+            includeTools: tools is not null, tools: tools, maxTokens: maxTokens, enableThinking: enableThinking);
         if (!ok) return new ChatTurn(false, "", "", null, null, new List<ToolCall>(), error);
 
         buffer.Position = 0;

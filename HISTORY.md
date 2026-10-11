@@ -575,3 +575,30 @@
 - Architecture stable: 8B orchestrator (4100) + 3B executor (4101) with CPU offload
 - All phases complete: Green→Purple→Brown→Black→Blue→Tools
 - Suite: **77/77 PASS**, build Release 0 erros
+
+## Bridge Web — Fase 11 Estabilização do chat agente-fases-subs (2026-10-11)
+- Agente 8B (id 1, orchestrator/plan) + executor 8B-exec (id 2, role executor,
+  sem `subagent` anunciado por filtro de role no loop).
+- Tools de leitura liberadas no chat: read/grep/glob (pastas), fetch (web,
+  GET somente-leitura), git (somente status/log/diff/show/branch); escrita e
+  execução seguem fora do anúncio.
+- Tetos removidos do caminho do chat: sem `max_tokens` no body (agente e sub;
+  `maxTokens:2048` da descrição da tool não é mais repassado) — vale o teto 8k
+  da bridge; `Truncate`/`OneLine`/3000/500 viraram identidade; consts mortas
+  (`DefaultMaxTokens`, `MaxOutputChars`) removidas.
+- Contexto do turno seguinte: subagente reidrata como `assistant` (não `user`).
+- Fechamento silencioso: turno final vazio após tools persiste e digita
+  "As tarefas delegadas aos subagentes foram concluídas." (subs) ou
+  "As ferramentas solicitadas foram executadas, verifique." (outras tools).
+- DONE garantido em saída anormal (erro da bridge com stream aberto, exceção
+  no loop); UI renderiza `evt.error` na bolha em vez de prender em "Processando".
+- UI: CANCELAR por sessão (trocar de sessão aborta o stream anterior, sem
+  bolha na conversa errada); thinking inicia fechado com % do orçamento 8k e
+  fecha em 100% (agente e sub, ao vivo e no histórico); sem salto inicial de
+  linhas em branco; fluxo híbrido morto (Decompose/OrchestrateApproved) removido.
+- Verificações: SSE byte a byte = SQLite = tela; cortes em ponto variado são
+  parada do modelo (não teto); turno final vazio pós-subs confirmado via
+  journal do vLLM (prefill do contexto gigante + encerramento silencioso).
+- Suite E2E UI iniciada (`Web.Test/Ui/ChatBehaviorTests.cs`, `--ui-behavior`):
+  histórico, ENVIAR->CANCELAR, Stop por sessão, % ao vivo, label de tool.
+- Suite: build Release 0 erros (Web + Test).
