@@ -10,7 +10,6 @@ public sealed class SubagentToolHandler : IToolHandler
 {
     public string ToolName => "subagent";
 
-    private const int DefaultMaxTokens = 8192;
     private const int MaxOutputChars = 4000;
     private const double FixedTemperature = 0.4;
     private const string SubagentSystem =
