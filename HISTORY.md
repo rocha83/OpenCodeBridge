@@ -659,3 +659,8 @@
   allowlist do shell. Workspace do sub = `bin` do site (contido).
 - Suite UI: **23/23 PASS**. Units: 2 FAIL pré-existentes (`U-tool-definitions`,
   `U-orch-plan-tools` — anúncio tem 7, teste espera 5; falham sem a mudança).
+
+## Bridge Web — Fase 12b Testes donos do anúncio (2026-10-11)
+- `U-tool-definitions` e `U-orch-plan-tools` esperavam 5 tools; anúncio real
+  tem 7 (shell/read/grep/glob/fetch/git/subagent). Testes atualizados.
+- Units: **PASS total**. Suite UI: pendente re-run.
