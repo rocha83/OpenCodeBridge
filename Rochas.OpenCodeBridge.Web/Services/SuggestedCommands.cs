@@ -40,6 +40,43 @@ public static class SuggestedCommands
                         $"write {file} (heredoc)"));
                     continue;
                 }
+                // echo "..." multilinha (abre aspas numa linha, fecha noutra com "> arq) => write.
+                var ms = Regex.Match(line, "^echo\\s+(?<q>[\"'])(?<rest>.*)$");
+                if (ms.Success && !line.Contains(">>") && !Regex.IsMatch(line, "[\"']\\s*>\\s*\\S+\\s*$"))
+                {
+                    string q = ms.Groups["q"].Value;
+                    var mb = new StringBuilder(ms.Groups["rest"].Value);
+                    int lj = li + 1;
+                    bool closed = false;
+                    string mfile = "";
+                    while (lj < lines.Length)
+                    {
+                        string lraw = lines[lj].Trim().TrimEnd('\\').Trim();
+                        if (!lraw.Contains(">>"))
+                        {
+                            var mc = Regex.Match(lraw, "^(?<t>.*)" + q + "\\s*>\\s*(?<f>\\S+)\\s*$");
+                            if (mc.Success)
+                            {
+                                mb.Append('\n').Append(mc.Groups["t"].Value);
+                                mfile = mc.Groups["f"].Value;
+                                closed = true;
+                                break;
+                            }
+                        }
+                        mb.Append('\n').Append(lines[lj]);
+                        lj++;
+                    }
+                    if (closed)
+                    {
+                        string t = mb.ToString().Replace("\\n", "\n").Replace("\\t", "\t")
+                            .Replace("\\\"", "\"").Replace("\\'", "'");
+                        steps.Add(new Step("write",
+                            "{\"path\": " + JsonEscape(mfile.Trim('"', '\'')) + ", \"content\": " + JsonEscape(t) + "}",
+                            $"write {mfile}"));
+                        li = lj;
+                        continue;
+                    }
+                }
                 var step = Translate(line);
                 if (step is not null) steps.Add(step);
             }
@@ -57,7 +94,7 @@ public static class SuggestedCommands
             string t = m.Groups["t"].Value.Trim();
             if ((t.StartsWith("\"") && t.EndsWith("\"")) || (t.StartsWith("'") && t.EndsWith("'")))
                 t = t[1..^1];
-            t = t.Replace("\\n", "\n").Replace("\\t", "\t");
+            t = t.Replace("\\n", "\n").Replace("\\t", "\t").Replace("\\\"", "\"").Replace("\\'", "'");
             string f = m.Groups["f"].Value.Trim().Trim('"', '\'');
             return new Step("write",
                 "{\"path\": " + JsonEscape(f) + ", \"content\": " + JsonEscape(t) + "}",

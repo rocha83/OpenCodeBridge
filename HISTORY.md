@@ -1,5 +1,40 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Bridge Web — Fase 11 Agente+fases+subs, UI e árvore (2026-10-11)
+- Doutrina final do dono: 1 agente (8B plan) sugere fases e dispara subagentes;
+  ninguém executa shell/escrita — só gera `.sh` como texto p/ execução futura.
+  Prompts: agente "desenvolvedor senior .net c# que nao dialoga, sugere a solucao
+  em fases e dispara subagentes para cada fase"; sub "compoe script shell sh
+  para implementacao do enunciado em batch".
+- Tools do principal: leitura (read/grep), navegação (glob), subagentes.
+  Shell encolhido p/ `ls/cat/grep/curl` + `cd` com guard (fora do Allowed de
+  propósito); `sudo systemctl` (4 strings exatas de ops) mantido — remover sob ordem.
+- Coerção de execução DESLIGADA no loop principal (blocos ```sh não executam mais);
+  extrator ganhou `echo` multilinha -> `write` e unescape de `\"` (legado p/ futuro).
+- Sub interno: não anuncia `subagent` (só trabalha); chamada interna é ignorada
+  com neutro (sem FALHOU). Trava de recursão mantida no executor.
+- Parar virou CANCELAR via API: `POST /Chat/Stop` cancela o CTS da sessão no
+  servidor + abort local; botão vermelho preenchido fonte preta; ENVIAR quadrado;
+  LIMPAR idem. Botão fica visível o stream inteiro; abort não gera bolha de erro.
+- Bolhas: agente abre só com texto real (deltas de espaço não abrem quadro vazio);
+  sub abre independente no done (sem label "Executando" durante); ordem agente em
+  cima/subs abaixo; texto em caixa rawbox (`pre` + `pre-wrap`, quebras originais).
+  `esc()` agora escapa `&<>`, desescapa `\"`/`\n`/`\t` p/ exibição e filtra tags
+  `<details>/<summary>` do texto (só tags, conteúdo fica).
+- Persistência por turno: texto do agente ao fechar cada turno (não só no fim do
+  loop); retorno do sub gravado como msg `subagent` (texto+thinking via SUBTHINK);
+  thinking dos dois na coluna `thinking`; bridge recebe sub como `user`.
+- Histórico à prova: `loadMessages` com fallback por msg (nunca aborta; role
+  desconhecido vira Agente, nulo vira ""); `msgItem` cobre user/assistant/subagent.
+- Tela de aprovação do orch OCULTA por desvio (conceito pausado, código fica);
+  `DirectApprove=true` por padrão; painel lateral intacto.
+- `[truncado]` zerado no repo inteiro (Web + CLI + Runner); texto fluente.
+- Testes: `HistoryTree` novo em SessionServiceTests (árvore user/assistant/subagent
+  + split texto/thinking) — SessionService 12/12 PASS. RESSALVA: 5 FAILs antigos
+  em ToolExecutorTests (echo/chain/quoted/metachar/bash-alias) por testarem a
+  allowlist antiga do shell — aguardam decisão do dono (atualizar ou reverter).
+- Stack: vLLM :4100 (service, reiniciado), bridge :4124, site :4130.
+
 ## Bridge Web — Instrutor 8B + tolerância em 3 camadas + tool_calls (2026-10-10)
 - Doutrina: modelo só conversa enxuto (system de 1 frase + enunciado), o site faz
   funcionar — sem exigir `tool_calls` OpenAPI perfeitos de modelo pequeno. Pilha

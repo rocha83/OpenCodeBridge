@@ -55,8 +55,9 @@ internal static class SessionServiceTests
             await CountMessagesAsync(svc, testUserId, testAgentId);
             await TouchAsync(svc, testUserId, testAgentId);
             await ToolCallAsync(svc, testUserId, testAgentId);
+            await HistoryTreeAsync(svc, testUserId, testAgentId);
 
-            System.Console.WriteLine($"=== SessionService Unit: {11 - Failures}/11 PASS, {Failures} FAIL ===");
+            System.Console.WriteLine($"=== SessionService Unit: {12 - Failures}/12 PASS, {Failures} FAIL ===");
         }
         finally
         {
@@ -183,6 +184,25 @@ internal static class SessionServiceTests
             var calls = await s.GetToolCallsAsync(id);
             Check(calls.Count == 2 && calls[0].Name == "shell" && calls[0].Ok && calls[0].Ms == 12
                 && calls[1].Name == "write" && !calls[1].Ok, "ToolCallAsync log+query");
+        }
+    }
+
+    private static async Task HistoryTreeAsync(SessionService s, int userId, int agentId)
+    {
+        // Árvore da conversa: user -> turnos assistant -> subagent (texto+thinking separados).
+        var session = await s.CreateAsync(userId, agentId, "History Tree");
+        if (session.Id is int id)
+        {
+            await s.AddMessageAsync(id, "user", "faça em fases", "", null, null);
+            await s.AddMessageAsync(id, "assistant", "fase 1 pronta", "pensei...", null, null);
+            await s.AddMessageAsync(id, "subagent", "script fase 1", "raciocínio sub", null, null);
+            await s.AddMessageAsync(id, "assistant", "resumo final", "", null, null);
+            var msgs = await s.GetMessagesAsync(id);
+            Check(msgs.Count == 4, "HistoryTree keeps all turns");
+            Check(msgs[0].Role == "user" && msgs[1].Role == "assistant"
+                && msgs[2].Role == "subagent" && msgs[3].Role == "assistant", "HistoryTree order+roles");
+            Check(msgs[2].Content == "script fase 1" && msgs[2].Thinking == "raciocínio sub",
+                "HistoryTree subagent text+thinking split");
         }
     }
 

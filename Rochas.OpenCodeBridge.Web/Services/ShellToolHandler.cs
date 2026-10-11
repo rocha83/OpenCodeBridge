@@ -9,12 +9,11 @@ public sealed class ShellToolHandler : IToolHandler
 {
     public string ToolName => "shell";
 
+    // Permitidos: leitura/navegação/rede mínima + subagentes (ordem do dono).
+    // Shell: ls, cat, grep, curl. cd com guard no workspace. Demais: negados.
     private static readonly HashSet<string> Allowed = new(StringComparer.Ordinal)
     {
-        "ls", "cat", "head", "tail", "echo", "sed", "grep", "find", "wc", "diff",
-        "file", "pwd", "date", "git", "dotnet", "python", "python3", "node",
-        "npm", "curl", "wget", "shell", "bash", "sh", "mkdir", "touch",
-        "bc", "expr", "awk",
+        "ls", "cat", "grep", "curl",
     };
 
     private static readonly string[] DeniedTokens =
@@ -39,6 +38,16 @@ public sealed class ShellToolHandler : IToolHandler
         var parts = SplitChain(command);
         if (parts.Count <= 1)
         {
+            // cd avulso com o mesmo guard da cadeia (fora do Allowed de propósito).
+            string solo = parts.Count == 1 ? parts[0].Trim() : "";
+            if (solo == "cd" || solo.StartsWith("cd "))
+            {
+                string target = solo.Length > 2 ? solo[2..].Trim().Trim('"', '\'') : ".";
+                if (string.IsNullOrWhiteSpace(target)) target = ".";
+                if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, target, out string nd, out string whyCd))
+                    return ToolResult.Fail(whyCd);
+                return ToolResult.Ok(nd);
+            }
             if (!TryBuildArgv(argumentsJson, out string[] argv, out string why))
                 return ToolResult.Fail(why);
             return ProcessRunner.Run(argv[0], argv[1..], context.WorkspaceRoot, context.TimeoutSeconds);

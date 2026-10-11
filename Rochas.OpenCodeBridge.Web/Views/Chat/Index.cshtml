@@ -13,7 +13,7 @@
           <h5 class="font-weight-bold text-lg-start mb-0">Sessões</h5>
           <div>
             <button type="button" class="btn btn-sm btn-info me-2" id="newSession" data-mdb-button-init data-mdb-ripple-init>Nova</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" id="clearSessions" data-mdb-button-init data-mdb-ripple-init>Limpar</button>
+            <button type="button" class="btn btn-sm btn-danger text-black" id="clearSessions" data-mdb-button-init data-mdb-ripple-init>Limpar</button>
           </div>
         </div>
 
@@ -53,7 +53,7 @@
               <textarea class="form-control bg-body-tertiary rounded-3" id="prompt" rows="4" style="border: 1px solid #2a323d !important;"></textarea>
             </div>
           </li>
-          <button type="button" data-mdb-button-init data-mdb-ripple-init class="btn btn-info btn-rounded float-end" id="send">ENVIAR</button>
+          <button type="button" data-mdb-button-init data-mdb-ripple-init class="btn btn-info float-end" id="send">ENVIAR</button>
         </ul>
 
       </div>
@@ -99,7 +99,7 @@ const execIdOrNull = () => execSel.value ? +execSel.value : null;
 const avatarUser = '<span class="rounded-circle d-flex align-self-start ms-3 shadow-1-strong bg-secondary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-user fa-2x text-white"></i></span>';
 const avatarAgent = '<span class="rounded-circle d-flex align-self-start me-3 shadow-1-strong bg-primary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-robot fa-2x text-white"></i></span>';
 
-function esc(s) { return (s || '').replace(/</g, '<'); }
+function esc(s) { return (s || '').replace(/<\/?(details|summary)(\s[^>]*)?>/gi, '').replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 function showToast(message, type = 'danger') {
   const id = 'toast-' + Date.now();
@@ -160,7 +160,7 @@ function toolStatus(name, running, ok, result, ms, args) {
               <p class="fw-bold mb-0">Sub Agente</p>
             </div>
             <div class="card-body">
-              <p class="mb-0 subans text-wrap"></p>
+              <pre class="mb-0 subans rawbox text-wrap"></pre>
             </div>
           </div>`;
         const prev = window._lastSubCard;
@@ -262,7 +262,17 @@ async function loadMessages(sessionId) {
   const msgs = await r.json();
   const wasAtBottom = isScrolledToBottom();
   conv.innerHTML = '';
-  msgs.forEach(m => conv.appendChild(msgItem(m.role, m.thinking, m.content)));
+  // Toda msg renderiza: falha isolada vira bolha bruta, nunca aborta a conversa.
+  (msgs || []).forEach(m => {
+    try {
+      conv.appendChild(msgItem(m?.role ?? 'assistant', m?.thinking ?? '', m?.content ?? ''));
+    } catch (err) {
+      const li = document.createElement('li');
+      li.className = 'd-flex justify-content-between mb-4';
+      li.innerHTML = `${avatarAgent}<div class="card w-100"><div class="card-header d-flex justify-content-between p-3"><p class="fw-bold mb-0">Agente</p></div><div class="card-body"><pre class="mb-0 ans rawbox text-wrap">${esc(String(m?.content ?? ''))}</pre></div></div>`;
+      conv.appendChild(li);
+    }
+  });
   if (wasAtBottom) scrollToBottom();
   await loadTasks(sessionId);
 }
@@ -369,7 +379,7 @@ function msgItem(role, think, body) {
         </div>
         <div class="card-body">
           ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
-          <p class="mb-0 subans text-wrap">${esc(body)}</p>
+          <pre class="mb-0 subans rawbox text-wrap">${esc(body)}</pre>
         </div>
       </div>`;
   } else {
@@ -381,7 +391,7 @@ function msgItem(role, think, body) {
         </div>
         <div class="card-body">
           ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
-          <p class="mb-0 ans text-wrap">${esc(body)}</p>
+          <pre class="mb-0 ans rawbox text-wrap">${esc(body)}</pre>
         </div>
       </div>`;
   }
@@ -620,9 +630,9 @@ document.getElementById('send').onclick = async () => {
   document.getElementById('cancelBtn')?.remove();
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
-  cancelBtn.className = 'btn btn-sm btn-outline-danger ms-2';
+  cancelBtn.className = 'btn btn-sm btn-danger text-black ms-2';
   cancelBtn.id = 'cancelBtn';
-  cancelBtn.innerHTML = '<i class="fas fa-times me-1"></i>Parar';
+  cancelBtn.innerHTML = 'CANCELAR';
   cancelBtn.style.display = 'none';
   sendBtn.parentNode.insertBefore(cancelBtn, sendBtn.nextSibling);
   
@@ -736,8 +746,9 @@ document.getElementById('send').onclick = async () => {
             engineTxt.textContent = 'Pensando...';
           }
           else if (d.content) {
-            if (!agentBubbleCreated) {
-              // Cria a bolha na primeira content (sem thinking ao vivo)
+            full += d.content;
+            // Bolha só quando há texto real (deltas iniciais de espaço não abrem quadro vazio).
+            if (!agentBubbleCreated && full.trim()) {
               agentLi = document.createElement('li');
               agentLi.className = 'd-flex justify-content-between mb-4';
               agentLi.innerHTML = `
@@ -747,7 +758,7 @@ document.getElementById('send').onclick = async () => {
                     <p class="fw-bold mb-0">Agente</p>
                   </div>
                   <div class="card-body">
-                    <p class="mb-0 ans text-wrap"></p>
+                    <pre class="mb-0 ans rawbox text-wrap"></pre>
                   </div>
                 </div>`;
               conv.appendChild(agentLi);
@@ -758,7 +769,6 @@ document.getElementById('send').onclick = async () => {
               let anchor = agentLi;
               (window._subCards || []).forEach(c => { if (c.isConnected) { anchor.after(c); anchor = c; } });
             }
-            full += d.content;
             startTypewriter();
           }
         } catch (e) { /* chunk parcial: ignora */ }

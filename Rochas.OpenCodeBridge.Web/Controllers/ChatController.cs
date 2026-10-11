@@ -403,9 +403,15 @@ public sealed class ChatController(
 
         while (!ct.IsCancellationRequested)
         {
-            // Modo plan: tools de leitura/navegação + temp 0.4.
+            // Agente: leitura (read/grep), navegação (glob) e disparo (subagent). Sem execução/escrita.
             bool plan = agent.Mode == "plan";
-            var tools = ToolDefinitions.GetTools(plan ? "plan" : null);
+            var allowed = new HashSet<string> { "read", "grep", "glob", "subagent" };
+            var tools = new JsonArray();
+            foreach (var t in ToolDefinitions.GetTools())
+            {
+                if ((t as JsonObject)?["function"]?["name"]?.GetValue<string>() is not string tn || !allowed.Contains(tn)) continue;
+                if (t is not null) tools.Add(t.DeepClone());
+            }
             var body = new JsonObject
             {
                 ["model"] = agent.Model,
@@ -505,34 +511,9 @@ public sealed class ChatController(
                 }
             }
 
-            // Se não houve tool_calls ou finish_reason != tool_calls, terminamos
+            // Sem tools anunciadas: sem tool_calls; sem coerção — só texto, termina.
             if (toolCallAccum.Count == 0 || finishReason != "tool_calls")
             {
-                // Interpretador de sugeridos: compõe comandos dos blocos ```sh do texto.
-                if (toolCallAccum.Count == 0)
-                {
-                    var steps = SuggestedCommands.Extract(assistantContent.ToString());
-                    if (steps.Count == 0) break;
-                    var rep = new System.Text.StringBuilder("[exec]");
-                    foreach (var st in steps)
-                    {
-                        await WriteProgressAsync(outputStream, "tool_start", st.Tool, null, ct);
-                        var ssw = System.Diagnostics.Stopwatch.StartNew();
-                        var sr = toolExecutor.Execute(st.Tool, st.Args, 120, null, agent);
-                        ssw.Stop();
-                        if (session?.Id is int sidSug)
-                            await sessionService.LogToolAsync(sidSug, agent.Name + "+sugerida", st.Tool, st.Args,
-                                sr.Success, sr.Success ? sr.Output : sr.Error ?? "", ssw.ElapsedMilliseconds);
-                        string soFull = sr.Success ? sr.Output : $"Error: {sr.Error}";
-                        string so = soFull;
-                        await WriteProgressAsync(outputStream, "tool_done", st.Tool, sr.Success, ct, soFull, ssw.ElapsedMilliseconds);
-                        rep.Append($"\n- {st.Echo} => {(sr.Success ? "ok" : "FALHOU")}: {so.Replace("\n", " / ")}");
-                    }
-                    messages.Add(new JsonObject { ["role"] = "user", ["content"] = rep.ToString() });
-                    assistantContent.Clear();
-                    assistantThinking.Clear();
-                    continue;
-                }
                 break;
             }
 
@@ -560,6 +541,19 @@ public sealed class ChatController(
                 });
             }
             messages.Add(assistantMsg);
+
+            // Persiste o texto do turno ao fechar (o que a bolha já exibiu),
+            // sem esperar o fim do loop com as tools.
+            if (session?.Id is int sidTurn && assistantContent.Length > 0)
+            {
+                try
+                {
+                    await sessionService.AddMessageAsync(sidTurn, "assistant",
+                        assistantContent.ToString(), assistantThinking.ToString(), null, null);
+                    await sessionService.TouchAsync(sidTurn);
+                }
+                catch { /* histórico best-effort */ }
+            }
 
             // Executa cada tool e adiciona resultado às mensagens.
             // Progresso vai ao cliente em tempo real para a UI indicar execução.

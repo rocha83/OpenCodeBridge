@@ -14,9 +14,7 @@ public sealed class SubagentToolHandler : IToolHandler
     private const int MaxOutputChars = 4000;
     private const double FixedTemperature = 0.4;
     private const string SubagentSystem =
-        "Você é um subagente do mesmo modelo: primeiro resuma a subtarefa em até 3 linhas " +
-        "(RESUMO); depois componha a solução completa em scripts sh por fase (SOLUÇÃO). " +
-        "Responda só com as duas partes, sem executar nada.";
+        "Você é um agente desenvolvedor senior .net c# que nao dialoga, compoe script shell sh para implementacao do enunciado em batch";
 
     private readonly IBridgeClient _bridge;
 
@@ -49,7 +47,8 @@ public sealed class SubagentToolHandler : IToolHandler
                 ToolExecutor.DefaultHandlers().Where(h => h.ToolName != "subagent"),
                 context.WorkspaceRoot, "/tmp/tool-executor-sub.log");
             var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = prompt.Trim() } };
-            var tools = ToolDefinitions.GetTools();
+            // Sub só gera texto (sem tools anunciadas): mantém o executor só como retaguarda.
+            JsonArray? tools = null;
             var collected = new StringBuilder();
             string subthink = "";
             for (int turn = 0; turn < 3; turn++)
@@ -74,6 +73,18 @@ public sealed class SubagentToolHandler : IToolHandler
                 });
                 foreach (var c in t.Calls)
                 {
+                    // Sub não delega: ignora sem erro (não polui o histórico com FALHOU).
+                    if (c.Name == "subagent")
+                    {
+                        collected.AppendLine("[subagent] ignorado: subagente não delega.");
+                        history.Add(new JsonObject
+                        {
+                            ["role"] = "tool",
+                            ["tool_call_id"] = c.Id,
+                            ["content"] = "ignorado: subagente não delega.",
+                        });
+                        continue;
+                    }
                     var r = inner.Execute(c.Name, c.Args, 60);
                     string o = r.Success ? r.Output : $"Error: {r.Error}";
                     collected.AppendLine($"[{c.Name}] {(r.Success ? "ok" : "FALHOU")}: {o.Replace("\n", " / ")}");
