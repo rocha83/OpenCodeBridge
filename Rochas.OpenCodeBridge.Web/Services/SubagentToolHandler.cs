@@ -32,8 +32,9 @@ public sealed class SubagentToolHandler : IToolHandler
 
         string prompt = obj["prompt"]?.GetValue<string>() ?? "";
         if (string.IsNullOrWhiteSpace(prompt)) return ToolResult.Fail("prompt é obrigatório");
-        int maxTokens = obj["maxTokens"]?.GetValue<int>() ?? DefaultMaxTokens;
-        maxTokens = Math.Min(Math.Max(maxTokens, 256), 8192);
+        // Sem teto repassado: ignora pedido menor (o thinking come o orçamento e o texto morre).
+        // null = sem max_tokens no body; a bridge aplica o teto 8k.
+        int? maxTokens = null;
 
         if (string.IsNullOrWhiteSpace(context.BridgeUrl) || string.IsNullOrWhiteSpace(context.Model))
             return ToolResult.Fail("subagente sem agente (bridge/modelo ausentes)");
@@ -54,7 +55,7 @@ public sealed class SubagentToolHandler : IToolHandler
             for (int turn = 0; turn < 3; turn++)
             {
                 var t = BridgeHelper.ChatTurnAsync(_bridge, context.BridgeUrl, context.Model,
-                    FixedTemperature, SubagentSystem, history, tools, cts.Token, enableThinking: true)
+                    FixedTemperature, SubagentSystem, history, tools, cts.Token, enableThinking: true, maxTokens: maxTokens)
                     .GetAwaiter().GetResult();
                 if (!t.Ok) return ToolResult.Fail($"subagente falhou: {t.Error}");
                 if (!string.IsNullOrWhiteSpace(t.Thinking)) subthink = t.Thinking;
@@ -85,7 +86,7 @@ public sealed class SubagentToolHandler : IToolHandler
                         });
                         continue;
                     }
-                    var r = inner.Execute(c.Name, c.Args, 60);
+                    var r = inner.Execute(c.Name, c.Args, 300);
                     string o = r.Success ? r.Output : $"Error: {r.Error}";
                     collected.AppendLine($"[{c.Name}] {(r.Success ? "ok" : "FALHOU")}: {o.Replace("\n", " / ")}");
                     history.Add(new JsonObject

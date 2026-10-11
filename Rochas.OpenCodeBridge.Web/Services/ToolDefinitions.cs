@@ -26,7 +26,7 @@ public static class ToolDefinitions
         tools.Add(BuildTool("git", "Git somente-leitura: status/log/diff/show/branch. Sem commit/push/checkout.",
             new[] { BuildParam("command", "string", "Comando (ex.: 'log --oneline -5').", true) }));
         tools.Add(BuildTool("subagent", "Delega UMA fase ao mesmo modelo (passe só o enunciado da fase, nunca o enunciado original).",
-            new[] { BuildParam("prompt", "string", "Subtarefa completa e autocontida.", true), BuildParam("maxTokens", "integer", "Teto de saída (padrão 2048).", false) }));
+            new[] { BuildParam("prompt", "string", "Subtarefa completa e autocontida.", true) }));
         return tools;
     }
 
