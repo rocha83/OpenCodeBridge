@@ -10,7 +10,6 @@ public sealed class SubagentToolHandler : IToolHandler
 {
     public string ToolName => "subagent";
 
-    private const int MaxOutputChars = 4000;
     private const double FixedTemperature = 0.4;
     private const string SubagentSystem =
         "Você é um agente desenvolvedor senior .net c# que nao dialoga, compoe script shell sh para implementacao do enunciado em batch";
