@@ -643,3 +643,7 @@
   (80/20) do tamanho thinking+conteúdo em `localStorage` (início 6000).
   Resposta típica chega ~90%, salto final pequeno; 100% exato só no DONE.
 - Suite UI: **23/23 PASS** com o adaptativo.
+
+## Bridge Web — Fase 11f Percentual mira 95% (2026-10-11)
+- Divisor 9→19 (`k = max(150, media/19)`): resposta típica chega ~95%,
+  salto final ~5 pontos. Suite UI: **23/23 PASS**.

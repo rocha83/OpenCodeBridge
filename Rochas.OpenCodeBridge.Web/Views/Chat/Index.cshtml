@@ -126,7 +126,7 @@ function thinkNote(total) {
 }
 // % calibrado pela média móvel do tamanho das respostas (thinking+conteúdo):
 // resposta típica chega ~90%, salto final pequeno; 100% exato só no DONE.
-function thinkPct(chars) { const k = Math.max(300, thinkAvg() / 9); return Math.min(99, Math.floor(100 * chars / (chars + k))); }
+function thinkPct(chars) { const k = Math.max(150, thinkAvg() / 19); return Math.min(99, Math.floor(100 * chars / (chars + k))); }
 
 function showToast(message, type = 'danger') {
   const id = 'toast-' + Date.now();
