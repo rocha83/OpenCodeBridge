@@ -38,7 +38,10 @@ namespace Rochas.OpenCodeBridge.Web.Services
         // Sink de progresso: o ChatController liga só na chamada "subagent".
         // O agente principal não usa este sink (o loop emite o dele direto
         // no SSE); o sub repassa ao executor interno (write/shell/edit).
-        public Func<string, bool?, string, Task>? ProgressAsync { get; set; }
+        // Sub = id do subagente dono (só nas internas); chunks ao vivo idem.
+        public Func<ToolProgress, Task>? ProgressAsync { get; set; }
+        public string? SubId { get; set; }
+        public Func<string, string, string, Task>? SubChunkAsync { get; set; }
 
         public ToolResult Execute(string name, string arguments, int timeoutSeconds = 300, string? mode = null, Models.Agent? agent = null)
         {
@@ -64,17 +67,18 @@ namespace Rochas.OpenCodeBridge.Web.Services
                 Model = agent?.Model ?? "",
                 Temperature = agent?.Temperature ?? 0.4,
                 ProgressAsync = ProgressAsync,
+                SubChunkAsync = SubChunkAsync,
             };
             ToolResult result;
             try
             {
                 if (ProgressAsync is not null)
-                    try { ProgressAsync(key, null, "").GetAwaiter().GetResult(); } catch { }
+                    try { ProgressAsync(new ToolProgress(key, SubId, null, "")).GetAwaiter().GetResult(); } catch { }
                 result = _telemetry is not null
                     ? _telemetry.Timed($"tool.{key}", () => handler.Handle(arguments ?? "", context))
                     : handler.Handle(arguments ?? "", context);
                 if (ProgressAsync is not null)
-                    try { ProgressAsync(key, result.Success, result.Success ? result.Output : result.Error ?? "").GetAwaiter().GetResult(); } catch { }
+                    try { ProgressAsync(new ToolProgress(key, SubId, result.Success, result.Success ? result.Output : result.Error ?? "")).GetAwaiter().GetResult(); } catch { }
             }
             catch (Exception ex)
             {

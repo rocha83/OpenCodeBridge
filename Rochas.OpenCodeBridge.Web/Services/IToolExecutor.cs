@@ -9,5 +9,7 @@ public interface IToolExecutor
     // Sink de progresso das tools INTERNAS do sub (write/shell/edit).
     // O agente principal não usa este sink: o ChatController emite o
     // progresso dele direto no SSE; aqui só trafega o do sub até o SSE.
-    Func<string, bool?, string, Task>? ProgressAsync { get; set; }
+    Func<ToolProgress, Task>? ProgressAsync { get; set; }
+    // Chunks ao vivo do subagente (sub, kind thinking|content, texto).
+    Func<string, string, string, Task>? SubChunkAsync { get; set; }
 }

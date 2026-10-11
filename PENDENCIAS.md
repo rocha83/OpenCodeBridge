@@ -14,3 +14,9 @@
 ## Remover após testes
 - `cap200` (teto de 200 linhas na EXIBIÇÃO do thinking, `Index.cshtml`):
   exibição volta integral; gravação já é integral.
+
+## Review — nomes intuitivos/legíveis (2026-10-11)
+- Renomear classes, métodos e variáveis crípticas p/ nomes de domínio claros
+  em toda a solução (ex.: `ChunkTap`, `thinkPct`, `subChunk`, `ensureSubCard`,
+  `toolStatus`, siglas e abreviações). Vale p/ C# e JS. Fazer em passada
+  dedicada, com build + suites verdes por arquivo.

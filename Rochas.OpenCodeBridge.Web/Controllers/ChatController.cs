@@ -642,14 +642,15 @@ public sealed class ChatController(
             // Ao contexto volta SÓ texto (user/assistant/subagente): outputs de
             // tools NÃO entram no loop (persistidos em tool_calls + histórico).
             // Sem tool_calls no contexto (sem elas, a API exige as respostas).
-            string turnContent = assistantContent.Length > 0 ? assistantContent.ToString() : "";
+            string turnContent = StripThinkTags(assistantContent.ToString(), assistantThinking);
             if (!string.IsNullOrWhiteSpace(turnContent))
                 messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = turnContent });
 
             // Persiste o texto do turno ao fechar (o que a bolha já exibiu),
             // sem esperar o fim do loop com as tools. Turno só-com-espaço e sem
             // thinking não grava (evita bolhas vazias no reload).
-            string turnText = assistantContent.ToString().Trim();
+            // <think> vazado no content: move p/ thinking (não suja bolha/contexto).
+            string turnText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
             if (session?.Id is int sidTurn && (turnText.Length > 0 || assistantThinking.Length > 0))
             {
                 try
@@ -670,13 +671,17 @@ public sealed class ChatController(
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
                 // Trunfo: o modelo vê plan (anunciado), o executor roda build (pode tudo).
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                // Progresso das tools internas do sub (write/shell): só aqui.
+                // Progresso + chunks ao vivo das tools internas do sub: só aqui.
                 toolExecutor.ProgressAsync = name == "subagent"
-                    ? async (n, ok, summary) => await WriteProgressAsync(outputStream,
-                        ok is null ? "tool_start" : "tool_done", n, ok, ct, summary ?? "", 0)
+                    ? async p => await WriteProgressAsync(outputStream,
+                        p.Ok is null ? "tool_start" : "tool_done", p.Name, p.Ok, ct, p.Summary ?? "", 0, p.Sub ?? "")
+                    : null;
+                toolExecutor.SubChunkAsync = name == "subagent"
+                    ? async (sub, kind, text) => await WriteSubChunkAsync(outputStream, sub, kind, text, ct)
                     : null;
                 var result = toolExecutor.Execute(name, args, 300, null, agent);
                 toolExecutor.ProgressAsync = null;
+                toolExecutor.SubChunkAsync = null;
                 sw.Stop();
                 if (session?.Id is int sidLog)
                     await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
@@ -717,7 +722,7 @@ public sealed class ChatController(
         }
 
         // Persiste resposta final do assistant se há sessão (texto real ou thinking).
-        string finalText = assistantContent.ToString().Trim();
+        string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
         bool silentClose = false;
         if (finalText.Length == 0 && assistantThinking.Length == 0 && (anySubRan || anyToolRan))
         {
@@ -754,13 +759,31 @@ public sealed class ChatController(
         catch { }
     }
 
+    // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.
+    private static string StripThinkTags(string content, System.Text.StringBuilder thinking)
+    {
+        if (string.IsNullOrEmpty(content) || !content.Contains("<think>", StringComparison.Ordinal)) return content;
+        return System.Text.RegularExpressions.Regex.Replace(content, "<think>([\\s\\S]*?)</think>",
+            m => { thinking.Append(m.Groups[1].Value); return ""; });
+    }
+
     // Evento de progresso ao cliente (a UI mostra "Executando [tool]..." / details com retorno).
-    private static async Task WriteProgressAsync(System.IO.Stream output, string stage, string name, bool? ok, CancellationToken ct, string result = "", long ms = 0)
+    private static async Task WriteProgressAsync(System.IO.Stream output, string stage, string name, bool? ok, CancellationToken ct, string result = "", long ms = 0, string sub = "")
     {
         var evt = new JsonObject { ["progress"] = stage, ["name"] = name };
+        if (!string.IsNullOrEmpty(sub)) evt["sub"] = sub;
         if (ok.HasValue) evt["ok"] = ok.Value;
         if (ms > 0) evt["ms"] = ms;
         if (!string.IsNullOrEmpty(result)) evt["result"] = result;
+        var bytes = Encoding.UTF8.GetBytes("data: " + evt.ToJsonString() + "\n\n");
+        await output.WriteAsync(bytes, ct);
+        await output.FlushAsync(ct);
+    }
+
+    // Chunk ao vivo do subagente (thinking/content) p/ card próprio na UI.
+    private static async Task WriteSubChunkAsync(System.IO.Stream output, string sub, string kind, string text, CancellationToken ct)
+    {
+        var evt = new JsonObject { ["progress"] = "sub_chunk", ["sub"] = sub, ["kind"] = kind, ["text"] = text };
         var bytes = Encoding.UTF8.GetBytes("data: " + evt.ToJsonString() + "\n\n");
         await output.WriteAsync(bytes, ct);
         await output.FlushAsync(ct);

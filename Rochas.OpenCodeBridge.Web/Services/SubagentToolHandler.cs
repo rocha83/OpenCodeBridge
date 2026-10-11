@@ -13,7 +13,7 @@ public sealed class SubagentToolHandler : IToolHandler
 
     private const double FixedTemperature = 0.4;
     private const string SubagentSystem =
-        "Você é um agente desenvolvedor senior .net c# que nao dialoga, compoe script shell sh para implementacao do enunciado em batch, ao final escreva o script na pasta atual com a tool write, valide a sintaxe com a tool shell usando 'bash -n <arquivo>', se a validação acusar erro corrija o script e valide de novo até limpar, porém não execute o script";
+        "Você é um agente desenvolvedor senior .net c# que nao dialoga, compoe script shell sh para implementacao do enunciado em batch, ao final escreva o script na pasta atual com a tool write usando o nome <tema-da-fase>_<data-hora-juliana>.sh (tema curto da fase, data-hora-juliana = dia do ano + hora/minuto informados no enunciado, ex.: 2841435), valide a sintaxe com a tool shell usando 'bash -n <arquivo>', se a validação acusar erro corrija o script e valide de novo até limpar, porém não execute o script";
 
     private readonly IBridgeClient _bridge;
 
@@ -106,11 +106,17 @@ public sealed class SubagentToolHandler : IToolHandler
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(30, context.TimeoutSeconds)));
             // Mesmas specs do chamador: mesmo modelo, 0.4, thinking on, mesmas tools.
             // Trava de profundidade estrutural: executor interno sem "subagent".
+            // Id do subagente p/ UI ao vivo (card + labels próprios; execução serial).
+            string subId = "sub-" + Guid.NewGuid().ToString("N")[..8];
             var inner = new ToolExecutor(
                 ToolExecutor.DefaultHandlers().Where(h => h.ToolName != "subagent"),
                 context.WorkspaceRoot, "/tmp/tool-executor-sub.log");
-            inner.ProgressAsync = context.ProgressAsync;
-            var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = prompt.Trim() } };
+            inner.SubId = subId;
+            inner.ProgressAsync = context.ProgressAsync is null ? null
+                : (p => context.ProgressAsync(p with { Sub = subId }));
+            var chunkSink = context.SubChunkAsync;
+            var now = System.DateTime.Now;
+            var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = prompt.Trim() + $"\n(Data-hora-juliana atual: {now.DayOfYear}{now:HHmm}.)" } };
             // Sub com tools anunciadas (experimento): write, edit e shell.
             // Trava: shell do sub só valida (`bash -n`), compacta (zip/unzip) ou
             // navega (ls/cat/pwd); nada executa — ver SubShellAllowed.
@@ -120,7 +126,8 @@ public sealed class SubagentToolHandler : IToolHandler
             for (int turn = 0; turn < 3; turn++)
             {
                 var t = BridgeHelper.ChatTurnAsync(_bridge, context.BridgeUrl, context.Model,
-                    FixedTemperature, SubagentSystem, history, tools, cts.Token, enableThinking: true, maxTokens: maxTokens)
+                    FixedTemperature, SubagentSystem, history, tools, cts.Token, enableThinking: true, maxTokens: maxTokens,
+                    onChunk: chunkSink is null ? null : (async (kind, text) => await chunkSink(subId, kind, text)))
                     .GetAwaiter().GetResult();
                 if (!t.Ok) return ToolResult.Fail($"subagente falhou: {t.Error}");
                 if (!string.IsNullOrWhiteSpace(t.Thinking)) subthink = t.Thinking;
@@ -166,7 +173,11 @@ public sealed class SubagentToolHandler : IToolHandler
                     }
                     var r = inner.Execute(c.Name, c.Args, 300);
                     string o = r.Success ? r.Output : $"Error: {r.Error}";
-                    collected.AppendLine($"[{c.Name}] {(r.Success ? "ok" : "FALHOU")}: {o.Replace("\n", " / ")}");
+                    string line = $"[{c.Name}] {(r.Success ? "ok" : "FALHOU")}: {o.Replace("\n", " / ")}";
+                    collected.AppendLine(line);
+                    // Linha de retorno também ao vivo no card (além do label).
+                    if (chunkSink is not null)
+                        try { chunkSink(subId, "content", line + "\n").GetAwaiter().GetResult(); } catch { }
                     history.Add(new JsonObject
                     {
                         ["role"] = "tool",

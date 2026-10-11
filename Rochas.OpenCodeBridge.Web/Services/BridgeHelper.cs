@@ -55,11 +55,16 @@ public static class BridgeHelper
     }
 
     // Volta com tool_calls acumuladas (para loops de execução por subtarefa).
+    // onChunk(kind thinking|content, texto): ao vivo, por delta (subagentes).
     public static async Task<ChatTurn> ChatTurnAsync(IBridgeClient bridge, string bridgeUrl, string model,
-        double temperature, string systemPrompt, JsonArray messages, JsonArray? tools, CancellationToken ct, bool? enableThinking = null, int? maxTokens = null)
+        double temperature, string systemPrompt, JsonArray messages, JsonArray? tools, CancellationToken ct, bool? enableThinking = null, int? maxTokens = null,
+        Func<string, string, Task>? onChunk = null)
     {
         using var buffer = new MemoryStream();
-        var (ok, error) = await bridge.StreamAsync(bridgeUrl, model, temperature, systemPrompt, messages, buffer, ct,
+        Stream output = buffer;
+        ChunkTap? tap = null;
+        if (onChunk is not null) { tap = new ChunkTap(buffer, onChunk); output = tap; }
+        var (ok, error) = await bridge.StreamAsync(bridgeUrl, model, temperature, systemPrompt, messages, output, ct,
             includeTools: tools is not null, tools: tools, maxTokens: maxTokens, enableThinking: enableThinking);
         if (!ok) return new ChatTurn(false, "", "", null, null, new List<ToolCall>(), error);
 
@@ -121,5 +126,54 @@ public static class BridgeHelper
                 .ToList()
             : new List<ToolCall>();
         return new ChatTurn(true, content.ToString(), thinking.ToString(), promptTokens, completionTokens, calls, "");
+    }
+
+    // Stream que repassa ao vivo os deltas (thinking/content) enquanto bufferiza.
+    // Falha de parse nunca quebra o fluxo (best-effort).
+    private sealed class ChunkTap : System.IO.Stream
+    {
+        private readonly System.IO.MemoryStream _inner;
+        private readonly Func<string, string, Task> _onChunk;
+        private string _rest = "";
+        public ChunkTap(System.IO.MemoryStream inner, Func<string, string, Task> onChunk)
+        { _inner = inner; _onChunk = onChunk; }
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => _inner.Length;
+        public override long Position { get => _inner.Position; set => throw new NotSupportedException(); }
+        public override void Flush() => _inner.Flush();
+        public override Task FlushAsync(System.Threading.CancellationToken ct) => _inner.FlushAsync(ct);
+        public override int Read(byte[] b, int o, int c) => throw new NotSupportedException();
+        public override long Seek(long o, System.IO.SeekOrigin org) => throw new NotSupportedException();
+        public override void SetLength(long v) => _inner.SetLength(v);
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            _inner.Write(buffer, offset, count);
+            try
+            {
+                _rest += System.Text.Encoding.UTF8.GetString(buffer, offset, count);
+                int idx;
+                while ((idx = _rest.IndexOf('\n')) >= 0)
+                {
+                    string line = _rest[..idx].TrimEnd('\r');
+                    _rest = _rest[(idx + 1)..];
+                    if (!line.StartsWith("data: ")) continue;
+                    string data = line[6..].Trim();
+                    if (data == "[DONE]") continue;
+                    System.Text.Json.Nodes.JsonObject? chunk;
+                    try { chunk = System.Text.Json.Nodes.JsonNode.Parse(data)?.AsObject(); }
+                    catch { continue; }
+                    var delta = chunk?["choices"]?[0]?["delta"]?.AsObject();
+                    if (delta is null) continue;
+                    if (delta["reasoning_content"]?.GetValue<string>() is string r && r.Length > 0)
+                        try { _onChunk("thinking", r).GetAwaiter().GetResult(); } catch { }
+                    if (delta["content"]?.GetValue<string>() is string c && c.Length > 0)
+                        try { _onChunk("content", c).GetAwaiter().GetResult(); } catch { }
+                }
+                if (_rest.Length > 65536) _rest = _rest[^65536..];
+            }
+            catch { }
+        }
     }
 }

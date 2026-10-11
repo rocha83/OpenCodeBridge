@@ -5,6 +5,10 @@ namespace Rochas.OpenCodeBridge.Web.Test.Ui;
 // se a plataforma não suportar, cai p/ o Chrome do sistema (canal, sem download).
 public static class PlaywrightSetup
 {
+    // HEADED=1: navegador visível (acompanha ao vivo); padrão headless.
+    public static bool Headless() =>
+        Environment.GetEnvironmentVariable("HEADED") != "1";
+
     public static string EnsureBrowser()
     {
         string cache = Path.Combine(

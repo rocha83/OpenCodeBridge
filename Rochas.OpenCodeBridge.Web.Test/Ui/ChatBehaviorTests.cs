@@ -32,12 +32,12 @@ public static class ChatBehaviorTests
             ? await pw.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
                 Channel = "chrome",
-                Headless = true,
+                Headless = PlaywrightSetup.Headless(),
             })
             : await pw.Firefox.LaunchAsync(new BrowserTypeLaunchOptions
             {
                 Channel = "firefox",
-                Headless = true,
+                Headless = PlaywrightSetup.Headless(),
             });
         var ctx = await browser.NewContextAsync();
         var page = await ctx.NewPageAsync();

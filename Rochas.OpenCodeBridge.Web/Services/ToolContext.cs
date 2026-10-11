@@ -1,6 +1,8 @@
 namespace Rochas.OpenCodeBridge.Web.Services;
 
 // Contexto de execução das tools (raiz do workspace + timeout + agente chamador).
+public sealed record ToolProgress(string Name, string? Sub, bool? Ok, string Summary);
+
 public sealed class ToolContext
 {
     public string WorkspaceRoot { get; init; } = "";
@@ -9,6 +11,8 @@ public sealed class ToolContext
     public string BridgeUrl { get; init; } = "";
     public string Model { get; init; } = "";
     public double Temperature { get; init; } = 0.2;
-    // Sink de progresso, mesma via do IToolExecutor: (tool, ok null=start, resumo).
-    public Func<string, bool?, string, Task>? ProgressAsync { get; set; }
+    // Progresso de tool (ok null=start). Sub = id do subagente (só internas).
+    public Func<ToolProgress, Task>? ProgressAsync { get; set; }
+    // Chunks ao vivo do subagente: (sub, kind thinking|content, texto).
+    public Func<string, string, string, Task>? SubChunkAsync { get; set; }
 }
