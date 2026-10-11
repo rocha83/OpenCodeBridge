@@ -232,8 +232,13 @@ function scrollToBottom() {
 // Card ao vivo do subagente: abre no primeiro thinking/chunk/tool dele,
 // com % e digitação como o principal (execução dos subs é serial).
 function ensureSubCard(sub) {
+  window._subCards = window._subCards || {};
+  if (sub && window._subCards[sub] && window._subCards[sub].li.isConnected) {
+    window._currentSubCard = window._subCards[sub];
+    return window._subCards[sub];
+  }
   const cur = window._currentSubCard;
-  if (cur && cur.li.isConnected) return cur;
+  if (!sub && cur && cur.li.isConnected) return cur;
   const card = document.createElement('li');
   card.className = 'd-flex justify-content-between mb-4 subagent-card';
   if (sub) card.dataset.sub = sub;
@@ -259,6 +264,7 @@ function ensureSubCard(sub) {
   (window._liveSubs = window._liveSubs || []).push(card);
   const h = { li: card, pre: card.querySelector('.subans'), det: null, psum: null, pp: null, think: '', full: '' };
   window._currentSubCard = h;
+  if (sub) window._subCards[sub] = h;
   return h;
 }
 

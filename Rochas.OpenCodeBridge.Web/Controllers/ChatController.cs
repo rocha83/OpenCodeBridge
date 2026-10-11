@@ -723,6 +723,12 @@ public sealed class ChatController(
 
         // Persiste resposta final do assistant se há sessão (texto real ou thinking).
         string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
+        // Se content vazio mas thinking tem resposta, usa thinking (limpando tags) como content.
+        if (string.IsNullOrWhiteSpace(finalText) && assistantThinking.Length > 0)
+        {
+            finalText = StripThinkTags(assistantThinking.ToString(), new System.Text.StringBuilder()).Trim();
+            assistantThinking.Clear();
+        }
         bool silentClose = false;
         if (finalText.Length == 0 && assistantThinking.Length == 0 && (anySubRan || anyToolRan))
         {

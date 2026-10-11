@@ -742,3 +742,16 @@
   (stderr sozinho não derruba). Label da UI mostra "falhou".
 - Subagente: cláusula "se `bash -n` acusar erro, corrija e valide de novo".
 - Suite UI 24/24 + units PASS.
+
+## Bridge Web — Fase 15+ Ajustes finos (2026-10-11)
+- Thinking aberto sem fecho capturado e movido para thinking (vivo+server).
+- Subagente com streaming ao vivo (thinking + content + tools) no card próprio,
+  labels por id, abre no primeiro chunk.
+- Bolha agente: thinking vazado limpo, conteúdo vazio cai no fallback (thinking
+  limpo via tags ou bruto).
+- Prompt do agente: "Responda SEMPRE no canal de conteúdo em português do Brasil"
+  evita inglês no thinking sem conteúdo no canal principal.
+- Timeout por faixa na execução dos pipes (azul 30, verde 30, roxa 30,
+  marrom 90, preta 120 min).
+- Espera de sessão nova robusta no teste (evita colisão de sessões antigas).
+- Suíte UI: **25/25 PASS** (inclui azul, verde, roxa, marrom, preta em batch).
