@@ -664,3 +664,8 @@
 - `U-tool-definitions` e `U-orch-plan-tools` esperavam 5 tools; anúncio real
   tem 7 (shell/read/grep/glob/fetch/git/subagent). Testes atualizados.
 - Units: **PASS total**. Suite UI: pendente re-run.
+
+## Bridge Web — Fase 12c Nome .sh por fase (2026-10-11)
+- Subs sobrescreviam `fase1.sh`: system do agente 8B (id 1, no banco) ganhou
+  "Informe um nome de arquivo .sh distinto por fase para nao sobrescrever a
+  implementacao." Vale imediato (lido do banco por turno, sem restart).
