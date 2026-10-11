@@ -829,9 +829,12 @@ document.getElementById('send').onclick = async () => {
           }
           else if (d.content) {
             full += d.content;
+            // Sem salto inicial em nenhum caminho (bolha aberta pelo thinking ou pelo texto):
+            // enquanto só há espaço, apara a frente; texto real nunca é tocado.
+            if (!full.trim()) full = '';
+            else full = full.replace(/^\s+/, '');
             // Bolha só quando há texto real (deltas iniciais de espaço não abrem quadro vazio).
-            // Corta o salto inicial: deltas de quebra de linha não viram linhas em branco.
-            if (!agentBubbleCreated && full.trim()) { full = full.replace(/^\s+/, ''); ensureAgentBubble(); }
+            if (!agentBubbleCreated && full.trim()) ensureAgentBubble();
             // Thinking encerrou: fecha o accordion (mantém ref p/ acumular) e o texto começa abaixo.
             if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); }
             startTypewriter();
