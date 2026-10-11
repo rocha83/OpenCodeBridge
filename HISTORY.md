@@ -647,3 +647,7 @@
 ## Bridge Web — Fase 11f Percentual mira 95% (2026-10-11)
 - Divisor 9→19 (`k = max(150, media/19)`): resposta típica chega ~95%,
   salto final ~5 pontos. Suite UI: **23/23 PASS**.
+
+## Bridge Web — Fase 11g 100% do sub (2026-10-11)
+- Corpo do sub sobrescrevia os 100% durante a digitação: repõe
+  `Raciocínio 100%` ao concluir o corpo. Suite UI: **23/23 PASS**.
