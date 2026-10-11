@@ -766,6 +766,8 @@ document.getElementById('send').onclick = async () => {
             full += d.content;
             // <think> vazado no content: move p/ thinking (some da bolha).
             full = full.replace(/<think>([\s\S]*?)<\/think>/g, (m, t) => { think += t; return ''; });
+            { const oi = full.indexOf('<think>'); if (oi >= 0) { think += full.slice(oi + 7); full = full.slice(0, oi); } }
+            full = full.split('</think>').join('');
             if (thinkP) thinkP.textContent = think;
             // Sem salto inicial em nenhum caminho (bolha aberta pelo thinking ou pelo texto):
             // enquanto só há espaço, apara a frente; texto real nunca é tocado.

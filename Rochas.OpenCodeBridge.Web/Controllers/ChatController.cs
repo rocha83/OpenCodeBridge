@@ -762,9 +762,16 @@ public sealed class ChatController(
     // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.
     private static string StripThinkTags(string content, System.Text.StringBuilder thinking)
     {
-        if (string.IsNullOrEmpty(content) || !content.Contains("<think>", StringComparison.Ordinal)) return content;
-        return System.Text.RegularExpressions.Regex.Replace(content, "<think>([\\s\\S]*?)</think>",
-            m => { thinking.Append(m.Groups[1].Value); return ""; });
+        if (string.IsNullOrEmpty(content)) return content;
+        string s = content;
+        if (s.Contains("<think>", StringComparison.Ordinal))
+        {
+            s = System.Text.RegularExpressions.Regex.Replace(s, "<think>([\\s\\S]*?)</think>",
+                m => { thinking.Append(m.Groups[1].Value); return ""; });
+            int oi = s.IndexOf("<think>", StringComparison.Ordinal);
+            if (oi >= 0) { thinking.Append(s[(oi + 7)..]); s = s[..oi]; }
+        }
+        return s.Replace("</think>", "", StringComparison.Ordinal);
     }
 
     // Evento de progresso ao cliente (a UI mostra "Executando [tool]..." / details com retorno).
