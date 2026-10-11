@@ -113,6 +113,9 @@ const avatarAgent = '<span class="rounded-circle d-flex align-self-start me-3 sh
 
 function esc(s) { return (s || '').replace(/<\/?(details|summary)(\s[^>]*)?>/gi, '').replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
+// % do thinking sobre o teto 8k (estimativa chars/4); ao vivo trava em 99, conclusão = 100.
+function thinkPct(chars) { return Math.min(99, Math.floor(chars / 4 / 8192 * 100)); }
+
 function showToast(message, type = 'danger') {
   const id = 'toast-' + Date.now();
   const bg = type === 'danger' ? 'bg-danger' : (type === 'success' ? 'bg-success' : 'bg-info');
@@ -189,12 +192,12 @@ function toolStatus(name, running, ok, result, ms, args) {
         let body = result, think = '';
         const hm = body.match(/<SUBTHINK>([\s\S]*)<\/SUBTHINK>/);
         if (hm) { think = hm[1].trim(); body = body.replace(hm[0], '').trim(); }
-        let det = null, pp = null;
+        let det = null, pp = null, psum = null;
         if (think) {
           det = document.createElement('details');
-          det.setAttribute('open', '');
           det.className = 'mb-2';
-          det.innerHTML = `<summary class="small text-muted">Raciocínio</summary>`;
+          det.innerHTML = `<summary class="small text-muted">Raciocínio 0%</summary>`;
+          psum = det.querySelector('summary');
           pp = document.createElement('p');
           pp.className = 'small text-muted';
           det.appendChild(pp);
@@ -219,12 +222,14 @@ function toolStatus(name, running, ok, result, ms, args) {
           const tTimer = setInterval(() => {
             ci = Math.min(ci + 60, chars.length);
             pp.textContent = chars.slice(0, ci).join('');
+            if (psum) psum.textContent = `Raciocínio ${thinkPct(ci)}%`;
             pp.scrollTop = pp.scrollHeight;
             if (isScrolledToBottom()) scrollToBottom();
             if (ci >= chars.length) {
               clearInterval(tTimer);
               pp.classList.remove('typing');
               det.removeAttribute('open');
+              if (psum) psum.textContent = 'Raciocínio 100%';
               typeBody();
             }
           }, 60);
@@ -410,7 +415,7 @@ function msgItem(role, think, body) {
           <p class="fw-bold mb-0">Sub Agente</p>
         </div>
         <div class="card-body">
-          ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
+          ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio 100%</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
           ${(body || '').trim() ? `<pre class="mb-0 subans rawbox">${esc(body)}</pre>` : ''}
         </div>
       </div>`;
@@ -422,7 +427,7 @@ function msgItem(role, think, body) {
           <p class="fw-bold mb-0">Agente</p>
         </div>
         <div class="card-body">
-          ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
+          ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio 100%</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
           ${(body || '').trim() ? `<pre class="mb-0 ans rawbox">${esc(body)}</pre>` : ''}
         </div>
       </div>`;
@@ -558,6 +563,8 @@ document.getElementById('send').onclick = async () => {
   let think = '';
   let thinkDet = null;
   let thinkP = null;
+  let thinkSum = null;
+  let thinkFrozen = false;
   let thinkLive = false;
   let full = '';
   let agentBubbleCreated = false;
@@ -656,22 +663,23 @@ document.getElementById('send').onclick = async () => {
           }
           const d = evt.choices[0].delta;
           if (d.reasoning_content) {
-            // Thinking acumula no MESMO accordion da bolha (abre, digita, fecha no texto).
+            // Thinking acumula no MESMO accordion da bolha (fechado, com %; abrir mostra digitando).
             think += d.reasoning_content;
             ensureAgentBubble();
             if (!thinkDet) {
               thinkDet = document.createElement('details');
               thinkDet.className = 'mb-2';
-              thinkDet.innerHTML = `<summary class="small text-muted">Raciocínio</summary>`;
+              thinkDet.innerHTML = `<summary class="small text-muted">Raciocínio 0%</summary>`;
+              thinkSum = thinkDet.querySelector('summary');
               thinkP = document.createElement('p');
               thinkP.className = 'small text-muted typing';
               thinkDet.appendChild(thinkP);
               anP.parentNode.insertBefore(thinkDet, anP);
               thinkLive = true;
             }
-            thinkDet.setAttribute('open', '');
             if (thinkP) thinkP.classList.add('typing');
             thinkP.textContent = think;
+            if (thinkSum && !thinkFrozen) thinkSum.textContent = `Raciocínio ${thinkPct(think.length)}%`;
             thinkP.scrollTop = thinkP.scrollHeight;
             engineTxt.textContent = 'Pensando...';
           }
@@ -683,7 +691,8 @@ document.getElementById('send').onclick = async () => {
             else full = full.replace(/^\s+/, '');
             // Bolha só quando há texto real (deltas iniciais de espaço não abrem quadro vazio).
             if (!agentBubbleCreated && full.trim()) ensureAgentBubble();
-            // Thinking encerrou: fecha o accordion (mantém ref p/ acumular) e o texto começa abaixo.
+            // Thinking encerrou: congela o %, fecha e o texto começa abaixo.
+            thinkFrozen = true;
             if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); }
             startTypewriter();
           }
@@ -725,9 +734,9 @@ document.getElementById('send').onclick = async () => {
   // Trocou de sessão no meio do stream: não finaliza bolha na conversa errada.
   const stillHere = (currentSessionId === sendSessionId);
   if (agentBubbleCreated && stillHere) {
-    // Flush final do efeito + thinking fechado + remove "Processando"
+    // Flush final do efeito + thinking fechado em 100% + remove "Processando"
     stopTypewriter();
-    if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); }
+    if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); if (thinkSum) thinkSum.textContent = 'Raciocínio 100%'; }
     else if (thinkLive && anP) {
       // Thinking já exibido ao vivo (accordion aberto e fechado): garante fechado.
       anP.parentNode.querySelectorAll('details').forEach(d => d.removeAttribute('open'));
@@ -737,7 +746,7 @@ document.getElementById('send').onclick = async () => {
       det.className = 'mb-2';
       const sum = document.createElement('summary');
       sum.className = 'small text-muted';
-      sum.textContent = 'Raciocínio';
+      sum.textContent = 'Raciocínio 100%';
       const p = document.createElement('p');
       p.className = 'small text-muted';
       p.textContent = think;
