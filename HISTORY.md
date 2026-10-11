@@ -1,29 +1,29 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
-## Bridge Web — Fase 11 Agente+fases+subs, UI e árvore (2026-10-11)
+## Bridge Web — Fase 11 Agente+fases+subagentes, UI e árvore (2026-10-11)
 - Doutrina final do dono: 1 agente (8B plan) sugere fases e dispara subagentes;
   ninguém executa shell/escrita — só gera `.sh` como texto p/ execução futura.
   Prompts: agente "desenvolvedor senior .net c# que nao dialoga, sugere a solucao
-  em fases e dispara subagentes para cada fase"; sub "compoe script shell sh
+  em fases e dispara subagentes para cada fase"; subagente "compoe script shell sh
   para implementacao do enunciado em batch".
 - Tools do principal: leitura (read/grep), navegação (glob), subagentes.
   Shell encolhido p/ `ls/cat/grep/curl` + `cd` com guard (fora do Allowed de
   propósito); `sudo systemctl` (4 strings exatas de ops) mantido — remover sob ordem.
 - Coerção de execução DESLIGADA no loop principal (blocos ```sh não executam mais);
   extrator ganhou `echo` multilinha -> `write` e unescape de `\"` (legado p/ futuro).
-- Sub interno: não anuncia `subagent` (só trabalha); chamada interna é ignorada
+- Subagente interno: não anuncia `subagent` (só trabalha); chamada interna é ignorada
   com neutro (sem FALHOU). Trava de recursão mantida no executor.
 - Parar virou CANCELAR via API: `POST /Chat/Stop` cancela o CTS da sessão no
   servidor + abort local; botão vermelho preenchido fonte preta; ENVIAR quadrado;
   LIMPAR idem. Botão fica visível o stream inteiro; abort não gera bolha de erro.
 - Bolhas: agente abre só com texto real (deltas de espaço não abrem quadro vazio);
-  sub abre independente no done (sem label "Executando" durante); ordem agente em
-  cima/subs abaixo; texto em caixa rawbox (`pre` + `pre-wrap`, quebras originais).
+  subagente abre independente no done (sem label "Executando" durante); ordem agente em
+  cima/subagentes abaixo; texto em caixa rawbox (`pre` + `pre-wrap`, quebras originais).
   `esc()` agora escapa `&<>`, desescapa `\"`/`\n`/`\t` p/ exibição e filtra tags
   `<details>/<summary>` do texto (só tags, conteúdo fica).
 - Persistência por turno: texto do agente ao fechar cada turno (não só no fim do
-  loop); retorno do sub gravado como msg `subagent` (texto+thinking via SUBTHINK);
-  thinking dos dois na coluna `thinking`; bridge recebe sub como `user`.
+  loop); retorno do subagente gravado como msg `subagent` (texto+thinking via SUBTHINK);
+  thinking dos dois na coluna `thinking`; bridge recebe subagente como `user`.
 - Histórico à prova: `loadMessages` com fallback por msg (nunca aborta; role
   desconhecido vira Agente, nulo vira ""); `msgItem` cobre user/assistant/subagent.
 - Tela de aprovação do orch OCULTA por desvio (conceito pausado, código fica);
@@ -576,28 +576,28 @@
 - All phases complete: Green→Purple→Brown→Black→Blue→Tools
 - Suite: **77/77 PASS**, build Release 0 erros
 
-## Bridge Web — Fase 11 Estabilização do chat agente-fases-subs (2026-10-11)
+## Bridge Web — Fase 11 Estabilização do chat agente-fases-subagentes (2026-10-11)
 - Agente 8B (id 1, orchestrator/plan) + executor 8B-exec (id 2, role executor,
   sem `subagent` anunciado por filtro de role no loop).
 - Tools de leitura liberadas no chat: read/grep/glob (pastas), fetch (web,
   GET somente-leitura), git (somente status/log/diff/show/branch); escrita e
   execução seguem fora do anúncio.
-- Tetos removidos do caminho do chat: sem `max_tokens` no body (agente e sub;
+- Tetos removidos do caminho do chat: sem `max_tokens` no body (agente e subagente;
   `maxTokens:2048` da descrição da tool não é mais repassado) — vale o teto 8k
   da bridge; `Truncate`/`OneLine`/3000/500 viraram identidade; consts mortas
   (`DefaultMaxTokens`, `MaxOutputChars`) removidas.
 - Contexto do turno seguinte: subagente reidrata como `assistant` (não `user`).
 - Fechamento silencioso: turno final vazio após tools persiste e digita
-  "As tarefas delegadas aos subagentes foram concluídas." (subs) ou
+  "As tarefas delegadas aos subagentes foram concluídas." (subagentes) ou
   "As ferramentas solicitadas foram executadas, verifique." (outras tools).
 - DONE garantido em saída anormal (erro da bridge com stream aberto, exceção
   no loop); UI renderiza `evt.error` na bolha em vez de prender em "Processando".
 - UI: CANCELAR por sessão (trocar de sessão aborta o stream anterior, sem
   bolha na conversa errada); thinking inicia fechado com % do orçamento 8k e
-  fecha em 100% (agente e sub, ao vivo e no histórico); sem salto inicial de
+  fecha em 100% (agente e subagente, ao vivo e no histórico); sem salto inicial de
   linhas em branco; fluxo híbrido morto (Decompose/OrchestrateApproved) removido.
 - Verificações: SSE byte a byte = SQLite = tela; cortes em ponto variado são
-  parada do modelo (não teto); turno final vazio pós-subs confirmado via
+  parada do modelo (não teto); turno final vazio pós-subagentes confirmado via
   journal do vLLM (prefill do contexto gigante + encerramento silencioso).
 - Suite E2E UI iniciada (`Web.Test/Ui/ChatBehaviorTests.cs`, `--ui-behavior`):
   histórico, ENVIAR->CANCELAR, Stop por sessão, % ao vivo, label de tool.
@@ -622,8 +622,8 @@
 ## Bridge Web — Fase 11b resultado (2026-10-11)
 - Suite UI (`--ui-behavior`): **23/23 PASS** (`UIBEHAVIOR PASS`), do zero após
   limpar órfãos (`UIMOCK-*`, `UITEST-MOCK`) — sessões antigas poluíam o init.
-- Cobertos: thinking com % e 100% (agente), label de tool, card + texto do sub,
-  histórico (bolhas + 100%), fallback silencioso (tools e subs), CANCELAR por
+- Cobertos: thinking com % e 100% (agente), label de tool, card + texto do subagente,
+  histórico (bolhas + 100%), fallback silencioso (tools e subagentes), CANCELAR por
   sessão com destrava, erro mid-loop na bolha com DONE garantido.
 
 ## Bridge Web — Fase 11c Percentual do thinking (2026-10-11)
@@ -634,7 +634,7 @@
 
 ## Bridge Web — Fase 11d Percentual contínuo (2026-10-11)
 - `%` não congela mais no fim do thinking: acumula thinking+conteúdo
-  (`thinkPct(think+full)` no agente; sub atualiza no typewriter do corpo).
+  (`thinkPct(think+full)` no agente; subagente atualiza no typewriter do corpo).
   Remove `thinkFrozen`. Fecha 100% no DONE como antes.
 - Suite UI: **23/23 PASS** com o contínuo.
 
@@ -648,15 +648,15 @@
 - Divisor 9→19 (`k = max(150, media/19)`): resposta típica chega ~95%,
   salto final ~5 pontos. Suite UI: **23/23 PASS**.
 
-## Bridge Web — Fase 11g 100% do sub (2026-10-11)
-- Corpo do sub sobrescrevia os 100% durante a digitação: repõe
+## Bridge Web — Fase 11g 100% do subagente (2026-10-11)
+- Corpo do subagente sobrescrevia os 100% durante a digitação: repõe
   `Raciocínio 100%` ao concluir o corpo. Suite UI: **23/23 PASS**.
 
 ## Bridge Web — Fase 12 Subagente com tools (2026-10-11)
-- Experimento: sub anuncia `write`/`edit`/`shell`; prompt manda escrever o
+- Experimento: subagente anuncia `write`/`edit`/`shell`; prompt manda escrever o
   script na pasta atual e validar com `bash -n` sem executar. Trava
   `SubShellAllowed` (só `bash -n`, zip/unzip, navegação). `zip`/`unzip` no
-  allowlist do shell. Workspace do sub = `bin` do site (contido).
+  allowlist do shell. Workspace do subagente = `bin` do site (contido).
 - Suite UI: **23/23 PASS**. Units: 2 FAIL pré-existentes (`U-tool-definitions`,
   `U-orch-plan-tools` — anúncio tem 7, teste espera 5; falham sem a mudança).
 
@@ -666,17 +666,17 @@
 - Units: **PASS total**. Suite UI: pendente re-run.
 
 ## Bridge Web — Fase 12c Nome .sh por fase (2026-10-11)
-- Subs sobrescreviam `fase1.sh`: system do agente 8B (id 1, no banco) ganhou
+- Subagentes sobrescreviam `fase1.sh`: system do agente 8B (id 1, no banco) ganhou
   "Informe um nome de arquivo .sh distinto por fase para nao sobrescrever a
   implementacao." Vale imediato (lido do banco por turno, sem restart).
 
 ## Bridge Web — Fase 12d Nomes distintos funcionam (2026-10-11)
-- Sessão 126: 7 subs, 7 arquivos (`backend-domain/infrastructure/services`,
+- Sessão 126: 7 subagentes, 7 arquivos (`backend-domain/infrastructure/services`,
   `frontend-mvc`, `security`, `tests`, `documentation.sh`), todos com
   `bash -n` limpo. Sem sobrescrita.
 
-## Bridge Web — Fase 12e Labels das tools internas do sub (2026-10-11)
-- Executor interno do sub emite `tool_start`/`tool_done` no SSE via sink
+## Bridge Web — Fase 12e Labels das tools internas do subagente (2026-10-11)
+- Executor interno do subagente emite `tool_start`/`tool_done` no SSE via sink
   `ProgressAsync` (`ToolContext` → `IToolExecutor` → interno); `ChatController`
   liga só na chamada `subagent`. UI reaproveita `toolStatus` ("Executando
   write..." → details no done). Sem duplicatas (principal emite o próprio).

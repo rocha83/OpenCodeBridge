@@ -26,6 +26,6 @@ Você é um agente desenvolvedor senior .net c# que nao dialoga, compoe script s
 
 - Principal anuncia: shell, read, grep, glob, fetch, git, subagent (sem
   escrita direta; executor barra write/edit em modo plan).
-- Sub anuncia: write, edit, shell — com trava `SubShellAllowed` (só
+- Subagente anuncia: write, edit, shell — com trava `SubShellAllowed` (só
   `bash -n`, zip/unzip, navegação; nada executa). Executor interno sem
   `subagent` (sem recursão); workspace = `bin` do site.

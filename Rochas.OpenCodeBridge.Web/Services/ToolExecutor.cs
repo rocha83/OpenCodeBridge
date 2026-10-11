@@ -35,8 +35,9 @@ namespace Rochas.OpenCodeBridge.Web.Services
             yield return new FetchToolHandler();
         }
 
-        // Sink de progresso: o ChatController liga só na chamada "subagent"
-        // (o loop principal já emite o próprio); o sub repassa ao interno.
+        // Sink de progresso: o ChatController liga só na chamada "subagent".
+        // O agente principal não usa este sink (o loop emite o dele direto
+        // no SSE); o sub repassa ao executor interno (write/shell/edit).
         public Func<string, bool?, string, Task>? ProgressAsync { get; set; }
 
         public ToolResult Execute(string name, string arguments, int timeoutSeconds = 300, string? mode = null, Models.Agent? agent = null)
