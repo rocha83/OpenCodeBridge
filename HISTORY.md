@@ -681,3 +681,22 @@
   liga só na chamada `subagent`. UI reaproveita `toolStatus` ("Executando
   write..." → details no done). Sem duplicatas (principal emite o próprio).
 - Units: **PASS**. `zip`/`unzip` no allowlist do shell.
+
+## Estado da stack e da solução (2026-10-11, sessão de sucesso)
+- Stack de pé: vLLM `:4100` (systemd `vllm.service` corrigido, sem
+  `ExecStartPost`, modelo `qwen3-8b-awq` 200); bridge `:4124` (200);
+  site `:4130` + `:80` (mesma instância, 200 nas duas).
+- Solução: chat agente-fases-subagentes. Principal (8B id 1) resume em texto e
+  delega enunciado por fase; subagentes (id 2 executor + handler) escrevem
+  `.sh` com nome distinto por fase via `write`, validam com `bash -n` via
+  `shell` travado (sem execução), `zip`/`unzip` liberados. Prompts em
+  `AGENTS-PROMPTS.md` (fonte versionada; principal/executor no banco).
+- UI: bolhas agente/subagente, thinking com % adaptativo (média móvel,
+  mira 95%, 100% no DONE), labels "Executando ..." das tools do principal e
+  das internas do subagente (SSE `tool_start`/`tool_done`), ENVIAR↔CANCELAR
+  por sessão, histórico do sqlite com junção (só-thinking incorpora) e frase
+  de fecho quando há subagentes e content vazio.
+- Sucesso (sessão 126, faixa azul): 7 subagentes → 7 `.sh` distintos
+  (`backend-domain/infrastructure/services`, `frontend-mvc`, `security`,
+  `tests`, `documentation.sh`), todos `bash -n` limpo, nada executado.
+- Verificações: suite UI **23/23 PASS**, units **PASS**; `main` no GitHub.
