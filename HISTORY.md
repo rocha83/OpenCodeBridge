@@ -713,3 +713,14 @@
 - Teste mock pega o agente recém-criado (órfãos de runs abortadas
   envenenavam); `cancel: bolinha vermelha` coberto.
 - Suite UI: **24/24 PASS**. Units: **PASS**.
+
+## Bridge Web — Fase 13 Contexto enxuto + compactação (2026-10-11)
+- Ao contexto voltam SÓ user/assistant/subagente (texto do subagente como
+  assistant); outputs de tools não entram no loop (persistidos em
+  `tool_calls`). Fim do 400 por estouro.
+- Compactação: flag `archived` (migração) marca o passado sem apagar;
+  `ContextWindow` ignora arquivados; resumo via bridge entra como mensagem
+  do agente. Botão Compactar ao lado do Nova + automática no 400 (1 retry).
+- UI: Sessões acima dos botões; grupo Nova|Compactar|Limpar; dropdowns com
+  cores no tema light; bolinha vermelha ao cancelar.
+- Suite UI: **24/24 PASS**. Units: **PASS**.

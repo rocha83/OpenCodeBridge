@@ -30,6 +30,8 @@ public static class ContextWindow
         for (int i = history.Count - 1; i >= 0; i--)
         {
             var m = history[i];
+            // Compactado = passado: fora do contexto, visível no histórico.
+            if (m.Archived != 0) continue;
             int est = EstimateTokens(m.Content);
             if (used + est > maxInputTokens && result.Count > 0) break;
 

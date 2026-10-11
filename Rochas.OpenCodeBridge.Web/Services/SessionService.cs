@@ -174,6 +174,43 @@ public sealed class SessionService(
         return list.Count;
     }
 
+    public async Task<int> CompactAsync(int sessionId, Func<string, Task<string?>> summarize, int keepLast = 8)
+    {
+        var all = (await GetMessagesAsync(sessionId, int.MaxValue)).Where(m => m.Archived == 0).ToList();
+        if (all.Count <= keepLast + 1) return 0;
+        var head = all[..^keepLast];
+        var sb = new System.Text.StringBuilder();
+        foreach (var m in head)
+            sb.AppendLine($"[{m.Role}] {(m.Content ?? "").Trim()}");
+        string? summary = null;
+        try { summary = await summarize(sb.ToString()); } catch { }
+        if (string.IsNullOrWhiteSpace(summary)) return 0;
+        // Marca o antigo como passado (não apaga: segue visível no histórico,
+        // fora do contexto). Resumo entra entre o passado e a cauda.
+        var summaryAt = all[^keepLast].CreatedAt.AddTicks(-1);
+        await DbRetryAsync(async () =>
+        {
+            foreach (var m in head)
+            {
+                if (!m.Id.HasValue) continue;
+                await _messagesWrite.Remove(new SessionMessage { Id = m.Id });
+                await _messagesWrite.Add(new SessionMessage
+                {
+                    SessionId = sessionId, Role = m.Role, Content = m.Content,
+                    Thinking = m.Thinking, CreatedAt = m.CreatedAt, Archived = 1,
+                });
+            }
+            await _messagesWrite.Add(new SessionMessage
+            {
+                SessionId = sessionId, Role = "assistant",
+                Content = "[Resumo da conversa até aqui] " + summary!.Trim(),
+                Thinking = "", CreatedAt = summaryAt, Archived = 0,
+            });
+        });
+        await TouchAsync(sessionId);
+        return head.Count;
+    }
+
     public async Task TouchAsync(int sessionId)
     {
         var s = await DbRetryAsync(async () => await _sessions.Get(new Session { Id = (int?)sessionId }));

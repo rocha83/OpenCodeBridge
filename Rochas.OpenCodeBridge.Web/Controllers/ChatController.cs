@@ -157,6 +157,60 @@ public sealed class ChatController(
         return Ok();
     }
 
+    // POST /Chat/Sessions/{id}/Compact — resume o antigo, mantém a cauda.
+    [HttpPost("/Chat/Sessions/{id:int}/Compact")]
+    public async Task<IActionResult> CompactSession(int id)
+    {
+        var s = await sessionService.GetAsync(id, CurrentUserId);
+        if (s is null) return NotFound();
+        var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == s.AgentId);
+        if (agent is null || !agent.Active) return NotFound();
+        int removed = await CompactSessionAsync(s, agent, HttpContext.RequestAborted);
+        return Json(new { compacted = removed > 0, removed });
+    }
+
+    // Compactação: resumo via bridge (fatiado) + troca no banco. O resumo
+    // volta como mensagem do agente (visível no histórico e no contexto).
+    private async Task<int> CompactSessionAsync(Session session, Agent agent, CancellationToken ct, int keepLast = 8)
+    {
+        return await sessionService.CompactAsync(session.Id!.Value, async headText =>
+        {
+            var parts = new List<string>();
+            for (int i = 0; i < headText.Length && parts.Count < 5; i += 20000)
+                parts.Add(headText.Substring(i, Math.Min(20000, headText.Length - i)));
+            var sums = new List<string>();
+            foreach (string part in parts)
+            {
+                var body = new JsonObject
+                {
+                    ["model"] = agent.Model,
+                    ["temperature"] = 0.2,
+                    ["stream"] = false,
+                    ["messages"] = new JsonArray
+                    {
+                        new JsonObject { ["role"] = "system", ["content"] = "Resuma fielmente a conversa abaixo em até 20 linhas: decisões, arquivos citados, resultados de tools e pendências. Sem enrolação." },
+                        new JsonObject { ["role"] = "user", ["content"] = part },
+                    },
+                };
+                using var req = new HttpRequestMessage(HttpMethod.Post, agent.BridgeUrl.TrimEnd('/') + "/v1/chat/completions")
+                {
+                    Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
+                };
+                using var sumClient = http.CreateClient();
+                using var res = await sumClient.SendAsync(req, ct);
+                if (!res.IsSuccessStatusCode) return null;
+                try
+                {
+                    var json = JsonNode.Parse(await res.Content.ReadAsStringAsync(ct))?.AsObject();
+                    string? text = json?["choices"]?[0]?["message"]?["content"]?.GetValue<string>();
+                    if (!string.IsNullOrWhiteSpace(text)) sums.Add(text!.Trim());
+                }
+                catch { return null; }
+            }
+            return sums.Count == 0 ? null : string.Join("\n", sums);
+        }, keepLast);
+    }
+
     [HttpPut("/Chat/Sessions/{id:int}/Title")]
     public async Task<IActionResult> UpdateSessionTitle(int id, [FromBody] UpdateTitleRequest req)
     {
@@ -381,6 +435,8 @@ public sealed class ChatController(
         // Fechamento silencioso: turno final vazio após tools ganha nota de conclusão.
         bool anyToolRan = false;
         bool anySubRan = false;
+        // Compactação automática: 1 retry após resumir (contexto cheio).
+        bool compactRetried = false;
 
         // Helper to build fresh messages array from values (avoids JsonNode parent issues)
         JsonArray BuildMessages(JsonArray src)
@@ -460,6 +516,32 @@ public sealed class ChatController(
             if (!res.IsSuccessStatusCode)
             {
                 if (!Response.HasStarted) { Response.StatusCode = 502; return; }
+                // Contexto cheio: compacta e tenta o turno de novo (1 vez).
+                string errBody = "";
+                try { errBody = await res.Content.ReadAsStringAsync(ct); } catch { }
+                if (!compactRetried && errBody.Contains("maximum context", StringComparison.OrdinalIgnoreCase)
+                    && session?.Id is int sidCtx)
+                {
+                    compactRetried = true;
+                    int removed = 0;
+                    try { removed = await CompactSessionAsync(session, agent, ct); } catch { }
+                    if (removed > 0)
+                    {
+                        try
+                        {
+                            var fresh = await sessionService.GetMessagesAsync(sidCtx, int.MaxValue);
+                            var keep = ContextWindow.BuildContext(fresh);
+                            messages.Clear();
+                            foreach (var m in keep)
+                                messages.Add(new JsonObject { ["role"] = m.Role == "subagent" ? "assistant" : m.Role, ["content"] = m.Content });
+                            var note = new JsonObject { ["error"] = $"contexto cheio: histórico compactado ({removed} msgs resumidas), tentando de novo." };
+                            await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + note.ToJsonString() + "\n\n"), ct);
+                            await outputStream.FlushAsync(ct);
+                        }
+                        catch { }
+                        continue;
+                    }
+                }
                 // Falha com stream aberto: avisa a UI e cai no epílogo (persiste + DONE).
                 try
                 {
@@ -557,24 +639,12 @@ public sealed class ChatController(
                 .Select(t => (t.Id, t.Name, t.Args.ToString()))
                 .ToList();
 
-            // Adiciona mensagem do assistant com tool_calls para o histórico (necessário para o modelo ver suas próprias chamadas)
-            var assistantMsg = new JsonObject
-            {
-                ["role"] = "assistant",
-                ["content"] = assistantContent.Length > 0 ? assistantContent.ToString() : "",
-                ["tool_calls"] = new JsonArray()
-            };
-            var tcArray = (JsonArray)assistantMsg["tool_calls"]!;
-            foreach (var (id, name, args) in toolCalls)
-            {
-                tcArray.Add(new JsonObject
-                {
-                    ["id"] = id,
-                    ["type"] = "function",
-                    ["function"] = new JsonObject { ["name"] = name, ["arguments"] = args }
-                });
-            }
-            messages.Add(assistantMsg);
+            // Ao contexto volta SÓ texto (user/assistant/subagente): outputs de
+            // tools NÃO entram no loop (persistidos em tool_calls + histórico).
+            // Sem tool_calls no contexto (sem elas, a API exige as respostas).
+            string turnContent = assistantContent.Length > 0 ? assistantContent.ToString() : "";
+            if (!string.IsNullOrWhiteSpace(turnContent))
+                messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = turnContent });
 
             // Persiste o texto do turno ao fechar (o que a bolha já exibiu),
             // sem esperar o fim do loop com as tools. Turno só-com-espaço e sem
@@ -612,6 +682,7 @@ public sealed class ChatController(
                     await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
                         result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds);
                 // Retorno do subagente entra na árvore da sessão (bolha Sub Agente no reload).
+                string? subText = null;
                 if (session?.Id is int sidSub && name == "subagent" && result.Success)
                 {
                     try
@@ -629,19 +700,15 @@ public sealed class ChatController(
                             await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null);
                             await sessionService.TouchAsync(sidSub);
                         }
+                        if (sbody.Length > 0) subText = sbody;
                     }
                     catch { /* histórico best-effort: nunca quebra o pipeline */ }
                 }
                 string contentFull = result.Success ? result.Output : $"Error: {result.Error}";
-                string content = contentFull;
                 await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds);
-                var toolResult = new JsonObject
-                {
-                    ["role"] = "tool",
-                    ["tool_call_id"] = id,
-                    ["content"] = content
-                };
-                messages.Add(toolResult);
+                // Outputs NÃO voltam ao contexto; só o texto do subagente (como assistant).
+                if (subText is not null)
+                    messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = "[subagente] " + subText });
             }
 
             // Reseta para próxima iteração

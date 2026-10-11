@@ -243,6 +243,15 @@ html, body {
   border-color: #86b7fe !important;
   box-shadow: 0 0 0 0.25rem rgba(13,110,253,0.15) !important;
 }
+[data-bs-theme="light"] .form-select {
+  background: #fff !important;
+  border-color: #ced4da !important;
+  color: #212529 !important;
+}
+[data-bs-theme="light"] .form-select option {
+  background: #fff;
+  color: #212529;
+}
 [data-bs-theme="light"] .form-outline .form-label { color: #6c757d !important; }
 [data-bs-theme="light"] .avatar-icon { background: #e9ecef; }
 [data-bs-theme="light"] .avatar-icon i { color: #0d6efd; }

@@ -9,11 +9,12 @@
 
       <div class="col-md-6 col-lg-4 col-xl-3 mb-4 mb-md-0">
 
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <h5 class="font-weight-bold text-lg-start mb-0">Sessões</h5>
-          <div>
-            <button type="button" class="btn btn-sm btn-info me-2" id="newSession" data-mdb-button-init data-mdb-ripple-init>Nova</button>
-            <button type="button" class="btn btn-sm btn-danger text-black" id="clearSessions" data-mdb-button-init data-mdb-ripple-init>Limpar</button>
+        <div class="mb-3">
+          <h5 class="font-weight-bold text-lg-start mb-2">Sessões</h5>
+          <div class="btn-group btn-group-sm" role="group">
+            <button type="button" class="btn btn-info" id="newSession" data-mdb-button-init data-mdb-ripple-init>Nova</button>
+            <button type="button" class="btn btn-warning" id="compactBtn" data-mdb-button-init data-mdb-ripple-init>Compactar</button>
+            <button type="button" class="btn btn-danger text-black" id="clearSessions" data-mdb-button-init data-mdb-ripple-init>Limpar</button>
           </div>
         </div>
 
@@ -841,5 +842,14 @@ initPromise.then(() => { sendBtn.disabled = false; });
 
 document.getElementById('newSession').onclick = createSession;
 document.getElementById('clearSessions').onclick = deleteAllSessions;
+document.getElementById('compactBtn').onclick = async () => {
+  if (!currentSessionId) { showToast('Sem sessão ativa.', 'warning'); return; }
+  try {
+    const r = await fetch(`/Chat/Sessions/${currentSessionId}/Compact`, { method: 'POST' });
+    const j = await r.json();
+    showToast(j.compacted ? `Compactado: ${j.removed} msgs resumidas.` : 'Nada a compactar.', j.compacted ? 'success' : 'info');
+    await loadMessages(currentSessionId);
+  } catch { showToast('Falha ao compactar.', 'danger'); }
+};
 </script>
 }

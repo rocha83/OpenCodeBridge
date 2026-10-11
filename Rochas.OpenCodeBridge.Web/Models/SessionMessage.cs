@@ -31,4 +31,6 @@ public sealed class SessionMessage
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    // Compactação: 1 = passado (fora do contexto, visível no histórico).
+    public int Archived { get; set; } = 0;
 }
