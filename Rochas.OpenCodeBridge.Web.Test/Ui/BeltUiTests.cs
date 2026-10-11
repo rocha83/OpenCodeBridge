@@ -230,7 +230,7 @@ public static class BeltUiTests
             await page.ClickAsync("#send");
             Console.WriteLine($"[ui] {belt.Key}: aguardando engine");
             bool done = false;
-            var deadline = DateTime.UtcNow.AddMinutes(20);
+            var deadline = DateTime.UtcNow.AddMinutes(Math.Max(20, belt.TimeoutMin));
             while (DateTime.UtcNow < deadline)
             {
                 try
