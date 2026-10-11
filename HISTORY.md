@@ -705,3 +705,11 @@
 - CANCELAR deixava a bolinha verde piscando com "Interrompido": agora vai a
   vermelho (`dot err`), igual ao "Desconectado". Novo envio volta a piscar.
 - Suite cobre: `cancel: bolinha vermelha`.
+
+## Bridge Web — Fase 12g Glob `**` + workspace /mnt/media (2026-10-11)
+- `glob`: `**/*.cs` virava literal `.cs` (linha que comia o `*`) — removida;
+  sem restrição de extensão (padrão livre). Teste `U-tool-glob-starstar`.
+- `WorkspaceGuard`: `/mnt` e `/media` (+ subpastas) liberados além do workspace.
+- Teste mock pega o agente recém-criado (órfãos de runs abortadas
+  envenenavam); `cancel: bolinha vermelha` coberto.
+- Suite UI: **24/24 PASS**. Units: **PASS**.

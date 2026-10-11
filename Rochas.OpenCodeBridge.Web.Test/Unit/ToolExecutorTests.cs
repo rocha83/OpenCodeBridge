@@ -135,6 +135,8 @@ internal static class ToolExecutorTests
     {
         var r = exec.Execute("glob", "{\"pattern\": \"*.txt\"}");
         Check(r.Success && r.Output.Contains("g.txt"), "U-tool-glob");
+        var r2 = exec.Execute("glob", "{\"pattern\": \"**/*.txt\"}");
+        Check(r2.Success && r2.Output.Contains("g.txt"), "U-tool-glob-starstar");
     }
 
     // Casos de borda (cobertura dos handlers).

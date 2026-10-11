@@ -100,8 +100,10 @@ public static class ChatBehaviorTests
           await fetch('/Agents/Create', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
           return await (await fetch('/Agents')).text();
         }".Replace("__URL__", bridgeUrl));
-        var m = Regex.Match(html, @"<td>UITEST-MOCK</td>.*?/Agents/Edit/(\d+)", RegexOptions.Singleline);
-        return m.Success ? int.Parse(m.Groups[1].Value) : 0;
+        var ms = Regex.Matches(html, @"<td>UITEST-MOCK</td>.*?/Agents/Edit/(\d+)", RegexOptions.Singleline);
+        int newest = 0;
+        foreach (Match mm in ms) newest = Math.Max(newest, int.Parse(mm.Groups[1].Value));
+        return newest;
     }
 
     private static async Task<int> NewSession(IPage page, int agentId, string title, List<int> sessions)
@@ -265,7 +267,7 @@ public static class ChatBehaviorTests
         Check((req.PostData ?? "").Contains(sid.ToString()), "cancel: Stop da sessao");
         await page.WaitForTimeoutAsync(1000);
         Check(await page.EvaluateAsync<bool>("() => !document.getElementById('send').disabled"), "cancel: destrava");
-        Check(await page.EvaluateAsync<bool>("() => (document.querySelector('#engineDot')?.className ?? '').Contains('err')"), "cancel: bolinha vermelha");
+        Check(await page.EvaluateAsync<bool>("() => (document.querySelector('#engineDot')?.className ?? '').includes('err')"), "cancel: bolinha vermelha");
     }
 
     // F: erro mid-loop vira texto na bolha + DONE (sem prender).

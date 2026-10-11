@@ -13,7 +13,8 @@ internal static class WorkspaceGuard
             // prefixo não virar "//" e negar tudo dentro do workspace.
             string baseRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             string candidate = Path.GetFullPath(Path.Combine(baseRoot, path ?? ""));
-            if (candidate != baseRoot && !candidate.StartsWith(baseRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            if (candidate != baseRoot && !candidate.StartsWith(baseRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                && !UnderExtraRoot(candidate))
             {
                 why = $"caminho '{path}' fora do workspace";
                 return false;
@@ -26,5 +27,16 @@ internal static class WorkspaceGuard
             why = $"caminho inválido '{path}': {ex.Message}";
             return false;
         }
+    }
+
+    // Raízes extras permitidas além do workspace: /mnt e /media e subpastas.
+    private static readonly string[] ExtraRoots = { "/mnt", "/media" };
+
+    private static bool UnderExtraRoot(string candidate)
+    {
+        foreach (string r in ExtraRoots)
+            if (candidate == r || candidate.StartsWith(r + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                return true;
+        return false;
     }
 }
