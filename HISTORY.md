@@ -736,3 +736,9 @@
 - `batch` (chat real via UI, enunciados com delegação `.sh` distinto): azul,
   verde, roxa, marrom e preta PASS (preta: 28k chars, 14 toolcalls).
 - Suite UI 24/24 + units PASS. Tudo no `main`.
+
+## Bridge Web — Fase 15 Falha honesta do shell (2026-10-11)
+- `ProcessRunner` ignorava exit code (sempre Ok): agora exit ≠ 0 vira FALHA
+  (stderr sozinho não derruba). Label da UI mostra "falhou".
+- Subagente: cláusula "se `bash -n` acusar erro, corrija e valide de novo".
+- Suite UI 24/24 + units PASS.

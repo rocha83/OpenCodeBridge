@@ -45,6 +45,9 @@ internal static class ProcessRunner
             string output = stdout.ToString().Trim();
             string err = stderr.ToString().Trim();
             if (err.Length > 0) output += "\n[stderr]\n" + err;
+            // Falha honesta: exit code diz; stderr sozinho (warning) não derruba.
+            if (proc.ExitCode != 0)
+                return ToolResult.Fail($"exit {proc.ExitCode}" + (output.Length > 0 ? $": {output}" : ""));
             return ToolResult.Ok(output);
         }
         catch (Exception ex)

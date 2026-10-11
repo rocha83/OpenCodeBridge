@@ -13,12 +13,14 @@ public static class ToolDefinitions
     public static JsonArray GetTools(string? mode = null)
     {
         var tools = new JsonArray();
-        tools.Add(BuildTool("shell", "Executa comando shell no workspace. Retorna stdout/stderr.",
+        tools.Add(BuildTool("shell", "Executa comando shell. Diretório atual é o do site (bin); prefira caminhos absolutos (/media e /mnt liberados). Pipes/redirecionamento só via bash -c \"...\". Retorna stdout/stderr.",
             new[] { BuildParam("command", "string", "Comando (ex.: 'ls -la').", true) }));
         tools.Add(BuildTool("read", "Lê arquivo de texto do workspace.",
             new[] { BuildParam("path", "string", "Caminho do arquivo.", true), BuildParam("offset", "integer", "Linha inicial (0-based).", false), BuildParam("limit", "integer", "Máx. linhas (padrão 2000).", false) }));
         tools.Add(BuildTool("grep", "Busca regex nos arquivos. Retorna arquivo:linha:texto.",
             new[] { BuildParam("pattern", "string", "Regex ou texto.", true), BuildParam("path", "string", "Diretório (padrão raiz).", false), BuildParam("include", "string", "Glob de filtro (ex.: '*.cs').", false) }));
+        tools.Add(BuildTool("glob", "Lista caminhos por padrão glob.",
+            new[] { BuildParam("pattern", "string", "Glob (ex.: '**/*.cs').", true), BuildParam("path", "string", "Diretório (padrão raiz).", false) }));
         tools.Add(BuildTool("fetch", "GET HTTP somente-leitura (curl sem execução). Retorna o corpo como texto.",
             new[] { BuildParam("url", "string", "URL http(s) absoluta.", true), BuildParam("maxChars", "integer", "Teto de chars (padrão 12000).", false) }));
         tools.Add(BuildTool("git", "Git somente-leitura: status/log/diff/show/branch. Sem commit/push/checkout.",

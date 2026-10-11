@@ -483,10 +483,10 @@ public sealed class ChatController(
 
         while (!ct.IsCancellationRequested)
         {
-            // Agente: shell (ls), leitura (read/grep) e disparo (subagent). Sem glob, sem escrita.
+            // Agente: shell (ls), leitura (read/grep), navegação (glob) e disparo (subagent). Sem escrita.
             // Executor não delega: sem "subagent" anunciado (nem em pensamento).
             bool plan = agent.Mode == "plan";
-            var allowed = new HashSet<string> { "shell", "read", "grep", "fetch", "git", "subagent" };
+            var allowed = new HashSet<string> { "shell", "read", "grep", "glob", "fetch", "git", "subagent" };
             if (agent.Role == "executor") allowed.Remove("subagent");
             var tools = new JsonArray();
             foreach (var t in ToolDefinitions.GetTools())
