@@ -265,6 +265,7 @@ public static class ChatBehaviorTests
         Check((req.PostData ?? "").Contains(sid.ToString()), "cancel: Stop da sessao");
         await page.WaitForTimeoutAsync(1000);
         Check(await page.EvaluateAsync<bool>("() => !document.getElementById('send').disabled"), "cancel: destrava");
+        Check(await page.EvaluateAsync<bool>("() => (document.querySelector('#engineDot')?.className ?? '').Contains('err')"), "cancel: bolinha vermelha");
     }
 
     // F: erro mid-loop vira texto na bolha + DONE (sem prender).

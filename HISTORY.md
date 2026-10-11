@@ -700,3 +700,8 @@
   (`backend-domain/infrastructure/services`, `frontend-mvc`, `security`,
   `tests`, `documentation.sh`), todos `bash -n` limpo, nada executado.
 - Verificações: suite UI **23/23 PASS**, units **PASS**; `main` no GitHub.
+
+## Bridge Web — Fase 12f Bolinha vermelha ao cancelar (2026-10-11)
+- CANCELAR deixava a bolinha verde piscando com "Interrompido": agora vai a
+  vermelho (`dot err`), igual ao "Desconectado". Novo envio volta a piscar.
+- Suite cobre: `cancel: bolinha vermelha`.

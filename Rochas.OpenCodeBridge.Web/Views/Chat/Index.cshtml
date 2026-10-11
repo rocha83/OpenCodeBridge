@@ -314,9 +314,29 @@ async function loadMessages(sessionId) {
   const wasAtBottom = isScrolledToBottom();
   conv.innerHTML = '';
   // Toda msg renderiza: falha isolada vira bolha bruta, nunca aborta a conversa.
+  // Junção: assistant só-thinking (turno de delegação) não abre bolha própria;
+  // o thinking incorpora na próxima bolha do agente com texto.
+  // Histórico com subagentes e content vazio: preenche com a frase de fecho.
+  const hasSub = (msgs || []).some(m => m?.role === 'subagent');
+  let pendingThink = '';
   (msgs || []).forEach(m => {
     try {
-      conv.appendChild(msgItem(m?.role ?? 'assistant', m?.thinking ?? '', m?.content ?? ''));
+      const role = m?.role ?? 'assistant';
+      const think = m?.thinking ?? '';
+      let body = m?.content ?? '';
+      if (role === 'assistant' && !(body || '').trim() && hasSub)
+        body = 'As tarefas delegadas aos subagentes foram concluídas.';
+      if (role === 'assistant' && !(body || '').trim() && (think || '').trim()) {
+        pendingThink += (pendingThink ? '\n\n' : '') + think.trim();
+        return;
+      }
+      if (role === 'assistant' && pendingThink.trim()) {
+        const merged = pendingThink + ((think || '').trim() ? '\n\n' + think.trim() : '');
+        pendingThink = '';
+        conv.appendChild(msgItem(role, merged, body));
+        return;
+      }
+      conv.appendChild(msgItem(role, think, body));
     } catch (err) {
       const li = document.createElement('li');
       li.className = 'd-flex justify-content-between mb-4';
@@ -324,6 +344,24 @@ async function loadMessages(sessionId) {
       conv.appendChild(li);
     }
   });
+  // Sobra sem bolha posterior: anexa ao último Agente em vez de bolha vazia.
+  if (pendingThink.trim()) {
+    const cards = [...conv.querySelectorAll('.card')].filter(c =>
+      c.querySelector('.card-header p')?.textContent === 'Agente');
+    const last = cards.pop();
+    if (last) {
+      const det = document.createElement('details');
+      det.className = 'mb-2';
+      det.innerHTML = `<summary class="small text-muted">Raciocínio 100%</summary>`;
+      const p = document.createElement('p');
+      p.className = 'small text-muted';
+      p.textContent = pendingThink.trim();
+      det.appendChild(p);
+      last.querySelector('.card-body')?.prepend(det);
+    } else {
+      conv.appendChild(msgItem('assistant', pendingThink, ''));
+    }
+  }
   if (wasAtBottom) scrollToBottom();
   await loadTasks(sessionId);
 }
@@ -547,7 +585,7 @@ document.getElementById('send').onclick = async () => {
     document.getElementById('processing-indicator')?.remove();
     stopTypewriter();
     if (anP) anP.classList.remove('typing');
-    engineTxt.textContent = 'Interrompido';
+    engineDot.className = 'dot err'; engineTxt.textContent = 'Interrompido';
     ta.disabled = false;
     sendBtn.disabled = false;
     sendBtn.innerHTML = 'ENVIAR';
