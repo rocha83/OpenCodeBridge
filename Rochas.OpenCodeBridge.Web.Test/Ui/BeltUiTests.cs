@@ -64,12 +64,19 @@ public static class BeltUiTests
 
         try
         {
+            string browserKind = PlaywrightSetup.EnsureBrowser();
             using var playwright = await Playwright.CreateAsync();
-            await using var browser = await playwright.Firefox.LaunchAsync(new BrowserTypeLaunchOptions
-            {
-                Channel = "firefox",
-                Headless = true,
-            });
+            await using var browser = browserKind == "chrome"
+                ? await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                {
+                    Channel = "chrome",
+                    Headless = true,
+                })
+                : await playwright.Firefox.LaunchAsync(new BrowserTypeLaunchOptions
+                {
+                    Channel = "firefox",
+                    Headless = true,
+                });
             var context = await browser.NewContextAsync(new BrowserNewContextOptions
             {
                 UserAgent = Win11FirefoxUa,

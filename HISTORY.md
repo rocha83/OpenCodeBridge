@@ -602,3 +602,26 @@
 - Suite E2E UI iniciada (`Web.Test/Ui/ChatBehaviorTests.cs`, `--ui-behavior`):
   histórico, ENVIAR->CANCELAR, Stop por sessão, % ao vivo, label de tool.
 - Suite: build Release 0 erros (Web + Test).
+
+## Bridge Web — Fase 11b Webdriver Firefox automatizado (2026-10-11)
+- `Web.Test/Ui/PlaywrightSetup.cs`: `EnsureBrowser()` em C# — usa o Firefox do
+  Playwright se presente no cache, senão roda `install firefox` via
+  `Microsoft.Playwright.Program.Main`; se a plataforma não suportar, fallback
+  p/ o Chrome do sistema (canal, sem download). `ChatBehaviorTests` e
+  `BeltUiTests` lançam conforme o retorno (UA Win11 mantido nas faixas).
+- Ambiente (LMDE 7): Playwright 1.63 detecta `ubuntu20.04-x64` e o registro não
+  traz Firefox p/ ela (`install firefox` = exit 1). Correção manual (uma vez):
+  `firefox-debian-12.zip` rev 1543 do CDN (`cdn.playwright.dev/.../firefox/1543/`)
+  extraído em `~/.cache/ms-playwright/firefox-1543/` — binário `firefox 155.0`,
+  `ldd` sem faltas. Host `/usr/bin/firefox` não serve (falta o protocolo do
+  Playwright) — tem que ser o build do cache.
+- Stack: `vllm.service` corrigido (sem `ExecStartPost` que mascarava falha)
+  instalado em `/etc/systemd/system`; bridge `:4124` + site `:4130` e `:80`
+  (mesma instância, log `/tmp/site-4130-80.log`).
+
+## Bridge Web — Fase 11b resultado (2026-10-11)
+- Suite UI (`--ui-behavior`): **23/23 PASS** (`UIBEHAVIOR PASS`), do zero após
+  limpar órfãos (`UIMOCK-*`, `UITEST-MOCK`) — sessões antigas poluíam o init.
+- Cobertos: thinking com % e 100% (agente), label de tool, card + texto do sub,
+  histórico (bolhas + 100%), fallback silencioso (tools e subs), CANCELAR por
+  sessão com destrava, erro mid-loop na bolha com DONE garantido.
