@@ -625,3 +625,9 @@
 - Cobertos: thinking com % e 100% (agente), label de tool, card + texto do sub,
   histórico (bolhas + 100%), fallback silencioso (tools e subs), CANCELAR por
   sessão com destrava, erro mid-loop na bolha com DONE garantido.
+
+## Bridge Web — Fase 11c Percentual do thinking (2026-10-11)
+- `%` era fixo sobre orçamento de 8k tokens (`chars/4/8192`) — thinking curto
+  (~2,6k chars) congelava em ~8%. Novo: progressão assintótica
+  `100*n/(n+2000)` (50% aos 2000 chars), sempre mexe por chunk e fecha 100%.
+- Suite UI: **23/23 PASS** com o novo cálculo.

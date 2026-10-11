@@ -114,7 +114,7 @@ const avatarAgent = '<span class="rounded-circle d-flex align-self-start me-3 sh
 function esc(s) { return (s || '').replace(/<\/?(details|summary)(\s[^>]*)?>/gi, '').replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 // % do thinking sobre o teto 8k (estimativa chars/4); ao vivo trava em 99, conclusão = 100.
-function thinkPct(chars) { return Math.min(99, Math.floor(chars / 4 / 8192 * 100)); }
+function thinkPct(chars) { return Math.min(99, Math.floor(100 * chars / (chars + 2000))); }
 
 function showToast(message, type = 'danger') {
   const id = 'toast-' + Date.now();
