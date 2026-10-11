@@ -114,7 +114,19 @@ const avatarAgent = '<span class="rounded-circle d-flex align-self-start me-3 sh
 function esc(s) { return (s || '').replace(/<\/?(details|summary)(\s[^>]*)?>/gi, '').replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 // % do thinking sobre o teto 8k (estimativa chars/4); ao vivo trava em 99, conclusão = 100.
-function thinkPct(chars) { return Math.min(99, Math.floor(100 * chars / (chars + 2000))); }
+function thinkAvg() {
+  try { return parseFloat(localStorage.getItem('thinkAvg') || '6000') || 6000; }
+  catch { return 6000; }
+}
+function thinkNote(total) {
+  try {
+    const prev = thinkAvg();
+    localStorage.setItem('thinkAvg', String(Math.round(prev * 0.8 + total * 0.2)));
+  } catch {}
+}
+// % calibrado pela média móvel do tamanho das respostas (thinking+conteúdo):
+// resposta típica chega ~90%, salto final pequeno; 100% exato só no DONE.
+function thinkPct(chars) { const k = Math.max(300, thinkAvg() / 9); return Math.min(99, Math.floor(100 * chars / (chars + k))); }
 
 function showToast(message, type = 'danger') {
   const id = 'toast-' + Date.now();
@@ -757,6 +769,7 @@ document.getElementById('send').onclick = async () => {
     }
     document.getElementById('processing-indicator')?.remove();
     engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!';
+    thinkNote(think.length + full.length);
   } else if (stillHere) {
     document.getElementById('processing-indicator')?.remove();
   }

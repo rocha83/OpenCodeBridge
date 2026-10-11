@@ -637,3 +637,9 @@
   (`thinkPct(think+full)` no agente; sub atualiza no typewriter do corpo).
   Remove `thinkFrozen`. Fecha 100% no DONE como antes.
 - Suite UI: **23/23 PASS** com o contínuo.
+
+## Bridge Web — Fase 11e Percentual adaptativo (2026-10-11)
+- `k` fixo (2000) removido: `k = max(300, media/9)` com média móvel
+  (80/20) do tamanho thinking+conteúdo em `localStorage` (início 6000).
+  Resposta típica chega ~90%, salto final pequeno; 100% exato só no DONE.
+- Suite UI: **23/23 PASS** com o adaptativo.
