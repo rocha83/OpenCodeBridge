@@ -338,12 +338,33 @@ public sealed class ChatController(
             ActiveStreams[session.Id.Value] = linked;
             try { await StreamWithTools(agent, messages, session, linked.Token); }
             catch (OperationCanceledException) { /* Parar via API ou abort do fetch */ }
+            catch (Exception ex)
+            {
+                // Qualquer falha no meio do loop: nunca prende a UI sem DONE.
+                try
+                {
+                    if (!Response.HasStarted) Response.StatusCode = 502;
+                    else
+                    {
+                        var ee = new JsonObject { ["error"] = "falha no stream: " + ex.Message };
+                        await Response.Body.WriteAsync(Encoding.UTF8.GetBytes("data: " + ee.ToJsonString() + "\n\n"), linked.Token);
+                        await Response.Body.FlushAsync(linked.Token);
+                        await Response.Body.WriteAsync(Encoding.UTF8.GetBytes("data: [DONE]\n\n"), linked.Token);
+                        await Response.Body.FlushAsync(linked.Token);
+                    }
+                }
+                catch { }
+            }
             finally { ActiveStreams.TryRemove(session.Id.Value, out _); }
         }
         else
         {
             try { await StreamWithTools(agent, messages, session, ct); }
             catch (OperationCanceledException) { }
+            catch (Exception)
+            {
+                try { if (!Response.HasStarted) Response.StatusCode = 502; } catch { }
+            }
         }
     }
 
@@ -435,8 +456,16 @@ public sealed class ChatController(
 
             if (!res.IsSuccessStatusCode)
             {
-                if (!Response.HasStarted) Response.StatusCode = 502;
-                return;
+                if (!Response.HasStarted) { Response.StatusCode = 502; return; }
+                // Falha com stream aberto: avisa a UI e cai no epílogo (persiste + DONE).
+                try
+                {
+                    var be = new JsonObject { ["error"] = $"bridge {(int)res.StatusCode}" };
+                    await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + be.ToJsonString() + "\n\n"), ct);
+                    await outputStream.FlushAsync(ct);
+                }
+                catch { }
+                break;
             }
 
             // Repasse ao vivo: cada linha da bridge vai ao cliente asim que chega
@@ -618,9 +647,14 @@ public sealed class ChatController(
         }
 
         // DONE próprio após persistir: elimina race do cliente ler histórico cedo.
-        var doneBytes = Encoding.UTF8.GetBytes("data: [DONE]\n\n");
-        await outputStream.WriteAsync(doneBytes, ct);
-        await outputStream.FlushAsync(ct);
+        // Sempre tenta entregar (cliente abortado só ignora).
+        try
+        {
+            var doneBytes = Encoding.UTF8.GetBytes("data: [DONE]\n\n");
+            await outputStream.WriteAsync(doneBytes, ct);
+            await outputStream.FlushAsync(ct);
+        }
+        catch { }
     }
 
     // Evento de progresso ao cliente (a UI mostra "Executando [tool]..." / details com retorno).

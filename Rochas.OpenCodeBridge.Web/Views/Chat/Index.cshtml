@@ -640,6 +640,14 @@ document.getElementById('send').onclick = async () => {
         if (!line || line.includes('[DONE]')) continue;
         try {
           const evt = JSON.parse(line.slice(5));
+          if (evt.error) {
+            // Falha do servidor no meio do loop: mostra na bolha e segue até o DONE.
+            full += '\nErro: ' + evt.error;
+            if (!agentBubbleCreated && full.trim()) ensureAgentBubble();
+            if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); }
+            startTypewriter();
+            continue;
+          }
           if (evt.progress) {
             // Progresso de tool vindo do servidor
             if (evt.progress === 'tool_start') toolStatus(evt.name, true, null, '', 0, evt.args || '');
