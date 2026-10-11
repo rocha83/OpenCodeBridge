@@ -378,6 +378,9 @@ public sealed class ChatController(
         var assistantThinking = new System.Text.StringBuilder();
         int? promptTokens = null;
         int? completionTokens = null;
+        // Fechamento silencioso: turno final vazio após tools ganha nota de conclusão.
+        bool anyToolRan = false;
+        bool anySubRan = false;
 
         // Helper to build fresh messages array from values (avoids JsonNode parent issues)
         JsonArray BuildMessages(JsonArray src)
@@ -592,6 +595,8 @@ public sealed class ChatController(
             // Progresso vai ao cliente em tempo real para a UI indicar execução.
             foreach (var (id, name, args) in toolCalls)
             {
+                anyToolRan = true;
+                if (name == "subagent") anySubRan = true;
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
                 // Trunfo: o modelo vê plan (anunciado), o executor roda build (pode tudo).
                 var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -640,6 +645,15 @@ public sealed class ChatController(
 
         // Persiste resposta final do assistant se há sessão (texto real ou thinking).
         string finalText = assistantContent.ToString().Trim();
+        bool silentClose = false;
+        if (finalText.Length == 0 && assistantThinking.Length == 0 && (anySubRan || anyToolRan))
+        {
+            // Retorno silencioso após execução: fecha a bolha do agente e grava no sqlite.
+            finalText = anySubRan
+                ? "As tarefas delegadas aos subagentes foram concluídas."
+                : "As ferramentas solicitadas foram executadas, verifique.";
+            silentClose = true;
+        }
         if (session is not null && session.Id.HasValue && (finalText.Length > 0 || assistantThinking.Length > 0))
         {
             await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens);
@@ -650,6 +664,16 @@ public sealed class ChatController(
         // Sempre tenta entregar (cliente abortado só ignora).
         try
         {
+            if (silentClose)
+            {
+                // Fechamento silencioso também digita na bolha ao vivo.
+                var fb = new JsonObject
+                {
+                    ["choices"] = new JsonArray { new JsonObject { ["delta"] = new JsonObject { ["content"] = finalText } } },
+                };
+                await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + fb.ToJsonString() + "\n\n"), ct);
+                await outputStream.FlushAsync(ct);
+            }
             var doneBytes = Encoding.UTF8.GetBytes("data: [DONE]\n\n");
             await outputStream.WriteAsync(doneBytes, ct);
             await outputStream.FlushAsync(ct);
