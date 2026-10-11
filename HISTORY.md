@@ -674,3 +674,10 @@
 - Sessão 126: 7 subs, 7 arquivos (`backend-domain/infrastructure/services`,
   `frontend-mvc`, `security`, `tests`, `documentation.sh`), todos com
   `bash -n` limpo. Sem sobrescrita.
+
+## Bridge Web — Fase 12e Labels das tools internas do sub (2026-10-11)
+- Executor interno do sub emite `tool_start`/`tool_done` no SSE via sink
+  `ProgressAsync` (`ToolContext` → `IToolExecutor` → interno); `ChatController`
+  liga só na chamada `subagent`. UI reaproveita `toolStatus` ("Executando
+  write..." → details no done). Sem duplicatas (principal emite o próprio).
+- Units: **PASS**. `zip`/`unzip` no allowlist do shell.

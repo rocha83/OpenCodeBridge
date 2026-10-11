@@ -35,6 +35,10 @@ namespace Rochas.OpenCodeBridge.Web.Services
             yield return new FetchToolHandler();
         }
 
+        // Sink de progresso: o ChatController liga só na chamada "subagent"
+        // (o loop principal já emite o próprio); o sub repassa ao interno.
+        public Func<string, bool?, string, Task>? ProgressAsync { get; set; }
+
         public ToolResult Execute(string name, string arguments, int timeoutSeconds = 300, string? mode = null, Models.Agent? agent = null)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -58,13 +62,18 @@ namespace Rochas.OpenCodeBridge.Web.Services
                 BridgeUrl = agent?.BridgeUrl ?? "",
                 Model = agent?.Model ?? "",
                 Temperature = agent?.Temperature ?? 0.4,
+                ProgressAsync = ProgressAsync,
             };
             ToolResult result;
             try
             {
+                if (ProgressAsync is not null)
+                    try { ProgressAsync(key, null, "").GetAwaiter().GetResult(); } catch { }
                 result = _telemetry is not null
                     ? _telemetry.Timed($"tool.{key}", () => handler.Handle(arguments ?? "", context))
                     : handler.Handle(arguments ?? "", context);
+                if (ProgressAsync is not null)
+                    try { ProgressAsync(key, result.Success, result.Success ? result.Output : result.Error ?? "").GetAwaiter().GetResult(); } catch { }
             }
             catch (Exception ex)
             {

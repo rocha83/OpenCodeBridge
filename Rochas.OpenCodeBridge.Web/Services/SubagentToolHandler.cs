@@ -109,6 +109,7 @@ public sealed class SubagentToolHandler : IToolHandler
             var inner = new ToolExecutor(
                 ToolExecutor.DefaultHandlers().Where(h => h.ToolName != "subagent"),
                 context.WorkspaceRoot, "/tmp/tool-executor-sub.log");
+            inner.ProgressAsync = context.ProgressAsync;
             var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = prompt.Trim() } };
             // Sub com tools anunciadas (experimento): write, edit e shell.
             // Trava: shell do sub só valida (`bash -n`), compacta (zip/unzip) ou

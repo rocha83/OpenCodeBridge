@@ -9,4 +9,6 @@ public sealed class ToolContext
     public string BridgeUrl { get; init; } = "";
     public string Model { get; init; } = "";
     public double Temperature { get; init; } = 0.2;
+    // Sink de progresso (só o subagente usa): (tool, ok null=start, resumo).
+    public Func<string, bool?, string, Task>? ProgressAsync { get; set; }
 }

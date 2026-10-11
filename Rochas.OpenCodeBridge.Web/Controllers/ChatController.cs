@@ -600,7 +600,13 @@ public sealed class ChatController(
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
                 // Trunfo: o modelo vê plan (anunciado), o executor roda build (pode tudo).
                 var sw = System.Diagnostics.Stopwatch.StartNew();
+                // Progresso das tools internas do sub (write/shell): só aqui.
+                toolExecutor.ProgressAsync = name == "subagent"
+                    ? async (n, ok, summary) => await WriteProgressAsync(outputStream,
+                        ok is null ? "tool_start" : "tool_done", n, ok, ct, summary ?? "", 0)
+                    : null;
                 var result = toolExecutor.Execute(name, args, 300, null, agent);
+                toolExecutor.ProgressAsync = null;
                 sw.Stop();
                 if (session?.Id is int sidLog)
                     await sessionService.LogToolAsync(sidLog, agent.Name, name, args,

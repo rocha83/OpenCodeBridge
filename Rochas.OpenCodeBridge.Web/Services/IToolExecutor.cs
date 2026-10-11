@@ -6,4 +6,6 @@ namespace Rochas.OpenCodeBridge.Web.Services;
 public interface IToolExecutor
 {
     ToolResult Execute(string name, string arguments, int timeoutSeconds = 120, string? mode = null, Agent? agent = null);
+    // Sink de progresso (só o subagente usa via ChatController).
+    Func<string, bool?, string, Task>? ProgressAsync { get; set; }
 }
