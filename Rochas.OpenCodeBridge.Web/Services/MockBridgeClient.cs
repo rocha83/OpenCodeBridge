@@ -14,6 +14,23 @@ public sealed class MockBridgeClient : IBridgeClient
     private readonly MockBridgeOptions _options;
     private readonly Random _rng = Random.Shared;
 
+    // Turno roteirizado p/ E2E determinístico (sem GPU): thinking, content,
+    // tool_calls, erro de bridge e ritmo dos chunks.
+    public sealed record MockToolCall(string Name, string Arguments, string Id = "call_1");
+    public sealed record MockTurn(
+        string Thinking = "", string Content = "",
+        List<MockToolCall>? ToolCalls = null,
+        string? BridgeError = null, int ChunkDelayMs = 20,
+        string FinishReason = "stop");
+
+    // Fila estática: cada StreamAsync consome UM turno; vazia = RNG atual.
+    public static readonly System.Collections.Concurrent.ConcurrentQueue<MockTurn> Script = new();
+    public static void EnqueueScript(params MockTurn[] turns)
+    {
+        foreach (var t in turns) Script.Enqueue(t);
+    }
+    public static void ClearScript() { while (Script.TryDequeue(out _)) { } }
+
     public MockBridgeClient(IOptions<MockBridgeOptions> options)
     {
         _options = options.Value;
@@ -27,6 +44,10 @@ public sealed class MockBridgeClient : IBridgeClient
         {
             // Simula latência inicial
             await Task.Delay(_rng.Next(_options.MinInitialDelayMs, _options.MaxInitialDelayMs), ct);
+
+            // Turno roteirizado tem prioridade sobre o RNG.
+            if (Script.TryDequeue(out MockTurn? scripted) && scripted is not null)
+                return await EmitScriptedAsync(scripted, messages, output, ct);
 
             // Extrai última mensagem do usuário para resposta contextual
             string lastUserMsg = "";
@@ -156,6 +177,98 @@ public sealed class MockBridgeClient : IBridgeClient
                 return (false, "Mock bridge: erro simulado");
             }
 
+            return (true, "");
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    // Emite um turno roteirizado no padrão OpenAI SSE: thinking fatiado,
+    // content fatiado, tool_calls (1 chunk por call, args integrais) e DONE.
+    private async Task<(bool ok, string error)> EmitScriptedAsync(MockTurn turn, JsonArray messages, Stream output, CancellationToken ct)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(turn.BridgeError))
+                return (false, turn.BridgeError);
+
+            var writer = new StreamWriter(output, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
+            async Task WriteChunk(JsonObject chunk)
+            {
+                await writer.WriteAsync($"data: {chunk.ToJsonString()}\n\n");
+            }
+            JsonObject DeltaChunk(JsonObject delta, string? finish)
+            {
+                return new JsonObject
+                {
+                    ["id"] = $"chatcmpl-mock-{Guid.NewGuid():N}",
+                    ["object"] = "chat.completion.chunk",
+                    ["created"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    ["model"] = "mock-model",
+                    ["choices"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["index"] = 0,
+                            ["delta"] = delta,
+                            ["logprobs"] = null,
+                            ["finish_reason"] = finish,
+                        },
+                    },
+                };
+            }
+
+            string rest = turn.Thinking;
+            while (rest.Length > 0 && !ct.IsCancellationRequested)
+            {
+                string piece = rest[..Math.Min(rest.Length, 30)];
+                rest = rest[piece.Length..];
+                await WriteChunk(DeltaChunk(new JsonObject { ["reasoning_content"] = piece }, null));
+                await Task.Delay(turn.ChunkDelayMs, ct);
+            }
+            rest = turn.Content;
+            while (rest.Length > 0 && !ct.IsCancellationRequested)
+            {
+                string piece = rest[..Math.Min(rest.Length, 20)];
+                rest = rest[piece.Length..];
+                await WriteChunk(DeltaChunk(new JsonObject { ["content"] = piece }, null));
+                await Task.Delay(turn.ChunkDelayMs, ct);
+            }
+            int idx = 0;
+            if (turn.ToolCalls is not null)
+            {
+                foreach (var tc in turn.ToolCalls)
+                {
+                    await WriteChunk(DeltaChunk(new JsonObject
+                    {
+                        ["tool_calls"] = new JsonArray
+                        {
+                            new JsonObject
+                            {
+                                ["index"] = idx++,
+                                ["id"] = tc.Id,
+                                ["function"] = new JsonObject { ["name"] = tc.Name, ["arguments"] = tc.Arguments },
+                            },
+                        },
+                    }, null));
+                    await Task.Delay(turn.ChunkDelayMs, ct);
+                }
+            }
+
+            string finish = turn.ToolCalls is { Count: > 0 } ? "tool_calls" : turn.FinishReason;
+            int promptTokens = EstimateTokens(string.Join(" ", messages.Select(m => m["content"]?.GetValue<string>() ?? ""))) + 10;
+            int completionTokens = EstimateTokens(turn.Thinking + turn.Content) + 1;
+            var final = DeltaChunk(new JsonObject { }, finish);
+            final["usage"] = new JsonObject
+            {
+                ["prompt_tokens"] = promptTokens,
+                ["completion_tokens"] = completionTokens,
+                ["total_tokens"] = promptTokens + completionTokens,
+            };
+            await WriteChunk(final);
+            await writer.WriteAsync("data: [DONE]\n\n");
             return (true, "");
         }
         catch (Exception ex)
