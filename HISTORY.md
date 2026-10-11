@@ -731,3 +731,8 @@
   chamado). Prompt do principal revertido (sem preferência textual).
 - UI: Sessões acima dos botões; dropdowns claros no tema light.
 - Suite UI: **24/24 PASS**. Units: **PASS**.
+
+## Pipe batch azul→preta PASS (2026-10-11)
+- `batch` (chat real via UI, enunciados com delegação `.sh` distinto): azul,
+  verde, roxa, marrom e preta PASS (preta: 28k chars, 14 toolcalls).
+- Suite UI 24/24 + units PASS. Tudo no `main`.
