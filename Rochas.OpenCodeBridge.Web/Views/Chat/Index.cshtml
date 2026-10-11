@@ -96,6 +96,18 @@ let uiConfig = { directApprove: false };
 fetch('/Chat/Config').then(r => r.json()).then(j => { uiConfig.directApprove = !!j.directApprove; }).catch(() => {});
 const execIdOrNull = () => execSel.value ? +execSel.value : null;
 
+// Stream ativo por sessão: trocar de sessão aborta o anterior (bolhas independentes).
+function abortActiveStream() {
+  try { window._streamAbort?.abort(); } catch {}
+  if (window._streamSession) {
+    fetch('/Chat/Stop', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: window._streamSession }) }).catch(() => {});
+  }
+  window._streamAbort = null; window._streamSession = null;
+  document.getElementById('cancelBtn')?.remove();
+  document.getElementById('processing-indicator')?.remove();
+}
+
 const avatarUser = '<span class="rounded-circle d-flex align-self-start ms-3 shadow-1-strong bg-secondary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-user fa-2x text-white"></i></span>';
 const avatarAgent = '<span class="rounded-circle d-flex align-self-start me-3 shadow-1-strong bg-primary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-robot fa-2x text-white"></i></span>';
 
@@ -160,41 +172,63 @@ function toolStatus(name, running, ok, result, ms, args) {
               <p class="fw-bold mb-0">Sub Agente</p>
             </div>
             <div class="card-body">
-              <pre class="mb-0 subans rawbox text-wrap"></pre>
+              <pre class="mb-0 subans rawbox"></pre>
             </div>
           </div>`;
+        // Pilha LIFO acima da bolha: o mais recente entra no topo (antes do anterior).
         const prev = window._lastSubCard;
-        if (prev && prev.isConnected) prev.after(card);
+        if (prev && prev.isConnected) prev.before(card);
         else {
           const bub = window._agentBubble;
-          if (bub && bub.isConnected) bub.after(card);
+          if (bub && bub.isConnected) conv.insertBefore(card, bub);
           else conv.appendChild(card);
         }
         window._lastSubCard = card;
-        (window._subCards = window._subCards || []).push(card);
+        (window._liveSubs = window._liveSubs || []).push(card);
         const p = card.querySelector('.subans');
         let body = result, think = '';
         const hm = body.match(/<SUBTHINK>([\s\S]*)<\/SUBTHINK>/);
         if (hm) { think = hm[1].trim(); body = body.replace(hm[0], '').trim(); }
+        let det = null, pp = null;
         if (think) {
-          const det = document.createElement('details');
+          det = document.createElement('details');
+          det.setAttribute('open', '');
           det.className = 'mb-2';
           det.innerHTML = `<summary class="small text-muted">Raciocínio</summary>`;
-          const pp = document.createElement('p');
+          pp = document.createElement('p');
           pp.className = 'small text-muted';
-          pp.textContent = think;
           det.appendChild(pp);
           p.parentNode.insertBefore(det, p);
         }
-        const words = body.split(/(\s+)/);
-        let shown = 0;
-        p.classList.add('typing');
-        const timer = setInterval(() => {
-          shown = Math.min(shown + 4, words.length);
-          p.textContent = words.slice(0, shown).join('');
-          if (isScrolledToBottom()) scrollToBottom();
-          if (shown >= words.length) { clearInterval(timer); p.classList.remove('typing'); }
-        }, 90);
+        // Sub: mesma dinâmica — thinking digita aberto, fecha, corpo digita abaixo.
+        const typeBody = () => {
+          const words = body.split(/(\s+)/);
+          let shown = 0;
+          p.classList.add('typing');
+          const timer = setInterval(() => {
+            shown = Math.min(shown + 4, words.length);
+            p.textContent = words.slice(0, shown).join('');
+            if (isScrolledToBottom()) scrollToBottom();
+            if (shown >= words.length) { clearInterval(timer); p.classList.remove('typing'); }
+          }, 90);
+        };
+        if (think && det && pp) {
+          pp.classList.add('typing');
+          const chars = think.split('');
+          let ci = 0;
+          const tTimer = setInterval(() => {
+            ci = Math.min(ci + 60, chars.length);
+            pp.textContent = chars.slice(0, ci).join('');
+            pp.scrollTop = pp.scrollHeight;
+            if (isScrolledToBottom()) scrollToBottom();
+            if (ci >= chars.length) {
+              clearInterval(tTimer);
+              pp.classList.remove('typing');
+              det.removeAttribute('open');
+              typeBody();
+            }
+          }, 60);
+        } else typeBody();
     } else {
       const items2 = conv.querySelectorAll('.tool-status');
       let li = null;
@@ -244,6 +278,7 @@ async function loadSessions() {
 }
 
 async function selectSession(id, agentId, executorAgentId) {
+  if (window._streamSession && window._streamSession !== id) abortActiveStream();
   currentSessionId = id;
   currentAgentId = agentId;
   agentSel.value = agentId;
@@ -269,7 +304,7 @@ async function loadMessages(sessionId) {
     } catch (err) {
       const li = document.createElement('li');
       li.className = 'd-flex justify-content-between mb-4';
-      li.innerHTML = `${avatarAgent}<div class="card w-100"><div class="card-header d-flex justify-content-between p-3"><p class="fw-bold mb-0">Agente</p></div><div class="card-body"><pre class="mb-0 ans rawbox text-wrap">${esc(String(m?.content ?? ''))}</pre></div></div>`;
+      li.innerHTML = `${avatarAgent}<div class="card w-100"><div class="card-header d-flex justify-content-between p-3"><p class="fw-bold mb-0">Agente</p></div><div class="card-body"><pre class="mb-0 ans rawbox">${esc(String(m?.content ?? ''))}</pre></div></div>`;
       conv.appendChild(li);
     }
   });
@@ -326,6 +361,7 @@ async function loadTasks(sessionId) {
 setInterval(() => { if (currentSessionId) loadTasks(currentSessionId); }, 5000);
 
 async function createSession() {
+  abortActiveStream();
   const r = await fetch('/Chat/Sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -379,7 +415,7 @@ function msgItem(role, think, body) {
         </div>
         <div class="card-body">
           ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
-          <pre class="mb-0 subans rawbox text-wrap">${esc(body)}</pre>
+          ${(body || '').trim() ? `<pre class="mb-0 subans rawbox">${esc(body)}</pre>` : ''}
         </div>
       </div>`;
   } else {
@@ -391,7 +427,7 @@ function msgItem(role, think, body) {
         </div>
         <div class="card-body">
           ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
-          <pre class="mb-0 ans rawbox text-wrap">${esc(body)}</pre>
+          ${(body || '').trim() ? `<pre class="mb-0 ans rawbox">${esc(body)}</pre>` : ''}
         </div>
       </div>`;
   }
@@ -638,14 +674,17 @@ document.getElementById('send').onclick = async () => {
   
   // AbortController for cancellation
   const abortController = new AbortController();
+  const sendSessionId = currentSessionId;
+  window._streamSession = sendSessionId; window._streamAbort = abortController;
   let stoppedByUser = false;
   cancelBtn.style.display = 'inline-block';
   cancelBtn.onclick = () => {
     stoppedByUser = true;
     // Para o servidor via API + corta o fetch local.
     fetch('/Chat/Stop', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: currentSessionId }) }).catch(() => {});
+      body: JSON.stringify({ sessionId: sendSessionId }) }).catch(() => {});
     try { abortController.abort(); } catch {}
+    window._streamAbort = null; window._streamSession = null;
     cancelBtn.style.display = 'none';
     document.getElementById('processing-indicator')?.remove();
     stopTypewriter();
@@ -670,15 +709,42 @@ document.getElementById('send').onclick = async () => {
   conv.appendChild(indicator);
   if (isScrolledToBottom()) scrollToBottom();
 
-  // Prepara bolha do agente (cria no primeiro content; thinking vai em accordion ao final)
+  // Prepara bolha do agente (abre no thinking ou no texto real; nunca vazia parada)
   let agentLi = null;
   window._agentBubble = null;
   window._lastSubCard = null;
-  window._subCards = [];
+  window._liveSubs = [];
   let anP = null;
   let think = '';
+  let thinkDet = null;
+  let thinkP = null;
+  let thinkLive = false;
   let full = '';
   let agentBubbleCreated = false;
+
+  // Abre a bolha (uma vez) e ancora os sub cards do envio abaixo dela.
+  function ensureAgentBubble() {
+    if (agentBubbleCreated) return;
+    agentLi = document.createElement('li');
+    agentLi.className = 'd-flex justify-content-between mb-4';
+    agentLi.innerHTML = `
+      ${avatarAgent}
+      <div class="card w-100">
+        <div class="card-header d-flex justify-content-between p-3">
+          <p class="fw-bold mb-0">Agente</p>
+        </div>
+        <div class="card-body">
+          <pre class="mb-0 ans rawbox"></pre>
+        </div>
+      </div>`;
+    conv.appendChild(agentLi);
+    anP = agentLi.querySelector('.ans');
+    agentBubbleCreated = true;
+    window._agentBubble = agentLi;
+    // Pilha do envio: subs acima da bolha, mais recente no topo.
+    let anchor = agentLi;
+    (window._liveSubs || []).forEach(c => { if (c.isConnected) { anchor.before(c); anchor = c; } });
+  }
 
   // Efeito "digitando" palavra por palavra (JS puro)
   let shownWords = 0;
@@ -726,6 +792,7 @@ document.getElementById('send').onclick = async () => {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      if (currentSessionId !== sendSessionId) break;
       buf += dec.decode(value, { stream: true });
       const parts = buf.split('\n\n'); buf = parts.pop();
       for (const p of parts) {
@@ -741,34 +808,32 @@ document.getElementById('send').onclick = async () => {
           }
           const d = evt.choices[0].delta;
           if (d.reasoning_content) {
-            // Thinking acumula silencioso; vai pronto em accordion fechado ao final
+            // Thinking acumula no MESMO accordion da bolha (abre, digita, fecha no texto).
             think += d.reasoning_content;
+            ensureAgentBubble();
+            if (!thinkDet) {
+              thinkDet = document.createElement('details');
+              thinkDet.className = 'mb-2';
+              thinkDet.innerHTML = `<summary class="small text-muted">Raciocínio</summary>`;
+              thinkP = document.createElement('p');
+              thinkP.className = 'small text-muted typing';
+              thinkDet.appendChild(thinkP);
+              anP.parentNode.insertBefore(thinkDet, anP);
+              thinkLive = true;
+            }
+            thinkDet.setAttribute('open', '');
+            if (thinkP) thinkP.classList.add('typing');
+            thinkP.textContent = think;
+            thinkP.scrollTop = thinkP.scrollHeight;
             engineTxt.textContent = 'Pensando...';
           }
           else if (d.content) {
             full += d.content;
             // Bolha só quando há texto real (deltas iniciais de espaço não abrem quadro vazio).
-            if (!agentBubbleCreated && full.trim()) {
-              agentLi = document.createElement('li');
-              agentLi.className = 'd-flex justify-content-between mb-4';
-              agentLi.innerHTML = `
-                ${avatarAgent}
-                <div class="card w-100">
-                  <div class="card-header d-flex justify-content-between p-3">
-                    <p class="fw-bold mb-0">Agente</p>
-                  </div>
-                  <div class="card-body">
-                    <pre class="mb-0 ans rawbox text-wrap"></pre>
-                  </div>
-                </div>`;
-              conv.appendChild(agentLi);
-              anP = agentLi.querySelector('.ans');
-              agentBubbleCreated = true;
-              window._agentBubble = agentLi;
-              // Sub cards do envio atual que chegaram antes: sempre abaixo da bolha.
-              let anchor = agentLi;
-              (window._subCards || []).forEach(c => { if (c.isConnected) { anchor.after(c); anchor = c; } });
-            }
+            // Corta o salto inicial: deltas de quebra de linha não viram linhas em branco.
+            if (!agentBubbleCreated && full.trim()) { full = full.replace(/^\s+/, ''); ensureAgentBubble(); }
+            // Thinking encerrou: fecha o accordion (mantém ref p/ acumular) e o texto começa abaixo.
+            if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); }
             startTypewriter();
           }
         } catch (e) { /* chunk parcial: ignora */ }
@@ -805,10 +870,18 @@ document.getElementById('send').onclick = async () => {
     document.getElementById('cancelBtn')?.remove();
     showToast('Erro ao conectar na engine. Verifique se a bridge está online.', 'danger');
   }
-  if (agentBubbleCreated) {
-    // Flush final do efeito + accordion de thinking fechado + remove "Processando"
+  window._streamAbort = null; window._streamSession = null;
+  // Trocou de sessão no meio do stream: não finaliza bolha na conversa errada.
+  const stillHere = (currentSessionId === sendSessionId);
+  if (agentBubbleCreated && stillHere) {
+    // Flush final do efeito + thinking fechado + remove "Processando"
     stopTypewriter();
-    if (think.trim() && anP) {
+    if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); }
+    else if (thinkLive && anP) {
+      // Thinking já exibido ao vivo (accordion aberto e fechado): garante fechado.
+      anP.parentNode.querySelectorAll('details').forEach(d => d.removeAttribute('open'));
+    }
+    if (!thinkLive && think.trim() && anP) {
       const det = document.createElement('details');
       det.className = 'mb-2';
       const sum = document.createElement('summary');
@@ -823,7 +896,7 @@ document.getElementById('send').onclick = async () => {
     }
     document.getElementById('processing-indicator')?.remove();
     engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!';
-  } else {
+  } else if (stillHere) {
     document.getElementById('processing-indicator')?.remove();
   }
   ta.disabled = false;
@@ -831,7 +904,7 @@ document.getElementById('send').onclick = async () => {
   sendBtn.innerHTML = 'ENVIAR';
   document.getElementById('cancelBtn')?.remove();
   ta.focus();
-  if (isScrolledToBottom()) scrollToBottom();
+  if (stillHere && isScrolledToBottom()) scrollToBottom();
 };
 
 // Inicialização - garante sessão ativa antes de permitir envio
