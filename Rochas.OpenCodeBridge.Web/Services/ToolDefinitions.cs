@@ -21,7 +21,11 @@ public static class ToolDefinitions
             new[] { BuildParam("pattern", "string", "Regex ou texto.", true), BuildParam("path", "string", "Diretório (padrão raiz).", false), BuildParam("include", "string", "Glob de filtro (ex.: '*.cs').", false) }));
         tools.Add(BuildTool("glob", "Lista caminhos por padrão glob.",
             new[] { BuildParam("pattern", "string", "Glob (ex.: '**/*.cs').", true), BuildParam("path", "string", "Diretório (padrão raiz).", false) }));
-        tools.Add(BuildTool("subagent", "Delega subtarefa ao mesmo modelo (resposta em texto, sem tools).",
+        tools.Add(BuildTool("fetch", "GET HTTP somente-leitura (curl sem execução). Retorna o corpo como texto.",
+            new[] { BuildParam("url", "string", "URL http(s) absoluta.", true), BuildParam("maxChars", "integer", "Teto de chars (padrão 12000).", false) }));
+        tools.Add(BuildTool("git", "Git somente-leitura: status/log/diff/show/branch. Sem commit/push/checkout.",
+            new[] { BuildParam("command", "string", "Comando (ex.: 'log --oneline -5').", true) }));
+        tools.Add(BuildTool("subagent", "Delega UMA fase ao mesmo modelo (passe só o enunciado da fase, nunca o enunciado original).",
             new[] { BuildParam("prompt", "string", "Subtarefa completa e autocontida.", true), BuildParam("maxTokens", "integer", "Teto de saída (padrão 2048).", false) }));
         return tools;
     }
