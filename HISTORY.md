@@ -669,3 +669,8 @@
 - Subs sobrescreviam `fase1.sh`: system do agente 8B (id 1, no banco) ganhou
   "Informe um nome de arquivo .sh distinto por fase para nao sobrescrever a
   implementacao." Vale imediato (lido do banco por turno, sem restart).
+
+## Bridge Web — Fase 12d Nomes distintos funcionam (2026-10-11)
+- Sessão 126: 7 subs, 7 arquivos (`backend-domain/infrastructure/services`,
+  `frontend-mvc`, `security`, `tests`, `documentation.sh`), todos com
+  `bash -n` limpo. Sem sobrescrita.
