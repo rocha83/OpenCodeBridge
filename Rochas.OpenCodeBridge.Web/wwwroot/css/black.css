@@ -171,6 +171,8 @@ html, body {
 #prompt { font-size: 0.875rem; }
 /* Rótulo no tamanho dos títulos das bolhas (Você/Agente/Sub Agente). */
 label[for="prompt"] { font-size: 0.875rem; }
+/* Data/hora pequena no rodapé à direita das bolhas. */
+.msg-ts { text-align: right; font-size: 0.68rem; color: #9e9e9e; margin: 2px 0 0; }
 #conv details p { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: #9e9e9e; }
 /* Thinking em campo de 5 linhas com scroll interno (não expande a bolha) */
 #conv details p { max-height: 7.5em; overflow-y: auto; }

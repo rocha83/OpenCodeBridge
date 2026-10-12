@@ -194,12 +194,23 @@ function toolStatus(name, running, ok, result, ms, args, sub) {
       items.forEach(el => { if (el.dataset.tool === name) el.remove(); });
       // Sempre pelo id do sub quando presente: o fallback no card corrente
       // pintava o resultado no card errado (2 bolhas com o mesmo conteúdo).
-      const h = sub ? ensureSubCard(sub)
-        : ((window._currentSubCard && window._currentSubCard.li.isConnected)
-          ? window._currentSubCard : ensureSubCard(sub));
+      // Sem id: descarta o paint (fallback no card corrente apagava o
+      // conteúdo alheio e duplicava o novo). Com id: mesmo id nunca pinta 2x.
+      if (!sub) { try { console.warn('[sub] done sem id, paint descartado'); } catch {} return; }
+      const h = ensureSubCard(sub);
+      if (h.painted) { try { console.warn('[sub] paint duplicado ignorado', sub); } catch {} return; }
       let body = result, think = '';
       const hm = body.match(/<SUBTHINK>([\s\S]*)<\/SUBTHINK>/);
       if (hm) { think = hm[1].trim(); body = body.replace(hm[0], '').trim(); }
+      // Dedupe: resultado idêntico já exibido em outro card (double-paint)?
+      // Remove o redundante em vez de mostrar 2 bolhas iguais.
+      const sig = body.length + ':' + body.slice(0, 120);
+      let dupPaint = false;
+      conv.querySelectorAll('.subagent-card').forEach(cd => {
+        const p = cd.querySelector('.subans');
+        if (cd !== h.li && p && (p.textContent.length + ':' + p.textContent.slice(0, 120)) === sig) dupPaint = true;
+      });
+      if (dupPaint && h.li.isConnected) { h.li.remove(); window._currentSubCard = null; return; }
       if (!think) think = h.think;
       h.full = body;
       h.pre.textContent = body;
@@ -220,6 +231,7 @@ function toolStatus(name, running, ok, result, ms, args, sub) {
         h.det.removeAttribute('open');
         if (h.psum) h.psum.textContent = 'Raciocínio 100%';
       }
+      h.painted = true;
       window._currentSubCard = null;
     } else {
       const items2 = conv.querySelectorAll('.tool-status');
@@ -261,6 +273,7 @@ function ensureSubCard(sub) {
         </div>
         <div class="card-body">
           <pre class="mb-0 subans rawbox"></pre>
+          <div class="msg-ts">${fmtTs(new Date().toISOString())}</div>
         </div>
       </div>`;
   // Pilha LIFO acima da bolha: o mais recente entra no topo (antes do anterior).
@@ -283,6 +296,7 @@ function ensureSubCard(sub) {
 function subChunk(sub, kind, text) {
   if (!sub) return;
   const h = ensureSubCard(sub);
+  if (h.painted) return; // done já pintou: chunk tardio não reabre nem duplica.
   if (kind === 'thinking') {
     h.think += text;
     if (!h.det) {
@@ -402,10 +416,10 @@ async function loadMessages(sessionId) {
       if (role === 'assistant' && pendingThink.trim()) {
         const merged = pendingThink + ((think || '').trim() ? '\n\n' + think.trim() : '');
         pendingThink = '';
-        conv.appendChild(msgItem(role, merged, body));
+        conv.appendChild(msgItem(role, merged, body, m?.createdAt));
         return;
       }
-      conv.appendChild(msgItem(role, think, body));
+      conv.appendChild(msgItem(role, think, body, m?.createdAt));
     } catch (err) {
       const li = document.createElement('li');
       li.className = 'd-flex justify-content-between mb-4';
@@ -516,16 +530,25 @@ async function deleteAllSessions() {
   conv.innerHTML = '';
 }
 
-function msgItem(role, think, body) {
+function fmtTs(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  } catch { return ''; }
+}
+function msgItem(role, think, body, ts) {
   const li = document.createElement('li');
   li.className = 'd-flex justify-content-between mb-4';
+  const foot = ts ? `<div class="msg-ts">${esc(fmtTs(ts))}</div>` : '';
   if (role === 'user') {
     li.innerHTML = `
       <div class="card w-100">
         <div class="card-header d-flex justify-content-between p-3">
           <p class="fw-bold mb-0">Você</p>
         </div>
-        <div class="card-body"><p class="mb-0 text-wrap">${esc(body)}</p></div>
+        <div class="card-body"><p class="mb-0 text-wrap">${esc(body)}</p>${foot}</div>
       </div>
       ${avatarUser}`;
   } else if (role === 'subagent') {
@@ -538,6 +561,7 @@ function msgItem(role, think, body) {
         <div class="card-body">
           ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio 100%</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
           ${(body || '').trim() ? `<pre class="mb-0 subans rawbox">${esc(body)}</pre>` : ''}
+          ${foot}
         </div>
       </div>`;
   } else {
@@ -550,6 +574,7 @@ function msgItem(role, think, body) {
         <div class="card-body">
           ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio 100%</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
           ${(body || '').trim() ? `<pre class="mb-0 ans rawbox">${esc(body)}</pre>` : ''}
+          ${foot}
         </div>
       </div>`;
   }
@@ -657,7 +682,7 @@ document.getElementById('send').onclick = async () => {
   ta.focus();
 
   // Adiciona mensagem do usuário na UI imediatamente
-  conv.appendChild(msgItem('user', '', esc(text)));
+  conv.appendChild(msgItem('user', '', esc(text), new Date().toISOString()));
 
   // Indicador "Processando" como linha da conversa (com margem), ativo até finalizar
   const indicator = document.createElement('li');
@@ -694,6 +719,7 @@ document.getElementById('send').onclick = async () => {
         </div>
         <div class="card-body">
           <pre class="mb-0 ans rawbox"></pre>
+          <div class="msg-ts">${fmtTs(new Date().toISOString())}</div>
         </div>
       </div>`;
     conv.appendChild(agentLi);

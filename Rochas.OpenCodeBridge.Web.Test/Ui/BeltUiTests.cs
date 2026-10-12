@@ -40,6 +40,9 @@ public static class BeltUiTests
         new("preta", "Faixa PRETA E2E",
             "Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador (ponto eletronico, reembolsos, organograma), banco de dados SQL (DDL, indices, constraints), repositorios e servicos (Dapper, servicos de aplicacao), API REST do portal e servicos bus: barramento de eventos assincrono integrando portal, folha e ERP; pipeline de Big Data com ML: regressao para previsao de gastos e classificacao de reembolsos suspeitos apenas com algoritmos ML classicos (sem redes neurais), e rede neural (perceptron multicamadas) para deteccao de anomalias em ponto eletronico, com scripts de treino e avaliacao para cada modelo. Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados; repositorios e servicos; API; servicos bus; redes neurais) e divida a tarefa de implementacao usando subagent tool.",
             5, 120),
+        new("imunow", "Faixa IMUNOW E2E",
+            "preciso avaliar um projeto, veja nas subpastas existe a pagina react contendo 'Meu Painel', onde existe um card com informacoes sobre expediente, veja em /media/mint/3686C649614854E6/Projetos/Imunow/mova/Mova.Pwa/src/views. devemos remover este quadro da pagina e garantir o build do react, analise o necessario, crie um plano em fases e delegue cada fase usando subagent tool",
+            2, 60),
     };
 
     public static async Task<int> RunAsync(string web, string[] only, string mode)

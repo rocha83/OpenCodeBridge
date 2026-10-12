@@ -123,7 +123,7 @@ public sealed class SubagentToolHandler : IToolHandler
             JsonArray? tools = SubTools();
             var collected = new StringBuilder();
             string subthink = "";
-            for (int turn = 0; turn < 3; turn++)
+            for (int turn = 0; turn < 5; turn++)
             {
                 var t = BridgeHelper.ChatTurnAsync(_bridge, context.BridgeUrl, context.Model,
                     FixedTemperature, SubagentSystem, history, tools, cts.Token, enableThinking: true, maxTokens: maxTokens,

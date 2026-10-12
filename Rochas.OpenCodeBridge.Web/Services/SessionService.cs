@@ -46,19 +46,38 @@ public sealed class SessionService(
     // WORKAROUND (remover quando SqlWrapper>=1.5.1 chegar via DapperRepository):
     // o parser emite DateTime como data em UPDATE (hotfix rocha83/SqlWrapper 1.5.1).
     // Carimbo com precisão de hora via SQL direto.
+    // Retry se 0 linhas afetadas (race INSERT vs UPDATE em conexões diferentes).
     private static async Task StampAsync(string sql, params (string Name, object Value)[] args)
     {
-        await DbRetryAsync(async () =>
+        for (int attempt = 1; attempt <= 5; attempt++)
         {
-            using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
-            await conn.OpenAsync();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = sql;
-            foreach (var (name, value) in args)
-                cmd.Parameters.AddWithValue(name, value);
-            await cmd.ExecuteNonQueryAsync();
-            return 0;
-        });
+            using (var conn1 = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString))
+            {
+                await conn1.OpenAsync();
+                using (var cmd1 = conn1.CreateCommand())
+                {
+                    cmd1.CommandText = sql;
+                    foreach (var (name, value) in args)
+                        cmd1.Parameters.AddWithValue(name, value);
+                    int rows = await cmd1.ExecuteNonQueryAsync();
+                    if (rows > 0) return;
+                }
+            }
+            // 0 linhas: race INSERT/UPDATE - espera e tenta de novo
+            await Task.Delay(50 * attempt);
+        }
+        // última tentativa sem checar linhas (pode falhar silenciosamente)
+        using (var conn2 = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString))
+        {
+            await conn2.OpenAsync();
+            using (var cmd2 = conn2.CreateCommand())
+            {
+                cmd2.CommandText = sql;
+                foreach (var (name, value) in args)
+                    cmd2.Parameters.AddWithValue(name, value);
+                await cmd2.ExecuteNonQueryAsync();
+            }
+        }
     }
 
     private static string Iso(System.DateTime dt) =>
@@ -72,8 +91,9 @@ public sealed class SessionService(
         // Obter o ID gerado (last_insert_rowid)
         var created = await DbRetryAsync(async () => await _sessions.Query(new Session { UserId = userId, AgentId = agentId, Title = title }));
         var first = created.OrderByDescending(x => x.Id ?? 0).First();
-        await StampAsync("UPDATE sessions SET created_at=@c, updated_at=@u WHERE id=@id",
-            ("@c", Iso(now)), ("@u", Iso(now)), ("@id", first.Id ?? 0));
+        // created_at nunca atualizado: vem só do INSERT; aqui só updated_at.
+        await StampAsync("UPDATE sessions SET updated_at=@u WHERE id=@id",
+            ("@u", Iso(now)), ("@id", first.Id ?? 0));
         first.CreatedAt = now;
         first.UpdatedAt = now;
         return first;
@@ -95,44 +115,26 @@ public sealed class SessionService(
 
     public async Task UpdateTitleAsync(int sessionId, string title)
     {
-        var s = await _sessions.Get(new Session { Id = (int?)sessionId });
-        if (s is not null)
-        {
-            s.Title = title;
-            var stamp = System.DateTime.UtcNow;
-            s.UpdatedAt = stamp;
-            await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
-            await StampAsync("UPDATE sessions SET updated_at=@t WHERE id=@id",
-                ("@t", Iso(stamp)), ("@id", sessionId));
-        }
+        // created_at nunca atualizado: SQL direto só em title + updated_at (ORM truncaria).
+        var stamp = System.DateTime.UtcNow;
+        await StampAsync("UPDATE sessions SET title=@title, updated_at=@t WHERE id=@id",
+            ("@title", title), ("@t", Iso(stamp)), ("@id", sessionId));
     }
 
     public async Task UpdateAgentAsync(int sessionId, int agentId)
     {
-        var s = await _sessions.Get(new Session { Id = (int?)sessionId });
-        if (s is not null)
-        {
-            s.AgentId = agentId;
-            var stamp = System.DateTime.UtcNow;
-            s.UpdatedAt = stamp;
-            await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
-            await StampAsync("UPDATE sessions SET updated_at=@t WHERE id=@id",
-                ("@t", Iso(stamp)), ("@id", sessionId));
-        }
+        // created_at nunca atualizado: SQL direto só em agent_id + updated_at (ORM truncaria).
+        var stamp = System.DateTime.UtcNow;
+        await StampAsync("UPDATE sessions SET agent_id=@a, updated_at=@t WHERE id=@id",
+            ("@a", agentId), ("@t", Iso(stamp)), ("@id", sessionId));
     }
 
     public async Task UpdateExecutorAsync(int sessionId, int? executorAgentId)
     {
-        var s = await _sessions.Get(new Session { Id = (int?)sessionId });
-        if (s is not null)
-        {
-            s.ExecutorAgentId = executorAgentId;
-            var stamp = System.DateTime.UtcNow;
-            s.UpdatedAt = stamp;
-            await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
-            await StampAsync("UPDATE sessions SET updated_at=@t WHERE id=@id",
-                ("@t", Iso(stamp)), ("@id", sessionId));
-        }
+        // created_at nunca atualizado: SQL direto só em executor + updated_at (ORM truncaria).
+        var stamp = System.DateTime.UtcNow;
+        await StampAsync("UPDATE sessions SET executor_agent_id=@e, updated_at=@t WHERE id=@id",
+            ("@e", (object?)executorAgentId ?? System.DBNull.Value), ("@t", Iso(stamp)), ("@id", sessionId));
     }
 
     public async Task DeleteAsync(int sessionId, int userId)
@@ -149,7 +151,9 @@ public sealed class SessionService(
     {
         var filter = new SessionMessage { SessionId = sessionId };
         var list = await DbRetryAsync(async () => await _messages.Query(filter));
-        return list.OrderBy(x => x.CreatedAt).TakeLast(limit).ToList();
+        // Desempate por Id: SQLite trunca CreatedAt em segundos e turnos
+        // rápidos empatam — sem isto o histórico volta embaralhado.
+        return list.OrderBy(x => x.CreatedAt).ThenBy(x => x.Id).TakeLast(limit).ToList();
     }
 
     public async Task AddMessageAsync(int sessionId, string role, string content, string thinking, int? promptTokens, int? completionTokens)
@@ -187,7 +191,9 @@ public sealed class SessionService(
         if (string.IsNullOrWhiteSpace(summary)) return 0;
         // Marca o antigo como passado (não apaga: segue visível no histórico,
         // fora do contexto). Resumo entra entre o passado e a cauda.
-        var summaryAt = all[^keepLast].CreatedAt.AddTicks(-1);
+        // Resumo entra entre o passado e a cauda. -1s (não ticks: SQLite
+        // trunca em segundos e o resumo cairia no mesmo segundo da cauda).
+        var summaryAt = all[^keepLast].CreatedAt.AddSeconds(-1);
         await DbRetryAsync(async () =>
         {
             foreach (var m in head)
@@ -218,13 +224,12 @@ public sealed class SessionService(
         {
             // Precisão de segundo do SQLite + relógio pode saltar (dual-boot/RTC):
             // trunca o now (determinístico p/ teste) e nunca deixa futuro para trás.
+            // created_at nunca atualizado: só updated_at via SQL direto (ORM truncaria).
             var now = System.DateTime.UtcNow;
             var sec = new System.DateTime(now.Ticks - now.Ticks % System.TimeSpan.TicksPerSecond, System.DateTimeKind.Utc);
             var stamp = sec > s.UpdatedAt ? sec : (s.UpdatedAt > now ? sec : s.UpdatedAt.AddSeconds(1));
-            s.UpdatedAt = stamp;
-            await _sessionsWrite.Update(s, new Session { Id = (int?)sessionId });
             await StampAsync("UPDATE sessions SET updated_at=@t WHERE id=@id",
-                ("@t", Iso(s.UpdatedAt)), ("@id", sessionId));
+                ("@t", Iso(stamp)), ("@id", sessionId));
         }
     }
 

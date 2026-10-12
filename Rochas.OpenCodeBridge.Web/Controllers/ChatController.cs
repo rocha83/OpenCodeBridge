@@ -446,6 +446,11 @@ public sealed class ChatController(
         // Fechamento silencioso: turno final vazio após tools ganha nota de conclusão.
         bool anyToolRan = false;
         bool anySubRan = false;
+        // Anti-giro: turnos só-leitura sem texto nem delegate disparam
+        // enunciado corretivo (máx 2); sem progresso, aborta honesto.
+        int idleTurns = 0, giroFixes = 0, repeatSig = 0;
+        string lastToolSig = "";
+        bool giroAbort = false;
         // Compactação automática: 1 retry após resumir (contexto cheio).
         bool compactRetried = false;
 
@@ -647,8 +652,40 @@ public sealed class ChatController(
             // Converte accumulated tool calls para lista
             var toolCalls = toolCallAccum.Values
                 .Where(t => !string.IsNullOrEmpty(t.Id) && !string.IsNullOrEmpty(t.Name))
-                .Select(t => (t.Id, t.Name, t.Args.ToString()))
+                .Select(t => (Id: t.Id, Name: t.Name, Args: t.Args.ToString()))
                 .ToList();
+
+            // Deduplica calls idênticas no mesmo turno (o modelo repete
+            // glob/read): executa 1x. Sem isto, o mesmo subagente pintava 2 cards.
+            var seenCall = new HashSet<string>();
+            toolCalls = toolCalls.Where(t => seenCall.Add(t.Name + ":" + t.Args)).ToList();
+
+            // Anti-giro: 3 turnos só-leitura sem texto nem delegate, ou a mesma
+            // chamada 3x seguidas. Corrige com enunciado (2x) ou aborta honesto.
+            // As leituras do turno são descartadas (nunca executaram).
+            bool hasSubCall = toolCalls.Any(t => t.Name == "subagent");
+            bool readOnlyCall = toolCalls.Count > 0 && toolCalls.All(t =>
+                t.Name is "read" or "grep" or "glob" or "fetch" or "git" or "shell");
+            string turnTxt0 = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
+            if (!hasSubCall && readOnlyCall && turnTxt0.Length == 0) idleTurns++; else idleTurns = 0;
+            string sig = string.Join(";", toolCalls.Select(t => t.Name + ":" + t.Args));
+            if (sig == lastToolSig) repeatSig++; else { repeatSig = 1; lastToolSig = sig; }
+            if (idleTurns >= 3 || repeatSig >= 3)
+            {
+                if (giroFixes < 2)
+                {
+                    giroFixes++;
+                    messages.Add(new JsonObject { ["role"] = "user",
+                        ["content"] = $"[Anti-giro {giroFixes}/2] Voce esta ha varios turnos so navegando (leitura) sem produzir texto nem delegar. PARE de chamar tools de leitura: resuma o que ja achou em 3 linhas e delegue a proxima fase via subagent tool." });
+                    assistantContent.Clear();
+                    assistantThinking.Clear();
+                    idleTurns = 0;
+                    repeatSig = 0;
+                    continue;
+                }
+                giroAbort = true;
+                break;
+            }
 
             // Ao contexto volta SÓ texto (user/assistant/subagente): outputs de
             // tools NÃO entram no loop (persistidos em tool_calls + histórico).
@@ -733,6 +770,13 @@ public sealed class ChatController(
         }
 
         // Persiste resposta final do assistant se há sessão (texto real ou thinking).
+        // Giro sem saída após 2 correções: nota honesta no lugar do silêncio.
+        if (giroAbort)
+        {
+            assistantContent.Clear();
+            assistantContent.Append("Interrompido por giro em leitura: o agente navegou sem produzir texto nem delegar após 2 correções automáticas.");
+            assistantThinking.Clear();
+        }
         string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
         // Se content vazio mas thinking tem resposta, usa thinking (limpando tags) como content.
         if (string.IsNullOrWhiteSpace(finalText) && assistantThinking.Length > 0)
@@ -759,7 +803,7 @@ public sealed class ChatController(
         // Sempre tenta entregar (cliente abortado só ignora).
         try
         {
-            if (silentClose)
+            if (silentClose || giroAbort)
             {
                 // Fechamento silencioso também digita na bolha ao vivo.
                 var fb = new JsonObject
