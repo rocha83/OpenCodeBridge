@@ -33,16 +33,18 @@ public static class BridgeHelper
             JsonObject? chunk;
             try { chunk = JsonNode.Parse(data)?.AsObject(); }
             catch { continue; }
-            var delta = chunk?["choices"]?[0]?["delta"]?.AsObject();
+            var choices0 = chunk?["choices"]?.AsArray();
+            var delta = choices0 is { Count: > 0 } ? choices0[0]?["delta"]?.AsObject() : null;
+            // Usage vem em chunk próprio (choices vazio): ler antes do guard.
+            var usage0 = chunk?["usage"]?.AsObject();
+            if (usage0 is not null)
+            {
+                promptTokens = usage0["prompt_tokens"]?.GetValue<int>();
+                completionTokens = usage0["completion_tokens"]?.GetValue<int>();
+            }
             if (delta is null) continue;
             if (delta["reasoning_content"]?.GetValue<string>() is string r) thinking.Append(r);
             if (delta["content"]?.GetValue<string>() is string c) content.Append(c);
-            var usage = chunk?["usage"]?.AsObject();
-            if (usage is not null)
-            {
-                promptTokens = usage["prompt_tokens"]?.GetValue<int>();
-                completionTokens = usage["completion_tokens"]?.GetValue<int>();
-            }
         }
         // Mitigação do desvio reasoning/content (espelha a bridge /v1/responses:
         // "raciocínio vira texto comum" com thinking off): o parser do serve pode
@@ -84,8 +86,18 @@ public static class BridgeHelper
             JsonObject? chunk;
             try { chunk = JsonNode.Parse(data)?.AsObject(); }
             catch { continue; }
-            var choice = chunk?["choices"]?[0]?.AsObject();
-            if (choice is null) continue;
+            var choice = chunk?["choices"]?.AsArray() is { Count: > 0 } arr ? arr[0]?.AsObject() : null;
+            if (choice is null)
+            {
+                // Chunk só de usage (choices vazio): captura e segue.
+                var usageOnly = chunk?["usage"]?.AsObject();
+                if (usageOnly is not null)
+                {
+                    promptTokens = usageOnly["prompt_tokens"]?.GetValue<int>();
+                    completionTokens = usageOnly["completion_tokens"]?.GetValue<int>();
+                }
+                continue;
+            }
             finishReason = choice["finish_reason"]?.GetValue<string>() ?? finishReason;
             var delta = choice["delta"]?.AsObject();
             if (delta is null) continue;
@@ -125,7 +137,16 @@ public static class BridgeHelper
                 .Select(t => new ToolCall(t.Id, t.Name, t.Args.ToString()))
                 .ToList()
             : new List<ToolCall>();
-        return new ChatTurn(true, content.ToString(), thinking.ToString(), promptTokens, completionTokens, calls, "");
+        string txt = content.ToString();
+        // Caminho DeepSeek: sem tool_calls estruturadas, o modelo escreve a
+        // chamada no texto — coage para Calls (só quando tools foram pedidas;
+        // texto puro de orquestração nunca é tocado).
+        if (calls.Count == 0 && tools is not null && tools.Count > 0)
+        {
+            var coerced = DeepSeekToolCoercion.Coerce(model, txt, out string cleaned);
+            if (coerced.Count > 0) { calls = coerced; txt = cleaned; }
+        }
+        return new ChatTurn(true, txt, thinking.ToString(), promptTokens, completionTokens, calls, "");
     }
 
     // Stream que repassa ao vivo os deltas (thinking/content) enquanto bufferiza.

@@ -1,5 +1,23 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Bridge Web — DeepSeek ToolExecutor, padrão oficial em texto (2026-10-12)
+- Coder V2-Lite não emite `tool_calls` estruturadas: novo caminho em classe
+  própria (`DeepSeekToolCoercion`: parse `<tool_name>` XML oficial + hermes em
+  texto + fence json + tokens V3 + `<attempt_completion>`; `DeepSeekToolExecutor`:
+  loop texto→parse→executa, retorno como `<tool_response>`). Sem mudar prompts.
+- Engates: `SubagentToolHandler` usa o executor quando o modelo é deepseek;
+  loop principal (`ChatController`) coage antes do gate; `ChatTurnAsync` idem.
+  `<thinking>` vazado vai p/ thinking (`StripThinkTags`). Gate por modelo:
+  Qwen/hermes intacto (teste `U-dsq-gated-by-model`).
+- Suite: **21/21 PASS** coerção + resto verde (`--units-only`).
+- Infra DeepSeek (doc `fixes-doc.md` no zip `/media/mint/Linux/`): V2-Lite
+  (MoE+MLA) exige FlashInfer JIT → `nvidia-cuda-toolkit + ninja-build`;
+  Qwen (marlin) não precisa. Unit vLLM: `deepseek-coder-v2-lite-instruct`,
+  `--trust-remote-code`, hermes, ctx 32768, sem reasoning parser (aborta:
+  `could not locate think start/end tokens`). Bridge `:4124` no modelo
+  deepseek; site `:80`; agentes `DSCoder`/`DSCoder-exec` no `web.db`.
+- EM ABERTO: teste mova com deepseek usando tools (vLLM em carga JIT).
+
 ## Bridge Web — Fase 11 Agente+fases+subagentes, UI e árvore (2026-10-11)
 - Doutrina final do dono: 1 agente (8B plan) sugere fases e dispara subagentes;
   ninguém executa shell/escrita — só gera `.sh` como texto p/ execução futura.

@@ -13,7 +13,7 @@ public sealed class SubagentToolHandler : IToolHandler
 
     private const double FixedTemperature = 0.4;
     private const string SubagentSystem =
-        "Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga, compoe script shell sh para implementacao do enunciado em batch, ao final escreva o script na pasta atual com a tool write usando o nome <tema-da-fase>_<data-hora-juliana>.sh (tema curto da fase, data-hora-juliana = dia do ano + hora/minuto informados no enunciado, ex.: 2841435), valide a sintaxe com a tool shell usando 'bash -n <arquivo>', se a validação acusar erro corrija o script e valide de novo até limpar, porém não execute o script";
+        "Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga, compoe script shell sh para implementacao do enunciado em batch, ao final escreva o script na pasta atual com a tool write usando o nome <tema-da-fase>_<data-hora-juliana>.sh (tema curto da fase, data-hora-juliana = dia do ano + hora/minuto informados no enunciado, ex.: 2841435), valide a sintaxe com a tool shell usando 'bash -n <arquivo>', se a validação acusar erro corrija o script e valide de novo até limpar, porém não execute o script. O uso das tools write e shell (bash -n) é OBRIGATÓRIO em toda fase, sem elas o script não existe; 'não executar' refere-se apenas a rodar o script final, validar a sintaxe é validação, não execução.";
 
     private readonly IBridgeClient _bridge;
 
@@ -123,6 +123,20 @@ public sealed class SubagentToolHandler : IToolHandler
             JsonArray? tools = SubTools();
             var collected = new StringBuilder();
             string subthink = "";
+            if (DeepSeekToolCoercion.IsDeepSeek(context.Model))
+            {
+                // DeepSeek sem tool_calls estruturadas: loop texto->parse->executa,
+                // retorno como <tool_response> (padrão oficial). Sem mudar prompts.
+                var dsq = new DeepSeekToolExecutor(inner, SubShellAllowed);
+                var r = dsq.RunAsync(_bridge, context.BridgeUrl, context.Model, FixedTemperature,
+                    SubagentSystem, history, new List<string> { "write", "edit", "shell", "subagent" },
+                    5, chunkSink is null ? null : (async (kind, text) => await chunkSink(subId, kind, text)),
+                    cts.Token).GetAwaiter().GetResult();
+                if (!r.Ok) return ToolResult.Fail($"subagente falhou: {r.Error}");
+                if (!string.IsNullOrWhiteSpace(r.Text)) collected.AppendLine(r.Text);
+                subthink = r.Thinking;
+            }
+            else
             for (int turn = 0; turn < 5; turn++)
             {
                 var t = BridgeHelper.ChatTurnAsync(_bridge, context.BridgeUrl, context.Model,
@@ -201,6 +215,7 @@ public sealed class SubagentToolHandler : IToolHandler
         }
         catch (Exception ex)
         {
+            try { System.IO.File.AppendAllText("/tmp/opencode/subagent-errors.log", $"{System.DateTime.Now:HH:mm:ss} {ex}\n---\n"); } catch { }
             return ToolResult.Fail($"subagente errou: {ex.Message.Split('\n')[0]}");
         }
     }

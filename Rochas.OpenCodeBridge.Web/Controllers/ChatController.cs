@@ -684,6 +684,28 @@ public sealed class ChatController(
                 }
             }
 
+            // Caminho DeepSeek (padrão oficial em texto): sem tool_calls
+            // estruturadas, o modelo escreve a chamada no texto
+            // (<tool_name>/hermes/fence/tokens). Coage para o fluxo normal de
+            // execução, sem mudar prompts.
+            if ((toolCallAccum.Count == 0 || finishReason != "tool_calls")
+                && tools.Count > 0
+                && DeepSeekToolCoercion.IsDeepSeek(agent.Model))
+            {
+                var coerced = DeepSeekToolCoercion.Coerce(agent.Model,
+                    assistantContent.ToString(), out string dsqCleaned,
+                    DeepSeekToolCoercion.NamesOf(tools));
+                int dsqIdx = toolCallAccum.Count;
+                foreach (var c in coerced)
+                    toolCallAccum[dsqIdx++] = (c.Id, c.Name, new StringBuilder(c.Args));
+                if (coerced.Count > 0)
+                {
+                    finishReason = "tool_calls";
+                    assistantContent.Clear();
+                    assistantContent.Append(dsqCleaned);
+                }
+            }
+
             // Sem tools anunciadas: sem tool_calls; sem coerção — só texto, termina.
             if (toolCallAccum.Count == 0 || finishReason != "tool_calls")
             {
@@ -867,10 +889,18 @@ public sealed class ChatController(
     }
 
     // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.
+    // Idem <thinking> (padrão DeepSeek): vai para o dropdown Raciocínio.
     private static string StripThinkTags(string content, System.Text.StringBuilder thinking)
     {
         if (string.IsNullOrEmpty(content)) return content;
         string s = content;
+        if (s.Contains("<thinking>", StringComparison.Ordinal))
+        {
+            s = System.Text.RegularExpressions.Regex.Replace(s, "<thinking>([\\s\\S]*?)</thinking>",
+                m => { thinking.Append(m.Groups[1].Value); return ""; });
+            int oi = s.IndexOf("<thinking>", StringComparison.Ordinal);
+            if (oi >= 0) { thinking.Append(s[(oi + 10)..]); s = s[..oi]; }
+        }
         if (s.Contains("<think>", StringComparison.Ordinal))
         {
             s = System.Text.RegularExpressions.Regex.Replace(s, "<think>([\\s\\S]*?)</think>",
@@ -895,8 +925,12 @@ public sealed class ChatController(
     }
 
     // Chunk ao vivo do subagente (thinking/content) p/ card próprio na UI.
+    private static readonly ConcurrentDictionary<string, int> SubChunkCounts = new();
     private static async Task WriteSubChunkAsync(System.IO.Stream output, string sub, string kind, string text, CancellationToken ct)
     {
+        int n = SubChunkCounts.AddOrUpdate(sub + "/" + kind, 1, (_, v) => v + 1);
+        if (n == 1 || n % 50 == 0)
+            try { await System.IO.File.AppendAllTextAsync("/tmp/opencode/subchunks.log", $"{System.DateTime.Now:HH:mm:ss} {sub} {kind} n={n} len={text.Length}\n", ct); } catch { }
         var evt = new JsonObject { ["progress"] = "sub_chunk", ["sub"] = sub, ["kind"] = kind, ["text"] = text };
         var bytes = Encoding.UTF8.GetBytes("data: " + evt.ToJsonString() + "\n\n");
         await output.WriteAsync(bytes, ct);
