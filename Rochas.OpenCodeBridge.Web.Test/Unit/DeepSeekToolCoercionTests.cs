@@ -41,8 +41,9 @@ internal static class DeepSeekToolCoercionTests
         ExecutorStopsAfterWork();
         FenceSingleKey();
         ExecutorStructuredCalls();
+        ExecutorOmitsSubagent();
 
-        System.Console.WriteLine($"=== DeepSeekCoercion Unit: {25 - Failures}/25 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== DeepSeekCoercion Unit: {26 - Failures}/26 PASS, {Failures} FAIL ===");
         return Failures;
     }
 
@@ -207,8 +208,7 @@ internal static class DeepSeekToolCoercionTests
     }
 
     private static void ExecutorStructuredCalls()
-    {
-        string root = Path.Combine(Path.GetTempPath(), $"dsq-{System.Guid.NewGuid():N}");
+    {        string root = Path.Combine(Path.GetTempPath(), $"dsq-{System.Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
         try
         {
@@ -334,9 +334,23 @@ internal static class DeepSeekToolCoercionTests
         finally { try { Directory.Delete(root, true); } catch { } }
     }
 
+    private static void ExecutorOmitsSubagent()
+    {
+        var inner = new ToolExecutor(ToolExecutor.DefaultHandlers(), Path.GetTempPath(), Path.Combine(Path.GetTempPath(), "dsq-audit.log"));
+        var dsq = new DeepSeekToolExecutor(inner, _ => true);
+        var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = "faca" } };
+        var stub = new SseStub(SseText("só texto"));
+        dsq.RunAsync(stub, "http://x", DsModel, 0.4, "sys", history,
+            new List<string> { "write", "edit", "shell", "subagent" }, 7, null,
+            CancellationToken.None).GetAwaiter().GetResult();
+        bool announcedSub = stub.SeenTools.Any(a => a.Any(n => n == "subagent"));
+        Check(stub.SeenTools.Count > 0 && !announcedSub, "U-dsq-exec-omits-subagent");
+    }
+
     private sealed class SseStub : IBridgeClient
     {
         private readonly Queue<string> _q;
+        public readonly List<List<string>> SeenTools = new();
         public SseStub(string sse) { _q = new Queue<string>(new[] { sse }); }
         public SseStub(IEnumerable<string> sses) { _q = new Queue<string>(sses); }
         public Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
@@ -344,6 +358,7 @@ internal static class DeepSeekToolCoercionTests
             bool includeTools = true, JsonArray? tools = null, int? maxTokens = null, bool? enableThinking = null,
             JsonNode? toolChoice = null)
         {
+            SeenTools.Add(tools?.Select(t => (t as JsonObject)?["function"]?["name"]?.GetValue<string>() ?? "").ToList() ?? new List<string>());
             string s = _q.Count > 1 ? _q.Dequeue() : _q.Peek();
             byte[] bytes = Encoding.UTF8.GetBytes(s);
             output.Write(bytes, 0, bytes.Length);

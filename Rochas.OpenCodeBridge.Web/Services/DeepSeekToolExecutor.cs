@@ -31,10 +31,13 @@ public sealed class DeepSeekToolExecutor
         bool anyCall = false;
         // Tools reais do sub (mesmas defs anunciadas): sem elas o template não
         // renderiza o bloco # Tools e o required não tem o que forçar.
+        // Sem "subagent": sem recursão por construção (stray text ainda cai
+        // na coerção via knownTools).
         var subTools = new JsonArray();
         foreach (var t in ToolDefinitions.GetTools())
         {
             if ((t as JsonObject)?["function"]?["name"]?.GetValue<string>() is not string tn) continue;
+            if (tn.Equals("subagent", StringComparison.OrdinalIgnoreCase)) continue;
             if (!knownTools.Any(k => k.Equals(tn, StringComparison.OrdinalIgnoreCase))) continue;
             subTools.Add(t.DeepClone());
         }
