@@ -9,5 +9,6 @@ public interface IBridgeClient
 {
     Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
         string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
-        bool includeTools = true, JsonArray? tools = null, int? maxTokens = null, bool? enableThinking = null);
+        bool includeTools = true, JsonArray? tools = null, int? maxTokens = null, bool? enableThinking = null,
+        JsonNode? toolChoice = null);
 }

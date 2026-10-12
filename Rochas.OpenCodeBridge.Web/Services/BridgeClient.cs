@@ -10,7 +10,8 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
 {
     public async Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
         string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
-        bool includeTools = true, JsonArray? tools = null, int? maxTokens = null, bool? enableThinking = null)
+        bool includeTools = true, JsonArray? tools = null, int? maxTokens = null, bool? enableThinking = null,
+        JsonNode? toolChoice = null)
     {
         try
         {
@@ -34,7 +35,7 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
             if (includeTools)
             {
                 body["tools"] = (JsonNode?)tools?.DeepClone() ?? ToolDefinitions.GetTools();
-                body["tool_choice"] = "auto";
+                body["tool_choice"] = toolChoice ?? JsonValue.Create("auto");
             }
             // Corta o mimetismo <think> na fonte (executores non-thinking): sem isto o
             // template default emite as tags como texto e o StripThink limpa depois.

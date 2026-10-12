@@ -37,8 +37,11 @@ internal static class DeepSeekToolCoercionTests
         ExecutorWrite();
         ExecutorShellDenied();
         ExecutorPassthrough();
+        ExecutorNudgesThenCalls();
+        ExecutorStopsAfterWork();
+        FenceSingleKey();
 
-        System.Console.WriteLine($"=== DeepSeekCoercion Unit: {21 - Failures}/21 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== DeepSeekCoercion Unit: {24 - Failures}/24 PASS, {Failures} FAIL ===");
         return Failures;
     }
 
@@ -194,6 +197,14 @@ internal static class DeepSeekToolCoercionTests
         Check(calls.Count == 0 && cleaned.Contains("feito") && !cleaned.Contains("<attempt_completion>"), "U-dsq-attempt-completion");
     }
 
+    private static void FenceSingleKey()
+    {
+        string content = "```json\n{\n  \"subagent\": {\n    \"prompt\": \"Fase 1.\"\n  }\n}\n```";
+        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out string cleaned, Known);
+        Check(calls.Count == 1 && calls[0].Name == "subagent" && calls[0].Args.Contains("Fase 1"), "U-dsq-fence-single-key");
+        Check(!cleaned.Contains("```"), "U-dsq-fence-single-key-cleaned");
+    }
+
     private static string SseText(string content)
     {
         string e = content.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", "\\n");
@@ -248,9 +259,58 @@ internal static class DeepSeekToolCoercionTests
         var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = "faca" } };
         var stub = new SseStub(SseText("só texto, sem chamadas"));
         var r = dsq.RunAsync(stub, "http://x", DsModel, 0.4, "sys", history,
-            new List<string> { "write", "edit", "shell", "subagent" }, 5, null,
+            new List<string> { "write", "edit", "shell", "subagent" }, 7, null,
             CancellationToken.None).GetAwaiter().GetResult();
-        Check(r.Ok && r.Text.Contains("só texto") && history.Count == 1, "U-dsq-exec-passthrough");
+        // Prosa sem trabalho: 2 cutucadas e para (1 + 2x2 msgs no histórico).
+        Check(r.Ok && r.Text.Contains("só texto") && history.Count == 5, "U-dsq-exec-nudge-stop");
+    }
+
+    private static void ExecutorStopsAfterWork()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"dsq-{System.Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var inner = new ToolExecutor(ToolExecutor.DefaultHandlers(), root, Path.Combine(root, "audit.log"));
+            var dsq = new DeepSeekToolExecutor(inner, _ => true);
+            var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = "faca" } };
+            var stub = new SseStub(new[]
+            {
+                SseText("<write><path>h.sh</path><content>echo h</content></write>"),
+                SseText("script criado e validado"),
+            });
+            var r = dsq.RunAsync(stub, "http://x", DsModel, 0.4, "sys", history,
+                new List<string> { "write", "edit", "shell", "subagent" }, 7, null,
+                CancellationToken.None).GetAwaiter().GetResult();
+            bool nudged = history.Any(m => (m as JsonObject)?["content"]?.GetValue<string>()?.Contains("DeepSeek-tools") == true);
+            Check(r.Ok && !nudged && System.IO.File.Exists(Path.Combine(root, "h.sh")), "U-dsq-exec-no-nudge-after-work");
+        }
+        finally { try { Directory.Delete(root, true); } catch { } }
+    }
+
+    private static void ExecutorNudgesThenCalls()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"dsq-{System.Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var inner = new ToolExecutor(ToolExecutor.DefaultHandlers(), root, Path.Combine(root, "audit.log"));
+            var dsq = new DeepSeekToolExecutor(inner, _ => true);
+            var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = "faca" } };
+            var stub = new SseStub(new[]
+            {
+                SseText("vou pensar em prosa primeiro"),
+                SseText("mais prosa, sem chamar nada"),
+                SseText("<write><path>g.sh</path><content>echo g</content></write>"),
+                SseText("fim"),
+            });
+            var r = dsq.RunAsync(stub, "http://x", DsModel, 0.4, "sys", history,
+                new List<string> { "write", "edit", "shell", "subagent" }, 7, null,
+                CancellationToken.None).GetAwaiter().GetResult();
+            bool nudged = history.Any(m => (m as JsonObject)?["content"]?.GetValue<string>()?.Contains("DeepSeek-tools") == true);
+            Check(r.Ok && nudged && System.IO.File.Exists(Path.Combine(root, "g.sh")), "U-dsq-exec-nudge-then-call");
+        }
+        finally { try { Directory.Delete(root, true); } catch { } }
     }
 
     private sealed class SseStub : IBridgeClient
@@ -260,7 +320,8 @@ internal static class DeepSeekToolCoercionTests
         public SseStub(IEnumerable<string> sses) { _q = new Queue<string>(sses); }
         public Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
             string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
-            bool includeTools = true, JsonArray? tools = null, int? maxTokens = null, bool? enableThinking = null)
+            bool includeTools = true, JsonArray? tools = null, int? maxTokens = null, bool? enableThinking = null,
+            JsonNode? toolChoice = null)
         {
             string s = _q.Count > 1 ? _q.Dequeue() : _q.Peek();
             byte[] bytes = Encoding.UTF8.GetBytes(s);

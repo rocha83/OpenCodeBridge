@@ -130,7 +130,7 @@ public sealed class SubagentToolHandler : IToolHandler
                 var dsq = new DeepSeekToolExecutor(inner, SubShellAllowed);
                 var r = dsq.RunAsync(_bridge, context.BridgeUrl, context.Model, FixedTemperature,
                     SubagentSystem, history, new List<string> { "write", "edit", "shell", "subagent" },
-                    5, chunkSink is null ? null : (async (kind, text) => await chunkSink(subId, kind, text)),
+                    7, chunkSink is null ? null : (async (kind, text) => await chunkSink(subId, kind, text)),
                     cts.Token).GetAwaiter().GetResult();
                 if (!r.Ok) return ToolResult.Fail($"subagente falhou: {r.Error}");
                 if (!string.IsNullOrWhiteSpace(r.Text)) collected.AppendLine(r.Text);

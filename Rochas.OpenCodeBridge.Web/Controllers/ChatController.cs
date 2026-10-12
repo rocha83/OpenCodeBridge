@@ -489,6 +489,9 @@ public sealed class ChatController(
         bool giroAbort = false;
         // Compactação automática: 1 retry após resumir (contexto cheio).
         bool compactRetried = false;
+        // Cutucadas DeepSeek em prosa (máx 2, contador próprio p/ não
+        // interferir no anti-giro).
+        int dsqNudges = 0;
 
         // Helper to build fresh messages array from values (avoids JsonNode parent issues)
         JsonArray BuildMessages(JsonArray src)
@@ -546,6 +549,14 @@ public sealed class ChatController(
                 if ((t as JsonObject)?["function"]?["name"]?.GetValue<string>() is not string tn || !allowed.Contains(tn)) continue;
                 if (t is not null) tools.Add(t.DeepClone());
             }
+            // DeepSeek em prosa ignora tools com "auto": o 1º turno força chamada;
+            // com subagent anunciado, força nominal (foco: delegar); depois volta
+            // a "auto" p/ poder concluir em texto (sem isto, loop infinito).
+            System.Text.Json.Nodes.JsonNode toolChoice = System.Text.Json.Nodes.JsonValue.Create("auto");
+            if (DeepSeekToolCoercion.IsDeepSeek(agent.Model) && !anyToolRan && tools.Count > 0)
+                toolChoice = DeepSeekToolCoercion.NamesOf(tools).Contains("subagent")
+                    ? new JsonObject { ["type"] = "function", ["function"] = new JsonObject { ["name"] = "subagent" } }
+                    : System.Text.Json.Nodes.JsonValue.Create("required");
             var body = new JsonObject
             {
                 ["model"] = agent.Model,
@@ -555,7 +566,7 @@ public sealed class ChatController(
                 // Trava anti-eco degenerado ([shell] ok x500): repete menos.
                 ["repetition_penalty"] = 1.15,
                 ["tools"] = tools,
-                ["tool_choice"] = "auto",
+                ["tool_choice"] = toolChoice,
                 // Sem isto o vLLM não devolve usage no stream e o donut
                 // trabalhava no chute (chars/4).
                 ["stream_options"] = new JsonObject { ["include_usage"] = true },
@@ -684,6 +695,12 @@ public sealed class ChatController(
                 }
             }
 
+            // DeepSeek com choice forçado devolve calls com finish "stop":
+            // normaliza p/ o fluxo normal (só deepseek; Qwen intacto).
+            if (DeepSeekToolCoercion.IsDeepSeek(agent.Model) && finishReason != "tool_calls"
+                && toolCallAccum.Values.Any(t => !string.IsNullOrEmpty(t.Id) && !string.IsNullOrEmpty(t.Name)))
+                finishReason = "tool_calls";
+
             // Caminho DeepSeek (padrão oficial em texto): sem tool_calls
             // estruturadas, o modelo escreve a chamada no texto
             // (<tool_name>/hermes/fence/tokens). Coage para o fluxo normal de
@@ -709,6 +726,26 @@ public sealed class ChatController(
             // Sem tools anunciadas: sem tool_calls; sem coerção — só texto, termina.
             if (toolCallAccum.Count == 0 || finishReason != "tool_calls")
             {
+                // DeepSeek em prosa (vê as tools mas discursa): cutucada mecânica
+                // com o formato exato (máx 2, sem tocar prompts — linha anti-giro).
+                if (DeepSeekToolCoercion.IsDeepSeek(agent.Model) && tools.Count > 0
+                    && dsqNudges < 2 && assistantContent.Length > 0)
+                {
+                    dsqNudges++;
+                    string prose = StripThinkTags(assistantContent.ToString(), assistantThinking);
+                    if (!string.IsNullOrWhiteSpace(prose))
+                        messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = prose });
+                    messages.Add(new JsonObject { ["role"] = "user", ["content"] =
+                        $"[DeepSeek-tools {dsqNudges}/2] Você respondeu em prosa sem chamar tools. " +
+                        "As tools estão no seu contexto (bloco # Tools). Para agir, emita a chamada " +
+                        "no formato exato, sem prosa junto. Para delegar uma fase: " +
+                        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>subagent\n" +
+                        "```json\n{\"prompt\": \"enunciado da fase\"}\n```<｜tool▁call▁end｜>" +
+                        "<｜tool▁calls▁end｜>" });
+                    assistantContent.Clear();
+                    assistantThinking.Clear();
+                    continue;
+                }
                 break;
             }
 

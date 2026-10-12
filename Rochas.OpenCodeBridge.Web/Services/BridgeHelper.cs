@@ -60,14 +60,15 @@ public static class BridgeHelper
     // onChunk(kind thinking|content, texto): ao vivo, por delta (subagentes).
     public static async Task<ChatTurn> ChatTurnAsync(IBridgeClient bridge, string bridgeUrl, string model,
         double temperature, string systemPrompt, JsonArray messages, JsonArray? tools, CancellationToken ct, bool? enableThinking = null, int? maxTokens = null,
-        Func<string, string, Task>? onChunk = null)
+        Func<string, string, Task>? onChunk = null, JsonNode? toolChoice = null)
     {
         using var buffer = new MemoryStream();
         Stream output = buffer;
         ChunkTap? tap = null;
         if (onChunk is not null) { tap = new ChunkTap(buffer, onChunk); output = tap; }
         var (ok, error) = await bridge.StreamAsync(bridgeUrl, model, temperature, systemPrompt, messages, output, ct,
-            includeTools: tools is not null, tools: tools, maxTokens: maxTokens, enableThinking: enableThinking);
+            includeTools: tools is not null, tools: tools, maxTokens: maxTokens, enableThinking: enableThinking,
+            toolChoice: toolChoice);
         if (!ok) return new ChatTurn(false, "", "", null, null, new List<ToolCall>(), error);
 
         buffer.Position = 0;

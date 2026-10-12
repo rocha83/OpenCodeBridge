@@ -54,7 +54,7 @@ public static class DeepSeekToolCoercion
             return calls;
         }
         text = ExtractHermes(text, calls);
-        if (calls.Count < MaxCalls) text = ExtractJsonFences(text, calls);
+        if (calls.Count < MaxCalls) text = ExtractJsonFences(text, calls, known);
         if (calls.Count < MaxCalls) text = ExtractV3Tokens(text, calls);
         if (calls.Count < MaxCalls) text = ExtractXml(text, calls, known);
 
@@ -74,7 +74,7 @@ public static class DeepSeekToolCoercion
         return text;
     }
 
-    private static string ExtractJsonFences(string text, List<BridgeHelper.ToolCall> calls)
+    private static string ExtractJsonFences(string text, List<BridgeHelper.ToolCall> calls, List<string>? known)
     {
         foreach (Match m in Regex.Matches(text, "```(?:json)?[^\\n\\r]*[\\r\\n]+(.*?)```",
                      RegexOptions.Singleline | RegexOptions.IgnoreCase))
@@ -82,7 +82,24 @@ public static class DeepSeekToolCoercion
             if (calls.Count >= MaxCalls) break;
             string body = m.Groups[1].Value.Trim();
             if (!body.StartsWith("{")) continue;
-            if (TryBuildCall(body, calls)) text = text.Replace(m.Value, "\n");
+            if (TryBuildCall(body, calls)) { text = text.Replace(m.Value, "\n"); continue; }
+            // Variante sem "name": {"<tool>": {...args...}} (chave única = tool).
+            if (known is not null && known.Count > 0)
+            {
+                JsonObject? obj;
+                try { obj = JsonNode.Parse(body)?.AsObject(); }
+                catch { continue; }
+                if (obj is not null && obj.Count == 1)
+                {
+                    string key = obj.First().Key;
+                    string canonical = known.FirstOrDefault(k => k.Equals(key, StringComparison.OrdinalIgnoreCase)) ?? "";
+                    if (canonical.Length > 0 && obj[key] is JsonObject argsObj)
+                    {
+                        calls.Add(new BridgeHelper.ToolCall($"dsq-{calls.Count}", canonical, argsObj.ToJsonString(JsonRelaxed())));
+                        text = text.Replace(m.Value, "\n");
+                    }
+                }
+            }
         }
         return text;
     }

@@ -27,21 +27,52 @@ public sealed class DeepSeekToolExecutor
     {
         var collected = new StringBuilder();
         string thinking = "";
+        int nudges = 0;
+        bool anyCall = false;
+        // Tools reais do sub (mesmas defs anunciadas): sem elas o template não
+        // renderiza o bloco # Tools e o required não tem o que forçar.
+        var subTools = new JsonArray();
+        foreach (var t in ToolDefinitions.GetTools())
+        {
+            if ((t as JsonObject)?["function"]?["name"]?.GetValue<string>() is not string tn) continue;
+            if (!knownTools.Any(k => k.Equals(tn, StringComparison.OrdinalIgnoreCase))) continue;
+            subTools.Add(t.DeepClone());
+        }
         for (int turn = 0; turn < maxTurns; turn++)
         {
-            // Texto puro (sem tools anunciadas): o parse é todo client-side.
+            // Com tools + required no 1º turno (força ação); depois auto.
+            // O parse estruturado vale; o texto cai na coerção.
             var t = await BridgeHelper.ChatTurnAsync(bridge, bridgeUrl, model, temperature,
-                systemPrompt, history, tools: null, ct,
-                enableThinking: true, maxTokens: null, onChunk: onChunk);
+                systemPrompt, history, subTools.Count > 0 ? subTools : null, ct,
+                enableThinking: true, maxTokens: null, onChunk: onChunk,
+                toolChoice: !anyCall && subTools.Count > 0
+                    ? System.Text.Json.Nodes.JsonValue.Create("required") : null);
             if (!t.Ok) return new DsResult(false, collected.ToString().Trim(), thinking, t.Error);
             if (!string.IsNullOrWhiteSpace(t.Thinking)) thinking = t.Thinking;
             if (!string.IsNullOrWhiteSpace(t.Content)) collected.AppendLine(t.Content);
             var calls = DeepSeekToolCoercion.Coerce(model, t.Content, out _, knownTools);
-            if (calls.Count == 0) break;
+            if (calls.Count == 0)
+            {
+                // Em prosa sem calls e sem nenhum trabalho feito: cutucada com
+                // o formato exato (máx 2). Texto após trabalho = conclusão.
+                if (!anyCall && nudges < 2 && !string.IsNullOrWhiteSpace(t.Content))
+                {
+                    nudges++;
+                    history.Add(new JsonObject { ["role"] = "assistant", ["content"] = t.Content });
+                    history.Add(new JsonObject { ["role"] = "user", ["content"] =
+                        $"[DeepSeek-tools {nudges}/2] Sem tool calls. Emita no formato exato, sem prosa junto, ex.: " +
+                        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>write\n" +
+                        "```json\n{\"path\": \"fase.sh\", \"content\": \"...\"}\n```<｜tool▁call▁end｜>" +
+                        "<｜tool▁calls▁end｜> (write cria o script; shell só 'bash -n <arq>')." });
+                    continue;
+                }
+                break;
+            }
             history.Add(new JsonObject { ["role"] = "assistant", ["content"] = t.Content });
             var responses = new StringBuilder();
             foreach (var c in calls)
             {
+                anyCall = true;
                 if (c.Name.Equals("subagent", StringComparison.OrdinalIgnoreCase))
                 {
                     collected.AppendLine("[subagent] ignorado: subagente não delega.");
