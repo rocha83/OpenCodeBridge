@@ -97,8 +97,7 @@ public sealed class ChatController(
             if (execId.Value == req.AgentId) return BadRequest("Executor deve diferir do orquestrador");
             var exec = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == execId.Value);
             if (exec is null || !exec.Active) return BadRequest("Executor inválido");
-            if (Agent.EffectiveMode(exec) != Agent.EffectiveMode(agent))
-                return BadRequest("Orquestrador e executor devem estar no mesmo modo (plan ou build)");
+            // Sem amarra de modo: orquestrador plan + executor build é topologia válida.
         }
         var title = string.IsNullOrWhiteSpace(req.Title) ? "Nova sessão" : req.Title;
         var s = await sessionService.CreateAsync(CurrentUserId, req.AgentId, title, execId);
@@ -155,6 +154,20 @@ public sealed class ChatController(
     {
         await sessionService.DeleteAsync(id, CurrentUserId);
         return Ok();
+    }
+
+    // GET /Chat/Sessions/{id}/Context - tamanho do contexto: real (prompt_tokens
+    // do último turno, medido pelo modelo) com fallback p/ estimativa chars/4.
+    [HttpGet("/Chat/Sessions/{id:int}/Context")]
+    public async Task<IActionResult> GetSessionContext(int id)
+    {
+        var s = await sessionService.GetAsync(id, CurrentUserId);
+        if (s is null) return NotFound();
+        var msgs = await sessionService.GetMessagesAsync(id, int.MaxValue);
+        var live = msgs.Where(m => m.Archived == 0).ToList();
+        int tokens = ContextWindow.EstimateTotalTokens(live);
+        int real = live.LastOrDefault(m => (m.PromptTokens ?? 0) > 0)?.PromptTokens ?? 0;
+        return Json(new { tokens, real, budget = ContextWindow.MaxInputTokens });
     }
 
     // POST /Chat/Sessions/{id}/Compact — resume o antigo, mantém a cauda.
@@ -241,9 +254,7 @@ public sealed class ChatController(
             if (req.ExecutorAgentId.Value == s.AgentId) return BadRequest("Executor deve diferir do orquestrador");
             var exec = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.ExecutorAgentId.Value);
             if (exec is null || !exec.Active) return BadRequest("Executor inválido");
-            var orch = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == s.AgentId);
-            if (orch is not null && Agent.EffectiveMode(exec) != Agent.EffectiveMode(orch))
-                return BadRequest("Orquestrador e executor devem estar no mesmo modo (plan ou build)");
+            // Sem amarra de modo: orquestrador plan + executor build é topologia válida.
         }
         await sessionService.UpdateExecutorAsync(id, req.ExecutorAgentId);
         return Ok();

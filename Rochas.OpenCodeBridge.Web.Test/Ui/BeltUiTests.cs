@@ -26,19 +26,19 @@ public static class BeltUiTests
     private static readonly Belt[] Belts =
     {
         new("azul", "Faixa AZUL E2E",
-            "Especifique um CRUD de reembolsos corporativos: modelo de dados com campos, regras de aprovacao por faixa de valor e os endpoints necessarios. Premissas: backend .NET C#, frontend em MVC Razor. Divida em fases por escopo (backend: domínio, infraestrutura, serviços; frontend) e divida a tarefa de implementacao usando subagent tool.",
+            "Especifique o dominio backend C# de um CRUD de reembolsos corporativos: entidades, value objects e regras de aprovacao por faixa de valor. Escopo SOMENTE dominio (sem banco, sem API). Premissas: backend .NET C#. Divida em fases por escopo de dominio e divida a tarefa de implementacao usando subagent tool.",
             4, 30),
         new("verde", "Faixa VERDE E2E",
-            "Defina as regras de validacao de CPF e CNPJ para cadastro de clientes e fornecedores: digitos verificadores, rejeicao de sequencias repetidas e numeros de teste conhecidos, aceitacao com e sem mascara, obrigatoriedade por tipo de pessoa (PF exige CPF, PJ exige CNPJ), e de 2 exemplos validos e 1 invalido de cada. Inclua calculo de distancia haversiana entre dois CEPs a partir de base local de CEP com campos lat/lng (amostra embutida no enunciado, sem rede), com 1 exemplo calculado. Divida em fases por escopo (backend: domínio, infraestrutura, serviços; frontend) e divida a tarefa de implementacao usando subagent tool.",
+            "Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ como regras de dominio persistidas: digitos verificadores, rejeicao de sequencias repetidas, obrigatoriedade por tipo de pessoa (PF exige CPF, PJ exige CNPJ). Escopo: dominio + banco SQL (sem API). Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados) e divida a tarefa de implementacao usando subagent tool.",
             4, 30),
         new("roxa", "Faixa ROXA E2E",
-            "Defina validacao e mascaras para e-mail, telefone BR com DDD e CEP: regras, regex de cada um e 2 exemplos validos de cada. Divida em fases por escopo (backend: domínio, infraestrutura, serviços; frontend) e divida a tarefa de implementacao usando subagent tool.",
+            "Especifique o dominio backend C# de cadastro de clientes e fornecedores, o banco de dados SQL (DDL, indices, constraints) e os repositorios e servicos: repositorio generico Dapper, servicos de aplicacao, validacao e mascaras de e-mail, telefone BR com DDD e CEP como servicos (regras, regex de cada um e 2 exemplos validos de cada). Escopo: dominio + banco SQL + repositorios e servicos (sem API). Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados; repositorios e servicos) e divida a tarefa de implementacao usando subagent tool.",
             5, 30),
         new("marrom", "Faixa MARROM E2E",
-            "Especifique um CRUD de reembolsos corporativos: modelo de dados com campos, regras de aprovacao por faixa de valor, endpoints necessarios, e pipeline CI/CD com Docker (Dockerfile multi-stage e compose para subir api+db). Divida em fases por escopo (backend: domínio, infraestrutura, serviços; frontend) e divida a tarefa de implementacao usando subagent tool.",
+            "Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, regras de aprovacao por faixa de valor), o banco de dados SQL (DDL, indices, constraints), os repositorios e servicos (Dapper, servicos de aplicacao) e a API REST: controllers, DTOs, autenticacao, frontend do portal em React.js consumindo a API e pipeline CI/CD com Docker (Dockerfile multi-stage e compose para subir api+db). Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados; repositorios e servicos; API; frontend React) e divida a tarefa de implementacao usando subagent tool.",
             4, 90),
         new("preta", "Faixa PRETA E2E",
-            "Arquitetura de ecossistema (divida em cerca de 14 subtarefas): Portal do Colaborador (ponto eletronico, reembolsos, organograma) integrado via barramento de eventos assincrono a outros sistemas (folha, ERP); APIs REST do portal; pipeline de Big Data com ML: regressao para previsao de gastos, classificacao de reembolsos suspeitos e rede neural (perceptron multicamadas) para deteccao de anomalias em ponto eletronico. Premissas: backend .NET C#, frontend do portal em React.js. Divida em fases por escopo (backend: domínio, infraestrutura, serviços; frontend) e divida a tarefa de implementacao usando subagent tool.",
+            "Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador (ponto eletronico, reembolsos, organograma), banco de dados SQL (DDL, indices, constraints), repositorios e servicos (Dapper, servicos de aplicacao), API REST do portal e servicos bus: barramento de eventos assincrono integrando portal, folha e ERP; pipeline de Big Data com ML: regressao para previsao de gastos e classificacao de reembolsos suspeitos apenas com algoritmos ML classicos (sem redes neurais), e rede neural (perceptron multicamadas) para deteccao de anomalias em ponto eletronico, com scripts de treino e avaliacao para cada modelo. Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados; repositorios e servicos; API; servicos bus; redes neurais) e divida a tarefa de implementacao usando subagent tool.",
             5, 120),
     };
 
@@ -222,6 +222,8 @@ public static class BeltUiTests
             await page.WaitForSelectorAsync("#conv, #prompt, select#agentId", new PageWaitForSelectorOptions { Timeout = 15000 });
             Console.WriteLine($"[ui] {belt.Key}: agente plan");
             await page.SelectOptionAsync("select#agentId", "1");
+            Console.WriteLine($"[ui] {belt.Key}: executor 8B-exec");
+            await page.SelectOptionAsync("select#executorId", "2");
             Console.WriteLine($"[ui] {belt.Key}: nova sessao");
             await page.ClickAsync("#newSession");
             // Nova sessão vazia antes de enviar (sem isso o prompt cai na antiga).
