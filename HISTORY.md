@@ -1,5 +1,19 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Bypass llama + auth upstream (2026-10-12)
+- Bug OpenCode 2.0.21 direto no llama.cpp: `item['content'] is not an array` em
+  todo turno com histórico (Responses reenvia `reasoning` com content string).
+  Novo `--passthrough-responses`: remove só os itens `reasoning` do `input` e
+  encaminha o resto intacto (tools nativas, sem tradução p/ chat). Pipe antigo
+  mantido por compatibilidade (vLLM). Evidências: GPU `BP-1`/`BP-2`
+  (`dropped_reasoning=1`) + Write `BP-TOOLS-OK`; CPU `BPC-1`/`BPC-2`.
+- Novo `--api-key` (+ `apiKey` no appsettings, `api_key: ***` no `/api/status`):
+  repassa `Authorization` do cliente ou injeta o Bearer (llama exige).
+- Rollback live: bridges C# `:4124 → :4100` (`qwen3.5-9b`, max 32768) e
+  `:4125 → :4110` (`qwen3.5-4b`, max 4096) no lugar do `atomic serve`;
+  exemplos `appsettings.4124/4125.*` atualizados. Build 0/0, suite EXIT=0.
+
+
 ## Bridge Web — DeepSeek-Coder-V2-Lite com tools (2026-10-12)
 - Causa raiz: o `chat_template` do tokenizer ignora `tools` — o modelo nunca
   as via. Novo `/opt/vllm/deepseek-tools.jinja` (mesmo formato `User:/Assistant:`,

@@ -49,6 +49,8 @@ internal static partial class Program
     static int CpuMaxTokens = 2048;                                // teto p/ upstream sem parser server-side (llama/CPU): decode ~5 tok/s, teto alto = divagacao de minutos. GPU usa MaxTokens.
     static int ToolOutputLimit = 8000;                             // corte por resultado de tool (ctx 28672)
     static string LogPath = "/tmp/qwen3-bridge.log";
+    static string ApiKey = "";
+    static bool PassthroughResponses = false;                    // Bypass p/ upstream com Responses nativo (llama.cpp): so remove itens reasoning, resto passa direto                                     // Bearer p/ upstream com auth (llama --api-key); vazio = so repasse
     static readonly string Version = "2.1";
 
     // Coerção texto->tool_calls p/ upstream sem parser server-side (llama.cpp
@@ -102,6 +104,8 @@ internal static partial class Program
             if (cfg["maxTokens"]?.GetValue<int>() is int mt && mt > 0) MaxTokens = mt;
             if (cfg["cpuMaxTokens"]?.GetValue<int>() is int cmt && cmt > 0) CpuMaxTokens = cmt;
             if (cfg["logPath"]?.GetValue<string>() is string log && log.Length > 0) LogPath = log;
+            if (cfg["apiKey"]?.GetValue<string>() is string key && key.Length > 0) ApiKey = key;
+            if (cfg["passthroughResponses"]?.GetValue<bool>() is bool pt) PassthroughResponses = pt;
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
             if (cfg["profiles"]?.AsObject() is JsonObject profs)
                 foreach (var kv in profs)
@@ -152,6 +156,16 @@ internal static partial class Program
     }
 
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(10) };
+
+    /// <summary>Auth no upstream: repassa o Authorization do cliente ou usa a ApiKey configurada.</summary>
+    /// <param name="req">Request upstream.</param>
+    /// <param name="ctx">Contexto com os headers originais.</param>
+    static void WithAuth(HttpRequestMessage req, HttpListenerContext ctx)
+    {
+        string? incoming = ctx.Request.Headers["Authorization"];
+        if (!string.IsNullOrWhiteSpace(incoming)) { req.Headers.TryAddWithoutValidation("Authorization", incoming.Trim()); return; }
+        if (!string.IsNullOrEmpty(ApiKey)) req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ApiKey);
+    }
 
     // JSON sem escape unicode -> acentos do pt-BR chegam inteiros no cliente
     static readonly JsonSerializerOptions SerOpts = new()
@@ -312,6 +326,8 @@ internal static partial class Program
                 case "--max-tokens": MaxTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--cpu-max-tokens": CpuMaxTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--log": LogPath = cliArgs[i + 1]; break;
+                case "--api-key": ApiKey = cliArgs[i + 1]; break;
+                case "--passthrough-responses": PassthroughResponses = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
             }
         }
@@ -495,7 +511,9 @@ internal static partial class Program
         ["status"] = "ok", ["bridge"] = "qwen3-csharp", ["version"] = Version,
         ["listen"] = Listen, ["port"] = Port,
         ["upstream"] = Upstream, ["model"] = Model, ["thinking"] = Thinking,
-        ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
+["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
+["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
+        ["passthrough_responses"] = PassthroughResponses,
         ["cpu_max_tokens"] = CpuMaxTokens,
         ["uptime_seconds"] = (long)(DateTime.UtcNow - StartedAt).TotalSeconds,
         ["total_requests"] = TotalRequests, ["failed_requests"] = FailedRequests
@@ -578,7 +596,8 @@ internal static partial class Program
             }
             catch { wantStream = false; }
         }
-        var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Upstream + ctx.Request.Url!.AbsolutePath);
+var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Upstream + ctx.Request.Url!.AbsolutePath);
+        WithAuth(forward, ctx);
         if (ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH")
             forward.Content = new StringContent(outBody, Encoding.UTF8, "application/json");
         // Linha CPU + stream: o opencode TUI aborta em 300s sem headers e o
@@ -807,6 +826,14 @@ internal static partial class Program
             WriteJson(ctx, 400, new JsonObject { ["error"] = "input ausente ou vazio: Responses exige input com ao menos 1 mensagem" });
             return;
         }
+// Bypass llama: upstream fala Responses nativo; so removemos os itens
+        // reasoning (llama.cpp exige content array neles) e encaminhamos o
+        // resto intacto — tools nativas, sem traducao p/ chat.
+        if (PassthroughResponses)
+        {
+            ForwardResponses(ctx, body, req);
+            return;
+        }
         bool wantStream = req["stream"]?.GetValue<bool>() ?? false;
         var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out string thinking, out int toolCount);
 
@@ -818,10 +845,11 @@ internal static partial class Program
         }
 
         // 4.5) CHAMADA AO vLLM
-        var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/completions")
+var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/completions")
         {
             Content = new StringContent(chat.ToJsonString(SerOpts), Encoding.UTF8, "application/json")
         };
+        WithAuth(chatRequest, ctx);
         using var upstreamResponse = Http.Send(chatRequest);
         string responseBody = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         if (!upstreamResponse.IsSuccessStatusCode)
@@ -859,6 +887,59 @@ internal static partial class Program
         WriteJson(ctx, 200, responseObj);
     }
 
+/// <summary>Bypass: encaminha /v1/responses ao upstream apos remover itens reasoning.</summary>
+    /// <param name="ctx">Contexto HTTP.</param>
+    /// <param name="body">Corpo original.</param>
+    /// <param name="req">Request ja parseado.</param>
+    static void ForwardResponses(HttpListenerContext ctx, string body, JsonObject req)
+    {
+        var startedAt = DateTime.UtcNow;
+        int dropped = 0;
+        string outBody = body;
+        try
+        {
+            if (req["input"] is JsonArray list)
+            {
+                int n0 = list.Count;
+                var clean = new JsonArray();
+                foreach (var it in list)
+                {
+                    if (it is JsonObject o && o["type"]?.GetValue<string>() == "reasoning") { dropped++; continue; }
+                    clean.Add(it?.DeepClone());
+                }
+                if (dropped > 0) { req["input"] = clean; outBody = req.ToJsonString(SerOpts); }
+            }
+        }
+        catch { outBody = body; }
+        var forward = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/responses")
+        {
+            Content = new StringContent(outBody, Encoding.UTF8, "application/json")
+        };
+        WithAuth(forward, ctx);
+        using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHeadersRead);
+        double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
+        Log(new JsonObject { ["event"] = "passthrough-responses", ["model"] = Model, ["dropped_reasoning"] = dropped, ["status"] = (int)upstreamResponse.StatusCode, ["elapsed"] = Math.Round(elapsed, 2) });
+        if (!upstreamResponse.IsSuccessStatusCode) Interlocked.Increment(ref FailedRequests);
+        ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
+        ctx.Response.ContentType = upstreamResponse.Content.Headers.ContentType?.ToString() ?? "application/json";
+        using var stream = upstreamResponse.Content.ReadAsStream();
+        if ((ctx.Response.ContentType ?? "").Contains("text/event-stream"))
+        {
+            using var reader = new StreamReader(stream, new UTF8Encoding(false));
+            using var writer = new StreamWriter(ctx.Response.OutputStream, new UTF8Encoding(false)) { AutoFlush = true };
+            string? line;
+            while ((line = reader.ReadLine()) != null) writer.WriteLine(line);
+        }
+        else
+        {
+            using var reader = new StreamReader(stream, new UTF8Encoding(false));
+            string json = reader.ReadToEnd();
+            var bytes = new UTF8Encoding(false).GetBytes(json);
+            ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+        }
+        ctx.Response.Close();
+    }
+
     /// <summary>Streaming real: repassa deltas do vLLM na hora, fecha com completed.</summary>
     /// <param name="ctx">Contexto HTTP.</param>
     /// <param name="chat">Chat request ja montado.</param>
@@ -873,10 +954,11 @@ internal static partial class Program
         chat["stream"] = true;
         chat["stream_options"] = new JsonObject { ["include_usage"] = true };
 
-        var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/completions")
+var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/completions")
         {
             Content = new StringContent(chat.ToJsonString(SerOpts), Encoding.UTF8, "application/json")
         };
+        WithAuth(chatRequest, ctx);
 
         // Headers do upstream ANTES de abrir o SSE: se der erro aqui,
         // devolvemos JSON de erro limpo (nada foi enviado ao cliente ainda).

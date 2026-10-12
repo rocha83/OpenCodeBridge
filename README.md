@@ -78,6 +78,8 @@ dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 | `--cpu-max-tokens` | `2048` | Teto da linha CPU (llama.cpp ~5 tok/s; teto alto = divagação) |
 | `--coerce-text-tools` | auto (`true` se model contém `cpu`) | Coage JSON em texto → `tool_calls` (só linha CPU; vLLM intacta) |
 | `--log` | `/tmp/qwen3-bridge.log` | Log JSONL de eventos (`coerced`, `tps_output`) |
+| `--api-key` | (vazio) | Bearer p/ upstream com auth (llama `--api-key`); repassa o `Authorization` do cliente quando presente |
+| `--passthrough-responses` | `false` | Bypass p/ upstream com Responses nativo (llama.cpp): remove só os itens `reasoning` do `input` e encaminha o resto intacto (tools nativas, sem tradução p/ chat). Pipe antigo mantido p/ vLLM |
 
 ### Perfis por sufixo no model
 
@@ -95,8 +97,9 @@ Temperatura explícita no request vence o perfil. `appsettings.json` ao lado do 
 
 | Linha | Bridge | Upstream | Modelo |
 |---|---|---|---|
-| GPU | `:4124` | vLLM `:4100` (`hermes` + `deepseek_r1`) | `qwen3-8b-awq` (Qwen3-8B-AWQ) |
-| CPU | `:4125` | llama.cpp `:4110` | `qwen25-coder-3b-cpu` (Qwen2.5-Coder-3B) |
+| GPU | `:4124` | llama TurboQuant `:4100` (Qwen3.5-9B, bypass) | `qwen3.5-9b` |
+| CPU | `:4125` | llama TurboQuant `:4110` (Qwen3.5-4B 16k/slot, bypass) | `qwen3.5-4b` |
+| (legado) | `:4124` | vLLM `:4100` (`hermes` + `deepseek_r1`) | `qwen3-8b-awq` (Qwen3-8B-AWQ) |
 
 ### Endpoints
 
