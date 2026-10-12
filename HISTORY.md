@@ -1,5 +1,25 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Bridge Web — DeepSeek-Coder-V2-Lite com tools (2026-10-12)
+- Causa raiz: o `chat_template` do tokenizer ignora `tools` — o modelo nunca
+  as via. Novo `/opt/vllm/deepseek-tools.jinja` (mesmo formato `User:/Assistant:`,
+  + bloco oficial `# Tools` com tokens `<｜tool▁calls▁begin｜>...` byte-exatos do
+  parser `deepseek_v3`); unit vLLM sem reasoning parser (aborta) e com
+  `--trust-remote-code`, ctx 32768. Deps JIT: `nvidia-cuda-toolkit + ninja-build`.
+- Servidor (`Web`, sem mudar prompts): `DeepSeekToolCoercion` (parse texto:
+  XML oficial `<tool_name>`, hermes, fence json + variante chave-única,
+  tokens V3, `<attempt_completion>`) + `DeepSeekToolExecutor` (loop
+  texto→parse→executa, retorno `<tool_response>`, sem recursão: sub não
+  anuncia `subagent`). Engates por modelo (Qwen/hermes intacto).
+- Direção: 1º turno forçado — principal força `subagent` nominal, sub força
+  `write` nominal, depois `auto` (p/ concluir em texto); `finish "stop"` com
+  calls normalizado; cutucada mecânica máx 2 (linha anti-giro) quando discursa.
+- Bug pego por log: executor descartava `t.Calls` estruturadas (content vazio
+  com required) → "subagente vazio"; corrigido + teste `U-dsq-exec-structured`.
+- Suite: coerção **26/26 PASS**, resto verde (`--units-only`).
+- Mova/imunow com DeepSeek: delegação principal→sub ok; sub gerando `.sh`
+  em validação (shell só `bash -n`). Enunciado imunow ganhou ordem de `.sh`.
+
 ## Bridge Web — DeepSeek ToolExecutor, padrão oficial em texto (2026-10-12)
 - Coder V2-Lite não emite `tool_calls` estruturadas: novo caminho em classe
   própria (`DeepSeekToolCoercion`: parse `<tool_name>` XML oficial + hermes em

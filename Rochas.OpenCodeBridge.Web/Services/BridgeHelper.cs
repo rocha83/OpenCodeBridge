@@ -132,11 +132,15 @@ public static class BridgeHelper
                 completionTokens = usage["completion_tokens"]?.GetValue<int>();
             }
         }
-        var calls = finishReason == "tool_calls"
-            ? accum.Values
-                .Where(t => !string.IsNullOrEmpty(t.Id) && !string.IsNullOrEmpty(t.Name))
-                .Select(t => new ToolCall(t.Id, t.Name, t.Args.ToString()))
-                .ToList()
+        var structured = accum.Values
+            .Where(t => !string.IsNullOrEmpty(t.Id) && !string.IsNullOrEmpty(t.Name))
+            .Select(t => new ToolCall(t.Id, t.Name, t.Args.ToString()))
+            .ToList();
+        // Choice forçado (required/nominal) pode voltar com finish "stop":
+        // aceita as calls mesmo assim (só deepseek; Qwen intacto).
+        var calls = (finishReason == "tool_calls"
+                || (structured.Count > 0 && DeepSeekToolCoercion.IsDeepSeek(model)))
+            ? structured
             : new List<ToolCall>();
         string txt = content.ToString();
         // Caminho DeepSeek: sem tool_calls estruturadas, o modelo escreve a

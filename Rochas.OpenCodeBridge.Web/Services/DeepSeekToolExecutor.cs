@@ -43,13 +43,20 @@ public sealed class DeepSeekToolExecutor
         }
         for (int turn = 0; turn < maxTurns; turn++)
         {
-            // Com tools + required no 1º turno (força ação); depois auto.
-            // O parse estruturado vale; o texto cai na coerção.
+            // Com tools + write nominal no 1º turno (força a escrita do script,
+            // ordem do prompt do sub); depois auto. O parse estruturado vale;
+            // o texto cai na coerção.
+            System.Text.Json.Nodes.JsonNode? choice = null;
+            if (subTools.Count > 0 && !anyCall)
+                choice = new JsonObject
+                {
+                    ["type"] = "function",
+                    ["function"] = new JsonObject { ["name"] = "write" },
+                };
             var t = await BridgeHelper.ChatTurnAsync(bridge, bridgeUrl, model, temperature,
                 systemPrompt, history, subTools.Count > 0 ? subTools : null, ct,
                 enableThinking: true, maxTokens: null, onChunk: onChunk,
-                toolChoice: !anyCall && subTools.Count > 0
-                    ? System.Text.Json.Nodes.JsonValue.Create("required") : null);
+                toolChoice: choice);
             if (!t.Ok) return new DsResult(false, collected.ToString().Trim(), thinking, t.Error);
             // Estruturadas primeiro (required força tool_calls com content vazio);
             // texto cai na coerção.
