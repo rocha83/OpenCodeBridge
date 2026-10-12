@@ -48,9 +48,13 @@ public sealed class DeepSeekToolExecutor
                 toolChoice: !anyCall && subTools.Count > 0
                     ? System.Text.Json.Nodes.JsonValue.Create("required") : null);
             if (!t.Ok) return new DsResult(false, collected.ToString().Trim(), thinking, t.Error);
+            // Estruturadas primeiro (required força tool_calls com content vazio);
+            // texto cai na coerção.
+            var calls = t.Calls.Count > 0
+                ? t.Calls
+                : DeepSeekToolCoercion.Coerce(model, t.Content, out _, knownTools);
             if (!string.IsNullOrWhiteSpace(t.Thinking)) thinking = t.Thinking;
             if (!string.IsNullOrWhiteSpace(t.Content)) collected.AppendLine(t.Content);
-            var calls = DeepSeekToolCoercion.Coerce(model, t.Content, out _, knownTools);
             if (calls.Count == 0)
             {
                 // Em prosa sem calls e sem nenhum trabalho feito: cutucada com

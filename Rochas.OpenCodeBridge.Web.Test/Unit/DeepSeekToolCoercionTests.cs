@@ -40,8 +40,9 @@ internal static class DeepSeekToolCoercionTests
         ExecutorNudgesThenCalls();
         ExecutorStopsAfterWork();
         FenceSingleKey();
+        ExecutorStructuredCalls();
 
-        System.Console.WriteLine($"=== DeepSeekCoercion Unit: {24 - Failures}/24 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== DeepSeekCoercion Unit: {25 - Failures}/25 PASS, {Failures} FAIL ===");
         return Failures;
     }
 
@@ -203,6 +204,26 @@ internal static class DeepSeekToolCoercionTests
         var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out string cleaned, Known);
         Check(calls.Count == 1 && calls[0].Name == "subagent" && calls[0].Args.Contains("Fase 1"), "U-dsq-fence-single-key");
         Check(!cleaned.Contains("```"), "U-dsq-fence-single-key-cleaned");
+    }
+
+    private static void ExecutorStructuredCalls()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"dsq-{System.Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var inner = new ToolExecutor(ToolExecutor.DefaultHandlers(), root, Path.Combine(root, "audit.log"));
+            var dsq = new DeepSeekToolExecutor(inner, _ => true);
+            var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = "faca" } };
+            // required força tool_calls com content vazio: o executor usa t.Calls.
+            string turn1 = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"write\",\"arguments\":\"{\\\"path\\\": \\\"s.sh\\\", \\\"content\\\": \\\"echo s\\\"}\"}}],\"content\":\"\"},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n";
+            var stub = new SseStub(new[] { turn1, SseText("fim") });
+            var r = dsq.RunAsync(stub, "http://x", DsModel, 0.4, "sys", history,
+                new List<string> { "write", "edit", "shell", "subagent" }, 7, null,
+                CancellationToken.None).GetAwaiter().GetResult();
+            Check(r.Ok && System.IO.File.Exists(Path.Combine(root, "s.sh")), "U-dsq-exec-structured");
+        }
+        finally { try { Directory.Delete(root, true); } catch { } }
     }
 
     private static string SseText(string content)
