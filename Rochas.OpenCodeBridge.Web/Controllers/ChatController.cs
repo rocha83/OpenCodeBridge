@@ -149,6 +149,42 @@ public sealed class ChatController(
         });
     }
 
+    // GET /Chat/Sessions/{id}/Scripts - .sh gerados na sessão (write +
+    // menções em comandos e resultados), p/ o painel lateral.
+    [HttpGet("/Chat/Sessions/{id:int}/Scripts")]
+    public async Task<IActionResult> GetSessionScripts(int id)
+    {
+        var s = await sessionService.GetAsync(id, CurrentUserId);
+        if (s is null) return NotFound();
+        var calls = await sessionService.GetToolCallsAsync(id, 500);
+        var files = new List<string>();
+        void Add(string? f)
+        {
+            if (string.IsNullOrWhiteSpace(f)) return;
+            f = f.Trim().Trim('"', '\'');
+            if (f.EndsWith(".sh", StringComparison.OrdinalIgnoreCase)
+                && !files.Contains(f)) files.Add(f);
+        }
+        foreach (var c in calls)
+        {
+            try
+            {
+                var args = System.Text.Json.Nodes.JsonNode.Parse(c.Args ?? "")?.AsObject();
+                Add(args?["path"]?.GetValue<string>());
+                var cmd = args?["command"]?.GetValue<string>() ?? "";
+                foreach (System.Text.RegularExpressions.Match m in
+                    System.Text.RegularExpressions.Regex.Matches(cmd, @"[\w\-.]+/[ \w\-./]*\.sh|[\w\-.]+\.sh"))
+                    Add(m.Value);
+            }
+            catch { }
+            if (c.Output is string o)
+                foreach (System.Text.RegularExpressions.Match m in
+                    System.Text.RegularExpressions.Regex.Matches(o, @"[\w\-.]+\.sh"))
+                    Add(m.Value);
+        }
+        return Json(new { scripts = files });
+    }
+
     [HttpDelete("/Chat/Sessions/{id:int}")]
     public async Task<IActionResult> DeleteSession(int id)
     {
@@ -516,8 +552,13 @@ public sealed class ChatController(
                 ["messages"] = BuildMessages(messages),
                 ["temperature"] = plan ? 0.4 : agent.Temperature,
                 ["stream"] = true,
+                // Trava anti-eco degenerado ([shell] ok x500): repete menos.
+                ["repetition_penalty"] = 1.15,
                 ["tools"] = tools,
                 ["tool_choice"] = "auto",
+                // Sem isto o vLLM não devolve usage no stream e o donut
+                // trabalhava no chute (chars/4).
+                ["stream_options"] = new JsonObject { ["include_usage"] = true },
                 ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = true },
             };
 
@@ -761,7 +802,12 @@ public sealed class ChatController(
                 await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds);
                 // Outputs NÃO voltam ao contexto; só o texto do subagente (como assistant).
                 if (subText is not null)
-                    messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = "[subagente] " + subText });
+                {
+                    // Resumo curto p/ contexto: o texto integral (com as linhas
+                    // [write]/[shell] ok) fazia o modelo recitar o eco em loop.
+                    string shortSub = subText.Length > 600 ? subText[..600] + "…" : subText;
+                    messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = "[subagente] " + shortSub });
+                }
             }
 
             // Reseta para próxima iteração

@@ -25,6 +25,10 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
                 ["messages"] = all,
                 ["temperature"] = temperature,
                 ["stream"] = true,
+                // Trava anti-eco degenerado ([shell] ok x500): repete menos.
+                ["repetition_penalty"] = 1.15,
+                // Sem isto o vLLM não devolve usage no stream (donut no chute).
+                ["stream_options"] = new JsonObject { ["include_usage"] = true },
             };
             if (maxTokens.HasValue) body["max_tokens"] = maxTokens.Value;
             if (includeTools)

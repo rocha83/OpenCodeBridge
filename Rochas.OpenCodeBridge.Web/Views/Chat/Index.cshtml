@@ -81,6 +81,15 @@
           </div>
         </div>
 
+        <div class="card mt-3">
+          <div class="card-body">
+            <h6 class="font-weight-bold mb-2 scripts-title">Scripts para o Executor</h6>
+            <ul class="list-unstyled mb-0" id="scriptList">
+              <li class="small text-muted">Nenhum script ainda.</li>
+            </ul>
+          </div>
+        </div>
+
       </div>
 
     </div>
@@ -310,7 +319,7 @@ function subChunk(sub, kind, text) {
       h.pre.parentNode.insertBefore(h.det, h.pre);
     }
     h.pp.textContent = h.think;
-    if (h.psum) h.psum.textContent = `Raciocínio ${thinkPct(h.think.length + h.full.length)}%`;
+    if (h.psum) h.psum.textContent = `Raciocínio ${thinkPct(h.think.length + h.full.length)}% · ${fmtK(h.think.length + h.full.length)}`;
     h.pp.scrollTop = h.pp.scrollHeight;
   } else {
     h.full += text;
@@ -321,7 +330,7 @@ function subChunk(sub, kind, text) {
     h.pre.textContent = h.full;
     // Conteúdo começou: fecha o accordion do raciocínio (o % segue subindo).
     if (h.det) h.det.removeAttribute('open');
-    if (h.psum) h.psum.textContent = `Raciocínio ${thinkPct(h.think.length + h.full.length)}%`;
+    if (h.psum) h.psum.textContent = `Raciocínio ${thinkPct(h.think.length + h.full.length)}% · ${fmtK(h.think.length + h.full.length)}`;
   }
   if (isScrolledToBottom()) scrollToBottom();
 }
@@ -449,6 +458,28 @@ async function loadMessages(sessionId) {
   await loadTasks(sessionId);
 }
 
+// Painel lateral: scripts .sh gerados na sessão (do histórico tool_calls).
+async function loadScripts(sessionId) {
+  const list = document.getElementById('scriptList');
+  if (!list) return;
+  try {
+    const r = await fetch(`/Chat/Sessions/${sessionId}/Scripts`);
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j.scripts || !j.scripts.length) {
+      list.innerHTML = '<li class="small text-muted">Nenhum script ainda.</li>';
+      return;
+    }
+    list.innerHTML = '';
+    j.scripts.forEach(s => {
+      const li = document.createElement('li');
+      li.className = 'mb-1';
+      li.innerHTML = `<span class="badge bg-dark">${esc(s)}</span>`;
+      list.appendChild(li);
+    });
+  } catch { /* painel opcional: ignora */ }
+}
+
 // Painel lateral: decomposição + status das mini-tarefas dos executores
 async function loadTasks(sessionId) {
   const list = document.getElementById('taskList');
@@ -495,7 +526,7 @@ async function loadTasks(sessionId) {
 }
 
 // Atualiza o painel a cada 5s enquanto há sessão ativa
-setInterval(() => { if (currentSessionId) { loadTasks(currentSessionId); updateCtxDonut(); } }, 5000);
+setInterval(() => { if (currentSessionId) { loadTasks(currentSessionId); updateCtxDonut(); loadScripts(currentSessionId); } }, 5000);
 
 async function createSession() {
   abortActiveStream();
@@ -822,7 +853,7 @@ document.getElementById('send').onclick = async () => {
             }
             if (thinkP) thinkP.classList.add('typing');
             thinkP.textContent = think;
-            if (thinkSum) thinkSum.textContent = `Raciocínio ${thinkPct(think.length + full.length)}%`;
+            if (thinkSum) thinkSum.textContent = `Raciocínio ${thinkPct(think.length + full.length)}% · ${fmtK(think.length + full.length)}`;
             thinkP.scrollTop = thinkP.scrollHeight;
             engineTxt.textContent = 'Pensando...';
           }
@@ -842,7 +873,7 @@ document.getElementById('send').onclick = async () => {
             // Thinking encerrou: fecha o accordion, mas o % segue subindo com o
             // conteúdo (chars acumulados) até 100% no DONE — nunca congela.
             if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); }
-            if (thinkSum) thinkSum.textContent = `Raciocínio ${thinkPct(think.length + full.length)}%`;
+            if (thinkSum) thinkSum.textContent = `Raciocínio ${thinkPct(think.length + full.length)}% · ${fmtK(think.length + full.length)}`;
             startTypewriter();
           }
         } catch (e) { /* chunk parcial: ignora */ }

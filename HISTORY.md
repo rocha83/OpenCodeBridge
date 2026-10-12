@@ -788,3 +788,30 @@
   tem 1x cada, args todos distintos, canais SSE limpos). Reconciliação do
   done agora é sempre pelo id do sub; falta o pintor duplicado (trace +
   assert DOM×banco pendentes).
+
+## Bridge Web — Anti-giro, contexto real e painel de scripts (2026-10-12)
+- Anti-giro no loop: 3 turnos só-leitura sem texto nem delegate (ou mesma
+  call 3x) injeta enunciado corretivo `[Anti-giro 1/2]` (efêmero, máx 2);
+  sem progresso aborta com nota honesta na bolha. Leituras do turno
+  descartadas (nunca executaram). Subagente teto 3→5 turnos.
+- Dedup de calls idênticas no turno (modelo repetia glob/read e o servidor
+  executava 2x) + done do sub só com id (`painted` 1x, sem fallback no card
+  corrente, chunks tardios ignorados) + dedupe por assinatura no done.
+- Contexto real: `stream_options.include_usage` nos corpos (sem isto o vLLM
+  nunca manda usage e o donut vivia no chute chars/4); endpoint Context
+  devolve `real` (último prompt_tokens) com fallback; label `% · k`.
+- Eco degenerado (`[shell] ok` x500 na síntese): causa era o retorno integral
+  do sub ao contexto — cortado p/ 600 chars (histórico segue integral).
+  `repetition_penalty` vai no corpo (1.15; flag não existe no `serve` 0.19).
+- Painel "Scripts para o Executor" (`GET Sessions/{id}/Scripts` do
+  tool_calls: write.path + regex `.sh`; fonte menor; atualiza no poll).
+- Data/hora `dd/MM HH:mm` no rodapé das bolhas; fonte 0.875 unificada.
+- Histórico ordenado (`CreatedAt`,Id — SQLite trunca segundos e turnos
+  rápidos embaralhavam); resumo usa -1s (ticks se perdiam). Isso revelou o
+  duplo-envio: 2 streams concorrentes intercalavam turns e duplicavam bolhas.
+- 14B: 20k não cabe (KV 3.12GB > 1.47GB) → 9k; 29 tok/s ≈ 8B; thinking-pt-BR
+  instruído e revertido (ignorado + vazou pt no content); JSON de tool
+  malformado recorrente (400 hermes → retry); prompts C#+React + pt-br.
+- Faixas em progressão + `, diálogo em pt-br`; faixa `imunow` (Mova.Pwa
+  expediente) registrada e com doc em `Projetos/Imunow/mova/`; azul e imunow
+  PASS no 14B. Janela headed 1536x864.
