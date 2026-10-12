@@ -71,7 +71,9 @@ internal static class UnitBypassTests
         var res = await TestContext.PostObj(TestContext.Bridge + "/api/sanitize", ComplexInput());
         TestContext.Check(res["dropped_reasoning"]?.GetValue<int>() == 2, "dropped 2, veio: " + res["dropped_reasoning"]);
         var input = res["input"]?.AsArray() ?? throw new Exception("sem input");
-        TestContext.Check(input.Count == 5, "7 itens - 2 reasoning = 5, veio: " + input.Count);
+TestContext.Check(input.Count == 6, "7 - 2 reasoning + 1 system(instructions) = 6, veio: " + input.Count);
+        var first = input[0]?.AsObject() ?? throw new Exception("sem primeiro");
+        TestContext.Check(first["role"]?.GetValue<string>() == "system", "instructions vira system inicial");
         CheckNoReasoning(input, "sanitize");
         TestContext.Check(input.Any(i => i?["type"]?.GetValue<string>() == "function_call"
             && i?["call_id"]?.GetValue<string>() == "call_hist1"), "function_call preservada");
@@ -93,6 +95,9 @@ public static async Task SanitizeSystemFirst()
         TestContext.Check(first["role"]?.GetValue<string>() == "system", "primeiro e system");
         string t = first["content"]?.AsArray().FirstOrDefault()?["text"]?.GetValue<string>() ?? "";
         TestContext.Check(t.Contains("resumo do meio"), "system do meio fundido no inicial");
+        TestContext.Check(t.Contains("Voce e um backend senior"), "instructions fundida junto");
+        var res2 = await TestContext.PostObj(TestContext.Bridge + "/api/sanitize", ComplexInput());
+        TestContext.Check(res2["has_instructions"]?.GetValue<bool>() == false, "campo instructions removido");
         TestContext.Check(clean.Count(i => i?["type"]?.GetValue<string>() == "message"
             && (i?["role"]?.GetValue<string>() == "system" || i?["role"]?.GetValue<string>() == "developer")) == 1,
             "system unico");

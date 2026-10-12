@@ -413,10 +413,11 @@ if (ctx.Request.HttpMethod == "POST" && path == "/api/sanitize")
 int dropped = 0;
                 bool moved = false;
                 try { dropped = StripReasoningItems(req); moved = NormalizeSystemFirst(req); } catch { }
-                WriteJson(ctx, 200, new JsonObject
+WriteJson(ctx, 200, new JsonObject
                 {
                     ["dropped_reasoning"] = dropped,
                     ["system_normalized"] = moved,
+                    ["has_instructions"] = req.ContainsKey("instructions"),
                     ["input"] = req["input"]?.DeepClone() ?? new JsonArray()
                 });
                 return;
@@ -925,12 +926,38 @@ string outBody = body;
             Content = new StringContent(outBody, Encoding.UTF8, "application/json")
         };
         WithAuth(forward, ctx);
-        using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHeadersRead);
+using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHeadersRead);
         double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
-        Log(new JsonObject { ["event"] = "passthrough-responses", ["model"] = Model, ["dropped_reasoning"] = dropped, ["status"] = (int)upstreamResponse.StatusCode, ["elapsed"] = Math.Round(elapsed, 2) });
-        if (!upstreamResponse.IsSuccessStatusCode) Interlocked.Increment(ref FailedRequests);
+        string? errBody = null;
+        if (!upstreamResponse.IsSuccessStatusCode)
+        {
+            Interlocked.Increment(ref FailedRequests);
+            try
+            {
+                using var er = new StreamReader(upstreamResponse.Content.ReadAsStream(), new UTF8Encoding(false));
+                errBody = er.ReadToEnd();
+            }
+            catch { errBody = ""; }
+        }
+var shape = new StringBuilder();
+        try
+        {
+            if (req.TryGetPropertyValue("instructions", out JsonNode? ins) && ins is not null) shape.Append("[instructions]+");
+            if (req["input"] is JsonArray li)
+                foreach (var x in li)
+                    shape.Append(x is JsonObject o ? (o["type"]?.GetValue<string>() ?? "?") + ":" + (o["role"]?.GetValue<string>() ?? "-") + " " : "str ");
+        }
+        catch { }
+        Log(new JsonObject { ["event"] = "passthrough-responses", ["model"] = Model, ["dropped_reasoning"] = dropped, ["status"] = (int)upstreamResponse.StatusCode, ["elapsed"] = Math.Round(elapsed, 2), ["shape"] = shape.ToString().Trim(), ["upstream_error"] = (errBody ?? "").Length > 500 ? errBody![..500] : (errBody ?? "") });
         ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
         ctx.Response.ContentType = upstreamResponse.Content.Headers.ContentType?.ToString() ?? "application/json";
+        if (errBody is not null)
+        {
+            var eb = new UTF8Encoding(false).GetBytes(errBody);
+            ctx.Response.OutputStream.Write(eb, 0, eb.Length);
+            ctx.Response.Close();
+            return;
+        }
         using var stream = upstreamResponse.Content.ReadAsStream();
         if ((ctx.Response.ContentType ?? "").Contains("text/event-stream"))
         {
@@ -949,9 +976,6 @@ string outBody = body;
         ctx.Response.Close();
     }
 
-/// <summary>Remove itens reasoning do input Responses (llama.cpp exige content array neles).</summary>
-    /// <param name="req">Request Responses (mutado no lugar).</param>
-    /// <returns>No. de itens removidos.</returns>
 /// <summary>Texto de content Responses (string ou lista de partes input/output_text).</summary>
     static string ExtractResponseText(JsonNode? node)
     {
@@ -971,10 +995,15 @@ string outBody = body;
     /// <summary>Funde system/developer do input num unico system inicial (jinja Qwen exige system primeiro).</summary>
     /// <param name="req">Request Responses (mutado no lugar).</param>
     /// <returns>True se reordenou.</returns>
-    static bool NormalizeSystemFirst(JsonObject req)
+static bool NormalizeSystemFirst(JsonObject req)
     {
         if (req["input"] is not JsonArray list) return false;
         var sys = new StringBuilder();
+        // instructions vira system no llama: fundir junto senao sao 2 systems.
+        if (req.TryGetPropertyValue("instructions", out JsonNode? ins)
+            && ins is JsonValue iv && iv.TryGetValue<string>(out string? st) && !string.IsNullOrWhiteSpace(st))
+            sys.Append(st.Trim());
+        req.Remove("instructions");
         var rest = new JsonArray();
         foreach (var it in list)
         {

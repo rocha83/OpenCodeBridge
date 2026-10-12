@@ -1,5 +1,11 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Instructions fundido no system inicial (2026-10-12)
+- Refinamento do system-first: o culpado final era a dualidade
+  `instructions` + system no input (log `shape` criado p/ provar).
+  `NormalizeSystemFirst` funde instructions junto e remove o campo.
+  Teste cobre os dois textos + `has_instructions=false`. Suite 16/16.
+
 ## System-first no input (2026-10-12)
 - Jinja Qwen abortava 500 (`System message must be at the beginning`) quando
   resumo/compactacao chegava como system/developer no meio do historico.
