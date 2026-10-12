@@ -755,3 +755,36 @@
   marrom 90, preta 120 min).
 - Espera de sessão nova robusta no teste (evita colisão de sessões antigas).
 - Suíte UI: **25/25 PASS** (inclui azul, verde, roxa, marrom, preta em batch).
+
+## Bridge Web — Faixas em progressão + 14B na 3060 12GB (2026-10-11/12)
+- Enunciados das faixas reescritos em progressão de escopo (capacidade, sem
+  SLO): azul só domínio → verde +SQL → roxa +repos/serviços → marrom +API e
+  React → preta +bus, ML clássico (regressão/classificação) e NN só no MLP
+  de anomalias. Batch uma faixa por vez, headed p/ acompanhar.
+- Exec em build (id 2); amarra "mesmo modo" removida no servidor
+  (`CreateSession`/`UpdateSessionExecutor`) e na view (`filterExecutors`
+  lista todos); teste fixa `executorId=2`; sessões criadas `1/2` OK.
+- vLLM no 14B-AWQ: ctx 20k NÃO cabe nos 12GB (KV precisa 3.12GB, há 1.47GB;
+  estimativa do próprio vLLM: 9632) → ctx 9216, sem OOM (11.4GB). Bridge
+  `--model qwen3-14b-awq`, teto de saída 8192→6144 (8k estourava o ctx 9k).
+  Agentes renomeados `14B`/`14B-exec` nos dois bancos; prompts restaurados
+  no `/opt` (migração tinha zerado) e fonte `AGENTS-PROMPTS.md` sincronizada
+  (+ mapa real de tools: filtro por Role, backstop por Mode, sub hardcoded).
+- Medido: 14B a **29 tok/s** de decode ≈ 8B (~30); ctx menor não acelerou.
+  Thinking-pt-BR instruído nos 3 prompts e revertido: o 14B ignorou
+  (thinking seguiu en-US) e vazou pt no content em teste manual. Vale só o
+  content-pt-BR do principal.
+- Azul 14B batch **PASS** (4 fases, `.sh` fases 3-4 com `bash -n` limpo,
+  autocorreção `exit 127→ok` vista ao vivo). Falhas: fase 1 com tool call
+  JSON malformado (400 do parser hermes — `JSONDecodeError` no journal) e
+  fase 2 com sub vazio.
+- Donut de contexto ao lado do Limpar (`GET Sessions/{id}/Context`:
+  `prompt_tokens` real do último turno com fallback chars/4; hover
+  "Tamanho do contexto Xk (medido/estimado)"). Compactar com ≤9 msgs
+  responde "Nada a compactar" (correto, `keepLast=8`).
+- UI: Raciocínio do sub começa fechado (e fecha ao chegar conteúdo), aparo
+  de salto inicial no corpo do sub, fonte 0.875 unificada (caixa + rótulo).
+- EM ABERTO: bolha do subagente duplicada ao vivo (pares idênticos; banco
+  tem 1x cada, args todos distintos, canais SSE limpos). Reconciliação do
+  done agora é sempre pelo id do sub; falta o pintor duplicado (trace +
+  assert DOM×banco pendentes).
