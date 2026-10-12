@@ -1,5 +1,12 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## System-first no input (2026-10-12)
+- Jinja Qwen abortava 500 (`System message must be at the beginning`) quando
+  resumo/compactacao chegava como system/developer no meio do historico.
+  `NormalizeSystemFirst` (bypass) + mesma fusao no `InputToMessages` (pipe
+  antigo) + `ExtractResponseText`. Repro curl 500 -> 200. Testes
+  `U-sanitize-system-first` + `U-translate-system-first`: **16/16 PASS**.
+
 ## Bypass com testes de canal duplo (2026-10-12)
 - `StripReasoningItems` extraida p/ funcao pura + endpoint dry-run
   `POST /api/sanitize` (precedente do `/api/translate`): sem modelo.

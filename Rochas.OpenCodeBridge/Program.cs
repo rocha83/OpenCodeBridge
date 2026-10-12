@@ -410,11 +410,13 @@ if (ctx.Request.HttpMethod == "POST" && path == "/api/sanitize")
                 // Dry-run do bypass: mostra o input SEM os itens reasoning,
                 // sem chamar o modelo. Corpo: {input:[...]}.
                 var req = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
-                int dropped = 0;
-                try { dropped = StripReasoningItems(req); } catch { }
+int dropped = 0;
+                bool moved = false;
+                try { dropped = StripReasoningItems(req); moved = NormalizeSystemFirst(req); } catch { }
                 WriteJson(ctx, 200, new JsonObject
                 {
                     ["dropped_reasoning"] = dropped,
+                    ["system_normalized"] = moved,
                     ["input"] = req["input"]?.DeepClone() ?? new JsonArray()
                 });
                 return;
@@ -909,9 +911,14 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
     static void ForwardResponses(HttpListenerContext ctx, string body, JsonObject req)
     {
 var startedAt = DateTime.UtcNow;
-        string outBody = body;
+string outBody = body;
         int dropped = 0;
-        try { dropped = StripReasoningItems(req); if (dropped > 0) outBody = req.ToJsonString(SerOpts); }
+        try
+        {
+            dropped = StripReasoningItems(req);
+            bool moved = NormalizeSystemFirst(req);
+            if (dropped > 0 || moved) outBody = req.ToJsonString(SerOpts);
+        }
         catch { outBody = body; }
         var forward = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/responses")
         {
@@ -945,6 +952,55 @@ var startedAt = DateTime.UtcNow;
 /// <summary>Remove itens reasoning do input Responses (llama.cpp exige content array neles).</summary>
     /// <param name="req">Request Responses (mutado no lugar).</param>
     /// <returns>No. de itens removidos.</returns>
+/// <summary>Texto de content Responses (string ou lista de partes input/output_text).</summary>
+    static string ExtractResponseText(JsonNode? node)
+    {
+        if (node is null) return "";
+        if (node is JsonValue v && v.TryGetValue<string>(out string? s)) return s ?? "";
+        if (node is JsonArray arr)
+        {
+            var b = new StringBuilder();
+            foreach (var part in arr)
+                if (part is JsonObject o && o["text"] is JsonValue tv && tv.TryGetValue<string>(out string? t) && !string.IsNullOrWhiteSpace(t))
+                { if (b.Length > 0) b.Append('\n'); b.Append(t); }
+            return b.ToString();
+        }
+        return "";
+    }
+
+    /// <summary>Funde system/developer do input num unico system inicial (jinja Qwen exige system primeiro).</summary>
+    /// <param name="req">Request Responses (mutado no lugar).</param>
+    /// <returns>True se reordenou.</returns>
+    static bool NormalizeSystemFirst(JsonObject req)
+    {
+        if (req["input"] is not JsonArray list) return false;
+        var sys = new StringBuilder();
+        var rest = new JsonArray();
+        foreach (var it in list)
+        {
+            if (it is JsonObject o && o["type"]?.GetValue<string>() == "message"
+                && o["role"]?.GetValue<string>() is string role && (role == "system" || role == "developer"))
+            {
+                string t = ExtractResponseText(o["content"]);
+                if (!string.IsNullOrWhiteSpace(t)) { if (sys.Length > 0) sys.Append("\n\n"); sys.Append(t.Trim()); }
+                continue;
+            }
+            rest.Add(it?.DeepClone());
+        }
+        if (sys.Length == 0) return false;
+        var final = new JsonArray
+        {
+            new JsonObject
+            {
+                ["type"] = "message", ["role"] = "system",
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = sys.ToString() })
+            }
+        };
+        foreach (var it in rest) final.Add(it?.DeepClone());
+        req["input"] = final;
+        return true;
+    }
+
     static int StripReasoningItems(JsonObject req)
     {
         if (req["input"] is not JsonArray list) return 0;
@@ -1352,9 +1408,11 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
     {
         var messages = new JsonArray();
 
-        // "instructions" do Responses vira a mensagem de sistema
+// "instructions" + todo system/developer do meio viram UM system inicial
+        // (jinja Qwen exige system primeiro; resumo de compactacao chega no meio).
+        var sysText = new StringBuilder();
         if (instructions is JsonValue instructionNode && instructionNode.TryGetValue<string>(out string? systemText) && !string.IsNullOrWhiteSpace(systemText))
-            messages.Add(new JsonObject { ["role"] = "system", ["content"] = systemText });
+            sysText.Append(systemText.Trim());
 
         if (input is JsonValue stringValue && stringValue.TryGetValue<string>(out string? directText))
         {
@@ -1381,13 +1439,18 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
             string type = entry["type"]?.GetValue<string>() ?? "message";
 
-            if (type == "message")
+if (type == "message")
             {
                 string role = entry["role"]?.GetValue<string>() ?? "user";
                 string content = ExtractText(entry["content"]);
                 if (string.IsNullOrWhiteSpace(content)) continue;
-                if (role == "developer") role = "system";
-                if (role is not ("user" or "system" or "assistant")) role = "user";
+                if (role is ("system" or "developer"))
+                {
+                    if (sysText.Length > 0) sysText.Append("\n\n");
+                    sysText.Append(content.Trim());
+                    continue;
+                }
+                if (role is not ("user" or "assistant")) role = "user";
                 messages.Add(new JsonObject { ["role"] = role, ["content"] = content });
             }
             else if (type == "function_call")
@@ -1416,9 +1479,11 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                 if (resultText.Length > ToolOutputLimit) resultText = resultText[..ToolOutputLimit];
                 messages.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = callId, ["content"] = resultText });
             }
-            // Outros tipos (reasoning, item_reference, calls ainda nao executados)
+// Outros tipos (reasoning, item_reference, calls ainda nao executados)
             // sao ignorados de proposito: nao fazem falta no fluxo chat.
         }
+        if (sysText.Length > 0)
+            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = sysText.ToString() });
         return messages;
     }
 
