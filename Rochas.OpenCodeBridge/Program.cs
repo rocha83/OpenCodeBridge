@@ -405,6 +405,21 @@ internal static partial class Program
                 return;
             }
 
+if (ctx.Request.HttpMethod == "POST" && path == "/api/sanitize")
+            {
+                // Dry-run do bypass: mostra o input SEM os itens reasoning,
+                // sem chamar o modelo. Corpo: {input:[...]}.
+                var req = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
+                int dropped = 0;
+                try { dropped = StripReasoningItems(req); } catch { }
+                WriteJson(ctx, 200, new JsonObject
+                {
+                    ["dropped_reasoning"] = dropped,
+                    ["input"] = req["input"]?.DeepClone() ?? new JsonArray()
+                });
+                return;
+            }
+
             if (ctx.Request.HttpMethod == "POST" && path == "/api/convert")
             {
                 // Converte um /v1/chat/completions PRONTO em objeto Responses,
@@ -893,23 +908,10 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
     /// <param name="req">Request ja parseado.</param>
     static void ForwardResponses(HttpListenerContext ctx, string body, JsonObject req)
     {
-        var startedAt = DateTime.UtcNow;
-        int dropped = 0;
+var startedAt = DateTime.UtcNow;
         string outBody = body;
-        try
-        {
-            if (req["input"] is JsonArray list)
-            {
-                int n0 = list.Count;
-                var clean = new JsonArray();
-                foreach (var it in list)
-                {
-                    if (it is JsonObject o && o["type"]?.GetValue<string>() == "reasoning") { dropped++; continue; }
-                    clean.Add(it?.DeepClone());
-                }
-                if (dropped > 0) { req["input"] = clean; outBody = req.ToJsonString(SerOpts); }
-            }
-        }
+        int dropped = 0;
+        try { dropped = StripReasoningItems(req); if (dropped > 0) outBody = req.ToJsonString(SerOpts); }
         catch { outBody = body; }
         var forward = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/responses")
         {
@@ -938,6 +940,23 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
         }
         ctx.Response.Close();
+    }
+
+/// <summary>Remove itens reasoning do input Responses (llama.cpp exige content array neles).</summary>
+    /// <param name="req">Request Responses (mutado no lugar).</param>
+    /// <returns>No. de itens removidos.</returns>
+    static int StripReasoningItems(JsonObject req)
+    {
+        if (req["input"] is not JsonArray list) return 0;
+        var clean = new JsonArray();
+        int dropped = 0;
+        foreach (var it in list)
+        {
+            if (it is JsonObject o && o["type"]?.GetValue<string>() == "reasoning") { dropped++; continue; }
+            clean.Add(it?.DeepClone());
+        }
+        if (dropped > 0) req["input"] = clean;
+        return dropped;
     }
 
     /// <summary>Streaming real: repassa deltas do vLLM na hora, fecha com completed.</summary>

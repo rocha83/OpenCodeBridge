@@ -1,5 +1,17 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Bypass com testes de canal duplo (2026-10-12)
+- `StripReasoningItems` extraida p/ funcao pura + endpoint dry-run
+  `POST /api/sanitize` (precedente do `/api/translate`): sem modelo.
+- `UnitBypassTests`: cenario complexo multi-turno (instructions, user,
+  assistant, function_call + output com call_id, 2 reasoning — string e
+  array —, tools flat + namespace) nos DOIS canais: sanitize remove 2 e
+  preserva calls/ids; translate nao vaza thinking nas messages e converte
+  tools. Suite unit: **14/14 PASS** contra a bridge `:4124` viva.
+- E2E manual via bypass (opencode 2.0.21): GPU `BP-1`/`BP-2` + Write
+  `BP-TOOLS-OK`; CPU `BPC-1`/`BPC-2`; stress 4 turnos (git/dotnet/vite)
+  sem erro de protocolo.
+
 ## Bypass llama + auth upstream (2026-10-12)
 - Bug OpenCode 2.0.21 direto no llama.cpp: `item['content'] is not an array` em
   todo turno com histórico (Responses reenvia `reasoning` com content string).

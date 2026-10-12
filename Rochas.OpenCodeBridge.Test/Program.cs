@@ -44,6 +44,8 @@ internal static class Program
         TestContext.Run("U-convert-invalid-arguments", UnitConvertTests.ConvertInvalidArguments);
         TestContext.Run("U-convert-coerced-text-call", UnitConvertTests.ConvertCoercedTextCall);
         TestContext.Run("U-convert-coerced-angle-call", UnitConvertTests.ConvertCoercedAngleCall);
+        TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);
+        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
 
         // ---- e2e (modelo vivo)
         if (!TestContext.SkipE2E)
