@@ -19,6 +19,8 @@
   "ao executar tools que resultem em erro tentar no maximo mais 2 vezes, e
   sempre responde na lingua do usuario de forma concisa".
 - Teste `U-translate-profiles` atualizado p/ nova doutrina (build thinking on).
+- Sufixo estendido: listar arquivos locais com `glob`/`read` e navegação
+  web só p/ endereços externos (corta o `webfetch file://`).
 - Suite web units PASS; bridge units 16/16; build Release 0/0.
 
 ## Harness de tools por agente + sessoes por usuario (2026-10-13)
