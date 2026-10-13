@@ -93,6 +93,12 @@ public static class SimpleHelloTests
             }
             bool ok = done && calls > 0;
             Console.WriteLine($"[simple] {(ok ? "PASS" : "FAIL")} hello: engineDone={done} toolcalls={calls}");
+            if (!PlaywrightSetup.Headless())
+            {
+                // Janela aberta ao fim (HEAD): encerre o processo p/ fechar.
+                Console.WriteLine("[simple] HOLD: janela aberta; mate o processo para encerrar.");
+                await Task.Delay(Timeout.InfiniteTimeSpan);
+            }
             return ok ? 0 : 1;
         }
         catch (Exception ex)

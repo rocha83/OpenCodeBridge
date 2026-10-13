@@ -173,8 +173,15 @@ public sealed class ChatController(
         byte[] bytes;
         try { bytes = Convert.FromBase64String(zip.Value.B64); }
         catch { return BadRequest("artefato ilegível"); }
-        return File(bytes, string.IsNullOrEmpty(zip.Value.Mime) ? "application/zip" : zip.Value.Mime,
-            $"sessao-{id}-scripts.zip");
+        // [nome-da-sessao]-scripts-[data-hora].zip
+        string slug = new string((s.Title ?? "sessao").ToLowerInvariant()
+            .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray());
+        while (slug.Contains("--")) slug = slug.Replace("--", "-");
+        slug = slug.Trim('-');
+        if (string.IsNullOrEmpty(slug)) slug = "sessao";
+        if (slug.Length > 40) slug = slug[..40];
+        string fname = $"{slug}-scripts-{DateTime.Now:yyyyMMdd-HHmmss}.zip";
+        return File(bytes, string.IsNullOrEmpty(zip.Value.Mime) ? "application/zip" : zip.Value.Mime, fname);
     }
 
     private static string fmtSize(long bytes) =>
