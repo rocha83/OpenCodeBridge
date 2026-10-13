@@ -8,6 +8,11 @@
   (sistema readonly p/ não-admin), Usuários só admin (link + controller).
 - Suite web units PASS; build Release 0/0.
 
+## Sem truncamento no subagente (2026-10-13)
+- Removidos todos os cortes arbitrários (600 chars no texto do subagente,
+  4000 no output de tool, etc.): o ctx 256k do 9B comporta tudo.
+- Suite web units PASS; build Release 0/0.
+
 ## Zip dos scripts + fonte e donut (2026-10-13)
 - Quadro da direita: nomes com classe `script-name` (pouco acima do badge),
   link de download do zip abaixo da lista; Raciocínio com rolagem (~8 linhas).
