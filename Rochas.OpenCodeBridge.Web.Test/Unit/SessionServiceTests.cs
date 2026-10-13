@@ -202,6 +202,12 @@ internal static class SessionServiceTests
             await s.LinkToolsByIdsAsync(id, new[] { orphan }, final);
             var all2 = await s.GetToolCallsAsync(id);
             Check(all2.FirstOrDefault(c => c.Id == orphan)?.MessageId == final, "ToolCallAsync orphan linked to final");
+            // Artefato: zip em base64 com upsert por nome.
+            await s.SaveArtifactAsync(id, "scripts.zip", "application/zip", "e30=");
+            await s.SaveArtifactAsync(id, "scripts.zip", "application/zip", "e31=");
+            var art = await s.GetArtifactAsync(id, "scripts.zip");
+            Check(art?.B64 == "e31=" && art?.Mime == "application/zip", "ArtifactAsync upsert+get");
+            Check(await s.GetArtifactAsync(id, "nada.zip") is null, "ArtifactAsync missing null");
         }
     }
 

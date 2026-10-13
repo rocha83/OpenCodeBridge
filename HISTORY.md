@@ -1,5 +1,14 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Zip dos scripts + fonte e donut (2026-10-13)
+- Quadro da direita: nomes com classe `script-name` (pouco acima do badge),
+  link de download do zip abaixo da lista; Raciocínio com rolagem (~8 linhas).
+- Ao fim do turno com `.sh`: zip no workspace gravado em base64
+  (`session_artifacts`, upsert por sessão) + `GET ScriptsZip`; donut soma
+  `usage` real + delta posterior (`medido+delta`).
+- Nome do script: título da fase + data-hora juliana.
+- Suite web units PASS; build Release 0/0.
+
 ## Merge UI paralela: grupo Ferramentas + gate de escopo (2026-10-13)
 - Portado da árvore paralela (base anterior + trabalho não commitado):
   grupo "Ferramentas" por bolha (aberto, com contador), labels próprias no

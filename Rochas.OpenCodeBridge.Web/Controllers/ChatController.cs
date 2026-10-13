@@ -156,7 +156,33 @@ public sealed class ChatController(
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
-        var calls = await sessionService.GetToolCallsAsync(id, 500);
+        var files = await CollectSessionScriptsAsync(id);
+        var zip = await sessionService.GetArtifactAsync(id, "scripts.zip");
+        object? zipInfo = zip is null ? null : new { name = "scripts.zip", size = fmtSize(zip.Value.B64.Length * 3 / 4) };
+        return Json(new { scripts = files, zip = zipInfo });
+    }
+
+    // GET /Chat/Sessions/{id}/ScriptsZip - baixa o zip gravado ao fim do turno.
+    [HttpGet("/Chat/Sessions/{id:int}/ScriptsZip")]
+    public async Task<IActionResult> GetSessionScriptsZip(int id)
+    {
+        var s = await sessionService.GetAsync(id, CurrentUserId);
+        if (s is null) return NotFound();
+        var zip = await sessionService.GetArtifactAsync(id, "scripts.zip");
+        if (zip is null || string.IsNullOrEmpty(zip.Value.B64)) return NotFound();
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(zip.Value.B64); }
+        catch { return BadRequest("artefato ilegível"); }
+        return File(bytes, string.IsNullOrEmpty(zip.Value.Mime) ? "application/zip" : zip.Value.Mime,
+            $"sessao-{id}-scripts.zip");
+    }
+
+    private static string fmtSize(long bytes) =>
+        bytes >= 1048576 ? $"{bytes / 1048576.0:0.#} MB" : bytes >= 1024 ? $"{bytes / 1024.0:0.#} KB" : $"{bytes} B";
+
+    private async Task<List<string>> CollectSessionScriptsAsync(int sessionId)
+    {
+        var calls = await sessionService.GetToolCallsAsync(sessionId, 500);
         var files = new List<string>();
         void Add(string? f)
         {
@@ -182,7 +208,37 @@ public sealed class ChatController(
                     System.Text.RegularExpressions.Regex.Matches(o, @"[\w\-.]+\.sh"))
                     Add(m.Value);
         }
-        return Json(new { scripts = files });
+        return files;
+    }
+
+    // Ao fim do turno com scripts: zipa os .sh do workspace e grava em base64
+    // (download no quadro da direita). Best-effort, nunca quebra o pipeline.
+    private async Task ZipSessionScriptsAsync(int sessionId)
+    {
+        try
+        {
+            var files = await CollectSessionScriptsAsync(sessionId);
+            if (files.Count == 0) return;
+            string root = AppContext.BaseDirectory;
+            using var ms = new MemoryStream();
+            using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+            {
+                foreach (var f in files)
+                {
+                    string name = System.IO.Path.GetFileName(f);
+                    string full = System.IO.Path.IsPathRooted(f) ? f : System.IO.Path.Combine(root, f);
+                    if (!System.IO.File.Exists(full)) continue;
+                    var entry = zip.CreateEntry(name, System.IO.Compression.CompressionLevel.Optimal);
+                    using var es = entry.Open();
+                    using var fs = System.IO.File.OpenRead(full);
+                    await fs.CopyToAsync(es);
+                }
+            }
+            if (ms.Length == 0) return;
+            await sessionService.SaveArtifactAsync(sessionId, "scripts.zip", "application/zip",
+                Convert.ToBase64String(ms.ToArray()));
+        }
+        catch { /* best-effort */ }
     }
 
     [HttpDelete("/Chat/Sessions/{id:int}")]
@@ -1007,6 +1063,7 @@ public sealed class ChatController(
                 lock (unlinkedToolIds) orphans = unlinkedToolIds.ToList();
                 await sessionService.LinkToolsByIdsAsync(session.Id.Value, orphans, finalMsgId);
             }
+            await ZipSessionScriptsAsync(session.Id.Value);
         }
 
         // DONE próprio após persistir: elimina race do cliente ler histórico cedo.
@@ -1285,6 +1342,7 @@ public sealed class ChatController(
                 lock (unlinkedToolIds) orphans = unlinkedToolIds.ToList();
                 await sessionService.LinkToolsByIdsAsync(session.Id.Value, orphans, finalMsgId);
             }
+            await ZipSessionScriptsAsync(session.Id.Value);
         }
         try
         {

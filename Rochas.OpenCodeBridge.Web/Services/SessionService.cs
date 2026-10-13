@@ -290,6 +290,47 @@ public sealed class SessionService(
         catch { /* best-effort */ }
     }
 
+    // Artefato da sessão (ex.: zip dos scripts): upsert por nome.
+    public async Task SaveArtifactAsync(int sessionId, string name, string mime, string b64)
+    {
+        try
+        {
+            await DbRetryAsync(async () =>
+            {
+                using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
+                await conn.OpenAsync();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "INSERT INTO session_artifacts (session_id, name, mime, b64) VALUES (@s,@n,@m,@b) " +
+                    "ON CONFLICT(session_id, name) DO UPDATE SET mime=excluded.mime, b64=excluded.b64, created_at=CURRENT_TIMESTAMP";
+                cmd.Parameters.AddWithValue("@s", sessionId);
+                cmd.Parameters.AddWithValue("@n", name ?? "");
+                cmd.Parameters.AddWithValue("@m", mime ?? "");
+                cmd.Parameters.AddWithValue("@b", b64 ?? "");
+                await cmd.ExecuteNonQueryAsync();
+                return 0;
+            });
+        }
+        catch { /* best-effort */ }
+    }
+
+    public async Task<(string Mime, string B64)?> GetArtifactAsync(int sessionId, string name)
+    {
+        (string, string)? found = null;
+        await DbRetryAsync(async () =>
+        {
+            using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT mime, b64 FROM session_artifacts WHERE session_id=@s AND name=@n LIMIT 1";
+            cmd.Parameters.AddWithValue("@s", sessionId);
+            cmd.Parameters.AddWithValue("@n", name ?? "");
+            using var r = await cmd.ExecuteReaderAsync();
+            if (await r.ReadAsync()) found = (r.IsDBNull(0) ? "" : r.GetString(0), r.IsDBNull(1) ? "" : r.GetString(1));
+            return 0;
+        });
+        return found;
+    }
+
     // Liga as tools internas do sub (gravadas sem message_id) ao card dele.
     public async Task LinkSubToolsAsync(int sessionId, string sub, int messageId)
     {

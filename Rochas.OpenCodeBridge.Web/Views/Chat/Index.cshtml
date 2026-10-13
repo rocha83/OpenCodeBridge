@@ -530,16 +530,28 @@ async function loadScripts(sessionId) {
     if (!r.ok) return;
     const j = await r.json();
     if (!j.scripts || !j.scripts.length) {
-      list.innerHTML = '<li class="small text-muted">Nenhum script ainda.</li>';
-      return;
+      list.innerHTML = '<li class="small text-muted script-name">Nenhum script ainda.</li>';
+    } else {
+      list.innerHTML = '';
+      j.scripts.forEach(s => {
+        const li = document.createElement('li');
+        li.className = 'mb-1';
+        li.innerHTML = `<span class="badge bg-dark script-name">${esc(s)}</span>`;
+        list.appendChild(li);
+      });
     }
-    list.innerHTML = '';
-    j.scripts.forEach(s => {
-      const li = document.createElement('li');
-      li.className = 'mb-1';
-      li.innerHTML = `<span class="badge bg-dark">${esc(s)}</span>`;
-      list.appendChild(li);
-    });
+    const zip = document.getElementById('scriptZip');
+    if (j.zip && j.zip.name) {
+      if (!zip) {
+        const a = document.createElement('a');
+        a.id = 'scriptZip';
+        a.className = 'small script-name';
+        list.parentNode.appendChild(a);
+      }
+      const a2 = document.getElementById('scriptZip');
+      a2.href = `/Chat/Sessions/${sessionId}/ScriptsZip`;
+      a2.textContent = `Baixar scripts (.zip, ${j.zip.size || ''})`;
+    } else if (zip) zip.remove();
   } catch { /* painel opcional: ignora */ }
 }
 

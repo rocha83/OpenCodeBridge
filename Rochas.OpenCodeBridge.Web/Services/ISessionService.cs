@@ -29,4 +29,8 @@ public interface ISessionService
     Task LinkSubToolsAsync(int sessionId, string sub, int messageId);
     // Liga órfãs (turno sem texto / card que falhou) à mensagem final.
     Task LinkToolsByIdsAsync(int sessionId, IEnumerable<int> toolIds, int messageId);
+    // Artefato da sessão (ex.: zip dos scripts): upsert por nome.
+    Task SaveArtifactAsync(int sessionId, string name, string mime, string b64);
+    // Lê artefato (nome exato) ou null.
+    Task<(string Mime, string B64)?> GetArtifactAsync(int sessionId, string name);
 }
