@@ -1,5 +1,20 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Bridge — bind externo padrão 0.0.0.0 + fluxo de credenciais (2026-10-13)
+- Default de escuta no código: `Listen = "0.0.0.0"` (`Rochas.OpenCodeBridge/Program.cs`).
+  Units systemd (`bridge-gpu` :4124, `bridge-cpu` :4125) já passavam `--listen 0.0.0.0`
+  explícito; o default garante o ajuste mesmo sem a flag (ex.: `dotnet` direto).
+  Verificado: `ss` mostra `0.0.0.0:4124` e `0.0.0.0:4125`, `/api/status` ok nas duas.
+- Fluxo de credenciais apurado (sem mudança de código): TUI (`start-opencode-app.sh`)
+  e Web (`start-opencodeweb.sh`) perguntam a chave no Zenity e gravam `apiKey` no
+  `opencode.json` + env (`OPENAI_API_KEY`/`LLAMA_API_KEY`); a bridge NÃO valida a
+  chave nos próprios endpoints (`/api/status` aberto) — só repassa (`WithAuth`:
+  usa o `Authorization` do cliente ou injeta o `--api-key`) ao upstream, que valida.
+  Externo + chave fraca (`guest@123`) = LAN inteira usa os modelos; trocar a chave
+  em produção.
+- Suite bridge units contra GPU viva: 15/16; `U-translate-profiles` (build thinking on)
+  falha pré-existente — unit viva roda `--thinking events` global, sem perfil por modelo.
+
 ## Rodapé das bolhas com duração e t/s + trava anti-loop na bridge (2026-10-13)
 - Bolhas de Agente e Sub Agente exibem no rodapé à direita
   `DATA HORA - Ns - X t/s` (ex.: `13/10 10:44 - 143s - 15 t/s`).

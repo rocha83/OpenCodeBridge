@@ -40,7 +40,7 @@ internal static partial class Program
     // 1) CONFIGURACAO (linhas de comando) — tudo sobrescrevivel sem recompilar
     // ---------------------------------------------------------------------
     static int Port = 4124;                                        // porta da bridge
-    static string Listen = "127.0.0.1";                            // interface de escuta (0.0.0.0 = rede toda)
+    static string Listen = "0.0.0.0";                              // interface de escuta padrao: rede toda (acesso externo; units systemd repetem via --listen)
     static string Upstream = "http://127.0.0.1:4100";              // vLLM
     static string Model = "qwen3-8b-awq";                          // id servido pelo vLLM
     static string Thinking = "events";                             // "events" = mostra | "off" = descarta
