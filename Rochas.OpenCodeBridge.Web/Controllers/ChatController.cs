@@ -1033,8 +1033,7 @@ public sealed class ChatController(
                 {
                     // Resumo curto p/ contexto: o texto integral (com as linhas
                     // [write]/[shell] ok) fazia o modelo recitar o eco em loop.
-                    string shortSub = subText.Length > 600 ? subText[..600] + "…" : subText;
-                    messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = "[subagente] " + shortSub });
+                    messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = "[subagente] " + subText });
                 }
             }
 
@@ -1333,7 +1332,6 @@ public sealed class ChatController(
                     catch { /* histórico best-effort */ }
                 }
                 string contentFull = result.Success ? (result.Output ?? "") : $"Error: {result.Error}";
-                if (contentFull.Length > 4000) contentFull = contentFull[..4000] + "…[cortado]";
                 await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds, "", args);
                 input.Add(new JsonObject
                 {
@@ -1346,11 +1344,10 @@ public sealed class ChatController(
                 });
                 if (subText is not null)
                 {
-                    string shortSub = subText.Length > 600 ? subText[..600] + "…" : subText;
                     var sm = new JsonObject
                     {
                         ["type"] = "message", ["role"] = "assistant",
-                        ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = "[subagente] " + shortSub }),
+                        ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = "[subagente] " + subText }),
                     };
                     input.Add(sm);
                 }
