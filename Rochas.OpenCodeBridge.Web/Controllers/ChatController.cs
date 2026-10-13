@@ -920,6 +920,15 @@ public sealed class ChatController(
             {
                 anyToolRan = true;
                 if (name == "subagent") anySubRan = true;
+                // Call vazia (sem prompt): nem anuncia (evita label fantasma).
+                if (name == "subagent" && string.IsNullOrWhiteSpace(SubPrompt(args)))
+                {
+                    if (session?.Id is int sidEmpty)
+                        await sessionService.LogToolAsync(sidEmpty, agent.Name, "subagent", args, false, "recusado: prompt vazio", 0);
+                    messages.Add(new JsonObject { ["role"] = "user",
+                        ["content"] = "[subagent] recusado: prompt vazio. Reenvie a fase com objetivo, arquivos e o que fazer." });
+                    continue;
+                }
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct, "", 0, "", args);
                 // Card imediato no "digitando": o sub real adota ao no primeiro chunk.
                 if (name == "subagent") await WriteProgressAsync(outputStream, "sub_start", name, null, ct);
@@ -939,7 +948,7 @@ public sealed class ChatController(
                         string rej = SubagentScopeGate.RejectMessage(subScopeRejects);
                         if (session?.Id is int sidRej)
                             await sessionService.LogToolAsync(sidRej, agent.Name, "subagent", args, false, rej, 0, null, turnMsgId > 0 ? turnMsgId : null);
-                        await WriteProgressAsync(outputStream, "tool_done", name, false, ct, rej, 0);
+                        await WriteProgressAsync(outputStream, "tool_done", name, false, ct, rej, 0, "", args);
                         // Corretivo volta ao contexto como user (fala com o modelo).
                         messages.Add(new JsonObject { ["role"] = "user", ["content"] = rej });
                         continue;
@@ -1011,7 +1020,7 @@ public sealed class ChatController(
                 string output = result.Output ?? "";
                 string error = result.Error ?? "";
                 string contentFull = result.Success ? output : $"Error: {error}";
-                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds);
+                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds, "", args);
                 // Outputs NÃO voltam ao contexto; só o texto do subagente (como assistant).
                 if (subText is not null)
                 {
@@ -1222,6 +1231,19 @@ public sealed class ChatController(
             // function_call_output p/ toda call; sem isso o modelo trava).
             foreach (var (id, name, args) in accum.Calls)
             {
+                // Call vazia (sem prompt): nem anuncia (evita label fantasma).
+                if (name == "subagent" && string.IsNullOrWhiteSpace(SubPrompt(args)))
+                {
+                    if (session?.Id is int sidEmpty)
+                        await sessionService.LogToolAsync(sidEmpty, agent.Name, "subagent", args, false, "recusado: prompt vazio", 0);
+                    input.Add(new JsonObject
+                    {
+                        ["type"] = "message", ["role"] = "user",
+                        ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text",
+                            ["text"] = "[subagent] recusado: prompt vazio. Reenvie a fase com objetivo, arquivos e o que fazer." }),
+                    });
+                    continue;
+                }
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct, "", 0, "", args);
                 // Card imediato no "digitando": o sub real adota ao no primeiro chunk.
                 if (name == "subagent") await WriteProgressAsync(outputStream, "sub_start", name, null, ct);
@@ -1237,7 +1259,7 @@ public sealed class ChatController(
                         string rej = SubagentScopeGate.RejectMessage(subScopeRejects);
                         if (session?.Id is int sidRej)
                             await sessionService.LogToolAsync(sidRej, agent.Name, "subagent", args, false, rej, 0);
-                        await WriteProgressAsync(outputStream, "tool_done", name, false, ct, rej, 0);
+                        await WriteProgressAsync(outputStream, "tool_done", name, false, ct, rej, 0, "", args);
                         input.Add(new JsonObject
                         {
                             ["type"] = "message", ["role"] = "user",
@@ -1305,7 +1327,7 @@ public sealed class ChatController(
                 }
                 string contentFull = result.Success ? (result.Output ?? "") : $"Error: {result.Error}";
                 if (contentFull.Length > 4000) contentFull = contentFull[..4000] + "…[cortado]";
-                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds);
+                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds, "", args);
                 input.Add(new JsonObject
                 {
                     ["type"] = "function_call", ["id"] = id, ["call_id"] = id,
@@ -1353,6 +1375,13 @@ public sealed class ChatController(
 
     // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.
 
+    // Prompt do subagente nos args (vazio = call fantasma, sem label).
+    private static string SubPrompt(string argsJson)
+    {
+        try { return JsonNode.Parse(argsJson ?? "")?.AsObject()?["prompt"]?.GetValue<string>() ?? ""; }
+        catch { return ""; }
+    }
+
     // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.
     // Idem <thinking> (padrão DeepSeek): vai para o dropdown Raciocínio.
     private static string StripThinkTags(string content, System.Text.StringBuilder thinking)
@@ -1384,7 +1413,7 @@ public sealed class ChatController(
         if (ok.HasValue) evt["ok"] = ok.Value;
         if (ms > 0) evt["ms"] = ms;
         if (!string.IsNullOrEmpty(result)) evt["result"] = result;
-        if (!string.IsNullOrEmpty(args)) evt["args"] = args.Length > 2000 ? args[..2000] : args;
+        if (!string.IsNullOrEmpty(args)) evt["args"] = args.Length > 4000 ? args[..4000] : args;
         var bytes = Encoding.UTF8.GetBytes("data: " + evt.ToJsonString() + "\n\n");
         await output.WriteAsync(bytes, ct);
         await output.FlushAsync(ct);

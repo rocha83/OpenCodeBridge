@@ -234,6 +234,12 @@ function toolStatus(name, running, ok, result, ms, args, sub) {
     d.setAttribute('open', '');
     const a = (args || '').replace(/\s+/g, ' ').trim();
     const head = a.length > 80 ? a.slice(0, 80) + '…' : a;
+    // Sem duplicar: start repetido do mesmo args reutiliza o item ocupado.
+    let dup = null;
+    list.querySelectorAll('details.tool-item').forEach(el => {
+      if (!dup && el.dataset.tool === name && el.dataset.busy === '1' && (el.dataset.args || '') === head) dup = el;
+    });
+    if (dup) { bumpToolsCount(g); return; }
     // Delegação externa: label próprio + enunciado passado ao subagente.
     const isOuterSub = name === 'subagent' && !sub;
     const psnip = isOuterSub ? subPromptOf(args).slice(0, 160) : '';
@@ -246,8 +252,10 @@ function toolStatus(name, running, ok, result, ms, args, sub) {
     bumpToolsCount(g);
   } else {
     let d = null;
+    const ahead = args ? String(args).replace(/\s+/g, ' ').trim().slice(0, 80) : '';
     list.querySelectorAll('details.tool-item').forEach(el => {
-      if (!d && el.dataset.tool === name && el.dataset.busy === '1') d = el;
+      if (!d && el.dataset.tool === name && el.dataset.busy === '1'
+        && (!ahead || (el.dataset.args || '') === ahead)) d = el;
     });
     if (!d) list.querySelectorAll('details.tool-item').forEach(el => {
       if (!d && el.dataset.tool === name) d = el;
