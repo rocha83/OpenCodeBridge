@@ -9,7 +9,7 @@ public sealed class OrchestrationOptions
     public int MaxParallel { get; set; } = 0;
     // tok/s assumido quando o executor nunca foi sondado e roda em CPU
     // (llama). Na CPU a ETA correta depende disto: GPU chuta 7, CPU 4.0.
-    public double CpuDefaultTps { get; set; } = 4.0;
+    public double CpuDefaultTps { get; set; } = 3.0;
     // Revisao em lote do orch sobre os resultados (pos-execucao, via /Chat/Review).
     // Inativa por padrao: o fluxo segue decompose -> aprova -> executa -> sintetiza.
     public bool EnableReview { get; set; } = false;

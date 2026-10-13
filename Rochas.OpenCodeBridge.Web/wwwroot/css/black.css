@@ -175,8 +175,8 @@ html, body {
 label[for="prompt"] { font-size: 0.875rem; }
 /* Data/hora pequena no rodapé à direita das bolhas. */
 .msg-ts { text-align: right; font-size: 0.68rem; color: #9e9e9e; margin: 2px 0 0; }
-/* Painel de scripts: lista em fonte menor. */
-#scriptList { font-size: 0.75rem; }
+/* Quadros da direita (Mudanças/Scripts): badges no tamanho do texto small. */
+#scriptList .badge, #changedList .badge { font-size: 0.875rem; }
 /* Cadastros (agentes/usuários): lista ao lado do form, mesma fonte das bolhas. */
 .crud-list { font-size: 0.875rem; }
 .crud-list .list-group-item { transition: background 0.15s ease; }

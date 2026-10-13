@@ -54,7 +54,6 @@ internal static class Program
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ToolExecutorTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.DeepSeekToolCoercionTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.DiagnosticsTests.Run();
-            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.OrchestrationTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ResponsesBypassTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.SessionTaskPanelTests.Run();
             IntegrationCrud().GetAwaiter().GetResult();
@@ -150,7 +149,7 @@ internal static class Program
         var handler = new HttpClientHandler { CookieContainer = new CookieContainer(), AllowAutoRedirect = false };
         using var client = new HttpClient(handler);
         var login = await client.PostAsync(web + "/Account/Login",
-            new FormUrlEncodedContent(new Dictionary<string, string> { ["email"] = "admin@mova.com", ["password"] = "Admin@123" }));
+            new FormUrlEncodedContent(new Dictionary<string, string> { ["email"] = "admin@bridge.pcss.com.br", ["password"] = "123" }));
         Check(login.StatusCode == HttpStatusCode.Redirect, "I-http-login");
         var chat = await client.GetAsync(web + "/Chat");
         Check(chat.IsSuccessStatusCode, "I-http-chat");

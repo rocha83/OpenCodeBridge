@@ -167,6 +167,26 @@ public sealed class ChatController(
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
         var files = await CollectSessionScriptsAsync(id);
+        string root = AppContext.BaseDirectory;
+        var items = new List<object>();
+        foreach (var f in files)
+        {
+            // ETA estimada pelo modelo no cabeçalho (`# ETA: ~12 min`); ausente = vazio.
+            double? eta = null;
+            try
+            {
+                string full = System.IO.Path.IsPathRooted(f) ? f : System.IO.Path.Combine(root, f);
+                if (System.IO.File.Exists(full))
+                {
+                    using var fs = System.IO.File.OpenRead(full);
+                    byte[] buf = new byte[4096];
+                    int n = await fs.ReadAsync(buf, 0, buf.Length);
+                    eta = Services.ScriptEta.ParseMinutes(System.Text.Encoding.UTF8.GetString(buf, 0, n));
+                }
+            }
+            catch { }
+            items.Add(new { path = f, etaMin = eta });
+        }
         var zip = await sessionService.GetArtifactAsync(id, "scripts.zip");
         // Zip vazio (0 entradas, legado do scraper antigo) não é oferecido.
         object? zipInfo = null;
@@ -181,7 +201,7 @@ public sealed class ChatController(
             }
             catch { }
         }
-        return Json(new { scripts = files, zip = zipInfo });
+        return Json(new { scripts = items, zip = zipInfo });
     }
 
     // GET /Chat/Sessions/{id}/ScriptsZip - baixa o zip gravado ao fim do turno.
@@ -825,6 +845,12 @@ public sealed class ChatController(
             return dst;
         }
 
+        // Executor da sessão: chamadas subagent rodam no modelo/bridge dele.
+        Agent? execAgent = null;
+        if (session?.ExecutorAgentId is int execId)
+        {
+            try { execAgent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == execId && a.Active); } catch { }
+        }
         try
         {
         while (!ct.IsCancellationRequested)
@@ -1038,6 +1064,7 @@ public sealed class ChatController(
                 // Plan sem delegar (texto sem subagent): cutucada mecânica
                 // (máx 2, sem tocar prompts — mesma linha anti-giro/deepseek).
                 if (!DeepSeekToolCoercion.IsDeepSeek(agent.Model) && agent.Mode == "plan"
+                    && ToolDefinitions.Allowed(agent, "subagent")
                     && planNudges < 2 && assistantContent.Length > 0 && !anyToolRan)
                 {
                     planNudges++;
@@ -1178,7 +1205,7 @@ public sealed class ChatController(
                         lock (unlinkedToolIds) unlinkedToolIds.Add(toolId);
                     }
                     : null;
-                var result = toolExecutor.Execute(name, args, 300, null, agent);
+                var result = toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent);
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
                 toolExecutor.LogInnerAsync = null;
@@ -1349,6 +1376,12 @@ public sealed class ChatController(
                 && m?["content"]?.GetValue<string>() is string u && u.Length > originalTask.Length)
                 originalTask = u;
 
+        // Executor da sessão: chamadas subagent rodam no modelo/bridge dele.
+        Agent? execAgent = null;
+        if (session?.ExecutorAgentId is int execId)
+        {
+            try { execAgent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == execId && a.Active); } catch { }
+        }
         try
         {
         for (int turn = 0; turn < 5 && !ct.IsCancellationRequested; turn++)
@@ -1360,7 +1393,10 @@ public sealed class ChatController(
                 ["stream"] = true,
                 ["temperature"] = temp,
             };
-            if (!string.IsNullOrWhiteSpace(agent.SystemPrompt)) body["instructions"] = agent.SystemPrompt;
+            string instructions = agent.SystemPrompt ?? "";
+            if (execAgent is not null && ToolDefinitions.Allowed(agent, "subagent"))
+                instructions += $"\n\nUtilize o agente '{execAgent.Name}' como subagente de execução: delegue as fases de implementação via tool subagent para ele.";
+            if (!string.IsNullOrWhiteSpace(instructions)) body["instructions"] = instructions;
             if (respTools.Count > 0) body["tools"] = respTools.DeepClone();
 
             using var bridgeReq = new HttpRequestMessage(HttpMethod.Post, agent.BridgeUrl.TrimEnd('/') + "/v1/responses")
@@ -1420,7 +1456,7 @@ public sealed class ChatController(
             if (accum.Calls.Count == 0)
             {
                 // Plan sem delegar: cutucada mecânica (máx 2), paridade com o chat.
-                if (agent.Mode == "plan" && planNudges < 2 && !anyCall && assistantContent.Length > 0)
+                if (agent.Mode == "plan" && ToolDefinitions.Allowed(agent, "subagent") && planNudges < 2 && !anyCall && assistantContent.Length > 0)
                 {
                     planNudges++;
                     string prose = StripThinkTags(assistantContent.ToString(), assistantThinking);
@@ -1503,7 +1539,7 @@ public sealed class ChatController(
                         lock (unlinkedToolIds) unlinkedToolIds.Add(toolId);
                     }
                     : null;
-                var result = toolExecutor.Execute(name, args, 300, null, agent);
+                var result = toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent);
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
                 toolExecutor.LogInnerAsync = null;

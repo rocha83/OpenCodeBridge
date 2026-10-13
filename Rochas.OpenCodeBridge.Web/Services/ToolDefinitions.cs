@@ -31,12 +31,11 @@ public static class ToolDefinitions
     }
 
     // Harness por agente: CSV com as liberadas (vazio = nenhuma).
-    // subagent segue o Mode (build não delega). Desconhecida = negada.
+    // subagent é checkbox como as demais (marcou, delega). Desconhecida = negada.
     // "display" libera shell só-echo (ver DisplayOnly) + leitura via read.
     public static bool Allowed(Models.Agent? a, string name)
     {
         if (a is null) return false;
-        if (name == "subagent") return a.Mode != "build";
         var set = ToolSet(a);
         if (set.Contains(name)) return true;
         return name == "shell" && set.Contains("display");

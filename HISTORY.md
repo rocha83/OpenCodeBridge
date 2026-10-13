@@ -1,5 +1,17 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Web — sem orquestrador, executor via harness + ETA nos scripts (2026-10-13)
+- Removido `OrchestrationService`/`IOrchestrationService` (778 linhas mortas, sem DI nem chamada;
+  lições de refinamento junto); `ExecutorTps` separado (sondado vence; CPU 3 t/s, GPU 20 t/s);
+  testes `CpuEtaTps`/`PlanToolsFilter` movidos p/ `ToolExecutorTests` (34/34).
+- `subagent` virou checkbox (harness) em vez de regra do Modo; migração dá `subagent` aos plan
+  existentes; nudges de delegação só cutucam quem pode delegar; `ExpandTools` passa adiante.
+- Com executor na sessão: dispatch da tool `subagent` roda no Model/BridgeUrl dele + sufixo no
+  system prompt (bypass `instructions`): "utilize o agente X como subagente de execução".
+  (Clássico não envia system prompt — gap pré-existente.)
+- Painel Scripts: ETA estimada pelo modelo (`# ETA: ~N min` no cabeçalho, exigido no harness;
+  ausente = vazio), `ScriptEta` com units; zip vazio dá 404.
+
 ## Web — status da mensagem + retomada automática (2026-10-13)
 - Tabela `message_statuses` (1 Enviada, 2 Respondida, 3 Arquivada) + `session_messages.status_id`
   com FK; migração com backfill (`archived→3, user→1, demais→2`); `AddMessageAsync` carimba

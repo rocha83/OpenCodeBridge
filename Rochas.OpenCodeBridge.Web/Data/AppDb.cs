@@ -94,6 +94,12 @@ public static class AppDb
             backfill.CommandText = "UPDATE session_messages SET status_id = CASE WHEN archived != 0 THEN 3 WHEN role = 'user' THEN 1 ELSE 2 END WHERE status_id IS NULL;";
             try { backfill.ExecuteNonQuery(); } catch { }
         }
+        // Migração: subagent virou checkbox — agentes plan existentes mantêm delegação.
+        using (var subq = conn.CreateCommand())
+        {
+            subq.CommandText = "UPDATE agents SET tools = CASE WHEN COALESCE(tools,'') = '' THEN 'subagent' ELSE tools || ',subagent' END WHERE mode = 'plan' AND (',' || COALESCE(tools,'') || ',') NOT LIKE '%,subagent,%';";
+            try { subq.ExecuteNonQuery(); } catch { }
+        }
         // Migração: harness de tools por agente (CSV; vazio = nenhuma).
         EnsureColumn(conn, "agents", "tools", "ALTER TABLE agents ADD COLUMN tools TEXT NOT NULL DEFAULT 'shell,read,write,edit,grep,glob,fetch,git';");
     }

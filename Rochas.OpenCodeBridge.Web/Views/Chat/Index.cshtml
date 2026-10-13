@@ -633,7 +633,9 @@ async function loadScripts(sessionId) {
       j.scripts.forEach(s => {
         const li = document.createElement('li');
         li.className = 'mb-1';
-        li.innerHTML = `<span class="badge bg-dark">${esc(s)}</span>`;
+        const p = (s && s.path) || s;
+        const eta = (s && s.etaMin) ? ` <span class="small text-muted">· ~${esc(String(s.etaMin))} min</span>` : '';
+        li.innerHTML = `<span class="badge bg-dark">${esc(p)}</span>${eta}`;
         list.appendChild(li);
       });
     }
