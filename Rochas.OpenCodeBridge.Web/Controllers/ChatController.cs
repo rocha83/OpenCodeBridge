@@ -570,7 +570,7 @@ public sealed class ChatController(
             {
                 ["model"] = agent.Model,
                 ["messages"] = BuildMessages(messages),
-                ["temperature"] = plan ? 0.6 : agent.Temperature,
+                ["temperature"] = agent.Temperature,
                 ["stream"] = true,
                 // Trava anti-eco degenerado ([shell] ok x500): repete menos.
                 ["repetition_penalty"] = 1.15,
@@ -951,8 +951,8 @@ public sealed class ChatController(
         var assistantThinking = new System.Text.StringBuilder();
         int? promptTokens = null, completionTokens = null;
 
-        bool plan = agent.Mode == "plan";
-        double temp = plan ? 0.6 : agent.Temperature;
+        // Temperatura e thinking vêm do cadastro do agente (sem override no código).
+        double temp = agent.Temperature;
         // Mesmo filtro do loop chat: build executa tudo e não delega subagent.
         var allowed = new HashSet<string> { "shell", "read", "grep", "glob", "fetch", "git", "subagent" };
         if (agent.Mode == "build") allowed.Remove("subagent");

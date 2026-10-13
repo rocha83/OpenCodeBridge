@@ -7,6 +7,7 @@
   Transporte provado ponta a ponta (shell executou e voltou).
 - Doutrina: plan thinking on / build off (chat respeita `agent.Thinking`,
   sub roda off); filtro de tools por **Mode** (build sem `subagent`).
+- Temperatura sem override no código: vale a do cadastro (`agent.Temperature`).
 - Suite web units 100/100; build Release 0/0.
 
 ## Web perfil 9B/4B (2026-10-13)
