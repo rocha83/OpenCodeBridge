@@ -66,6 +66,8 @@ internal static class Program
         }
         if (ui)
             Failures += Ui.BeltUiTests.RunAsync(web, belts.ToArray(), mode, phase).GetAwaiter().GetResult();
+        if (args.Contains("--simple"))
+            Failures += Ui.SimpleHelloTests.RunAsync(web).GetAwaiter().GetResult();
         if (args.Contains("--ui-behavior"))
             Failures += Ui.ChatBehaviorTests.RunAsync(web).GetAwaiter().GetResult();
 

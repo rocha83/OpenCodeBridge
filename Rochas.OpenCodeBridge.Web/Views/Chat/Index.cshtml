@@ -242,9 +242,9 @@ function toolStatus(name, running, ok, result, ms, args, sub) {
     if (dup) { bumpToolsCount(g); return; }
     // Delegação externa: label próprio + enunciado passado ao subagente.
     const isOuterSub = name === 'subagent' && !sub;
-    const psnip = isOuterSub ? subPromptOf(args).slice(0, 160) : '';
+    const psnip = isOuterSub ? subPromptOf(args) : '';
     d.innerHTML = isOuterSub
-      ? `<summary class="small text-muted">Delegando a um subagente…${psnip ? ' ' + esc(psnip) + (psnip.length >= 160 ? '…' : '') : ''}</summary>`
+      ? `<summary class="small text-muted">Delegando a um subagente…</summary>${psnip ? `<p class="small text-muted">${esc(psnip)}</p>` : ''}`
       : `<summary class="small text-muted">Executando ${esc(name)}${head ? ' ' + esc(head) : ''}…</summary>`;
     d.dataset.args = head;
     if (psnip) d.dataset.prompt = psnip;
@@ -269,8 +269,8 @@ function toolStatus(name, running, ok, result, ms, args, sub) {
     const state = ok === false ? 'falhou' : 'executado com sucesso';
     const showResult = result && (ok === false || !outerSub);
     const p = showResult ? `<p class="small text-muted">${esc(result)}</p>` : '';
-    const ah = d.dataset.prompt ? ` <span class="text-muted">${esc(d.dataset.prompt)}</span>`
-      : (d.dataset.args ? ` <span class="text-muted">${esc(d.dataset.args)}</span>` : '');
+    // Enunciado integral já está no corpo (item do start); no done só o estado.
+    const ah = (!outerSub && d.dataset.args) ? ` <span class="text-muted">${esc(d.dataset.args)}</span>` : '';
     if (outerSub) settlePlaceholder(name, ok, result);
     d.dataset.busy = '';
     d.innerHTML = `<summary class="small text-muted">${outerSub ? 'Subagente' : esc(name)} ${state}.${ah}</summary>${p}`;
@@ -661,12 +661,13 @@ function toolsGroupHtml(tools) {
     // já mostra); falha sem card mostra o motivo (paridade com o ao vivo).
     const outerSub = c?.name === 'subagent' && !c?.sub;
     const out = ((!outerSub || c?.ok === false) && c?.output) ? `<p class="small text-muted">${esc(c.output)}</p>` : '';
-    const psnip = outerSub ? subPromptOf(c?.args).slice(0, 160) : '';
+    const psnip = outerSub ? subPromptOf(c?.args) : '';
     const rawhead = ((c?.args || '').replace(/\s+/g, ' ').trim()).slice(0, 80);
     const a = psnip || rawhead;
-    const ah = a ? ` <span class="text-muted">${esc(a)}${(!psnip && (c?.args || '').length > 80) || (psnip && subPromptOf(c?.args).length > 160) ? '…' : ''}</span>` : '';
+    const ah = psnip ? '' : (a ? ` <span class="text-muted">${esc(a)}${(c?.args || '').length > 80 ? '…' : ''}</span>` : '');
     const tlabel = outerSub ? 'Subagente' : esc(c?.name ?? 'tool');
-    return `<details class="mb-1 tool-item"><summary class="small text-muted">${tlabel} ${state}.${ah}</summary>${out}</details>`;
+    const pbody = psnip ? `<p class="small text-muted">${esc(psnip)}</p>` : '';
+    return `<details class="mb-1 tool-item"><summary class="small text-muted">${tlabel} ${state}.${ah}</summary>${out}${pbody}</details>`;
   }).join('');
   return `<details class="mb-2 tools-group" open><summary class="small text-muted">Ferramentas (${tools.length})</summary><div class="tlist">${items}</div></details>`;
 }

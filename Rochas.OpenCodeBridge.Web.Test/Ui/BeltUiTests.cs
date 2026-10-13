@@ -107,13 +107,21 @@ public static class BeltUiTests
                 Console.WriteLine($"[ui] faixa {belt.Key}: enunciado: {belt.Prompt}");
                 switch (phase)
                 {
-                    case "batch": failures += await UiChatSendAsync(api, page, belt); break;
+                    // Nova janela por faixa (as anteriores ficam abertas p/ comparar).
+                    case "batch": { var bpage = await context.NewPageAsync(); failures += await UiChatSendAsync(api, bpage, belt); break; }
                     case "plan": failures += await PlanBeltAsync(api, belt); break;
                     case "reviewplan": failures += await ReviewPlanAsync(api, belt); break;
                     case "execute": failures += await ExecuteBeltAsync(api, belt); break;
                     case "review": failures += await ReviewBeltAsync(api, belt); break;
                     default: Console.WriteLine($"[ui] FAIL fase desconhecida ou desativada: {phase}"); failures++; break;
                 }
+            }
+            Console.WriteLine($"[ui] faixas: {wanted.Length - failures}/{wanted.Length} PASS");
+            if (!PlaywrightSetup.Headless())
+            {
+                // Janela aberta ao fim (HEAD): encerre o processo p/ fechar.
+                Console.WriteLine("[ui] HOLD: janelas abertas; mate o processo para encerrar.");
+                await Task.Delay(Timeout.InfiniteTimeSpan);
             }
         }
         catch (Exception ex)
@@ -290,6 +298,25 @@ public static class BeltUiTests
             }
             bool ok = done && conv.Length > 0 && toolsUi && msgs > 0 && calls > 0;
             Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: conversa {conv.Length} chars, toolsUi={toolsUi}, msgs={msgs}, toolcalls={calls} ({file})");
+            // Link do zip no quadro da direita (artefato gravado ao fim do turno).
+            try
+            {
+                using var sres2 = await api.GetAsync("Chat/Sessions");
+                sres2.EnsureSuccessStatusCode();
+                using var sdoc2 = JsonDocument.Parse(await sres2.Content.ReadAsStringAsync());
+                int sid2 = sdoc2.RootElement.EnumerateArray().First().GetProperty("id").GetInt32();
+                using var zres = await api.GetAsync($"Chat/Sessions/{sid2}/Scripts");
+                if (zres.IsSuccessStatusCode)
+                {
+                    using var zdoc = JsonDocument.Parse(await zres.Content.ReadAsStringAsync());
+                    bool hasZip = zdoc.RootElement.TryGetProperty("zip", out var z) && z.ValueKind != JsonValueKind.Null;
+                    Console.WriteLine($"[ui] {belt.Key}: zip {(hasZip ? "OK (" + z.GetProperty("size").GetString() + ")" : "ausente")}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ui] {belt.Key}: sem zip ({ex.Message.Split('\n')[0]})");
+            }
             return ok ? 0 : 1;
         }
         catch (Exception ex)
