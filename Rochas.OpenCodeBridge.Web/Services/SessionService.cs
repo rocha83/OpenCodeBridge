@@ -156,7 +156,7 @@ public sealed class SessionService(
         return list.OrderBy(x => x.CreatedAt).ThenBy(x => x.Id).TakeLast(limit).ToList();
     }
 
-    public async Task<int> AddMessageAsync(int sessionId, string role, string content, string thinking, int? promptTokens, int? completionTokens)
+    public async Task<int> AddMessageAsync(int sessionId, string role, string content, string thinking, int? promptTokens, int? completionTokens, long? elapsedMs = null, double? tps = null)
     {
         // INSERT direto + last_insert_rowid na mesma conexão: id confiável
         // p/ vincular as tools do turno a esta mensagem (bolha dona).
@@ -165,13 +165,15 @@ public sealed class SessionService(
             using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
             await conn.OpenAsync();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "INSERT INTO session_messages (session_id, role, content, thinking, prompt_tokens, completion_tokens) VALUES (@s,@r,@c,@t,@p,@e); SELECT last_insert_rowid();";
+            cmd.CommandText = "INSERT INTO session_messages (session_id, role, content, thinking, prompt_tokens, completion_tokens, elapsed_ms, tps) VALUES (@s,@r,@c,@t,@p,@e,@m,@v); SELECT last_insert_rowid();";
             cmd.Parameters.AddWithValue("@s", sessionId);
             cmd.Parameters.AddWithValue("@r", role ?? "");
             cmd.Parameters.AddWithValue("@c", content ?? "");
             cmd.Parameters.AddWithValue("@t", thinking ?? "");
             cmd.Parameters.AddWithValue("@p", (object?)promptTokens ?? System.DBNull.Value);
             cmd.Parameters.AddWithValue("@e", (object?)completionTokens ?? System.DBNull.Value);
+            cmd.Parameters.AddWithValue("@m", (object?)elapsedMs ?? System.DBNull.Value);
+            cmd.Parameters.AddWithValue("@v", (object?)tps ?? System.DBNull.Value);
             var id = await cmd.ExecuteScalarAsync();
             return System.Convert.ToInt32(id);
         });

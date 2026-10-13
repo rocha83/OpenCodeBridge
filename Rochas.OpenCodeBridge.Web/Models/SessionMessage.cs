@@ -29,6 +29,13 @@ public sealed class SessionMessage
     [Column("completion_tokens")]
     public int? CompletionTokens { get; set; }
 
+    // Métrica do rodapé da bolha: duração da execução em ms + throughput em t/s.
+    [Column("elapsed_ms")]
+    public long? ElapsedMs { get; set; }
+
+    [Column("tps")]
+    public double? Tps { get; set; }
+
     [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     // Compactação: 1 = passado (fora do contexto, visível no histórico).

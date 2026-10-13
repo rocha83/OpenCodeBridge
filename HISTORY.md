@@ -1,5 +1,26 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Rodapé das bolhas com duração e t/s + trava anti-loop na bridge (2026-10-13)
+- Bolhas de Agente e Sub Agente exibem no rodapé à direita
+  `DATA HORA - Ns - X t/s` (ex.: `13/10 10:44 - 143s - 15 t/s`).
+- Backend: `session_messages` ganha `elapsed_ms` + `tps` (migração via
+  `EnsureColumn`); `SessionMessage` e `AddMessageAsync` (params opcionais)
+  propagam; `GET Messages` devolve os dois campos.
+- Agente: cronômetro do stream inteiro; `tps` = `completion_tokens` do
+  `usage` / segundos. Subagente: duração medida (`sw.ElapsedMilliseconds`) e
+  t/s estimado por chars/4 (sem `usage` no sub).
+- Front (`Views/Chat/Index.cshtml`): `fmtFoot()` monta o rodapé; `msgItem`
+  recebe `elapsedMs`/`tps`; ao fim do stream recarrega as mensagens do
+  servidor para a bolha ao vivo ganhar a métrica persistida.
+- Donut inalterado: segue consumo total do contexto em tokens.
+- Trava anti-loop na bridge (`Rochas.OpenCodeBridge/Program.cs`,
+  `WithSystemGuardrail`, sem duplicar): todo system prompt (Responses via
+  `NormalizeSystemFirst`/`InputToMessages` e chat direto) recebe no final
+  "ao executar tools que resultem em erro tentar no maximo mais 2 vezes, e
+  sempre responde na lingua do usuario de forma concisa".
+- Teste `U-translate-profiles` atualizado p/ nova doutrina (build thinking on).
+- Suite web units PASS; bridge units 16/16; build Release 0/0.
+
 ## Harness de tools por agente + sessoes por usuario (2026-10-13)
 - `Agent.Tools` (CSV; vazio = nenhuma): 7 presets no cadastro (pastas, leitura,
   escrita, repos, internet, validação, exibição echo/cat) + `subagent` pelo Mode;

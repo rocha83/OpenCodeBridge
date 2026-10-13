@@ -118,7 +118,7 @@ public sealed class ChatController(
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
         var msgs = await sessionService.GetMessagesAsync(id, limit);
-        return Json(msgs.Select(m => new { m.Id, m.Role, m.Content, m.Thinking, m.PromptTokens, m.CompletionTokens, CreatedAt = Utc(m.CreatedAt) }));
+        return Json(msgs.Select(m => new { m.Id, m.Role, m.Content, m.Thinking, m.PromptTokens, m.CompletionTokens, m.ElapsedMs, m.Tps, CreatedAt = Utc(m.CreatedAt) }));
     }
 
     // GET /Chat/Sessions/{id}/ToolCalls - trilha de tools p/ avaliação posterior.
@@ -542,6 +542,8 @@ public sealed class ChatController(
 
     private async Task StreamWithTools(Agent agent, JsonArray messages, Session? session, CancellationToken ct)
     {
+        // Cronômetro do stream inteiro: duração da bolha final do agente.
+        var streamSw = System.Diagnostics.Stopwatch.StartNew();
         // Bypass padrão (flag Orchestration:UseResponsesBypass): turno único via
         // /v1/responses com passthrough da bridge — SEM ToolExecutor, só o
         // sanitize leve (system-first + drop de reasoning) do lado da bridge.
@@ -1011,7 +1013,9 @@ public sealed class ChatController(
                         }
                         if (sbody.Length > 0 || sthink.Length > 0)
                         {
-                            int subMsgId = await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null);
+                            long subMs = sw.ElapsedMilliseconds;
+                            int subMsgId = await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null,
+                                subMs, TpsEstimate(sbody + "\n" + sthink, subMs));
                             await sessionService.TouchAsync(sidSub);
                             // Card dono das internas: liga as tools do sub a ele.
                             if (lastSub is not null)
@@ -1068,7 +1072,9 @@ public sealed class ChatController(
         }
         if (session is not null && session.Id.HasValue && (finalText.Length > 0 || assistantThinking.Length > 0))
         {
-            int finalMsgId = await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens);
+            long streamMs = streamSw.ElapsedMilliseconds;
+            int finalMsgId = await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens,
+                streamMs, TpsOf(completionTokens, streamMs));
             await sessionService.TouchAsync(session.Id.Value);
             // Órfãs (turno sem texto / card que falhou) fecham na bolha final.
             if (unlinkedToolIds.Count > 0)
@@ -1108,6 +1114,8 @@ public sealed class ChatController(
     // (o loop agêntico mora aqui; a bridge só transporta). Persiste e fecha [DONE].
     private async Task StreamResponsesBypass(Agent agent, JsonArray messages, Session? session, CancellationToken ct)
     {
+        // Cronômetro do stream inteiro: duração da bolha final do agente.
+        var streamSw = System.Diagnostics.Stopwatch.StartNew();
         var outputStream = Response.Body;
         var client = http.CreateClient();
         client.Timeout = Timeout.InfiniteTimeSpan;
@@ -1318,7 +1326,9 @@ public sealed class ChatController(
                         }
                         if (sbody.Length > 0 || sthink.Length > 0)
                         {
-                            int subMsgId = await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null);
+                            long subMs = sw.ElapsedMilliseconds;
+                            int subMsgId = await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null,
+                                subMs, TpsEstimate(sbody + "\n" + sthink, subMs));
                             await sessionService.TouchAsync(sidSub);
                             // Card dono das internas: liga as tools do sub a ele.
                             if (lastSub is not null)
@@ -1357,7 +1367,9 @@ public sealed class ChatController(
         string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
         if (session is not null && session.Id.HasValue && (finalText.Length > 0 || assistantThinking.Length > 0))
         {
-            int finalMsgId = await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens);
+            long streamMs = streamSw.ElapsedMilliseconds;
+            int finalMsgId = await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens,
+                streamMs, TpsOf(completionTokens, streamMs));
             await sessionService.TouchAsync(session.Id.Value);
             // Órfãs (card que falhou) fecham na bolha final.
             if (unlinkedToolIds.Count > 0)
@@ -1384,6 +1396,20 @@ public sealed class ChatController(
     {
         try { return JsonNode.Parse(argsJson ?? "")?.AsObject()?["prompt"]?.GetValue<string>() ?? ""; }
         catch { return ""; }
+    }
+
+    // Throughput da bolha (t/s): tokens de saída / segundos de execução.
+    private static double? TpsOf(int? completionTokens, long elapsedMs)
+    {
+        if (completionTokens is null || completionTokens <= 0 || elapsedMs <= 0) return null;
+        return Math.Round(completionTokens.Value / (elapsedMs / 1000.0), 1);
+    }
+
+    // Estimativa p/ bolha de subagente (sem usage): chars/4 sobre os segundos.
+    private static double? TpsEstimate(string text, long elapsedMs)
+    {
+        if (string.IsNullOrWhiteSpace(text) || elapsedMs <= 0) return null;
+        return Math.Round((text.Trim().Length / 4.0) / (elapsedMs / 1000.0), 1);
     }
 
     // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.

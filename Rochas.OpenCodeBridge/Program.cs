@@ -52,6 +52,9 @@ internal static partial class Program
     static string ApiKey = "";
     static bool PassthroughResponses = false;                    // Bypass p/ upstream com Responses nativo (llama.cpp): so remove itens reasoning, resto passa direto                                     // Bearer p/ upstream com auth (llama --api-key); vazio = so repasse
     static readonly string Version = "2.1";
+    // Trava anti-loop no nivel da bridge: complementa QUALQUER system
+    // prompt no final (Responses e chat), sem depender do agente.
+    static readonly string SystemGuardrail = "ao executar tools que resultem em erro tentar no maximo mais 2 vezes, e sempre responde na lingua do usuario de forma concisa";
 
     // Coerção texto->tool_calls p/ upstream sem parser server-side (llama.cpp
     // na CPU): extrai ```json{"name"..} ou <tool_call>..</tool_call> do content
@@ -583,6 +586,25 @@ WriteJson(ctx, 200, new JsonObject
                 if (hasProfile || CoerceFor(mid))
                 {
                     node["model"] = Model;
+                    if (node["messages"] is JsonArray chatMessages)
+                    {
+                        foreach (var m in chatMessages)
+                        {
+                            if (m is JsonObject mo && mo["role"]?.GetValue<string>() is string mrole && (mrole == "system" || mrole == "developer"))
+                            {
+                                if (mo["content"] is JsonValue mcv && mcv.TryGetValue<string>(out string? mtext) && !string.IsNullOrWhiteSpace(mtext))
+                                    mo["content"] = WithSystemGuardrail(mtext);
+                                else if (mo["content"] is JsonArray mparts)
+                                {
+                                    foreach (var p in mparts)
+                                    {
+                                        if (p is JsonObject po && po["text"] is JsonValue ptv && ptv.TryGetValue<string>(out string? ptext) && !string.IsNullOrWhiteSpace(ptext))
+                                        { po["text"] = WithSystemGuardrail(ptext); break; }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if (node["temperature"] is null && !double.IsNaN(profTemp))
                         node["temperature"] = profTemp;
                     // Linha CPU: o 3B entra em loop de filler ([END_OF_TEXT])
@@ -992,6 +1014,17 @@ var shape = new StringBuilder();
         return "";
     }
 
+    /// <summary>Complementa qualquer system prompt com o sufixo padrao anti-loop (sem duplicar).</summary>
+    /// <param name="text">System prompt original.</param>
+    /// <returns>System prompt com o sufixo no final.</returns>
+    static string WithSystemGuardrail(string text)
+    {
+        string t = (text ?? "").Trim();
+        if (t.Length == 0) return t;
+        if (t.Contains("mais 2 vezes", StringComparison.OrdinalIgnoreCase)) return t;
+        return t + "\n\n" + SystemGuardrail;
+    }
+
     /// <summary>Funde system/developer do input num unico system inicial (jinja Qwen exige system primeiro).</summary>
     /// <param name="req">Request Responses (mutado no lugar).</param>
     /// <returns>True se reordenou.</returns>
@@ -1022,7 +1055,7 @@ static bool NormalizeSystemFirst(JsonObject req)
             new JsonObject
             {
                 ["type"] = "message", ["role"] = "system",
-                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = sys.ToString() })
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = WithSystemGuardrail(sys.ToString()) })
             }
         };
         foreach (var it in rest) final.Add(it?.DeepClone());
@@ -1512,7 +1545,7 @@ if (type == "message")
             // sao ignorados de proposito: nao fazem falta no fluxo chat.
         }
         if (sysText.Length > 0)
-            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = sysText.ToString() });
+            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = WithSystemGuardrail(sysText.ToString()) });
         return messages;
     }
 

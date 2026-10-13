@@ -514,10 +514,10 @@ async function loadMessages(sessionId) {
       if (role === 'assistant' && pendingThink.trim()) {
         const merged = pendingThink + ((think || '').trim() ? '\n\n' + think.trim() : '');
         pendingThink = '';
-        conv.appendChild(msgItem(role, merged, body, m?.createdAt, toolsByMsg[m?.id]));
+        conv.appendChild(msgItem(role, merged, body, m?.createdAt, toolsByMsg[m?.id], m?.elapsedMs, m?.tps));
         return;
       }
-      conv.appendChild(msgItem(role, think, body, m?.createdAt, toolsByMsg[m?.id]));
+      conv.appendChild(msgItem(role, think, body, m?.createdAt, toolsByMsg[m?.id], m?.elapsedMs, m?.tps));
     } catch (err) {
       const li = document.createElement('li');
       li.className = 'd-flex justify-content-between mb-4';
@@ -671,6 +671,14 @@ function fmtTs(iso) {
     return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
   } catch { return ''; }
 }
+// Rodapé da bolha: "13/10 10:44 - 143s - 15 t/s" (duração e t/s só quando medidos).
+function fmtFoot(ts, ms, tps) {
+  const base = fmtTs(ts);
+  const parts = [base];
+  if (+ms > 0) parts.push(`${Math.round(+ms / 1000)}s`);
+  if (+tps > 0) parts.push(`${(+tps % 1 === 0) ? +tps : (+tps).toFixed(1)} t/s`);
+  return parts.filter(Boolean).join(' - ');
+}
 function toolsGroupHtml(tools) {
   if (!tools || !tools.length) return '';
   const items = tools.map(c => {
@@ -684,10 +692,10 @@ function toolsGroupHtml(tools) {
   }).join('');
   return `<details class="mb-2 tools-group" open><summary class="small text-muted">Ferramentas (${tools.length})</summary><div class="tlist">${items}</div></details>`;
 }
-function msgItem(role, think, body, ts, tools) {
+function msgItem(role, think, body, ts, tools, ms, tps) {
   const li = document.createElement('li');
   li.className = 'd-flex justify-content-between mb-4';
-  const foot = ts ? `<div class="msg-ts">${esc(fmtTs(ts))}</div>` : '';
+  const foot = ts ? `<div class="msg-ts">${esc(fmtFoot(ts, ms, tps))}</div>` : '';
   if (role === 'user') {
     li.innerHTML = `
       <div class="card w-100">
@@ -1068,6 +1076,8 @@ document.getElementById('send').onclick = async () => {
   sendBtn.innerHTML = 'ENVIAR';
   document.getElementById('cancelBtn')?.remove();
   ta.focus();
+  // Recarrega do servidor: a bolha ao vivo ganha o rodapé com duração e t/s persistidos.
+  if (stillHere) { try { await loadMessages(sendSessionId); await updateCtxDonut(); } catch {} }
   if (stillHere && isScrolledToBottom()) scrollToBottom();
 };
 

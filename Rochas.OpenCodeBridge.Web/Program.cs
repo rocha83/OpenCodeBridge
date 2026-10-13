@@ -15,6 +15,7 @@ var options = new WebApplicationOptions
     ContentRootPath = AppContext.BaseDirectory
 };
 var builder = WebApplication.CreateBuilder(options);
+builder.WebHost.UseUrls("http://*:4130");
 
 // Diagnóstico (appsettings Diagnostics + env DIAGNOSTICS_ENABLED=1).
 // O env entra na configuração para valer em IOptions, Serilog e middleware.

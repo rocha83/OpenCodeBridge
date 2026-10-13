@@ -82,6 +82,9 @@ public static class AppDb
         // Migração: vínculo tool->bolha (mensagem dona) + id do subagente dono.
         EnsureColumn(conn, "tool_calls", "message_id", "ALTER TABLE tool_calls ADD COLUMN message_id INTEGER;");
         EnsureColumn(conn, "tool_calls", "sub", "ALTER TABLE tool_calls ADD COLUMN sub TEXT NOT NULL DEFAULT '';");
+        // Migração: métrica por bolha (rodapé): duração em ms + throughput t/s.
+        EnsureColumn(conn, "session_messages", "elapsed_ms", "ALTER TABLE session_messages ADD COLUMN elapsed_ms INTEGER;");
+        EnsureColumn(conn, "session_messages", "tps", "ALTER TABLE session_messages ADD COLUMN tps REAL;");
         // Migração: harness de tools por agente (CSV; vazio = nenhuma).
         EnsureColumn(conn, "agents", "tools", "ALTER TABLE agents ADD COLUMN tools TEXT NOT NULL DEFAULT 'shell,read,write,edit,grep,glob,fetch,git';");
     }

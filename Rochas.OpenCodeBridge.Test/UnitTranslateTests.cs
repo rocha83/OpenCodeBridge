@@ -102,7 +102,7 @@ internal static class UnitTranslateTests
     public static async Task TranslateProfiles()
     {
         // Perfis por sufixo: plan = temp alta + thinking; build = temp baixa
-        // sem thinking; sem sufixo valem os globais da bridge.
+        // COM thinking (executor precisa raciocinar); sem sufixo valem os globais.
         static JsonObject Body(string model) => new()
         {
             ["model"] = model,
@@ -121,7 +121,7 @@ internal static class UnitTranslateTests
         var build = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen2.5-coder-3b-build"));
         var buildChat = build["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request build");
         TestContext.Check(build["temperature"]?.GetValue<double>() <= globalTemp, "build temp abaixo da global");
-        TestContext.Check(buildChat["chat_template_kwargs"]?["enable_thinking"]?.GetValue<bool>() == false, "build thinking off");
+        TestContext.Check(buildChat["chat_template_kwargs"]?["enable_thinking"]?.GetValue<bool>() == true, "build thinking on");
         var plain = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq"));
         TestContext.Check(plain["temperature"]?.GetValue<double>() == globalTemp, "sem sufixo usa global");
     }
