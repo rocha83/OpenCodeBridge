@@ -55,3 +55,6 @@ Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga. Para
   temp 0.4) pelos endpoints Decompose/Orchestrate.
   `UseResponsesBypass=true`: chat é conversa pura (sem ToolExecutor no loop);
   delegação no chat-loop exigiria o flag desligado.
+- Sem delegação no plan, cutucada mecânica (`[Plan-delegate n/2]`, máx 2).
+- Enunciado ao subagente: vai em `tool_calls.args` (`{"prompt": ...}`) e
+  aparece nos labels ("Delegando a um subagente…" + trecho).

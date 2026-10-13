@@ -865,7 +865,7 @@ public sealed class ChatController(
             {
                 anyToolRan = true;
                 if (name == "subagent") anySubRan = true;
-                await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
+                await WriteProgressAsync(outputStream, "tool_start", name, null, ct, "", 0, "", args);
                 // Card imediato no "digitando": o sub real adota ao no primeiro chunk.
                 if (name == "subagent") await WriteProgressAsync(outputStream, "sub_start", name, null, ct);
                 // Gate de escopo: subagent recebe UMA fase, nunca o enunciado
@@ -1167,7 +1167,7 @@ public sealed class ChatController(
             // function_call_output p/ toda call; sem isso o modelo trava).
             foreach (var (id, name, args) in accum.Calls)
             {
-                await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
+                await WriteProgressAsync(outputStream, "tool_start", name, null, ct, "", 0, "", args);
                 // Card imediato no "digitando": o sub real adota ao no primeiro chunk.
                 if (name == "subagent") await WriteProgressAsync(outputStream, "sub_start", name, null, ct);
                 // Gate de escopo: subagent recebe UMA fase (máx 2 recusas).
@@ -1321,13 +1321,14 @@ public sealed class ChatController(
     }
 
     // Evento de progresso ao cliente (a UI mostra "Executando [tool]..." / details com retorno).
-    private static async Task WriteProgressAsync(System.IO.Stream output, string stage, string name, bool? ok, CancellationToken ct, string result = "", long ms = 0, string sub = "")
+    private static async Task WriteProgressAsync(System.IO.Stream output, string stage, string name, bool? ok, CancellationToken ct, string result = "", long ms = 0, string sub = "", string args = "")
     {
         var evt = new JsonObject { ["progress"] = stage, ["name"] = name };
         if (!string.IsNullOrEmpty(sub)) evt["sub"] = sub;
         if (ok.HasValue) evt["ok"] = ok.Value;
         if (ms > 0) evt["ms"] = ms;
         if (!string.IsNullOrEmpty(result)) evt["result"] = result;
+        if (!string.IsNullOrEmpty(args)) evt["args"] = args.Length > 2000 ? args[..2000] : args;
         var bytes = Encoding.UTF8.GetBytes("data: " + evt.ToJsonString() + "\n\n");
         await output.WriteAsync(bytes, ct);
         await output.FlushAsync(ct);
