@@ -172,6 +172,17 @@ function subPromptOf(args) {
   } catch {}
   return (args || '').replace(/\s+/g, ' ').trim();
 }
+// Rótulo do arg por tool (comando/caminho/padrão em vez de JSON cru).
+function labelHead(name, args) {
+  try {
+    const o = JSON.parse(args || '');
+    const pick = { shell: 'command', read: 'path', write: 'path', edit: 'path',
+      grep: 'pattern', glob: 'pattern', fetch: 'url', git: 'command' }[name];
+    if (pick && o[pick]) return String(o[pick]).replace(/\s+/g, ' ').trim().slice(0, 120);
+  } catch {}
+  const a = (args || '').replace(/\s+/g, ' ').trim();
+  return a.length > 80 ? a.slice(0, 80) + '…' : a;
+}
 // Grupo "Ferramentas" por bolha: dropdown abaixo do Raciocínio com uma
 // sub-label (details) por tool executada. Individual por bolha (agente e sub).
 function ensureToolsGroup(bodyEl) {
@@ -221,7 +232,12 @@ function toolsOwnerBody(sub) {
 // grupo do agente: sucesso não despeja o resultado (o card já mostra);
 // falha sem card mostra o motivo (timeout/recusa ficavam invisíveis).
 function toolStatus(name, running, ok, result, ms, args, sub) {
-  const outerSub = name === 'subagent' && !sub;
+  // Chamada de subagente ≠ execução: só placeholder/card (sem grupo).
+  if (name === 'subagent' && !sub) {
+    if (running) subPlaceholder(subPromptOf(args));
+    else settlePlaceholder(name, ok, result);
+    return;
+  }
   const body = toolsOwnerBody(sub);
   if (!body) return;
   const g = ensureToolsGroup(body);
@@ -233,26 +249,21 @@ function toolStatus(name, running, ok, result, ms, args, sub) {
     d.dataset.busy = '1';
     d.setAttribute('open', '');
     const a = (args || '').replace(/\s+/g, ' ').trim();
-    const head = a.length > 80 ? a.slice(0, 80) + '…' : a;
+    const head = labelHead(name, args);
     // Sem duplicar: start repetido do mesmo args reutiliza o item ocupado.
     let dup = null;
     list.querySelectorAll('details.tool-item').forEach(el => {
       if (!dup && el.dataset.tool === name && el.dataset.busy === '1' && (el.dataset.args || '') === head) dup = el;
     });
     if (dup) { bumpToolsCount(g); return; }
-    // Delegação externa: label próprio + enunciado passado ao subagente.
-    const isOuterSub = name === 'subagent' && !sub;
-    const psnip = isOuterSub ? subPromptOf(args) : '';
-    d.innerHTML = isOuterSub
-      ? `<summary class="small text-muted">Delegando a um subagente…</summary>${psnip ? `<p class="small text-muted">${esc(psnip)}</p>` : ''}`
-      : `<summary class="small text-muted">Executando ${esc(name)}${head ? ' ' + esc(head) : ''}…</summary>`;
+    // Tool real: label com comando/caminho + item no grupo.
+    d.innerHTML = `<summary class="small text-muted">Executando ${esc(name)}${head ? ' ' + esc(head) : ''}…</summary>`;
     d.dataset.args = head;
-    if (psnip) d.dataset.prompt = psnip;
     list.appendChild(d);
     bumpToolsCount(g);
   } else {
     let d = null;
-    const ahead = args ? String(args).replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+    const ahead = args ? labelHead(name, args) : '';
     list.querySelectorAll('details.tool-item').forEach(el => {
       if (!d && el.dataset.tool === name && el.dataset.busy === '1'
         && (!ahead || (el.dataset.args || '') === ahead)) d = el;
@@ -267,13 +278,10 @@ function toolStatus(name, running, ok, result, ms, args, sub) {
       list.appendChild(d);
     }
     const state = ok === false ? 'falhou' : 'executado com sucesso';
-    const showResult = result && (ok === false || !outerSub);
-    const p = showResult ? `<p class="small text-muted">${esc(result)}</p>` : '';
-    // Enunciado integral já está no corpo (item do start); no done só o estado.
-    const ah = (!outerSub && d.dataset.args) ? ` <span class="text-muted">${esc(d.dataset.args)}</span>` : '';
-    if (outerSub) settlePlaceholder(name, ok, result);
+    const p = result ? `<p class="small text-muted">${esc(result)}</p>` : '';
+    const ah = d.dataset.args ? ` <span class="text-muted">${esc(d.dataset.args)}</span>` : '';
     d.dataset.busy = '';
-    d.innerHTML = `<summary class="small text-muted">${outerSub ? 'Subagente' : esc(name)} ${state}.${ah}</summary>${p}`;
+    d.innerHTML = `<summary class="small text-muted">${esc(name)} ${state}.${ah}</summary>${p}`;
     d.removeAttribute('open');
     bumpToolsCount(g);
   }
@@ -335,13 +343,23 @@ function ensureSubCard(sub) {
 
 // Placeholder imediato no "digitando" (delegação anunciada, sub ainda em
 // prefill): o primeiro subChunk do sub real adota este card.
-function subPlaceholder() {
+function subPlaceholder(prompt) {
   if (window._pendingSubCard && window._pendingSubCard.li.isConnected) return;
   const h = ensureSubCard(null);
   h.pending = true;
   window._pendingSubCard = h;
   h.pre.textContent = '';
   h.pre.classList.add('typing');
+  // Enunciado da delegação em dropdown próprio (chamada ≠ execução).
+  if (prompt) {
+    const det = document.createElement('details');
+    det.className = 'mb-2 subprompt';
+    det.setAttribute('open', '');
+    det.innerHTML = `<summary class="small text-muted">Enunciado</summary><p class="small text-muted"></p>`;
+    det.querySelector('p').textContent = prompt;
+    h.pre.parentNode.insertBefore(det, h.pre);
+    h.promptDet = det;
+  }
   if (isScrolledToBottom()) scrollToBottom();
 }
 // Finaliza placeholder nunca adotado (sub falhou antes do primeiro chunk).
@@ -656,18 +674,13 @@ function fmtTs(iso) {
 function toolsGroupHtml(tools) {
   if (!tools || !tools.length) return '';
   const items = tools.map(c => {
+    // Chamada de subagente não entra no grupo (tem card próprio).
+    if (c?.name === 'subagent' && !c?.sub) return '';
     const state = c?.ok === false ? 'falhou' : 'executado com sucesso';
-    // Delegação externa: sem despejo do resultado no sucesso (o card do sub
-    // já mostra); falha sem card mostra o motivo (paridade com o ao vivo).
-    const outerSub = c?.name === 'subagent' && !c?.sub;
-    const out = ((!outerSub || c?.ok === false) && c?.output) ? `<p class="small text-muted">${esc(c.output)}</p>` : '';
-    const psnip = outerSub ? subPromptOf(c?.args) : '';
-    const rawhead = ((c?.args || '').replace(/\s+/g, ' ').trim()).slice(0, 80);
-    const a = psnip || rawhead;
-    const ah = psnip ? '' : (a ? ` <span class="text-muted">${esc(a)}${(c?.args || '').length > 80 ? '…' : ''}</span>` : '');
-    const tlabel = outerSub ? 'Subagente' : esc(c?.name ?? 'tool');
-    const pbody = psnip ? `<p class="small text-muted">${esc(psnip)}</p>` : '';
-    return `<details class="mb-1 tool-item"><summary class="small text-muted">${tlabel} ${state}.${ah}</summary>${out}${pbody}</details>`;
+    const out = c?.output ? `<p class="small text-muted">${esc(c.output)}</p>` : '';
+    const a = labelHead(c?.name, c?.args);
+    const ah = a ? ` <span class="text-muted">${esc(a)}</span>` : '';
+    return `<details class="mb-1 tool-item"><summary class="small text-muted">${esc(c?.name ?? 'tool')} ${state}.${ah}</summary>${out}</details>`;
   }).join('');
   return `<details class="mb-2 tools-group" open><summary class="small text-muted">Ferramentas (${tools.length})</summary><div class="tlist">${items}</div></details>`;
 }
@@ -940,7 +953,7 @@ document.getElementById('send').onclick = async () => {
             }
             else if (evt.progress === 'tool_done') toolStatus(evt.name, false, evt.ok, evt.result || '', evt.ms || 0, '', evt.sub || null);
             else if (evt.progress === 'sub_chunk') subChunk(evt.sub, evt.kind, evt.text || '');
-            else if (evt.progress === 'sub_start') subPlaceholder();
+            else if (evt.progress === 'sub_start') subPlaceholder(subPromptOf(evt.args));
             continue;
           }
           const d = evt.choices[0].delta;
