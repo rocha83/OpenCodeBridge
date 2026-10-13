@@ -1,5 +1,10 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Temps sem 0.2: orch 0.6, default global 0.4 (2026-10-13)
+- Perfil `orch` 0.2 -> 0.6 (codigo + appsettings); default global
+  `Temperature` 0.2 -> 0.4; perfil `build` 0.2 -> 0.4 no codigo.
+  Matriz 5/5 OK via `/api/translate` (plan/orch 0.6, build 0.4).
+
 ## Instructions fundido no system inicial (2026-10-12)
 - Refinamento do system-first: o culpado final era a dualidade
   `instructions` + system no input (log `shape` criado p/ provar).

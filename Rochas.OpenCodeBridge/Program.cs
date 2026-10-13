@@ -44,7 +44,7 @@ internal static partial class Program
     static string Upstream = "http://127.0.0.1:4100";              // vLLM
     static string Model = "qwen3-8b-awq";                          // id servido pelo vLLM
     static string Thinking = "events";                             // "events" = mostra | "off" = descarta
-    static double Temperature = 0.2;                                 // direto e objetivo (0.1-0.4); tool calling continua deterministico via tool_choice
+    static double Temperature = 0.4;                                 // direto e objetivo (0.1-0.4); tool calling continua deterministico via tool_choice
     static int MaxTokens = 4096;                                   // teto de saida padrao (fabrica 4k); pedido menor e honrado, nunca maior
     static int CpuMaxTokens = 2048;                                // teto p/ upstream sem parser server-side (llama/CPU): decode ~5 tok/s, teto alto = divagacao de minutos. GPU usa MaxTokens.
     static int ToolOutputLimit = 8000;                             // corte por resultado de tool (ctx 28672)
@@ -70,8 +70,8 @@ internal static partial class Program
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["plan"] = (0.4, "events"),
-            ["build"] = (0.2, "off"),
-            ["orch"] = (0.2, "events"),
+            ["build"] = (0.4, "off"),
+            ["orch"] = (0.6, "events"),
             ["moe"] = (0.4, "events"),
         };
 
