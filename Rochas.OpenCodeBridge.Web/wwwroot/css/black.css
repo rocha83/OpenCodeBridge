@@ -167,6 +167,10 @@ html, body {
 #conv details p { white-space: pre-wrap; word-break: break-word; }
 #conv details summary { cursor: pointer; user-select: none; color: #9e9e9e; }
 #conv details[open] summary { margin-bottom: 0.25rem; }
+/* Raciocínio/resultados longos: rolagem com ~8 linhas visíveis. */
+#conv details > p.small { max-height: 12em; overflow-y: auto; }
+/* Nomes dos scripts no quadro da direita (+2pt sobre o badge padrão). */
+#scriptList .badge { font-size: 0.875rem; }
 /* Caixa de entrada com a mesma fonte das bolhas (0.875rem). */
 #prompt { font-size: 0.875rem; }
 /* Rótulo no tamanho dos títulos das bolhas (Você/Agente/Sub Agente). */

@@ -202,10 +202,16 @@ public sealed class ChatController(
         var msgs = await sessionService.GetMessagesAsync(id, int.MaxValue);
         var live = msgs.Where(m => m.Archived == 0).ToList();
         int tokens = ContextWindow.EstimateTotalTokens(live);
-        int real = live.LastOrDefault(m => (m.PromptTokens ?? 0) > 0)?.PromptTokens ?? 0;
+        var measured = live.LastOrDefault(m => (m.PromptTokens ?? 0) > 0);
+        int real = measured?.PromptTokens ?? 0;
+        // Uso real + delta estimado depois da última medição (o usage é do
+        // turno passado; o que entrou depois soma por chars/4).
+        int newer = 0;
+        if (measured is not null)
+            newer = ContextWindow.EstimateTotalTokens(live.SkipWhile(m => m.Id != measured.Id).Skip(1).ToList());
         var ag = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == s.AgentId);
         int budget = ag is null ? ContextWindow.MaxInputTokens : ContextWindow.ResolveMaxInput(ag.Model, ag.BridgeUrl);
-        return Json(new { tokens, real, budget });
+        return Json(new { tokens, real, newer, budget });
     }
 
     // POST /Chat/Sessions/{id}/Compact — resume o antigo, mantém a cauda.
