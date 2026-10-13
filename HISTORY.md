@@ -1,5 +1,14 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Bypass com tools nativas + doutrina plan/build (2026-10-13)
+- Bypass com harness nativo: `BuildBody` envia tools Responses flat
+  (`ToResponsesTools`), `CallAccum` junta function_call do SSE e o loop
+  executa via ToolExecutor reenviando `function_call_output` (teto 5 turnos).
+  Transporte provado ponta a ponta (shell executou e voltou).
+- Doutrina: plan thinking on / build off (chat respeita `agent.Thinking`,
+  sub roda off); filtro de tools por **Mode** (build sem `subagent`).
+- Suite web units 100/100; build Release 0/0.
+
 ## Web perfil 9B/4B (2026-10-13)
 - Agentes `9B` (id 1, orchestrator/plan, `qwen3.5-9b`, temp 0.6) e `4B-exec`
   (id 2, executor/build, `qwen3.5-4b`, temp 0.4) com os prompts deste arquivo;

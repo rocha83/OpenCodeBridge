@@ -548,11 +548,10 @@ public sealed class ChatController(
 
         while (!ct.IsCancellationRequested)
         {
-            // Agente: shell (ls), leitura (read/grep), navegação (glob) e disparo (subagent). Sem escrita.
-            // Executor não delega: sem "subagent" anunciado (nem em pensamento).
+            // Build executa todas as tools e NÃO delega subagente; plan delega e não executa escrita.
             bool plan = agent.Mode == "plan";
             var allowed = new HashSet<string> { "shell", "read", "grep", "glob", "fetch", "git", "subagent" };
-            if (agent.Role == "executor") allowed.Remove("subagent");
+            if (!plan) allowed.Remove("subagent");
             var tools = new JsonArray();
             foreach (var t in ToolDefinitions.GetTools())
             {
@@ -580,7 +579,7 @@ public sealed class ChatController(
                 // Sem isto o vLLM não devolve usage no stream e o donut
                 // trabalhava no chute (chars/4).
                 ["stream_options"] = new JsonObject { ["include_usage"] = true },
-                ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = true },
+                ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = agent.Thinking != "off" },
             };
 
             // Repasse ao vivo (sem buffer total): ResponseHeadersRead ou o PostAsync
@@ -938,8 +937,10 @@ public sealed class ChatController(
     }
 
     // Bypass: turno único contra {bridge}/v1/responses (passthrough da bridge),
-    // sem tools e sem ToolExecutor. Traduz o SSE Responses -> chat SSE ao vivo
-    // (a UI já entende choices[].delta), persiste e fecha com [DONE] próprio.
+    // Bypass com harness nativo de tools: anuncia as tools em formato Responses,
+    // traduz o SSE Responses -> chat SSE ao vivo (a UI já entende choices[].delta),
+    // executa function_call via ToolExecutor e reenvia function_call_output
+    // (o loop agêntico mora aqui; a bridge só transporta). Persiste e fecha [DONE].
     private async Task StreamResponsesBypass(Agent agent, JsonArray messages, Session? session, CancellationToken ct)
     {
         var outputStream = Response.Body;
@@ -951,60 +952,151 @@ public sealed class ChatController(
         int? promptTokens = null, completionTokens = null;
 
         bool plan = agent.Mode == "plan";
-        var body = Services.ResponsesBypass.BuildBody(agent.Model, plan ? 0.6 : agent.Temperature,
-            agent.SystemPrompt, messages);
-
-        using var bridgeReq = new HttpRequestMessage(HttpMethod.Post, agent.BridgeUrl.TrimEnd('/') + "/v1/responses")
+        double temp = plan ? 0.6 : agent.Temperature;
+        // Mesmo filtro do loop chat: build executa tudo e não delega subagent.
+        var allowed = new HashSet<string> { "shell", "read", "grep", "glob", "fetch", "git", "subagent" };
+        if (agent.Mode == "build") allowed.Remove("subagent");
+        var chatTools = new JsonArray();
+        foreach (var t in ToolDefinitions.GetTools())
         {
-            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-        };
-        using var res = await client.SendAsync(bridgeReq, HttpCompletionOption.ResponseHeadersRead, ct);
-        if (!res.IsSuccessStatusCode)
-        {
-            if (!Response.HasStarted) { Response.StatusCode = 502; return; }
-            try
-            {
-                var be = new JsonObject { ["error"] = $"bridge {(int)res.StatusCode}" };
-                await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + be.ToJsonString() + "\n\n"), ct);
-                await outputStream.FlushAsync(ct);
-            }
-            catch { }
-            return;
+            if ((t as JsonObject)?["function"]?["name"]?.GetValue<string>() is not string tn || !allowed.Contains(tn)) continue;
+            if (t is not null) chatTools.Add(t.DeepClone());
         }
+        var respTools = Services.ResponsesBypass.ToResponsesTools(chatTools);
+        var input = Services.ResponsesBypass.ToInputItems(messages);
 
-        using var stream = await res.Content.ReadAsStreamAsync(ct);
-        using var reader = new System.IO.StreamReader(stream);
-        string? line;
-        bool done = false;
-        while (!done && (line = await reader.ReadLineAsync()) != null)
+        for (int turn = 0; turn < 5 && !ct.IsCancellationRequested; turn++)
         {
-            if (ct.IsCancellationRequested) break;
-            if (!line.StartsWith("data: ")) continue;
-            string data = line[6..].Trim();
-            var t = Services.ResponsesBypass.TranslateData(data, assistantContent, assistantThinking,
-                ref promptTokens, ref completionTokens);
-            if (t.Error is not null)
+            var body = new JsonObject
             {
+                ["model"] = agent.Model,
+                ["input"] = input.DeepClone(),
+                ["stream"] = true,
+                ["temperature"] = temp,
+            };
+            if (!string.IsNullOrWhiteSpace(agent.SystemPrompt)) body["instructions"] = agent.SystemPrompt;
+            if (respTools.Count > 0) body["tools"] = respTools.DeepClone();
+
+            using var bridgeReq = new HttpRequestMessage(HttpMethod.Post, agent.BridgeUrl.TrimEnd('/') + "/v1/responses")
+            {
+                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
+            };
+            using var res = await client.SendAsync(bridgeReq, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!res.IsSuccessStatusCode)
+            {
+                if (!Response.HasStarted) { Response.StatusCode = 502; return; }
                 try
                 {
-                    var be = new JsonObject { ["error"] = t.Error };
+                    var be = new JsonObject { ["error"] = $"bridge {(int)res.StatusCode}" };
                     await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + be.ToJsonString() + "\n\n"), ct);
                     await outputStream.FlushAsync(ct);
                 }
                 catch { }
-                done = true;
-                break;
+                return;
             }
-            if (t.ChatData is not null && t.ChatData != "[DONE]")
+
+            var accum = new Services.ResponsesBypass.CallAccum();
+            using var stream = await res.Content.ReadAsStreamAsync(ct);
+            using var reader = new System.IO.StreamReader(stream);
+            string? line;
+            bool done = false;
+            while (!done && (line = await reader.ReadLineAsync()) != null)
             {
-                try
+                if (ct.IsCancellationRequested) break;
+                if (!line.StartsWith("data: ")) continue;
+                string data = line[6..].Trim();
+                var t = Services.ResponsesBypass.TranslateData(data, assistantContent, assistantThinking,
+                    ref promptTokens, ref completionTokens, accum);
+                if (t.Error is not null)
                 {
-                    await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + t.ChatData + "\n\n"), ct);
-                    await outputStream.FlushAsync(ct);
+                    try
+                    {
+                        var be = new JsonObject { ["error"] = t.Error };
+                        await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + be.ToJsonString() + "\n\n"), ct);
+                        await outputStream.FlushAsync(ct);
+                    }
+                    catch { }
+                    done = true;
+                    break;
                 }
-                catch { break; }
+                if (t.ChatData is not null && t.ChatData != "[DONE]")
+                {
+                    try
+                    {
+                        await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + t.ChatData + "\n\n"), ct);
+                        await outputStream.FlushAsync(ct);
+                    }
+                    catch { break; }
+                }
+                done = t.Completed;
             }
-            done = t.Completed;
+
+            if (accum.Calls.Count == 0) break;
+            // Executa cada call e devolve outputs no próximo turno (a API exige
+            // function_call_output p/ toda call; sem isso o modelo trava).
+            foreach (var (id, name, args) in accum.Calls)
+            {
+                await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                toolExecutor.ProgressAsync = name == "subagent"
+                    ? async p => await WriteProgressAsync(outputStream,
+                        p.Ok is null ? "tool_start" : "tool_done", p.Name, p.Ok, ct, p.Summary ?? "", 0, p.Sub ?? "")
+                    : null;
+                toolExecutor.SubChunkAsync = name == "subagent"
+                    ? async (sub, kind, text) => await WriteSubChunkAsync(outputStream, sub, kind, text, ct)
+                    : null;
+                var result = toolExecutor.Execute(name, args, 300, null, agent);
+                toolExecutor.ProgressAsync = null;
+                toolExecutor.SubChunkAsync = null;
+                sw.Stop();
+                if (session?.Id is int sidLog)
+                    await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
+                        result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds);
+                string? subText = null;
+                if (session?.Id is int sidSub && name == "subagent" && result.Success)
+                {
+                    try
+                    {
+                        string sbody = result.Output ?? "", sthink = "";
+                        int si = sbody.IndexOf("<SUBTHINK>", StringComparison.Ordinal);
+                        int ei = sbody.IndexOf("</SUBTHINK>", StringComparison.Ordinal);
+                        if (si >= 0 && ei > si)
+                        {
+                            sthink = sbody.Substring(si + "<SUBTHINK>".Length, ei - si - "<SUBTHINK>".Length).Trim();
+                            sbody = (sbody[..si] + sbody[(ei + "</SUBTHINK>".Length)..]).Trim();
+                        }
+                        if (sbody.Length > 0 || sthink.Length > 0)
+                        {
+                            await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null);
+                            await sessionService.TouchAsync(sidSub);
+                        }
+                        if (sbody.Length > 0) subText = sbody;
+                    }
+                    catch { /* histórico best-effort */ }
+                }
+                string contentFull = result.Success ? (result.Output ?? "") : $"Error: {result.Error}";
+                if (contentFull.Length > 4000) contentFull = contentFull[..4000] + "…[cortado]";
+                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds);
+                input.Add(new JsonObject
+                {
+                    ["type"] = "function_call", ["id"] = id, ["call_id"] = id,
+                    ["name"] = name, ["arguments"] = args,
+                });
+                input.Add(new JsonObject
+                {
+                    ["type"] = "function_call_output", ["call_id"] = id, ["output"] = contentFull,
+                });
+                if (subText is not null)
+                {
+                    string shortSub = subText.Length > 600 ? subText[..600] + "…" : subText;
+                    var sm = new JsonObject
+                    {
+                        ["type"] = "message", ["role"] = "assistant",
+                        ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = "[subagente] " + shortSub }),
+                    };
+                    input.Add(sm);
+                }
+            }
         }
 
         string finalText = assistantContent.ToString();

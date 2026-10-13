@@ -11,8 +11,27 @@ public static class ResponsesBypass
 {
     // Monta o corpo Responses: instructions separadas + input de mensagens
     // {type: message, role, content} (a bridge funde system/developer no inicial).
+    // Tools nativas (Responses flat): o modelo devolve function_call; QUEM executa
+    // é o chamador (opencode executa as dele, o site executa via ToolExecutor).
     public static JsonObject BuildBody(string model, double temperature, string instructions,
-        JsonArray messages, int? maxTokens = null)
+        JsonArray messages, int? maxTokens = null, JsonArray? tools = null)
+    {
+        var input = ToInputItems(messages);
+        var body = new JsonObject
+        {
+            ["model"] = model,
+            ["input"] = input,
+            ["stream"] = true,
+            ["temperature"] = temperature,
+        };
+        if (!string.IsNullOrWhiteSpace(instructions)) body["instructions"] = instructions;
+        if (maxTokens.HasValue) body["max_tokens"] = maxTokens.Value;
+        if (tools is { Count: > 0 }) body["tools"] = tools.DeepClone();
+        return body;
+    }
+
+    // Mensagens chat -> itens Responses (reuso no loop: outputs voltam aqui).
+    public static JsonArray ToInputItems(JsonArray messages)
     {
         var input = new JsonArray();
         foreach (var m in messages)
@@ -29,25 +48,103 @@ public static class ResponsesBypass
                 ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = text }),
             });
         }
-        var body = new JsonObject
+        return input;
+    }
+
+    // Chat-style {type: function, function: {name, description, parameters}} ->
+    // Responses flat {type: function, name, description, parameters} (a bridge
+    // aceita os dois; flat é o nativo).
+    public static JsonArray ToResponsesTools(JsonArray chatTools)
+    {
+        var out_ = new JsonArray();
+        foreach (var t in chatTools)
         {
-            ["model"] = model,
-            ["input"] = input,
-            ["stream"] = true,
-            ["temperature"] = temperature,
-        };
-        if (!string.IsNullOrWhiteSpace(instructions)) body["instructions"] = instructions;
-        if (maxTokens.HasValue) body["max_tokens"] = maxTokens.Value;
-        return body;
+            var o = t?.AsObject();
+            if (o is null) continue;
+            var fn = o["function"]?.AsObject();
+            if (fn is null) continue;
+            string name = fn["name"]?.GetValue<string>() ?? "";
+            if (string.IsNullOrWhiteSpace(name)) continue;
+            out_.Add(new JsonObject
+            {
+                ["type"] = "function",
+                ["name"] = name,
+                ["description"] = fn["description"]?.GetValue<string>() ?? "",
+                ["parameters"] = fn["parameters"]?.DeepClone() ?? new JsonObject(),
+            });
+        }
+        return out_;
+    }
+
+    // Acumulador de function_call no SSE (delta -> done). Puro e testável.
+    public sealed class CallAccum
+    {
+        private sealed class State
+        {
+            public string CallId = "";
+            public string Name = "";
+            public readonly StringBuilder Args = new();
+            public bool Done;
+        }
+        private readonly Dictionary<string, State> _byItem = new();
+        public readonly List<(string Id, string Name, string Args)> Calls = new();
+
+        public void Feed(JsonObject evt)
+        {
+            string type = evt["type"]?.GetValue<string>() ?? "";
+            if (type == "response.output_item.added" && evt["item"]?.AsObject() is JsonObject item
+                && item["type"]?.GetValue<string>() == "function_call")
+            {
+                string id = item["id"]?.GetValue<string>() ?? "";
+                if (string.IsNullOrEmpty(id)) return;
+                var st = new State
+                {
+                    CallId = item["call_id"]?.GetValue<string>() ?? id,
+                    Name = item["name"]?.GetValue<string>() ?? "",
+                };
+                string a = item["arguments"]?.GetValue<string>() ?? "";
+                if (a.Length > 0) st.Args.Append(a);
+                _byItem[id] = st;
+            }
+            else if (type == "response.function_call_arguments.delta")
+            {
+                string id = evt["item_id"]?.GetValue<string>() ?? "";
+                if (id.Length > 0 && evt["delta"]?.GetValue<string>() is string d)
+                {
+                    if (!_byItem.TryGetValue(id, out var st)) { st = new State(); _byItem[id] = st; }
+                    st.Args.Append(d);
+                }
+            }
+            else if (type is "response.function_call_arguments.done" or "response.output_item.done")
+            {
+                string id = evt["item_id"]?.GetValue<string>() ?? "";
+                JsonObject? doneItem = evt["item"]?.AsObject();
+                if (id.Length == 0 && doneItem is not null && doneItem["type"]?.GetValue<string>() == "function_call")
+                    id = doneItem["id"]?.GetValue<string>() ?? "";
+                if (id.Length > 0 && _byItem.TryGetValue(id, out var st) && !st.Done)
+                {
+                    if (doneItem is not null)
+                    {
+                        if (string.IsNullOrEmpty(st.Name)) st.Name = doneItem["name"]?.GetValue<string>() ?? "";
+                        if (string.IsNullOrEmpty(st.CallId)) st.CallId = doneItem["call_id"]?.GetValue<string>() ?? id;
+                        if (st.Args.Length == 0) st.Args.Append(doneItem["arguments"]?.GetValue<string>() ?? "");
+                    }
+                    string args = evt["arguments"]?.GetValue<string>() ?? st.Args.ToString();
+                    st.Done = true;
+                    if (!string.IsNullOrEmpty(st.Name)) Calls.Add((st.CallId.Length > 0 ? st.CallId : id, st.Name, args));
+                }
+            }
+        }
     }
 
     public sealed record TranslatedLine(string? ChatData, bool Completed, string? Error);
 
     // Traduz UMA linha "data:" do SSE Responses. Acumula texto/thinking/usage
     // nos builders; devolve a linha chat SSE equivalente p/ repasse ao vivo
-    // (null = nada a repassar). Puro e testável (sem HTTP).
+    // (null = nada a repassar). Puro e testável (sem HTTP). Com accum, coleta
+    // function_call p/ o loop executar via ToolExecutor e reenviar outputs.
     public static TranslatedLine TranslateData(string data, StringBuilder content, StringBuilder thinking,
-        ref int? promptTokens, ref int? completionTokens)
+        ref int? promptTokens, ref int? completionTokens, CallAccum? accum = null)
     {
         if (data == "[DONE]") return new TranslatedLine("[DONE]", true, null);
         JsonObject? evt;
@@ -101,6 +198,9 @@ public static class ResponsesBypass
                 ?? "falha no bypass";
             return new TranslatedLine(null, true, msg);
         }
+        if (type is "response.output_item.added" or "response.function_call_arguments.delta"
+            or "response.function_call_arguments.done" or "response.output_item.done")
+            accum?.Feed(evt);
         return new TranslatedLine(null, false, null);
     }
 }

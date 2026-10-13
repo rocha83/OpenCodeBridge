@@ -117,7 +117,8 @@ public sealed class SubagentToolHandler : IToolHandler
             var chunkSink = context.SubChunkAsync;
             var now = System.DateTime.Now;
             var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = prompt.Trim() + $"\n(Data-hora-juliana atual: {now.DayOfYear}{now:HHmm}.)" } };
-            // Sub com tools anunciadas (experimento): write, edit e shell.
+            // Sub É build (9B-build): temp 0.4 fixa, thinking OFF (doutrina plan
+            // true / build false; pensar no executor come orçamento e murcha ato).
             // Trava: shell do sub só valida (`bash -n`), compacta (zip/unzip) ou
             // navega (ls/cat/pwd); nada executa — ver SubShellAllowed.
             JsonArray? tools = SubTools();
@@ -140,7 +141,7 @@ public sealed class SubagentToolHandler : IToolHandler
             for (int turn = 0; turn < 5; turn++)
             {
                 var t = BridgeHelper.ChatTurnAsync(_bridge, context.BridgeUrl, context.Model,
-                    FixedTemperature, SubagentSystem, history, tools, cts.Token, enableThinking: true, maxTokens: maxTokens,
+                    FixedTemperature, SubagentSystem, history, tools, cts.Token, enableThinking: false, maxTokens: maxTokens,
                     onChunk: chunkSink is null ? null : (async (kind, text) => await chunkSink(subId, kind, text)))
                     .GetAwaiter().GetResult();
                 if (!t.Ok) return ToolResult.Fail($"subagente falhou: {t.Error}");
