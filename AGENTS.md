@@ -12,7 +12,7 @@
   `tail -1 /tmp/qwen3-bridge.log`
 
 ## Tuning aplicado (diálogo enxuto, tools intactas)
-- `temperature: 0.2` (agentes + default da bridge) — direto, sem enrolação.
+- `temperature`: plan/orch 0.6, build e default da bridge 0.4 — direto, sem enrolação.
 - System prompt: `...assistente conciso. Responda de forma direta, usando no máximo
   duas frases ou um parágrafo curto, sem introduções ou saudações.
   Código e tool calls sempre completos, nunca truncados.`

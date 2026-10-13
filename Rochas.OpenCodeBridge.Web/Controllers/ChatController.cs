@@ -233,7 +233,7 @@ public sealed class ChatController(
                 var body = new JsonObject
                 {
                     ["model"] = agent.Model,
-                    ["temperature"] = 0.2,
+                    ["temperature"] = 0.4,
                     ["stream"] = false,
                     ["messages"] = new JsonArray
                     {
@@ -383,7 +383,7 @@ public sealed class ChatController(
     [HttpPost("/Chat/Stream")]
     public async Task Stream([FromBody] StreamRequest req, CancellationToken ct)
     {
-        Agent agent;
+        Agent? agent;
         Session? session = null;
         List<SessionMessage> history = new();
 
@@ -471,6 +471,14 @@ public sealed class ChatController(
 
     private async Task StreamWithTools(Agent agent, JsonArray messages, Session? session, CancellationToken ct)
     {
+        // Bypass padrão (flag Orchestration:UseResponsesBypass): turno único via
+        // /v1/responses com passthrough da bridge — SEM ToolExecutor, só o
+        // sanitize leve (system-first + drop de reasoning) do lado da bridge.
+        if (orchOptions.Value.UseResponsesBypass)
+        {
+            await StreamResponsesBypass(agent, messages, session, ct);
+            return;
+        }
         var outputStream = Response.Body;
         var client = http.CreateClient();
         client.Timeout = Timeout.InfiniteTimeSpan;
@@ -561,7 +569,7 @@ public sealed class ChatController(
             {
                 ["model"] = agent.Model,
                 ["messages"] = BuildMessages(messages),
-                ["temperature"] = plan ? 0.4 : agent.Temperature,
+                ["temperature"] = plan ? 0.6 : agent.Temperature,
                 ["stream"] = true,
                 // Trava anti-eco degenerado ([shell] ok x500): repete menos.
                 ["repetition_penalty"] = 1.15,
@@ -857,7 +865,9 @@ public sealed class ChatController(
                     }
                     catch { /* histórico best-effort: nunca quebra o pipeline */ }
                 }
-                string contentFull = result.Success ? result.Output : $"Error: {result.Error}";
+                string output = result.Output ?? "";
+                string error = result.Error ?? "";
+                string contentFull = result.Success ? output : $"Error: {error}";
                 await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds);
                 // Outputs NÃO voltam ao contexto; só o texto do subagente (como assistant).
                 if (subText is not null)
@@ -918,6 +928,91 @@ public sealed class ChatController(
                 await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + fb.ToJsonString() + "\n\n"), ct);
                 await outputStream.FlushAsync(ct);
             }
+            var doneBytes = Encoding.UTF8.GetBytes("data: [DONE]\n\n");
+            await outputStream.WriteAsync(doneBytes, ct);
+            await outputStream.FlushAsync(ct);
+        }
+        catch { }
+    }
+
+    // Bypass: turno único contra {bridge}/v1/responses (passthrough da bridge),
+    // sem tools e sem ToolExecutor. Traduz o SSE Responses -> chat SSE ao vivo
+    // (a UI já entende choices[].delta), persiste e fecha com [DONE] próprio.
+    private async Task StreamResponsesBypass(Agent agent, JsonArray messages, Session? session, CancellationToken ct)
+    {
+        var outputStream = Response.Body;
+        var client = http.CreateClient();
+        client.Timeout = Timeout.InfiniteTimeSpan;
+
+        var assistantContent = new System.Text.StringBuilder();
+        var assistantThinking = new System.Text.StringBuilder();
+        int? promptTokens = null, completionTokens = null;
+
+        bool plan = agent.Mode == "plan";
+        var body = Services.ResponsesBypass.BuildBody(agent.Model, plan ? 0.6 : agent.Temperature,
+            agent.SystemPrompt, messages);
+
+        using var bridgeReq = new HttpRequestMessage(HttpMethod.Post, agent.BridgeUrl.TrimEnd('/') + "/v1/responses")
+        {
+            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
+        };
+        using var res = await client.SendAsync(bridgeReq, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!res.IsSuccessStatusCode)
+        {
+            if (!Response.HasStarted) { Response.StatusCode = 502; return; }
+            try
+            {
+                var be = new JsonObject { ["error"] = $"bridge {(int)res.StatusCode}" };
+                await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + be.ToJsonString() + "\n\n"), ct);
+                await outputStream.FlushAsync(ct);
+            }
+            catch { }
+            return;
+        }
+
+        using var stream = await res.Content.ReadAsStreamAsync(ct);
+        using var reader = new System.IO.StreamReader(stream);
+        string? line;
+        bool done = false;
+        while (!done && (line = await reader.ReadLineAsync()) != null)
+        {
+            if (ct.IsCancellationRequested) break;
+            if (!line.StartsWith("data: ")) continue;
+            string data = line[6..].Trim();
+            var t = Services.ResponsesBypass.TranslateData(data, assistantContent, assistantThinking,
+                ref promptTokens, ref completionTokens);
+            if (t.Error is not null)
+            {
+                try
+                {
+                    var be = new JsonObject { ["error"] = t.Error };
+                    await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + be.ToJsonString() + "\n\n"), ct);
+                    await outputStream.FlushAsync(ct);
+                }
+                catch { }
+                done = true;
+                break;
+            }
+            if (t.ChatData is not null && t.ChatData != "[DONE]")
+            {
+                try
+                {
+                    await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + t.ChatData + "\n\n"), ct);
+                    await outputStream.FlushAsync(ct);
+                }
+                catch { break; }
+            }
+            done = t.Completed;
+        }
+
+        string finalText = assistantContent.ToString();
+        if (session is not null && session.Id.HasValue && (finalText.Length > 0 || assistantThinking.Length > 0))
+        {
+            await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens);
+            await sessionService.TouchAsync(session.Id.Value);
+        }
+        try
+        {
             var doneBytes = Encoding.UTF8.GetBytes("data: [DONE]\n\n");
             await outputStream.WriteAsync(doneBytes, ct);
             await outputStream.FlushAsync(ct);

@@ -22,10 +22,13 @@ public sealed class OrchestrationOptions
     // formato JSON sem divagar. Decompose/planejamento segue em 0.4 (criativo).
     public double ReviewTemperature { get; set; } = 0.1;
     // Temperatura da decomposição (análise + expansão em subtarefas): Qwen oficial
-    // recomenda 0.6 p/ thinking mode (0.2 murchava a granularidade: 1-3 tarefas).
+    // recomenda 0.6 p/ thinking mode (temp baixa demais murchava a granularidade: 1-3 tarefas).
     public double DecomposeTemperature { get; set; } = 0.6;
     // Thinking na decomposição ("events" = raciocina; "off" = direto, sem <think>).
     // Off corta o mimetismo na fonte via chat_template_kwargs; se o parser do serve
     // desviar a resposta p/ o canal reasoning, a pipeline promove a conteúdo.
     public string DecomposeThinking { get; set; } = "events";
+    // Caminho bypass da UI (turno único em {bridge}/v1/responses, SEM ToolExecutor;
+    // sanitize leve na bridge com passthrough). Ligado por padrão.
+    public bool UseResponsesBypass { get; set; } = true;
 }

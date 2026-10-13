@@ -7,7 +7,7 @@ namespace Rochas.OpenCodeBridge.Web.Data;
 // Usa banco compartilhado na raiz da solução bridge para persistência unificada.
 public static class AppDb
 {
-    private static string _dbPath;
+    private static string _dbPath = "";
     public static string Path 
     { 
         get => _dbPath; 
@@ -20,13 +20,13 @@ public static class AppDb
     private static string DefaultPath => System.IO.Path.GetFullPath(
         System.IO.Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Rochas.OpenCodeBridge", "bridge.db"));
 
-    public static void Init(string path = null)
+    public static void Init(string? path = null)
     {
         Path = path ?? DefaultPath;
-        
+
         // Garante diretório
         var dir = System.IO.Path.GetDirectoryName(Path);
-        if (!System.IO.Directory.Exists(dir))
+        if (!string.IsNullOrEmpty(dir) && !System.IO.Directory.Exists(dir))
             System.IO.Directory.CreateDirectory(dir);
 
         using var conn = new SqliteConnection(ConnectionString);
@@ -41,7 +41,7 @@ public static class AppDb
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, is_admin INTEGER NOT NULL DEFAULT 0);
-            CREATE TABLE IF NOT EXISTS agents (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, model TEXT NOT NULL DEFAULT 'qwen3-8b-awq', bridge_url TEXT NOT NULL DEFAULT 'http://127.0.0.1:4124', temperature REAL NOT NULL DEFAULT 0.2, thinking TEXT NOT NULL DEFAULT 'events', system_prompt TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT 'build', measured_tps REAL NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1);
+            CREATE TABLE IF NOT EXISTS agents (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, model TEXT NOT NULL DEFAULT 'qwen3-8b-awq', bridge_url TEXT NOT NULL DEFAULT 'http://127.0.0.1:4124', temperature REAL NOT NULL DEFAULT 0.4, thinking TEXT NOT NULL DEFAULT 'events', system_prompt TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT 'build', measured_tps REAL NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1);
             CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, agent_id INTEGER NOT NULL, executor_agent_id INTEGER, title TEXT NOT NULL DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id), FOREIGN KEY(agent_id) REFERENCES agents(id));
             CREATE TABLE IF NOT EXISTS session_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, thinking TEXT NOT NULL DEFAULT '', prompt_tokens INTEGER, completion_tokens INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE);
             CREATE TABLE IF NOT EXISTS refinement_lessons (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, task_index INTEGER NOT NULL DEFAULT 0, kind TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE);

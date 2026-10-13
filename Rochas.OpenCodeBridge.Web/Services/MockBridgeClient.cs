@@ -141,7 +141,7 @@ public sealed class MockBridgeClient : IBridgeClient
             }
 
             // Final chunk com usage
-            int promptTokens = EstimateTokens(string.Join(" ", messages.Select(m => m["content"]?.GetValue<string>() ?? ""))) + 10;
+            int promptTokens = EstimateTokens(string.Join(" ", messages.Select(m => m?["content"]?.GetValue<string>() ?? ""))) + 10;
             int completionTokens = _rng.Next(50, 300);
 
             var finalChunk = new JsonObject
@@ -259,7 +259,7 @@ public sealed class MockBridgeClient : IBridgeClient
             }
 
             string finish = turn.ToolCalls is { Count: > 0 } ? "tool_calls" : turn.FinishReason;
-            int promptTokens = EstimateTokens(string.Join(" ", messages.Select(m => m["content"]?.GetValue<string>() ?? ""))) + 10;
+            int promptTokens = EstimateTokens(string.Join(" ", messages.Select(m => m?["content"]?.GetValue<string>() ?? ""))) + 10;
             int completionTokens = EstimateTokens(turn.Thinking + turn.Content) + 1;
             var final = DeltaChunk(new JsonObject { }, finish);
             final["usage"] = new JsonObject

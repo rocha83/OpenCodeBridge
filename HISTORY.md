@@ -1,5 +1,23 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Push remaster chroot: bypass Web padrão + matriz final (2026-10-13)
+- Commit `feat(Web): bypass Responses padrao na UI + 0.2 erradicado + zero
+  warnings`: flag `Orchestration:UseResponsesBypass` (default true) com turno
+  único em `/v1/responses` sem ToolExecutor; `ResponsesBypass.cs` + 18 testes
+  `U-bypass`; temps plan/orch 0.6, build/global 0.4 em tudo (código, examples,
+  testes, README, AGENTS, HISTORY, AJUSTES); suite bridge 16/16, suite web PASS.
+
+## Web via bypass Responses + zero warnings (2026-10-13)
+- UI web no caminho bypass por padrão (flag `Orchestration:UseResponsesBypass`,
+  default true): turno único em `{bridge}/v1/responses`, SEM ToolExecutor;
+  sanitize leve na bridge (passthrough). `Services/ResponsesBypass.cs` traduz o
+  SSE Responses -> chat SSE ao vivo (a UI não muda). Chat direto com plan 0.6.
+- `0.2` erradicado de código, examples, testes, README (5 idiomas), AGENTS e
+  HISTORY (versões `2.x` e `0.24` de modelo preservadas — não são temperatura).
+- Warnings zerados sem supressão (nullable real: AppDb path, Mock `m?`,
+  `result.Error ??`, `Agent?`, `output/error ??`). Suite web PASS (18 U-bypass
+  novos); suite bridge 16/16.
+
 ## Temps sem 0.2: orch 0.6, default global 0.4 (2026-10-13)
 - Perfil `orch` 0.2 -> 0.6 (codigo + appsettings); default global
   `Temperature` 0.2 -> 0.4; perfil `build` 0.2 -> 0.4 no codigo.
@@ -255,7 +273,7 @@
 - **hermes travado** como oficial. Bridge é agnóstica: consome `tool_calls` normalizado.
 
 ## Tuning e garantia do agente
-- `temperature: 0.2` (opencode mint+root e default da bridge); system prompt + sufixo
+- `temperature`: plan/orch 0.6, build e default da bridge 0.4 (opencode mint+root); system prompt + sufixo
   conciso (2 frases, sem saudação, código/tools completos).
 - `max_tokens 8192` mantido (código precisa); `stop` só por passthrough explícito
   (com tools trunca o JSON — documentado); `presence_penalty` fora da Responses API.
@@ -321,7 +339,7 @@
 
 ## Bridge v1.7 — perfis plan/build + appsettings.json (2026-10-04)
 - Sufixo no model (`...-plan`, `...-build`): plan = temp 0.6 + thinking;
-  build = temp 0.2 + thinking fundido. Temperatura explicita no request
+  build = temp 0.4 + thinking fundido. Temperatura explicita no request
   vence o perfil; sem sufixo valem os globais (Qwen3 padrao inalterado).
 - `appsettings.json` opcional ao lado do DLL (listen/port/upstream/model/
   thinking/temperature/maxTokens/logPath/profiles); CLI vence o arquivo;

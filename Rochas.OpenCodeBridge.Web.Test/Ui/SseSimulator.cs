@@ -81,7 +81,7 @@ public sealed class SseSimulator : IDisposable
                 }
                 ctx.Response.StatusCode = 200;
                 ctx.Response.ContentType = "text/event-stream";
-                var (ok, _) = await _mock.StreamAsync("", "", 0.2, "", new System.Text.Json.Nodes.JsonArray(),
+                var (ok, _) = await _mock.StreamAsync("", "", 0.4, "", new System.Text.Json.Nodes.JsonArray(),
                     ctx.Response.OutputStream, _cts.Token);
                 _ = ok;
                 try { ctx.Response.Close(); } catch { }

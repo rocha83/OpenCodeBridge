@@ -707,7 +707,7 @@ public sealed class OrchestrationService(
                 msw.Stop();
                 await sessions.LogToolAsync(sessionId, exec.Name, call.Name, call.Args,
                     result.Success, result.Success ? result.Output : result.Error ?? "", msw.ElapsedMilliseconds);
-                if (!result.Success && (result.Error.Contains("Não permitido") || result.Error.Contains("não suportada") || result.Error.Contains("indisponível")))
+                if (!result.Success && ((result.Error ?? "").Contains("Não permitido") || (result.Error ?? "").Contains("não suportada") || (result.Error ?? "").Contains("indisponível")))
                     await RecordLessonAsync(sessionId, index + 1, "tool_denied",
                         $"{OneLine(prompt, 80)}: tentou '{call.Name}' fora do escopo");
                 await sessions.AddMessageAsync(sessionId, "assistant",

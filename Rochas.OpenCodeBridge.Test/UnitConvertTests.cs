@@ -10,7 +10,7 @@ internal static class UnitConvertTests
         var body = new JsonObject
         {
             ["model"] = "openai/qwen3-8b-awq",
-            ["temperature"] = 0.2,
+            ["temperature"] = 0.4,
             ["completion"] = new JsonObject
             {
                 ["choices"] = new JsonArray(new JsonObject

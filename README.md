@@ -73,7 +73,7 @@ dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 | `--upstream` | `http://127.0.0.1:4100` | URL base do vLLM (GPU) ou llama.cpp (CPU) |
 | `--model` | `qwen3-8b-awq` | Nome do modelo forçado upstream |
 | `--thinking` | `events` | `events` = repassa deltas de reasoning; `off` = sem item reasoning (texto fundido) |
-| `--temperature` | `0.2` | Valor do request vence a config; InvariantCulture |
+| `--temperature` | `0.4` | Valor do request vence a config; InvariantCulture |
 | `--max-tokens` | `4096` | Teto de saída (GPU); pedido menor honrado, nunca maior |
 | `--cpu-max-tokens` | `2048` | Teto da linha CPU (llama.cpp ~5 tok/s; teto alto = divagação) |
 | `--coerce-text-tools` | auto (`true` se model contém `cpu`) | Coage JSON em texto → `tool_calls` (só linha CPU; vLLM intacta) |
@@ -213,7 +213,7 @@ dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 | `--upstream` | `http://127.0.0.1:4100` | Upstream base URL (vLLM on GPU, llama.cpp on CPU) |
 | `--model` | `qwen3-8b-awq` | Model name forced upstream |
 | `--thinking` | `events` | `events` = forward reasoning deltas; `off` = no reasoning item (text fused) |
-| `--temperature` | `0.2` | Request value wins over config; parsed with InvariantCulture |
+| `--temperature` | `0.4` | Request value wins over config; parsed with InvariantCulture |
 | `--max-tokens` | `4096` | Output cap (GPU); smaller requests honored, never larger |
 | `--cpu-max-tokens` | `2048` | CPU-line cap (llama.cpp ~5 tok/s; high cap = rambling) |
 | `--coerce-text-tools` | auto (`true` when model contains `cpu`) | Coerce text JSON → `tool_calls` (CPU line only; vLLM untouched) |
@@ -350,7 +350,7 @@ dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 | `--upstream` | `http://127.0.0.1:4100` | URL base de vLLM |
 | `--model` | `qwen3-8b-awq` | Nombre de modelo forzado upstream |
 | `--thinking` | `events` | `events` = reenvía deltas; `off` = sin item reasoning (texto fundido) |
-| `--temperature` | `0.2` | El valor del request vence a la config; InvariantCulture |
+| `--temperature` | `0.4` | El valor del request vence a la config; InvariantCulture |
 | `--max-tokens` | `4096` | Techo de salida (GPU); `--cpu-max-tokens` `2048` (CPU) |
 | `--log` | `/tmp/qwen3-bridge.log` | Log JSONL de eventos |
 
@@ -453,7 +453,7 @@ dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 | `--upstream` | `http://127.0.0.1:4100` | URL de base de vLLM |
 | `--model` | `qwen3-8b-awq` | Nom de modèle forcé upstream |
 | `--thinking` | `events` | `events` = transmet les deltas ; `off` = sans item reasoning (texte fusionné) |
-| `--temperature` | `0.2` | La valeur de la requête prime sur la config ; InvariantCulture |
+| `--temperature` | `0.4` | La valeur de la requête prime sur la config ; InvariantCulture |
 | `--max-tokens` | `4096` | Plafond de sortie (GPU) ; `--cpu-max-tokens` `2048` (CPU) |
 | `--log` | `/tmp/qwen3-bridge.log` | Journal d'événements JSONL |
 
@@ -559,7 +559,7 @@ dotnet run -- --port 4124 --upstream http://127.0.0.1:4100 --model qwen3-8b-awq
 | `--upstream` | `http://127.0.0.1:4100` | Basis-URL von vLLM |
 | `--model` | `qwen3-8b-awq` | Upstream erzwungener Modellname |
 | `--thinking` | `events` | `events` = Deltas weiterreichen; `off` = ohne Reasoning-Item (Text fusioniert) |
-| `--temperature` | `0.2` | Request-Wert hat Vorrang vor der Konfiguration; InvariantCulture |
+| `--temperature` | `0.4` | Request-Wert hat Vorrang vor der Konfiguration; InvariantCulture |
 | `--max-tokens` | `4096` | Ausgabelimit (GPU); `--cpu-max-tokens` `2048` (CPU) |
 | `--log` | `/tmp/qwen3-bridge.log` | JSONL-Ereignislog |
 
