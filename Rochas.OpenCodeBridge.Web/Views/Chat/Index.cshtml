@@ -227,6 +227,7 @@ function toolStatus(name, running, ok, result, ms, args, sub) {
     const a = (args || '').replace(/\s+/g, ' ').trim();
     const head = a.length > 80 ? a.slice(0, 80) + '…' : a;
     d.innerHTML = `<summary class="small text-muted">Executando ${esc(name)}${head ? ' ' + esc(head) : ''}…</summary>`;
+    d.dataset.args = head;
     list.appendChild(d);
     bumpToolsCount(g);
   } else {
@@ -246,8 +247,10 @@ function toolStatus(name, running, ok, result, ms, args, sub) {
     const state = ok === false ? 'falhou' : 'executado com sucesso';
     const showResult = result && (ok === false || !outerSub);
     const p = showResult ? `<p class="small text-muted">${esc(result)}</p>` : '';
+    const ah = d.dataset.args ? ` <span class="text-muted">${esc(d.dataset.args)}</span>` : '';
+    if (outerSub) settlePlaceholder(name, ok, result);
     d.dataset.busy = '';
-    d.innerHTML = `<summary class="small text-muted">${esc(name)} ${state}.</summary>${p}`;
+    d.innerHTML = `<summary class="small text-muted">${esc(name)} ${state}.${ah}</summary>${p}`;
     d.removeAttribute('open');
     bumpToolsCount(g);
   }
@@ -262,6 +265,15 @@ function scrollToBottom() {
 // com % e digitação como o principal (execução dos subs é serial).
 function ensureSubCard(sub) {
   window._subCards = window._subCards || {};
+  // Placeholder do "digitando" adotado pelo sub real (sem duplicar).
+  if (sub && window._pendingSubCard && window._pendingSubCard.li.isConnected && window._pendingSubCard.pending) {
+    const h = window._pendingSubCard;
+    h.pending = false; window._pendingSubCard = null;
+    h.li.dataset.sub = sub;
+    window._subCards[sub] = h;
+    window._currentSubCard = h;
+    return h;
+  }
   if (sub && window._subCards[sub] && window._subCards[sub].li.isConnected) {
     window._currentSubCard = window._subCards[sub];
     return window._subCards[sub];
@@ -298,6 +310,28 @@ function ensureSubCard(sub) {
   return h;
 }
 
+// Placeholder imediato no "digitando" (delegação anunciada, sub ainda em
+// prefill): o primeiro subChunk do sub real adota este card.
+function subPlaceholder() {
+  if (window._pendingSubCard && window._pendingSubCard.li.isConnected) return;
+  const h = ensureSubCard(null);
+  h.pending = true;
+  window._pendingSubCard = h;
+  h.pre.textContent = '';
+  h.pre.classList.add('typing');
+  if (isScrolledToBottom()) scrollToBottom();
+}
+// Finaliza placeholder nunca adotado (sub falhou antes do primeiro chunk).
+function settlePlaceholder(name, ok, result) {
+  const h = window._pendingSubCard;
+  if (!h || !h.li.isConnected || !h.pending) return;
+  h.pending = false; window._pendingSubCard = null;
+  h.pre.classList.remove('typing');
+  h.pre.textContent = ok === false ? ('Falhou: ' + (result || name)) : (result || '');
+  h.painted = true;
+  if (window._currentSubCard === h) window._currentSubCard = null;
+}
+
 // Chunk ao vivo do subagente (thinking/content): paridade com o principal.
 function subChunk(sub, kind, text) {
   if (!sub) return;
@@ -320,13 +354,14 @@ function subChunk(sub, kind, text) {
     h.pp.scrollTop = h.pp.scrollHeight;
   } else {
     h.full += text;
+    h.pre.classList.remove('typing');
     // Sem salto inicial (paridade com a bolha do agente): enquanto só há
     // espaço, apara a frente; texto real nunca é tocado.
     if (!h.full.trim()) h.full = '';
     else h.full = h.full.replace(/^\s+/, '');
     h.pre.textContent = h.full;
-    // Conteúdo começou: fecha o accordion do raciocínio (o % segue subindo).
-    if (h.det) h.det.removeAttribute('open');
+    // Conteúdo começou (o % segue subindo; sem fechar à força — o usuário
+    // pode abrir o Raciocínio durante o stream).
     if (h.psum) h.psum.textContent = `Raciocínio ${thinkPct(h.think.length + h.full.length)}% · ${fmtK(h.think.length + h.full.length)}`;
   }
   if (isScrolledToBottom()) scrollToBottom();
@@ -588,7 +623,9 @@ function toolsGroupHtml(tools) {
     // já mostra); falha sem card mostra o motivo (paridade com o ao vivo).
     const outerSub = c?.name === 'subagent' && !c?.sub;
     const out = ((!outerSub || c?.ok === false) && c?.output) ? `<p class="small text-muted">${esc(c.output)}</p>` : '';
-    return `<details class="mb-1 tool-item"><summary class="small text-muted">${esc(c?.name ?? 'tool')} ${state}.</summary>${out}</details>`;
+    const a = ((c?.args || '').replace(/\s+/g, ' ').trim()).slice(0, 80);
+    const ah = a ? ` <span class="text-muted">${esc(a)}${(c?.args || '').length > 80 ? '…' : ''}</span>` : '';
+    return `<details class="mb-1 tool-item"><summary class="small text-muted">${esc(c?.name ?? 'tool')} ${state}.${ah}</summary>${out}</details>`;
   }).join('');
   return `<details class="mb-2 tools-group" open><summary class="small text-muted">Ferramentas (${tools.length})</summary><div class="tlist">${items}</div></details>`;
 }
@@ -861,6 +898,7 @@ document.getElementById('send').onclick = async () => {
             }
             else if (evt.progress === 'tool_done') toolStatus(evt.name, false, evt.ok, evt.result || '', evt.ms || 0, '', evt.sub || null);
             else if (evt.progress === 'sub_chunk') subChunk(evt.sub, evt.kind, evt.text || '');
+            else if (evt.progress === 'sub_start') subPlaceholder();
             continue;
           }
           const d = evt.choices[0].delta;
@@ -898,9 +936,10 @@ document.getElementById('send').onclick = async () => {
             else full = full.replace(/^\s+/, '');
             // Bolha só quando há texto real (deltas iniciais de espaço não abrem quadro vazio).
             if (!agentBubbleCreated && full.trim()) ensureAgentBubble();
-            // Thinking encerrou: fecha o accordion, mas o % segue subindo com o
-            // conteúdo (chars acumulados) até 100% no DONE — nunca congela.
-            if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); }
+            // Thinking encerrou: o % segue subindo com o conteúdo (chars
+            // acumulados) até 100% no DONE — nunca congela. O accordion NÃO é
+            // fechado à força (o usuário pode abrir durante o stream).
+            if (thinkP) thinkP.classList.remove('typing');
             if (thinkSum) thinkSum.textContent = `Raciocínio ${thinkPct(think.length + full.length)}% · ${fmtK(think.length + full.length)}`;
             startTypewriter();
           }

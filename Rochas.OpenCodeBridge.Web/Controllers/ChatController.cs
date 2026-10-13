@@ -507,6 +507,9 @@ public sealed class ChatController(
         // Cutucadas DeepSeek em prosa (máx 2, contador próprio p/ não
         // interferir no anti-giro).
         int dsqNudges = 0;
+        // Cutucada de delegação do plan (máx 2): resumiu em texto sem chamar
+        // subagent — manda entregar a fase via tool, sem tocar prompts.
+        int planNudges = 0;
         // Gate de escopo do subagent (máx 2 recusas; depois delega do jeito
         // que veio p/ não travar o run).
         int subScopeRejects = 0;
@@ -769,6 +772,22 @@ public sealed class ChatController(
                     assistantThinking.Clear();
                     continue;
                 }
+                // Plan sem delegar (texto sem subagent): cutucada mecânica
+                // (máx 2, sem tocar prompts — mesma linha anti-giro/deepseek).
+                if (!DeepSeekToolCoercion.IsDeepSeek(agent.Model) && agent.Mode == "plan"
+                    && planNudges < 2 && assistantContent.Length > 0 && !anyToolRan)
+                {
+                    planNudges++;
+                    string prose = StripThinkTags(assistantContent.ToString(), assistantThinking);
+                    if (!string.IsNullOrWhiteSpace(prose))
+                        messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = prose });
+                    messages.Add(new JsonObject { ["role"] = "user", ["content"] =
+                        $"[Plan-delegate {planNudges}/2] Você resumiu em texto mas não delegou nenhuma fase. " +
+                        "Entregue agora a FASE 1 via subagent tool (UMA fase por chamada: objetivo, arquivos e o que fazer)." });
+                    assistantContent.Clear();
+                    assistantThinking.Clear();
+                    continue;
+                }
                 break;
             }
 
@@ -841,6 +860,8 @@ public sealed class ChatController(
                 anyToolRan = true;
                 if (name == "subagent") anySubRan = true;
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
+                // Card imediato no "digitando": o sub real adota ao no primeiro chunk.
+                if (name == "subagent") await WriteProgressAsync(outputStream, "sub_start", name, null, ct);
                 // Gate de escopo: subagent recebe UMA fase, nunca o enunciado
                 // integral (máx 2 recusas; depois aceita p/ não travar).
                 if (name == "subagent" && subScopeRejects < 2)
@@ -1035,6 +1056,8 @@ public sealed class ChatController(
         var unlinkedToolIds = new List<int>();
         string? lastSub = null;
         int subScopeRejects = 0;
+        int planNudges = 0;
+        bool anyCall = false;
         string originalTask = "";
         foreach (var m in messages)
             if (m?["role"]?.GetValue<string>() == "user"
@@ -1107,12 +1130,40 @@ public sealed class ChatController(
                 done = t.Completed;
             }
 
-            if (accum.Calls.Count == 0) break;
+            if (accum.Calls.Count == 0)
+            {
+                // Plan sem delegar: cutucada mecânica (máx 2), paridade com o chat.
+                if (agent.Mode == "plan" && planNudges < 2 && !anyCall && assistantContent.Length > 0)
+                {
+                    planNudges++;
+                    string prose = StripThinkTags(assistantContent.ToString(), assistantThinking);
+                    if (!string.IsNullOrWhiteSpace(prose))
+                        input.Add(new JsonObject
+                        {
+                            ["type"] = "message", ["role"] = "assistant",
+                            ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = prose }),
+                        });
+                    input.Add(new JsonObject
+                    {
+                        ["type"] = "message", ["role"] = "user",
+                        ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text",
+                            ["text"] = $"[Plan-delegate {planNudges}/2] Você resumiu em texto mas não delegou nenhuma fase. " +
+                            "Entregue agora a FASE 1 via subagent tool (UMA fase por chamada: objetivo, arquivos e o que fazer)." }),
+                    });
+                    assistantContent.Clear();
+                    assistantThinking.Clear();
+                    continue;
+                }
+                break;
+            }
+            anyCall = true;
             // Executa cada call e devolve outputs no próximo turno (a API exige
             // function_call_output p/ toda call; sem isso o modelo trava).
             foreach (var (id, name, args) in accum.Calls)
             {
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
+                // Card imediato no "digitando": o sub real adota ao no primeiro chunk.
+                if (name == "subagent") await WriteProgressAsync(outputStream, "sub_start", name, null, ct);
                 // Gate de escopo: subagent recebe UMA fase (máx 2 recusas).
                 if (name == "subagent" && subScopeRejects < 2)
                 {
