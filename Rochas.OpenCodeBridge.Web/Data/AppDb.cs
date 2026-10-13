@@ -41,7 +41,7 @@ public static class AppDb
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, is_admin INTEGER NOT NULL DEFAULT 0);
-            CREATE TABLE IF NOT EXISTS agents (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, model TEXT NOT NULL DEFAULT 'qwen3.5-9b', bridge_url TEXT NOT NULL DEFAULT 'http://127.0.0.1:4124', temperature REAL NOT NULL DEFAULT 0.4, thinking TEXT NOT NULL DEFAULT 'events', system_prompt TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT 'build', measured_tps REAL NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1);
+            CREATE TABLE IF NOT EXISTS agents (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, model TEXT NOT NULL DEFAULT 'qwen3.5-9b', bridge_url TEXT NOT NULL DEFAULT 'http://127.0.0.1:4124', temperature REAL NOT NULL DEFAULT 0.4, thinking TEXT NOT NULL DEFAULT 'events', system_prompt TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT 'build', measured_tps REAL NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, tools TEXT NOT NULL DEFAULT 'shell,read,write,edit,grep,glob,fetch,git');
             CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, agent_id INTEGER NOT NULL, executor_agent_id INTEGER, title TEXT NOT NULL DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id), FOREIGN KEY(agent_id) REFERENCES agents(id));
             CREATE TABLE IF NOT EXISTS session_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, thinking TEXT NOT NULL DEFAULT '', prompt_tokens INTEGER, completion_tokens INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE);
             CREATE TABLE IF NOT EXISTS refinement_lessons (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, task_index INTEGER NOT NULL DEFAULT 0, kind TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE);
@@ -82,6 +82,8 @@ public static class AppDb
         // Migração: vínculo tool->bolha (mensagem dona) + id do subagente dono.
         EnsureColumn(conn, "tool_calls", "message_id", "ALTER TABLE tool_calls ADD COLUMN message_id INTEGER;");
         EnsureColumn(conn, "tool_calls", "sub", "ALTER TABLE tool_calls ADD COLUMN sub TEXT NOT NULL DEFAULT '';");
+        // Migração: harness de tools por agente (CSV; vazio = nenhuma).
+        EnsureColumn(conn, "agents", "tools", "ALTER TABLE agents ADD COLUMN tools TEXT NOT NULL DEFAULT 'shell,read,write,edit,grep,glob,fetch,git';");
     }
 
     private static void EnsureColumn(SqliteConnection conn, string table, string column, string alterSql)

@@ -30,6 +30,37 @@ public static class ToolDefinitions
         return tools;
     }
 
+    // Harness por agente: CSV com as liberadas (vazio = nenhuma).
+    // subagent segue o Mode (build não delega). Desconhecida = negada.
+    // "display" libera shell só-echo (ver DisplayOnly) + leitura via read.
+    public static bool Allowed(Models.Agent? a, string name)
+    {
+        if (a is null) return false;
+        if (name == "subagent") return a.Mode != "build";
+        var set = ToolSet(a);
+        if (set.Contains(name)) return true;
+        return name == "shell" && set.Contains("display");
+    }
+
+    public static HashSet<string> ToolSet(Models.Agent? a) =>
+        new((a?.Tools ?? "").Split(',',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            StringComparer.OrdinalIgnoreCase);
+
+    // Exibição em console: só `echo ...` simples (sem pipes/redirects).
+    public static bool DisplayOnly(HashSet<string> set, string argsJson)
+    {
+        if (set.Contains("shell")) return false;
+        if (!set.Contains("display")) return false;
+        string cmd = "";
+        try { cmd = System.Text.Json.Nodes.JsonNode.Parse(argsJson)?.AsObject()?["command"]?.GetValue<string>() ?? ""; }
+        catch { return false; }
+        cmd = cmd.Trim();
+        if (!cmd.StartsWith("echo ", StringComparison.Ordinal) && cmd != "echo") return false;
+        string rest = cmd == "echo" ? "" : cmd[5..];
+        return !rest.Contains('|') && !rest.Contains('>') && !rest.Contains('<') && !rest.Contains(';') && !rest.Contains("&&");
+    }
+
     private sealed record ToolParam(string Name, string Type, string Description, bool Required);
 
     private static ToolParam BuildParam(string name, string type, string description, bool required) => new(name, type, description, required);

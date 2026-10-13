@@ -10,14 +10,25 @@ namespace Rochas.OpenCodeBridge.Web.Controllers;
 [Authorize]
 public sealed class UsersController(IGenericRepository<User> users, IPersistenceRepository<User> usersWrite, IPasswordHasher passwords) : Controller
 {
-    public async Task<IActionResult> Index()
-        => View(await users.Query(new User()));
+    // Usuários: só admin (lista e mutações). Não-admin nem vê o link.
+    private bool IsAdmin => (User.FindFirst("IsAdmin")?.Value ?? "false").ToLower() == "true";
 
-    public IActionResult Create() => View(new User());
+    public async Task<IActionResult> Index()
+    {
+        if (!IsAdmin) return Forbid();
+        return View(await users.Query(new User()));
+    }
+
+    public IActionResult Create()
+    {
+        if (!IsAdmin) return Forbid();
+        return View(new User());
+    }
 
     [HttpPost]
     public async Task<IActionResult> Create(User model, string password)
     {
+        if (!IsAdmin) return Forbid();
         if (string.IsNullOrWhiteSpace(model.Email) || string.IsNullOrWhiteSpace(password))
         {
             ViewBag.Error = "Email e senha obrigatórios.";
@@ -31,6 +42,7 @@ public sealed class UsersController(IGenericRepository<User> users, IPersistence
 
     public async Task<IActionResult> Toggle(int id)
     {
+        if (!IsAdmin) return Forbid();
         var user = await users.Get(new User { Id = id });
         if (user is not null)
         {
@@ -42,6 +54,7 @@ public sealed class UsersController(IGenericRepository<User> users, IPersistence
 
     public async Task<IActionResult> Delete(int id)
     {
+        if (!IsAdmin) return Forbid();
         await usersWrite.Remove(new User { Id = id });
         return RedirectToAction("Index");
     }

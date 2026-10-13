@@ -18,10 +18,11 @@ Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga, comp
 
 ## Mapa real de tools (código-fonte da verdade)
 
-- Filtro é por **Mode**, não por Role (`ChatController.cs`, loop do chat e bypass):
+- Filtro é por **Mode + CSV `Agent.Tools`** (`ChatController.cs`, loop do chat e bypass):
   base `shell, read, grep, glob, fetch, git, subagent`; `Mode == "build"`
-  remove `subagent` (build executa tudo, não delega); plan delega.
-  `write`/`edit` nunca são anunciados no chat.
+  remove `subagent`; vazio = nenhuma. Backstop no executor nega fora do CSV
+  (preset display: shell só-`echo` simples). `write`/`edit` nunca são
+  anunciados no chat.
 - Backstop é por **Mode** (`ToolExecutor.cs`): `mode == "plan"` barra
   `write`/`edit` mesmo se o modelo chamar (só entram via coerção
   fence/`SuggestedCommands`). Em `build`, passam.

@@ -30,13 +30,14 @@ internal static class ToolExecutorTests
             GrepFinds(exec);
             GlobFinds(exec);
             EdgeCases(exec);
+            AgentFlags(exec);
         }
         finally
         {
             try { Directory.Delete(root, true); } catch { }
         }
 
-        System.Console.WriteLine($"=== ToolExecutor Unit: {24 - Failures}/24 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== ToolExecutor Unit: {25 - Failures}/25 PASS, {Failures} FAIL ===");
         return Failures;
     }
 
@@ -44,6 +45,23 @@ internal static class ToolExecutorTests
     {
         System.Console.WriteLine((ok ? "PASS " : "FAIL ") + name);
         if (!ok) Failures++;
+    }
+
+    internal static void AgentFlags(ToolExecutor exec)
+    {
+        var none = new Models.Agent { Name = "n", Mode = "build", Tools = "" };
+        Check(!Services.ToolDefinitions.Allowed(none, "shell") && !Services.ToolDefinitions.Allowed(none, "read"),
+            "U-tool-flags-empty-deny");
+        var disp = new Models.Agent { Name = "d", Mode = "build", Tools = "read,display" };
+        Check(Services.ToolDefinitions.Allowed(disp, "shell") && Services.ToolDefinitions.Allowed(disp, "read")
+            && !Services.ToolDefinitions.Allowed(disp, "write"), "U-tool-flags-display-shell");
+        var echo = exec.Execute("shell", "{\"command\": \"echo oi\"}", 30, "build", disp);
+        Check(echo.Success, "U-tool-flags-display-echo-ok");
+        var bad = exec.Execute("shell", "{\"command\": \"ls -la\"}", 30, "build", disp);
+        Check(!bad.Success && bad.Error.Contains("exibição"), "U-tool-flags-display-ls-deny");
+        var plan = new Models.Agent { Name = "p", Mode = "plan", Tools = "shell,read" };
+        Check(Services.ToolDefinitions.Allowed(plan, "subagent") && !Services.ToolDefinitions.Allowed(none, "subagent"),
+            "U-tool-flags-subagent-plan-only");
     }
 
     private static void ShellEcho(ToolExecutor exec)

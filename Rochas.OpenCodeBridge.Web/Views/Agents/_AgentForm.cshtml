@@ -8,7 +8,7 @@
 <div class="col"><input name="Thinking" class="form-control mb-2" value="@Model.Thinking" /></div></div>
 <select name="Mode" class="form-select mb-2" title="Modo de atuação">
   <option value="build" selected="@(Model.Mode != "plan")">Modo: build (execução total)</option>
-  <option value="plan" selected="@(Model.Mode == "plan")">Modo: plan (só leitura/navegação, temp 0.4)</option>
+  <option value="plan" selected="@(Model.Mode == "plan")">Modo: plan (leitura/navegação + subagent)</option>
 </select>
 <textarea name="SystemPrompt" class="form-control mb-2" rows="6" placeholder="System prompt — orquestrador: como decompor; executor: enunciado rígido">@Model.SystemPrompt</textarea>
 <select name="Role" class="form-select mb-2">
@@ -17,4 +17,17 @@
   <option value="executor" selected="@(Model.Role == "executor")">Executor</option>
 </select>
 <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="Active" value="true" @(Model.Active ? "checked" : "") /><label class="form-check-label">Ativo</label></div>
+@{
+  var toolSet = new HashSet<string>((Model.Tools ?? "").Split(',', System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries), System.StringComparer.OrdinalIgnoreCase);
+  bool has(string n) => toolSet.Contains(n);
+}
+<div class="mb-2"><label class="form-label">Tools liberadas (vazio = nenhuma; subagent segue o Modo)</label>
+<div class="form-check"><input class="form-check-input" type="checkbox" name="selectedTools" value="glob" @(has("glob") ? "checked" : "") /><label class="form-check-label">Navegação de pastas (glob)</label></div>
+<div class="form-check"><input class="form-check-input" type="checkbox" name="selectedTools" value="read" @(has("read") ? "checked" : "") /><label class="form-check-label">Leitura de arquivos (read, grep)</label></div>
+<div class="form-check"><input class="form-check-input" type="checkbox" name="selectedTools" value="write" @(has("write") ? "checked" : "") /><label class="form-check-label">Escrita em arquivos (write, edit)</label></div>
+<div class="form-check"><input class="form-check-input" type="checkbox" name="selectedTools" value="git" @(has("git") ? "checked" : "") /><label class="form-check-label">Manipulação de repositórios (git)</label></div>
+<div class="form-check"><input class="form-check-input" type="checkbox" name="selectedTools" value="fetch" @(has("fetch") ? "checked" : "") /><label class="form-check-label">Navegação na internet (fetch)</label></div>
+<div class="form-check"><input class="form-check-input" type="checkbox" name="selectedTools" value="shell" @(has("shell") ? "checked" : "") /><label class="form-check-label">Validação de scripts (shell)</label></div>
+<div class="form-check"><input class="form-check-input" type="checkbox" name="selectedTools" value="display" @(has("display") ? "checked" : "") /><label class="form-check-label">Exibição em console (echo, cat)</label></div>
+</div>
 

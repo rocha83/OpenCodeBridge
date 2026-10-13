@@ -41,6 +41,12 @@ public sealed class Agent
     [Column("active")]
     public bool Active { get; set; }
 
+    // Harness de tools: CSV com as tools liberadas (vazio = nenhuma).
+    // Presets: navegação=glob, leitura=read+grep, escrita=write+edit,
+    // repos=git, internet=fetch, validação=shell. subagent segue o Mode.
+    [Column("tools")]
+    public string Tools { get; set; } = "shell,read,write,edit,grep,glob,fetch,git";
+
     // Normaliza vazio (linhas antigas) para build.
     public static string EffectiveMode(Agent a) => string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode;
 }

@@ -22,9 +22,9 @@
     {
       <div class="navbar-nav">
         <a class="nav-link" href="/Chat">Chat</a>
+        <a class="nav-link" href="/Agents">Agentes</a>
         @if ((User.FindFirst("IsAdmin")?.Value ?? "false").ToLower() == "true")
         {
-          <a class="nav-link" href="/Agents">Agentes</a>
           <a class="nav-link" href="/Users">Usuários</a>
         }
       </div>

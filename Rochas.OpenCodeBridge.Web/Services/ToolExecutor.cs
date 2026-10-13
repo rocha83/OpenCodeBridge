@@ -59,6 +59,14 @@ namespace Rochas.OpenCodeBridge.Web.Services
             if (!_handlers.TryGetValue(key, out IToolHandler? handler))
                 return ToolResult.Fail($"Não permitido: tool '{name}' fora do escopo permitido (válidas: shell, read, write, edit, grep, glob, fetch, git, subagent)");
 
+            // Backstop do cadastro: anunciada ou não, tool fora do CSV do agente não executa.
+            if (agent is not null && !ToolDefinitions.Allowed(agent, key))
+                return ToolResult.Fail($"Não permitido: tool '{key}' fora do harness do agente '{agent.Name}'");
+            // Preset display (sem shell): shell anunciada só p/ `echo` simples.
+            if (agent is not null && key == "shell" && !ToolDefinitions.ToolSet(agent).Contains("shell")
+                && !ToolDefinitions.DisplayOnly(ToolDefinitions.ToolSet(agent), arguments ?? ""))
+                return ToolResult.Fail("Não permitido: preset exibição só aceita 'echo' simples (sem pipes/redirects)");
+
             var context = new ToolContext
             {
                 WorkspaceRoot = _repoPath,

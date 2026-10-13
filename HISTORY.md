@@ -1,5 +1,13 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Harness de tools por agente + sessoes por usuario (2026-10-13)
+- `Agent.Tools` (CSV; vazio = nenhuma): 7 presets no cadastro (pastas, leitura,
+  escrita, repos, internet, validação, exibição echo/cat) + `subagent` pelo Mode;
+  anúncio filtra e backstop nega (display: shell só-`echo` simples).
+- Login persiste o usuário (sessões isoladas por dono); Agentes visível a todos
+  (sistema readonly p/ não-admin), Usuários só admin (link + controller).
+- Suite web units PASS; build Release 0/0.
+
 ## Zip dos scripts + fonte e donut (2026-10-13)
 - Quadro da direita: nomes com classe `script-name` (pouco acima do badge),
   link de download do zip abaixo da lista; Raciocínio com rolagem (~8 linhas).

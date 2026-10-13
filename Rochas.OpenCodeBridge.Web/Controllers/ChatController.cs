@@ -629,12 +629,11 @@ public sealed class ChatController(
         {
             // Build executa todas as tools e NÃO delega subagente; plan delega e não executa escrita.
             bool plan = agent.Mode == "plan";
-            var allowed = new HashSet<string> { "shell", "read", "grep", "glob", "fetch", "git", "subagent" };
-            if (!plan) allowed.Remove("subagent");
             var tools = new JsonArray();
             foreach (var t in ToolDefinitions.GetTools())
             {
-                if ((t as JsonObject)?["function"]?["name"]?.GetValue<string>() is not string tn || !allowed.Contains(tn)) continue;
+                if ((t as JsonObject)?["function"]?["name"]?.GetValue<string>() is not string tn) continue;
+                if (!ToolDefinitions.Allowed(agent, tn)) continue;
                 if (t is not null) tools.Add(t.DeepClone());
             }
             // DeepSeek em prosa ignora tools com "auto": o 1º turno força chamada;
@@ -1104,13 +1103,12 @@ public sealed class ChatController(
 
         // Temperatura e thinking vêm do cadastro do agente (sem override no código).
         double temp = agent.Temperature;
-        // Mesmo filtro do loop chat: build executa tudo e não delega subagent.
-        var allowed = new HashSet<string> { "shell", "read", "grep", "glob", "fetch", "git", "subagent" };
-        if (agent.Mode == "build") allowed.Remove("subagent");
+        // Harness do cadastro (CSV); subagent segue o Mode.
         var chatTools = new JsonArray();
         foreach (var t in ToolDefinitions.GetTools())
         {
-            if ((t as JsonObject)?["function"]?["name"]?.GetValue<string>() is not string tn || !allowed.Contains(tn)) continue;
+            if ((t as JsonObject)?["function"]?["name"]?.GetValue<string>() is not string tn) continue;
+            if (!ToolDefinitions.Allowed(agent, tn)) continue;
             if (t is not null) chatTools.Add(t.DeepClone());
         }
         var respTools = Services.ResponsesBypass.ToResponsesTools(chatTools);
