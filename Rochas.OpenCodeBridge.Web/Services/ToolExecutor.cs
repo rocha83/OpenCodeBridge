@@ -53,7 +53,7 @@ namespace Rochas.OpenCodeBridge.Web.Services
             string key = name is "bash" or "sh" ? "shell" : name;
 
             // Modo plan: leitura + navegação shell (retaguarda; o anúncio já filtra).
-            if (mode == "plan" && (key is "write" or "edit"))
+            if (string.Equals(mode, "plan", StringComparison.OrdinalIgnoreCase) && (key is "write" or "edit"))
                 return ToolResult.Fail($"Não permitido em modo plan: tool '{key}' indisponível (sem escrita)");
 
             if (!_handlers.TryGetValue(key, out IToolHandler? handler))

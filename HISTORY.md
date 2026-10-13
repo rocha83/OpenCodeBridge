@@ -1,5 +1,15 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Web — sem Role, Plan/Build canônico, Plan travado (2026-10-13)
+- `Role` do agente removido (model, form, lista, pré-seleção; coluna fica inerte). Controle
+  é pelo flag `subagent` no harness.
+- `Mode` canônico `Plan`/`Build` (primeira maiúscula): comparações insensíveis em tudo,
+  normalização ao salvar, migração no banco.
+- Plan no cadastro: escrita e shell inativas (JS por form + strip no `ExpandTools`); fetch fica.
+  Ordem dos checkboxes: glob, read, git, fetch, display, write, shell, subagent.
+- `Tools` default `""` (estava com CSV cheio envenenando todo `Query(new Agent())` — mesma
+  classe do bug CreatedAt; vazio é excluído do WHERE).
+
 ## Web — combo de executor segue a permissão (2026-10-13)
 - Orquestrador sem `subagent` no harness: combo de executor vem sem seleção e inativa
   (`data-tools` nas options + `applyExecutorAvailability`; limpa e zera na sessão via PUT);

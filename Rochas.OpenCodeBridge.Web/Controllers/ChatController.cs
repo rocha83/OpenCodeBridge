@@ -857,7 +857,7 @@ public sealed class ChatController(
         while (!ct.IsCancellationRequested)
         {
             // Build executa todas as tools e NÃO delega subagente; plan delega e não executa escrita.
-            bool plan = agent.Mode == "plan";
+            bool plan = string.Equals(agent.Mode, "plan", StringComparison.OrdinalIgnoreCase);
             var tools = new JsonArray();
             foreach (var t in ToolDefinitions.GetTools())
             {
@@ -1064,7 +1064,7 @@ public sealed class ChatController(
                 }
                 // Plan sem delegar (texto sem subagent): cutucada mecânica
                 // (máx 2, sem tocar prompts — mesma linha anti-giro/deepseek).
-                if (!DeepSeekToolCoercion.IsDeepSeek(agent.Model) && agent.Mode == "plan"
+                if (!DeepSeekToolCoercion.IsDeepSeek(agent.Model) && string.Equals(agent.Mode, "plan", StringComparison.OrdinalIgnoreCase)
                     && ToolDefinitions.Allowed(agent, "subagent")
                     && planNudges < 2 && assistantContent.Length > 0 && !anyToolRan)
                 {
@@ -1457,7 +1457,7 @@ public sealed class ChatController(
             if (accum.Calls.Count == 0)
             {
                 // Plan sem delegar: cutucada mecânica (máx 2), paridade com o chat.
-                if (agent.Mode == "plan" && ToolDefinitions.Allowed(agent, "subagent") && planNudges < 2 && !anyCall && assistantContent.Length > 0)
+                if (string.Equals(agent.Mode, "plan", StringComparison.OrdinalIgnoreCase) && ToolDefinitions.Allowed(agent, "subagent") && planNudges < 2 && !anyCall && assistantContent.Length > 0)
                 {
                     planNudges++;
                     string prose = StripThinkTags(assistantContent.ToString(), assistantThinking);

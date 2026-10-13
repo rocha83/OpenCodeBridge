@@ -29,9 +29,6 @@ public sealed class Agent
     [Column("system_prompt")]
     public string SystemPrompt { get; set; } = "";
 
-    [Column("role")]
-    public string Role { get; set; } = "";
-
     [Column("mode")]
     public string Mode { get; set; } = "";
 
@@ -44,8 +41,10 @@ public sealed class Agent
     // Harness de tools: CSV com as tools liberadas (vazio = nenhuma).
     // Presets: navegação=glob, leitura=read+grep, escrita=write+edit,
     // repos=git, internet=fetch, validação=shell. subagent segue o Mode.
+    // SEMPRE vazio por padrão: valor preenchido aqui vazaria p/ o WHERE de
+    // todo filtro `new Agent()` (o parser inclui strings não-vazias).
     [Column("tools")]
-    public string Tools { get; set; } = "shell,read,write,edit,grep,glob,fetch,git";
+    public string Tools { get; set; } = "";
 
     // Normaliza vazio (linhas antigas) para build.
     public static string EffectiveMode(Agent a) => string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode;

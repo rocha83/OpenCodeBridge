@@ -19,9 +19,11 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
         new() { Active = true, Model = "qwen3.5-9b", BridgeUrl = "http://127.0.0.1:4124", Temperature = 0.4, Thinking = "events", Tools = "shell,read,write,edit,grep,glob,fetch,git" };
 
     // Presets do form -> tools reais (leitura=read+grep, escrita=write+edit).
-    private static string ExpandTools(string[]? selected)
+    private static string ExpandTools(string[]? selected, string? mode)
     {
         var want = new HashSet<string>(selected ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        // Plan nunca escreve nem valida execução (fetch navega: fica).
+        if (string.Equals(mode, "plan", StringComparison.OrdinalIgnoreCase)) { want.Remove("write"); want.Remove("shell"); }
         var out_ = new List<string>();
         if (want.Contains("glob")) out_.Add("glob");
         if (want.Contains("read")) { out_.Add("read"); out_.Add("grep"); }
@@ -29,7 +31,7 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
         foreach (var t in new[] { "git", "fetch", "shell", "subagent" }) if (want.Contains(t)) out_.Add(t);
         if (want.Contains("display")) { out_.Add("read"); out_.Add("display"); }
         var rank = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-            { ["glob"] = 0, ["read"] = 1, ["grep"] = 2, ["write"] = 3, ["edit"] = 4, ["git"] = 5, ["fetch"] = 6, ["shell"] = 7, ["display"] = 8, ["subagent"] = 9 };
+            { ["glob"] = 0, ["read"] = 1, ["grep"] = 2, ["git"] = 3, ["fetch"] = 4, ["display"] = 5, ["write"] = 6, ["edit"] = 7, ["shell"] = 8, ["subagent"] = 9 };
         return string.Join(",", out_.Distinct().OrderBy(t => rank.TryGetValue(t, out int r) ? r : 99));
     }
 
@@ -52,7 +54,9 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
             ViewBag.Error = "Nome e model obrigatórios.";
             return View(form);
         }
-        form.Tools = ExpandTools(selectedTools);
+        // Canônico: Plan/Build (primeira maiúscula); resto vira Build.
+        form.Mode = string.Equals(form.Mode, "plan", StringComparison.OrdinalIgnoreCase) ? "Plan" : "Build";
+        form.Tools = ExpandTools(selectedTools, form.Mode);
         await agentsWrite.Add(form);
         return RedirectToAction("Index");
     }
@@ -81,10 +85,9 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
         existing.Temperature = form.Temperature;
         existing.Thinking = form.Thinking ?? "";
         existing.SystemPrompt = form.SystemPrompt ?? "";
-        existing.Role = form.Role ?? "";
-        existing.Mode = form.Mode ?? "";
+        existing.Mode = string.Equals(form.Mode, "plan", StringComparison.OrdinalIgnoreCase) ? "Plan" : "Build";
         existing.Active = form.Active;
-        existing.Tools = ExpandTools(selectedTools);
+        existing.Tools = ExpandTools(selectedTools, existing.Mode);
         await agentsWrite.Update(existing, new Agent { Id = existing.Id });
         return RedirectToAction("Index");
     }

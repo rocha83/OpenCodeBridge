@@ -94,10 +94,27 @@ public static class AppDb
             backfill.CommandText = "UPDATE session_messages SET status_id = CASE WHEN archived != 0 THEN 3 WHEN role = 'user' THEN 1 ELSE 2 END WHERE status_id IS NULL;";
             try { backfill.ExecuteNonQuery(); } catch { }
         }
-        // Migração: subagent virou checkbox — agentes plan existentes mantêm delegação.
+        // Migração: modo canônico Plan/Build (primeira maiúscula).
+        using (var modeq = conn.CreateCommand())
+        {
+            modeq.CommandText = "UPDATE agents SET mode = CASE WHEN LOWER(mode) = 'plan' THEN 'Plan' ELSE 'Build' END WHERE LOWER(mode) IN ('plan', 'build') AND mode NOT IN ('Plan', 'Build');";
+            try { modeq.ExecuteNonQuery(); } catch { }
+        }
+        // Migração: Plan sem escrita/execução (remove write,edit,shell legados; fetch navega, fica).
+        using (var planq = conn.CreateCommand())
+        {
+            planq.CommandText = "UPDATE agents SET tools = TRIM(REPLACE(REPLACE(REPLACE(REPLACE(',' || COALESCE(tools,'') || ',', ',write,', ','), ',edit,', ','), ',shell,', ','), ',,', ','), ',') WHERE LOWER(mode) = 'plan';";
+            try { planq.ExecuteNonQuery(); } catch { }
+        }
+        // Migração: Plan navega com fetch (repõe se ausente).
+        using (var fetchq = conn.CreateCommand())
+        {
+            fetchq.CommandText = "UPDATE agents SET tools = CASE WHEN COALESCE(tools,'') = '' THEN 'fetch' ELSE tools || ',fetch' END WHERE LOWER(mode) = 'plan' AND (',' || COALESCE(tools,'') || ',') NOT LIKE '%,fetch,%';";
+            try { fetchq.ExecuteNonQuery(); } catch { }
+        }
         using (var subq = conn.CreateCommand())
         {
-            subq.CommandText = "UPDATE agents SET tools = CASE WHEN COALESCE(tools,'') = '' THEN 'subagent' ELSE tools || ',subagent' END WHERE mode = 'plan' AND (',' || COALESCE(tools,'') || ',') NOT LIKE '%,subagent,%';";
+            subq.CommandText = "UPDATE agents SET tools = CASE WHEN COALESCE(tools,'') = '' THEN 'subagent' ELSE tools || ',subagent' END WHERE LOWER(mode) = 'plan' AND (',' || COALESCE(tools,'') || ',') NOT LIKE '%,subagent,%';";
             try { subq.ExecuteNonQuery(); } catch { }
         }
         // Migração: harness de tools por agente (CSV; vazio = nenhuma).

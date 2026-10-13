@@ -1,13 +1,71 @@
 ﻿@model IEnumerable<Rochas.OpenCodeBridge.Web.Models.Agent>
 @{ Layout = "_Layout"; ViewData["Title"] = "Agentes"; }
 @{ var isAdmin = (User.FindFirst("IsAdmin")?.Value ?? "false").ToLower() == "true"; }
-<h5>Agentes @if (isAdmin) { <a class="btn btn-sm btn-primary" href="/Agents/Create">Novo</a> }</h5>
-<table class="table table-dark table-striped">
-<tr><th>Nome</th><th>Model</th><th>Bridge</th><th>Papel</th><th>Modo</th><th>Temp</th><th>Thinking</th><th>Tools</th><th>Ativo</th><th></th></tr>
-@foreach (var a in Model) {
-<tr><td>@a.Name</td><td>@a.Model</td><td>@a.BridgeUrl</td><td>@(string.IsNullOrEmpty(a.Role) ? "—" : a.Role)</td><td>@(string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode)</td><td>@a.Temperature</td><td>@a.Thinking</td><td class="small text-muted">@a.Tools</td><td>@(a.Active ? "sim" : "não")</td>
-<td>@if (isAdmin) { <a class="btn btn-sm btn-outline-secondary" href="/Agents/Edit/@a.Id">Editar</a>
-<a class="btn btn-sm btn-outline-danger" href="/Agents/Delete/@a.Id">Excluir</a> } else { <span class="small text-muted">sistema</span> }</td></tr>
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center p-3">
+    <p class="fw-bold mb-0">Agentes</p>
+    <div>
+      <span class="small text-muted me-2">@Model.Count() cadastrados</span>
+      @if (isAdmin) { <button class="btn btn-sm btn-info" data-mdb-toggle="modal" data-mdb-target="#agentModal-new">Novo agente</button> }
+    </div>
+  </div>
+  <div class="list-group list-group-flush crud-list">
+    @foreach (var a in Model) {
+    <div class="list-group-item">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <span class="fw-bold">@a.Name</span>
+          <span class="badge bg-info ms-2">@(string.IsNullOrEmpty(a.Mode) ? "Build" : a.Mode)</span>
+          @if (a.Active) { <span class="badge bg-success ms-1">ativo</span> } else { <span class="badge bg-warning ms-1">inativo</span> }
+          <div class="small text-muted mt-1">@a.Model · @a.BridgeUrl · temp @a.Temperature · @a.Thinking</div>
+          <div class="small text-muted">@a.Tools</div>
+        </div>
+        <div class="btn-group btn-group-sm flex-shrink-0">
+          @if (isAdmin) {
+          <button class="btn btn-outline-secondary" data-mdb-toggle="modal" data-mdb-target="#agentModal-@a.Id">Editar</button>
+          <a class="btn btn-outline-danger" href="/Agents/Delete/@a.Id" onclick="return confirm('Excluir @a.Name?')">Excluir</a>
+          } else { <span class="small text-muted">sistema</span> }
+        </div>
+      </div>
+    </div>
+    }
+  </div>
+</div>
+@if (isAdmin) {
+  <div class="modal fade" id="agentModal-new" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title mb-0">Novo agente</h6>
+          <button type="button" class="btn-close" data-mdb-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <form method="post" action="/Agents/Create">
+          <div class="modal-body crud-form">@await Html.PartialAsync("_AgentForm", (Rochas.OpenCodeBridge.Web.Models.Agent)ViewBag.NewAgent)</div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-mdb-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-info">Salvar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  @foreach (var a in Model) {
+  <div class="modal fade" id="agentModal-@a.Id" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title mb-0">Editar agente</h6>
+          <button type="button" class="btn-close" data-mdb-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <form method="post" action="/Agents/Edit">
+          <div class="modal-body crud-form">@await Html.PartialAsync("_AgentForm", a)</div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-mdb-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-info">Salvar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  }
 }
-</table>
-
