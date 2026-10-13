@@ -33,6 +33,14 @@ public sealed class ToolCall
     [Column("ms")]
     public long Ms { get; set; }
 
+    // Vínculo por bolha: id da mensagem dona (turno do agente ou card do sub).
+    [Column("message_id")]
+    public int? MessageId { get; set; }
+
+    // Id do subagente dono (só nas tools internas do sub; "" nas do agente).
+    [Column("sub")]
+    public string Sub { get; set; } = "";
+
     [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -112,6 +112,7 @@ public sealed class SubagentToolHandler : IToolHandler
                 ToolExecutor.DefaultHandlers().Where(h => h.ToolName != "subagent"),
                 context.WorkspaceRoot, "/tmp/tool-executor-sub.log");
             inner.SubId = subId;
+            inner.LogInnerAsync = context.LogInnerAsync;
             inner.ProgressAsync = context.ProgressAsync is null ? null
                 : (p => context.ProgressAsync(p with { Sub = subId }));
             var chunkSink = context.SubChunkAsync;

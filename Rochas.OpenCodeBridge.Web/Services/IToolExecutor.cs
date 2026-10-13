@@ -12,4 +12,6 @@ public interface IToolExecutor
     Func<ToolProgress, Task>? ProgressAsync { get; set; }
     // Chunks ao vivo do subagente (sub, kind thinking|content, texto).
     Func<string, string, string, Task>? SubChunkAsync { get; set; }
+    // Persistência das tools internas do sub (só invocado quando há Sub).
+    Func<InnerToolLog, Task>? LogInnerAsync { get; set; }
 }

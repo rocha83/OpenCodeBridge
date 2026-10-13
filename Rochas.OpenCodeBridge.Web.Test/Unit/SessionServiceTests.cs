@@ -184,6 +184,24 @@ internal static class SessionServiceTests
             var calls = await s.GetToolCallsAsync(id);
             Check(calls.Count == 2 && calls[0].Name == "shell" && calls[0].Ok && calls[0].Ms == 12
                 && calls[1].Name == "write" && !calls[1].Ok, "ToolCallAsync log+query");
+            // Vínculo tool->bolha: turno do agente + internas do sub.
+            int turnId = await s.AddMessageAsync(id, "assistant", "turno", "", null, null);
+            Check(turnId > 0, "AddMessageAsync returns id");
+            int t1 = await s.LogToolAsync(id, "agente-teste", "read", "{}", true, "conteúdo", 5, null, turnId);
+            int subId = await s.AddMessageAsync(id, "subagent", "feito", "", null, null);
+            await s.LogToolAsync(id, "agente-teste", "shell", "{}", true, "ok", 7, "sub-abc123");
+            await s.LinkSubToolsAsync(id, "sub-abc123", subId);
+            var all = await s.GetToolCallsAsync(id);
+            var turn = all.FirstOrDefault(c => c.Id == t1);
+            var inner = all.FirstOrDefault(c => c.Sub == "sub-abc123");
+            Check(turn?.MessageId == turnId, "ToolCallAsync outer linked to turn");
+            Check(inner?.MessageId == subId, "ToolCallAsync inner linked to sub card");
+            // Órfã fecha na mensagem final.
+            int orphan = await s.LogToolAsync(id, "agente-teste", "grep", "{}", true, "x", 1);
+            int final = await s.AddMessageAsync(id, "assistant", "fim", "", null, null);
+            await s.LinkToolsByIdsAsync(id, new[] { orphan }, final);
+            var all2 = await s.GetToolCallsAsync(id);
+            Check(all2.FirstOrDefault(c => c.Id == orphan)?.MessageId == final, "ToolCallAsync orphan linked to final");
         }
     }
 

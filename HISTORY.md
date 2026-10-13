@@ -1,5 +1,17 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Merge UI paralela: grupo Ferramentas + gate de escopo (2026-10-13)
+- Portado da árvore paralela (base anterior + trabalho não commitado):
+  grupo "Ferramentas" por bolha (aberto, com contador), labels próprias no
+  card do sub, histórico com tools por `message_id`, gate de escopo do
+  subagent (recusa enunciado integral, máx 2) e erro da bridge com corpo.
+- Vínculo tool→bolha: `tool_calls.message_id/sub` (migração), `LogInnerAsync`
+  nas internas do sub, `LinkSubToolsAsync` no card + `LinkToolsByIdsAsync`
+  nas órfãs; `AddMessageAsync`/`LogToolAsync` retornam ids.
+- Divergências resolvidas: sub segue sem `max_tokens` (teto da bridge);
+  `ToolOutputLimit` da bridge em 32768.
+- Suite web units PASS; build Release 0/0.
+
 ## Bypass com tools nativas + doutrina plan/build (2026-10-13)
 - Bypass com harness nativo: `BuildBody` envia tools Responses flat
   (`ToResponsesTools`), `CallAccum` junta function_call do SSE e o loop

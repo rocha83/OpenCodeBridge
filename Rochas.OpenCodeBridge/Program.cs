@@ -47,7 +47,7 @@ internal static partial class Program
     static double Temperature = 0.4;                                 // direto e objetivo (0.1-0.4); tool calling continua deterministico via tool_choice
     static int MaxTokens = 4096;                                   // teto de saida padrao (fabrica 4k); pedido menor e honrado, nunca maior
     static int CpuMaxTokens = 2048;                                // teto p/ upstream sem parser server-side (llama/CPU): decode ~5 tok/s, teto alto = divagacao de minutos. GPU usa MaxTokens.
-    static int ToolOutputLimit = 8000;                             // corte por resultado de tool (ctx 28672)
+    static int ToolOutputLimit = 32768;                             // corte por resultado de tool
     static string LogPath = "/tmp/qwen3-bridge.log";
     static string ApiKey = "";
     static bool PassthroughResponses = false;                    // Bypass p/ upstream com Responses nativo (llama.cpp): so remove itens reasoning, resto passa direto                                     // Bearer p/ upstream com auth (llama --api-key); vazio = so repasse

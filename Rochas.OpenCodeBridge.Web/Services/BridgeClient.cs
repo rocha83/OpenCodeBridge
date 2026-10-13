@@ -46,7 +46,14 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
             using var res = await client.PostAsync(bridgeUrl.TrimEnd('/') + "/v1/chat/completions",
                 new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
             if (!res.IsSuccessStatusCode)
-                return (false, $"bridge {(int)res.StatusCode}");
+            {
+                // Corpo do erro (truncado): sem ele o "bridge 400" era
+                // inconstrutável (o motivo vem no JSON).
+                string errBody = "";
+                try { errBody = await res.Content.ReadAsStringAsync(ct); } catch { }
+                if (errBody.Length > 400) errBody = errBody[..400];
+                return (false, $"bridge {(int)res.StatusCode}: {errBody}");
+            }
             using var stream = await res.Content.ReadAsStreamAsync(ct);
             await stream.CopyToAsync(output, ct);
             return (true, "");

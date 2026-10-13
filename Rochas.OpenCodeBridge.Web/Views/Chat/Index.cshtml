@@ -113,6 +113,7 @@ function abortActiveStream() {
       body: JSON.stringify({ sessionId: window._streamSession }) }).catch(() => {});
   }
   window._streamAbort = null; window._streamSession = null;
+  window._ensureAgentBubbleForTools = null;
   document.getElementById('cancelBtn')?.remove();
   document.getElementById('processing-indicator')?.remove();
 }
@@ -163,87 +164,92 @@ function isScrolledToBottom() {
   return conv.scrollTop + conv.clientHeight >= conv.scrollHeight - 50;
 }
 
-// Linha de status de tool (mesmo padrão do Raciocínio): details fechado com retorno.
+// Grupo "Ferramentas" por bolha: dropdown abaixo do Raciocínio com uma
+// sub-label (details) por tool executada. Individual por bolha (agente e sub).
+function ensureToolsGroup(bodyEl) {
+  let g = bodyEl.querySelector(':scope > details.tools-group');
+  if (g) return g;
+  g = document.createElement('details');
+  g.className = 'mb-2 tools-group';
+  // Aberto por padrão: o estado das tools ("executado com sucesso"/"falhou")
+  // fica visível sem clique duplo e entra no texto da conversa (gate das faixas).
+  g.setAttribute('open', '');
+  g.innerHTML = `<summary class="small text-muted">Ferramentas</summary><div class="tlist"></div>`;
+  const think = bodyEl.querySelector(':scope > details:not(.tools-group)');
+  if (think) think.after(g);
+  else {
+    const pre = bodyEl.querySelector(':scope > pre');
+    if (pre) pre.before(g); else bodyEl.prepend(g);
+  }
+  return g;
+}
+function bumpToolsCount(g) {
+  const n = g.querySelectorAll(':scope > .tlist > details.tool-item').length;
+  g.querySelector('summary').textContent = `Ferramentas (${n})`;
+}
+// Raciocínio sempre acima do grupo: insere o details do thinking antes dele.
+function insertThinkFirst(det, refEl) {
+  const body = refEl ? refEl.parentNode : null;
+  if (!body) return;
+  const g = body.querySelector(':scope > details.tools-group');
+  if (g) body.insertBefore(det, g);
+  else if (refEl && refEl.isConnected) body.insertBefore(det, refEl);
+  else body.prepend(det);
+}
+// Dono do label: card do sub (sub) ou bolha do agente. Sem bolha ainda
+// (tool antes de qualquer texto): abre a bolha p/ ancorar o grupo.
+function toolsOwnerBody(sub) {
+  if (sub) return ensureSubCard(sub).li.querySelector('.card-body');
+  let bub = window._agentBubble;
+  if (!bub || !bub.isConnected) {
+    try { if (window._ensureAgentBubbleForTools) window._ensureAgentBubbleForTools(); } catch {}
+    bub = window._agentBubble;
+  }
+  return (bub && bub.isConnected) ? bub.querySelector('.card-body') : null;
+}
+// Linha de status de tool dentro do grupo da bolha dona.
 // sub: id do subagente dono (labels próprios, ancorados no card dele).
+// Delegação externa (subagent sem id: o card ainda não existe) ancora no
+// grupo do agente: sucesso não despeja o resultado (o card já mostra);
+// falha sem card mostra o motivo (timeout/recusa ficavam invisíveis).
 function toolStatus(name, running, ok, result, ms, args, sub) {
-  const anchorCard = sub ? ensureSubCard(sub).li : null;
+  const outerSub = name === 'subagent' && !sub;
+  const body = toolsOwnerBody(sub);
+  if (!body) return;
+  const g = ensureToolsGroup(body);
+  const list = g.querySelector(':scope > .tlist');
   if (running) {
-    if (name === 'subagent') {
-      // Card do subagente abre no primeiro chunk/thinking (ensureSubCard);
-      // sem ele ainda, só o "Processando...".
-      return;
-    } else {
-      const li = document.createElement('li');
-      li.className = 'd-flex justify-content-start mt-1 mb-1 tool-status';
-      li.dataset.tool = name;
-      if (sub) li.dataset.sub = sub;
-      const a = (args || '').replace(/\s+/g, ' ').trim();
-      li.innerHTML = `<span class="small text-muted"><span class="dot blink me-1"></span>Executando ${esc(name)}${a ? ' ' + esc(a) : ''}...</span>`;
-      // Labels do sub: logo acima do card dele; do agente: acima da bolha.
-      if (anchorCard && anchorCard.isConnected) conv.insertBefore(li, anchorCard);
-      else {
-        const bub = window._agentBubble;
-        if (bub && bub.isConnected) conv.insertBefore(li, bub);
-        else conv.appendChild(li);
-      }
-    }
+    const d = document.createElement('details');
+    d.className = 'mb-1 tool-item';
+    d.dataset.tool = name;
+    d.dataset.busy = '1';
+    d.setAttribute('open', '');
+    const a = (args || '').replace(/\s+/g, ' ').trim();
+    const head = a.length > 80 ? a.slice(0, 80) + '…' : a;
+    d.innerHTML = `<summary class="small text-muted">Executando ${esc(name)}${head ? ' ' + esc(head) : ''}…</summary>`;
+    list.appendChild(d);
+    bumpToolsCount(g);
   } else {
-    // Done do subagente: reconcilia o card ao vivo (paridade com o principal).
-    if (name === 'subagent' && ok !== false && result) {
-      const items = conv.querySelectorAll('.tool-status');
-      items.forEach(el => { if (el.dataset.tool === name) el.remove(); });
-      // Sempre pelo id do sub quando presente: o fallback no card corrente
-      // pintava o resultado no card errado (2 bolhas com o mesmo conteúdo).
-      // Sem id: descarta o paint (fallback no card corrente apagava o
-      // conteúdo alheio e duplicava o novo). Com id: mesmo id nunca pinta 2x.
-      if (!sub) { try { console.warn('[sub] done sem id, paint descartado'); } catch {} return; }
-      const h = ensureSubCard(sub);
-      if (h.painted) { try { console.warn('[sub] paint duplicado ignorado', sub); } catch {} return; }
-      let body = result, think = '';
-      const hm = body.match(/<SUBTHINK>([\s\S]*)<\/SUBTHINK>/);
-      if (hm) { think = hm[1].trim(); body = body.replace(hm[0], '').trim(); }
-      // Dedupe: resultado idêntico já exibido em outro card (double-paint)?
-      // Remove o redundante em vez de mostrar 2 bolhas iguais.
-      const sig = body.length + ':' + body.slice(0, 120);
-      let dupPaint = false;
-      conv.querySelectorAll('.subagent-card').forEach(cd => {
-        const p = cd.querySelector('.subans');
-        if (cd !== h.li && p && (p.textContent.length + ':' + p.textContent.slice(0, 120)) === sig) dupPaint = true;
-      });
-      if (dupPaint && h.li.isConnected) { h.li.remove(); window._currentSubCard = null; return; }
-      if (!think) think = h.think;
-      h.full = body;
-      h.pre.textContent = body;
-      h.pre.classList.remove('typing');
-      if (think) {
-        if (!h.det) {
-          h.det = document.createElement('details');
-          h.det.className = 'mb-2';
-          h.det.innerHTML = `<summary class="small text-muted">Raciocínio 0%</summary>`;
-          h.psum = h.det.querySelector('summary');
-          h.pp = document.createElement('p');
-          h.pp.className = 'small text-muted';
-          h.det.appendChild(h.pp);
-          h.pre.parentNode.insertBefore(h.det, h.pre);
-        }
-        h.pp.textContent = think;
-        h.pp.classList.remove('typing');
-        h.det.removeAttribute('open');
-        if (h.psum) h.psum.textContent = 'Raciocínio 100%';
-      }
-      h.painted = true;
-      window._currentSubCard = null;
-    } else {
-      const items2 = conv.querySelectorAll('.tool-status');
-      let li = null;
-      items2.forEach(el => { if (!li && el.dataset.tool === name && (!sub || el.dataset.sub === sub)) li = el; });
-      if (li) {
-        const state = ok === false ? 'falhou' : 'executado com sucesso';
-        const body = result ? `<p class="small text-muted">${esc(result)}</p>` : '';
-        li.innerHTML = `<details class="mb-2"><summary class="small text-muted">${esc(name)} ${state}.</summary>${body}</details>`;
-        li.classList.remove('tool-status');
-      }
+    let d = null;
+    list.querySelectorAll('details.tool-item').forEach(el => {
+      if (!d && el.dataset.tool === name && el.dataset.busy === '1') d = el;
+    });
+    if (!d) list.querySelectorAll('details.tool-item').forEach(el => {
+      if (!d && el.dataset.tool === name) d = el;
+    });
+    if (!d) {
+      d = document.createElement('details');
+      d.className = 'mb-1 tool-item';
+      d.dataset.tool = name;
+      list.appendChild(d);
     }
+    const state = ok === false ? 'falhou' : 'executado com sucesso';
+    const showResult = result && (ok === false || !outerSub);
+    const p = showResult ? `<p class="small text-muted">${esc(result)}</p>` : '';
+    d.dataset.busy = '';
+    d.innerHTML = `<summary class="small text-muted">${esc(name)} ${state}.</summary>${p}`;
+    d.removeAttribute('open');
+    bumpToolsCount(g);
   }
   if (isScrolledToBottom()) scrollToBottom();
 }
@@ -307,7 +313,7 @@ function subChunk(sub, kind, text) {
       h.pp = document.createElement('p');
       h.pp.className = 'small text-muted typing';
       h.det.appendChild(h.pp);
-      h.pre.parentNode.insertBefore(h.det, h.pre);
+      insertThinkFirst(h.det, h.pre);
     }
     h.pp.textContent = h.think;
     if (h.psum) h.psum.textContent = `Raciocínio ${thinkPct(h.think.length + h.full.length)}% · ${fmtK(h.think.length + h.full.length)}`;
@@ -401,6 +407,19 @@ async function loadMessages(sessionId) {
   // o thinking incorpora na próxima bolha do agente com texto.
   // Histórico com subagentes e content vazio: preenche com a frase de fecho.
   const hasSub = (msgs || []).some(m => m?.role === 'subagent');
+  // Tools por bolha (message_id; subagent externo tem card próprio e sai).
+  let toolsByMsg = {};
+  try {
+    const rt = await fetch(`/Chat/Sessions/${sessionId}/ToolCalls?limit=500`);
+    if (rt.ok) {
+      const calls = await rt.json();
+      (calls || []).forEach(c => {
+        const mid = c?.messageId;
+        if (!mid) return;
+        (toolsByMsg[mid] = toolsByMsg[mid] || []).push(c);
+      });
+    }
+  } catch { /* histórico sem tools: segue só texto */ }
   let pendingThink = '';
   (msgs || []).forEach(m => {
     try {
@@ -416,10 +435,10 @@ async function loadMessages(sessionId) {
       if (role === 'assistant' && pendingThink.trim()) {
         const merged = pendingThink + ((think || '').trim() ? '\n\n' + think.trim() : '');
         pendingThink = '';
-        conv.appendChild(msgItem(role, merged, body, m?.createdAt));
+        conv.appendChild(msgItem(role, merged, body, m?.createdAt, toolsByMsg[m?.id]));
         return;
       }
-      conv.appendChild(msgItem(role, think, body, m?.createdAt));
+      conv.appendChild(msgItem(role, think, body, m?.createdAt, toolsByMsg[m?.id]));
     } catch (err) {
       const li = document.createElement('li');
       li.className = 'd-flex justify-content-between mb-4';
@@ -561,7 +580,19 @@ function fmtTs(iso) {
     return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
   } catch { return ''; }
 }
-function msgItem(role, think, body, ts) {
+function toolsGroupHtml(tools) {
+  if (!tools || !tools.length) return '';
+  const items = tools.map(c => {
+    const state = c?.ok === false ? 'falhou' : 'executado com sucesso';
+    // Delegação externa: sem despejo do resultado no sucesso (o card do sub
+    // já mostra); falha sem card mostra o motivo (paridade com o ao vivo).
+    const outerSub = c?.name === 'subagent' && !c?.sub;
+    const out = ((!outerSub || c?.ok === false) && c?.output) ? `<p class="small text-muted">${esc(c.output)}</p>` : '';
+    return `<details class="mb-1 tool-item"><summary class="small text-muted">${esc(c?.name ?? 'tool')} ${state}.</summary>${out}</details>`;
+  }).join('');
+  return `<details class="mb-2 tools-group" open><summary class="small text-muted">Ferramentas (${tools.length})</summary><div class="tlist">${items}</div></details>`;
+}
+function msgItem(role, think, body, ts, tools) {
   const li = document.createElement('li');
   li.className = 'd-flex justify-content-between mb-4';
   const foot = ts ? `<div class="msg-ts">${esc(fmtTs(ts))}</div>` : '';
@@ -583,6 +614,7 @@ function msgItem(role, think, body, ts) {
         </div>
         <div class="card-body">
           ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio 100%</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
+          ${toolsGroupHtml(tools)}
           ${(body || '').trim() ? `<pre class="mb-0 subans rawbox">${esc(body)}</pre>` : ''}
           ${foot}
         </div>
@@ -596,6 +628,7 @@ function msgItem(role, think, body, ts) {
         </div>
         <div class="card-body">
           ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio 100%</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
+          ${toolsGroupHtml(tools)}
           ${(body || '').trim() ? `<pre class="mb-0 ans rawbox">${esc(body)}</pre>` : ''}
           ${foot}
         </div>
@@ -691,6 +724,7 @@ document.getElementById('send').onclick = async () => {
       body: JSON.stringify({ sessionId: sendSessionId }) }).catch(() => {});
     try { abortController.abort(); } catch {}
     window._streamAbort = null; window._streamSession = null;
+  window._ensureAgentBubbleForTools = null;
     cancelBtn.style.display = 'none';
     document.getElementById('processing-indicator')?.remove();
     stopTypewriter();
@@ -749,6 +783,8 @@ document.getElementById('send').onclick = async () => {
     anP = agentLi.querySelector('.ans');
     agentBubbleCreated = true;
     window._agentBubble = agentLi;
+    // Ancoragem do grupo Ferramentas quando a tool chega antes do texto.
+    window._ensureAgentBubbleForTools = ensureAgentBubble;
     // Pilha do envio: subs acima da bolha, mais recente no topo.
     let anchor = agentLi;
     (window._liveSubs || []).forEach(c => { if (c.isConnected) { anchor.before(c); anchor = c; } });
@@ -840,7 +876,7 @@ document.getElementById('send').onclick = async () => {
               thinkP = document.createElement('p');
               thinkP.className = 'small text-muted typing';
               thinkDet.appendChild(thinkP);
-              anP.parentNode.insertBefore(thinkDet, anP);
+              insertThinkFirst(thinkDet, anP);
               thinkLive = true;
             }
             if (thinkP) thinkP.classList.add('typing');
@@ -903,6 +939,7 @@ document.getElementById('send').onclick = async () => {
     showToast('Erro ao conectar na engine. Verifique se a bridge está online.', 'danger');
   }
   window._streamAbort = null; window._streamSession = null;
+  window._ensureAgentBubbleForTools = null;
   // Trocou de sessão no meio do stream: não finaliza bolha na conversa errada.
   const stillHere = (currentSessionId === sendSessionId);
   if (agentBubbleCreated && stillHere) {
@@ -924,7 +961,7 @@ document.getElementById('send').onclick = async () => {
       p.textContent = think;
       det.appendChild(sum);
       det.appendChild(p);
-      anP.parentNode.insertBefore(det, anP);
+      insertThinkFirst(det, anP);
     }
     document.getElementById('processing-indicator')?.remove();
     engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!';

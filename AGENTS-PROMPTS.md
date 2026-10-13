@@ -30,9 +30,10 @@ Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga, comp
 - **Build (id 2, executor/build)**: tudo do plan menos `subagent`, mais
   escrita liberada no backstop.
 - **Subagente** (`SubagentToolHandler.cs`): hardcoded build — temp 0.4 fixa,
-  system fixo, só `write/edit/shell` (shell travado: `bash -n`, zip/unzip,
-  navegação; nada executa), sem `subagent` (sem recursão). Não lê o Mode
-  do banco.
+  thinking off, system fixo, só `write/edit/shell` (shell travado: `bash -n`,
+  zip/unzip, navegação; nada executa), sem `subagent` (sem recursão). Não lê
+  o Mode do banco. Gate de escopo (`SubagentScopeGate`): recusa prompt que
+  repassa o enunciado integral (máx 2) com corretivo ao contexto.
 
 ## Subagente (`SubagentToolHandler.cs`, temp 0.4 fixa, tools write/edit/shell)
 

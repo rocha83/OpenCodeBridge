@@ -42,6 +42,7 @@ namespace Rochas.OpenCodeBridge.Web.Services
         public Func<ToolProgress, Task>? ProgressAsync { get; set; }
         public string? SubId { get; set; }
         public Func<string, string, string, Task>? SubChunkAsync { get; set; }
+        public Func<InnerToolLog, Task>? LogInnerAsync { get; set; }
 
         public ToolResult Execute(string name, string arguments, int timeoutSeconds = 300, string? mode = null, Models.Agent? agent = null)
         {
@@ -68,8 +69,10 @@ namespace Rochas.OpenCodeBridge.Web.Services
                 Temperature = agent?.Temperature ?? 0.4,
                 ProgressAsync = ProgressAsync,
                 SubChunkAsync = SubChunkAsync,
+                LogInnerAsync = LogInnerAsync,
             };
             ToolResult result;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 if (ProgressAsync is not null)
@@ -83,6 +86,19 @@ namespace Rochas.OpenCodeBridge.Web.Services
             catch (Exception ex)
             {
                 result = ToolResult.Fail($"falha interna na tool '{name}': {ex.Message}");
+            }
+            sw.Stop();
+            // Trilha das internas do sub (as do agente o ChatController já grava
+            // com o id da mensagem do turno; aqui o Sub identifica o card dono).
+            if (SubId is not null && LogInnerAsync is not null)
+            {
+                try
+                {
+                    LogInnerAsync(new InnerToolLog(context.AgentName, key, arguments ?? "",
+                        result.Success, result.Success ? result.Output : result.Error ?? "",
+                        sw.ElapsedMilliseconds, SubId)).GetAwaiter().GetResult();
+                }
+                catch { /* trilha best-effort */ }
             }
 
             Audit(name, result);

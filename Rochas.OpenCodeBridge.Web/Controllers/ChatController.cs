@@ -128,7 +128,7 @@ public sealed class ChatController(
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
         var calls = await sessionService.GetToolCallsAsync(id, limit);
-        return Json(calls.Select(c => new { c.Id, c.Agent, c.Name, c.Args, c.Ok, c.Output, c.Ms, c.CreatedAt }));
+        return Json(calls.Select(c => new { c.Id, c.Agent, c.Name, c.Args, c.Ok, c.Output, c.Ms, c.MessageId, c.Sub, c.CreatedAt }));
     }
 
     // GET /Chat/Sessions/{id}/Tasks - painel de acompanhamento da decomposição
@@ -497,11 +497,25 @@ public sealed class ChatController(
         int idleTurns = 0, giroFixes = 0, repeatSig = 0;
         string lastToolSig = "";
         bool giroAbort = false;
+        // Vínculo tool->bolha: ids de tools gravadas sem mensagem dona (turno sem
+        // texto ou internas de sub cujo card falhou) vão p/ a mensagem final.
+        var unlinkedToolIds = new List<int>();
+        // Último sub visto no sink de internas (execução serial: é o dono atual).
+        string? lastSub = null;
         // Compactação automática: 1 retry após resumir (contexto cheio).
         bool compactRetried = false;
         // Cutucadas DeepSeek em prosa (máx 2, contador próprio p/ não
         // interferir no anti-giro).
         int dsqNudges = 0;
+        // Gate de escopo do subagent (máx 2 recusas; depois delega do jeito
+        // que veio p/ não travar o run).
+        int subScopeRejects = 0;
+        // Enunciado original (primeira user do contexto): base do gate.
+        string originalTask = "";
+        foreach (var m in messages)
+            if (m?["role"]?.GetValue<string>() == "user"
+                && m?["content"]?.GetValue<string>() is string u && u.Length > originalTask.Length)
+                originalTask = u;
 
         // Helper to build fresh messages array from values (avoids JsonNode parent issues)
         JsonArray BuildMessages(JsonArray src)
@@ -808,11 +822,12 @@ public sealed class ChatController(
             // thinking não grava (evita bolhas vazias no reload).
             // <think> vazado no content: move p/ thinking (não suja bolha/contexto).
             string turnText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
+            int turnMsgId = 0;
             if (session?.Id is int sidTurn && (turnText.Length > 0 || assistantThinking.Length > 0))
             {
                 try
                 {
-                    await sessionService.AddMessageAsync(sidTurn, "assistant",
+                    turnMsgId = await sessionService.AddMessageAsync(sidTurn, "assistant",
                         turnText, assistantThinking.ToString(), null, null);
                     await sessionService.TouchAsync(sidTurn);
                 }
@@ -826,6 +841,28 @@ public sealed class ChatController(
                 anyToolRan = true;
                 if (name == "subagent") anySubRan = true;
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
+                // Gate de escopo: subagent recebe UMA fase, nunca o enunciado
+                // integral (máx 2 recusas; depois aceita p/ não travar).
+                if (name == "subagent" && subScopeRejects < 2)
+                {
+                    string subPrompt = "";
+                    try
+                    {
+                        subPrompt = JsonNode.Parse(args)?.AsObject()?["prompt"]?.GetValue<string>() ?? "";
+                    }
+                    catch { /* args ilegível: deixa passar p/ o handler falhar */ }
+                    if (SubagentScopeGate.IsFullTaskPass(originalTask, subPrompt))
+                    {
+                        subScopeRejects++;
+                        string rej = SubagentScopeGate.RejectMessage(subScopeRejects);
+                        if (session?.Id is int sidRej)
+                            await sessionService.LogToolAsync(sidRej, agent.Name, "subagent", args, false, rej, 0, null, turnMsgId > 0 ? turnMsgId : null);
+                        await WriteProgressAsync(outputStream, "tool_done", name, false, ct, rej, 0);
+                        // Corretivo volta ao contexto como user (fala com o modelo).
+                        messages.Add(new JsonObject { ["role"] = "user", ["content"] = rej });
+                        continue;
+                    }
+                }
                 // Trunfo: o modelo vê plan (anunciado), o executor roda build (pode tudo).
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 // Progresso + chunks ao vivo das tools internas do sub: só aqui.
@@ -836,13 +873,30 @@ public sealed class ChatController(
                 toolExecutor.SubChunkAsync = name == "subagent"
                     ? async (sub, kind, text) => await WriteSubChunkAsync(outputStream, sub, kind, text, ct)
                     : null;
+                // Trilha das internas do sub (com o sub dono; a mensagem dona
+                // liga depois, no save do card). Fora de sessão: sem persistir.
+                lastSub = null;
+                toolExecutor.LogInnerAsync = name == "subagent" && session?.Id is int sidInner
+                    ? async log =>
+                    {
+                        int toolId = await sessionService.LogToolAsync(sidInner, agent.Name,
+                            log.Name, log.Args, log.Ok, log.Output, log.Ms, log.Sub);
+                        if (!string.IsNullOrEmpty(log.Sub)) lastSub = log.Sub;
+                        lock (unlinkedToolIds) unlinkedToolIds.Add(toolId);
+                    }
+                    : null;
                 var result = toolExecutor.Execute(name, args, 300, null, agent);
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
+                toolExecutor.LogInnerAsync = null;
                 sw.Stop();
                 if (session?.Id is int sidLog)
-                    await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
-                        result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds);
+                {
+                    int outerId = await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
+                        result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds,
+                        null, turnMsgId > 0 ? turnMsgId : null);
+                    if (turnMsgId <= 0) lock (unlinkedToolIds) unlinkedToolIds.Add(outerId);
+                }
                 // Retorno do subagente entra na árvore da sessão (bolha Sub Agente no reload).
                 string? subText = null;
                 if (session?.Id is int sidSub && name == "subagent" && result.Success)
@@ -859,8 +913,14 @@ public sealed class ChatController(
                         }
                         if (sbody.Length > 0 || sthink.Length > 0)
                         {
-                            await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null);
+                            int subMsgId = await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null);
                             await sessionService.TouchAsync(sidSub);
+                            // Card dono das internas: liga as tools do sub a ele.
+                            if (lastSub is not null)
+                            {
+                                await sessionService.LinkSubToolsAsync(sidSub, lastSub, subMsgId);
+                                lastSub = null;
+                            }
                         }
                         if (sbody.Length > 0) subText = sbody;
                     }
@@ -911,8 +971,15 @@ public sealed class ChatController(
         }
         if (session is not null && session.Id.HasValue && (finalText.Length > 0 || assistantThinking.Length > 0))
         {
-            await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens);
+            int finalMsgId = await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens);
             await sessionService.TouchAsync(session.Id.Value);
+            // Órfãs (turno sem texto / card que falhou) fecham na bolha final.
+            if (unlinkedToolIds.Count > 0)
+            {
+                List<int> orphans;
+                lock (unlinkedToolIds) orphans = unlinkedToolIds.ToList();
+                await sessionService.LinkToolsByIdsAsync(session.Id.Value, orphans, finalMsgId);
+            }
         }
 
         // DONE próprio após persistir: elimina race do cliente ler histórico cedo.
@@ -964,6 +1031,15 @@ public sealed class ChatController(
         }
         var respTools = Services.ResponsesBypass.ToResponsesTools(chatTools);
         var input = Services.ResponsesBypass.ToInputItems(messages);
+        // Vínculo tool->bolha + gate de escopo (paridade com o loop chat).
+        var unlinkedToolIds = new List<int>();
+        string? lastSub = null;
+        int subScopeRejects = 0;
+        string originalTask = "";
+        foreach (var m in messages)
+            if (m?["role"]?.GetValue<string>() == "user"
+                && m?["content"]?.GetValue<string>() is string u && u.Length > originalTask.Length)
+                originalTask = u;
 
         for (int turn = 0; turn < 5 && !ct.IsCancellationRequested; turn++)
         {
@@ -1037,6 +1113,27 @@ public sealed class ChatController(
             foreach (var (id, name, args) in accum.Calls)
             {
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct);
+                // Gate de escopo: subagent recebe UMA fase (máx 2 recusas).
+                if (name == "subagent" && subScopeRejects < 2)
+                {
+                    string subPrompt = "";
+                    try { subPrompt = JsonNode.Parse(args)?.AsObject()?["prompt"]?.GetValue<string>() ?? ""; }
+                    catch { /* args ilegível: deixa passar */ }
+                    if (SubagentScopeGate.IsFullTaskPass(originalTask, subPrompt))
+                    {
+                        subScopeRejects++;
+                        string rej = SubagentScopeGate.RejectMessage(subScopeRejects);
+                        if (session?.Id is int sidRej)
+                            await sessionService.LogToolAsync(sidRej, agent.Name, "subagent", args, false, rej, 0);
+                        await WriteProgressAsync(outputStream, "tool_done", name, false, ct, rej, 0);
+                        input.Add(new JsonObject
+                        {
+                            ["type"] = "message", ["role"] = "user",
+                            ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = rej }),
+                        });
+                        continue;
+                    }
+                }
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 toolExecutor.ProgressAsync = name == "subagent"
                     ? async p => await WriteProgressAsync(outputStream,
@@ -1045,13 +1142,27 @@ public sealed class ChatController(
                 toolExecutor.SubChunkAsync = name == "subagent"
                     ? async (sub, kind, text) => await WriteSubChunkAsync(outputStream, sub, kind, text, ct)
                     : null;
+                lastSub = null;
+                toolExecutor.LogInnerAsync = name == "subagent" && session?.Id is int sidInner
+                    ? async log =>
+                    {
+                        int toolId = await sessionService.LogToolAsync(sidInner, agent.Name,
+                            log.Name, log.Args, log.Ok, log.Output, log.Ms, log.Sub);
+                        if (!string.IsNullOrEmpty(log.Sub)) lastSub = log.Sub;
+                        lock (unlinkedToolIds) unlinkedToolIds.Add(toolId);
+                    }
+                    : null;
                 var result = toolExecutor.Execute(name, args, 300, null, agent);
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
+                toolExecutor.LogInnerAsync = null;
                 sw.Stop();
                 if (session?.Id is int sidLog)
-                    await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
+                {
+                    int outerId = await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
                         result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds);
+                    lock (unlinkedToolIds) unlinkedToolIds.Add(outerId);
+                }
                 string? subText = null;
                 if (session?.Id is int sidSub && name == "subagent" && result.Success)
                 {
@@ -1067,8 +1178,14 @@ public sealed class ChatController(
                         }
                         if (sbody.Length > 0 || sthink.Length > 0)
                         {
-                            await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null);
+                            int subMsgId = await sessionService.AddMessageAsync(sidSub, "subagent", sbody, sthink, null, null);
                             await sessionService.TouchAsync(sidSub);
+                            // Card dono das internas: liga as tools do sub a ele.
+                            if (lastSub is not null)
+                            {
+                                await sessionService.LinkSubToolsAsync(sidSub, lastSub, subMsgId);
+                                lastSub = null;
+                            }
                         }
                         if (sbody.Length > 0) subText = sbody;
                     }
@@ -1099,11 +1216,18 @@ public sealed class ChatController(
             }
         }
 
-        string finalText = assistantContent.ToString();
+        string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
         if (session is not null && session.Id.HasValue && (finalText.Length > 0 || assistantThinking.Length > 0))
         {
-            await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens);
+            int finalMsgId = await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens);
             await sessionService.TouchAsync(session.Id.Value);
+            // Órfãs (card que falhou) fecham na bolha final.
+            if (unlinkedToolIds.Count > 0)
+            {
+                List<int> orphans;
+                lock (unlinkedToolIds) orphans = unlinkedToolIds.ToList();
+                await sessionService.LinkToolsByIdsAsync(session.Id.Value, orphans, finalMsgId);
+            }
         }
         try
         {
@@ -1113,6 +1237,8 @@ public sealed class ChatController(
         }
         catch { }
     }
+
+    // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.
 
     // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.
     // Idem <thinking> (padrão DeepSeek): vai para o dropdown Raciocínio.

@@ -156,19 +156,25 @@ public sealed class SessionService(
         return list.OrderBy(x => x.CreatedAt).ThenBy(x => x.Id).TakeLast(limit).ToList();
     }
 
-    public async Task AddMessageAsync(int sessionId, string role, string content, string thinking, int? promptTokens, int? completionTokens)
+    public async Task<int> AddMessageAsync(int sessionId, string role, string content, string thinking, int? promptTokens, int? completionTokens)
     {
-        var msg = new SessionMessage
+        // INSERT direto + last_insert_rowid na mesma conexão: id confiável
+        // p/ vincular as tools do turno a esta mensagem (bolha dona).
+        return await DbRetryAsync(async () =>
         {
-            SessionId = sessionId,
-            Role = role,
-            Content = content,
-            Thinking = thinking,
-            PromptTokens = promptTokens,
-            CompletionTokens = completionTokens,
-            CreatedAt = System.DateTime.UtcNow
-        };
-        await DbRetryAsync(async () => await _messagesWrite.Add(msg));
+            using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO session_messages (session_id, role, content, thinking, prompt_tokens, completion_tokens) VALUES (@s,@r,@c,@t,@p,@e); SELECT last_insert_rowid();";
+            cmd.Parameters.AddWithValue("@s", sessionId);
+            cmd.Parameters.AddWithValue("@r", role ?? "");
+            cmd.Parameters.AddWithValue("@c", content ?? "");
+            cmd.Parameters.AddWithValue("@t", thinking ?? "");
+            cmd.Parameters.AddWithValue("@p", (object?)promptTokens ?? System.DBNull.Value);
+            cmd.Parameters.AddWithValue("@e", (object?)completionTokens ?? System.DBNull.Value);
+            var id = await cmd.ExecuteScalarAsync();
+            return System.Convert.ToInt32(id);
+        });
     }
 
     public async Task<int> CountMessagesAsync(int sessionId)
@@ -234,18 +240,18 @@ public sealed class SessionService(
     }
 
     // Trilha de tools no SQLite (como o thinking): best-effort, nunca quebra o pipeline.
-    public async Task LogToolAsync(int sessionId, string agent, string name, string args, bool ok, string output, long ms)
+    public async Task<int> LogToolAsync(int sessionId, string agent, string name, string args, bool ok, string output, long ms, string? sub = null, int? messageId = null)
     {
         try
         {
             string a = args;
             string o = output;
-            await DbRetryAsync(async () =>
+            return await DbRetryAsync(async () =>
             {
                 using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
                 await conn.OpenAsync();
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = "INSERT INTO tool_calls (session_id, agent, name, args, ok, output, ms) VALUES (@s,@a,@n,@g,@o,@u,@m)";
+                cmd.CommandText = "INSERT INTO tool_calls (session_id, agent, name, args, ok, output, ms, sub, message_id) VALUES (@s,@a,@n,@g,@o,@u,@m,@b,@d); SELECT last_insert_rowid();";
                 cmd.Parameters.AddWithValue("@s", sessionId);
                 cmd.Parameters.AddWithValue("@a", agent ?? "");
                 cmd.Parameters.AddWithValue("@n", name ?? "");
@@ -253,11 +259,56 @@ public sealed class SessionService(
                 cmd.Parameters.AddWithValue("@o", ok ? 1 : 0);
                 cmd.Parameters.AddWithValue("@u", o);
                 cmd.Parameters.AddWithValue("@m", ms);
+                cmd.Parameters.AddWithValue("@b", sub ?? "");
+                cmd.Parameters.AddWithValue("@d", (object?)messageId ?? System.DBNull.Value);
+                var id = await cmd.ExecuteScalarAsync();
+                return System.Convert.ToInt32(id);
+            });
+        }
+        catch { return 0; /* log nunca quebra o pipeline */ }
+    }
+
+    // Liga órfãs (turno sem texto / card que falhou) à mensagem final.
+    public async Task LinkToolsByIdsAsync(int sessionId, IEnumerable<int> toolIds, int messageId)
+    {
+        try
+        {
+            var ids = toolIds.Where(i => i > 0).Distinct().ToList();
+            if (ids.Count == 0) return;
+            await DbRetryAsync(async () =>
+            {
+                using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
+                await conn.OpenAsync();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"UPDATE tool_calls SET message_id=@m WHERE session_id=@s AND message_id IS NULL AND id IN ({string.Join(",", ids)})";
+                cmd.Parameters.AddWithValue("@m", messageId);
+                cmd.Parameters.AddWithValue("@s", sessionId);
                 await cmd.ExecuteNonQueryAsync();
                 return 0;
             });
         }
-        catch { /* log nunca quebra o pipeline */ }
+        catch { /* best-effort */ }
+    }
+
+    // Liga as tools internas do sub (gravadas sem message_id) ao card dele.
+    public async Task LinkSubToolsAsync(int sessionId, string sub, int messageId)
+    {
+        try
+        {
+            await DbRetryAsync(async () =>
+            {
+                using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
+                await conn.OpenAsync();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "UPDATE tool_calls SET message_id=@m WHERE session_id=@s AND sub=@b AND message_id IS NULL";
+                cmd.Parameters.AddWithValue("@m", messageId);
+                cmd.Parameters.AddWithValue("@s", sessionId);
+                cmd.Parameters.AddWithValue("@b", sub ?? "");
+                await cmd.ExecuteNonQueryAsync();
+                return 0;
+            });
+        }
+        catch { /* best-effort */ }
     }
 
     public async Task<List<ToolCall>> GetToolCallsAsync(int sessionId, int limit = 200)
@@ -268,7 +319,7 @@ public sealed class SessionService(
             using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
             await conn.OpenAsync();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT id, session_id, agent, name, args, ok, output, ms, created_at FROM tool_calls WHERE session_id=@s ORDER BY id LIMIT @l";
+            cmd.CommandText = "SELECT id, session_id, agent, name, args, ok, output, ms, message_id, sub, created_at FROM tool_calls WHERE session_id=@s ORDER BY id LIMIT @l";
             cmd.Parameters.AddWithValue("@s", sessionId);
             cmd.Parameters.AddWithValue("@l", Math.Max(1, limit));
             using var r = await cmd.ExecuteReaderAsync();
@@ -284,6 +335,8 @@ public sealed class SessionService(
                     Ok = !r.IsDBNull(5) && r.GetInt32(5) != 0,
                     Output = r.IsDBNull(6) ? "" : r.GetString(6),
                     Ms = r.IsDBNull(7) ? 0 : r.GetInt64(7),
+                    MessageId = r.IsDBNull(8) ? null : r.GetInt32(8),
+                    Sub = r.IsDBNull(9) ? "" : r.GetString(9),
                 });
             }
             return 0;
