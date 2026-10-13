@@ -1,5 +1,10 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Web — combo de executor segue a permissão (2026-10-13)
+- Orquestrador sem `subagent` no harness: combo de executor vem sem seleção e inativa
+  (`data-tools` nas options + `applyExecutorAvailability`; limpa e zera na sessão via PUT);
+  backend não auto-atribui executor sem permissão (`Allowed(agent,"subagent")` no Create).
+
 ## Web — sem orquestrador, executor via harness + ETA nos scripts (2026-10-13)
 - Removido `OrchestrationService`/`IOrchestrationService` (778 linhas mortas, sem DI nem chamada;
   lições de refinamento junto); `ExecutorTps` separado (sondado vence; CPU 3 t/s, GPU 20 t/s);

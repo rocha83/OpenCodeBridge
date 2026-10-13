@@ -92,7 +92,8 @@ public sealed class ChatController(
         var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.AgentId);
         if (agent is null || !agent.Active) return BadRequest("Agente inválido");
         int? execId = req.ExecutorAgentId;
-        if (!execId.HasValue)
+        // Sem permissão de delegar, sem executor automático.
+        if (!execId.HasValue && ToolDefinitions.Allowed(agent, "subagent"))
         {
             // Padrão (Orch = Plan + Build-Exec): executor Build-Exec, senão o 4B,
             // sempre diferente do orquestrador.

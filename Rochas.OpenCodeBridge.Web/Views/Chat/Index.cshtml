@@ -40,7 +40,7 @@
           <select id="agentId" class="form-select form-select-sm" title="Orquestrador">
             @foreach (var a in agents)
             {
-              <option value="@a.Id" data-mode="@(string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode)">@a.Name — @a.Model</option>
+              <option value="@a.Id" data-mode="@(string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode)" data-tools="@(a.Tools ?? "")">@a.Name — @a.Model</option>
             }
           </select>
           <select id="executorId" class="form-select form-select-sm mt-2" title="Executor (opcional)">
@@ -511,7 +511,7 @@ async function selectSession(id, agentId, executorAgentId) {
   currentAgentId = agentId;
   agentSel.value = agentId;
   currentExecutorId = executorAgentId ?? null;
-  filterExecutors();
+  applyExecutorAvailability();
   execSel.value = currentExecutorId ?? '';
   await loadMessages(id);
   await loadSessions();
@@ -825,7 +825,7 @@ async function createSession() {
   currentAgentId = s.agentId;
   agentSel.value = s.agentId;
   currentExecutorId = s.executorAgentId ?? null;
-  filterExecutors();
+  applyExecutorAvailability();
   execSel.value = currentExecutorId ?? '';
   await loadSessions();
   conv.innerHTML = '';
@@ -933,6 +933,30 @@ function orchMode() {
 function filterExecutors() {
   [...execSel.options].forEach(o => { if (o.value) o.hidden = false; });
   execSel.disabled = ![...execSel.options].some(o => o.value);
+}
+
+// Orquestrador sem permissão de subagent: combo de executor vem sem seleção e inativa.
+function orchestratorCanDelegate() {
+  try {
+    const o = agentSel.selectedOptions && agentSel.selectedOptions[0];
+    const csv = (o && o.dataset.tools) || '';
+    return csv.split(',').map(s => s.trim().toLowerCase()).includes('subagent');
+  } catch { return false; }
+}
+async function applyExecutorAvailability() {
+  applyExecutorAvailability();
+  if (orchestratorCanDelegate()) return;
+  execSel.value = '';
+  execSel.disabled = true;
+  currentExecutorId = null;
+  if (currentSessionId) {
+    try {
+      await fetch(`/Chat/Sessions/${currentSessionId}/Executor`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ executorAgentId: null })
+      });
+    } catch {}
+  }
 }
 
 execSel.onchange = async () => {
