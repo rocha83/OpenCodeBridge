@@ -35,7 +35,7 @@ public sealed class OrchestrationService(
     // domínio e EXPANDE o cognitivo ao segmentar — colabora nos dois lados
     // (decompor e depois refinar/sintetizar), sem depender do humano no meio.
     private const string DecomposeSystem =
-        "Você é o orquestrador (modelo 8B supervisor). Decomponha o pedido: ele chega " +
+        "Você é o orquestrador (modelo 9B supervisor). Decomponha o pedido: ele chega " +
         "SUCINTO pela interface do opencodebridge; seu papel é ALONGAR o descritivo com " +
         "entendimento do domínio e das regras de negócio, e SUBDIVIDIR em subtarefas ATÔMICAS " +
         "(1 ação verificável cada: 'crie a classe X com propósito Y', 'compile o " +
@@ -327,8 +327,8 @@ public sealed class OrchestrationService(
 
     private sealed record AgentPair(Agent Orch, Agent Exec);
 
-    // Modo plan: temperatura 0.4 nos modelos (leitura/navegação, sem pressa criativa).
-    private static double PlanTemp(Agent a) => a.Mode == "plan" ? 0.4 : a.Temperature;
+    // Modo plan: temperatura 0.6 (expansão/decomposição); build usa a do agente (0.4).
+    private static double PlanTemp(Agent a) => a.Mode == "plan" ? 0.6 : a.Temperature;
 
     // Julgamento: temperatura baixa (~0.1) para obedecer ao JSON sem divagar.
     // Decompose/planejamento é criativo (0.4); revisão é determinística.
@@ -358,7 +358,8 @@ public sealed class OrchestrationService(
     private static bool IsCpuExecutor(Agent exec) =>
         (exec.BridgeUrl ?? "").Contains(":4125") ||
         (exec.BridgeUrl ?? "").Contains("llama", StringComparison.OrdinalIgnoreCase) ||
-        (exec.Model ?? "").Contains("cpu", StringComparison.OrdinalIgnoreCase);
+        (exec.Model ?? "").Contains("cpu", StringComparison.OrdinalIgnoreCase) ||
+        (exec.Model ?? "").Contains("4b", StringComparison.OrdinalIgnoreCase);
 
     private static string DivisionText(List<SubTask> tasks, double tps)
     {

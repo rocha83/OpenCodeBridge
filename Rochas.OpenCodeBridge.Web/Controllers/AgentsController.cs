@@ -12,7 +12,7 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
     public async Task<IActionResult> Index()
         => View(await agents.Query(new Agent()));
 
-    public IActionResult Create() => View(new Agent { Active = true, Temperature = 0.2, Thinking = "events" });
+    public IActionResult Create() => View(new Agent { Active = true, Model = "qwen3.5-9b", BridgeUrl = "http://127.0.0.1:4124", Temperature = 0.4, Thinking = "events" });
 
     [HttpPost]
     public async Task<IActionResult> Create(Agent form)

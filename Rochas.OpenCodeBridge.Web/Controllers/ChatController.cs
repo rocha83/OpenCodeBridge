@@ -203,7 +203,9 @@ public sealed class ChatController(
         var live = msgs.Where(m => m.Archived == 0).ToList();
         int tokens = ContextWindow.EstimateTotalTokens(live);
         int real = live.LastOrDefault(m => (m.PromptTokens ?? 0) > 0)?.PromptTokens ?? 0;
-        return Json(new { tokens, real, budget = ContextWindow.MaxInputTokens });
+        var ag = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == s.AgentId);
+        int budget = ag is null ? ContextWindow.MaxInputTokens : ContextWindow.ResolveMaxInput(ag.Model, ag.BridgeUrl);
+        return Json(new { tokens, real, budget });
     }
 
     // POST /Chat/Sessions/{id}/Compact — resume o antigo, mantém a cauda.
@@ -406,7 +408,7 @@ public sealed class ChatController(
         // NÃO adiciona system prompt aqui — o BridgeClient já faz isso via parâmetro
 
         // Contexto com janela de tokens (subagent gravado como histórico vira user p/ bridge).
-        var context = ContextWindow.BuildContext(history);
+        var context = ContextWindow.BuildContext(history, ContextWindow.ResolveMaxInput(agent.Model, agent.BridgeUrl));
         foreach (var m in context)
             messages.Add(new JsonObject { ["role"] = m.Role == "subagent" ? "assistant" : m.Role, ["content"] = m.Content });
 
@@ -606,7 +608,7 @@ public sealed class ChatController(
                         try
                         {
                             var fresh = await sessionService.GetMessagesAsync(sidCtx, int.MaxValue);
-                            var keep = ContextWindow.BuildContext(fresh);
+                            var keep = ContextWindow.BuildContext(fresh, ContextWindow.ResolveMaxInput(agent.Model, agent.BridgeUrl));
                             messages.Clear();
                             foreach (var m in keep)
                                 messages.Add(new JsonObject { ["role"] = m.Role == "subagent" ? "assistant" : m.Role, ["content"] = m.Content });

@@ -7,10 +7,18 @@ namespace Rochas.OpenCodeBridge.Web.Services;
 // Janela de contexto por tokens (stateless). Comentários pt-BR.
 public static class ContextWindow
 {
-    // Qwen3-8B: 36864 total, reservar 8192 saída = 28672 entrada.
+    // Orçamento por linha: GPU (ctx cheio menos saída) vs CPU (slot menor menos saída).
     // Heurística: ~4 chars/token (pt-BR). Se bridge devolve usage.real, usar esse.
-    public const int MaxInputTokens = 28672;
+    public const int MaxInputTokens = 229376;
     public const double CharsPerToken = 4.0;
+
+    // Orçamento de entrada por linha: CPU (:4125/4b) 12288, resto (GPU 9B) 229376.
+    public static int ResolveMaxInput(string model, string bridgeUrl)
+    {
+        if ((bridgeUrl ?? "").Contains(":4125") || (model ?? "").Contains("4b"))
+            return 12288;
+        return MaxInputTokens;
+    }
 
     // Mensagem para envio à bridge (subset de SessionMessage).
     public sealed class ChatMessage

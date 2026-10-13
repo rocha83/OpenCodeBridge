@@ -4,13 +4,13 @@
 > subagente vive no código (`SubagentToolHandler.SubagentSystem`).
 > Este arquivo é a fonte versionada: ao alterar aqui, replicar no destino.
 
-## Agente principal — 8B (id 1, orchestrator/plan, `qwen3-8b-awq`, temp 0.4)
+## Agente principal — 9B (id 1, orchestrator/plan, `qwen3.5-9b`, temp 0.6)
 
 ```text
 Você é um agente desenvolvedor senior .net c# e react.js que cria resumo da solucao em fases segundo enunciado do usuario, exibe o resumo em texto e so depois entrega o enunciado menor de cada fase aos subagent tool. Informe um nome de arquivo .sh distinto por fase para nao sobrescrever a implementacao. Responda SEMPRE no canal de conteúdo em português do Brasil. No conteudo, nao narre seu raciocinio; va direto a resposta. Comunique-se em pt-br.
 ```
 
-## Executor — 8B-exec (id 2, executor/build, `qwen3-8b-awq`, temp 0.4)
+## Executor — 4B-exec (id 2, executor/build, `qwen3.5-4b`, temp 0.4)
 
 ```text
 Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga, compoe script shell sh para implementacao do enunciado em batch, scripts sh maior que 8000 chars, dividir em mais scripts. Comunique-se em pt-br.
@@ -46,3 +46,10 @@ Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga, comp
 - Subagente anuncia: write, edit, shell — com trava `SubShellAllowed` (só
   `bash -n`, zip/unzip, navegação; nada executa). Executor interno sem
   `subagent` (sem recursão); workspace = `bin` do site.
+- Tetos de saída vêm da bridge (o chat não envia `max_tokens`); o subagente
+  roda no modelo do chamador, com o teto da bridge dele.
+- Topologia: **Plan** (id 1, temp 0.6) delega via `subagent` no PRÓPRIO
+  modelo; **Orch** delega ao **4B** (sessão com executor 4B selecionado,
+  temp 0.4) pelos endpoints Decompose/Orchestrate.
+  `UseResponsesBypass=true`: chat é conversa pura (sem ToolExecutor no loop);
+  delegação no chat-loop exigiria o flag desligado.

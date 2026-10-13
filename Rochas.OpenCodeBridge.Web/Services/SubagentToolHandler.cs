@@ -95,7 +95,7 @@ public sealed class SubagentToolHandler : IToolHandler
         string prompt = obj["prompt"]?.GetValue<string>() ?? "";
         if (string.IsNullOrWhiteSpace(prompt)) return ToolResult.Fail("prompt é obrigatório");
         // Sem teto repassado: ignora pedido menor (o thinking come o orçamento e o texto morre).
-        // null = sem max_tokens no body; a bridge aplica o teto 8k.
+        // null = sem max_tokens no body; a bridge aplica o teto (GPU 32k, CPU 4k).
         int? maxTokens = null;
 
         if (string.IsNullOrWhiteSpace(context.BridgeUrl) || string.IsNullOrWhiteSpace(context.Model))

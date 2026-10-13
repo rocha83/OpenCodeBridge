@@ -1,5 +1,18 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Web perfil 9B/4B (2026-10-13)
+- Agentes `9B` (id 1, orchestrator/plan, `qwen3.5-9b`, temp 0.6) e `4B-exec`
+  (id 2, executor/build, `qwen3.5-4b`, temp 0.4) com os prompts deste arquivo;
+  headers atualizados (era 8B/0.4) + topologia registrada (Plan no próprio
+  modelo, Orch ao 4B).
+- `UseResponsesBypass=true` mantido: chat é conversa pura (sem ToolExecutor
+  no loop); delegação Orch→executor segue pelos endpoints Decompose/Orchestrate.
+- Orçamentos: `ContextWindow` com teto da linha GPU + `ResolveMaxInput`
+  (teto menor na linha CPU); `PlanTemp` plan 0.6 (era 0.4);
+  `DecomposeTemperature` 0.6; `CpuDefaultTps` 4.0; defaults de Create/AppDb
+  em 9B/0.4.
+- Suite web units 100/100; build Release 0/0.
+
 ## Push remaster chroot: bypass Web padrão + matriz final (2026-10-13)
 - Commit `feat(Web): bypass Responses padrao na UI + 0.2 erradicado + zero
   warnings`: flag `Orchestration:UseResponsesBypass` (default true) com turno
