@@ -6,6 +6,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Rochas.DapperRepository;
 using Rochas.Data.Specification.Enums;
 using Rochas.OpenCodeBridge.Web.Data;
@@ -34,6 +37,7 @@ internal static class ChatIntegrationTests
         Check(await AdminSeesAgentsUsersLinks(), "I-chat-admin-sees-agents-users");
         Check(await SessionsCrud(), "I-chat-sessions-crud");
         Check(await StreamSseWithSession(), "I-chat-stream-sse");
+        Check(await AbortKeepsMessageThenResume(), "I-chat-abort-resume");
         Check(await PingEngine(), "I-chat-ping-engine");
         Check(await DiagnosticsEndpoint(), "I-chat-diagnostics");
         Check(await ToolProgressEvents(), "I-chat-tool-progress");
@@ -44,7 +48,7 @@ internal static class ChatIntegrationTests
             try { await Http.DeleteAsync($"{WebBase}/Chat/Sessions/{sid}"); } catch { }
         }
 
-        Console.WriteLine($"=== Chat Integration: {16 - Failures}/16 PASS, {Failures} FAIL ===");
+        Console.WriteLine($"=== Chat Integration: {8 - Failures}/8 PASS, {Failures} FAIL ===");
     }
 
     private static void Check(bool ok, string name)
@@ -57,7 +61,7 @@ internal static class ChatIntegrationTests
     {
         // Bateria isolada no usuário de teste (nunca polui as sessões do admin na UI).
         var resp = await Http.PostAsync($"{WebBase}/Account/Login",
-            new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("email", "teste@e2e.local"), new KeyValuePair<string, string>("password", "x") }));
+            new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("email", "teste@e2e.local"), new KeyValuePair<string, string>("password", "Teste@123") }));
         return resp.StatusCode == HttpStatusCode.Redirect;
     }
 
@@ -73,7 +77,7 @@ internal static class ChatIntegrationTests
         // Links de admin exigem o admin de verdade (bateria roda no usuário de teste).
         using var admin = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, CookieContainer = new CookieContainer() });
         var login = await admin.PostAsync($"{WebBase}/Account/Login",
-            new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("email", "admin@mova.com"), new KeyValuePair<string, string>("password", "x") }));
+            new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("email", "admin@bridge.pcss.com.br"), new KeyValuePair<string, string>("password", "123") }));
         if (login.StatusCode != HttpStatusCode.Redirect) return false;
         var html = await admin.GetStringAsync($"{WebBase}/Chat");
         return html.Contains("/Agents") && html.Contains("/Users");
@@ -160,6 +164,56 @@ internal static class ChatIntegrationTests
         var assistantMsg = msgResp?.Any(x => x?["role"]?.GetValue<string>() == "assistant") == true;
 
         return gotReasoning && gotContent && gotDone && userMsg && assistantMsg;
+    }
+
+    private static async Task<bool> AbortKeepsMessageThenResume()
+    {
+        // 1) Mensagem garantida sem resposta: stream abortado no início.
+        var createResp = await Http.PostAsJsonAsync($"{WebBase}/Chat/Sessions", new { agentId = 1, title = "Resume Test" });
+        if (!createResp.IsSuccessStatusCode) return false;
+        var session = await createResp.Content.ReadFromJsonAsync<JsonObject>();
+        var id = session?["id"]?.GetValue<int>();
+        if (id == null || id <= 0) return false;
+        CreatedSessions.Add(id.Value);
+
+        using (var cts = new CancellationTokenSource())
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{WebBase}/Chat/Stream");
+            req.Content = JsonContent.Create(new { sessionId = id, agentId = 1, messages = new[] { new { role = "user", content = "ping resume" } } });
+            cts.CancelAfter(TimeSpan.FromSeconds(2));
+            try { using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token); } catch { }
+        }
+        await Task.Delay(1500);
+        var mid = await Http.GetFromJsonAsync<JsonArray>($"{WebBase}/Chat/Sessions/{id}/Messages");
+        if (mid == null) return false;
+        var userRows = mid.Where(x => x?["role"]?.GetValue<string>() == "user").ToList();
+        // Pergunta persistida e marcada Enviada, sem duplicação; última é user ou parcial.
+        if (userRows.Count != 1 || userRows[0]?["content"]?.GetValue<string>() != "ping resume") return false;
+        if (userRows[0]?["status"]?.GetValue<string>() != "Enviada") return false;
+        var lastRole = mid.LastOrDefault()?["role"]?.GetValue<string>();
+        if (lastRole != "user" && lastRole != "assistant") return false;
+
+        // 2) Retomada: stream completo continua do histórico.
+        using (var req2 = new HttpRequestMessage(HttpMethod.Post, $"{WebBase}/Chat/Stream"))
+        {
+            req2.Content = JsonContent.Create(new { sessionId = id, agentId = 1, messages = new[] { new { role = "user", content = "continue" } } });
+            using var resp2 = await Http.SendAsync(req2, HttpCompletionOption.ResponseHeadersRead);
+            if (!resp2.IsSuccessStatusCode) return false;
+            using var stream = await resp2.Content.ReadAsStreamAsync();
+            using var reader = new System.IO.StreamReader(stream);
+            string? line; bool done = false;
+            while ((line = await reader.ReadLineAsync()) != null)
+                if (line.Trim() == "data: [DONE]") { done = true; break; }
+            if (!done) return false;
+        }
+        var fin = await Http.GetFromJsonAsync<JsonArray>($"{WebBase}/Chat/Sessions/{id}/Messages");
+        if (fin == null) return false;
+        // Sem duplicação da pergunta; última é resposta marcada Respondida; tudo com status.
+        if (fin.Count(x => x?["role"]?.GetValue<string>() == "user") != 2) return false;
+        var flast = fin.LastOrDefault();
+        if (flast?["role"]?.GetValue<string>() != "assistant") return false;
+        if (flast?["status"]?.GetValue<string>() != "Respondida") return false;
+        return fin.All(x => !string.IsNullOrEmpty(x?["status"]?.GetValue<string>()));
     }
 
     private static async Task<bool> PingEngine()

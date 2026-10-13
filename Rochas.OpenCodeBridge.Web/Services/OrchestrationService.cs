@@ -407,7 +407,8 @@ public sealed class OrchestrationService(
             string d = (detail ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
             await lessonWrite.Add(new RefinementLesson
             {
-                SessionId = sessionId, TaskIndex = taskIndex, Kind = kind, Detail = d
+                SessionId = sessionId, TaskIndex = taskIndex, Kind = kind, Detail = d,
+                CreatedAt = DateTime.UtcNow
             });
         }
         catch { /* lição é acessória: nunca quebra o pipeline */ }

@@ -28,8 +28,9 @@ public sealed class WriteToolHandler : IToolHandler
         {
             string? dir = Path.GetDirectoryName(full);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            bool existed = File.Exists(full);
             File.WriteAllText(full, content);
-            return ToolResult.Ok($"escrito {content.Length} chars em '{path}'");
+            return ToolResult.Ok($"{(existed ? "atualizado" : "criado")} {content.Length} chars em '{path}'");
         }
         catch (Exception ex)
         {

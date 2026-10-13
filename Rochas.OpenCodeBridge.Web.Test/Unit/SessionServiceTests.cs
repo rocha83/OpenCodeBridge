@@ -53,11 +53,12 @@ internal static class SessionServiceTests
             await GetMessagesAsync(svc, testUserId, testAgentId);
             await AddMessageAsync(svc, testUserId, testAgentId);
             await CountMessagesAsync(svc, testUserId, testAgentId);
+            await MessageStatusAsync(svc, testUserId, testAgentId);
             await TouchAsync(svc, testUserId, testAgentId);
             await ToolCallAsync(svc, testUserId, testAgentId);
             await HistoryTreeAsync(svc, testUserId, testAgentId);
 
-            System.Console.WriteLine($"=== SessionService Unit: {12 - Failures}/12 PASS, {Failures} FAIL ===");
+            System.Console.WriteLine($"=== SessionService Unit: {13 - Failures}/13 PASS, {Failures} FAIL ===");
         }
         finally
         {
@@ -159,6 +160,31 @@ internal static class SessionServiceTests
             await s.AddMessageAsync(id, "user", "teste", "", null, null);
             var count = await s.CountMessagesAsync(id);
             Check(count == 1, "AddMessageAsync increments count");
+        }
+    }
+
+    private static async Task MessageStatusAsync(SessionService s, int userId, int agentId)
+    {
+        // Mapeamento puro (tabela message_statuses + fallback).
+        Check(SessionService.MessageStatus(1, "assistant", 0) == "Enviada", "status id 1");
+        Check(SessionService.MessageStatus(2, "user", 0) == "Respondida", "status id 2");
+        Check(SessionService.MessageStatus(3, "user", 0) == "Arquivada", "status id 3");
+        Check(SessionService.MessageStatus(null, "user", 0) == "Enviada", "status nulo user");
+        Check(SessionService.MessageStatus(null, "assistant", 0) == "Respondida", "status nulo assistant");
+        Check(SessionService.MessageStatus(null, "subagent", 0) == "Respondida", "status nulo subagent");
+        Check(SessionService.MessageStatus(null, "assistant", 1) == "Arquivada", "status nulo arquivado");
+        // Default no INSERT por papel + explícito.
+        var session = await s.CreateAsync(userId, agentId, "Status Test");
+        if (session.Id is int id)
+        {
+            await s.AddMessageAsync(id, "user", "oi", "", null, null);
+            await s.AddMessageAsync(id, "assistant", "olá", "", null, null);
+            await s.AddMessageAsync(id, "assistant", "velha", "", null, null, null, null, 3);
+            var msgs = await s.GetMessagesAsync(id, 10);
+            Check(msgs.Count == 3, "status 3 mensagens");
+            Check(msgs[0].StatusId == 1, "status user=Enviada");
+            Check(msgs[1].StatusId == 2, "status assistant=Respondida");
+            Check(msgs[2].StatusId == 3, "status explícito Arquivada");
         }
     }
 

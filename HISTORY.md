@@ -1,5 +1,21 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Web — status da mensagem + retomada automática (2026-10-13)
+- Tabela `message_statuses` (1 Enviada, 2 Respondida, 3 Arquivada) + `session_messages.status_id`
+  com FK; migração com backfill (`archived→3, user→1, demais→2`); `AddMessageAsync` carimba
+  (default pelo papel, explícito opcional); `CompactAsync` grava 3 nas arquivadas e 2 no resumo.
+- Causa raiz do "sumia tudo": `CreatedAt = DateTime.UtcNow` nos models envenenava os filtros
+  (`WHERE created_at = agora` → zero linhas); removido de `SessionMessage/ToolCall/RefinementLesson`
+  (convenção sgev3/mova), `RecordLessonAsync` carimba explícito. `Remove` do compact voltou a funcionar.
+- Rodapé da bolha: status à esquerda (Enviada/Respondida/Arquivada), data/duração/t-s à direita.
+- Sem rascunho entre sessões (caixa limpa ao trocar); sem botão Retomar: continuação é automática
+  pelo histórico não-arquivado (contexto exclui `archived`, thinking nunca reentra).
+- Testes: unit `MessageStatus` 13/13; integração `I-chat-abort-resume` (aborto→Enviada sem resposta,
+  resume→Respondida sem duplicar) 8/8; senha E2E do teste alinhada ao seed (`Teste@123`).
+- Quadro "Mudanças" acima de Scripts (write/edit ok, badge novo/editado) + modal com CodeMirror 5
+  vendored (10 linguagens, 5 temas) e diff lado a lado via diff2html do `git diff`; painel Scripts
+  na mesma fonte; zip vazio dá 404; write distingue criado/atualizado (só criado lista).
+
 ## Bridge — bind externo padrão 0.0.0.0 + fluxo de credenciais (2026-10-13)
 - Default de escuta no código: `Listen = "0.0.0.0"` (`Rochas.OpenCodeBridge/Program.cs`).
   Units systemd (`bridge-gpu` :4124, `bridge-cpu` :4125) já passavam `--listen 0.0.0.0`

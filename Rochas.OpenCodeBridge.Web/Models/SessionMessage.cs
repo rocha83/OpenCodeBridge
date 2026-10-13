@@ -37,7 +37,10 @@ public sealed class SessionMessage
     public double? Tps { get; set; }
 
     [Column("created_at")]
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; }
+    // Status: 1 Enviada (user), 2 Respondida (assistant/subagent), 3 Arquivada (compactação).
+    [Column("status_id")]
+    public int? StatusId { get; set; }
     // Compactação: 1 = passado (fora do contexto, visível no histórico).
     public int Archived { get; set; } = 0;
 }

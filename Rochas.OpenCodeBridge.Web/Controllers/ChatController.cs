@@ -92,6 +92,16 @@ public sealed class ChatController(
         var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.AgentId);
         if (agent is null || !agent.Active) return BadRequest("Agente inválido");
         int? execId = req.ExecutorAgentId;
+        if (!execId.HasValue)
+        {
+            // Padrão (Orch = Plan + Build-Exec): executor Build-Exec, senão o 4B,
+            // sempre diferente do orquestrador.
+            var all = (await agents.Query(new Agent())).Where(a => a.Active && a.Id != req.AgentId).ToList();
+            execId = all.Where(a => (a.Name ?? "").Contains("build-exec", StringComparison.OrdinalIgnoreCase))
+                .Select(a => a.Id).FirstOrDefault()
+                ?? all.Where(a => (a.Model ?? "").Contains("4b", StringComparison.OrdinalIgnoreCase))
+                .Select(a => a.Id).FirstOrDefault();
+        }
         if (execId.HasValue)
         {
             if (execId.Value == req.AgentId) return BadRequest("Executor deve diferir do orquestrador");
@@ -118,7 +128,7 @@ public sealed class ChatController(
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
         var msgs = await sessionService.GetMessagesAsync(id, limit);
-        return Json(msgs.Select(m => new { m.Id, m.Role, m.Content, m.Thinking, m.PromptTokens, m.CompletionTokens, m.ElapsedMs, m.Tps, CreatedAt = Utc(m.CreatedAt) }));
+        return Json(msgs.Select(m => new { m.Id, m.Role, m.Content, m.Thinking, m.PromptTokens, m.CompletionTokens, m.ElapsedMs, m.Tps, Status = Services.SessionService.MessageStatus(m.StatusId, m.Role ?? "", m.Archived), CreatedAt = Utc(m.CreatedAt) }));
     }
 
     // GET /Chat/Sessions/{id}/ToolCalls - trilha de tools p/ avaliação posterior.
@@ -158,7 +168,19 @@ public sealed class ChatController(
         if (s is null) return NotFound();
         var files = await CollectSessionScriptsAsync(id);
         var zip = await sessionService.GetArtifactAsync(id, "scripts.zip");
-        object? zipInfo = zip is null ? null : new { name = "scripts.zip", size = fmtSize(zip.Value.B64.Length * 3 / 4) };
+        // Zip vazio (0 entradas, legado do scraper antigo) não é oferecido.
+        object? zipInfo = null;
+        if (zip is not null && !string.IsNullOrEmpty(zip.Value.B64))
+        {
+            try
+            {
+                using var ms = new MemoryStream(Convert.FromBase64String(zip.Value.B64));
+                using var za = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Read);
+                if (za.Entries.Count > 0)
+                    zipInfo = new { name = "scripts.zip", size = fmtSize(zip.Value.B64.Length * 3 / 4) };
+            }
+            catch { }
+        }
         return Json(new { scripts = files, zip = zipInfo });
     }
 
@@ -173,6 +195,12 @@ public sealed class ChatController(
         byte[] bytes;
         try { bytes = Convert.FromBase64String(zip.Value.B64); }
         catch { return BadRequest("artefato ilegível"); }
+        try
+        {
+            using var za = new System.IO.Compression.ZipArchive(new MemoryStream(bytes, false), System.IO.Compression.ZipArchiveMode.Read);
+            if (za.Entries.Count == 0) return NotFound();
+        }
+        catch { return BadRequest("artefato ilegível"); }
         // [nome-da-sessao]-scripts-[data-hora].zip
         string slug = new string((s.Title ?? "sessao").ToLowerInvariant()
             .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray());
@@ -184,6 +212,149 @@ public sealed class ChatController(
         return File(bytes, string.IsNullOrEmpty(zip.Value.Mime) ? "application/zip" : zip.Value.Mime, fname);
     }
 
+    // ---- Arquivos Alterados (painel + modal com edição e diff) ----
+
+    private static string WorkspaceRoot => AppContext.BaseDirectory;
+
+    private static string? ToolPath(System.Text.Json.Nodes.JsonNode? args)
+    {
+        try
+        {
+            var f = args?["path"]?.GetValue<string>()?.Trim().Trim('"', '\'');
+            return string.IsNullOrWhiteSpace(f) ? null : f;
+        }
+        catch { return null; }
+    }
+
+    // GET /Chat/Sessions/{id}/ChangedFiles - todo arquivo tocado por write/edit
+    // ok na sessão (mais recente primeiro), p/ o painel lateral.
+    [HttpGet("/Chat/Sessions/{id:int}/ChangedFiles")]
+    public async Task<IActionResult> GetChangedFiles(int id)
+    {
+        var s = await sessionService.GetAsync(id, CurrentUserId);
+        if (s is null) return NotFound();
+        var calls = await sessionService.GetToolCallsAsync(id, 500);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var list = new List<object>();
+        foreach (var c in calls.OrderByDescending(t => t.Id ?? 0))
+        {
+            if (!c.Ok) continue;
+            if (!string.Equals(c.Name, "write", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(c.Name, "edit", StringComparison.OrdinalIgnoreCase)) continue;
+            string? f;
+            try { f = ToolPath(System.Text.Json.Nodes.JsonNode.Parse(c.Args ?? "")?.AsObject()); }
+            catch { continue; }
+            if (string.IsNullOrWhiteSpace(f) || !seen.Add(f)) continue;
+            bool exists = false; long size = 0; string? modified = null;
+            if (Services.WorkspaceGuard.TryResolve(WorkspaceRoot, f, out string full, out _))
+            {
+                try
+                {
+                    var fi = new System.IO.FileInfo(full);
+                    exists = fi.Exists;
+                    if (exists) { size = fi.Length; modified = fi.LastWriteTimeUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"); }
+                }
+                catch { }
+            }
+            string kind = (c.Output ?? "").Contains("criado") ? "novo" : "editado";
+            list.Add(new { path = f, exists, size, modified, kind });
+        }
+        return Json(list);
+    }
+
+    // GET /Chat/Sessions/{id}/File?path=... - conteúdo p/ o modal (teto 1MB, sem binário).
+    [HttpGet("/Chat/Sessions/{id:int}/File")]
+    public async Task<IActionResult> GetSessionFile(int id, [FromQuery] string path)
+    {
+        var s = await sessionService.GetAsync(id, CurrentUserId);
+        if (s is null) return NotFound();
+        if (!Services.WorkspaceGuard.TryResolve(WorkspaceRoot, path ?? "", out string full, out string why))
+            return BadRequest(why);
+        System.IO.FileInfo fi;
+        try { fi = new System.IO.FileInfo(full); } catch { return BadRequest("caminho inválido"); }
+        if (!fi.Exists) return NotFound();
+        if (fi.Length > 1_000_000) return StatusCode(413, "arquivo grande demais p/ o modal (teto 1MB)");
+        byte[] bytes;
+        try { bytes = await System.IO.File.ReadAllBytesAsync(full); }
+        catch { return BadRequest("falha ao ler"); }
+        if (bytes.Contains((byte)0)) return StatusCode(415, "binário não suportado no modal");
+        return Json(new { path, content = System.Text.Encoding.UTF8.GetString(bytes), size = bytes.Length, modified = fi.LastWriteTimeUtc.ToString("yyyy-MM-ddTHH:mm:ssZ") });
+    }
+
+    public sealed class SaveFileRequest
+    {
+        public string Path { get; set; } = "";
+        public string Content { get; set; } = "";
+    }
+
+    // POST /Chat/Sessions/{id}/File - salva edição do modal (guard de workspace, teto 1MB).
+    [HttpPost("/Chat/Sessions/{id:int}/File")]
+    public async Task<IActionResult> SaveSessionFile(int id, [FromBody] SaveFileRequest req)
+    {
+        var s = await sessionService.GetAsync(id, CurrentUserId);
+        if (s is null) return NotFound();
+        if (!Services.WorkspaceGuard.TryResolve(WorkspaceRoot, req?.Path ?? "", out string full, out string why))
+            return BadRequest(why);
+        string content = req?.Content ?? "";
+        if (content.Length > 1_000_000) return StatusCode(413, "conteúdo grande demais (teto 1MB)");
+        try
+        {
+            string? dir = System.IO.Path.GetDirectoryName(full);
+            if (!string.IsNullOrEmpty(dir)) System.IO.Directory.CreateDirectory(dir);
+            await System.IO.File.WriteAllTextAsync(full, content);
+        }
+        catch (Exception ex) { return BadRequest($"falha ao salvar: {ex.Message.Split('\n')[0]}"); }
+        if (s.Id.HasValue)
+        {
+            await sessionService.LogToolAsync(s.Id.Value, "modal", "write",
+                new System.Text.Json.Nodes.JsonObject { ["path"] = req!.Path }.ToJsonString(),
+                true, $"atualizado via modal {content.Length} chars em '{req.Path}'", 0);
+            await sessionService.TouchAsync(s.Id.Value);
+        }
+        return Json(new { ok = true });
+    }
+
+    // GET /Chat/Sessions/{id}/FileDiff?path=... - git diff do arquivo (lado a lado no front).
+    [HttpGet("/Chat/Sessions/{id:int}/FileDiff")]
+    public async Task<IActionResult> GetSessionFileDiff(int id, [FromQuery] string path)
+    {
+        var s = await sessionService.GetAsync(id, CurrentUserId);
+        if (s is null) return NotFound();
+        if (!Services.WorkspaceGuard.TryResolve(WorkspaceRoot, path ?? "", out string full, out string why))
+            return BadRequest(why);
+        if (!System.IO.File.Exists(full)) return NotFound();
+        string dir = System.IO.Path.GetDirectoryName(full) ?? WorkspaceRoot;
+        string top;
+        try
+        {
+            var rp = Services.ProcessRunner.Run("git", new[] { "rev-parse", "--show-toplevel" }, dir, 15);
+            if (!rp.Success) return Json(new { diff = (string?)null, message = "fora de repo git: diff indisponível" });
+            top = (rp.Output ?? "").Trim();
+        }
+        catch (Exception ex) { return Json(new { diff = (string?)null, message = $"git indisponível: {ex.Message.Split('\n')[0]}" }); }
+        string rel = System.IO.Path.GetRelativePath(top, full);
+        string diff;
+        try
+        {
+            var d = Services.ProcessRunner.Run("git", new[] { "diff", "--no-color", "--", rel }, top, 15);
+            diff = d.Success ? (d.Output ?? "") : "";
+            if (string.IsNullOrWhiteSpace(diff))
+            {
+                // Untracked: --no-index sai 1 quando HÁ diferenças (é o normal
+                // aqui) e o Fail esvazia Output — o diff vem em "exit 1: ...".
+                var u = Services.ProcessRunner.Run("git", new[] { "diff", "--no-color", "--no-index", "/dev/null", full }, top, 15);
+                string uout = u.Output ?? "";
+                if (string.IsNullOrWhiteSpace(uout) && (u.Error ?? "").StartsWith("exit 1", StringComparison.Ordinal))
+                    uout = u.Error!.Substring(u.Error.IndexOf(": ", StringComparison.Ordinal) + 2).Replace("\n[stderr]\n", "\n");
+                diff = uout;
+            }
+        }
+        catch (Exception ex) { return Json(new { diff = (string?)null, message = $"falha no git diff: {ex.Message.Split('\n')[0]}" }); }
+        if (diff.Length > 200_000) diff = diff[..200_000] + "\n[...cortado: diff > 200KB]";
+        if (string.IsNullOrWhiteSpace(diff)) return Json(new { diff = (string?)null, message = "sem diferenças no git" });
+        return Json(new { diff });
+    }
+
     private static string fmtSize(long bytes) =>
         bytes >= 1048576 ? $"{bytes / 1048576.0:0.#} MB" : bytes >= 1024 ? $"{bytes / 1024.0:0.#} KB" : $"{bytes} B";
 
@@ -191,31 +362,46 @@ public sealed class ChatController(
     {
         var calls = await sessionService.GetToolCallsAsync(sessionId, 500);
         var files = new List<string>();
-        void Add(string? f)
-        {
-            if (string.IsNullOrWhiteSpace(f)) return;
-            f = f.Trim().Trim('"', '\'');
-            if (f.EndsWith(".sh", StringComparison.OrdinalIgnoreCase)
-                && !files.Contains(f)) files.Add(f);
-        }
+        // Só .sh CRIADO na sessão (write ok com "criado"): write com falha,
+        // overwrite de preexistente ("atualizado"), menções em outputs (ls/grep)
+        // ou comandos (bash -n) não entram — aquilo listava .sh da raiz do
+        // projeto como se fossem da sessão.
         foreach (var c in calls)
         {
             try
             {
+                if (!c.Ok) continue;
+                if (!string.Equals(c.Name, "write", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!(c.Output ?? "").Contains("criado")) continue;
                 var args = System.Text.Json.Nodes.JsonNode.Parse(c.Args ?? "")?.AsObject();
-                Add(args?["path"]?.GetValue<string>());
-                var cmd = args?["command"]?.GetValue<string>() ?? "";
-                foreach (System.Text.RegularExpressions.Match m in
-                    System.Text.RegularExpressions.Regex.Matches(cmd, @"[\w\-.]+/[ \w\-./]*\.sh|[\w\-.]+\.sh"))
-                    Add(m.Value);
+                string? f = args?["path"]?.GetValue<string>()?.Trim().Trim('"', '\'');
+                if (!string.IsNullOrWhiteSpace(f) && f.EndsWith(".sh", StringComparison.OrdinalIgnoreCase)
+                    && !files.Contains(f)) files.Add(f);
             }
             catch { }
-            if (c.Output is string o)
-                foreach (System.Text.RegularExpressions.Match m in
-                    System.Text.RegularExpressions.Regex.Matches(o, @"[\w\-.]+\.sh"))
-                    Add(m.Value);
         }
         return files;
+    }
+
+    // F5/abort/Parar no meio do stream: persiste o parcial acumulado p/ a
+    // sessão não sumir do banco. Bolha marcada [interrompido]; órfãs ligadas
+    // a ela. Best-effort, nunca quebra o pipeline.
+    private async Task SavePartialAsync(Session? session, System.Text.StringBuilder content, System.Text.StringBuilder thinking, List<int> unlinkedToolIds, System.Diagnostics.Stopwatch sw)
+    {
+        try
+        {
+            if (session?.Id is not int sid) return;
+            string text = StripThinkTags(content.ToString(), thinking).Trim();
+            if (text.Length == 0 && thinking.Length == 0) return;
+            long ms = sw.ElapsedMilliseconds;
+            int msgId = await sessionService.AddMessageAsync(sid, "assistant", text + "\n\n[interrompido]", thinking.ToString(), null, null, ms, null);
+            await sessionService.TouchAsync(sid);
+            List<int> orphans;
+            lock (unlinkedToolIds) orphans = unlinkedToolIds.ToList();
+            if (orphans.Count > 0) await sessionService.LinkToolsByIdsAsync(sid, orphans, msgId);
+            await ZipSessionScriptsAsync(sid);
+        }
+        catch { }
     }
 
     // Ao fim do turno com scripts: zipa os .sh do workspace e grava em base64
@@ -228,6 +414,7 @@ public sealed class ChatController(
             if (files.Count == 0) return;
             string root = AppContext.BaseDirectory;
             using var ms = new MemoryStream();
+            int entries = 0;
             using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
             {
                 foreach (var f in files)
@@ -239,9 +426,10 @@ public sealed class ChatController(
                     using var es = entry.Open();
                     using var fs = System.IO.File.OpenRead(full);
                     await fs.CopyToAsync(es);
+                    entries++;
                 }
             }
-            if (ms.Length == 0) return;
+            if (entries == 0) return;
             await sessionService.SaveArtifactAsync(sessionId, "scripts.zip", "application/zip",
                 Convert.ToBase64String(ms.ToArray()));
         }
@@ -458,6 +646,9 @@ public sealed class ChatController(
         Session? session = null;
         List<SessionMessage> history = new();
 
+        // Retomar: mensagens em branco não entram (nem no contexto, nem no banco).
+        req.Messages = req.Messages.Where(m => !string.IsNullOrWhiteSpace(m.Content)).ToList();
+
         if (req.SessionId.HasValue)
         {
             session = await sessionService.GetAsync(req.SessionId.Value, CurrentUserId);
@@ -634,6 +825,8 @@ public sealed class ChatController(
             return dst;
         }
 
+        try
+        {
         while (!ct.IsCancellationRequested)
         {
             // Build executa todas as tools e NÃO delega subagente; plan delega e não executa escrita.
@@ -1045,6 +1238,14 @@ public sealed class ChatController(
             assistantContent.Clear();
             assistantThinking.Clear();
         }
+        }
+        catch (OperationCanceledException)
+        {
+            // F5/abort/Parar no meio do turno: persiste o parcial acumulado
+            // p/ a sessão não sumir do banco (bolha marcada [interrompido]).
+            await SavePartialAsync(session, assistantContent, assistantThinking, unlinkedToolIds, streamSw);
+            return;
+        }
 
         // Persiste resposta final do assistant se há sessão (texto real ou thinking).
         // Giro sem saída após 2 correções: nota honesta no lugar do silêncio.
@@ -1148,6 +1349,8 @@ public sealed class ChatController(
                 && m?["content"]?.GetValue<string>() is string u && u.Length > originalTask.Length)
                 originalTask = u;
 
+        try
+        {
         for (int turn = 0; turn < 5 && !ct.IsCancellationRequested; turn++)
         {
             var body = new JsonObject
@@ -1362,6 +1565,14 @@ public sealed class ChatController(
                     input.Add(sm);
                 }
             }
+        }
+        }
+        catch (OperationCanceledException)
+        {
+            // F5/abort/Parar no meio do turno: persiste o parcial acumulado
+            // p/ a sessão não sumir do banco (bolha marcada [interrompido]).
+            await SavePartialAsync(session, assistantContent, assistantThinking, unlinkedToolIds, streamSw);
+            return;
         }
 
         string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();

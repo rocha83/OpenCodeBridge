@@ -70,6 +70,18 @@
       <div class="col-md-12 col-lg-12 col-xl-3">
 
         <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="font-weight-bold text-lg-start mb-0">Mudanças</h5>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-body">
+            <ul class="list-unstyled mb-0" id="changedList">
+              <li class="small text-muted">Nenhum arquivo ainda.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
           <h5 class="font-weight-bold text-lg-start mb-0">Scripts para o Executor</h5>
         </div>
 
@@ -87,9 +99,62 @@
 
   </div>
 </section>
+<!-- Modal Arquivo (CodeMirror + diff lado a lado) -->
+<div class="modal fade" id="fileModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title mb-0 text-truncate" id="fileModalTitle" style="max-width:40%">Arquivo</h6>
+        <span id="fileModalKind" class="badge bg-info ms-2"></span>
+        <span id="cmModeLbl" class="small text-muted ms-2"></span>
+        <select id="cmTheme" class="form-select form-select-sm ms-2" style="width:auto" title="Tema do editor">
+          <option value="default">Claro</option>
+          <option value="material-darker">Material</option>
+          <option value="monokai">Monokai</option>
+          <option value="dracula">Dracula</option>
+          <option value="eclipse">Eclipse</option>
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-info ms-2" id="fileDiffBtn">Diff</button>
+        <button type="button" class="btn btn-sm btn-success ms-2" id="fileSaveBtn">Salvar</button>
+        <button type="button" class="btn-close" data-mdb-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="cmHost" style="border:1px solid #2a323d"></div>
+        <div id="diffHost" class="mt-2" style="display:none; max-height:55vh; overflow:auto;"></div>
+        <div id="fileMsg" class="small mt-2 text-muted"></div>
+      </div>
+    </div>
+  </div>
+</div>
 <!-- MDB Toast container for errors -->
 <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1080;" id="toastContainer"></div>
 @section Scripts {
+<link href="~/lib/codemirror/codemirror.css" rel="stylesheet" />
+<link href="~/lib/codemirror/theme/material-darker.css" rel="stylesheet" />
+<link href="~/lib/codemirror/theme/monokai.css" rel="stylesheet" />
+<link href="~/lib/codemirror/theme/dracula.css" rel="stylesheet" />
+<link href="~/lib/codemirror/theme/eclipse.css" rel="stylesheet" />
+<link href="~/lib/diff2html/diff2html.min.css" rel="stylesheet" />
+<link href="~/lib/diff2html/highlight-dark.min.css" rel="stylesheet" />
+<style>
+.CodeMirror { height: 55vh; font-size: 13px; }
+#diffHost .d2h-wrapper { text-align: left; }
+#diffHost .d2h-file-header { display: none; }
+</style>
+<script src="~/lib/codemirror/codemirror.js"></script>
+<script src="~/lib/codemirror/mode/meta.js"></script>
+<script src="~/lib/codemirror/mode/javascript.js"></script>
+<script src="~/lib/codemirror/mode/xml.js"></script>
+<script src="~/lib/codemirror/mode/css.js"></script>
+<script src="~/lib/codemirror/mode/htmlmixed.js"></script>
+<script src="~/lib/codemirror/mode/clike.js"></script>
+<script src="~/lib/codemirror/mode/python.js"></script>
+<script src="~/lib/codemirror/mode/shell.js"></script>
+<script src="~/lib/codemirror/mode/markdown.js"></script>
+<script src="~/lib/codemirror/mode/yaml.js"></script>
+<script src="~/lib/codemirror/mode/sql.js"></script>
+<script src="~/lib/diff2html/highlight.min.js"></script>
+<script src="~/lib/diff2html/diff2html.min.js"></script>
 <script>
 const conv = document.getElementById('conv');
 const sessionList = document.getElementById('sessionList');
@@ -410,6 +475,7 @@ function subChunk(sub, kind, text) {
 
 async function loadSessions() {
   const r = await fetch('/Chat/Sessions');
+  if (!r.ok) { location.href = '/Account/Login'; return []; }
   const list = await r.json();
   sessionList.innerHTML = '';
   list.forEach(s => {
@@ -430,7 +496,7 @@ async function loadSessions() {
     li.querySelector('.del-session').onclick = async (e) => {
       e.preventDefault(); e.stopPropagation();
       await fetch(`/Chat/Sessions/${s.id}`, { method: 'DELETE' });
-      if (currentSessionId === s.id) { currentSessionId = null; conv.innerHTML = ''; }
+      if (currentSessionId === s.id) { currentSessionId = null; conv.innerHTML = ''; try { localStorage.removeItem('bridgeSessionId'); } catch {} }
       await loadSessions();
     };
     sessionList.appendChild(li);
@@ -439,7 +505,9 @@ async function loadSessions() {
 
 async function selectSession(id, agentId, executorAgentId) {
   if (window._streamSession && window._streamSession !== id) abortActiveStream();
+  try { document.getElementById('prompt').value = ''; } catch {} // caixa é efêmera: nunca atravessa sessões
   currentSessionId = id;
+  try { localStorage.setItem('bridgeSessionId', String(id)); } catch {}
   currentAgentId = agentId;
   agentSel.value = agentId;
   currentExecutorId = executorAgentId ?? null;
@@ -449,6 +517,8 @@ async function selectSession(id, agentId, executorAgentId) {
   await loadSessions();
   checkEngine();
   updateCtxDonut();
+  loadScripts(id);
+  loadChangedFiles(id);
 }
 
 // Donut do tamanho do contexto da sessão ativa (tokens chars/4 vs orçamento).
@@ -514,10 +584,10 @@ async function loadMessages(sessionId) {
       if (role === 'assistant' && pendingThink.trim()) {
         const merged = pendingThink + ((think || '').trim() ? '\n\n' + think.trim() : '');
         pendingThink = '';
-        conv.appendChild(msgItem(role, merged, body, m?.createdAt, toolsByMsg[m?.id], m?.elapsedMs, m?.tps));
+        conv.appendChild(msgItem(role, merged, body, m?.createdAt, toolsByMsg[m?.id], m?.elapsedMs, m?.tps, m?.status));
         return;
       }
-      conv.appendChild(msgItem(role, think, body, m?.createdAt, toolsByMsg[m?.id], m?.elapsedMs, m?.tps));
+      conv.appendChild(msgItem(role, think, body, m?.createdAt, toolsByMsg[m?.id], m?.elapsedMs, m?.tps, m?.status));
     } catch (err) {
       const li = document.createElement('li');
       li.className = 'd-flex justify-content-between mb-4';
@@ -540,7 +610,7 @@ async function loadMessages(sessionId) {
       det.appendChild(p);
       last.querySelector('.card-body')?.prepend(det);
     } else {
-      conv.appendChild(msgItem('assistant', pendingThink, ''));
+      conv.appendChild(msgItem('assistant', pendingThink, '', undefined, undefined, undefined, undefined, ''));
     }
   }
   if (wasAtBottom) scrollToBottom();
@@ -553,16 +623,17 @@ async function loadScripts(sessionId) {
   if (!list) return;
   try {
     const r = await fetch(`/Chat/Sessions/${sessionId}/Scripts`);
+    if (sessionId !== currentSessionId) return; // resposta de sessão trocada: descarta
     if (!r.ok) return;
     const j = await r.json();
     if (!j.scripts || !j.scripts.length) {
-      list.innerHTML = '<li class="small text-muted script-name">Nenhum script ainda.</li>';
+      list.innerHTML = '<li class="small text-muted">Nenhum script ainda.</li>';
     } else {
       list.innerHTML = '';
       j.scripts.forEach(s => {
         const li = document.createElement('li');
         li.className = 'mb-1';
-        li.innerHTML = `<span class="badge bg-dark script-name">${esc(s)}</span>`;
+        li.innerHTML = `<span class="badge bg-dark">${esc(s)}</span>`;
         list.appendChild(li);
       });
     }
@@ -571,7 +642,7 @@ async function loadScripts(sessionId) {
       if (!zip) {
         const a = document.createElement('a');
         a.id = 'scriptZip';
-        a.className = 'small script-name';
+        a.className = 'small';
         list.parentNode.appendChild(a);
       }
       const a2 = document.getElementById('scriptZip');
@@ -580,6 +651,114 @@ async function loadScripts(sessionId) {
     } else if (zip) zip.remove();
   } catch { /* painel opcional: ignora */ }
 }
+
+// Painel lateral: arquivos alterados na sessão (write/edit ok).
+async function loadChangedFiles(sessionId) {
+  const list = document.getElementById('changedList');
+  if (!list) return;
+  try {
+    const r = await fetch(`/Chat/Sessions/${sessionId}/ChangedFiles`);
+    if (sessionId !== currentSessionId) return; // resposta de sessão trocada: descarta
+    if (!r.ok) return;
+    const arr = await r.json();
+    if (!arr || !arr.length) {
+      list.innerHTML = '<li class="small text-muted">Nenhum arquivo ainda.</li>';
+      return;
+    }
+    list.innerHTML = '';
+    arr.forEach(f => {
+      const li = document.createElement('li');
+      li.className = 'mb-1';
+      const badge = f.kind === 'novo' ? 'bg-success' : 'bg-warning text-dark';
+      const short = esc(f.path.length > 34 ? '…' + f.path.slice(-33) : f.path);
+      li.innerHTML = `<a href="#!" class="d-flex justify-content-between align-items-center text-decoration-none" title="${esc(f.path)}">
+        <span class="small text-truncate text-info" style="max-width:200px">${short}</span>
+        <span class="badge ${badge} ms-1">${esc(f.kind || '')}</span></a>`;
+      li.querySelector('a').onclick = (e) => { e.preventDefault(); openFileModal(sessionId, f.path, f.kind); };
+      list.appendChild(li);
+    });
+  } catch { /* painel opcional: ignora */ }
+}
+
+// Modal de arquivo: CodeMirror (temas + modos por extensão) + diff lado a lado.
+let cm = null, cmPath = '', cmSession = 0, cmShowingDiff = false;
+function cmThemeGet() { try { return localStorage.getItem('bridgeCmTheme') || 'material-darker'; } catch { return 'material-darker'; } }
+function ensureCM() {
+  if (cm) return cm;
+  cm = CodeMirror(document.getElementById('cmHost'), { lineNumbers: true, theme: cmThemeGet(), indentUnit: 2, tabSize: 2 });
+  const sel = document.getElementById('cmTheme');
+  if (sel) {
+    sel.value = cmThemeGet();
+    sel.onchange = () => { try { localStorage.setItem('bridgeCmTheme', sel.value); } catch {} cm.setOption('theme', sel.value); };
+  }
+  return cm;
+}
+function cmModeFor(path) {
+  try {
+    const name = (path || '').split('/').pop();
+    const info = CodeMirror.findModeByFileName(name);
+    if (info && (info.mime || info.mode)) return info.mime || info.mode;
+  } catch {}
+  return null;
+}
+function fileMsg(t, cls) {
+  const el = document.getElementById('fileMsg');
+  el.textContent = t || '';
+  el.className = 'small mt-2 ' + (cls || 'text-muted');
+}
+async function openFileModal(sessionId, path, kind) {
+  cmSession = sessionId; cmPath = path; cmShowingDiff = false;
+  document.getElementById('diffHost').style.display = 'none';
+  fileMsg('');
+  document.getElementById('fileModalTitle').textContent = path;
+  const kb = document.getElementById('fileModalKind');
+  kb.textContent = kind || '';
+  kb.className = 'badge ms-2 ' + (kind === 'novo' ? 'bg-success' : 'bg-warning text-dark');
+  document.getElementById('fileDiffBtn').textContent = 'Diff';
+  ensureCM();
+  try {
+    const r = await fetch(`/Chat/Sessions/${sessionId}/File?path=${encodeURIComponent(path)}`);
+    if (!r.ok) { fileMsg('Falha ao carregar (' + r.status + ')', 'text-danger'); return; }
+    const j = await r.json();
+    cm.setValue(j.content || '');
+    const mode = cmModeFor(path);
+    cm.setOption('mode', mode);
+    document.getElementById('cmModeLbl').textContent = mode || 'texto';
+    cm.refresh();
+  } catch { fileMsg('Falha ao carregar', 'text-danger'); return; }
+  const el = document.getElementById('fileModal');
+  if (window.mdb && mdb.Modal) mdb.Modal.getOrCreateInstance(el).show();
+  else { el.style.display = 'block'; el.classList.add('show'); }
+}
+document.getElementById('fileSaveBtn').onclick = async () => {
+  if (!cm || !cmSession || !cmPath) return;
+  fileMsg('Salvando...');
+  try {
+    const r = await fetch(`/Chat/Sessions/${cmSession}/File`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: cmPath, content: cm.getValue() })
+    });
+    if (!r.ok) { fileMsg('Falha ao salvar (' + r.status + ')', 'text-danger'); return; }
+    fileMsg('Salvo.', 'text-success');
+    await loadChangedFiles(cmSession);
+  } catch { fileMsg('Falha ao salvar', 'text-danger'); }
+};
+document.getElementById('fileDiffBtn').onclick = async () => {
+  const host = document.getElementById('diffHost');
+  if (cmShowingDiff) { host.style.display = 'none'; cmShowingDiff = false; document.getElementById('fileDiffBtn').textContent = 'Diff'; return; }
+  fileMsg('Carregando diff...');
+  try {
+    const r = await fetch(`/Chat/Sessions/${cmSession}/FileDiff?path=${encodeURIComponent(cmPath)}`);
+    const j = await r.json();
+    if (!j.diff) { fileMsg(j.message || 'Sem diff', 'text-warning'); return; }
+    host.innerHTML = Diff2Html.html(j.diff, { outputFormat: 'side-by-side', drawFileList: false, matching: 'lines' });
+    try { if (window.hljs) hljs.highlightAll(); } catch {}
+    host.style.display = 'block';
+    cmShowingDiff = true;
+    document.getElementById('fileDiffBtn').textContent = 'Código';
+    fileMsg('');
+  } catch { fileMsg('Falha no diff', 'text-danger'); }
+};
 
 // Painel lateral: decomposição + status das mini-tarefas dos executores
 async function loadTasks(sessionId) {
@@ -628,7 +807,7 @@ async function loadTasks(sessionId) {
 }
 
 // Atualiza o painel a cada 5s enquanto há sessão ativa
-setInterval(() => { if (currentSessionId) { loadTasks(currentSessionId); updateCtxDonut(); loadScripts(currentSessionId); } }, 5000);
+setInterval(() => { if (currentSessionId) { loadTasks(currentSessionId); updateCtxDonut(); loadScripts(currentSessionId); loadChangedFiles(currentSessionId); } }, 5000);
 
 async function createSession() {
   abortActiveStream();
@@ -639,6 +818,8 @@ async function createSession() {
   });
   const s = await r.json();
   currentSessionId = s.id;
+  try { localStorage.setItem('bridgeSessionId', String(s.id)); } catch {}
+  try { document.getElementById('prompt').value = ''; } catch {}
   currentAgentId = s.agentId;
   agentSel.value = s.agentId;
   currentExecutorId = s.executorAgentId ?? null;
@@ -646,6 +827,8 @@ async function createSession() {
   execSel.value = currentExecutorId ?? '';
   await loadSessions();
   conv.innerHTML = '';
+  document.getElementById('scriptList').innerHTML = '<li class="small text-muted">Nenhum script ainda.</li>';
+  document.getElementById('scriptZip')?.remove();
   updateCtxDonut();
 }
 
@@ -659,6 +842,7 @@ async function deleteAllSessions() {
   currentSessionId = null;
   currentAgentId = null;
   currentExecutorId = null;
+  try { localStorage.removeItem('bridgeSessionId'); } catch {}
   await loadSessions();
   conv.innerHTML = '';
 }
@@ -692,10 +876,10 @@ function toolsGroupHtml(tools) {
   }).join('');
   return `<details class="mb-2 tools-group" open><summary class="small text-muted">Ferramentas (${tools.length})</summary><div class="tlist">${items}</div></details>`;
 }
-function msgItem(role, think, body, ts, tools, ms, tps) {
+function msgItem(role, think, body, ts, tools, ms, tps, status) {
   const li = document.createElement('li');
   li.className = 'd-flex justify-content-between mb-4';
-  const foot = ts ? `<div class="msg-ts">${esc(fmtFoot(ts, ms, tps))}</div>` : '';
+  const foot = ts ? `<div class="d-flex justify-content-between align-items-center"><span class="msg-st small text-muted">${esc(status || '')}</span><div class="msg-ts">${esc(fmtFoot(ts, ms, tps))}</div></div>` : '';
   if (role === 'user') {
     li.innerHTML = `
       <div class="card w-100">
@@ -839,7 +1023,7 @@ document.getElementById('send').onclick = async () => {
   ta.focus();
 
   // Adiciona mensagem do usuário na UI imediatamente
-  conv.appendChild(msgItem('user', '', esc(text), new Date().toISOString()));
+  conv.appendChild(msgItem('user', '', esc(text), new Date().toISOString(), undefined, undefined, undefined, 'Enviada'));
 
   // Indicador "Processando" como linha da conversa (com margem), ativo até finalizar
   const indicator = document.createElement('li');
@@ -1088,9 +1272,15 @@ let initPromise = (async () => {
   if (!currentSessionId) {
     const r = await fetch('/Chat/Sessions');
     const list = await r.json();
-    if (list.length > 0) {
+    let saved = null;
+    try { saved = parseInt(localStorage.getItem('bridgeSessionId') || '', 10) || null; } catch {}
+    const hit = saved ? list.find(s => s.id === saved) : null;
+    if (hit) {
+      await selectSession(hit.id, hit.agentId, hit.executorAgentId);
+    } else if (list.length > 0) {
       await selectSession(list[0].id, list[0].agentId, list[0].executorAgentId);
     } else {
+      try { localStorage.removeItem('bridgeSessionId'); } catch {}
       await createSession();
     }
   }
