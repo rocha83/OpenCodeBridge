@@ -191,9 +191,8 @@ public sealed class SubagentToolHandler : IToolHandler
                     string o = r.Success ? r.Output : $"Error: {r.Error}";
                     string line = $"[{c.Name}] {(r.Success ? "ok" : "FALHOU")}: {o.Replace("\n", " / ")}";
                     collected.AppendLine(line);
-                    // Linha de retorno também ao vivo no card (além do label).
-                    if (chunkSink is not null)
-                        try { chunkSink(subId, "content", line + "\n").GetAwaiter().GetResult(); } catch { }
+                    // Sem chunk ao vivo da linha de tool (o corpo do card mostra
+                    // só o texto do modelo; o status vai no grupo Ferramentas).
                     history.Add(new JsonObject
                     {
                         ["role"] = "tool",
