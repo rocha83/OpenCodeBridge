@@ -1,5 +1,5 @@
 // Testes unitários de diagnóstico (telemetria, middleware, senhas) — sem rede.
-// Execução: dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --web http://127.0.0.1:4130
+// Execução: dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --web http://127.0.0.1:4150
 
 using System.IO;
 using System.Net;

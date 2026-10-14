@@ -1,5 +1,5 @@
 // Testes unitários de SessionService (usa SQLite arquivo temporário para isolamento).
-// Execução: dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --web http://127.0.0.1:4130
+// Execução: dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --web http://127.0.0.1:4150
 
 using System;
 using System.Collections.Generic;

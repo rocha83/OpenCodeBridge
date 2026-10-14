@@ -1,5 +1,35 @@
 ﻿@model Rochas.OpenCodeBridge.Web.Models.Agent
 @{ Layout = "_Layout"; ViewData["Title"] = "Editar agente"; }
-<h5>Editar agente</h5>
-<form method="post">@await Html.PartialAsync("_AgentForm", Model)<button class="btn btn-primary">Salvar</button></form>
-
+@{ var list = (IEnumerable<Rochas.OpenCodeBridge.Web.Models.Agent>)(ViewBag.List ?? Enumerable.Empty<Rochas.OpenCodeBridge.Web.Models.Agent>()); }
+<div class="row g-3">
+  <div class="col-12 col-lg-7">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center p-3">
+        <p class="fw-bold mb-0">Agentes</p>
+        <a class="btn btn-sm btn-outline-secondary" href="/Agents">Novo</a>
+      </div>
+      <div class="list-group list-group-flush crud-list">
+        @foreach (var a in list) {
+        <a class="list-group-item list-group-item-action @(a.Id == Model.Id ? "active" : "")" href="/Agents/Edit/@a.Id">
+          <span class="fw-bold">@a.Name</span>
+          <span class="badge bg-info ms-2">@(string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode)</span>
+          @if (!a.Active) { <span class="badge bg-warning ms-1">inativo</span> }
+          <div class="small text-muted mt-1">@a.Model · temp @a.Temperature · @a.Thinking</div>
+        </a>
+        }
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-5">
+    <div class="card">
+      <div class="card-header p-3"><p class="fw-bold mb-0">Editar agente</p></div>
+      <div class="card-body crud-form">
+        <form method="post">
+          @await Html.PartialAsync("_AgentForm", Model)
+          <button class="btn btn-info">Salvar</button>
+          <a class="btn btn-outline-secondary ms-2" href="/Agents">Cancelar</a>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

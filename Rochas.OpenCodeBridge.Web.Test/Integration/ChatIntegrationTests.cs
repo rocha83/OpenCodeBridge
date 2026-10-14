@@ -1,6 +1,6 @@
 // Testes de integração do Chat (HTTP real contra servidor web).
 // Requer servidor rodando em --web http://host:port
-// Execução: dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --web http://127.0.0.1:4130
+// Execução: dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --web http://127.0.0.1:4150
 
 using System.Net;
 using System.Net.Http.Json;
@@ -21,7 +21,7 @@ namespace Rochas.OpenCodeBridge.Web.Test.Integration;
 internal static class ChatIntegrationTests
 {
     private static HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false });
-    private static string WebBase = "http://127.0.0.1:4130";
+    private static string WebBase = "http://127.0.0.1:4150";
     private static CookieContainer Cookies = new();
     private static int Failures;
     private static string AfToken = "";

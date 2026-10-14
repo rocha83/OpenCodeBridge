@@ -32,8 +32,8 @@ public static class SimpleHelloTests
             var page = await context.NewPageAsync();
 
             await page.GotoAsync(web + "/Account/Login");
-            await page.FillAsync("input[name=email]", "admin@mova.com");
-            await page.FillAsync("input[name=password]", "e2e");
+            await page.FillAsync("input[name=email]", "admin@bridge.pcss.com.br");
+            await page.FillAsync("input[name=password]", "123");
             await page.ClickAsync("form button:has-text('Entrar')");
             await page.WaitForURLAsync(url => !url.Contains("/Account/Login"),
                 new PageWaitForURLOptions { Timeout = 15000 });
