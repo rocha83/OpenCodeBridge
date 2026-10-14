@@ -173,7 +173,7 @@ internal static class Program
         Check(login.StatusCode == HttpStatusCode.Redirect, "I-http-login");
         var chat = await client.GetAsync(web + "/Chat");
         Check(chat.IsSuccessStatusCode, "I-http-chat");
-        // Cookie antiforgery gira no login: reler o token pós-login.
+        // Token embute a identidade: reler o pós-login (anônimo não vale autenticado).
         var chatHtml = await chat.Content.ReadAsStringAsync();
         var m2 = System.Text.RegularExpressions.Regex.Match(chatHtml, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
         var streamTok = m2.Success ? m2.Groups[1].Value : (m.Success ? m.Groups[1].Value : "");
@@ -184,5 +184,46 @@ internal static class Program
         if (!string.IsNullOrEmpty(streamTok)) streamReq.Headers.Add("RequestVerificationToken", streamTok);
         var bad = await client.SendAsync(streamReq);
         Check(bad.StatusCode == HttpStatusCode.NotFound, "I-http-chat-404");
+        await AntiforgeryEnforced(client, web, m.Success ? m.Groups[1].Value : "", streamTok);
+    }
+
+    // Antiforgery nativo: sem token 400; token anônimo pós-login 400
+    // (username embutido difere); token fresco autenticado 200.
+    static async Task AntiforgeryEnforced(HttpClient client, string web, string anonTok, string freshTok)
+    {
+        static HttpRequestMessage Mut(string web, string tok)
+        {
+            var r = new HttpRequestMessage(HttpMethod.Post, web + "/Chat/Sessions")
+            {
+                Content = JsonContent.Create(new { agentId = 1, title = "AF-TESTE" })
+            };
+            if (!string.IsNullOrEmpty(tok)) r.Headers.Add("RequestVerificationToken", tok);
+            return r;
+        }
+        var noTok = await client.SendAsync(Mut(web, ""));
+        Check(noTok.StatusCode == HttpStatusCode.BadRequest, "I-af-sem-token-400");
+        int created = 0;
+        if (!string.IsNullOrEmpty(anonTok) && anonTok != freshTok)
+        {
+            var stale = await client.SendAsync(Mut(web, anonTok));
+            Check(stale.StatusCode == HttpStatusCode.BadRequest, "I-af-token-anonimo-400");
+        }
+        if (!string.IsNullOrEmpty(freshTok))
+        {
+            var okResp = await client.SendAsync(Mut(web, freshTok));
+            Check(okResp.IsSuccessStatusCode, "I-af-token-fresco-200");
+            try
+            {
+                var jo = await okResp.Content.ReadFromJsonAsync<System.Text.Json.Nodes.JsonObject>();
+                created = jo?["id"]?.GetValue<int>() ?? 0;
+            }
+            catch { }
+        }
+        if (created > 0)
+        {
+            var del = new HttpRequestMessage(HttpMethod.Delete, web + $"/Chat/Sessions/{created}");
+            if (!string.IsNullOrEmpty(freshTok)) del.Headers.Add("RequestVerificationToken", freshTok);
+            await client.SendAsync(del);
+        }
     }
 }
