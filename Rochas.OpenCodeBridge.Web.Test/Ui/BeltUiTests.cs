@@ -27,7 +27,7 @@ public static class BeltUiTests
     private static readonly Belt[] Belts =
     {
         new("azul", "Faixa AZUL E2E",
-            "Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando SOMENTE repositorio generico com ORM: entidade mapeada, Query com filtros e Search por criterio (sem SQL cru, sem Dapper direto, sem API). Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Divida em fases por escopo de backend e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
+            "Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Divida em fases por escopo de backend e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
             4, 30),
         new("verde", "Faixa VERDE E2E",
             "Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ como regras de dominio persistidas: digitos verificadores, rejeicao de sequencias repetidas, obrigatoriedade por tipo de pessoa (PF exige CPF, PJ exige CNPJ). Escopo: dominio + banco SQL (sem API). Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados) e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
