@@ -16,11 +16,11 @@ public static class BeltUiTests
     private const string Win11FirefoxUa =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0";
 
-    // Orquestrador 8B (id 1 build / id 6 plan) + executores (2 plan CPU, 4/5 build GPU, 7/8 plan GPU).
+    // Orquestrador 9B Build (id 1) + Scripter 9B (id 6) + executores (4/5 build GPU).
     private const int BuildOrchestratorId = 1;
-    private const int PlanOrchestratorId = 6;
-    private const int PlanExecutorId = 2;
-    private static int PlanGpuExecutor(string key) => key == "roxa" || key == "preta" ? 8 : 7;
+    private const int ScripterId = 6;
+    private const int BuildExecutorId = 4;
+    private static int BuildGpuExecutor(string key) => 4;
 
     private sealed record Belt(string Key, string Title, string Prompt, int ExecutorId, int TimeoutMin);
 
@@ -374,7 +374,7 @@ public static class BeltUiTests
     {
         try
         {
-            int sessionId = await CreateSessionAsync(api, PlanOrchestratorId, PlanGpuExecutor(belt.Key), belt.Title + " Plan");
+            int sessionId = await CreateSessionAsync(api, ScripterId, BuildGpuExecutor(belt.Key), belt.Title + " Plan");
             using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(TaskFile(belt.Key)));
             var payload = doc.RootElement.GetProperty("tasks").EnumerateArray().Select(t => new
             {
@@ -912,8 +912,8 @@ public static class BeltUiTests
 
     private static async Task<int> RunBeltAsync(HttpClient api, string web, Belt belt, bool build)
     {
-        int orch = build ? BuildOrchestratorId : PlanOrchestratorId;
-        int executor = build ? belt.ExecutorId : PlanExecutorId;
+        int orch = build ? BuildOrchestratorId : ScripterId;
+        int executor = build ? belt.ExecutorId : BuildGpuExecutor(belt.Key);
         try
         {
             // Cria sessao via UI: orch + executor do modo (retry: Query Dapper tem race transitoria).

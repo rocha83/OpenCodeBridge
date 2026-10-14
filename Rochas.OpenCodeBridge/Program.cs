@@ -54,7 +54,7 @@ internal static partial class Program
     static readonly string Version = "2.1";
     // Trava anti-loop no nivel da bridge: complementa QUALQUER system
     // prompt no final (Responses e chat), sem depender do agente.
-    static readonly string SystemGuardrail = "ao listar arquivos locais preferencialmente use as tools glob ou read, atentando-se ao modo de uso correto destas, e ao navegar na web use somente enderecos externos, informando user agent Firefox no Windows 11 ao navegar via fetch ou curl; ao executar tools que resultem em erro, leia a mensagem de erro e adapte a proxima chamada, tentando no maximo mais 2 vezes, e sempre responda na lingua do usuario, seja verboso apenas ao declarar acoes com tools dentro do loop agentico e em conversa simples sem tools responda em no maximo 2 frases; porem envie apenas uma vez a cada mensagem do usuario JAMAIS mensagens demasiadas";
+    static readonly string SystemGuardrail = "ao listar arquivos locais preferencialmente use as tools glob ou read, atentando-se ao modo de uso correto destas, e ao navegar na web use somente enderecos externos, informando user agent Firefox no Windows 11 ao navegar via fetch ou curl; ao executar tools que resultem em erro, leia a mensagem de erro e adapte a proxima chamada, tentando no maximo mais 2 vezes, e sempre responda na lingua do usuario, seja verboso apenas ao declarar acoes com tools dentro do loop agentico e em conversa simples sem tools responda em no maximo 2 frases; porem envie apenas uma vez a cada mensagem do usuario JAMAIS repita a mesma pergunta varias vezes; se o usuario nao respondeu siga com a melhor suposicao e declare a decisao tomada";
 
     // Coerção texto->tool_calls p/ upstream sem parser server-side (llama.cpp
     // na CPU): extrai ```json{"name"..} ou <tool_call>..</tool_call> do content
@@ -615,6 +615,18 @@ WriteJson(ctx, 200, new JsonObject
                     outBody = node.ToJsonString(SerOpts);
                 }
             }
+            // Compat qwen3/qwen3.5: patterns nao-ancorados nos schemas das
+            // tools quebram o parser do template 14B (400); vale p/ qualquer
+            // model id, com ou sem sufixo de perfil.
+            if (node is not null && node["tools"] is JsonArray toolsArr)
+            {
+                int dropped = StripUnanchoredPatterns(toolsArr);
+                if (dropped > 0)
+                {
+                    Log(new JsonObject { ["event"] = "pattern-strip", ["dropped"] = dropped });
+                    outBody = node.ToJsonString(SerOpts);
+                }
+            }
         }
         catch { outBody = body; }
         // Preserva o verbo original (GET p/ models, POST p/ completions).
@@ -803,6 +815,11 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         var messages = InputToMessages(req["input"], req["instructions"]);
         // Converte as tools Responses (formato "chato") -> formato chat
         var tools = ToolsToChat(req["tools"]);
+        if (tools is not null)
+        {
+            int droppedResp = StripUnanchoredPatterns(tools);
+            if (droppedResp > 0) Log(new JsonObject { ["event"] = "pattern-strip", ["mode"] = "responses", ["dropped"] = droppedResp });
+        }
         toolCount = tools?.Count ?? 0;
 
         // Monta o body do /v1/chat/completions
@@ -1023,6 +1040,34 @@ var shape = new StringBuilder();
         if (t.Length == 0) return t;
         if (t.Contains("mais 2 vezes", StringComparison.OrdinalIgnoreCase)) return t;
         return t + "\n\n" + SystemGuardrail;
+    }
+
+    /// <summary>Remove chaves "pattern" nao-ancoradas dos schemas das tools (recursivo).</summary>
+    /// <remarks>Compat qwen3/qwen3.5: o template do 14B gera parser gramatical e
+    /// rejeita pattern sem ^...$ (400); o do 9B ignorava. Remover equivale ao
+    /// comportamento do 9B (geracao livre, description continua guiando).</remarks>
+    /// <param name="node">Tools ou sub-schema (mutado no lugar).</param>
+    /// <returns>Quantas chaves removidas.</returns>
+    static int StripUnanchoredPatterns(JsonNode? node)
+    {
+        int dropped = 0;
+        if (node is JsonObject obj)
+        {
+            if (obj["pattern"] is JsonValue pv && pv.TryGetValue<string>(out string? pat)
+                && !string.IsNullOrEmpty(pat) && !(pat.StartsWith('^') && pat.EndsWith('$')))
+            {
+                obj.Remove("pattern");
+                dropped++;
+            }
+            foreach (var kv in obj)
+                dropped += StripUnanchoredPatterns(kv.Value);
+        }
+        else if (node is JsonArray arr)
+        {
+            foreach (var item in arr)
+                dropped += StripUnanchoredPatterns(item);
+        }
+        return dropped;
     }
 
     /// <summary>Funde system/developer do input num unico system inicial (jinja Qwen exige system primeiro).</summary>
