@@ -9,22 +9,22 @@
         <input id="q" name="criterio" class="form-control form-control-sm" value="@ViewBag.Criterio" placeholder="ex.: scripter, shell bash..." />
       </div>
       <div class="col-md-2">
-        <div class="small text-muted mb-1">Model</div>
-        @foreach (var m in (System.Collections.IEnumerable)ViewBag.Models) {
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="checkbox" name="model" value="@m" id="m-@m" @(((string[])ViewBag.SelModels).Contains((string)m) ? "checked" : null) />
-          <label class="form-check-label small" for="m-@m">@m</label>
-        </div>
-        }
+        <label class="form-label small text-muted mb-1" for="f-model">Model</label>
+        <select id="f-model" name="model" class="form-select form-select-sm">
+          <option value="">Todos</option>
+          @foreach (var m in (System.Collections.IEnumerable)ViewBag.Models) {
+          <option value="@m" @(((string[])ViewBag.SelModels).Contains((string)m) ? "selected" : null)>@m</option>
+          }
+        </select>
       </div>
       <div class="col-md-2">
-        <div class="small text-muted mb-1">Mode</div>
-        @foreach (var m in (System.Collections.IEnumerable)ViewBag.Modes) {
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="checkbox" name="mode" value="@m" id="md-@m" @(((string[])ViewBag.SelModes).Contains((string)m) ? "checked" : null) />
-          <label class="form-check-label small" for="md-@m">@m</label>
-        </div>
-        }
+        <label class="form-label small text-muted mb-1" for="f-mode">Mode</label>
+        <select id="f-mode" name="mode" class="form-select form-select-sm">
+          <option value="">Todos</option>
+          @foreach (var m in (System.Collections.IEnumerable)ViewBag.Modes) {
+          <option value="@m" @(((string[])ViewBag.SelModes).Contains((string)m) ? "selected" : null)>@m</option>
+          }
+        </select>
       </div>
       <div class="col-md-2">
         <div class="small text-muted mb-1">Thinking</div>
