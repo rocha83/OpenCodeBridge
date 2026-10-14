@@ -1,34 +1,32 @@
-# AGENTS.md — como o opencode desta máquina usa o Qwen local
+# AGENTS.md — como esta máquina usa o Qwen local
 
-## Garantia: o agente dos testes é o Qwen3-8B local
-- Único provider em `~/.config/opencode/opencode.json` (+ `/root/...`): `openai`
-  com `baseURL http://127.0.0.1:4143/v1` → **tudo passa pela bridge** (nada vai p/ nuvem).
-- Modelo topo: `openai/qwen3-8b-awq` (`tool_call: true`, ctx `28672`, out `8192`).
-- Agente padrão do `run`: `build` (`mode: primary`, model travado no Qwen local, `steps: 30`).
-- **Comandos de teste DEVEM pinar explicitamente:** 
-  `opencode run --standalone --thinking --auto --agent build --model openai/qwen3-8b-awq "<prompt>"`
-- Verificação: cada chamada aparece em `/tmp/qwen3-bridge.log` com `"model":"qwen3-8b-awq"`.
-  Sem linha no log = não usou o Qwen local. Conferir com:
-  `tail -1 /tmp/qwen3-bridge.log`
+## Garantia: tudo local, nada p/ nuvem
+- GPU `llama :4100`: `Qwen3.5-9B Q8_0`, ctx `163840` (160k) → bridge `:4124`
+  (`qwen3.5-9b`, saída `32768`).
+- CPU `llama :4110` (`-ngl 0`): `Qwen3.5-4B`, ctx `32768` em 2 slots (16k/slot)
+  → bridge `:4125` (`qwen3.5-4b`, saída `4096`). O 4B substitui os modelos
+  pequenos anteriores (ex.: Coder 2.5): é o executor da linha CPU.
+- Web em `:4150`; banco em `BRIDGE_WEB_DB_DIR` (disco local).
+- Verificação: cada chamada aparece em `/tmp/bridge-gpu.log` ou
+  `/tmp/bridge-cpu.log` com o `model` correspondente.
+  `curl /api/status` nas portas antes de rodar.
 
 ## Tuning aplicado (diálogo enxuto, tools intactas)
-- `temperature`: plan/orch 0.6, build e default da bridge 0.4 — direto, sem enrolação.
-- System prompt: `...assistente conciso. Responda de forma direta, usando no máximo
-  duas frases ou um parágrafo curto, sem introduções ou saudações.
-  Código e tool calls sempre completos, nunca truncados.`
-- `max_tokens` segue `8192` (código precisa de saída longa; concisão vem do prompt, não de corte).
+- `temperature`: agentes Plan 0.5–0.8, Build 0.5; bridges com default 0.4.
+- System prompts dos agentes: fonte versionada em `AGENTS-PROMPTS.md` +
+  seed em `Rochas.OpenCodeBridge.Web/Data/AgentSeeder.cs` (9B cita ctx
+  moderado 160k; 4B cita ctx limitado 16k).
 - `stop` **não** é enviado com tools (truncaria o JSON da tool call); a bridge só
   repassa `stop` se o cliente pedir explicitamente (`BuildChatRequest`).
 - `presence_penalty`: Responses API não define; ignorado de propósito.
 
 ## Ordem de boot p/ testes
-1. vLLM `:4100` (`sudo bash ~/Desktop/vllm-bridge/restart-vllm-tools.sh`, parser `hermes`).
-2. Bridge `:4143` (`nohup dotnet Rochas.OpenCodeBridge/bin/Release/net9.0/Rochas.OpenCodeBridge.dll --port 4143 ... &`).
-3. `curl /api/status` nas duas portas antes de rodar o agente.
+1. llama GPU `:4100` (Q8 160k) e CPU `:4110` (4B 16k/slot).
+2. Bridges `:4124` → `:4100` e `:4125` → `:4110` (`--passthrough-responses`).
+3. `curl /api/status` nas portas antes de rodar o agente.
 
 ## Segmentação obrigatória p/ modelos locais (2026-10-04)
-- Runs longas multi-step morrem em `Compaction produced no summary`
-  (Coder ~80% das runs; Qwen3 resiste, mas degrada em loops). REGRA:
+- Runs longas multi-step degradam em loops. REGRA:
   fatiar toda tarefa em micro-runs (1 artefato + verificação cada),
   leituras limitadas (≤2 por arquivo, blocos grandes), respostas curtas.
 - Subagentes do mesmo modelo SÓ onde existem (sessão interativa com Task);
@@ -39,19 +37,20 @@
 - Históricos: do fim ao começo, blocos de 8k.
 
 ## Conteúdo longo + subagentes que só agem (2026-10-04)
-- Thinking é requisito: bridge sempre com thinking ligado p/ Qwen3
-  (`--thinking events`, default); Coder não tem thinking — nada a desligar.
+- Thinking: GPU com thinking ligado (`--thinking events`); linha 4B/CPU
+  conforme o cadastro do agente (`events` p/ Plan, `off` p/ execução direta).
 - Conteúdo longo (>10k tokens) NÃO vai inteiro no prompt: fatiar em blocos
   com sobreposição e um índice (arquivo:início:fim) antes de delegar.
-- Subagente = Qwen3 com viés Coder: o Qwen3 delega a subagentes DELE MESMO
-  instruídos a agir como Coder — zero conversa, só ação com tools: recebe
+- Subagente = Qwen com viés executor: o 9B delega a subagentes DELE MESMO
+  ou ao 4B da linha CPU
+  instruídos a agir — zero conversa, só ação com tools: recebe
   slice + tarefa + critério, devolve artefato + evidência de execução.
   Sem relatório, sem resumo, sem pergunta de volta. Quem resume sou eu
   (ou o Qwen3 pai) no merge.
 - Resposta de subagente sem evidência de execução = falha (repetir 1x,
   depois executar eu mesmo o slice).
 
-## Enunciado rígido p/ subagentes (1.5B e Qwen3-consigo-mesmo)
-- Vale para 1.5B **e** para subagentes do próprio Qwen3 com viés coder:
+## Enunciado rígido p/ subagentes (4B e Qwen-consigo-mesmo)
+- Vale para o 4B **e** para subagentes do próprio 9B:
   1 tarefa por prompt, imperativo curto, exemplo de saída incluído,
   1 leitura + 1 escrita, verificação externa, temp 0.0.

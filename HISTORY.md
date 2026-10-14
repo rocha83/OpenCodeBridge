@@ -1,5 +1,9 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Web — UI oficial na porta 4150 (2026-10-14)
+- `Program.cs`: `UseUrls("http://*:4150")`; scripts (`deploy`, `gate`,
+  `health-check`) e defaults dos testes acompanham; ícone no Desktop.
+
 ## Web — inspetor shell + proc/exec p/ Scripters (2026-10-14)
 - `ShellInspector` novo: negação uniforme (direto, cadeia, payload `bash -c`
   — furo antigo pulava tudo) + `top` só batch + `mv/rm/rmdir` negados, só `cp`;

@@ -16,9 +16,9 @@ núcleo da bridge (só BCL).
 
 ## Modelos compatíveis
 
-- Qwen3-8B AWQ, Qwen3.5 9B / 4B (perfis `-plan` 0.6/events, `-build` 0.4/off,
-  `-orch` 0.6/events), Qwen2.5-Coder-3B (coerção texto→tool na linha CPU),
-  DeepSeek Coder V2-Lite (executor textual no padrão oficial).
+- Qwen3.5 9B Q8_0 (ctx 160k) / 4B (ctx 16k; substitui o Coder 2.5 na linha CPU)
+  (perfis `-plan` 0.6/events, `-build` 0.4/off,
+  `-orch` 0.6/events), DeepSeek Coder V2-Lite (executor textual no padrão oficial).
 
 ## Caminho bypass
 
