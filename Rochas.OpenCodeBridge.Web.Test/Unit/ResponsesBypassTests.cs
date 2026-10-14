@@ -19,6 +19,7 @@ internal static class ResponsesBypassTests
         OutputTextDelta();
         ReasoningDelta();
         CompletedUsage();
+        IncompleteUsage();
         FailedError();
         IgnoredEvents();
         ToolsConvert();
@@ -78,6 +79,17 @@ internal static class ResponsesBypassTests
         Check(r.Completed && p == 10 && co == 3, "U-bypass-completed-usage");
         var chat = JsonNode.Parse(r.ChatData!)?.AsObject();
         Check(chat?["choices"]?[0]?["finish_reason"]?.GetValue<string>() == "stop", "U-bypass-completed-stop");
+    }
+
+    static void IncompleteUsage()
+    {
+        // Corte por max_tokens fecha o turno sem sumir em silêncio.
+        var c = new StringBuilder(); var t = new StringBuilder();
+        int? p = null, co = null;
+        var r = Services.ResponsesBypass.TranslateData(
+            "{\"type\":\"response.incomplete\",\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":3}}}",
+            c, t, ref p, ref co);
+        Check(r.Completed && p == 10 && co == 3, "U-bypass-incomplete-usage");
     }
 
     static void FailedError()

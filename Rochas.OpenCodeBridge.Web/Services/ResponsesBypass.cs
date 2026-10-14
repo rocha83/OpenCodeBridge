@@ -172,7 +172,7 @@ public static class ResponsesBypass
             };
             return new TranslatedLine(chat.ToJsonString(), false, null);
         }
-        if (type == "response.completed")
+        if (type == "response.completed" || type == "response.incomplete")
         {
             var usage = evt["response"]?["usage"]?.AsObject();
             if (usage is not null)

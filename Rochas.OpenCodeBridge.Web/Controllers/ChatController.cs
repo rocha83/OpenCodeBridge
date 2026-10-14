@@ -1422,6 +1422,15 @@ public sealed class ChatController(
     // traduz o SSE Responses -> chat SSE ao vivo (a UI já entende choices[].delta),
     // executa function_call via ToolExecutor e reenvia function_call_output
     // (o loop agêntico mora aqui; a bridge só transporta). Persiste e fecha [DONE].
+    // Trace do loop agêntico (Serilog → console + diagnostics.db), só com
+    // DIAGNOSTICS ligado (env DIAGNOSTICS_ENABLED=1 ou Diagnostics:Enabled).
+    private void LoopTrace(string evt, int? sid, int turn, string detail = "")
+    {
+        if (!telemetry.Enabled) return;
+        try { log.LogInformation("[loop {Evt}] sess={Sid} turno={Turn} {Detail}", evt, sid, turn, detail); }
+        catch { }
+    }
+
     private async Task StreamResponsesBypass(Agent agent, JsonArray messages, Session? session, CancellationToken ct)
     {
         // Cronômetro do stream inteiro: duração da bolha final do agente.
@@ -1453,6 +1462,10 @@ public sealed class ChatController(
         // Bolha viva do orquestrador: INSERT no 1º turno com texto, UPDATE nos
         // seguintes (crash-safe); subagentes seguem em linhas próprias.
         int liveMsgId = 0;
+        // Turno só-prosa no meio da tarefa: continua (máx 2 seguidos) p/ o
+        // modelo agir; prosa no 1º turno termina (resposta conversacional).
+        bool sawCalls = false;
+        int emptyStreak = 0;
         // Retry único após compactar (contexto cheio), paridade com o loop chat.
         bool compactRetried = false;
         string originalTask = "";
@@ -1471,6 +1484,7 @@ public sealed class ChatController(
         {
         for (int turn = 0; turn < 5 && !ct.IsCancellationRequested; turn++)
         {
+            LoopTrace("turno", session?.Id, turn, $"input={input.Count}");
             var body = new JsonObject
             {
                 ["model"] = agent.Model,
@@ -1565,7 +1579,18 @@ public sealed class ChatController(
                 done = t.Completed;
             }
 
-            if (accum.Calls.Count == 0) break;
+            if (accum.Calls.Count == 0)
+            {
+                if (!sawCalls || ++emptyStreak >= 2)
+                {
+                    LoopTrace("fim-prosa", session?.Id, turn, $"sawCalls={sawCalls} vazios={emptyStreak}");
+                    break;
+                }
+                LoopTrace("prosa-continua", session?.Id, turn, $"vazios={emptyStreak}");
+                continue;
+            }
+            emptyStreak = 0;
+            sawCalls = true;
             // Executa cada call e devolve outputs no próximo turno (a API exige
             // function_call_output p/ toda call; sem isso o modelo trava).
             foreach (var (id, name, args) in accum.Calls)
