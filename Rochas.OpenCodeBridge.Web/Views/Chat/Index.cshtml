@@ -118,9 +118,9 @@
         <button type="button" class="btn btn-sm btn-success ms-2" id="fileSaveBtn">Salvar</button>
         <button type="button" class="btn-close" data-mdb-dismiss="modal" aria-label="Fechar"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" id="fileModalBody">
         <div id="cmHost" style="border:1px solid #2a323d"></div>
-        <div id="diffHost" class="mt-2" style="display:none; max-height:55vh; overflow:auto;"></div>
+        <div id="diffHost" class="mt-2"></div>
         <div id="fileMsg" class="small mt-2 text-muted"></div>
       </div>
     </div>
@@ -137,9 +137,24 @@
 <link href="~/lib/diff2html/diff2html.min.css" rel="stylesheet" />
 <link href="~/lib/diff2html/highlight-dark.min.css" rel="stylesheet" />
 <style>
-.CodeMirror { height: 55vh; font-size: 13px; }
+/* Modal Arquivo contido na tela: corpo flex (editor 60 / diff 30), scrolls internos. */
+#fileModal .modal-dialog { max-height: 94vh; margin-top: 3vh; margin-bottom: 3vh; }
+#fileModal .modal-content { max-height: 94vh; display: flex; flex-direction: column; }
+#fileModal .modal-body { height: 78vh; display: flex; flex-direction: column; gap: .5rem; min-height: 0; overflow: hidden; flex: 1 1 auto; }
+#cmHost { flex: 1 1 auto; min-height: 12rem; overflow: hidden; }
+.CodeMirror { height: 100%; font-size: 13px; }
+#fileModalBody.with-diff #cmHost { flex: 0 1 60%; }
+#diffHost { display: none; flex: 0 1 30%; min-height: 0; max-height: 9.5rem; overflow: auto; }
+#fileModalBody.with-diff #diffHost { display: block; }
 #diffHost .d2h-wrapper { text-align: left; }
 #diffHost .d2h-file-header { display: none; }
+/* Código no tema claro: paleta GitHub light (o highlight-dark.min.css é só p/ dark). */
+[data-bs-theme="light"] #diffHost .hljs { background: #fff; color: #24292e; }
+[data-bs-theme="light"] #diffHost .hljs-keyword, [data-bs-theme="light"] #diffHost .hljs-doctag { color: #d73a49; }
+[data-bs-theme="light"] #diffHost .hljs-string, [data-bs-theme="light"] #diffHost .hljs-regexp { color: #032f62; }
+[data-bs-theme="light"] #diffHost .hljs-comment, [data-bs-theme="light"] #diffHost .hljs-quote { color: #6a737d; }
+[data-bs-theme="light"] #diffHost .hljs-number, [data-bs-theme="light"] #diffHost .hljs-literal { color: #005cc5; }
+[data-bs-theme="light"] #diffHost .hljs-title, [data-bs-theme="light"] #diffHost .hljs-section, [data-bs-theme="light"] #diffHost .hljs-function { color: #6f42c1; }
 </style>
 <script src="~/lib/codemirror/codemirror.js"></script>
 <script src="~/lib/codemirror/mode/meta.js"></script>
@@ -750,6 +765,7 @@ function fileMsg(t, cls) {
 async function openFileModal(sessionId, path, kind) {
   cmSession = sessionId; cmPath = path; cmShowingDiff = false;
   document.getElementById('diffHost').style.display = 'none';
+  document.getElementById('fileModalBody').classList.remove('with-diff');
   fileMsg('');
   document.getElementById('fileModalTitle').textContent = path;
   const kb = document.getElementById('fileModalKind');
@@ -786,20 +802,29 @@ document.getElementById('fileSaveBtn').onclick = async () => {
 };
 document.getElementById('fileDiffBtn').onclick = async () => {
   const host = document.getElementById('diffHost');
-  if (cmShowingDiff) { host.style.display = 'none'; cmShowingDiff = false; document.getElementById('fileDiffBtn').textContent = 'Diff'; return; }
+  if (cmShowingDiff) { host.style.display = 'none'; document.getElementById('fileModalBody').classList.remove('with-diff'); cmShowingDiff = false; document.getElementById('fileDiffBtn').textContent = 'Diff'; try { cm.refresh(); } catch {} return; }
+  await loadDiff();
+};
+async function loadDiff() {
+  const host = document.getElementById('diffHost');
+  const scheme = (document.documentElement.getAttribute('data-bs-theme') || 'dark') === 'dark' ? 'dark' : 'light';
   fileMsg('Carregando diff...');
   try {
     const r = await fetch(`/Chat/Sessions/${cmSession}/FileDiff?path=${encodeURIComponent(cmPath)}`);
     const j = await r.json();
     if (!j.diff) { fileMsg(j.message || 'Sem diff', 'text-warning'); return; }
-    host.innerHTML = Diff2Html.html(j.diff, { outputFormat: 'side-by-side', drawFileList: false, matching: 'lines' });
+    host.innerHTML = Diff2Html.html(j.diff, { outputFormat: 'side-by-side', drawFileList: false, matching: 'lines', colorScheme: scheme });
     try { if (window.hljs) hljs.highlightAll(); } catch {}
     host.style.display = 'block';
+    document.getElementById('fileModalBody').classList.add('with-diff');
+    try { cm.refresh(); } catch {}
     cmShowingDiff = true;
     document.getElementById('fileDiffBtn').textContent = 'Código';
     fileMsg('');
   } catch { fileMsg('Falha no diff', 'text-danger'); }
-};
+}
+// Diff acompanha o tema do site (fundo claro/escuro; verdes do diff intactos).
+document.getElementById('themeToggle')?.addEventListener('click', () => { if (cmShowingDiff) loadDiff(); });
 
 // Painel lateral: decomposição + status das mini-tarefas dos executores
 async function loadTasks(sessionId) {
