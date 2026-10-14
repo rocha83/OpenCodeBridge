@@ -3,7 +3,7 @@
 @{ var s = (Rochas.OpenCodeBridge.Web.Models.Session)ViewBag.Session; }
 <style>
   /* Admin: mensagem integral, sem scroll interno. */
-  #sessMsgs pre { max-height: none; overflow: visible; white-space: pre-wrap; word-break: break-word; }
+  #sessMsgs pre { max-height: none; overflow: visible; white-space: pre-wrap; word-break: break-word; font-size: 1rem; font-family: inherit; }
   #sessMsgs details p { max-height: none; overflow: visible; white-space: pre-wrap; word-break: break-word; }
 </style>
 <div class="card mb-3">
@@ -33,7 +33,7 @@
       <span class="small text-muted ms-2">in @m.PromptTokens/out @m.CompletionTokens</span>
       }
       @if ((m.Tps ?? 0) > 0) { <span class="small text-muted ms-2">@m.Tps t/s</span> }
-      <pre class="small mt-2 mb-0 ans rawbox">@m.Content</pre>
+      <pre class="mt-2 mb-0 ans rawbox">@m.Content</pre>
       @if (!string.IsNullOrWhiteSpace(m.Thinking)) {
       <details class="mt-1"><summary class="small text-muted">Raciocínio</summary><p class="small text-muted">@m.Thinking</p></details>
       }
