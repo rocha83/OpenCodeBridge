@@ -12,7 +12,8 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
     public async Task<IActionResult> Index()
     {
         ViewBag.NewAgent = DefaultAgent();
-        return View(await agents.Query(new Agent()));
+        return View((await agents.Query(new Agent()))
+            .OrderByDescending(a => a.Model).ThenBy(a => a.Name).ToList());
     }
 
     private static Agent DefaultAgent() =>
@@ -67,7 +68,8 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
         if (!IsAdmin) return Forbid();
         var agent = await agents.Get(new Agent { Id = id });
         if (agent is null) return RedirectToAction("Index");
-        ViewBag.List = await agents.Query(new Agent());
+        ViewBag.List = (await agents.Query(new Agent()))
+            .OrderByDescending(a => a.Model).ThenBy(a => a.Name).ToList();
         return View(agent);
     }
 
