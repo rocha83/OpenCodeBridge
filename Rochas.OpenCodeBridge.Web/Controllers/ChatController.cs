@@ -1462,6 +1462,9 @@ public sealed class ChatController(
         // Bolha viva do orquestrador: INSERT no 1º turno com texto, UPDATE nos
         // seguintes (crash-safe); subagentes seguem em linhas próprias.
         int liveMsgId = 0;
+        // Base do t/s do rodapé: só o último turno (decode), não o stream
+        // inteiro (tools + esperas diluíam o número).
+        long turnStartMs = 0;
         // Retry único após compactar (contexto cheio), paridade com o loop chat.
         bool compactRetried = false;
         string originalTask = "";
@@ -1482,6 +1485,7 @@ public sealed class ChatController(
         for (int turn = 0; turn < maxTurns && !ct.IsCancellationRequested; turn++)
         {
             LoopTrace("turno", session?.Id, turn, $"input={input.Count}");
+            turnStartMs = streamSw.ElapsedMilliseconds;
             var body = new JsonObject
             {
                 ["model"] = agent.Model,
@@ -1736,18 +1740,19 @@ public sealed class ChatController(
         if (session is not null && session.Id.HasValue && (finalText.Length > 0 || assistantThinking.Length > 0))
         {
             long streamMs = streamSw.ElapsedMilliseconds;
+            long decodeMs = streamMs - turnStartMs;
             // Bolha viva vira final: UPDATE com texto + usage (sem duplicar no reload).
             int finalMsgId;
             if (liveMsgId > 0)
             {
                 await sessionService.UpdateMessageAsync(liveMsgId, finalText, assistantThinking.ToString(), promptTokens, completionTokens,
-                    streamMs, TpsOf(completionTokens, streamMs));
+                    streamMs, TpsOf(completionTokens, decodeMs));
                 finalMsgId = liveMsgId;
             }
             else
             {
                 finalMsgId = await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens,
-                    streamMs, TpsOf(completionTokens, streamMs));
+                    streamMs, TpsOf(completionTokens, decodeMs));
             }
             await sessionService.TouchAsync(session.Id.Value);
             // Órfãs (card que falhou) fecham na bolha final.
