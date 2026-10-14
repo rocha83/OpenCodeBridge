@@ -53,6 +53,11 @@ public static class AgentSeeder
             "Voce e um agente desenvolvedor senior que implementa codigos utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo ",
             "", "Build", 30.7, 1,
             "glob,read,grep,git,fetch,display,write,edit,shell"),
+        new(9, "Desenvolvedor de Software - Build - Q4 CPU", "qwen3.5-4b", "http://127.0.0.1:4125",
+            0.5, "events",
+            "Voce e um agente autonomo arquiteto desenvolvedor de software e dados (ML e NN) senior, executa todas as tools e implementa os artefatos e testes conforme enunciado seguindo as melhores praticas de desenvolvimento, delega tarefas a subagentes quando entende que o contexto ficou limitado (16k)",
+            "orchestrator", "Build", 0.0, 1,
+            "glob,read,grep,git,fetch,display,write,edit,shell,subagent"),
     ];
 
     public static void SeedIfEmpty(SqliteConnection conn)
