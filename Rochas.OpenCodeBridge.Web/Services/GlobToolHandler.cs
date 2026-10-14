@@ -57,7 +57,7 @@ public sealed class GlobToolHandler : IToolHandler
                 .OrderBy(h => h, StringComparer.Ordinal)
                 .Take(MaxResults)
                 .ToArray();
-            return ToolResult.Ok(rel.Length == 0 ? "(sem resultados)" : string.Join('\n', rel));
+            return ToolResult.Ok(rel.Length == 0 ? $"(sem resultados em '{(string.IsNullOrWhiteSpace(subdir) ? "." : subdir)}'; se já listou arquivos antes, leia o conteúdo deles com read)" : string.Join('\n', rel));
         }
         catch (Exception ex)
         {
