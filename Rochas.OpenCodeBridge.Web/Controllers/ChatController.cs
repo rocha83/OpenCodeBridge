@@ -977,7 +977,7 @@ public sealed class ChatController(
                 // Contexto cheio: compacta e tenta o turno de novo (1 vez).
                 string errBody = "";
                 try { errBody = await res.Content.ReadAsStringAsync(ct); } catch { }
-                if (!compactRetried && errBody.Contains("maximum context", StringComparison.OrdinalIgnoreCase)
+                if (!compactRetried && (errBody.Contains("maximum context", StringComparison.OrdinalIgnoreCase) || errBody.Contains("exceed", StringComparison.OrdinalIgnoreCase))
                     && session?.Id is int sidCtx)
                 {
                     compactRetried = true;
@@ -1429,6 +1429,8 @@ public sealed class ChatController(
         // Bolha viva do orquestrador: INSERT no 1º turno com texto, UPDATE nos
         // seguintes (crash-safe); subagentes seguem em linhas próprias.
         int liveMsgId = 0;
+        // Retry único após compactar (contexto cheio), paridade com o loop chat.
+        bool compactRetried = false;
         string originalTask = "";
         foreach (var m in messages)
             if (m?["role"]?.GetValue<string>() == "user"
@@ -1464,6 +1466,35 @@ public sealed class ChatController(
             if (!res.IsSuccessStatusCode)
             {
                 if (!Response.HasStarted) { Response.StatusCode = 502; return; }
+                // Contexto cheio (llama: exceed_context_size / exceeds available
+                // context; outros: maximum context): compacta e tenta 1 vez.
+                string errBody = "";
+                try { errBody = await res.Content.ReadAsStringAsync(ct); } catch { }
+                if (!compactRetried && session is not null && session.Id.HasValue
+                    && (errBody.Contains("maximum context", StringComparison.OrdinalIgnoreCase)
+                        || errBody.Contains("exceed", StringComparison.OrdinalIgnoreCase)))
+                {
+                    compactRetried = true;
+                    int removed = 0;
+                    try { removed = await CompactSessionAsync(session, agent, ct); } catch { }
+                    if (removed > 0)
+                    {
+                        try
+                        {
+                            var fresh = await sessionService.GetMessagesAsync(session.Id.Value, int.MaxValue);
+                            var keep = ContextWindow.BuildContext(fresh, ContextWindow.ResolveMaxInput(agent.Model, agent.BridgeUrl));
+                            var jm = new JsonArray();
+                            foreach (var m in keep)
+                                jm.Add(new JsonObject { ["role"] = m.Role == "subagent" ? "assistant" : m.Role, ["content"] = m.Content });
+                            input = Services.ResponsesBypass.ToInputItems(jm);
+                            var note = new JsonObject { ["error"] = $"contexto cheio: histórico compactado ({removed} msgs resumidas), tentando de novo." };
+                            await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + note.ToJsonString() + "\n\n"), ct);
+                            await outputStream.FlushAsync(ct);
+                        }
+                        catch { }
+                        continue;
+                    }
+                }
                 try
                 {
                     var be = new JsonObject { ["error"] = $"bridge {(int)res.StatusCode}" };

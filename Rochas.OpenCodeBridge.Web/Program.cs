@@ -30,7 +30,9 @@ Log.Logger = new LoggerConfiguration()
     .Enrich.FromLogContext()
     .WriteTo.Console()
     .WriteTo.SQLite(
-        sqliteDbPath: Path.Combine(AppContext.BaseDirectory, "diagnostics.db"),
+        sqliteDbPath: !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("BRIDGE_WEB_DB_DIR"))
+            ? Path.Combine(Environment.GetEnvironmentVariable("BRIDGE_WEB_DB_DIR")!, "diagnostics.db")
+            : Path.Combine(AppContext.BaseDirectory, "diagnostics.db"),
         tableName: string.IsNullOrWhiteSpace(diagOptions.SqliteTable) ? "logs" : diagOptions.SqliteTable,
         storeTimestampInUtc: true)
     .CreateLogger();
@@ -86,16 +88,21 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
-AppDb.Init(Path.Combine(AppContext.BaseDirectory, "web.db"));
+// Banco fora do disco externo (blocos defeituosos -> SQLite I/O error):
+// BRIDGE_WEB_DB_DIR aponta p/ disco local; padrão segue no bin.
+var localDbDir = Environment.GetEnvironmentVariable("BRIDGE_WEB_DB_DIR");
+AppDb.Init(!string.IsNullOrWhiteSpace(localDbDir)
+    ? Path.Combine(localDbDir, "web.db")
+    : Path.Combine(AppContext.BaseDirectory, "web.db"));
 
 // Seed admin (sempre confere, nunca duplica).
 using (var scope = app.Services.CreateScope())
 {
     var users = scope.ServiceProvider.GetRequiredService<IGenericRepository<User>>();
     var passwords = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
-    var existing = await users.Query(new User { Email = "admin@mova.com" });
+    var existing = await users.Query(new User { Email = "admin@bridge.pcss.com.br" });
     if (!existing.Any())
-        await users.Add(new User { Name = "Admin", Email = "admin@mova.com", PasswordHash = passwords.Hash("Admin@123"), IsAdmin = true, Active = true });
+        await users.Add(new User { Name = "Admin", Email = "admin@bridge.pcss.com.br", PasswordHash = passwords.Hash("123"), IsAdmin = true, Active = true });
     // Usuário isolado da bateria de integração (sessões de teste nunca na UI do admin).
     var etest = await users.Query(new User { Email = "teste@e2e.local" });
     if (!etest.Any())
@@ -106,6 +113,33 @@ app.UseStaticFiles();
 if (diagOptions.Enabled) app.UseMiddleware<DiagnosticMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
+// Cookie de usuário apagado/desativado (ex.: era login-livre): desloga e
+// manda ao login em vez de servir listas vazias e confusas.
+app.Use(async (ctx, next) =>
+{
+    if (ctx.User.Identity?.IsAuthenticated == true
+        && (ctx.Request.Path.StartsWithSegments("/Chat") || ctx.Request.Path.StartsWithSegments("/Agents") || ctx.Request.Path.StartsWithSegments("/Users")))
+    {
+        bool ok = false;
+        try
+        {
+            var users = ctx.RequestServices.GetRequiredService<Rochas.Data.Specification.Interfaces.IGenericRepository<Rochas.OpenCodeBridge.Web.Models.User>>();
+            if (int.TryParse(ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out int uid) && uid > 0)
+            {
+                var u = await users.Get(new Rochas.OpenCodeBridge.Web.Models.User { Id = uid });
+                ok = u is not null && u.Active;
+            }
+        }
+        catch { ok = false; }
+        if (!ok)
+        {
+            await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.SignOutAsync(ctx);
+            ctx.Response.StatusCode = 401;
+            return;
+        }
+    }
+    await next();
+});
 app.MapControllerRoute("default", "{controller=Chat}/{action=Index}/{id?}");
 app.MapControllers();
 app.Run();
