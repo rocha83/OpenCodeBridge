@@ -1675,14 +1675,14 @@ public sealed class ChatController(
                 });
                 input.Add(new JsonObject
                 {
-                    ["type"] = "function_call_output", ["call_id"] = id, ["output"] = contentFull,
+                    ["type"] = "function_call_output", ["call_id"] = id, ["output"] = CutForContext(contentFull),
                 });
                 if (subText is not null)
                 {
                     var sm = new JsonObject
                     {
                         ["type"] = "message", ["role"] = "assistant",
-                        ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = "[subagente] " + subText }),
+                        ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = "[subagente] " + CutForContext(subText) }),
                     };
                     input.Add(sm);
                 }
@@ -1750,6 +1750,11 @@ public sealed class ChatController(
         }
         catch { }
     }
+
+    // Retorno integral vai p/ banco/UI; p/ o contexto do loop, corta
+    // (sem isto o 4B estourava os 16k com outputs longos encadeados).
+    private static string CutForContext(string s, int max = 6000) =>
+        string.IsNullOrEmpty(s) || s.Length <= max ? s ?? "" : s[..max] + $"\n[...cortado: {s.Length} chars no contexto; integral no histórico]";
 
     // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.
 
