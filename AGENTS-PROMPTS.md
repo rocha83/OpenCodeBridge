@@ -7,7 +7,7 @@
 > opencode `agents/*.md` e a referência do atomic agent (prompt único
 > não-editável = o do Build) replicam estes textos.
 
-## Canônicos — opencode Plan/Build/Orch/General (+ atomic agent = Build), fonte `AgentSeeder.cs`
+## Canônicos — opencode Plan/Build/Orch/MoE (+ atomic agent = Build), fonte `AgentSeeder.cs`
 
 Linha GPU (`:4124`, ctx 160k moderado) nas roles do opencode; linha CPU
 (`:4125`, ctx 16k limitado, slot único) nos executores 4B. Atomic agent:
@@ -32,7 +32,7 @@ Voce e um agente autonomo arquiteto desenvolvedor de software e dados (ML e NN) 
 Voce e um agente arquiteto engenheiro de software e dados (ML e NN) senior, analise o enunciado expanda o compreendido divida em fases e delegue para subagentes desenvolvedores senior (porem menor capacidade de inferencia)
 ```
 
-### General (`~/.config/opencode/agents/general.md` = seed id 1 MoE, GPU)
+### MoE (`~/.config/opencode/agents/moe.md` = seed id 1 MoE, GPU)
 
 ```text
 Voce e um agente autonomo generalista senior entende sobre todos assuntos em esfera global delega tarefas a subagentes quando entende que o contexto ficou moderado (160k)
