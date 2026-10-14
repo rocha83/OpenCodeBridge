@@ -31,18 +31,14 @@
           <input class="form-check-input" type="checkbox" name="thinking" value="events" id="f-think" @(ViewBag.ThinkingOn ? "checked" : null) />
           <label class="form-check-label small" for="f-think" title="Marcado: só com raciocínio (events)">Raciocínio</label>
         </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="active" value="1" id="f-active" @(ViewBag.ActiveOn ? "checked" : null) />
+          <label class="form-check-label small" for="f-active" title="Marcado: só ativos">Ativo</label>
+        </div>
       </div>
       <div class="col-md-2">
         <div class="row g-2">
-          <div class="col-12">
-            <label class="form-label small text-muted mb-1" for="active">Ativos</label>
-            <select id="active" name="active" class="form-select form-select-sm">
-              <option value="all" @(ViewBag.ActiveSel == "all" ? "selected" : null)>Todos</option>
-              <option value="1" @(ViewBag.ActiveSel == "1" ? "selected" : null)>Só ativos</option>
-              <option value="0" @(ViewBag.ActiveSel == "0" ? "selected" : null)>Só inativos</option>
-            </select>
-          </div>
-          <div class="col-12 d-flex gap-2">
+          <div class="col-12 d-flex gap-2 mt-4">
             <button type="submit" class="btn btn-sm btn-info">Buscar</button>
             <a href="/Agents" class="btn btn-sm btn-outline-secondary">Limpar</a>
           </div>

@@ -19,7 +19,7 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
         ViewBag.SelModels = model ?? [];
         ViewBag.SelModes = mode ?? [];
         ViewBag.ThinkingOn = thinking == "events";
-        ViewBag.ActiveSel = active ?? "all";
+        ViewBag.ActiveOn = active == "1";
         ViewBag.Total = all.Count;
 
         // Critério: LIKE nas [Filterable] (nome, model, mode, thinking, prompt).
@@ -34,7 +34,6 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
             : await agents.Search(criterio.Trim());
         // Multi-valor e tri-state de ativo fora da entidade: interseção em memória.
         if (active == "1") list = list.Where(a => a.Active);
-        else if (active == "0") list = list.Where(a => !a.Active);
         if ((model?.Length ?? 0) > 1) list = list.Where(a => model!.Contains(a.Model ?? ""));
         if ((mode?.Length ?? 0) > 1) list = list.Where(a => mode!.Contains(string.IsNullOrEmpty(a.Mode) ? "Build" : a.Mode));
         return View(list.OrderByDescending(a => a.Model).ThenBy(a => a.Name).ToList());
