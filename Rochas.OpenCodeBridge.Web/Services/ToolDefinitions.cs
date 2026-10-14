@@ -8,8 +8,9 @@ namespace Rochas.OpenCodeBridge.Web.Services;
 // chamada (JsonNode tem um só pai — cache estático quebraria o loop).
 public static class ToolDefinitions
 {
-    // Tudo é plan: mesmo conjunto anunciado sempre (sem escrita direta anunciada;
-    // o servidor materializa via interpretador quando precisa).
+    // Harness anunciável: escrita (write/edit) inclusa — o filtro é o CSV do
+    // agente (`Allowed`) + retaguarda de modo no executor (plan barra escrita).
+    // Cada request carrega o array (~500 tokens com escrita); descrições curtas.
     public static JsonArray GetTools(string? mode = null)
     {
         var tools = new JsonArray();
@@ -27,6 +28,10 @@ public static class ToolDefinitions
             new[] { BuildParam("command", "string", "Comando (ex.: 'log --oneline -5').", true) }));
         tools.Add(BuildTool("subagent", "Delega UMA fase ao mesmo modelo (passe só o enunciado da fase, nunca o enunciado original).",
             new[] { BuildParam("prompt", "string", "Subtarefa completa e autocontida.", true) }));
+        tools.Add(BuildTool("write", "Grava arquivo no workspace (cria pastas).",
+            new[] { BuildParam("path", "string", "Caminho do arquivo.", true), BuildParam("content", "string", "Conteúdo integral.", true) }));
+        tools.Add(BuildTool("edit", "Substitui trecho exato em arquivo existente.",
+            new[] { BuildParam("path", "string", "Caminho do arquivo.", true), BuildParam("oldString", "string", "Trecho exato atual.", true), BuildParam("newString", "string", "Texto novo.", true), BuildParam("replaceAll", "boolean", "Trocar todas (padrão false).", false) }));
         return tools;
     }
 

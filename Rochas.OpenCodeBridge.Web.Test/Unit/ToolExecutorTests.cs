@@ -68,13 +68,19 @@ internal static class ToolExecutorTests
         Check(Services.ToolDefinitions.Allowed(planSub, "subagent") && Services.ToolDefinitions.Allowed(buildSub, "subagent")
             && !Services.ToolDefinitions.Allowed(plan, "subagent") && !Services.ToolDefinitions.Allowed(none, "subagent"),
             "U-tool-flags-subagent-checkbox");
+        // Escrita anunciada, permissão no CSV: plan sem write/edit não anuncia;
+        // build com write/edit anuncia (backstop confirma o modo).
+        var buildWrite = new Models.Agent { Name = "bw", Mode = "build", Tools = "shell,write,edit" };
+        Check(!Services.ToolDefinitions.Allowed(plan, "write") && !Services.ToolDefinitions.Allowed(plan, "edit")
+            && Services.ToolDefinitions.Allowed(buildWrite, "write") && Services.ToolDefinitions.Allowed(buildWrite, "edit"),
+            "U-tool-flags-write-csv");
     }
 
     private static void PlanToolsFilter()
     {
         var plan = ToolDefinitions.GetTools("plan");
         var names = plan.Select(t => (t as System.Text.Json.Nodes.JsonObject)?["function"]?["name"]?.GetValue<string>()).ToList();
-        Check(plan.Count == 7 && names.Contains("shell") && !names.Contains("write") && !names.Contains("edit")
+        Check(plan.Count == 9 && names.Contains("shell") && names.Contains("write") && names.Contains("edit")
             && names.Contains("read") && names.Contains("grep") && names.Contains("glob"), "U-exec-plan-tools");
         string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"plan-{System.Guid.NewGuid():N}");
         System.IO.Directory.CreateDirectory(root);
@@ -106,7 +112,7 @@ internal static class ToolExecutorTests
         var gpu = new Models.Agent { BridgeUrl = "http://127.0.0.1:4124", Model = "qwen3-8b-awq-build" };
         var probed = new Models.Agent { BridgeUrl = "http://127.0.0.1:4125", Model = "cpu", MeasuredTps = 3.1 };
         Check(Services.ExecutorTps.ResolveTps(cpu, 3) == 3, "U-exec-cpu-tps");
-        Check(Services.ExecutorTps.ResolveTps(gpu, 3) == 20, "U-exec-gpu-tps");
+        Check(Services.ExecutorTps.ResolveTps(gpu, 2.5) == 30, "U-exec-gpu-tps");
         Check(Services.ExecutorTps.ResolveTps(probed, 3) == 3.1, "U-exec-probed-tps");
     }
 
@@ -209,7 +215,7 @@ internal static class ToolExecutorTests
         var tools = ToolDefinitions.GetTools();
         bool hasTask = tools.Any(t => (t as System.Text.Json.Nodes.JsonObject)?["function"]?["name"]?.GetValue<string>() == "task");
         var names = tools.Select(t => (t as System.Text.Json.Nodes.JsonObject)?["function"]?["name"]?.GetValue<string>()).ToList();
-        Check(tools.Count == 7 && !hasTask && names.Contains("shell") && names.Contains("subagent") && names.Contains("glob") && !names.Contains("write") && !names.Contains("edit"), "U-tool-definitions");        var missing = exec.Execute("read", "{\"path\": \"nao-existe.txt\"}");
+        Check(tools.Count == 9 && !hasTask && names.Contains("shell") && names.Contains("subagent") && names.Contains("glob") && names.Contains("write") && names.Contains("edit"), "U-tool-definitions");        var missing = exec.Execute("read", "{\"path\": \"nao-existe.txt\"}");
         Check(!missing.Success && missing.Error.Contains("não encontrado"), "U-tool-read-missing");
 
         exec.Execute("write", "{\"path\": \"sub/ninho.txt\", \"content\": \"l1\\nl2\\nl3\\nl4\"}");

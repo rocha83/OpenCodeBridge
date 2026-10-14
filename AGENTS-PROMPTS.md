@@ -18,11 +18,11 @@ Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga, comp
 
 ## Mapa real de tools (código-fonte da verdade)
 
-- Filtro é por **Mode + CSV `Agent.Tools`** (`ChatController.cs`, loop do chat e bypass):
-  base `shell, read, grep, glob, fetch, git, subagent`; `Mode == "build"`
-  remove `subagent`; vazio = nenhuma. Backstop no executor nega fora do CSV
-  (preset display: shell só-`echo` simples). `write`/`edit` nunca são
-  anunciados no chat.
+- Filtro é por **CSV `Agent.Tools`** (`ToolDefinitions.Allowed`, loop do chat e bypass):
+  base `shell, read, grep, glob, fetch, git, subagent, write, edit`;
+  vazio = nenhuma. Backstop no executor nega fora do CSV
+  (preset display: shell só-`echo` simples). `write`/`edit` anunciadas só
+  p/ quem tem no CSV (agentes Build).
 - Backstop é por **Mode** (`ToolExecutor.cs`): `mode == "plan"` barra
   `write`/`edit` mesmo se o modelo chamar (só entram via coerção
   fence/`SuggestedCommands`). Em `build`, passam.
@@ -44,8 +44,8 @@ Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga. Para
 
 ## Notas
 
-- Principal anuncia: shell, read, grep, glob, fetch, git, subagent (sem
-  escrita direta; executor barra write/edit em modo plan).
+- Principal anuncia: shell, read, grep, glob, fetch, git, subagent (+ write,
+  edit se no CSV — agentes Build; executor barra write/edit em modo plan).
 - Subagente anuncia: write, edit, shell — com trava `SubShellAllowed` (só
   `bash -n`, zip/unzip, navegação; nada executa). Executor interno sem
   `subagent` (sem recursão); workspace = `bin` do site.
