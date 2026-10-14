@@ -1,5 +1,19 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Bridge — SystemGuardrail anti-loop ajustado (2026-10-14)
+- `Program.cs` linha 57: `SystemGuardrail` atualizado com diretrizes
+  de comportamento do loop agentico: "ao listar arquivos locais preferencialmente
+  use as tools glob ou read, atentando-se ao modo de uso correto destas, e ao
+  navegar na web use somente enderecos externos, informando user agent Firefox
+  no Windows 11 ao navegar via fetch ou curl; ao executar tools que resultem em
+  erro, leia a mensagem de erro e adapte a proxima chamada, tentando no maximo
+  mais 2 vezes, e sempre responda na lingua do usuario, seja verboso ao declarar
+  suas respostas a cada mensagem do usuario dentro do loop agentico; porem envie
+  apenas uma vez a cada mensagem do usuario JAMAIS mensagens demasiadas"
+- `WithSystemGuardrail`: check para evitar duplicação quando o prompt já contém
+  "mais 2 vezes"
+- Documentação: HISTORY.md registra ajuste no anti-prosa do loop agentico
+
 ## Web: porta parametrizada, retorno a 4130 + Caddy 4151 (2026-10-14)
 - Porta via `appsettings Web:Port` (default `4130`), override `BRIDGE_WEB_PORT`;
   `Program.cs` monta `UseUrls` dinâmico. `4150` conflita com o Caddy (externa da
