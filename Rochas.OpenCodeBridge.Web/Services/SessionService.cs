@@ -153,6 +153,27 @@ public sealed class SessionService(
         });
     }
 
+    public async Task UpdateMessageAsync(int id, string content, string thinking, int? promptTokens = null, int? completionTokens = null, long? elapsedMs = null, double? tps = null)
+    {
+        // UPDATE progressivo da bolha viva: texto cresce por turno; usage só no DONE
+        // (COALESCE preserva o que já está gravado quando o parâmetro é nulo).
+        await DbRetryAsync(async () =>
+        {
+            using var conn = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE session_messages SET content=@c, thinking=@t, prompt_tokens=COALESCE(@p,prompt_tokens), completion_tokens=COALESCE(@e,completion_tokens), elapsed_ms=COALESCE(@m,elapsed_ms), tps=COALESCE(@v,tps) WHERE id=@id";
+            cmd.Parameters.AddWithValue("@c", content ?? "");
+            cmd.Parameters.AddWithValue("@t", thinking ?? "");
+            cmd.Parameters.AddWithValue("@p", (object?)promptTokens ?? System.DBNull.Value);
+            cmd.Parameters.AddWithValue("@e", (object?)completionTokens ?? System.DBNull.Value);
+            cmd.Parameters.AddWithValue("@m", (object?)elapsedMs ?? System.DBNull.Value);
+            cmd.Parameters.AddWithValue("@v", (object?)tps ?? System.DBNull.Value);
+            cmd.Parameters.AddWithValue("@id", id);
+            await cmd.ExecuteNonQueryAsync();
+        });
+    }
+
     public async Task<int> CountMessagesAsync(int sessionId)
     {
         var filter = new SessionMessage { SessionId = (int?)sessionId };

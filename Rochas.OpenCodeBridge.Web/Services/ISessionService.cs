@@ -15,6 +15,8 @@ public interface ISessionService
     Task<List<SessionMessage>> GetMessagesAsync(int sessionId, int limit = 50);
     // Retorna o id inserido (vínculo tool->bolha). statusId nulo deriva do papel (user=1, demais=2).
     Task<int> AddMessageAsync(int sessionId, string role, string content, string thinking, int? promptTokens, int? completionTokens, long? elapsedMs = null, double? tps = null, int? statusId = null);
+    // Progressiva: atualiza a bolha viva do turno (texto acumulado + usage no DONE).
+    Task UpdateMessageAsync(int id, string content, string thinking, int? promptTokens = null, int? completionTokens = null, long? elapsedMs = null, double? tps = null);
     Task<int> CountMessagesAsync(int sessionId);
     // Compactação: resume o histórico antigo via summarize, apaga as antigas,
     // insere o resumo como mensagem do agente e reordena a cauda. Retorna

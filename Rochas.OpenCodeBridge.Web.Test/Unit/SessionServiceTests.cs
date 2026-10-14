@@ -52,6 +52,7 @@ internal static class SessionServiceTests
             await DeleteAsync(svc, testUserId);
             await GetMessagesAsync(svc, testUserId, testAgentId);
             await AddMessageAsync(svc, testUserId, testAgentId);
+            await UpdateMessageAsync(svc, testUserId, testAgentId);
             await CountMessagesAsync(svc, testUserId, testAgentId);
             await MessageStatusAsync(svc, testUserId, testAgentId);
             await TouchAsync(svc, testUserId, testAgentId);
@@ -160,6 +161,23 @@ internal static class SessionServiceTests
             await s.AddMessageAsync(id, "user", "teste", "", null, null);
             var count = await s.CountMessagesAsync(id);
             Check(count == 1, "AddMessageAsync increments count");
+        }
+    }
+
+    private static async Task UpdateMessageAsync(SessionService s, int userId, int agentId)
+    {
+        // Bolha viva: INSERT parcial + UPDATE progressivo + usage no fim, sem duplicar.
+        var session = await s.CreateAsync(userId, agentId, "Update Msg");
+        if (session.Id is int id)
+        {
+            int mid = await s.AddMessageAsync(id, "assistant", "parcial", "th1", null, null);
+            await s.UpdateMessageAsync(mid, "parcial + fim", "th1 th2");
+            var msgs = await s.GetMessagesAsync(id, 10);
+            Check(msgs.Count == 1, "UpdateMessageAsync sem duplicar");
+            Check(msgs[0].Content == "parcial + fim" && msgs[0].Thinking == "th1 th2", "UpdateMessageAsync atualiza texto");
+            await s.UpdateMessageAsync(mid, "parcial + fim", "th1 th2", 100, 20, 500, 3.5);
+            msgs = await s.GetMessagesAsync(id, 10);
+            Check(msgs[0].PromptTokens == 100 && msgs[0].CompletionTokens == 20, "UpdateMessageAsync grava usage");
         }
     }
 

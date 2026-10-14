@@ -1425,6 +1425,9 @@ public sealed class ChatController(
         var unlinkedToolIds = new List<int>();
         string? lastSub = null;
         int subScopeRejects = 0;
+        // Bolha viva do orquestrador: INSERT no 1º turno com texto, UPDATE nos
+        // seguintes (crash-safe); subagentes seguem em linhas próprias.
+        int liveMsgId = 0;
         string originalTask = "";
         foreach (var m in messages)
             if (m?["role"]?.GetValue<string>() == "user"
@@ -1627,6 +1630,24 @@ public sealed class ChatController(
                     };
                     input.Add(sm);
                 }
+                // Bolha viva: persiste o texto do orquestrador ao fim de cada
+                // turno (INSERT uma vez, UPDATE depois) — crash-safe, sem bolhas
+                // duplicadas no reload. Subagentes têm linhas próprias.
+                try
+                {
+                    string progText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
+                    if (session?.Id is int sidProg && (progText.Length > 0 || assistantThinking.Length > 0))
+                    {
+                        if (liveMsgId <= 0)
+                        {
+                            liveMsgId = await sessionService.AddMessageAsync(sidProg, "assistant",
+                                progText, assistantThinking.ToString(), null, null);
+                            await sessionService.TouchAsync(sidProg);
+                        }
+                        else await sessionService.UpdateMessageAsync(liveMsgId, progText, assistantThinking.ToString());
+                    }
+                }
+                catch { /* histórico best-effort */ }
             }
         }
         }
@@ -1642,8 +1663,19 @@ public sealed class ChatController(
         if (session is not null && session.Id.HasValue && (finalText.Length > 0 || assistantThinking.Length > 0))
         {
             long streamMs = streamSw.ElapsedMilliseconds;
-            int finalMsgId = await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens,
-                streamMs, TpsOf(completionTokens, streamMs));
+            // Bolha viva vira final: UPDATE com texto + usage (sem duplicar no reload).
+            int finalMsgId;
+            if (liveMsgId > 0)
+            {
+                await sessionService.UpdateMessageAsync(liveMsgId, finalText, assistantThinking.ToString(), promptTokens, completionTokens,
+                    streamMs, TpsOf(completionTokens, streamMs));
+                finalMsgId = liveMsgId;
+            }
+            else
+            {
+                finalMsgId = await sessionService.AddMessageAsync(session.Id.Value, "assistant", finalText, assistantThinking.ToString(), promptTokens, completionTokens,
+                    streamMs, TpsOf(completionTokens, streamMs));
+            }
             await sessionService.TouchAsync(session.Id.Value);
             // Órfãs (card que falhou) fecham na bolha final.
             if (unlinkedToolIds.Count > 0)
