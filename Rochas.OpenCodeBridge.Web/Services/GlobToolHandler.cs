@@ -45,8 +45,15 @@ public sealed class GlobToolHandler : IToolHandler
         try
         {
             string[] hits = Directory.GetFileSystemEntries(searchDir, pat, SearchOption.AllDirectories);
+            string wsRoot = Path.GetFullPath(context.WorkspaceRoot);
             string[] rel = hits
-                .Select(h => Path.GetRelativePath(Path.GetFullPath(context.WorkspaceRoot), h))
+                .Select(h =>
+                {
+                    string r = Path.GetRelativePath(wsRoot, h);
+                    // Fora do workspace: relativo vira cadeia "../../.." inútil —
+                    // devolve absoluto (vale p/ path absoluto pedido pelo agente).
+                    return r.StartsWith("..", StringComparison.Ordinal) ? Path.GetFullPath(h) : r;
+                })
                 .OrderBy(h => h, StringComparer.Ordinal)
                 .Take(MaxResults)
                 .ToArray();

@@ -24,7 +24,8 @@ public static class ShellInspector
 
     private static readonly string[] DeniedPatterns =
     {
-        ">/dev/", "/dev/sd", "/dev/nvme", "/dev/hd", "/dev/vd", ":(){",
+        // Dispositivos de bloco (descartar em /dev/null segue liberado).
+        "/dev/sd", "/dev/nvme", "/dev/hd", "/dev/vd", "/dev/mmcblk", "of=/dev/", ":(){",
     };
 
     public static string ExtractCommand(string argumentsJson)

@@ -1,5 +1,5 @@
 // Testes unitários do despachante de tools (handlers em workspace temporário).
-// Execução: dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --web http://127.0.0.1:4130
+// Execução: dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --web http://127.0.0.1:4150
 
 using System.IO;
 using Rochas.OpenCodeBridge.Web.Services;
@@ -35,6 +35,7 @@ internal static class ToolExecutorTests
             ShellInspectorBlocks();
             ShellProcExecGates(exec);
             GitRepoPath(exec, ctx);
+            GlobAbsoluteOutside();
             CpuEtaTps();
             ScriptEtaParse();
         }
@@ -113,6 +114,7 @@ internal static class ToolExecutorTests
         Check(Services.ShellInspector.Validate("mv a b") is not null, "U-insp-mv");
         Check(Services.ShellInspector.Validate("rmdir sub") is not null, "U-insp-rmdir");
         Check(Services.ShellInspector.Validate("echo x > /dev/sda") is not null, "U-insp-dev");
+        Check(Services.ShellInspector.Validate("find /tmp -name \"x*\" 2>/dev/null") is null, "U-insp-devnull-ok");
         Check(Services.ShellInspector.Validate("top") is not null, "U-insp-top-interactive");
         // Liberados: printf/cp (só cp entre os destrutivos), ps, top batch.
         Check(Services.ShellInspector.Validate("printf '%s\\n' oi") is null, "U-insp-printf-ok");
@@ -142,6 +144,33 @@ internal static class ToolExecutorTests
         Check(okPs.Success, "U-gate-ps-ok");
         var okBashN = exec.Execute("shell", "{\"command\": \"bash -n run.sh\"}", 30, "build", shellOnly);
         Check(okBashN.Success || okBashN.Error.Contains("run.sh"), "U-gate-bashn-validation");
+    }
+
+    private static void GlobAbsoluteOutside()
+    {
+        // Fora do workspace: absoluto (sem cadeia "../../.."); dentro: relativo.
+        // Base no volume de dados (gravável; /media direto é root).
+        string wsbase = "/media/mint/3686C649614854E6";
+        string ws = System.IO.Path.Combine(wsbase, $"globws-{System.Guid.NewGuid():N}");
+        string other = System.IO.Path.Combine(wsbase, $"globout-{System.Guid.NewGuid():N}");
+        System.IO.Directory.CreateDirectory(ws);
+        System.IO.Directory.CreateDirectory(other);
+        try
+        {
+            System.IO.File.WriteAllText(System.IO.Path.Combine(other, "alvo.txt"), "x");
+            var h = new GlobToolHandler();
+            var r = h.Handle("{\"pattern\": \"*.txt\", \"path\": \"" + other + "\"}",
+                new ToolContext { WorkspaceRoot = ws, TimeoutSeconds = 30 });
+            Check(r.Success && r.Output.StartsWith(other), "U-glob-absolute-outside");
+            var r2 = h.Handle("{\"pattern\": \"*.txt\", \"path\": \".\"}",
+                new ToolContext { WorkspaceRoot = other, TimeoutSeconds = 30 });
+            Check(r2.Success && !r2.Output.StartsWith("/"), "U-glob-relative-inside");
+        }
+        finally
+        {
+            try { System.IO.Directory.Delete(ws, true); } catch { }
+            try { System.IO.Directory.Delete(other, true); } catch { }
+        }
     }
 
     private static void GitRepoPath(ToolExecutor exec, ToolContext ctx)
