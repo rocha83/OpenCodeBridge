@@ -61,6 +61,9 @@ internal static partial class Program
     // e sintetiza tool_calls. Liga via --coerce-text-tools ou auto quando o
     // model contém "cpu". Qwen3/AWQ (parsers nativos) ficam intactos.
     static bool CoerceTextTools;
+    static bool AntiRepeat = true;                               // AntiRepeat: observa o thinking em stream e conteve repeticao
+    static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
+    static readonly string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida, mude a sua deducao para outra alternativa e responda, obrigado.";
     static bool CoerceFor(string modelId) => CoerceTextTools
         || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false);
 
@@ -110,6 +113,8 @@ internal static partial class Program
             if (cfg["apiKey"]?.GetValue<string>() is string key && key.Length > 0) ApiKey = key;
             if (cfg["passthroughResponses"]?.GetValue<bool>() is bool pt) PassthroughResponses = pt;
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
+            if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
+            if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
             if (cfg["profiles"]?.AsObject() is JsonObject profs)
                 foreach (var kv in profs)
                 {
@@ -332,6 +337,8 @@ internal static partial class Program
                 case "--api-key": ApiKey = cliArgs[i + 1]; break;
                 case "--passthrough-responses": PassthroughResponses = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
             }
         }
     }
@@ -1070,6 +1077,18 @@ var shape = new StringBuilder();
         return dropped;
     }
 
+    /// <summary>AntiRepeat: a cauda (janela) do thinking ja apareceu antes no proprio stream?</summary>
+    /// <param name="accumulated">Thinking acumulado ate aqui.</param>
+    /// <param name="window">Tamanho da cauda comparada (chars).</param>
+    /// <returns>True se a sequencia se repete (loop invalido provavel).</returns>
+    static bool ThinkingRepeats(string accumulated, int window)
+    {
+        if (string.IsNullOrEmpty(accumulated) || window < 32) return false;
+        if (accumulated.Length < 2 * window) return false;
+        string tail = accumulated[^window..];
+        return accumulated.AsSpan(0, accumulated.Length - window).IndexOf(tail.AsSpan(), StringComparison.Ordinal) >= 0;
+    }
+
     /// <summary>Funde system/developer do input num unico system inicial (jinja Qwen exige system primeiro).</summary>
     /// <param name="req">Request Responses (mutado no lugar).</param>
     /// <returns>True se reordenou.</returns>
@@ -1194,6 +1213,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         string reasoningId = "";
         string messageId = "";
         bool thinkOpen = false, msgOpen = false, inThink = false;
+        bool repeatTrip = false;   // AntiRepeat: thinking repetido detectado, aborta e conteve (1 retry)
         string carry = "";   // texto ainda nao classificado (tag pode partir no meio do chunk)
         var toolAccum = new SortedDictionary<int, (string Id, string Name, StringBuilder Args)>();
         int inputTokens = 0, outputTokens = 0;
@@ -1222,6 +1242,13 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             if (!thinkOpen && thinking != "events") { FlushMessage(text); return; }
             if (!thinkOpen) return;
             thinkingText.Append(text);
+            // AntiRepeat: cauda do thinking ja vista antes = loop invalido;
+            // arma o flag (o loop de leitura aborta e o modelo e contido).
+            if (AntiRepeat && !repeatTrip && ThinkingRepeats(thinkingText.ToString(), AntiRepeatWindow))
+            {
+                repeatTrip = true;
+                Log(new JsonObject { ["event"] = "anti-repeat", ["window"] = AntiRepeatWindow, ["thinking_chars"] = thinkingText.Length });
+            }
             Emit("response.reasoning_summary_text.delta", new JsonObject
             {
                 ["type"] = "response.reasoning_summary_text.delta", ["item_id"] = reasoningId,
@@ -1299,8 +1326,31 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         }
 
         // ---- Le o SSE do upstream e traduz delta a delta
-        using var stream = upstreamResponse.Content.ReadAsStream();
-        using var reader = new StreamReader(stream, Encoding.UTF8);
+        // AntiRepeat: ate 2 passagens; a 1a usa o fetch acima, na 2a o chat
+        // ja leva o aviso e o upstream e buscado de novo.
+        HttpResponseMessage RefetchUpstream()
+        {
+            var retryReq = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/completions")
+            {
+                Content = new StringContent(chat.ToJsonString(SerOpts), Encoding.UTF8, "application/json")
+            };
+            WithAuth(retryReq, ctx);
+            return Http.Send(retryReq, HttpCompletionOption.ResponseHeadersRead);
+        }
+        HttpResponseMessage? retryResp = null;
+        for (int attempt = 0; ; attempt++)
+        {
+            HttpResponseMessage srcResp;
+            if (attempt == 0) srcResp = upstreamResponse;
+            else
+            {
+                retryResp = RefetchUpstream();
+                if (!retryResp.IsSuccessStatusCode) break;
+                srcResp = retryResp;
+            }
+            using var attemptScope = attempt == 0 ? null as IDisposable : retryResp;
+            using var stream = srcResp.Content.ReadAsStream();
+            using var reader = new StreamReader(stream, Encoding.UTF8);
         string? line;
         while ((line = reader.ReadLine()) != null)
         {
@@ -1350,6 +1400,18 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                         acc.Args.Append(argsChunk);
                 }
             }
+            if (repeatTrip) break;   // AntiRepeat: para de consumir o loop invalido
+        }
+
+            if (!repeatTrip) break;
+            if (attempt >= 1) break;   // 1 retry de contencao no maximo
+            // Contencao: descarta a janela repetida e devolve o aviso ao modelo.
+            repeatTrip = false;
+            thinkingText.Clear();
+            carry = "";
+            inThink = false;
+            chat["messages"]!.AsArray().Add(new JsonObject { ["role"] = "user", ["content"] = AntiRepeatNotice });
+            Log(new JsonObject { ["event"] = "anti-repeat-retry" });
         }
 
         // ---- Fecho: descarrega o resto, fecha itens, emite tool calls
