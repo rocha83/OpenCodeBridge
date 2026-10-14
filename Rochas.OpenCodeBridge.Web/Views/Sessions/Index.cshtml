@@ -1,0 +1,71 @@
+@model IEnumerable<Rochas.OpenCodeBridge.Web.Models.Session>
+@{ Layout = "_Layout"; ViewData["Title"] = "Sessões"; }
+@{ var isAdmin = (User.FindFirst("IsAdmin")?.Value ?? "false").ToLower() == "true"; }
+@{ var agentNames = (System.Collections.Generic.Dictionary<int?, string>)ViewBag.AgentNames; }
+@{ var userNames = (System.Collections.Generic.Dictionary<int, string>)ViewBag.UserNames; }
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" action="/Sessions" class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label small text-muted mb-1" for="q">Critério (conteúdo das mensagens)</label>
+        <input id="q" name="criterio" class="form-control form-control-sm" value="@ViewBag.Criterio" placeholder="ex.: reembolso, poema..." />
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small text-muted mb-1" for="f-user">Usuário</label>
+        <select id="f-user" name="userId" class="form-select form-select-sm">
+          <option value="0">Todos</option>
+          @foreach (var u in (System.Collections.IEnumerable)ViewBag.Users) {
+          var uu = (Rochas.OpenCodeBridge.Web.Models.User)u;
+          <option value="@uu.Id" @(ViewBag.SelUserId == uu.Id ? "selected" : null)>@uu.Name</option>
+          }
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small text-muted mb-1" for="f-de">De</label>
+        <input id="f-de" type="date" name="de" class="form-control form-control-sm" value="@ViewBag.De" />
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small text-muted mb-1" for="f-ate">Até</label>
+        <input id="f-ate" type="date" name="ate" class="form-control form-control-sm" value="@ViewBag.Ate" />
+      </div>
+      <div class="col-md-2">
+        <div class="small text-muted mb-1">Papel</div>
+        @foreach (var r in (string[])ViewBag.Roles) {
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="checkbox" name="role" value="@r" id="r-@r" @(((string[])ViewBag.SelRoles).Contains(r) ? "checked" : null) />
+          <label class="form-check-label small" for="r-@r">@r</label>
+        </div>
+        }
+      </div>
+      <div class="col-md-1 d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-info">Buscar</button>
+        <a href="/Sessions" class="btn btn-sm btn-outline-secondary">Limpar</a>
+      </div>
+    </form>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center p-3">
+    <p class="fw-bold mb-0">Sessões</p>
+    <div><span class="small text-muted me-2">@Model.Count() de @ViewBag.Total na busca</span></div>
+  </div>
+  <div class="list-group list-group-flush crud-list">
+    @foreach (var s in Model) {
+    <div class="list-group-item">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <a class="fw-bold text-decoration-none" href="/Sessions/Details/@s.Id">@s.Title</a>
+          <span class="badge bg-info ms-2">@(agentNames.TryGetValue(s.AgentId, out var an) ? an : "#" + s.AgentId)</span>
+          <div class="small text-muted mt-1">@(userNames.TryGetValue(s.UserId, out var un) ? un : "#" + s.UserId) · criada @s.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm") · atualizada @s.UpdatedAt.ToLocalTime().ToString("dd/MM HH:mm")</div>
+        </div>
+        <div class="btn-group btn-group-sm flex-shrink-0">
+          <a class="btn btn-outline-secondary" href="/Sessions/Details/@s.Id">Ver</a>
+          @if (isAdmin) {
+          <a class="btn btn-outline-danger" href="/Sessions/Delete/@s.Id" onclick="return confirm('Excluir sessão @s.Title?')">Excluir</a>
+          }
+        </div>
+      </div>
+    </div>
+    }
+  </div>
+</div>

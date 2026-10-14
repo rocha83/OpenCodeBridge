@@ -1,0 +1,38 @@
+@model IEnumerable<Rochas.OpenCodeBridge.Web.Models.SessionMessage>
+@{ Layout = "_Layout"; ViewData["Title"] = "Sessão"; }
+@{ var s = (Rochas.OpenCodeBridge.Web.Models.Session)ViewBag.Session; }
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start gap-2">
+      <div>
+        <p class="fw-bold mb-0">@s.Title</p>
+        <div class="small text-muted mt-1">@ViewBag.UserName · @ViewBag.AgentName · executor @ViewBag.ExecName</div>
+        <div class="small text-muted">criada @s.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm") · atualizada @s.UpdatedAt.ToLocalTime().ToString("dd/MM HH:mm")</div>
+      </div>
+      <div class="btn-group btn-group-sm flex-shrink-0">
+        <a class="btn btn-outline-secondary" href="/Sessions">Voltar</a>
+        @if ((bool)ViewBag.IsAdmin) {
+        <a class="btn btn-outline-danger" href="/Sessions/Delete/@s.Id" onclick="return confirm('Excluir sessão @s.Title?')">Excluir</a>
+        }
+      </div>
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="list-group list-group-flush">
+    @foreach (var m in Model) {
+    <div class="list-group-item">
+      <span class="badge @(m.Role == "user" ? "bg-primary" : m.Role == "subagent" ? "bg-warning text-dark" : "bg-success")">@m.Role</span>
+      <span class="small text-muted ms-2">@m.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")</span>
+      @if ((m.PromptTokens ?? 0) > 0 || (m.CompletionTokens ?? 0) > 0) {
+      <span class="small text-muted ms-2">in @m.PromptTokens/out @m.CompletionTokens</span>
+      }
+      @if ((m.Tps ?? 0) > 0) { <span class="small text-muted ms-2">@m.Tps t/s</span> }
+      <pre class="small mt-2 mb-0 ans rawbox">@m.Content</pre>
+      @if (!string.IsNullOrWhiteSpace(m.Thinking)) {
+      <details class="mt-1"><summary class="small text-muted">Raciocínio</summary><p class="small text-muted">@m.Thinking</p></details>
+      }
+    </div>
+    }
+  </div>
+</div>

@@ -21,10 +21,16 @@ public sealed class Session
     public int? ExecutorAgentId { get; set; }
 
     [Column("title")]
+    [Filterable]
     public string Title { get; set; } = "";
 
     [Column("created_at")]
+    [RangeFilter(LinkedRangeProperty = "CreatedAte")]
     public DateTime CreatedAt { get; set; }
+
+    // Fim do intervalo de criação (de→até no quadro de busca; ORM gera BETWEEN).
+    [NotMapped]
+    public DateTime CreatedAte { get; set; }
 
     [Column("updated_at")]
     public DateTime UpdatedAt { get; set; }

@@ -17,6 +17,7 @@ namespace Rochas.OpenCodeBridge.Web.Test.Unit;
 internal static class SessionServiceTests
 {
     private static int Failures;
+    private static int Total;
 
     internal static async Task RunAsync()
     {
@@ -58,8 +59,9 @@ internal static class SessionServiceTests
             await TouchAsync(svc, testUserId, testAgentId);
             await ToolCallAsync(svc, testUserId, testAgentId);
             await HistoryTreeAsync(svc, testUserId, testAgentId);
+            await MessageSearchAsync(svc, messagesRepo, sessionsRepo, testUserId, testAgentId);
 
-            System.Console.WriteLine($"=== SessionService Unit: {13 - Failures}/13 PASS, {Failures} FAIL ===");
+            System.Console.WriteLine($"=== SessionService Unit: {Total - Failures}/{Total} PASS, {Failures} FAIL ===");
         }
         finally
         {
@@ -69,6 +71,7 @@ internal static class SessionServiceTests
 
     private static void Check(bool ok, string name)
     {
+        Total++;
         System.Console.WriteLine((ok ? "PASS " : "FAIL ") + name);
         if (!ok) Failures++;
     }
@@ -179,6 +182,37 @@ internal static class SessionServiceTests
             msgs = await s.GetMessagesAsync(id, 10);
             Check(msgs[0].PromptTokens == 100 && msgs[0].CompletionTokens == 20, "UpdateMessageAsync grava usage");
         }
+    }
+
+    private static async Task MessageSearchAsync(SessionService s,
+        Rochas.Data.Specification.Interfaces.IGenericRepository<SessionMessage> messagesRepo,
+        Rochas.Data.Specification.Interfaces.IGenericRepository<Session> sessionsRepo,
+        int userId, int agentId)
+    {
+        // Search atinge conteúdo de user/assistant/subagent; range de datas filtra sessões.
+        var session = await s.CreateAsync(userId, agentId, "Busca Msg");
+        if (session.Id is not int id) return;
+        await s.AddMessageAsync(id, "user", "zzqmsg pergunta", "", null, null);
+        await s.AddMessageAsync(id, "assistant", "zzqmsg resposta", "", null, null);
+        await s.AddMessageAsync(id, "subagent", "zzqmsg script", "", null, null);
+        var hits = await messagesRepo.Search("zzqmsg");
+        var roles = hits.Where(m => m.SessionId == id).Select(m => m.Role).ToHashSet();
+        Check(roles.SetEquals(new[] { "user", "assistant", "subagent" }), "MsgSearch atinge 3 papeis");
+        var mine = await sessionsRepo.Query(new Session
+        {
+            UserId = userId,
+            CreatedAt = DateTime.UtcNow.AddDays(-1),
+            CreatedAte = DateTime.UtcNow.AddDays(1),
+        });
+        Check(mine.Any(x => x.Id == id), "Session range encontra");
+        var fora = await sessionsRepo.Query(new Session
+        {
+            CreatedAt = DateTime.UtcNow.AddDays(-30),
+            CreatedAte = DateTime.UtcNow.AddDays(-20),
+        });
+        Check(!fora.Any(x => x.Id == id), "Session range exclui");
+        var semFiltro = await sessionsRepo.Query(new Session());
+        Check(semFiltro.Any(x => x.Id == id), "Session sem filtro inclui");
     }
 
     private static async Task MessageStatusAsync(SessionService s, int userId, int agentId)

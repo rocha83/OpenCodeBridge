@@ -18,6 +18,7 @@ public sealed class SessionMessage
     public string Role { get; set; } = ""; // "user" | "assistant" | "system"
 
     [Column("content")]
+    [Filterable]
     public string Content { get; set; } = "";
 
     [Column("thinking")]
