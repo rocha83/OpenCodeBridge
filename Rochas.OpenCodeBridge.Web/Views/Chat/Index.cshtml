@@ -140,11 +140,12 @@
 /* Modal Arquivo contido na tela: corpo flex (editor 60 / diff 30), scrolls internos. */
 #fileModal .modal-dialog { max-height: 94vh; margin-top: 3vh; margin-bottom: 3vh; }
 #fileModal .modal-content { max-height: 94vh; display: flex; flex-direction: column; }
-#fileModal .modal-body { height: 78vh; display: flex; flex-direction: column; gap: .5rem; min-height: 0; overflow: hidden; flex: 1 1 auto; }
+#fileModal .modal-body { height: 78vh; display: flex; flex-direction: column; gap: .5rem; min-height: 0; overflow: hidden; flex: 1 1 auto; padding: 1rem 1rem .3rem; }
+#fileModal #fileMsg { margin-top: .25rem; margin-bottom: 0; }
 #cmHost { flex: 1 1 auto; min-height: 12rem; overflow: hidden; }
 .CodeMirror { height: 100%; font-size: 13px; }
 #fileModalBody.with-diff #cmHost { flex: 0 1 60%; }
-#diffHost { display: none; flex: 0 1 30%; min-height: 0; overflow: auto; }
+#diffHost { display: none; flex: 0 1 40%; min-height: 0; overflow: auto; }
 #fileModalBody.with-diff #diffHost { display: block; }
 #diffHost .d2h-wrapper { text-align: left; }
 #diffHost .d2h-file-header { display: none; }
