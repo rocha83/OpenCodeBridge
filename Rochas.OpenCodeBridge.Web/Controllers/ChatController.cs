@@ -828,6 +828,10 @@ public sealed class ChatController(
         }
     }
 
+    // Cutucada de delegação só p/ tarefa real: saudação/ack curto responde
+    // em texto, sem segmentar (ex.: "ola" não vira FASE 1).
+    private static bool WorthDelegating(string task) => (task ?? "").Trim().Length >= 32;
+
     private async Task StreamWithTools(Agent agent, JsonArray messages, Session? session, CancellationToken ct)
     {
         // Cronômetro do stream inteiro: duração da bolha final do agente.
@@ -868,8 +872,7 @@ public sealed class ChatController(
         int dsqNudges = 0;
         // Cutucada de delegação do plan (máx 2): resumiu em texto sem chamar
         // subagent — manda entregar a fase via tool, sem tocar prompts.
-        int planNudges = 0;
-        // Gate de escopo do subagent (máx 2 recusas; depois delega do jeito
+        int planNudges = 0;        // Gate de escopo do subagent (máx 2 recusas; depois delega do jeito
         // que veio p/ não travar o run).
         int subScopeRejects = 0;
         // Enunciado original (primeira user do contexto): base do gate.
@@ -1142,7 +1145,7 @@ public sealed class ChatController(
                 // (máx 2, sem tocar prompts — mesma linha anti-giro/deepseek).
                 if (!DeepSeekToolCoercion.IsDeepSeek(agent.Model) && string.Equals(agent.Mode, "plan", StringComparison.OrdinalIgnoreCase)
                     && ToolDefinitions.Allowed(agent, "subagent")
-                    && planNudges < 2 && assistantContent.Length > 0 && !anyToolRan)
+                    && planNudges < 2 && assistantContent.Length > 0 && !anyToolRan && WorthDelegating(originalTask))
                 {
                     planNudges++;
                     string prose = StripThinkTags(assistantContent.ToString(), assistantThinking);
@@ -1533,7 +1536,7 @@ public sealed class ChatController(
             if (accum.Calls.Count == 0)
             {
                 // Plan sem delegar: cutucada mecânica (máx 2), paridade com o chat.
-                if (string.Equals(agent.Mode, "plan", StringComparison.OrdinalIgnoreCase) && ToolDefinitions.Allowed(agent, "subagent") && planNudges < 2 && !anyCall && assistantContent.Length > 0)
+                if (string.Equals(agent.Mode, "plan", StringComparison.OrdinalIgnoreCase) && ToolDefinitions.Allowed(agent, "subagent") && planNudges < 2 && !anyCall && assistantContent.Length > 0 && WorthDelegating(originalTask))
                 {
                     planNudges++;
                     string prose = StripThinkTags(assistantContent.ToString(), assistantThinking);
