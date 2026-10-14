@@ -1,5 +1,10 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Web — métricas medidas: 4B CPU 2.5 t/s, 9B GPU 30 t/s (2026-10-14)
+- `CpuDefaultTps` 3.0→2.5 (`appsettings` + default); `ExecutorTps`: CPU 2.5,
+  GPU 20→30; `measured_tps` no banco (9B=30, 4B=2.5) e no seed (id 8 tinha
+  30.7 herdado da GPU).
+
 ## Web — agentes 6/7/9, bolha viva, busca ORM, sem fases hardcoded (2026-10-14)
 - `AgentSeeder`: ids 6 (Scripter Q8), 7 (Eng Plan Q4), 9 (Dev Build Q4);
   prompts 9B com ctx moderado (160k), 4B limitado (16k); nomes no padrão

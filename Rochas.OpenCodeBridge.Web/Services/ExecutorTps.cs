@@ -1,13 +1,13 @@
 namespace Rochas.OpenCodeBridge.Web.Services;
 
 // Throughput do executor p/ ETA do painel (helper separado, sem orquestrador).
-// ETA correta por engine: sondado vale; sem sonda, CPU (llama/:4125) usa
-// CpuDefaultTps (3 t/s, realista) e GPU usa 20 t/s.
+// Medido em 14/10: CPU 4B 2.5 t/s, GPU 9B 30 t/s. Sondado vale; sem sonda,
+// CPU (llama/:4125) usa CpuDefaultTps e GPU usa 30 t/s.
 public static class ExecutorTps
 {
     public static double ResolveTps(Models.Agent exec, double cpuDefaultTps) =>
         exec.MeasuredTps > 0 ? exec.MeasuredTps
-        : IsCpuExecutor(exec) ? (cpuDefaultTps > 0 ? cpuDefaultTps : 3.0) : 20;
+        : IsCpuExecutor(exec) ? (cpuDefaultTps > 0 ? cpuDefaultTps : 2.5) : 30;
 
     public static bool IsCpuExecutor(Models.Agent exec) =>
         (exec.BridgeUrl ?? "").Contains(":4125") ||

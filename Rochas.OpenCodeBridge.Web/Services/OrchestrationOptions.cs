@@ -8,8 +8,8 @@ public sealed class OrchestrationOptions
     // Executores simultâneos (0 = núcleos da CPU; GPU paraleliza, CPU llama serializa).
     public int MaxParallel { get; set; } = 0;
     // tok/s assumido quando o executor nunca foi sondado e roda em CPU
-    // (llama). Na CPU a ETA correta depende disto: GPU chuta 7, CPU 4.0.
-    public double CpuDefaultTps { get; set; } = 3.0;
+    // (llama 4B). Medido em 14/10: CPU 2.5 t/s, GPU 9B 30 t/s.
+    public double CpuDefaultTps { get; set; } = 2.5;
     // Revisao em lote do orch sobre os resultados (pos-execucao, via /Chat/Review).
     // Inativa por padrao: o fluxo segue decompose -> aprova -> executa -> sintetiza.
     public bool EnableReview { get; set; } = false;
