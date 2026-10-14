@@ -32,6 +32,8 @@ internal static class ToolExecutorTests
             EdgeCases(exec);
             AgentFlags(exec);
             PlanToolsFilter();
+            ShellInspectorBlocks();
+            ShellProcExecGates(exec);
             CpuEtaTps();
             ScriptEtaParse();
         }
@@ -40,12 +42,15 @@ internal static class ToolExecutorTests
             try { Directory.Delete(root, true); } catch { }
         }
 
-        System.Console.WriteLine($"=== ToolExecutor Unit: {34 - Failures}/34 PASS, {Failures} FAIL ===");
+        System.Console.WriteLine($"=== ToolExecutor Unit: {Total - Failures}/{Total} PASS, {Failures} FAIL ===");
         return Failures;
     }
 
+    private static int Total;
+
     private static void Check(bool ok, string name)
     {
+        Total++;
         System.Console.WriteLine((ok ? "PASS " : "FAIL ") + name);
         if (!ok) Failures++;
     }
@@ -98,6 +103,46 @@ internal static class ToolExecutorTests
         }
     }
 
+    private static void ShellInspectorBlocks()
+    {
+        // Negação uniforme: direto, cadeia e payload bash -c (furo antigo).
+        Check(Services.ShellInspector.Validate("rm -rf /tmp/x") is not null, "U-insp-rm");
+        Check(Services.ShellInspector.Validate("sh -c \"rm -rf /tmp/x\"") is not null, "U-insp-bash-rm");
+        Check(Services.ShellInspector.Validate("echo ok; kill 123") is not null, "U-insp-chain-kill");
+        Check(Services.ShellInspector.Validate("mv a b") is not null, "U-insp-mv");
+        Check(Services.ShellInspector.Validate("rmdir sub") is not null, "U-insp-rmdir");
+        Check(Services.ShellInspector.Validate("echo x > /dev/sda") is not null, "U-insp-dev");
+        Check(Services.ShellInspector.Validate("top") is not null, "U-insp-top-interactive");
+        // Liberados: printf/cp (só cp entre os destrutivos), ps, top batch.
+        Check(Services.ShellInspector.Validate("printf '%s\\n' oi") is null, "U-insp-printf-ok");
+        Check(Services.ShellInspector.Validate("cp a b") is null, "U-insp-cp-ok");
+        Check(Services.ShellInspector.Validate("ps aux") is null, "U-insp-ps-ok");
+        Check(Services.ShellInspector.Validate("top -b -n 1") is null, "U-insp-top-batch-ok");
+        Check(Services.ShellInspector.Validate("bash -n run.sh") is null, "U-insp-bashn-ok");
+        // Sem falso-positivo em palavra contida.
+        Check(Services.ShellInspector.Validate("echo firmware ok") is null, "U-insp-substring-ok");
+        Check(Services.ShellInspector.Classify("bash run.sh") == Services.ShellInspector.ShellClass.Execution, "U-insp-class-exec");
+        Check(Services.ShellInspector.Classify("bash -n run.sh") == Services.ShellInspector.ShellClass.Validation, "U-insp-class-validation");
+        Check(Services.ShellInspector.Classify("ps aux") == Services.ShellInspector.ShellClass.Proc, "U-insp-class-proc");
+        Check(Services.ShellInspector.Classify("ls -la") == Services.ShellInspector.ShellClass.Other, "U-insp-class-other");
+    }
+
+    private static void ShellProcExecGates(ToolExecutor exec)
+    {
+        var shellOnly = new Models.Agent { Name = "so", Mode = "build", Tools = "shell" };
+        var full = new Models.Agent { Name = "full", Mode = "build", Tools = "shell,proc,exec" };
+        var noExec = exec.Execute("shell", "{\"command\": \"bash run.sh\"}", 30, "build", shellOnly);
+        Check(!noExec.Success && noExec.Error.Contains("exec"), "U-gate-exec");
+        var noProc = exec.Execute("shell", "{\"command\": \"ps aux\"}", 30, "build", shellOnly);
+        Check(!noProc.Success && noProc.Error.Contains("proc"), "U-gate-proc");
+        var okPrintf = exec.Execute("shell", "{\"command\": \"printf oi\"}", 30, "build", shellOnly);
+        Check(okPrintf.Success, "U-gate-printf-ok");
+        var okPs = exec.Execute("shell", "{\"command\": \"ps aux\"}", 30, "build", full);
+        Check(okPs.Success, "U-gate-ps-ok");
+        var okBashN = exec.Execute("shell", "{\"command\": \"bash -n run.sh\"}", 30, "build", shellOnly);
+        Check(okBashN.Success || okBashN.Error.Contains("run.sh"), "U-gate-bashn-validation");
+    }
+
     // ETA estimada pelo modelo no cabeçalho do script; ausente = vazio.
     private static void ScriptEtaParse()
     {
@@ -125,7 +170,7 @@ internal static class ToolExecutorTests
     private static void ShellDenied(ToolExecutor exec)
     {
         var r = exec.Execute("shell", "{\"command\": \"rm -rf /tmp/x\"}");
-        Check(!r.Success && r.Error.Contains("allowlist"), "U-tool-shell-denied");
+        Check(!r.Success && r.Error.Contains("negado"), "U-tool-shell-denied");
     }
 
     private static void ShellMetacharDenied(ToolExecutor exec)

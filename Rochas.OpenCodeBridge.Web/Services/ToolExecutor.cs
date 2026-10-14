@@ -67,6 +67,19 @@ namespace Rochas.OpenCodeBridge.Web.Services
             var gate = allowAgent ?? agent;
             if (gate is not null && !ToolDefinitions.Allowed(gate, key))
                 return ToolResult.Fail($"Não permitido: tool '{key}' fora do harness do agente '{gate.Name}'");
+            // Gates de shell: proc (ps/top/pgrep) exige 'Visualização de
+            // processos'; bash/sh fora de '-n' exige 'Execução de scripts'
+            // (validação `bash -n` segue no shell). A negação (inspetor) roda
+            // dentro do handler e vale p/ todos os caminhos, inclusive bash -c.
+            if (key == "shell" && gate is not null)
+            {
+                var set = ToolDefinitions.ToolSet(gate);
+                var cls = ShellInspector.Classify(ShellInspector.ExtractCommand(arguments ?? ""));
+                if (cls == ShellInspector.ShellClass.Proc && !set.Contains("proc"))
+                    return ToolResult.Fail($"Não permitido: visualização de processos exige 'proc' no harness do agente '{gate.Name}'");
+                if (cls == ShellInspector.ShellClass.Execution && !set.Contains("exec"))
+                    return ToolResult.Fail($"Não permitido: execução de scripts exige 'exec' no harness do agente '{gate.Name}'");
+            }
             // Preset display (sem shell): shell anunciada só p/ `echo` simples.
             if (agent is not null && key == "shell" && !ToolDefinitions.ToolSet(agent).Contains("shell")
                 && !ToolDefinitions.DisplayOnly(ToolDefinitions.ToolSet(agent), arguments ?? ""))

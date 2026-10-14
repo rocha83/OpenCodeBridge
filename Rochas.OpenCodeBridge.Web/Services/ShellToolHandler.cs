@@ -13,8 +13,8 @@ public sealed class ShellToolHandler : IToolHandler
     {
         "ls", "cat", "head", "tail", "echo", "sed", "grep", "find", "wc", "diff",
         "file", "pwd", "date", "git", "dotnet", "python", "python3", "node",
-        "npm", "curl", "wget", "shell", "bash", "sh", "mkdir", "touch",
-        "bc", "expr", "awk", "zip", "unzip",
+        "npm", "curl", "wget", "shell", "bash", "sh", "mkdir", "touch", "cp",
+        "bc", "expr", "awk", "zip", "unzip", "printf", "ps", "top", "pgrep",
     };
 
     private static readonly string[] DeniedTokens =
@@ -35,7 +35,11 @@ public sealed class ShellToolHandler : IToolHandler
 
     public ToolResult Handle(string argumentsJson, ToolContext context)
     {
-        string command = ExtractCommand(argumentsJson);
+        // Inspetor primeiro: negação uniforme em todos os caminhos (direto,
+        // cadeia, payload bash -c). Checagens estruturais vêm depois.
+        string command = ShellInspector.ExtractCommand(argumentsJson);
+        if (ShellInspector.Validate(command) is string whyInsp)
+            return ToolResult.Fail(whyInsp);
         var parts = SplitChain(command);
         if (parts.Count <= 1)
         {
@@ -120,7 +124,7 @@ public sealed class ShellToolHandler : IToolHandler
         argv = Array.Empty<string>();
 
         // Extrai "command" quando o modelo manda JSON {"command": "..."}.
-        string command = ExtractCommand(arguments);
+        string command = ShellInspector.ExtractCommand(arguments);
         return TryBuildArgvFromCommand(command, out argv, out why);
     }
 
@@ -184,18 +188,6 @@ public sealed class ShellToolHandler : IToolHandler
 
         argv = new[] { name }.Concat(ExpandGlobs(rest)).ToArray();
         return true;
-    }
-
-    private static string ExtractCommand(string arguments)
-    {
-        try
-        {
-            var obj = JsonNode.Parse(arguments)?.AsObject();
-            if (obj?["command"]?.GetValue<string>() is string cmd && !string.IsNullOrWhiteSpace(cmd))
-                return cmd.Trim();
-        }
-        catch { /* não é JSON: usa cru */ }
-        return (arguments ?? "").Trim();
     }
 
     // Devolve só o fora-de-aspas (para checagem de metacaracteres; o citado vai literal).

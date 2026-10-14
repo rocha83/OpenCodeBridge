@@ -1,5 +1,14 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Web — inspetor shell + proc/exec p/ Scripters (2026-10-14)
+- `ShellInspector` novo: negação uniforme (direto, cadeia, payload `bash -c`
+  — furo antigo pulava tudo) + `top` só batch + `mv/rm/rmdir` negados, só `cp`;
+  `printf/ps/top/pgrep` no allowlist; fail-closed com motivo.
+- Gates no `ToolExecutor`: `ps/top/pgrep` exigem `proc`, `bash/sh` fora de
+  `-n` exige `exec` (`bash -n` segue validação no `shell`); Plan remove `exec`.
+- Form: `proc` acima de validação, `exec` logo abaixo; seeds 3/6/8/9 com
+  `proc,shell,exec`; `write/edit` anunciadas p/ Build via CSV (4B chama direto).
+
 ## Web — métricas medidas: 4B CPU 2.5 t/s, 9B GPU 30 t/s (2026-10-14)
 - `CpuDefaultTps` 3.0→2.5 (`appsettings` + default); `ExecutorTps`: CPU 2.5,
   GPU 20→30; `measured_tps` no banco (9B=30, 4B=2.5) e no seed (id 8 tinha

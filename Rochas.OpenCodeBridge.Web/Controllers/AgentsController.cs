@@ -46,16 +46,16 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
     private static string ExpandTools(string[]? selected, string? mode)
     {
         var want = new HashSet<string>(selected ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-        // Plan nunca escreve nem valida execução (fetch navega: fica).
-        if (string.Equals(mode, "plan", StringComparison.OrdinalIgnoreCase)) { want.Remove("write"); want.Remove("shell"); }
+        // Plan nunca escreve, valida nem executa (fetch navega: fica; proc só lê: fica).
+        if (string.Equals(mode, "plan", StringComparison.OrdinalIgnoreCase)) { want.Remove("write"); want.Remove("shell"); want.Remove("exec"); }
         var out_ = new List<string>();
         if (want.Contains("glob")) out_.Add("glob");
         if (want.Contains("read")) { out_.Add("read"); out_.Add("grep"); }
         if (want.Contains("write")) { out_.Add("write"); out_.Add("edit"); }
-        foreach (var t in new[] { "git", "fetch", "shell", "subagent" }) if (want.Contains(t)) out_.Add(t);
+        foreach (var t in new[] { "git", "fetch", "proc", "shell", "exec", "subagent" }) if (want.Contains(t)) out_.Add(t);
         if (want.Contains("display")) { out_.Add("read"); out_.Add("display"); }
         var rank = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-            { ["glob"] = 0, ["read"] = 1, ["grep"] = 2, ["git"] = 3, ["fetch"] = 4, ["display"] = 5, ["write"] = 6, ["edit"] = 7, ["shell"] = 8, ["subagent"] = 9 };
+            { ["glob"] = 0, ["read"] = 1, ["grep"] = 2, ["git"] = 3, ["fetch"] = 4, ["display"] = 5, ["write"] = 6, ["edit"] = 7, ["proc"] = 8, ["shell"] = 9, ["exec"] = 10, ["subagent"] = 11 };
         return string.Join(",", out_.Distinct().OrderBy(t => rank.TryGetValue(t, out int r) ? r : 99));
     }
 

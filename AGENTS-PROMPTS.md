@@ -23,7 +23,10 @@ Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga, comp
   vazio = nenhuma. Backstop no executor nega fora do CSV
   (preset display: shell só-`echo` simples). `write`/`edit` anunciadas só
   p/ quem tem no CSV (agentes Build).
-- Backstop é por **Mode** (`ToolExecutor.cs`): `mode == "plan"` barra
+- Backstop é por **Mode + gates** (`ToolExecutor.cs`): `mode == "plan"` barra
+  `write`/`edit`; `ps/top/pgrep` exigem `proc`, `bash/sh` fora de `-n` exige
+  `exec` no CSV. Inspetor (`ShellInspector`) nega antes em todos os caminhos:
+  `rm/kill/pkill/mv/rmdir` e padrões (`>/dev/`, fork-bomb); `top` só batch.
   `write`/`edit` mesmo se o modelo chamar (só entram via coerção
   fence/`SuggestedCommands`). Em `build`, passam.
 - **Plan (id 1, orchestrator/plan)**: lê, navega (glob), git, internet

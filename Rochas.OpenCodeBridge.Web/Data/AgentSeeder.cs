@@ -27,7 +27,7 @@ public static class AgentSeeder
             0.5, "events",
             "Voce e um agente autonomo arquiteto desenvolvedor de software e dados (ML e NN) senior, executa todas as tools e implementa os artefatos e testes conforme enunciado seguindo as melhores praticas de desenvolvimento, delega tarefas a subagentes quando entende o contexto moderado (160k)",
             "orchestrator", "Build", 30.0, 1,
-            "glob,read,grep,git,fetch,display,write,edit,shell,subagent"),
+            "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec,subagent"),
         new(4, "Engenheiro de Software - Orch - Q8 GPU", "qwen3.5-9b", "http://127.0.0.1:4124",
             0.5, "events",
             "Voce e um agente arquiteto engenheiro de software e dados (ML e NN) senior, analise o enunciado expanda o compreendido divida em fases e delegue para subagentes desenvolvedores senior (porem menor capacidade de inferencia) ",
@@ -42,7 +42,7 @@ public static class AgentSeeder
             0.5, "off",
             "Voce e um agente desenvolvedor senior que implementa codigos utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo ",
             "", "Build", 30.0, 1,
-            "glob,read,grep,git,fetch,display,write,edit,shell"),
+            "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec"),
         new(7, "Engenheiro de Software - Plan - Q4 CPU", "qwen3.5-4b", "http://127.0.0.1:4125",
             0.5, "events",
             "Voce e um agente autonomo arquiteto engenheiro de software e dados (ML e NN) senior adepto das melhores praticas SOLID, design DDD clean arch e uso de ORM, delega tarefas a subagentes quando entende que o contexto ficou limitado (16k)",
@@ -52,12 +52,12 @@ public static class AgentSeeder
             0.5, "off",
             "Voce e um agente desenvolvedor senior que implementa codigos utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo ",
             "", "Build", 2.5, 1,
-            "glob,read,grep,git,fetch,display,write,edit,shell"),
+            "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec"),
         new(9, "Desenvolvedor de Software - Build - Q4 CPU", "qwen3.5-4b", "http://127.0.0.1:4125",
             0.5, "events",
             "Voce e um agente autonomo arquiteto desenvolvedor de software e dados (ML e NN) senior, executa todas as tools e implementa os artefatos e testes conforme enunciado seguindo as melhores praticas de desenvolvimento, delega tarefas a subagentes quando entende que o contexto ficou limitado (16k)",
             "orchestrator", "Build", 2.5, 1,
-            "glob,read,grep,git,fetch,display,write,edit,shell,subagent"),
+            "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec,subagent"),
     ];
 
     public static void SeedIfEmpty(SqliteConnection conn)
