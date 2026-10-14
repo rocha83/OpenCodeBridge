@@ -1123,3 +1123,8 @@
 - Faixas em progressão + `, diálogo em pt-br`; faixa `imunow` (Mova.Pwa
   expediente) registrada e com doc em `Projetos/Imunow/mova/`; azul e imunow
   PASS no 14B. Janela headed 1536x864.
+
+## CPU 4B slot unico 16k + prompts canonicos (2026-10-14)
+- llama CPU `:4110` fixado em slot unico: `-c 16384 -np 1 -t/-tb >=2 -ngl 0` (CPU puro) em `start-llama-cpu.sh`, unit `llama-cpu.service` e desktop; prova na `:4111` com `n_slots=1, n_ctx_slot=16384` e inferencia "ok" (~11 tok/s CPU puro). `:4110` ativo ainda com 2 slots: reiniciar pelo icone aplica a nova config.
+- Web: `ContextWindow` parametrizavel via appsettings `ContextWindow` (`CpuContextTokens 16384`, `CpuMaxOutputTokens 4096`, `CpuMaxInputTokens 12288`, `GpuMaxInputTokens 229376`); `BridgeHelper.ChatAsync` default `8192->4096` (8k estourava o ctx 16k do 4B).
+- Prompts canonicos (base Build) replicados em opencode `plan/build/orch.md`; atomic agent tem prompt unico nao-editavel (segue o do Build) + `completionMaxTokens 8192->4096` na linha CPU; fonte em `AGENTS-PROMPTS.md` (secao Canonicos). `opencode.v2.json` 4B `32768/8192->16384/4096`.

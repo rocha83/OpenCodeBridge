@@ -10,8 +10,10 @@ public static class BridgeHelper
     public sealed record ToolCall(string Id, string Name, string Args);
     public sealed record ChatTurn(bool Ok, string Content, string Thinking, int? PromptTokens, int? CompletionTokens, List<ToolCall> Calls, string Error);
 
+    // Teto de saída padrão 4096: cabe no orçamento da linha CPU (ctx 16384 em
+    // slot único menos 12k de entrada). 8192 estouraria o ctx 16k do 4B.
     public static async Task<ChatResult> ChatAsync(IBridgeClient bridge, string bridgeUrl, string model,
-        double temperature, string systemPrompt, JsonArray messages, CancellationToken ct, int maxTokens = 8192, bool? enableThinking = null)
+        double temperature, string systemPrompt, JsonArray messages, CancellationToken ct, int maxTokens = 4096, bool? enableThinking = null)
     {
         using var buffer = new MemoryStream();
         // Orquestração é texto puro (sem tools): JSON de decomposição e artefatos

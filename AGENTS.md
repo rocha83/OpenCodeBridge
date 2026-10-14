@@ -3,9 +3,10 @@
 ## Garantia: tudo local, nada p/ nuvem
 - GPU `llama :4100`: `Qwen3.5-9B Q8_0`, ctx `163840` (160k) → bridge `:4124`
   (`qwen3.5-9b`, saída `32768`).
-- CPU `llama :4110` (`-ngl 0`): `Qwen3.5-4B`, ctx `32768` em 2 slots (16k/slot)
-  → bridge `:4125` (`qwen3.5-4b`, saída `4096`). O 4B substitui os modelos
-  pequenos anteriores (ex.: Coder 2.5): é o executor da linha CPU.
+- CPU `llama :4110` (`-ngl 0`, CPU puro): `Qwen3.5-4B`, ctx `16384` em SLOT
+  ÚNICO (`-np 1`, mín. 2 threads) → bridge `:4125` (`qwen3.5-4b`, saída
+  `4096`). O 4B substitui os modelos pequenos anteriores (ex.: Coder 2.5):
+  é o executor da linha CPU.
 - Web em `:4130` (config `Web:Port` no `appsettings.json`, override via env
   `BRIDGE_WEB_PORT`); `:4150` reservado ao Caddy (Grafana `4800`); banco em `BRIDGE_WEB_DB_DIR` (disco local).
 - Verificação: cada chamada aparece em `/tmp/bridge-gpu.log` ou
@@ -22,7 +23,7 @@
 - `presence_penalty`: Responses API não define; ignorado de propósito.
 
 ## Ordem de boot p/ testes
-1. llama GPU `:4100` (Q8 160k) e CPU `:4110` (4B 16k/slot).
+1. llama GPU `:4100` (Q8 160k) e CPU `:4110` (4B 16k slot único, `-np 1`).
 2. Bridges `:4124` → `:4100` e `:4125` → `:4110` (`--passthrough-responses`).
 3. `curl /api/status` nas portas antes de rodar o agente.
 

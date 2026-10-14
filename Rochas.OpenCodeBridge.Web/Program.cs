@@ -47,6 +47,11 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddHttpClient();
 builder.Services.Configure<MockBridgeOptions>(builder.Configuration.GetSection("MockBridge"));
 builder.Services.Configure<DiagnosticOptions>(builder.Configuration.GetSection("Diagnostics"));
+builder.Services.Configure<OrchestrationOptions>(builder.Configuration.GetSection("Orchestration"));
+builder.Services.Configure<ContextWindowOptions>(builder.Configuration.GetSection("ContextWindow"));
+// Aplica o orçamento de contexto (CPU 16k slot único por padrão) ao estático.
+var ctxOpts = builder.Configuration.GetSection("ContextWindow").Get<ContextWindowOptions>() ?? new ContextWindowOptions();
+ContextWindow.Configure(ctxOpts.CpuContextTokens, ctxOpts.CpuMaxOutputTokens, ctxOpts.CpuMaxInputTokens, ctxOpts.GpuMaxInputTokens);
 builder.Services.AddSingleton<IDiagnosticTelemetry, DiagnosticTelemetry>();
 builder.Services.AddScoped<IBridgeClient>(sp =>
 {

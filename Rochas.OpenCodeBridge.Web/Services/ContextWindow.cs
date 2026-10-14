@@ -5,19 +5,38 @@ using Rochas.OpenCodeBridge.Web.Models;
 namespace Rochas.OpenCodeBridge.Web.Services;
 
 // Janela de contexto por tokens (stateless). Comentários pt-BR.
+// Linha CPU: llama :4110 CPU puro (-ngl 0), Qwen3.5-4B, ctx 16384 em
+// SLOT ÚNICO (-np 1, mín. 2 threads). Orçamento de entrada = ctx - saída.
 public static class ContextWindow
 {
-    // Orçamento por linha: GPU (ctx cheio menos saída) vs CPU (slot menor menos saída).
+    // Orçamento por linha: GPU (ctx cheio menos saída) vs CPU (slot único menos saída).
     // Heurística: ~4 chars/token (pt-BR). Se bridge devolve usage.real, usar esse.
     public const int MaxInputTokens = 229376;
     public const double CharsPerToken = 4.0;
 
-    // Orçamento de entrada por linha: CPU (:4125/4b) 12288, resto (GPU 9B) 229376.
+    // ctx total da linha CPU (slot único) e teto de saída: parametrizáveis via
+    // appsettings "ContextWindow" (ver ContextWindowOptions). Padrão 16k/4k.
+    public static int CpuContextTokens { get; set; } = 16384;
+    public static int CpuMaxOutputTokens { get; set; } = 4096;
+    public static int CpuMaxInputTokens { get; set; } = 12288;
+    public static int GpuMaxInputTokens { get; set; } = MaxInputTokens;
+
+    public static void Configure(int cpuContext, int cpuOutput, int cpuInput, int gpuInput)
+    {
+        if (cpuContext > 0) CpuContextTokens = cpuContext;
+        if (cpuOutput > 0) CpuMaxOutputTokens = cpuOutput;
+        if (cpuInput > 0) CpuMaxInputTokens = cpuInput;
+        else if (cpuContext > 0 && cpuOutput > 0) CpuMaxInputTokens = cpuContext - cpuOutput;
+        if (gpuInput > 0) GpuMaxInputTokens = gpuInput;
+    }
+
+    // Orçamento de entrada por linha: CPU (:4125/4b) = CpuMaxInputTokens (12k =
+    // 16k ctx slot único menos 4k saída), resto (GPU 9B) = GpuMaxInputTokens.
     public static int ResolveMaxInput(string model, string bridgeUrl)
     {
         if ((bridgeUrl ?? "").Contains(":4125") || (model ?? "").Contains("4b"))
-            return 12288;
-        return MaxInputTokens;
+            return CpuMaxInputTokens;
+        return GpuMaxInputTokens;
     }
 
     // Mensagem para envio à bridge (subset de SessionMessage).
