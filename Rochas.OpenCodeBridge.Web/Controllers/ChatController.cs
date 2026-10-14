@@ -828,10 +828,6 @@ public sealed class ChatController(
         }
     }
 
-    // Cutucada de delegação só p/ tarefa real: saudação/ack curto responde
-    // em texto, sem segmentar (ex.: "ola" não vira FASE 1).
-    private static bool WorthDelegating(string task) => (task ?? "").Trim().Length >= 32;
-
     private async Task StreamWithTools(Agent agent, JsonArray messages, Session? session, CancellationToken ct)
     {
         // Cronômetro do stream inteiro: duração da bolha final do agente.
@@ -870,9 +866,7 @@ public sealed class ChatController(
         // Cutucadas DeepSeek em prosa (máx 2, contador próprio p/ não
         // interferir no anti-giro).
         int dsqNudges = 0;
-        // Cutucada de delegação do plan (máx 2): resumiu em texto sem chamar
-        // subagent — manda entregar a fase via tool, sem tocar prompts.
-        int planNudges = 0;        // Gate de escopo do subagent (máx 2 recusas; depois delega do jeito
+        // Gate de escopo do subagent (máx 2 recusas; depois delega do jeito
         // que veio p/ não travar o run).
         int subScopeRejects = 0;
         // Enunciado original (primeira user do contexto): base do gate.
@@ -1137,23 +1131,6 @@ public sealed class ChatController(
                         "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>subagent\n" +
                         "```json\n{\"prompt\": \"enunciado da fase\"}\n```<｜tool▁call▁end｜>" +
                         "<｜tool▁calls▁end｜>" });
-                    assistantContent.Clear();
-                    assistantThinking.Clear();
-                    continue;
-                }
-                // Plan sem delegar (texto sem subagent): cutucada mecânica
-                // (máx 2, sem tocar prompts — mesma linha anti-giro/deepseek).
-                if (!DeepSeekToolCoercion.IsDeepSeek(agent.Model) && string.Equals(agent.Mode, "plan", StringComparison.OrdinalIgnoreCase)
-                    && ToolDefinitions.Allowed(agent, "subagent")
-                    && planNudges < 2 && assistantContent.Length > 0 && !anyToolRan && WorthDelegating(originalTask))
-                {
-                    planNudges++;
-                    string prose = StripThinkTags(assistantContent.ToString(), assistantThinking);
-                    if (!string.IsNullOrWhiteSpace(prose))
-                        messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = prose });
-                    messages.Add(new JsonObject { ["role"] = "user", ["content"] =
-                        $"[Plan-delegate {planNudges}/2] Você resumiu em texto mas não delegou nenhuma fase. " +
-                        "Entregue agora a FASE 1 via subagent tool (UMA fase por chamada: objetivo, arquivos e o que fazer)." });
                     assistantContent.Clear();
                     assistantThinking.Clear();
                     continue;
@@ -1448,8 +1425,6 @@ public sealed class ChatController(
         var unlinkedToolIds = new List<int>();
         string? lastSub = null;
         int subScopeRejects = 0;
-        int planNudges = 0;
-        bool anyCall = false;
         string originalTask = "";
         foreach (var m in messages)
             if (m?["role"]?.GetValue<string>() == "user"
@@ -1474,8 +1449,6 @@ public sealed class ChatController(
                 ["temperature"] = temp,
             };
             string instructions = agent.SystemPrompt ?? "";
-            if (execAgent is not null && ToolDefinitions.Allowed(agent, "subagent"))
-                instructions += $"\n\nUtilize o agente '{execAgent.Name}' como subagente de execução: delegue as fases de implementação via tool subagent para ele.";
             if (!string.IsNullOrWhiteSpace(instructions)) body["instructions"] = instructions;
             if (respTools.Count > 0) body["tools"] = respTools.DeepClone();
 
@@ -1533,33 +1506,7 @@ public sealed class ChatController(
                 done = t.Completed;
             }
 
-            if (accum.Calls.Count == 0)
-            {
-                // Plan sem delegar: cutucada mecânica (máx 2), paridade com o chat.
-                if (string.Equals(agent.Mode, "plan", StringComparison.OrdinalIgnoreCase) && ToolDefinitions.Allowed(agent, "subagent") && planNudges < 2 && !anyCall && assistantContent.Length > 0 && WorthDelegating(originalTask))
-                {
-                    planNudges++;
-                    string prose = StripThinkTags(assistantContent.ToString(), assistantThinking);
-                    if (!string.IsNullOrWhiteSpace(prose))
-                        input.Add(new JsonObject
-                        {
-                            ["type"] = "message", ["role"] = "assistant",
-                            ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = prose }),
-                        });
-                    input.Add(new JsonObject
-                    {
-                        ["type"] = "message", ["role"] = "user",
-                        ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text",
-                            ["text"] = $"[Plan-delegate {planNudges}/2] Você resumiu em texto mas não delegou nenhuma fase. " +
-                            "Entregue agora a FASE 1 via subagent tool (UMA fase por chamada: objetivo, arquivos e o que fazer)." }),
-                    });
-                    assistantContent.Clear();
-                    assistantThinking.Clear();
-                    continue;
-                }
-                break;
-            }
-            anyCall = true;
+            if (accum.Calls.Count == 0) break;
             // Executa cada call e devolve outputs no próximo turno (a API exige
             // function_call_output p/ toda call; sem isso o modelo trava).
             foreach (var (id, name, args) in accum.Calls)
