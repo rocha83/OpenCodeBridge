@@ -26,7 +26,15 @@ public sealed class GitToolHandler : IToolHandler
         if (obj is null) return ToolResult.Fail("argumentos inválidos: objeto JSON esperado");
 
         string command = obj["command"]?.GetValue<string>() ?? "";
-        if (string.IsNullOrWhiteSpace(command)) return ToolResult.Fail("command é obrigatório (ex.: 'log --oneline -5')");
+        if (string.IsNullOrWhiteSpace(command)) return ToolResult.Fail("command é obrigatório (ex.: 'git status')");
+        string repoDir = context.WorkspaceRoot;
+        string wantPath = obj["path"]?.GetValue<string>() ?? "";
+        if (!string.IsNullOrWhiteSpace(wantPath))
+        {
+            if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, wantPath, out string resolved, out string whyPath))
+                return ToolResult.Fail(whyPath);
+            repoDir = resolved;
+        }
         foreach (string bad in Denied)
             if (command.Contains(bad, StringComparison.Ordinal))
                 return ToolResult.Fail($"git somente-leitura: '{bad.Trim()}' negado");
@@ -35,13 +43,13 @@ public sealed class GitToolHandler : IToolHandler
         if (argv.Length > 0 && argv[0] != "git" && Allowed.Contains(argv[0]))
             argv = (new[] { "git" }).Concat(argv).ToArray();
         if (argv.Length == 0 || argv[0] != "git")
-            return ToolResult.Fail("command deve começar com 'git'");
+            return ToolResult.Fail("command deve começar com 'git' (leitura aqui; escrita via shell: 'cd <dir> && git add/commit ...')");
         if (argv.Length < 2 || !Allowed.Contains(argv[1]))
-            return ToolResult.Fail($"subcomando git permitido: {string.Join(", ", Allowed)}");
+            return ToolResult.Fail($"subcomando git permitido: {string.Join(", ", Allowed)} (escrita via shell)");
 
         try
         {
-            var r = ProcessRunner.Run(argv[0], argv[1..], context.WorkspaceRoot, context.TimeoutSeconds);
+            var r = ProcessRunner.Run(argv[0], argv[1..], repoDir, context.TimeoutSeconds);
             return r.Success ? ToolResult.Ok(r.Output) : ToolResult.Fail(r.Error ?? "falha");
         }
         catch (Exception ex)

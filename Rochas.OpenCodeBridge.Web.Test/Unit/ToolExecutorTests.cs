@@ -34,6 +34,7 @@ internal static class ToolExecutorTests
             PlanToolsFilter();
             ShellInspectorBlocks();
             ShellProcExecGates(exec);
+            GitRepoPath(exec, ctx);
             CpuEtaTps();
             ScriptEtaParse();
         }
@@ -141,6 +142,20 @@ internal static class ToolExecutorTests
         Check(okPs.Success, "U-gate-ps-ok");
         var okBashN = exec.Execute("shell", "{\"command\": \"bash -n run.sh\"}", 30, "build", shellOnly);
         Check(okBashN.Success || okBashN.Error.Contains("run.sh"), "U-gate-bashn-validation");
+    }
+
+    private static void GitRepoPath(ToolExecutor exec, ToolContext ctx)
+    {
+        // Tool git com path: roda no repo certo; escrita orienta p/ shell.
+        string sub = System.IO.Path.Combine(ctx.WorkspaceRoot, "repo-path-test");
+        System.IO.Directory.CreateDirectory(sub);
+        var init = exec.Execute("shell", "{\"command\": \"cd repo-path-test && git init\"}", 30);
+        Check(init.Success, "U-git-path-init");
+        var h = new GitToolHandler();
+        var st = h.Handle("{\"command\": \"status\", \"path\": \"repo-path-test\"}", ctx);
+        Check(st.Success, "U-git-path-status");
+        var add = h.Handle("{\"command\": \"add x\"}", ctx);
+        Check(!add.Success && add.Error.Contains("shell"), "U-git-write-hint");
     }
 
     // ETA estimada pelo modelo no cabeçalho do script; ausente = vazio.
