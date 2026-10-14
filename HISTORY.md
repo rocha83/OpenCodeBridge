@@ -1,5 +1,16 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Web — AgentSeeder + permissão de delegação no orquestrador (2026-10-13)
+- `Data/AgentSeeder.cs`: snapshot dos 6 agentes revisados na UI (só `INSERT OR IGNORE`
+  por id, nunca sobrescreve); chamado no fim do `AppDb.Init`.
+- `ToolExecutor.Execute` ganha `allowAgent`: permissão de `subagent` é do orquestrador
+  que delega, contexto (modelo/bridge) segue no executor — antes o anúncio mandava
+  delegar mas a execução negava contra o executor (sessão 30/32).
+- Tracer UI (`Tracer.*` + `POST /Chat/ClientLog` p/ tabela Serilog, flag `Diagnostics`),
+  tick do poll só no painel direito, blindagem dos GETs de leitura, `CpuDefaultTps` 3.0.
+- Infra: Q8 9B @128k na GPU (10,8/12,2 GB), 4B com `-ngl 0` (só CPU); 230k estourou
+  em `cudaGraphLaunch` OOM sob carga (log em `llama-gpu` 20:57).
+
 ## Web — sem Role, Plan/Build canônico, Plan travado (2026-10-13)
 - `Role` do agente removido (model, form, lista, pré-seleção; coluna fica inerte). Controle
   é pelo flag `subagent` no harness.

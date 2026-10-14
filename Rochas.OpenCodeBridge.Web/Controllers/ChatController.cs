@@ -20,6 +20,8 @@ public sealed class ChatController(
     ISessionService sessionService,
     IToolExecutor toolExecutor,
     IHttpClientFactory http,
+    Services.IDiagnosticTelemetry telemetry,
+    Microsoft.Extensions.Logging.ILogger<ChatController> log,
     Microsoft.Extensions.Options.IOptions<Services.OrchestrationOptions> orchOptions) : Controller
 {
     private int CurrentUserId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
@@ -43,9 +45,58 @@ public sealed class ChatController(
         return Json(new { ok = false });
     }
 
-    // GET /Chat/Config - flags de UX da orquestracao (aprovacao direta etc).
+    // GET /Chat/Config - flags de UX (aprovacao direta, telemetria p/ o tracer).
     [HttpGet("/Chat/Config")]
-    public IActionResult Config() => Json(new { directApprove = orchOptions.Value.DirectApprove });
+    public IActionResult Config() => Json(new { directApprove = orchOptions.Value.DirectApprove, telemetry = telemetry.Enabled });
+
+    // POST /Chat/ClientLog - lote do tracer do front p/ a tabela Serilog (sempre 200).
+    public sealed class ClientEvent
+    {
+        public string? T { get; set; }
+        public string? Source { get; set; }
+        public string? Level { get; set; }
+        public string? Msg { get; set; }
+        public string? Data { get; set; }
+    }
+
+    public sealed class ClientLogRequest
+    {
+        public int? SessionId { get; set; }
+        public List<ClientEvent>? Events { get; set; }
+    }
+
+    [HttpPost("/Chat/ClientLog")]
+    [RequestSizeLimit(65536)]
+    public async Task<IActionResult> ClientLog([FromBody] ClientLogRequest req)
+    {
+        try
+        {
+            int kept = 0;
+            if (req?.Events is not null)
+            {
+                int? sid = null;
+                if (req.SessionId.HasValue)
+                {
+                    var s = await sessionService.GetAsync(req.SessionId.Value, CurrentUserId);
+                    if (s?.Id is int v) sid = v;
+                }
+                foreach (var e in req.Events.Take(50))
+                {
+                    if (e is null) continue;
+                    string msg = e.Msg ?? "";
+                    if (msg.Length > 500) msg = msg[..500];
+                    string line = $"[ui] {(sid?.ToString() ?? "-")} {e.Source}: {msg}";
+                    string lvl = (e.Level ?? "info").ToLowerInvariant();
+                    if (lvl == "error") log.LogError(line);
+                    else if (lvl == "warn") log.LogWarning(line);
+                    else log.LogInformation(line);
+                    kept++;
+                }
+            }
+            return Json(new { ok = true, kept });
+        }
+        catch { return Json(new { ok = false, kept = 0 }); }
+    }
 
     public async Task<IActionResult> Index()
     {
@@ -82,8 +133,12 @@ public sealed class ChatController(
     [HttpGet("/Chat/Sessions")]
     public async Task<IActionResult> GetSessions()
     {
+        try
+        {
         var list = await sessionService.GetByUserAsync(CurrentUserId);
         return Json(list.Select(s => new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, CreatedAt = Utc(s.CreatedAt), UpdatedAt = Utc(s.UpdatedAt) }));
+        }
+        catch (Exception ex) { try { telemetry.RegisterError(ex); } catch { } return Json(new object[0]); }
     }
 
     [HttpPost("/Chat/Sessions")]
@@ -126,10 +181,14 @@ public sealed class ChatController(
     [HttpGet("/Chat/Sessions/{id:int}/Messages")]
     public async Task<IActionResult> GetSessionMessages(int id, int limit = 50)
     {
+        try
+        {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
         var msgs = await sessionService.GetMessagesAsync(id, limit);
         return Json(msgs.Select(m => new { m.Id, m.Role, m.Content, m.Thinking, m.PromptTokens, m.CompletionTokens, m.ElapsedMs, m.Tps, Status = Services.SessionService.MessageStatus(m.StatusId, m.Role ?? "", m.Archived), CreatedAt = Utc(m.CreatedAt) }));
+        }
+        catch (Exception ex) { try { telemetry.RegisterError(ex); } catch { } return Json(new object[0]); }
     }
 
     // GET /Chat/Sessions/{id}/ToolCalls - trilha de tools p/ avaliação posterior.
@@ -147,6 +206,8 @@ public sealed class ChatController(
     [HttpGet("/Chat/Sessions/{id:int}/Tasks")]
     public async Task<IActionResult> GetSessionTasks(int id)
     {
+        try
+        {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
         var msgs = await sessionService.GetMessagesAsync(id, 200);
@@ -158,6 +219,8 @@ public sealed class ChatController(
             totalEtaMin = Math.Round(tasks.Sum(t => t.EtaMin), 1),
             synthesized = SessionTaskPanel.Synthesized(items, tasks.Count),
         });
+        }
+        catch (Exception ex) { try { telemetry.RegisterError(ex); } catch { } return Json(new { tasks = new object[0], totalEtaMin = 0.0, synthesized = false }); }
     }
 
     // GET /Chat/Sessions/{id}/Scripts - .sh gerados na sessão (write +
@@ -165,6 +228,8 @@ public sealed class ChatController(
     [HttpGet("/Chat/Sessions/{id:int}/Scripts")]
     public async Task<IActionResult> GetSessionScripts(int id)
     {
+        try
+        {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
         var files = await CollectSessionScriptsAsync(id);
@@ -203,6 +268,8 @@ public sealed class ChatController(
             catch { }
         }
         return Json(new { scripts = items, zip = zipInfo });
+        }
+        catch (Exception ex) { try { telemetry.RegisterError(ex); } catch { } return Json(new { scripts = new object[0], zip = (object?)null }); }
     }
 
     // GET /Chat/Sessions/{id}/ScriptsZip - baixa o zip gravado ao fim do turno.
@@ -252,6 +319,8 @@ public sealed class ChatController(
     [HttpGet("/Chat/Sessions/{id:int}/ChangedFiles")]
     public async Task<IActionResult> GetChangedFiles(int id)
     {
+        try
+        {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
         var calls = await sessionService.GetToolCallsAsync(id, 500);
@@ -281,6 +350,8 @@ public sealed class ChatController(
             list.Add(new { path = f, exists, size, modified, kind });
         }
         return Json(list);
+        }
+        catch (Exception ex) { try { telemetry.RegisterError(ex); } catch { } return Json(new object[0]); }
     }
 
     // GET /Chat/Sessions/{id}/File?path=... - conteúdo p/ o modal (teto 1MB, sem binário).
@@ -469,6 +540,8 @@ public sealed class ChatController(
     [HttpGet("/Chat/Sessions/{id:int}/Context")]
     public async Task<IActionResult> GetSessionContext(int id)
     {
+        try
+        {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
         var msgs = await sessionService.GetMessagesAsync(id, int.MaxValue);
@@ -484,6 +557,8 @@ public sealed class ChatController(
         var ag = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == s.AgentId);
         int budget = ag is null ? ContextWindow.MaxInputTokens : ContextWindow.ResolveMaxInput(ag.Model, ag.BridgeUrl);
         return Json(new { tokens, real, newer, budget });
+        }
+        catch (Exception ex) { try { telemetry.RegisterError(ex); } catch { } return Json(new { tokens = 0, real = 0, newer = 0, budget = 0 }); }
     }
 
     // POST /Chat/Sessions/{id}/Compact — resume o antigo, mantém a cauda.
@@ -1206,7 +1281,7 @@ public sealed class ChatController(
                         lock (unlinkedToolIds) unlinkedToolIds.Add(toolId);
                     }
                     : null;
-                var result = toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent);
+                var result = toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
                 toolExecutor.LogInnerAsync = null;
@@ -1540,7 +1615,7 @@ public sealed class ChatController(
                         lock (unlinkedToolIds) unlinkedToolIds.Add(toolId);
                     }
                     : null;
-                var result = toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent);
+                var result = toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
                 toolExecutor.LogInnerAsync = null;

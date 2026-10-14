@@ -119,6 +119,8 @@ public static class AppDb
         }
         // Migração: harness de tools por agente (CSV; vazio = nenhuma).
         EnsureColumn(conn, "agents", "tools", "ALTER TABLE agents ADD COLUMN tools TEXT NOT NULL DEFAULT 'shell,read,write,edit,grep,glob,fetch,git';");
+        // Seed dos agentes revisados (só o que falta por id, nunca sobrescreve).
+        AgentSeeder.SeedIfEmpty(conn);
     }
 
     private static void EnsureColumn(SqliteConnection conn, string table, string column, string alterSql)

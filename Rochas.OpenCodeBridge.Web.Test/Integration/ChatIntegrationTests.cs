@@ -38,6 +38,7 @@ internal static class ChatIntegrationTests
         Check(await SessionsCrud(), "I-chat-sessions-crud");
         Check(await StreamSseWithSession(), "I-chat-stream-sse");
         Check(await AbortKeepsMessageThenResume(), "I-chat-abort-resume");
+        Check(await ClientLogAcceptsBatch(), "I-chat-clientlog");
         Check(await PingEngine(), "I-chat-ping-engine");
         Check(await DiagnosticsEndpoint(), "I-chat-diagnostics");
         Check(await ToolProgressEvents(), "I-chat-tool-progress");
@@ -48,7 +49,7 @@ internal static class ChatIntegrationTests
             try { await Http.DeleteAsync($"{WebBase}/Chat/Sessions/{sid}"); } catch { }
         }
 
-        Console.WriteLine($"=== Chat Integration: {8 - Failures}/8 PASS, {Failures} FAIL ===");
+        Console.WriteLine($"=== Chat Integration: {9 - Failures}/9 PASS, {Failures} FAIL ===");
     }
 
     private static void Check(bool ok, string name)
@@ -214,6 +215,15 @@ internal static class ChatIntegrationTests
         if (flast?["role"]?.GetValue<string>() != "assistant") return false;
         if (flast?["status"]?.GetValue<string>() != "Respondida") return false;
         return fin.All(x => !string.IsNullOrEmpty(x?["status"]?.GetValue<string>()));
+    }
+
+    private static async Task<bool> ClientLogAcceptsBatch()
+    {
+        var resp = await Http.PostAsJsonAsync($"{WebBase}/Chat/ClientLog",
+            new { sessionId = (int?)null, events = new[] { new { t = "2026-10-13T00:00:00Z", source = "ui:test", level = "info", msg = "tracer ok", data = (string?)null } } });
+        if (!resp.IsSuccessStatusCode) return false;
+        var j = await resp.Content.ReadFromJsonAsync<JsonObject>();
+        return j?["ok"]?.GetValue<bool>() == true && j?["kept"]?.GetValue<int>() == 1;
     }
 
     private static async Task<bool> PingEngine()

@@ -44,7 +44,10 @@ namespace Rochas.OpenCodeBridge.Web.Services
         public Func<string, string, string, Task>? SubChunkAsync { get; set; }
         public Func<InnerToolLog, Task>? LogInnerAsync { get; set; }
 
-        public ToolResult Execute(string name, string arguments, int timeoutSeconds = 300, string? mode = null, Models.Agent? agent = null)
+        // agent = contexto de execucao (modelo/bridge); allowAgent = dono da
+        // permissao (p/ subagent: o orquestrador que delega, nao o executor
+        // que roda a fase — o executor quase nunca tem subagent no CSV).
+        public ToolResult Execute(string name, string arguments, int timeoutSeconds = 300, string? mode = null, Models.Agent? agent = null, Models.Agent? allowAgent = null)
         {
             if (string.IsNullOrWhiteSpace(name))
                 return ToolResult.Fail("tool sem nome");
@@ -60,8 +63,10 @@ namespace Rochas.OpenCodeBridge.Web.Services
                 return ToolResult.Fail($"Não permitido: tool '{name}' fora do escopo permitido (válidas: shell, read, write, edit, grep, glob, fetch, git, subagent)");
 
             // Backstop do cadastro: anunciada ou não, tool fora do CSV do agente não executa.
-            if (agent is not null && !ToolDefinitions.Allowed(agent, key))
-                return ToolResult.Fail($"Não permitido: tool '{key}' fora do harness do agente '{agent.Name}'");
+            // (permissão do orquestrador quando ele delega; contexto segue no executor).
+            var gate = allowAgent ?? agent;
+            if (gate is not null && !ToolDefinitions.Allowed(gate, key))
+                return ToolResult.Fail($"Não permitido: tool '{key}' fora do harness do agente '{gate.Name}'");
             // Preset display (sem shell): shell anunciada só p/ `echo` simples.
             if (agent is not null && key == "shell" && !ToolDefinitions.ToolSet(agent).Contains("shell")
                 && !ToolDefinitions.DisplayOnly(ToolDefinitions.ToolSet(agent), arguments ?? ""))

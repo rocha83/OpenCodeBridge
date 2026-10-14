@@ -56,6 +56,7 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
         }
         // Canônico: Plan/Build (primeira maiúscula); resto vira Build.
         form.Mode = string.Equals(form.Mode, "plan", StringComparison.OrdinalIgnoreCase) ? "Plan" : "Build";
+        form.Thinking = string.Equals(form.Thinking, "events", StringComparison.OrdinalIgnoreCase) ? "events" : "off";
         form.Tools = ExpandTools(selectedTools, form.Mode);
         await agentsWrite.Add(form);
         return RedirectToAction("Index");
@@ -85,6 +86,7 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
         existing.Temperature = form.Temperature;
         existing.Thinking = form.Thinking ?? "";
         existing.SystemPrompt = form.SystemPrompt ?? "";
+        existing.Thinking = string.Equals(form.Thinking, "events", StringComparison.OrdinalIgnoreCase) ? "events" : "off";
         existing.Mode = string.Equals(form.Mode, "plan", StringComparison.OrdinalIgnoreCase) ? "Plan" : "Build";
         existing.Active = form.Active;
         existing.Tools = ExpandTools(selectedTools, existing.Mode);

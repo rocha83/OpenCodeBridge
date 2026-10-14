@@ -170,7 +170,12 @@ html, body {
 /* Raciocínio/resultados longos: rolagem com ~8 linhas visíveis. */
 #conv details > p.small { max-height: 12em; overflow-y: auto; }
 /* Caixa de entrada com a mesma fonte das bolhas (0.875rem). */
-#prompt { font-size: 0.875rem; }
+#prompt { font-size: 0.875rem; border: 1px solid #2a323d; }
+/* Foco da caixa igual ao padrão (verde, sem a margem azul do Bootstrap). */
+#prompt:focus {
+  border-color: #4ec9b0 !important;
+  box-shadow: 0 0 0 0.25rem rgba(78, 201, 176, 0.15) !important;
+}
 /* Rótulo no tamanho dos títulos das bolhas (Você/Agente/Sub Agente). */
 label[for="prompt"] { font-size: 0.875rem; }
 /* Data/hora pequena no rodapé à direita das bolhas. */
@@ -187,6 +192,13 @@ label[for="prompt"] { font-size: 0.875rem; }
 /* Modal no mesmo graphite dos cards. */
 .modal-content { background: #252526 !important; border: 1px solid #3a3a3a !important; color: #d4d4d4 !important; }
 .modal-header, .modal-footer { border-color: #3a3a3a !important; }
+/* Mobile (<md, modais fullscreen): fundo sempre cobre a área rolada — sem
+   transparência embaixo (100vh quebra com a barra do navegador; dvh resolve). */
+@media (max-width: 767.98px) {
+  .modal-fullscreen-md-down .modal-content { min-height: 100dvh; background: #252526 !important; }
+  .modal-fullscreen-md-down .modal-body { background: #252526; }
+  .modal-backdrop.show { height: 100vh; height: 100dvh; }
+}
 [data-bs-theme="light"] .modal-content { background: #fff !important; color: #212529 !important; }
 [data-bs-theme="light"] .crud-list .list-group-item:hover { background: #f1f3f5 !important; }
 #conv details p { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: #9e9e9e; }

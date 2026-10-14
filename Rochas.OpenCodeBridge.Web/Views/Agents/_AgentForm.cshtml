@@ -2,16 +2,46 @@
 @model Rochas.OpenCodeBridge.Web.Models.Agent
 <input type="hidden" name="Id" value="@Model.Id" />
 <div class="mb-2"><label class="form-label">Nome</label><input name="Name" class="form-control" value="@Model.Name" /></div>
-<div class="mb-2"><label class="form-label">Model (ex. qwen3.5-9b)</label><input name="Model" class="form-control" value="@Model.Model" /></div>
-<div class="mb-2"><label class="form-label">Bridge URL</label><input name="BridgeUrl" class="form-control" value="@Model.BridgeUrl" /></div>
-<div class="row"><div class="col"><div class="mb-2"><label class="form-label">Temperatura</label><input name="Temperature" class="form-control" value="@Model.Temperature" /></div></div>
-<div class="col"><div class="mb-2"><label class="form-label">Thinking</label><input name="Thinking" class="form-control" value="@Model.Thinking" /></div></div></div>
-<div class="mb-2"><label class="form-label">Modo de atuação</label>
+<div class="row"><div class="col-12 col-md-6"><div class="mb-2"><label class="form-label">Model (ex. qwen3.5-9b)</label><input name="Model" class="form-control" value="@Model.Model" /></div></div>
+<div class="col-12 col-md-6"><div class="mb-2"><label class="form-label">Bridge URL</label><input name="BridgeUrl" class="form-control" value="@Model.BridgeUrl" /></div></div></div>
+<div class="row"><div class="col-12 col-md-4"><div class="mb-2"><label class="form-label">Modo de atuação</label>
 <select name="Mode" class="form-select">
   <option value="Build" selected="@(!string.Equals(Model.Mode, "plan", System.StringComparison.OrdinalIgnoreCase))">Build (execução total)</option>
   <option value="Plan" selected="@(string.Equals(Model.Mode, "plan", System.StringComparison.OrdinalIgnoreCase))">Plan (leitura/navegação)</option>
-</select></div>
-<div class="mb-2"><label class="form-label">System prompt</label>
+</select></div></div>
+<div class="col-12 col-md-4"><div class="mb-2"><label class="form-label">Criatividade (<span class="criat-lbl"></span>)</label>
+<input type="range" class="form-range criat-range" min="0" max="2" step="1" />
+<input type="hidden" name="Temperature" class="criat-val" value="@Model.Temperature" /></div></div>
+<div class="col-12 col-md-4"><div class="mb-2"><label class="form-label">Raciocínio</label>
+<div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="Thinking" value="events" @(string.Equals(Model.Thinking, "events", System.StringComparison.OrdinalIgnoreCase) ? "checked" : "") /><label class="form-check-label">Exibir thinking</label></div></div></div>
+</div>
+<script>
+(function () {
+  // Slider Criatividade: Baixa 0.3 / Média 0.6 / Alta 0.9 (só UI; grava o float).
+  if (window._agentCriat) return; window._agentCriat = true;
+  var vals = [0.3, 0.5, 0.8], names = ['Baixa', 'Média', 'Alta'];
+  function setup(range) {
+    var wrap = range.closest('.row') || document;
+    var hidden = wrap.querySelector('.criat-val');
+    var lbl = wrap.querySelector('.criat-lbl');
+    var cur = parseFloat(String((hidden && hidden.value) || '').replace(',', '.'));
+    if (isNaN(cur)) cur = 0.6;
+    var idx = 0, bd = 1e9;
+    vals.forEach(function (v, i) { var d = Math.abs(v - cur); if (d < bd) { bd = d; idx = i; } });
+    function paint() {
+      var i = +range.value;
+      if (hidden) hidden.value = vals[i];
+      if (lbl) lbl.textContent = names[i] + ' ' + vals[i];
+    }
+    range.value = idx; paint();
+    range.addEventListener('input', paint);
+  }
+  function bindAll() { document.querySelectorAll('.criat-range').forEach(setup); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindAll);
+  else bindAll();
+})();
+</script>
+<div class="mb-2"><label class="form-label">Instruções a seguir</label>
 <textarea name="SystemPrompt" class="form-control" rows="6" placeholder="Orquestrador: como decompor; executor: enunciado rígido">@Model.SystemPrompt</textarea></div>
 <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="Active" value="true" @(Model.Active ? "checked" : "") /><label class="form-check-label">Ativo</label></div>
 @{

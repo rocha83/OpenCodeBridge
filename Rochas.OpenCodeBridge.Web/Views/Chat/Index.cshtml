@@ -28,7 +28,7 @@
 
         <div class="card">
           <div class="card-body">
-            <ul class="list-unstyled mb-0" id="sessionList"></ul>
+            <ul class="list-unstyled mb-0" id="sessionList"><li class="small text-muted">Carregando sessões...</li></ul>
           </div>
         </div>
 
@@ -47,7 +47,7 @@
             <option value="">Executor: nenhum (chat simples)</option>
             @foreach (var a in agents)
             {
-              <option value="@a.Id" data-mode="@(string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode)"@(a.Role == "executor" ? " selected" : "")>@a.Name — @a.Model</option>
+              <option value="@a.Id" data-mode="@(string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode)" data-tools="@(a.Tools ?? "")">@a.Name — @a.Model</option>
             }
           </select>
           <div class="small text-muted mt-2"><span id="engineDot" class="dot"></span> <span id="engineTxt">Aguardando...</span></div>
@@ -59,7 +59,7 @@
           <li class="mb-3">
             <label class="form-label fw-bold text-white" for="prompt">Pergunta ou Instrução</label>
             <div data-mdb-input-init class="form-outline mb-3">
-              <textarea class="form-control bg-body-tertiary rounded-3" id="prompt" rows="4" style="border: 1px solid #2a323d !important;"></textarea>
+              <textarea class="form-control bg-body-tertiary rounded-3" id="prompt" rows="4"></textarea>
             </div>
           </li>
           <button type="button" data-mdb-button-init data-mdb-ripple-init class="btn btn-info float-end" id="send">ENVIAR</button>
@@ -101,9 +101,9 @@
 </section>
 <!-- Modal Arquivo (CodeMirror + diff lado a lado) -->
 <div class="modal fade" id="fileModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl">
+  <div class="modal-dialog modal-xl modal-fullscreen-md-down">
     <div class="modal-content">
-      <div class="modal-header">
+      <div class="modal-header flex-wrap gap-2">
         <h6 class="modal-title mb-0 text-truncate" id="fileModalTitle" style="max-width:40%">Arquivo</h6>
         <span id="fileModalKind" class="badge bg-info ms-2"></span>
         <span id="cmModeLbl" class="small text-muted ms-2"></span>
@@ -166,8 +166,42 @@ const toastContainer = document.getElementById('toastContainer');
 let currentSessionId = null;
 let currentAgentId = null;
 let currentExecutorId = null;
-let uiConfig = { directApprove: false };
-fetch('/Chat/Config').then(r => r.json()).then(j => { uiConfig.directApprove = !!j.directApprove; }).catch(() => {});
+let uiConfig = { directApprove: false, telemetry: false };
+// Tracer injetável: observa os comportamentos autônomos (poll, init, select, stream)
+// e envia o lote p/ a tabela Serilog quando a telemetria está ligada (Diagnostics).
+const Tracer = (() => {
+  let enabled = false, queue = [], timer = null, sid = 0;
+  async function flush() {
+    if (!enabled || !queue.length) return;
+    const batch = queue.splice(0, 50);
+    try {
+      await fetch('/Chat/ClientLog', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sid || null, events: batch }) });
+    } catch { /* telemetria nunca quebra a UI */ }
+  }
+  function tick(source, level, msg, data) {
+    let d;
+    try { d = data === undefined ? undefined : String(JSON.stringify(data)).slice(0, 300); } catch { d = undefined; }
+    if (enabled) {
+      queue.push({ t: new Date().toISOString(), source, level, msg: String(msg || '').slice(0, 500), data: d });
+      if (level === 'error' || queue.length >= 20) flush();
+    }
+    try { (console[level] || console.log).call(console, '[ui]', source, msg); } catch {}
+  }
+  return {
+    init(opts) {
+      enabled = !!(opts && opts.telemetry);
+      if (enabled && !timer) timer = setInterval(flush, 8000);
+    },
+    session(id) { sid = id || 0; },
+    debug(s, m, d) { if (enabled) tick(s, 'debug', m, d); },
+    info(s, m, d) { tick(s, 'info', m, d); },
+    warn(s, m, d) { tick(s, 'warn', m, d); },
+    error(s, m, d) { tick(s, 'error', m, d); },
+    flush
+  };
+})();
+fetch('/Chat/Config').then(r => r.json()).then(j => { uiConfig.directApprove = !!j.directApprove; uiConfig.telemetry = !!j.telemetry; Tracer.init(uiConfig); }).catch(() => {});
 const execIdOrNull = () => execSel.value ? +execSel.value : null;
 
 // Stream ativo por sessão: trocar de sessão aborta o anterior (bolhas independentes).
@@ -504,9 +538,11 @@ async function loadSessions() {
 }
 
 async function selectSession(id, agentId, executorAgentId) {
+  try {
   if (window._streamSession && window._streamSession !== id) abortActiveStream();
   try { document.getElementById('prompt').value = ''; } catch {} // caixa é efêmera: nunca atravessa sessões
   currentSessionId = id;
+  Tracer.session(id);
   try { localStorage.setItem('bridgeSessionId', String(id)); } catch {}
   currentAgentId = agentId;
   agentSel.value = agentId;
@@ -519,6 +555,8 @@ async function selectSession(id, agentId, executorAgentId) {
   updateCtxDonut();
   loadScripts(id);
   loadChangedFiles(id);
+  Tracer.info('ui:select', 'sessao ' + id);
+  } catch (e) { Tracer.error('ui:select', (e && e.message) || e); showToast('Falha ao trocar de sessão.', 'danger'); }
 }
 
 // Donut do tamanho do contexto da sessão ativa (tokens chars/4 vs orçamento).
@@ -543,7 +581,7 @@ async function updateCtxDonut() {
     arc.setAttribute('stroke', frac >= 0.9 ? '#dc4c64' : frac >= 0.7 ? '#e4a11b' : '#14a44d');
     lab.textContent = fmtK(t);
     wrap.title = 'Tamanho do contexto ' + fmtK(t) + ` (${mode})`;
-  } catch { /* painel opcional: ignora */ }
+  } catch (e) { Tracer.warn('ui:donut', (e && e.message) || e); }
 }
 
 async function loadMessages(sessionId) {
@@ -651,7 +689,7 @@ async function loadScripts(sessionId) {
       a2.href = `/Chat/Sessions/${sessionId}/ScriptsZip`;
       a2.textContent = `Baixar scripts (.zip, ${j.zip.size || ''})`;
     } else if (zip) zip.remove();
-  } catch { /* painel opcional: ignora */ }
+  } catch (e) { Tracer.warn('ui:scripts', (e && e.message) || e); }
 }
 
 // Painel lateral: arquivos alterados na sessão (write/edit ok).
@@ -679,7 +717,7 @@ async function loadChangedFiles(sessionId) {
       li.querySelector('a').onclick = (e) => { e.preventDefault(); openFileModal(sessionId, f.path, f.kind); };
       list.appendChild(li);
     });
-  } catch { /* painel opcional: ignora */ }
+  } catch (e) { Tracer.warn('ui:changed', (e && e.message) || e); }
 }
 
 // Modal de arquivo: CodeMirror (temas + modos por extensão) + diff lado a lado.
@@ -805,13 +843,23 @@ async function loadTasks(sessionId) {
       li.innerHTML = '<span class="badge bg-primary">síntese pronta</span>';
       list.appendChild(li);
     }
-  } catch { /* painel opcional: ignora */ }
+  } catch (e) { Tracer.warn('ui:tasks', (e && e.message) || e); }
 }
 
 // Atualiza o painel a cada 5s enquanto há sessão ativa
-setInterval(() => { if (currentSessionId) { loadTasks(currentSessionId); updateCtxDonut(); loadScripts(currentSessionId); loadChangedFiles(currentSessionId); } }, 5000);
+// Tick: SOMENTE parciais do painel direito (tarefas, scripts, Mudanças). Nada de
+// conversa/lista aqui; donut atualiza no select/envio. Falha isolada por painel.
+setInterval(() => {
+  if (!currentSessionId) return;
+  try {
+    Promise.resolve(loadTasks(currentSessionId)).catch(e => Tracer.warn('poll:tasks', (e && e.message) || e));
+    Promise.resolve(loadScripts(currentSessionId)).catch(e => Tracer.warn('poll:scripts', (e && e.message) || e));
+    Promise.resolve(loadChangedFiles(currentSessionId)).catch(e => Tracer.warn('poll:changed', (e && e.message) || e));
+  } catch (e) { Tracer.error('poll:tick', (e && e.message) || e); }
+}, 5000);
 
 async function createSession() {
+  try {
   abortActiveStream();
   const r = await fetch('/Chat/Sessions', {
     method: 'POST',
@@ -820,6 +868,7 @@ async function createSession() {
   });
   const s = await r.json();
   currentSessionId = s.id;
+  Tracer.session(s.id);
   try { localStorage.setItem('bridgeSessionId', String(s.id)); } catch {}
   try { document.getElementById('prompt').value = ''; } catch {}
   currentAgentId = s.agentId;
@@ -832,6 +881,9 @@ async function createSession() {
   document.getElementById('scriptList').innerHTML = '<li class="small text-muted">Nenhum script ainda.</li>';
   document.getElementById('scriptZip')?.remove();
   updateCtxDonut();
+  checkEngine();
+  Tracer.info('ui:create', 'sessao ' + s.id);
+  } catch (e) { Tracer.error('ui:create', (e && e.message) || e); showToast('Falha ao criar sessão.', 'danger'); }
 }
 
 async function deleteAllSessions() {
@@ -944,12 +996,13 @@ function orchestratorCanDelegate() {
   } catch { return false; }
 }
 async function applyExecutorAvailability() {
-  applyExecutorAvailability();
+  filterExecutors();
   if (orchestratorCanDelegate()) return;
+  const had = currentExecutorId != null;
   execSel.value = '';
   execSel.disabled = true;
   currentExecutorId = null;
-  if (currentSessionId) {
+  if (currentSessionId && had) {
     try {
       await fetch(`/Chat/Sessions/${currentSessionId}/Executor`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -976,8 +1029,10 @@ async function checkEngine() {
     const r = await fetch(`/Chat/Ping?agentId=${agentSel.value}`);
     const j = await r.json();
     engineDot.className = 'dot' + (j.ok ? '' : ' err');
-    engineTxt.textContent = j.ok ? 'Concluído!' : 'Desconectado';
-  } catch { engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado'; }
+    // Sem interação ainda (conversa vazia): "Pronto!"; com histórico: "Concluído!".
+    engineTxt.textContent = !j.ok ? 'Desconectado'
+      : (document.getElementById('conv').children.length ? 'Concluído!' : 'Pronto!');
+  } catch { engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado'; Tracer.warn('ui:engine', 'ping falhou'); }
 }
 
 document.getElementById('newSession').onclick = createSession;
@@ -1037,7 +1092,6 @@ document.getElementById('send').onclick = async () => {
   window._ensureAgentBubbleForTools = null;
     cancelBtn.style.display = 'none';
     document.getElementById('processing-indicator')?.remove();
-    stopTypewriter();
     if (anP) anP.classList.remove('typing');
     engineDot.className = 'dot err'; engineTxt.textContent = 'Interrompido';
     ta.disabled = false;
@@ -1100,33 +1154,7 @@ document.getElementById('send').onclick = async () => {
     (window._liveSubs || []).forEach(c => { if (c.isConnected) { anchor.before(c); anchor = c; } });
   }
 
-  // Efeito "digitando" palavra por palavra (JS puro)
-  let shownWords = 0;
-  let typeTimer = null;
-  function renderWords() {
-    if (!anP) return;
-    const parts = full.split(/(\s+)/);
-    shownWords = Math.min(shownWords, parts.length);
-    anP.textContent = parts.slice(0, shownWords).join('');
-  }
-  function drainWords() {
-    if (!anP) return;
-    const total = full.split(/(\s+)/).length;
-    const backlog = total - shownWords;
-    if (backlog <= 0) return;
-    // Ritmo uniforme (~20 palavras/s), sem flush acelerado sob acúmulo.
-    shownWords += 2;
-    renderWords();
-  }
-  function startTypewriter() {
-    if (typeTimer) return;
-    if (anP) anP.classList.add('typing');
-    typeTimer = setInterval(drainWords, 90);
-  }
-  function stopTypewriter() {
-    if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
-    if (anP) { shownWords = full.split(/(\s+)/).length; renderWords(); anP.classList.remove('typing'); }
-  }
+  // Pintura direta por chunk (o SSE já é progressivo; sem efeito datilográfico).
 
   engineDot.className = 'dot blink'; engineTxt.textContent = 'Pensando...';
 
@@ -1159,7 +1187,7 @@ document.getElementById('send').onclick = async () => {
             full += '\nErro: ' + evt.error;
             if (!agentBubbleCreated && full.trim()) ensureAgentBubble();
             if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); }
-            startTypewriter();
+            if (anP) { anP.textContent = full; anP.classList.add('typing'); }
             continue;
           }
           if (evt.progress) {
@@ -1214,20 +1242,21 @@ document.getElementById('send').onclick = async () => {
             // fechado à força (o usuário pode abrir durante o stream).
             if (thinkP) thinkP.classList.remove('typing');
             if (thinkSum) thinkSum.textContent = `Raciocínio ${thinkPct(think.length + full.length)}% · ${fmtK(think.length + full.length)}`;
-            startTypewriter();
+            if (anP) { anP.textContent = full; anP.classList.add('typing'); }
           }
         } catch (e) { /* chunk parcial: ignora */ }
       }
       if (isScrolledToBottom()) scrollToBottom();
     }
   } catch (e) {
+    if (!stoppedByUser && e?.name !== 'AbortError') Tracer.error('ui:stream', (e && e.message) || e);
     if (stoppedByUser || e?.name === 'AbortError') {
       // Parada pelo usuário: sem bolha de erro nem toast.
       engineTxt.textContent = 'Interrompido';
       ta.disabled = false;
       sendBtn.disabled = false;
       sendBtn.innerHTML = 'ENVIAR';
-      stopTypewriter();
+      if (anP) anP.classList.remove('typing');
       document.getElementById('processing-indicator')?.remove();
       document.getElementById('cancelBtn')?.remove();
       return;
@@ -1245,7 +1274,7 @@ document.getElementById('send').onclick = async () => {
     ta.disabled = false;
     sendBtn.disabled = false;
     sendBtn.innerHTML = 'ENVIAR';
-    stopTypewriter();
+    if (anP) anP.classList.remove('typing');
     document.getElementById('processing-indicator')?.remove();
     document.getElementById('cancelBtn')?.remove();
     showToast('Erro ao conectar na engine. Verifique se a bridge está online.', 'danger');
@@ -1255,8 +1284,8 @@ document.getElementById('send').onclick = async () => {
   // Trocou de sessão no meio do stream: não finaliza bolha na conversa errada.
   const stillHere = (currentSessionId === sendSessionId);
   if (agentBubbleCreated && stillHere) {
-    // Flush final do efeito + thinking fechado em 100% + remove "Processando"
-    stopTypewriter();
+    // Flush final + thinking fechado em 100% + remove "Processando"
+    if (anP) { anP.textContent = full; anP.classList.remove('typing'); }
     if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); if (thinkSum) thinkSum.textContent = 'Raciocínio 100%'; }
     else if (thinkLive && anP) {
       // Thinking já exibido ao vivo (accordion aberto e fechado): garante fechado.
@@ -1287,12 +1316,14 @@ document.getElementById('send').onclick = async () => {
   document.getElementById('cancelBtn')?.remove();
   ta.focus();
   // Recarrega do servidor: a bolha ao vivo ganha o rodapé com duração e t/s persistidos.
-  if (stillHere) { try { await loadMessages(sendSessionId); await updateCtxDonut(); } catch {} }
+  if (stillHere) { try { await loadMessages(sendSessionId); await updateCtxDonut(); } catch (e) { Tracer.warn('ui:reload', (e && e.message) || e); } }
   if (stillHere && isScrolledToBottom()) scrollToBottom();
 };
 
 // Inicialização - garante sessão ativa antes de permitir envio
 let initPromise = (async () => {
+  try {
+  Tracer.info('ui:init', 'iniciando');
   await loadSessions();
   checkEngine();
   if (!currentSessionId) {
@@ -1310,12 +1341,14 @@ let initPromise = (async () => {
       await createSession();
     }
   }
+  Tracer.info('ui:init', 'ok');
+  } catch (e) { Tracer.error('ui:init', (e && e.message) || e); showToast('Falha ao iniciar o chat.', 'danger'); }
 })();
 
-// Desabilita send até inicialização completa
+// Desabilita send até inicialização completa (mesmo com falha: libera p/ tentar).
 const sendBtn = document.getElementById('send');
 sendBtn.disabled = true;
-initPromise.then(() => { sendBtn.disabled = false; });
+initPromise.then(() => { sendBtn.disabled = false; }, () => { sendBtn.disabled = false; });
 
 document.getElementById('newSession').onclick = createSession;
 document.getElementById('clearSessions').onclick = deleteAllSessions;
