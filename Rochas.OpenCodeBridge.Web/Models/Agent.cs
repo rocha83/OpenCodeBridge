@@ -12,9 +12,11 @@ public sealed class Agent
     public int? Id { get; set; }
 
     [Column("name")]
+    [Filterable]
     public string Name { get; set; } = "";
 
     [Column("model")]
+    [Filterable]
     public string Model { get; set; } = "";
 
     [Column("bridge_url")]
@@ -24,12 +26,15 @@ public sealed class Agent
     public double Temperature { get; set; }
 
     [Column("thinking")]
+    [Filterable]
     public string Thinking { get; set; } = "";
 
     [Column("system_prompt")]
+    [Filterable]
     public string SystemPrompt { get; set; } = "";
 
     [Column("mode")]
+    [Filterable]
     public string Mode { get; set; } = "";
 
     [Column("measured_tps")]

@@ -126,6 +126,21 @@ internal static class Program
             await agents.Add(new Agent { Name = "gpu", Model = "qwen3-8b-awq" });
             var list = await agents.Query(new Agent());
             Check(list.Any(a => a.Name == "gpu"), "I-crud-agent");
+            // ORM: Active=true filtra no WHERE; Search usa as [Filterable].
+            await agents.Add(new Agent { Name = "zzq-ativo", Model = "zzq-model", Mode = "Plan", Thinking = "off", SystemPrompt = "zzq prompt shell linux", Active = true });
+            await agents.Add(new Agent { Name = "zzq-inativo", Model = "zzq-model", Active = false });
+            var actives = await agents.Query(new Agent { Active = true });
+            Check(actives.All(a => a.Active) && actives.Any(a => a.Name == "zzq-ativo") && !actives.Any(a => a.Name == "zzq-inativo"), "I-orm-active-true");
+            var byModel = await agents.Query(new Agent { Model = "zzq-model" });
+            Check(byModel.Count() == 2, "I-orm-query-model");
+            var byMode = await agents.Query(new Agent { Mode = "Plan" });
+            Check(byMode.Any(a => a.Name == "zzq-ativo"), "I-orm-query-mode");
+            var byThinking = await agents.Query(new Agent { Thinking = "off" });
+            Check(byThinking.Any(a => a.Name == "zzq-ativo"), "I-orm-query-thinking");
+            var byName = await agents.Search("zzq-ativo");
+            Check(byName.Any(a => a.Name == "zzq-ativo"), "I-orm-search-nome");
+            var byPrompt = await agents.Search("zzq prompt shell");
+            Check(byPrompt.Any(a => a.Name == "zzq-ativo"), "I-orm-search-prompt");
         }
         finally
         {

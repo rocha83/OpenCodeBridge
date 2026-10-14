@@ -100,7 +100,8 @@ public sealed class ChatController(
 
     public async Task<IActionResult> Index()
     {
-        var list = (await agents.Query(new Agent())).Where(a => a.Active)
+        // Só ativos, filtrado na ORM (bool true entra no WHERE; false é ignorado).
+        var list = (await agents.Query(new Agent { Active = true })).Where(a => a.Active)
             .OrderByDescending(a => a.Model).ThenBy(a => a.Name).ToList();
         ViewBag.Agents = list;
         return View();

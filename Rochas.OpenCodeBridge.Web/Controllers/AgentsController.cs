@@ -9,11 +9,37 @@ namespace Rochas.OpenCodeBridge.Web.Controllers;
 [Authorize]
 public sealed class AgentsController(IGenericRepository<Agent> agents, IPersistenceRepository<Agent> agentsWrite) : Controller
 {
-    public async Task<IActionResult> Index()
+    public async Task<IActionResult> Index(string? criterio = null, string[]? model = null, string[]? mode = null, string[]? thinking = null, string? active = null)
     {
         ViewBag.NewAgent = DefaultAgent();
-        return View((await agents.Query(new Agent()))
-            .OrderByDescending(a => a.Model).ThenBy(a => a.Name).ToList());
+        var all = await agents.Query(new Agent());
+        ViewBag.Models = all.Select(a => a.Model ?? "").Where(s => s != "").Distinct().OrderByDescending(s => s).ToList();
+        ViewBag.Modes = all.Select(a => string.IsNullOrEmpty(a.Mode) ? "Build" : a.Mode).Distinct().OrderBy(s => s).ToList();
+        ViewBag.Thinkings = all.Select(a => a.Thinking ?? "").Where(s => s != "").Distinct().OrderBy(s => s).ToList();
+        ViewBag.Criterio = criterio ?? "";
+        ViewBag.SelModels = model ?? [];
+        ViewBag.SelModes = mode ?? [];
+        ViewBag.SelThinkings = thinking ?? [];
+        ViewBag.ActiveSel = active ?? "all";
+        ViewBag.Total = all.Count;
+
+        // Critério: LIKE nas [Filterable] (nome, model, mode, thinking, prompt).
+        // Sem critério: Query exata na entidade (faceta única vai ao WHERE).
+        var f = new Agent();
+        if (active == "1") f.Active = true; // bool true entra no WHERE; false é ignorado
+        if ((model?.Length ?? 0) == 1) f.Model = model![0];
+        if ((mode?.Length ?? 0) == 1) f.Mode = mode![0];
+        if ((thinking?.Length ?? 0) == 1) f.Thinking = thinking![0];
+        IEnumerable<Agent> list = string.IsNullOrWhiteSpace(criterio)
+            ? await agents.Query(f)
+            : await agents.Search(criterio.Trim());
+        // Multi-valor e tri-state de ativo fora da entidade: interseção em memória.
+        if (active == "1") list = list.Where(a => a.Active);
+        else if (active == "0") list = list.Where(a => !a.Active);
+        if ((model?.Length ?? 0) > 1) list = list.Where(a => model!.Contains(a.Model ?? ""));
+        if ((mode?.Length ?? 0) > 1) list = list.Where(a => mode!.Contains(string.IsNullOrEmpty(a.Mode) ? "Build" : a.Mode));
+        if ((thinking?.Length ?? 0) > 1) list = list.Where(a => thinking!.Contains(a.Thinking ?? ""));
+        return View(list.OrderByDescending(a => a.Model).ThenBy(a => a.Name).ToList());
     }
 
     private static Agent DefaultAgent() =>
