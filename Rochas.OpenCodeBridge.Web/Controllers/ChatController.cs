@@ -430,9 +430,22 @@ public sealed class ChatController(
         string diff;
         try
         {
-            var d = Services.ProcessRunner.Run("git", new[] { "diff", "--no-color", "--", rel }, top, 15);
-            diff = d.Success ? (d.Output ?? "") : "";
-            if (string.IsNullOrWhiteSpace(diff))
+            // Arquivo novo (fora do HEAD): diff integral (o alterado real).
+            // Versionado: contra o HEAD (stageadas + não-stageadas).
+            var inHead = Services.ProcessRunner.Run("git", new[] { "cat-file", "-e", "HEAD:" + rel }, top, 15);
+            bool isNew = !inHead.Success;
+            if (!isNew)
+            {
+                var d = Services.ProcessRunner.Run("git", new[] { "diff", "--no-color", "HEAD", "--", rel }, top, 15);
+                diff = d.Success ? (d.Output ?? "") : "";
+                if (string.IsNullOrWhiteSpace(diff))
+                {
+                    var d2 = Services.ProcessRunner.Run("git", new[] { "diff", "--no-color", "--", rel }, top, 15);
+                    diff = d2.Success ? (d2.Output ?? "") : "";
+                }
+            }
+            else diff = "";
+            if (isNew && string.IsNullOrWhiteSpace(diff))
             {
                 // Untracked: --no-index sai 1 quando HÁ diferenças (é o normal
                 // aqui) e o Fail esvazia Output — o diff vem em "exit 1: ...".
