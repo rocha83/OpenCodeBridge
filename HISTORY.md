@@ -1,5 +1,23 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Web — agentes 6/7/9, bolha viva, busca ORM, sem fases hardcoded (2026-10-14)
+- `AgentSeeder`: ids 6 (Scripter Q8), 7 (Eng Plan Q4), 9 (Dev Build Q4);
+  prompts 9B com ctx moderado (160k), 4B limitado (16k); nomes no padrão
+  `Papel - Modo - Q8 GPU/Q4 CPU`; Orch (id 4) no `9b/:4124`.
+- Listas (admin + chat) por `Model` desc; executor oculta o orquestrador
+  (antes o 400 "deve diferir" vinha mascarado de "Executor inválido" —
+  toast agora mostra o erro real); sessões em fonte `small`.
+- Removido o enunciado hardcoded de fases (`[Plan-delegate]`/sufixo do
+  executor): vale cadastro + enunciado do usuário.
+- Bolha viva no bypass: INSERT no 1º turno, UPDATE depois, DONE fecha com
+  texto + usage (`ISessionService.UpdateMessageAsync`); subs seguem em
+  linhas próprias — kill no meio não perde mais nada (sessão 31 perdeu tudo).
+- Busca de agentes: `[Filterable]` em Name/Model/Mode/Thinking/SystemPrompt
+  (Search sem Filterable voltava sem filtro); `Active=true` filtra no WHERE
+  (`bool false` é excluído — `EntitySqlParser`); quadro com critério (LIKE),
+  selects Model/Mode, checkbox único Raciocínio (events), Todos/Ativos/Inativos.
+- Suite `--units-only` verde (inclui `I-orm-*` e `UpdateMessageAsync*`).
+
 ## Web — system do sub via agente + bolhas com scroll (2026-10-13)
 - `SubagentToolHandler`: system do sub vem do agente executor cadastrado
   (`ToolContext.SystemPrompt`); pinado só se vazio.
