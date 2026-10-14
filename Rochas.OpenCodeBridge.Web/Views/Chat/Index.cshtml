@@ -500,6 +500,7 @@ function subChunk(sub, kind, text) {
     if (!h.full.trim()) h.full = '';
     else h.full = h.full.replace(/^\s+/, '');
     h.pre.textContent = h.full;
+    h.pre.scrollTop = h.pre.scrollHeight;
     // Conteúdo começou (o % segue subindo; sem fechar à força — o usuário
     // pode abrir o Raciocínio durante o stream).
     if (h.psum) h.psum.textContent = `Raciocínio ${thinkPct(h.think.length + h.full.length)}% · ${fmtK(h.think.length + h.full.length)}`;
@@ -1187,7 +1188,7 @@ document.getElementById('send').onclick = async () => {
             full += '\nErro: ' + evt.error;
             if (!agentBubbleCreated && full.trim()) ensureAgentBubble();
             if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); }
-            if (anP) { anP.textContent = full; anP.classList.add('typing'); }
+            if (anP) { anP.textContent = full; anP.classList.add('typing'); anP.scrollTop = anP.scrollHeight; }
             continue;
           }
           if (evt.progress) {
@@ -1242,7 +1243,7 @@ document.getElementById('send').onclick = async () => {
             // fechado à força (o usuário pode abrir durante o stream).
             if (thinkP) thinkP.classList.remove('typing');
             if (thinkSum) thinkSum.textContent = `Raciocínio ${thinkPct(think.length + full.length)}% · ${fmtK(think.length + full.length)}`;
-            if (anP) { anP.textContent = full; anP.classList.add('typing'); }
+            if (anP) { anP.textContent = full; anP.classList.add('typing'); anP.scrollTop = anP.scrollHeight; }
           }
         } catch (e) { /* chunk parcial: ignora */ }
       }

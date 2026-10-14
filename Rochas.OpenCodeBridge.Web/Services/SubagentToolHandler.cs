@@ -108,6 +108,8 @@ public sealed class SubagentToolHandler : IToolHandler
             // Trava de profundidade estrutural: executor interno sem "subagent".
             // Id do subagente p/ UI ao vivo (card + labels próprios; execução serial).
             string subId = "sub-" + Guid.NewGuid().ToString("N")[..8];
+            // System vem do agente executor cadastrado; pinado só se ele estiver vazio.
+            string subSystem = string.IsNullOrWhiteSpace(context.SystemPrompt) ? SubagentSystem : context.SystemPrompt;
             var inner = new ToolExecutor(
                 ToolExecutor.DefaultHandlers().Where(h => h.ToolName != "subagent"),
                 context.WorkspaceRoot, "/tmp/tool-executor-sub.log");
@@ -131,7 +133,7 @@ public sealed class SubagentToolHandler : IToolHandler
                 // retorno como <tool_response> (padrão oficial). Sem mudar prompts.
                 var dsq = new DeepSeekToolExecutor(inner, SubShellAllowed);
                 var r = dsq.RunAsync(_bridge, context.BridgeUrl, context.Model, FixedTemperature,
-                    SubagentSystem, history, new List<string> { "write", "edit", "shell", "subagent" },
+                    subSystem, history, new List<string> { "write", "edit", "shell", "subagent" },
                     7, chunkSink is null ? null : (async (kind, text) => await chunkSink(subId, kind, text)),
                     cts.Token).GetAwaiter().GetResult();
                 if (!r.Ok) return ToolResult.Fail($"subagente falhou: {r.Error}");
@@ -142,7 +144,7 @@ public sealed class SubagentToolHandler : IToolHandler
             for (int turn = 0; turn < 5; turn++)
             {
                 var t = BridgeHelper.ChatTurnAsync(_bridge, context.BridgeUrl, context.Model,
-                    FixedTemperature, SubagentSystem, history, tools, cts.Token, enableThinking: false, maxTokens: maxTokens,
+                    FixedTemperature, subSystem, history, tools, cts.Token, enableThinking: false, maxTokens: maxTokens,
                     onChunk: chunkSink is null ? null : (async (kind, text) => await chunkSink(subId, kind, text)))
                     .GetAwaiter().GetResult();
                 if (!t.Ok) return ToolResult.Fail($"subagente falhou: {t.Error}");

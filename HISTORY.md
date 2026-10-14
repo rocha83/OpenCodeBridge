@@ -1,5 +1,11 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Web — system do sub via agente + bolhas com scroll (2026-10-13)
+- `SubagentToolHandler`: system do sub vem do agente executor cadastrado
+  (`ToolContext.SystemPrompt`); pinado só se vazio.
+- Bolhas agente/subagente: conteúdo com teto de ~15 linhas + auto-scroll
+  (paridade com o thinking).
+
 ## Web — AgentSeeder + permissão de delegação no orquestrador (2026-10-13)
 - `Data/AgentSeeder.cs`: snapshot dos 6 agentes revisados na UI (só `INSERT OR IGNORE`
   por id, nunca sobrescreve); chamado no fim do `AppDb.Init`.

@@ -80,6 +80,7 @@ namespace Rochas.OpenCodeBridge.Web.Services
                 BridgeUrl = agent?.BridgeUrl ?? "",
                 Model = agent?.Model ?? "",
                 Temperature = agent?.Temperature ?? 0.4,
+                SystemPrompt = agent?.SystemPrompt ?? "",
                 ProgressAsync = ProgressAsync,
                 SubChunkAsync = SubChunkAsync,
                 LogInnerAsync = LogInnerAsync,
