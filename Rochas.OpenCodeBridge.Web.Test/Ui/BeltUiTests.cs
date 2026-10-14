@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Playwright;
 
@@ -26,7 +27,7 @@ public static class BeltUiTests
     private static readonly Belt[] Belts =
     {
         new("azul", "Faixa AZUL E2E",
-            "Especifique o dominio backend C# de um CRUD de reembolsos corporativos: entidades, value objects e regras de aprovacao por faixa de valor. Escopo SOMENTE dominio (sem banco, sem API). Premissas: backend .NET C#. Divida em fases por escopo de dominio e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
+            "Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando SOMENTE repositorio generico com ORM: entidade mapeada, Query com filtros e Search por criterio (sem SQL cru, sem Dapper direto, sem API). Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Divida em fases por escopo de backend e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
             4, 30),
         new("verde", "Faixa VERDE E2E",
             "Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ como regras de dominio persistidas: digitos verificadores, rejeicao de sequencias repetidas, obrigatoriedade por tipo de pessoa (PF exige CPF, PJ exige CNPJ). Escopo: dominio + banco SQL (sem API). Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados) e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
@@ -43,7 +44,30 @@ public static class BeltUiTests
         new("imunow", "Faixa IMUNOW E2E",
             "preciso avaliar uma pagina react no projeto mova, veja a pagina react contendo 'Meu Painel', onde existe um card com informacoes sobre expediente, veja em /media/mint/3686C649614854E6/Projetos/Imunow/mova/Mova.Pwa/src/views/*.tsx. devemos buscar em qual pagina esta, remover este quadro da pagina e garantir o build do react, analise o necessario, crie um plano em fases e delegue cada fase usando subagent tool, instrua-os a criar os scripts .sh para executar cada passo completo de cada fase, diálogo em pt-br.",
             2, 60),
+        // Cognitivo standalone: plano completo em texto puro, sem citar segmentacao.
+        new("preta-alone", "Faixa PRETA-ALONE",
+            PretaAlonePrompt, 5, 30),
+        // Uso real de tools, standalone: agente Build sem executor (regra do front).
+        new("tools-full", "Faixa TOOLS-FULL",
+            "Navegue até https://example.com com a tool fetch e anote o conteúdo de referência. " +
+            "Depois, usando as tools, crie um repositório git novo em tooltest/ dentro do workspace, " +
+            "crie antes a subpasta tooltest/docs, escreva o resumo da referência e o plano em " +
+            "tooltest/docs/plano.md e faça o commit inicial (configure user.name e user.email locais do " +
+            "repo se preciso). Faça tudo você mesmo com as suas tools, sem delegar. Diálogo em pt-br.",
+            0, 30),
     };
+
+    // Enunciado cognitivo: plano completo em texto, sem mencionar segmentacao,
+    // fases, delegacao ou tools (a obediencia ao modo texto é o próprio teste).
+    private const string PretaAlonePrompt =
+        "MODO TEXTO: responda APENAS em texto corrido, sem chamar nenhuma tool. " +
+        "Traga o plano completo da arquitetura de ecossistema: dominio backend C# do Portal do Colaborador " +
+        "(ponto eletronico, reembolsos, organograma), banco de dados SQL (tabelas, indices, constraints), " +
+        "repositorios e servicos com Dapper e servicos de aplicacao, API REST do portal, servicos bus com " +
+        "barramento de eventos assincrono integrando portal, folha e ERP, pipeline de Big Data com ML usando " +
+        "regressao para previsao de gastos e classificacao de reembolsos suspeitos apenas com algoritmos " +
+        "classicos, e rede neural perceptron multicamadas para deteccao de anomalias em ponto eletronico, " +
+        "com scripts de treino e avaliacao para cada modelo. Premissas: backend .NET C#. Diálogo em pt-br.";
 
     public static async Task<int> RunAsync(string web, string[] only, string mode)
     {
@@ -90,8 +114,8 @@ public static class BeltUiTests
 
             // Login livre (qualquer senha) + chega ao /Chat (navegacao UI real).
             await page.GotoAsync(web + "/Account/Login");
-            await page.FillAsync("input[name=email]", "admin@mova.com");
-            await page.FillAsync("input[name=password]", "e2e");
+            await page.FillAsync("input[name=email]", "admin@bridge.pcss.com.br");
+            await page.FillAsync("input[name=password]", "123");
             await page.ClickAsync("form button:has-text('Entrar')");
             await page.WaitForURLAsync(url => !url.Contains("/Account/Login"), new PageWaitForURLOptions { Timeout = 15000 });
             await page.GotoAsync(web + "/Chat");
@@ -118,6 +142,17 @@ public static class BeltUiTests
                         break;
                     }
                     case "plan": failures += await PlanBeltAsync(api, belt); break;
+                    case "cognitive": failures += await CognitiveBeltAsync(api, belt); break;
+                    case "cognitive-ui":
+                    {
+                        var cpage = await context.NewPageAsync();
+                        await cpage.GotoAsync(web + "/Chat");
+                        await cpage.WaitForSelectorAsync("#conv, #prompt, select#agentId",
+                            new PageWaitForSelectorOptions { Timeout = 15000 });
+                        failures += await CognitiveUiAsync(api, cpage, belt);
+                        break;
+                    }
+                    case "toolsfull": failures += await ToolsFullBeltAsync(api, belt); break;
                     case "reviewplan": failures += await ReviewPlanAsync(api, belt); break;
                     case "execute": failures += await ExecuteBeltAsync(api, belt); break;
                     case "review": failures += await ReviewBeltAsync(api, belt); break;
@@ -370,6 +405,221 @@ public static class BeltUiTests
                 await File.WriteAllBytesAsync(TaskFile(belt.Key), ms.ToArray());
             }
             return done ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ui] FAIL {belt.Key}: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+            return 1;
+        }
+    }
+
+    // Fase cognitive: plano completo em texto puro (obediencia ao modo texto é o teste).
+    // Sessao plan (orch 1) + stream SSE direto; PASS = [DONE] + >=2000 chars +
+    // zero tool calls + cobertura dos 8 nucleos do enunciado.
+    private static async Task<int> CognitiveBeltAsync(HttpClient api, Belt belt)
+    {
+        try
+        {
+            int sessionId = await CreateSessionAsync(api, BuildOrchestratorId, belt.ExecutorId, belt.Title + " Cognitiva");
+            using var req = new HttpRequestMessage(HttpMethod.Post, "Chat/Stream");
+            req.Content = JsonContent.Create(new
+            {
+                sessionId,
+                agentId = BuildOrchestratorId,
+                messages = new[] { new { role = "user", content = belt.Prompt } },
+            });
+            req.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+            using var resp = await api.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+            resp.EnsureSuccessStatusCode();
+            using var reader = new System.IO.StreamReader(await resp.Content.ReadAsStreamAsync());
+            var text = new System.Text.StringBuilder();
+            bool done = false;
+            string? line;
+            var deadline = DateTime.UtcNow.AddMinutes(Math.Max(20, belt.TimeoutMin));
+            while (DateTime.UtcNow < deadline && (line = await reader.ReadLineAsync()) is not null)
+            {
+                if (!line.StartsWith("data: ")) continue;
+                string d = line[6..].Trim();
+                if (d == "[DONE]") { done = true; break; }
+                try
+                {
+                    using var je = JsonDocument.Parse(d);
+                    // Schema do stream: delta.content (chunks) ou content direto.
+                    string? chunk = null;
+                    if (je.RootElement.TryGetProperty("delta", out var dl)
+                        && dl.TryGetProperty("content", out var dc))
+                        chunk = dc.GetString();
+                    else if (je.RootElement.TryGetProperty("content", out var c))
+                        chunk = c.GetString();
+                    if (chunk is not null) text.Append(chunk);
+                }
+                catch { /* heartbeat/progresso: ignora */ }
+            }
+            string file = $"/tmp/opencode/cognitivo_{belt.Key}.txt";
+            await File.WriteAllTextAsync(file, text.ToString());
+            int calls = -1;
+            try
+            {
+                using var tres = await api.GetAsync($"Chat/Sessions/{sessionId}/ToolCalls?limit=200");
+                if (tres.IsSuccessStatusCode)
+                    using (var tdoc = JsonDocument.Parse(await tres.Content.ReadAsStringAsync()))
+                        calls = tdoc.RootElement.EnumerateArray().Count();
+            }
+            catch { }
+            string low = text.ToString().ToLowerInvariant();
+            string[] nuclei =
+            [
+                "reembolso", "entidade", "sql", "dapper", "api", "evento", "regress",
+                "neural",
+            ];
+            int hit = nuclei.Count(k => low.Contains(k));
+            bool ok = done && text.Length >= 2000 && calls == 0 && hit >= 6;
+            Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: texto {text.Length} chars, toolcalls={calls}, cobertura {hit}/{nuclei.Length} (sessao {sessionId}, {file})");
+            return ok ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ui] FAIL {belt.Key}: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+            return 1;
+        }
+    }
+
+    // Fase cognitive-ui: mesmo enunciado pela UI headed (acompanha o stream pintando).
+    // Agente 9B Plan (id 1), sem forçar executor; observacional: PASS = concluiu +
+    // texto >= 2000 (calls e cobertura só reportados — o teste quer VER se usa tools).
+    private static async Task<int> CognitiveUiAsync(HttpClient api, IPage page, Belt belt)
+    {
+        try
+        {
+            Console.WriteLine($"[ui] {belt.Key}: goto chat");
+            await page.GotoAsync(page.Url.Split("/Chat")[0] + "/Chat");
+            await page.WaitForSelectorAsync("#conv, #prompt, select#agentId", new PageWaitForSelectorOptions { Timeout = 15000 });
+            Console.WriteLine($"[ui] {belt.Key}: agente 9B plan");
+            await page.SelectOptionAsync("select#agentId", "1");
+            Console.WriteLine($"[ui] {belt.Key}: nova sessao");
+            await page.ClickAsync("#newSession");
+            try
+            {
+                await page.WaitForFunctionAsync(
+                    "() => document.getElementById('conv') && document.getElementById('conv').children.length === 0",
+                    null, new PageWaitForFunctionOptions { Timeout = 30000 });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ui] {belt.Key}: FAIL sessao nova nao abriu ({ex.Message.Split('\n')[0]})");
+                return 1;
+            }
+            await page.WaitForTimeoutAsync(1500);
+            Console.WriteLine($"[ui] {belt.Key}: enviando enunciado");
+            await page.FillAsync("#prompt", belt.Prompt);
+            await page.ClickAsync("#send");
+            Console.WriteLine($"[ui] {belt.Key}: aguardando engine (acompanhe no navegador)");
+            bool done = false;
+            var deadline = DateTime.UtcNow.AddMinutes(Math.Max(20, belt.TimeoutMin));
+            while (DateTime.UtcNow < deadline)
+            {
+                try
+                {
+                    string txt = await page.InnerTextAsync("#engineTxt");
+                    if (txt.Contains("Conclu", StringComparison.OrdinalIgnoreCase)
+                        || txt.Contains("Desconect", StringComparison.OrdinalIgnoreCase)) { done = txt.Contains("Conclu"); break; }
+                }
+                catch { }
+                await page.WaitForTimeoutAsync(10000);
+            }
+            string conv = "";
+            try { conv = await page.InnerTextAsync("#conv"); } catch { }
+            string file = $"/tmp/opencode/cognitivo_{belt.Key}_{DateTime.Now:HHmmss}.txt";
+            try { await File.WriteAllTextAsync(file, conv); } catch { }
+            int msgs = 0, calls = 0;
+            try
+            {
+                using var sres = await api.GetAsync("Chat/Sessions");
+                sres.EnsureSuccessStatusCode();
+                using var sdoc = JsonDocument.Parse(await sres.Content.ReadAsStringAsync());
+                int sid = sdoc.RootElement.EnumerateArray().First().GetProperty("id").GetInt32();
+                using var mres = await api.GetAsync($"Chat/Sessions/{sid}/Messages?limit=20");
+                if (mres.IsSuccessStatusCode)
+                    using (var mdoc = JsonDocument.Parse(await mres.Content.ReadAsStringAsync()))
+                        msgs = mdoc.RootElement.EnumerateArray().Count(m =>
+                            m.TryGetProperty("role", out var r) && r.GetString() == "assistant"
+                            && m.TryGetProperty("content", out var c) && (c.GetString()?.Length ?? 0) > 0);
+                using var tres = await api.GetAsync($"Chat/Sessions/{sid}/ToolCalls?limit=200");
+                if (tres.IsSuccessStatusCode)
+                    using (var tdoc = JsonDocument.Parse(await tres.Content.ReadAsStringAsync()))
+                        calls = tdoc.RootElement.EnumerateArray().Count();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ui] {belt.Key}: sem API ({ex.Message.Split('\n')[0]})");
+            }
+            string low = conv.ToLowerInvariant();
+            string[] nuclei = ["reembolso", "entidade", "sql", "dapper", "api", "evento", "regress", "neural"];
+            int hit = nuclei.Count(k => low.Contains(k));
+            bool toolsUi = conv.Contains("executado com sucesso") || conv.Contains("falhou");
+            bool ok = done && conv.Length >= 2000;
+            Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: conversa {conv.Length} chars, msgs={msgs}, toolcalls={calls}, toolsUi={toolsUi}, cobertura {hit}/{nuclei.Length} ({file})");
+            return ok ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ui] FAIL {belt.Key}: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+            return 1;
+        }
+    }
+
+    // Fase toolsfull: agente Build standalone (id 8, sem executor pela regra do front),
+    // stream SSE direto; PASS = [DONE] + toolsUi + >=4 calls + plano.md no output.
+    private static async Task<int> ToolsFullBeltAsync(HttpClient api, Belt belt)
+    {
+        try
+        {
+            string sess = await PostAsync(api, "Chat/Sessions",
+                JsonSerializer.Serialize(new { agentId = 8, executorAgentId = (int?)null, title = belt.Title + " Tools" }), "id");
+            int sessionId = int.Parse(sess);
+            using var req = new HttpRequestMessage(HttpMethod.Post, "Chat/Stream");
+            req.Content = JsonContent.Create(new
+            {
+                sessionId,
+                agentId = 8,
+                messages = new[] { new { role = "user", content = belt.Prompt } },
+            });
+            req.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+            using var resp = await api.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+            resp.EnsureSuccessStatusCode();
+            using var reader = new System.IO.StreamReader(await resp.Content.ReadAsStreamAsync());
+            bool done = false;
+            string? line;
+            var deadline = DateTime.UtcNow.AddMinutes(Math.Max(20, belt.TimeoutMin));
+            while (DateTime.UtcNow < deadline && (line = await reader.ReadLineAsync()) is not null)
+            {
+                if (!line.StartsWith("data: ")) continue;
+                string d = line[6..].Trim();
+                if (d == "[DONE]") { done = true; break; }
+            }
+            string file = $"/tmp/opencode/toolsfull_{belt.Key}.txt";
+            int calls = -1;
+            string outputs = "";
+            try
+            {
+                using var tres = await api.GetAsync($"Chat/Sessions/{sessionId}/ToolCalls?limit=200");
+                if (tres.IsSuccessStatusCode)
+                    using (var tdoc = JsonDocument.Parse(await tres.Content.ReadAsStringAsync()))
+                    {
+                        var arr = tdoc.RootElement.EnumerateArray().ToArray();
+                        calls = arr.Length;
+                        outputs = string.Join("\n", arr.Select(e =>
+                            (e.TryGetProperty("name", out var n) ? n.GetString() : "?") + ": " +
+                            (e.TryGetProperty("output", out var o) ? (o.GetString() ?? "")[..Math.Min(200, (o.GetString() ?? "").Length)] : "")));
+                    }
+            }
+            catch { }
+            await File.WriteAllTextAsync(file, outputs);
+            bool toolsUi = outputs.Contains("executado com sucesso") || outputs.Contains("criado");
+            bool planOk = outputs.Contains("plano.md");
+            bool ok = done && toolsUi && calls >= 4 && planOk;
+            Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: done={done} toolsUi={toolsUi} calls={calls} plano.md={planOk} (sessao {sessionId}, {file})");
+            return ok ? 0 : 1;
         }
         catch (Exception ex)
         {
