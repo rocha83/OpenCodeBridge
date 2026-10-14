@@ -15,7 +15,12 @@ var options = new WebApplicationOptions
     ContentRootPath = AppContext.BaseDirectory
 };
 var builder = WebApplication.CreateBuilder(options);
-builder.WebHost.UseUrls("http://*:4150");
+// Porta via appsettings Web:Port (default 4130) ou env BRIDGE_WEB_PORT.
+// 4150 é reservado ao Caddy (Grafana); a Web não binda nele.
+int webPort = builder.Configuration.GetValue<int?>("Web:Port") ?? 4130;
+if (int.TryParse(Environment.GetEnvironmentVariable("BRIDGE_WEB_PORT"), out int envPort) && envPort > 0)
+    webPort = envPort;
+builder.WebHost.UseUrls($"http://*:{webPort}");
 
 // Diagnóstico (appsettings Diagnostics + env DIAGNOSTICS_ENABLED=1).
 // O env entra na configuração para valer em IOptions, Serilog e middleware.

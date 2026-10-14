@@ -24,7 +24,8 @@ internal static class Program
 
     static int Main(string[] args)
     {
-        string web = "http://127.0.0.1:4150";
+        string webPort = Environment.GetEnvironmentVariable("BRIDGE_WEB_PORT") ?? "4130";
+        string web = $"http://127.0.0.1:{webPort}";
         bool ui = false;
         string mode = "plan";
         string phase = "full";

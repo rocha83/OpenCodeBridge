@@ -6,7 +6,8 @@
 - CPU `llama :4110` (`-ngl 0`): `Qwen3.5-4B`, ctx `32768` em 2 slots (16k/slot)
   → bridge `:4125` (`qwen3.5-4b`, saída `4096`). O 4B substitui os modelos
   pequenos anteriores (ex.: Coder 2.5): é o executor da linha CPU.
-- Web em `:4150`; banco em `BRIDGE_WEB_DB_DIR` (disco local).
+- Web em `:4130` (config `Web:Port` no `appsettings.json`, override via env
+  `BRIDGE_WEB_PORT`); `:4150` reservado ao Caddy (Grafana `4800`); banco em `BRIDGE_WEB_DB_DIR` (disco local).
 - Verificação: cada chamada aparece em `/tmp/bridge-gpu.log` ou
   `/tmp/bridge-cpu.log` com o `model` correspondente.
   `curl /api/status` nas portas antes de rodar.

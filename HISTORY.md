@@ -1,5 +1,22 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Web: porta parametrizada, retorno a 4130 + Caddy 4151 (2026-10-14)
+- Porta via `appsettings Web:Port` (default `4130`), override `BRIDGE_WEB_PORT`;
+  `Program.cs` monta `UseUrls` dinâmico. `4150` conflita com o Caddy (externa da
+  Grafana `4800`) — liberado. Scripts (`deploy`, `gate`, `health-check`) e defaults
+  dos testes usam `${BRIDGE_WEB_PORT:-4130}`; ícone `Bridge Web UI` volta a
+  `http://127.0.0.1:4130`. Caddy ganha `rocha26.ddns.net:4151 -> 127.0.0.1:4130`
+  (bridge-web via TLS).
+
+## Remaster chroot: fonte alinhado à UI 4150 (2026-10-14)
+- `UseUrls("http://*:4150")` + scripts (`deploy`, `gate`, `health-check`)
+  e defaults dos testes saídos de 4130 p/ 4150 (o HISTORY já documentava
+  4150 e o vivo já servia nela; o fonte estava atrasado). Ícone
+  `Bridge Web UI` no Desktop (mint/skel/root) abrindo `http://127.0.0.1:4150`.
+- Build Release 0 erros; suite web `--units-only` PASS. Bridge viva ainda
+  na imagem antiga (restart via host/CPU fora do chroot); suite bridge
+  15/16 (`U-translate-profiles/build thinking on` pende até o restart).
+
 ## Web — UI oficial na porta 4150 (2026-10-14)
 - `Program.cs`: `UseUrls("http://*:4150")`; scripts (`deploy`, `gate`,
   `health-check`) e defaults dos testes acompanham; ícone no Desktop.
