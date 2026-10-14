@@ -1462,10 +1462,6 @@ public sealed class ChatController(
         // Bolha viva do orquestrador: INSERT no 1º turno com texto, UPDATE nos
         // seguintes (crash-safe); subagentes seguem em linhas próprias.
         int liveMsgId = 0;
-        // Turno só-prosa no meio da tarefa: continua (máx 2 seguidos) p/ o
-        // modelo agir; prosa no 1º turno termina (resposta conversacional).
-        bool sawCalls = false;
-        int emptyStreak = 0;
         // Retry único após compactar (contexto cheio), paridade com o loop chat.
         bool compactRetried = false;
         string originalTask = "";
@@ -1482,7 +1478,8 @@ public sealed class ChatController(
         }
         try
         {
-        for (int turn = 0; turn < 5 && !ct.IsCancellationRequested; turn++)
+        int maxTurns = orchOptions.Value.MaxTurns > 0 ? orchOptions.Value.MaxTurns : 8;
+        for (int turn = 0; turn < maxTurns && !ct.IsCancellationRequested; turn++)
         {
             LoopTrace("turno", session?.Id, turn, $"input={input.Count}");
             var body = new JsonObject
@@ -1581,16 +1578,11 @@ public sealed class ChatController(
 
             if (accum.Calls.Count == 0)
             {
-                if (!sawCalls || ++emptyStreak >= 2)
-                {
-                    LoopTrace("fim-prosa", session?.Id, turn, $"sawCalls={sawCalls} vazios={emptyStreak}");
-                    break;
-                }
-                LoopTrace("prosa-continua", session?.Id, turn, $"vazios={emptyStreak}");
+                // Sem corte de prosa: o sufixo pede declaração verbosa por ação;
+                // o loop segue até o teto de turnos (prosa conversa ou declara).
+                LoopTrace("turno-prosa", session?.Id, turn, "");
                 continue;
             }
-            emptyStreak = 0;
-            sawCalls = true;
             // Executa cada call e devolve outputs no próximo turno (a API exige
             // function_call_output p/ toda call; sem isso o modelo trava).
             foreach (var (id, name, args) in accum.Calls)

@@ -5,6 +5,8 @@ public sealed class OrchestrationOptions
 {
     // Quantas vezes um enunciado pode voltar ao orch para refinamento após falha.
     public int MaxTaskRetries { get; set; } = 2;
+    // Teto de turnos do loop agêntico (flag; sem corte de prosa, o teto limita).
+    public int MaxTurns { get; set; } = 8;
     // Executores simultâneos (0 = núcleos da CPU; GPU paraleliza, CPU llama serializa).
     public int MaxParallel { get; set; } = 0;
     // tok/s assumido quando o executor nunca foi sondado e roda em CPU
