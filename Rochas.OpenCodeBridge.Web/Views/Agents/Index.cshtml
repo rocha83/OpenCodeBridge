@@ -69,7 +69,7 @@
         <div class="btn-group btn-group-sm flex-shrink-0">
           @if (isAdmin) {
           <button class="btn btn-outline-secondary" data-mdb-toggle="modal" data-mdb-target="#agentModal-@a.Id">Editar</button>
-          <a class="btn btn-outline-danger" href="/Agents/Delete/@a.Id" onclick="return confirm('Excluir @a.Name?')">Excluir</a>
+          <form method="post" action="/Agents/Delete/@a.Id" class="d-inline" onsubmit="return confirm('Excluir @a.Name?')">@Html.AntiForgeryToken()<button class="btn btn-outline-danger">Excluir</button></form>
           } else { <span class="small text-muted">sistema</span> }
         </div>
       </div>

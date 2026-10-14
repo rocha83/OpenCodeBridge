@@ -10,31 +10,23 @@ namespace Rochas.OpenCodeBridge.Web.Controllers;
 
 // Login/logout com cookie (sem Identity). Comentarios pt-BR.
 [AllowAnonymous]
-public sealed class AccountController(IGenericRepository<User> users, IPersistenceRepository<User> usersWrite) : Controller
+public sealed class AccountController(IGenericRepository<User> users, IPersistenceRepository<User> usersWrite, Services.IPasswordHasher passwords) : Controller
 {
     [HttpGet]
     public IActionResult Login() => View();
 
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Login(string email, string password)
     {
-        var found = await users.Query(new User { Email = (email ?? "").Trim().ToLowerInvariant() });
+        string mail = (email ?? "").Trim().ToLowerInvariant();
+        var found = await users.Query(new User { Email = mail });
         var user = found.FirstOrDefault(u => u.Active);
-        // Login livre (sem verificação de senha) — TEMP. Primeira vez persiste
-        // o usuário p/ as sessões ficarem atreladas a ele (sem isso todos
-        // caíam no id 0 compartilhado).
-        if (user is null)
+        // Senha obrigatória: sem ela não há como atrelar a sessão ao dono.
+        if (user is null || string.IsNullOrEmpty(password) || !passwords.Verify(password, user.PasswordHash ?? ""))
         {
-            string mail = (email ?? "admin@mova.com").Trim().ToLowerInvariant();
-            string name = mail.Contains('@') ? mail[..mail.IndexOf('@')] : mail;
-            if (string.IsNullOrWhiteSpace(name)) name = "visitante";
-            try
-            {
-                await usersWrite.Add(new User { Name = name, Email = mail, Active = true, IsAdmin = false });
-                user = (await users.Query(new User { Email = mail })).FirstOrDefault(u => u.Active);
-            }
-            catch { /* email duplicado em corrida: relê abaixo */ }
-            user ??= new User { Name = name, Email = mail, IsAdmin = false };
+            ViewBag.Error = "Email ou senha inválidos.";
+            return View();
         }
         var claims = new[] { new Claim(ClaimTypes.NameIdentifier, (user.Id ?? 0).ToString()), new Claim(ClaimTypes.Name, user.Name), new Claim(ClaimTypes.Email, user.Email), new Claim("IsAdmin", user.IsAdmin.ToString()) };
         await HttpContext.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
@@ -42,6 +34,7 @@ public sealed class AccountController(IGenericRepository<User> users, IPersisten
     }
 
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Logout()
     {
         await HttpContext.SignOutAsync();

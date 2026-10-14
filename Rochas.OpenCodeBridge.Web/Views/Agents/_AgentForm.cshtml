@@ -49,6 +49,7 @@
   bool has(string n) => toolSet.Contains(n);
 }
 <div class="mb-2"><label class="form-label">Tools liberadas (vazio = nenhuma)</label>
+@Html.AntiForgeryToken()
 <div class="form-check"><input class="form-check-input" type="checkbox" name="selectedTools" value="glob" @(has("glob") ? "checked" : "") /><label class="form-check-label">Navegação de pastas (glob)</label></div>
 <div class="form-check"><input class="form-check-input" type="checkbox" name="selectedTools" value="read" @(has("read") ? "checked" : "") /><label class="form-check-label">Leitura de arquivos (read, grep)</label></div>
 <div class="form-check"><input class="form-check-input" type="checkbox" name="selectedTools" value="git" @(has("git") ? "checked" : "") /><label class="form-check-label">Manipulação de repositórios (git)</label></div>

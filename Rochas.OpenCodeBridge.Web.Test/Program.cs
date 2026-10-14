@@ -163,15 +163,26 @@ internal static class Program
         }
         var handler = new HttpClientHandler { CookieContainer = new CookieContainer(), AllowAutoRedirect = false };
         using var client = new HttpClient(handler);
-        var login = await client.PostAsync(web + "/Account/Login",
-            new FormUrlEncodedContent(new Dictionary<string, string> { ["email"] = "admin@bridge.pcss.com.br", ["password"] = "123" }));
+        // Antiforgery: token da página de login (cookie + form).
+        var loginPage = await client.GetStringAsync(web + "/Account/Login");
+        var m = System.Text.RegularExpressions.Regex.Match(loginPage, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
+        Check(m.Success, "I-http-af-token");
+        var form = new Dictionary<string, string> { ["email"] = "admin@bridge.pcss.com.br", ["password"] = "123" };
+        if (m.Success) form["__RequestVerificationToken"] = m.Groups[1].Value;
+        var login = await client.PostAsync(web + "/Account/Login", new FormUrlEncodedContent(form));
         Check(login.StatusCode == HttpStatusCode.Redirect, "I-http-login");
         var chat = await client.GetAsync(web + "/Chat");
         Check(chat.IsSuccessStatusCode, "I-http-chat");
+        // Cookie antiforgery gira no login: reler o token pós-login.
+        var chatHtml = await chat.Content.ReadAsStringAsync();
+        var m2 = System.Text.RegularExpressions.Regex.Match(chatHtml, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
+        var streamTok = m2.Success ? m2.Groups[1].Value : (m.Success ? m.Groups[1].Value : "");
         var agents = await client.GetAsync(web + "/Agents");
         Check(agents.IsSuccessStatusCode, "I-http-agents");
-        var bad = await client.PostAsync(web + "/Chat/Stream",
-            JsonContent.Create(new { agentId = 999999, messages = new[] { new { role = "user", content = "oi" } } }));
+        var streamReq = new HttpRequestMessage(HttpMethod.Post, web + "/Chat/Stream");
+        streamReq.Content = JsonContent.Create(new { agentId = 999999, messages = new[] { new { role = "user", content = "oi" } } });
+        if (!string.IsNullOrEmpty(streamTok)) streamReq.Headers.Add("RequestVerificationToken", streamTok);
+        var bad = await client.SendAsync(streamReq);
         Check(bad.StatusCode == HttpStatusCode.NotFound, "I-http-chat-404");
     }
 }

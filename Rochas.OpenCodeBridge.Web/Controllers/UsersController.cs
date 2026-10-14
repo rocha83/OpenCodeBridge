@@ -26,6 +26,7 @@ public sealed class UsersController(IGenericRepository<User> users, IPersistence
     }
 
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(User model, string password)
     {
         if (!IsAdmin) return Forbid();
@@ -40,6 +41,8 @@ public sealed class UsersController(IGenericRepository<User> users, IPersistence
         return RedirectToAction("Index");
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Toggle(int id)
     {
         if (!IsAdmin) return Forbid();
@@ -52,6 +55,8 @@ public sealed class UsersController(IGenericRepository<User> users, IPersistence
         return RedirectToAction("Index");
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Delete(int id)
     {
         if (!IsAdmin) return Forbid();

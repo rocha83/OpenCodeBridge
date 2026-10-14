@@ -173,6 +173,9 @@
 <script src="~/lib/diff2html/diff2html.min.js"></script>
 <script>
 const conv = document.getElementById('conv');
+// Antiforgery p/ mutações: token injetado pelo layout.
+function afToken() { try { const el = document.querySelector('input[name=__RequestVerificationToken]'); return el ? el.value : ''; } catch { return ''; } }
+function afHeaders(extra) { const h = { 'Content-Type': 'application/json', 'RequestVerificationToken': afToken() }; if (extra) for (const k in extra) h[k] = extra[k]; return h; }
 const sessionList = document.getElementById('sessionList');
 const agentSel = document.getElementById('agentId');
 const execSel = document.getElementById('executorId');
@@ -191,7 +194,7 @@ const Tracer = (() => {
     if (!enabled || !queue.length) return;
     const batch = queue.splice(0, 50);
     try {
-      await fetch('/Chat/ClientLog', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      await fetch('/Chat/ClientLog', { method: 'POST', headers: afHeaders(),
         body: JSON.stringify({ sessionId: sid || null, events: batch }) });
     } catch { /* telemetria nunca quebra a UI */ }
   }
@@ -224,7 +227,7 @@ const execIdOrNull = () => execSel.value ? +execSel.value : null;
 function abortActiveStream() {
   try { window._streamAbort?.abort(); } catch {}
   if (window._streamSession) {
-    fetch('/Chat/Stop', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    fetch('/Chat/Stop', { method: 'POST', headers: afHeaders(),
       body: JSON.stringify({ sessionId: window._streamSession }) }).catch(() => {});
   }
   window._streamAbort = null; window._streamSession = null;
@@ -546,7 +549,7 @@ async function loadSessions() {
     li.querySelector('a').onclick = (e) => { e.preventDefault(); selectSession(s.id, s.agentId, s.executorAgentId); };
     li.querySelector('.del-session').onclick = async (e) => {
       e.preventDefault(); e.stopPropagation();
-      await fetch(`/Chat/Sessions/${s.id}`, { method: 'DELETE' });
+      await fetch(`/Chat/Sessions/${s.id}`, { method: 'DELETE', headers: afHeaders() });
       if (currentSessionId === s.id) { currentSessionId = null; conv.innerHTML = ''; try { localStorage.removeItem('bridgeSessionId'); } catch {} }
       await loadSessions();
     };
@@ -793,7 +796,7 @@ document.getElementById('fileSaveBtn').onclick = async () => {
   fileMsg('Salvando...');
   try {
     const r = await fetch(`/Chat/Sessions/${cmSession}/File`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: afHeaders(),
       body: JSON.stringify({ path: cmPath, content: cm.getValue() })
     });
     if (!r.ok) { fileMsg('Falha ao salvar (' + r.status + ')', 'text-danger'); return; }
@@ -890,7 +893,7 @@ async function createSession() {
   abortActiveStream();
   const r = await fetch('/Chat/Sessions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: afHeaders(),
     body: JSON.stringify({ agentId: +agentSel.value, executorAgentId: execIdOrNull(), title: 'Nova sessão' })
   });
   const s = await r.json();
@@ -918,7 +921,7 @@ async function deleteAllSessions() {
   const r = await fetch('/Chat/Sessions');
   const list = await r.json();
   for (const s of list) {
-    await fetch(`/Chat/Sessions/${s.id}`, { method: 'DELETE' });
+    await fetch(`/Chat/Sessions/${s.id}`, { method: 'DELETE', headers: afHeaders() });
   }
   currentSessionId = null;
   currentAgentId = null;
@@ -1035,7 +1038,7 @@ async function applyExecutorAvailability() {
   if (currentSessionId && had) {
     try {
       await fetch(`/Chat/Sessions/${currentSessionId}/Executor`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        method: 'PUT', headers: afHeaders(),
         body: JSON.stringify({ executorAgentId: null })
       });
     } catch {}
@@ -1047,7 +1050,7 @@ execSel.onchange = async () => {
   if (!currentSessionId) return;
   const r = await fetch(`/Chat/Sessions/${currentSessionId}/Executor`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: afHeaders(),
     body: JSON.stringify({ executorAgentId: currentExecutorId })
   });
   if (!r.ok) {
@@ -1124,7 +1127,7 @@ document.getElementById('send').onclick = async () => {
   cancelBtn.onclick = () => {
     stoppedByUser = true;
     // Para o servidor via API + corta o fetch local.
-    fetch('/Chat/Stop', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    fetch('/Chat/Stop', { method: 'POST', headers: afHeaders(),
       body: JSON.stringify({ sessionId: sendSessionId }) }).catch(() => {});
     try { abortController.abort(); } catch {}
     window._streamAbort = null; window._streamSession = null;
@@ -1200,7 +1203,7 @@ document.getElementById('send').onclick = async () => {
   try {
     const res = await fetch('/Chat/Stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: afHeaders(),
       body: JSON.stringify({ sessionId: currentSessionId, agentId: currentAgentId, messages: [{ role: 'user', content: text }] }), signal: abortController.signal
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1394,7 +1397,7 @@ document.getElementById('clearSessions').onclick = deleteAllSessions;
 document.getElementById('compactBtn').onclick = async () => {
   if (!currentSessionId) { showToast('Sem sessão ativa.', 'warning'); return; }
   try {
-    const r = await fetch(`/Chat/Sessions/${currentSessionId}/Compact`, { method: 'POST' });
+    const r = await fetch(`/Chat/Sessions/${currentSessionId}/Compact`, { method: 'POST', headers: afHeaders() });
     const j = await r.json();
     showToast(j.compacted ? `Compactado: ${j.removed} msgs resumidas.` : 'Nada a compactar.', j.compacted ? 'success' : 'info');
     await loadMessages(currentSessionId);

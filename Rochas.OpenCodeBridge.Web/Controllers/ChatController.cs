@@ -35,6 +35,7 @@ public sealed class ChatController(
     }
 
     [HttpPost("/Chat/Stop")]
+    [ValidateAntiForgeryToken]
     public IActionResult Stop([FromBody] StopRequest req)
     {
         if (req.SessionId.HasValue && ActiveStreams.TryGetValue(req.SessionId.Value, out var cts))
@@ -66,6 +67,7 @@ public sealed class ChatController(
     }
 
     [HttpPost("/Chat/ClientLog")]
+    [ValidateAntiForgeryToken]
     [RequestSizeLimit(65536)]
     public async Task<IActionResult> ClientLog([FromBody] ClientLogRequest req)
     {
@@ -144,6 +146,7 @@ public sealed class ChatController(
     }
 
     [HttpPost("/Chat/Sessions")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateSession([FromBody] CreateSessionRequest req)
     {
         var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.AgentId);
@@ -383,6 +386,7 @@ public sealed class ChatController(
 
     // POST /Chat/Sessions/{id}/File - salva edição do modal (guard de workspace, teto 1MB).
     [HttpPost("/Chat/Sessions/{id:int}/File")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveSessionFile(int id, [FromBody] SaveFileRequest req)
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
@@ -544,6 +548,7 @@ public sealed class ChatController(
     }
 
     [HttpDelete("/Chat/Sessions/{id:int}")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteSession(int id)
     {
         await sessionService.DeleteAsync(id, CurrentUserId);
@@ -578,6 +583,7 @@ public sealed class ChatController(
 
     // POST /Chat/Sessions/{id}/Compact — resume o antigo, mantém a cauda.
     [HttpPost("/Chat/Sessions/{id:int}/Compact")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> CompactSession(int id)
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
@@ -631,6 +637,7 @@ public sealed class ChatController(
     }
 
     [HttpPut("/Chat/Sessions/{id:int}/Title")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateSessionTitle(int id, [FromBody] UpdateTitleRequest req)
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
@@ -640,6 +647,7 @@ public sealed class ChatController(
     }
 
     [HttpPut("/Chat/Sessions/{id:int}/Agent")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateSessionAgent(int id, [FromBody] UpdateAgentRequest req)
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
@@ -651,6 +659,7 @@ public sealed class ChatController(
     }
 
     [HttpPut("/Chat/Sessions/{id:int}/Executor")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateSessionExecutor(int id, [FromBody] UpdateExecutorRequest req)
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
@@ -668,6 +677,7 @@ public sealed class ChatController(
 
     // POST /Chat/Executors/{id}/Probe - mede tok/s do agente e grava em measured_tps.
     [HttpPost("/Chat/Executors/{id:int}/Probe")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ProbeExecutor(int id, [FromServices] IBridgeClient bridge, CancellationToken ct)
     {
         var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == id);
@@ -751,6 +761,7 @@ public sealed class ChatController(
     }
 
     [HttpPost("/Chat/Stream")]
+    [ValidateAntiForgeryToken]
     public async Task Stream([FromBody] StreamRequest req, CancellationToken ct)
     {
         Agent? agent;
@@ -1815,6 +1826,7 @@ public sealed class ChatController(
 
     // POST /Chat/Tool - Executa tool no servidor
     [HttpPost("/Chat/Tool")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ExecuteTool([FromBody] ToolRequest request)
     {
         var result = toolExecutor.Execute(request.Name, request.Arguments);

@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,6 +24,61 @@ internal static class ChatIntegrationTests
     private static string WebBase = "http://127.0.0.1:4130";
     private static CookieContainer Cookies = new();
     private static int Failures;
+    private static string AfToken = "";
+
+    private static async Task FetchAfToken()
+    {
+        try
+        {
+            var html = await Http.GetStringAsync($"{WebBase}/Account/Login");
+            var m = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
+            if (m.Success) AfToken = m.Groups[1].Value;
+        }
+        catch { }
+    }
+
+    private static Task<HttpResponseMessage> JPost(string url, object body)
+    {
+        var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonContent.Create(body) };
+        if (!string.IsNullOrEmpty(AfToken)) req.Headers.Add("RequestVerificationToken", AfToken);
+        return Http.SendAsync(req);
+    }
+
+    private static Task<HttpResponseMessage> JPut(string url, object body)
+    {
+        var req = new HttpRequestMessage(HttpMethod.Put, url) { Content = JsonContent.Create(body) };
+        if (!string.IsNullOrEmpty(AfToken)) req.Headers.Add("RequestVerificationToken", AfToken);
+        return Http.SendAsync(req);
+    }
+
+    private static Task<HttpResponseMessage> JDelete(string url)
+    {
+        var req = new HttpRequestMessage(HttpMethod.Delete, url);
+        if (!string.IsNullOrEmpty(AfToken)) req.Headers.Add("RequestVerificationToken", AfToken);
+        return Http.SendAsync(req);
+    }
+
+    private static Task<HttpResponseMessage> JPostForm(string url, HttpContent content)
+    {
+        var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+        if (!string.IsNullOrEmpty(AfToken)) req.Headers.Add("RequestVerificationToken", AfToken);
+        return Http.SendAsync(req);
+    }
+
+    private static async Task<HttpResponseMessage> JPostFormAdmin(HttpClient admin, string url, HttpContent content)
+    {
+        string tok = "";
+        try
+        {
+            var html = await admin.GetStringAsync($"{WebBase}/Account/Login");
+            var m = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
+            if (m.Success) tok = m.Groups[1].Value;
+        }
+        catch { }
+        var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+        if (!string.IsNullOrEmpty(tok)) req.Headers.Add("RequestVerificationToken", tok);
+        return await admin.SendAsync(req);
+    }
     private static readonly List<int> CreatedSessions = new();
 
     internal static async Task RunAsync(string webBase)
@@ -32,6 +88,9 @@ internal static class ChatIntegrationTests
 
         // Login admin
         await LoginAdmin();
+
+        // Cookie antiforgery gira no login: reler o token pós-login.
+        await FetchAfToken();
 
         Check(await AnonRedirectsToLogin(), "I-chat-login-redirect");
         Check(await AdminSeesAgentsUsersLinks(), "I-chat-admin-sees-agents-users");
@@ -46,7 +105,7 @@ internal static class ChatIntegrationTests
         // Não suja a UI real: apaga as sessões criadas pelos testes.
         foreach (int sid in CreatedSessions.Distinct())
         {
-            try { await Http.DeleteAsync($"{WebBase}/Chat/Sessions/{sid}"); } catch { }
+            try { await JDelete($"{WebBase}/Chat/Sessions/{sid}"); } catch { }
         }
 
         Console.WriteLine($"=== Chat Integration: {9 - Failures}/9 PASS, {Failures} FAIL ===");
@@ -61,7 +120,9 @@ internal static class ChatIntegrationTests
     private static async Task<bool> LoginAdmin()
     {
         // Bateria isolada no usuário de teste (nunca polui as sessões do admin na UI).
-        var resp = await Http.PostAsync($"{WebBase}/Account/Login",
+        // Token antes do login (cookie+form); FetchAfToken renova o pós-login.
+        await FetchAfToken();
+        var resp = await JPostForm($"{WebBase}/Account/Login",
             new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("email", "teste@e2e.local"), new KeyValuePair<string, string>("password", "Teste@123") }));
         return resp.StatusCode == HttpStatusCode.Redirect;
     }
@@ -77,7 +138,7 @@ internal static class ChatIntegrationTests
     {
         // Links de admin exigem o admin de verdade (bateria roda no usuário de teste).
         using var admin = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, CookieContainer = new CookieContainer() });
-        var login = await admin.PostAsync($"{WebBase}/Account/Login",
+        var login = await JPostFormAdmin(admin,$"{WebBase}/Account/Login",
             new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("email", "admin@bridge.pcss.com.br"), new KeyValuePair<string, string>("password", "123") }));
         if (login.StatusCode != HttpStatusCode.Redirect) return false;
         var html = await admin.GetStringAsync($"{WebBase}/Chat");
@@ -87,7 +148,7 @@ internal static class ChatIntegrationTests
     private static async Task<bool> SessionsCrud()
     {
         // Create
-        var createResp = await Http.PostAsJsonAsync($"{WebBase}/Chat/Sessions", new { agentId = 1, title = "Teste Integração" });
+        var createResp = await JPost($"{WebBase}/Chat/Sessions", new { agentId = 1, title = "Teste Integração" });
         if (!createResp.IsSuccessStatusCode) return false;
         var session = await createResp.Content.ReadFromJsonAsync<JsonObject>();
         var id = session?["id"]?.GetValue<int>();
@@ -104,15 +165,15 @@ internal static class ChatIntegrationTests
         if (msgResp == null || msgResp.Count != 0) return false;
 
         // Update title
-        var putResp = await Http.PutAsJsonAsync($"{WebBase}/Chat/Sessions/{id}/Title", new { title = "Atualizado" });
+        var putResp = await JPut($"{WebBase}/Chat/Sessions/{id}/Title", new { title = "Atualizado" });
         if (!putResp.IsSuccessStatusCode) return false;
 
         // Update agent
-        var putAgentResp = await Http.PutAsJsonAsync($"{WebBase}/Chat/Sessions/{id}/Agent", new { agentId = 2 });
+        var putAgentResp = await JPut($"{WebBase}/Chat/Sessions/{id}/Agent", new { agentId = 2 });
         if (!putAgentResp.IsSuccessStatusCode) return false;
 
         // Delete
-        var delResp = await Http.DeleteAsync($"{WebBase}/Chat/Sessions/{id}");
+        var delResp = await JDelete($"{WebBase}/Chat/Sessions/{id}");
         if (!delResp.IsSuccessStatusCode) return false;
 
         // Verify deleted
@@ -123,7 +184,7 @@ internal static class ChatIntegrationTests
     private static async Task<bool> StreamSseWithSession()
     {
         // Create session
-        var createResp = await Http.PostAsJsonAsync($"{WebBase}/Chat/Sessions", new { agentId = 1, title = "Stream Test" });
+        var createResp = await JPost($"{WebBase}/Chat/Sessions", new { agentId = 1, title = "Stream Test" });
         if (!createResp.IsSuccessStatusCode) return false;
         var session = await createResp.Content.ReadFromJsonAsync<JsonObject>();
         var id = session?["id"]?.GetValue<int>();
@@ -132,6 +193,7 @@ internal static class ChatIntegrationTests
 
         // Stream
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{WebBase}/Chat/Stream");
+        if (!string.IsNullOrEmpty(AfToken)) req.Headers.Add("RequestVerificationToken", AfToken);
         req.Content = JsonContent.Create(new { sessionId = id, agentId = 1, messages = new[] { new { role = "user", content = "ping" } } });
         req.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
 
@@ -170,7 +232,7 @@ internal static class ChatIntegrationTests
     private static async Task<bool> AbortKeepsMessageThenResume()
     {
         // 1) Mensagem garantida sem resposta: stream abortado no início.
-        var createResp = await Http.PostAsJsonAsync($"{WebBase}/Chat/Sessions", new { agentId = 1, title = "Resume Test" });
+        var createResp = await JPost($"{WebBase}/Chat/Sessions", new { agentId = 1, title = "Resume Test" });
         if (!createResp.IsSuccessStatusCode) return false;
         var session = await createResp.Content.ReadFromJsonAsync<JsonObject>();
         var id = session?["id"]?.GetValue<int>();
@@ -180,6 +242,7 @@ internal static class ChatIntegrationTests
         using (var cts = new CancellationTokenSource())
         {
             using var req = new HttpRequestMessage(HttpMethod.Post, $"{WebBase}/Chat/Stream");
+        if (!string.IsNullOrEmpty(AfToken)) req.Headers.Add("RequestVerificationToken", AfToken);
             req.Content = JsonContent.Create(new { sessionId = id, agentId = 1, messages = new[] { new { role = "user", content = "ping resume" } } });
             cts.CancelAfter(TimeSpan.FromSeconds(2));
             try { using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token); } catch { }
@@ -198,6 +261,7 @@ internal static class ChatIntegrationTests
         using (var req2 = new HttpRequestMessage(HttpMethod.Post, $"{WebBase}/Chat/Stream"))
         {
             req2.Content = JsonContent.Create(new { sessionId = id, agentId = 1, messages = new[] { new { role = "user", content = "continue" } } });
+            if (!string.IsNullOrEmpty(AfToken)) req2.Headers.Add("RequestVerificationToken", AfToken);
             using var resp2 = await Http.SendAsync(req2, HttpCompletionOption.ResponseHeadersRead);
             if (!resp2.IsSuccessStatusCode) return false;
             using var stream = await resp2.Content.ReadAsStreamAsync();
@@ -219,7 +283,7 @@ internal static class ChatIntegrationTests
 
     private static async Task<bool> ClientLogAcceptsBatch()
     {
-        var resp = await Http.PostAsJsonAsync($"{WebBase}/Chat/ClientLog",
+        var resp = await JPost($"{WebBase}/Chat/ClientLog",
             new { sessionId = (int?)null, events = new[] { new { t = "2026-10-13T00:00:00Z", source = "ui:test", level = "info", msg = "tracer ok", data = (string?)null } } });
         if (!resp.IsSuccessStatusCode) return false;
         var j = await resp.Content.ReadFromJsonAsync<JsonObject>();
@@ -242,7 +306,7 @@ internal static class ChatIntegrationTests
     private static async Task<bool> ToolProgressEvents()
     {
         // Pede um ls: o servidor deve emitir tool_start + tool_done no SSE.
-        var createResp = await Http.PostAsJsonAsync($"{WebBase}/Chat/Sessions", new { agentId = 1, title = "Progress Test" });
+        var createResp = await JPost($"{WebBase}/Chat/Sessions", new { agentId = 1, title = "Progress Test" });
         if (!createResp.IsSuccessStatusCode) return false;
         var session = await createResp.Content.ReadFromJsonAsync<JsonObject>();
         var id = session?["id"]?.GetValue<int>();
@@ -250,6 +314,7 @@ internal static class ChatIntegrationTests
         CreatedSessions.Add(id.Value);
 
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{WebBase}/Chat/Stream");
+        if (!string.IsNullOrEmpty(AfToken)) req.Headers.Add("RequestVerificationToken", AfToken);
         req.Content = JsonContent.Create(new { sessionId = id, agentId = 1, messages = new[] { new { role = "user", content = "liste os arquivos com ls" } } });
         using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
         if (!resp.IsSuccessStatusCode) return false;

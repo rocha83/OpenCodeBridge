@@ -69,6 +69,8 @@ public sealed class SessionsController(
         return View(msgs);
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Delete(int id)
     {
         if (!IsAdmin) return Forbid();

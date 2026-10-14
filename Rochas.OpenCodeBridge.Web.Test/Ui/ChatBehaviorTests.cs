@@ -11,8 +11,8 @@ namespace Rochas.OpenCodeBridge.Web.Test.Ui;
 // Roda com: dotnet run --project Rochas.OpenCodeBridge.Web.Test -c Release -- --ui-behavior
 public static class ChatBehaviorTests
 {
-    private const string Email = "admin@pccs.com.br";
-    private const string Password = "e2e";
+    private const string Email = "admin@bridge.pcss.com.br";
+    private const string Password = "123";
 
     private static int _failures;
     private static void Check(bool ok, string name)
@@ -58,6 +58,7 @@ public static class ChatBehaviorTests
         var sessions = new List<int>();
         try
         {
+            await I_LoginReject(browser, web);
             await A_ThinkingPct(page, mockAgent, sessions);
             await B_ToolLabel(page, mockAgent, sessions, sim);
             int sidSub = await C_SubCard(page, mockAgent, sessions, sim);
@@ -65,6 +66,10 @@ public static class ChatBehaviorTests
             await D_SilentFallback(page, mockAgent, sessions, sim);
             await E_Cancel(page, mockAgent, sessions, sim);
             await F_BridgeError(page, mockAgent, sessions, sim);
+            await G_FooterMetrics(page, mockAgent, sessions, sim);
+            await H_ToolsGroup(page, mockAgent, sessions, sim);
+            await K_EmptyZip(page, mockAgent, sessions);
+            await J_AgentModals(page, web);
         }
         finally
         {
@@ -83,8 +88,8 @@ public static class ChatBehaviorTests
                 catch { }
             }
             foreach (int sid in sessions)
-                await page.EvaluateAsync("(id) => fetch(`/Chat/Sessions/${id}`, { method: 'DELETE' })", sid);
-            await page.EvaluateAsync("(id) => fetch(`/Agents/Delete/${id}`)", mockAgent);
+                await page.EvaluateAsync("(id) => { const af = (document.querySelector('input[name=__RequestVerificationToken]') || {}).value || ''; return fetch(`/Chat/Sessions/${id}`, { method: 'DELETE', headers: { 'RequestVerificationToken': af } }); }", sid);
+            await page.EvaluateAsync("(id) => { const af = (document.querySelector('input[name=__RequestVerificationToken]') || {}).value || ''; const b = new URLSearchParams({ __RequestVerificationToken: af }); return fetch(`/Agents/Delete/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: b }); }", mockAgent);
         }
 
         Console.WriteLine(_failures == 0 ? "UIBEHAVIOR PASS" : "UIBEHAVIOR FAIL");
@@ -94,13 +99,15 @@ public static class ChatBehaviorTests
     private static async Task<int> EnsureMockAgent(IPage page, string web, string bridgeUrl)
     {
         string html = await page.EvaluateAsync<string>(@"async () => {
+          const af = (document.querySelector('input[name=__RequestVerificationToken]') || {}).value || '';
           const form = new URLSearchParams({ Name: 'UITEST-MOCK', Model: 'mock-model',
             BridgeUrl: '__URL__', Temperature: '0.4', Thinking: 'events', Active: 'true',
-            Role: 'orchestrator', Mode: 'plan', SystemPrompt: 'mock' });
+            Role: 'orchestrator', Mode: 'plan', SystemPrompt: 'mock',
+            __RequestVerificationToken: af });
           await fetch('/Agents/Create', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
           return await (await fetch('/Agents')).text();
         }".Replace("__URL__", bridgeUrl));
-        var ms = Regex.Matches(html, @"<td>UITEST-MOCK</td>.*?/Agents/Edit/(\d+)", RegexOptions.Singleline);
+        var ms = Regex.Matches(html, @"UITEST-MOCK.*?#agentModal-(\d+)", RegexOptions.Singleline);
         int newest = 0;
         foreach (Match mm in ms) newest = Math.Max(newest, int.Parse(mm.Groups[1].Value));
         return newest;
@@ -109,7 +116,8 @@ public static class ChatBehaviorTests
     private static async Task<int> NewSession(IPage page, int agentId, string title, List<int> sessions)
     {
         int sid = await page.EvaluateAsync<int>(@"async ({agentId, title}) => {
-          const r = await fetch('/Chat/Sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          const af = (document.querySelector('input[name=__RequestVerificationToken]') || {}).value || '';
+          const r = await fetch('/Chat/Sessions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': af },
             body: JSON.stringify({ agentId, title }) });
           return (await r.json()).id;
         }", new { agentId, title });
@@ -284,5 +292,70 @@ public static class ChatBehaviorTests
         var bubble = await page.EvaluateAsync<string>(@"() => [...document.querySelectorAll('#conv pre.ans')].pop()?.textContent ?? ''");
         Check(bubble.Contains("Erro:"), "mock-f: erro na bolha");
         Check(state.Contains("Conclu"), "mock-f: DONE mesmo com erro");
+    }
+
+    // G: rodapé da bolha com duração e t/s após reload do histórico.
+    private static async Task G_FooterMetrics(IPage page, int agent, List<int> sessions, SseSimulator sim)
+    {
+        int sid = await NewSession(page, agent, "UIMOCK-G", sessions);
+        _ = sid;
+        sim.Script(new MockBridgeClient.MockTurn("", "texto-metricas"));
+        string state = await SendAndWait(page, "vai");
+        Check(state.Contains("Conclu"), "mock-g: conclui");
+        var foot = await page.EvaluateAsync<string>(@"() => [...document.querySelectorAll('#conv .msg-ts')].pop()?.textContent ?? ''");
+        Check(Regex.IsMatch(foot, @"\d{2}/\d{2} \d{2}:\d{2} - \d+s - [\d.,]+ t/s"), "mock-g: rodape com duracao e t/s (" + foot + ")");
+    }
+
+    // H: grupo de tools por bolha no histórico recarregado.
+    private static async Task H_ToolsGroup(IPage page, int agent, List<int> sessions, SseSimulator sim)
+    {
+        int sid = await NewSession(page, agent, "UIMOCK-H", sessions);
+        _ = sid;
+        sim.Script(
+            new MockBridgeClient.MockTurn("pensando", "",
+                new List<MockBridgeClient.MockToolCall> { new("glob", "{\"pattern\":\"**/*.cs\"}") }, null, 5),
+            new MockBridgeClient.MockTurn("", "total-tools"));
+        string state = await SendAndWait(page, "vai");
+        Check(state.Contains("Conclu"), "mock-h: conclui");
+        var grp = await page.EvaluateAsync<string>(@"() => [...document.querySelectorAll('#conv .tools-group summary')].map(e => e.textContent).join('|')");
+        Check(grp.Contains("Ferramentas (1)"), "mock-h: grupo Ferramentas por bolha (" + grp + ")");
+    }
+
+    // I: senha errada não entra e mostra erro (contexto isolado).
+    private static async Task I_LoginReject(IBrowser browser, string web)
+    {
+        await using var ctx2 = await browser.NewContextAsync();
+        var p2 = await ctx2.NewPageAsync();
+        await p2.GotoAsync(web + "/Account/Login");
+        await p2.FillAsync("input[name=email]", Email);
+        await p2.FillAsync("input[name=password]", "senha-errada");
+        await p2.ClickAsync("form button:has-text('Entrar')");
+        await p2.WaitForTimeoutAsync(1500);
+        Check(p2.Url.Contains("/Account/Login"), "login: senha errada não entra");
+        Check(await p2.EvaluateAsync<bool>("() => !!document.querySelector('.alert-danger')"), "login: mostra erro");
+    }
+
+    // J: cadastro de agentes em lista + modais (novo e por linha).
+    private static async Task J_AgentModals(IPage page, string web)
+    {
+        await page.GotoAsync(web + "/Agents");
+        await page.WaitForSelectorAsync(".crud-list", new PageWaitForSelectorOptions { Timeout = 15000 });
+        Check(await page.EvaluateAsync<bool>("() => !!document.getElementById('agentModal-new')"), "agents: modal novo existe");
+        int rowModals = await page.EvaluateAsync<int>(@"() => document.querySelectorAll('[data-mdb-target^=""#agentModal-""]').length");
+        Check(rowModals >= 1, "agents: modal por linha");
+        await page.ClickAsync("[data-mdb-target=\"#agentModal-new\"]");
+        await page.WaitForSelectorAsync("#agentModal-new.show", new PageWaitForSelectorOptions { Timeout = 10000 });
+        Check(true, "agents: modal novo abre");
+    }
+
+    // K: sessão sem writes não oferece zip (guarda anti-zip-vazio).
+    private static async Task K_EmptyZip(IPage page, int agent, List<int> sessions)
+    {
+        int sid = await NewSession(page, agent, "UIMOCK-K", sessions);
+        _ = sid;
+        var j = await page.EvaluateAsync<JsonElement>("(id) => fetch(`/Chat/Sessions/${id}/Scripts`).then(r => r.json())", sid);
+        var scripts = j.GetProperty("scripts");
+        Check(scripts.GetArrayLength() == 0, "scripts: sem writes, sem lista");
+        Check(j.GetProperty("zip").ValueKind == System.Text.Json.JsonValueKind.Null, "scripts: sem writes, sem zip");
     }
 }

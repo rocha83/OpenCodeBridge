@@ -68,6 +68,7 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
     }
 
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(Agent form, string[] selectedTools)
     {
         if (!IsAdmin) return Forbid();
@@ -97,6 +98,7 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
     }
 
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Edit(Agent form, string[] selectedTools)
     {
         if (!IsAdmin) return Forbid();
@@ -119,6 +121,8 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
         return RedirectToAction("Index");
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Delete(int id)
     {
         if (!IsAdmin) return Forbid();

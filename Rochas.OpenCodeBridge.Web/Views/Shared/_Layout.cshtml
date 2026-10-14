@@ -15,6 +15,7 @@
 </script>
 </head>
 <body>
+@Html.AntiForgeryToken()
 <nav class="navbar navbar-expand navbar-dark topbar">
   <div class="container-fluid">
     <a class="navbar-brand" href="/">bridge.web</a>
@@ -30,6 +31,7 @@
         }
       </div>
       <form method="post" action="/Account/Logout" class="d-flex align-items-center">
+        @Html.AntiForgeryToken()
         <span class="navbar-text me-2">@User.Identity.Name</span>
         <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="themeToggle" title="Alternar tema">
           <i class="fas fa-sun"></i>

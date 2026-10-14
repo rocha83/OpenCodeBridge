@@ -1,9 +1,10 @@
 ﻿@* Form de usuário (partial). *@
 @model Rochas.OpenCodeBridge.Web.Models.User
-<form method="post">
-  <input name="Name" class="form-control mb-2" placeholder="Nome" value="@Model.Name" />
-  <input name="Email" class="form-control mb-2" placeholder="Email" value="@Model.Email" />
-  <input name="password" type="password" class="form-control mb-2" placeholder="Senha" />
-  <button class="btn btn-primary">Salvar</button>
+<form method="post" action="@(ViewData["FormAction"] ?? "")">
+  @Html.AntiForgeryToken()
+  <div class="mb-2"><label class="form-label">Nome</label><input name="Name" class="form-control" value="@Model.Name" /></div>
+  <div class="mb-2"><label class="form-label">Email</label><input name="Email" class="form-control" value="@Model.Email" /></div>
+  <div class="mb-2"><label class="form-label">Senha</label><input name="password" type="password" class="form-control" /></div>
+  <button class="btn btn-info">Salvar</button>
 </form>
 
