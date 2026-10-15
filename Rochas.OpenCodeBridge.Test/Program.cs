@@ -44,8 +44,8 @@ internal static class Program
         TestContext.Run("U-convert-invalid-arguments", UnitConvertTests.ConvertInvalidArguments);
         TestContext.Run("U-convert-coerced-text-call", UnitConvertTests.ConvertCoercedTextCall);
         TestContext.Run("U-convert-coerced-angle-call", UnitConvertTests.ConvertCoercedAngleCall);
-        TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);
-        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
+        TestContext.Run("U-tools-execute", UnitToolsExecuteTests.ToolsExecute);
+        TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
         TestContext.Run("U-sanitize-system-first", UnitBypassTests.SanitizeSystemFirst);
         TestContext.Run("U-translate-system-first", UnitBypassTests.TranslateSystemFirst);
 

@@ -50,6 +50,7 @@ internal static partial class Program
     static int MaxTokens = 4096;                                   // teto de saida padrao (fabrica 4k); pedido menor e honrado, nunca maior
     static int CpuMaxTokens = 2048;                                // teto p/ upstream sem parser server-side (llama/CPU): decode ~5 tok/s, teto alto = divagacao de minutos. GPU usa MaxTokens.
     static int ToolOutputLimit = 32768;                             // corte por resultado de tool
+    static string WorkspaceRoot = "";                               // raiz p/ POST /api/tools/execute; vazio = cwd do processo
     static string LogPath = "/tmp/qwen3-bridge.log";
     static string ApiKey = "";
     static bool PassthroughResponses = false;                    // Bypass p/ upstream com Responses nativo (llama.cpp): so remove itens reasoning, resto passa direto                                     // Bearer p/ upstream com auth (llama --api-key); vazio = so repasse
@@ -430,6 +431,7 @@ internal static partial class Program
                 case "--legacy-harness": LegacyHarness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
                 case "--diagnostic": Diagnostic = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--workspace": WorkspaceRoot = cliArgs[i + 1]; break;
             }
         }
     }
@@ -562,6 +564,29 @@ WriteJson(ctx, 200, new JsonObject
                     CpuMaxTokens = cpuMax;
                 Log(new JsonObject { ["event"] = "config", ["thinking"] = Thinking, ["temperature"] = Temperature, ["max_tokens"] = MaxTokens, ["cpu_max_tokens"] = CpuMaxTokens });
                 WriteJson(ctx, 200, BuildStatus());
+                return;
+            }
+
+            if (ctx.Request.HttpMethod == "POST" && path == "/api/tools/execute")
+            {
+                // Execução de tools na bridge (dono atual: Web delega p/ cá).
+                // Corpo: {name, arguments, timeout?}. Raiz = --workspace ou cwd.
+                var req = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
+                string name = req["name"]?.GetValue<string>() ?? "";
+                string args = req["arguments"]?.ToJsonString() ?? "{}";
+                int timeout = req["timeout"]?.GetValue<int>() ?? 300;
+                string root = WorkspaceRoot.Length > 0 ? WorkspaceRoot : Environment.CurrentDirectory;
+                var executor = new Tools.BridgeToolExecutor(root);
+                var result = executor.Execute(name, args, Math.Clamp(timeout, 1, 600));
+                string output = result.Success ? result.Output : "";
+                if (output.Length > ToolOutputLimit) output = output[..ToolOutputLimit];
+                string error = result.Success ? "" : result.Error;
+                if (error.Length > ToolOutputLimit) error = error[..ToolOutputLimit];
+                Log(new JsonObject { ["event"] = "tool_exec", ["tool"] = name, ["ok"] = result.Success });
+                WriteJson(ctx, 200, new JsonObject
+                {
+                    ["ok"] = result.Success, ["output"] = output, ["error"] = error
+                });
                 return;
             }
 
