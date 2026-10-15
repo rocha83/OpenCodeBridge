@@ -26,6 +26,8 @@ public static class ShellInspector
     {
         // Dispositivos de bloco (descartar em /dev/null segue liberado).
         "/dev/sd", "/dev/nvme", "/dev/hd", "/dev/vd", "/dev/mmcblk", "of=/dev/", ":(){",
+        // reset --hard apaga trabalho sem volta: sempre negado (sem excecao).
+        "reset --hard",
     };
 
     public static string ExtractCommand(string argumentsJson)
@@ -62,6 +64,9 @@ public static class ShellInspector
         foreach (string pat in DeniedPatterns)
             if (cmd.Contains(pat, StringComparison.Ordinal))
                 return $"padrão '{pat}' negado pelo inspetor";
+        // reset --hard com espacos variados (o Contains acima pega o exato).
+        if (Regex.IsMatch(cmd, @"\breset\s+--hard\b", RegexOptions.IgnoreCase))
+            return "git reset --hard negado: apaga trabalho sem volta";
         // top interativo trava o runner: só batch.
         if (string.Equals(FirstToken(cmd), "top", StringComparison.OrdinalIgnoreCase)
             && !Regex.IsMatch(cmd, @"(?:^|\s)-[a-zA-Z]*[bn]"))

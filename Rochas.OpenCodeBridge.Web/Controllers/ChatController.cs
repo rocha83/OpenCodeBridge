@@ -1285,7 +1285,15 @@ public sealed class ChatController(
                         lock (unlinkedToolIds) unlinkedToolIds.Add(toolId);
                     }
                     : null;
-                var result = toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
+                // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
+                Services.ToolResult? execResult = null;
+                if (Services.ConfirmGate.NeedsConfirmation(name, args)
+                    && !Services.ConfirmGate.ApprovedBy(Services.ConfirmGate.LastUserText(messages)))
+                {
+                    execResult = Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
+                    await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args);
+                }
+                var result = execResult ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
                 toolExecutor.LogInnerAsync = null;
@@ -1743,7 +1751,15 @@ public sealed class ChatController(
                         lock (unlinkedToolIds) unlinkedToolIds.Add(toolId);
                     }
                     : null;
-                var result = toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
+                // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
+                Services.ToolResult? execResult = null;
+                if (Services.ConfirmGate.NeedsConfirmation(name, args)
+                    && !Services.ConfirmGate.ApprovedBy(Services.ConfirmGate.LastUserInputText(input)))
+                {
+                    execResult = Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
+                    await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args);
+                }
+                var result = execResult ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
                 toolExecutor.LogInnerAsync = null;

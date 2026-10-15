@@ -349,6 +349,23 @@ function toolsOwnerBody(sub) {
 // Delegação externa (subagent sem id: o card ainda não existe) ancora no
 // grupo do agente: sucesso não despeja o resultado (o card já mostra);
 // falha sem card mostra o motivo (timeout/recusa ficavam invisíveis).
+function toolConfirm(name, result, args) {
+  // Card âmbar de confirmação: ação mutante aguardando "pode fazer" no chat.
+  const body = toolsOwnerBody(null);
+  if (!body) return;
+  const g = ensureToolsGroup(body);
+  const list = g.querySelector(':scope > .tlist');
+  if (!list) return;
+  const d = document.createElement('details');
+  d.className = 'mb-1 tool-item';
+  d.dataset.tool = name;
+  d.setAttribute('open', '');
+  const a = (args || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  d.innerHTML = `<summary class="small text-warning">🔒 Aguardando confirmação: ${esc(name)}${a ? ' ' + esc(a) : ''} — digite <b>pode fazer</b> no chat</summary>`
+    + `<div class="small text-muted">${esc(result || '')}</div>`;
+  list.appendChild(d);
+  bumpToolsCount(g);
+}
 function toolStatus(name, running, ok, result, ms, args, sub) {
   // Chamada de subagente ≠ execução: só placeholder/card (sem grupo).
   if (name === 'subagent' && !sub) {
@@ -1240,6 +1257,7 @@ document.getElementById('send').onclick = async () => {
               toolStatus(evt.name, true, null, '', 0, evt.args || '', evt.sub || null);
             }
             else if (evt.progress === 'tool_done') toolStatus(evt.name, false, evt.ok, evt.result || '', evt.ms || 0, '', evt.sub || null);
+            else if (evt.progress === 'tool_confirm') toolConfirm(evt.name, evt.result || '', evt.args || '');
             else if (evt.progress === 'sub_chunk') subChunk(evt.sub, evt.kind, evt.text || '');
             else if (evt.progress === 'sub_start') subPlaceholder(subPromptOf(evt.args));
             continue;
