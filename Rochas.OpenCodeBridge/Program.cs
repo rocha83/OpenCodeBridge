@@ -993,6 +993,15 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         int asked = req["max_tokens"]?.GetValue<int>()
             ?? req["max_output_tokens"]?.GetValue<int>() ?? cap;
         if (asked <= 0) asked = cap;
+        // Thinking do cliente (Web manda o do cadastro; opencode não manda):
+        // presente vence o default da linha; ausente segue o flag --thinking.
+        bool wantThinking = thinking == "events";
+        try
+        {
+            var kw = req["chat_template_kwargs"]?.AsObject();
+            if (kw?["enable_thinking"] is JsonValue ev && ev.TryGetValue<bool>(out bool b)) wantThinking = b;
+        }
+        catch { }
         var chat = new JsonObject
         {
             ["model"] = Model,
@@ -1000,7 +1009,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             ["temperature"] = temperature,
             ["max_tokens"] = Math.Min(asked, cap),
             ["stream"] = false,          // upstream sem stream: resposta unica, sintetizamos o SSE
-            ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = thinking == "events" }
+            ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = wantThinking }
         };
         if (tools is { Count: > 0 })
         {

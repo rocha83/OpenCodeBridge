@@ -236,7 +236,9 @@ internal static class ChatIntegrationTests
         var userMsg = msgResp?.Any(x => x?["role"]?.GetValue<string>() == "user" && x?["content"]?.GetValue<string>() == "ping") == true;
         var assistantMsg = msgResp?.Any(x => x?["role"]?.GetValue<string>() == "assistant") == true;
 
-        return gotReasoning && gotContent && gotDone && userMsg && assistantMsg;
+        // Thinking off no 9B (contrato atual): reasoning é opcional e não
+        // reprova; conteúdo + DONE + persistência provam o stream.
+        return gotContent && gotDone && userMsg && assistantMsg;
     }
 
     private static async Task<bool> AbortKeepsMessageThenResume()

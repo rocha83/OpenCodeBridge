@@ -1532,6 +1532,9 @@ public sealed class ChatController(
                 ["input"] = input.DeepClone(),
                 ["stream"] = true,
                 ["temperature"] = temp,
+                // Thinking do cadastro: a bridge honra no rebuild do chat
+                // (sem isto o default events dela vencia o off do agente).
+                ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = agent.Thinking != "off" },
             };
             string instructions = agent.SystemPrompt ?? "";
             // Calda global do Fluxo (prompt_controls.system_tail): vale p/ todo agente.
