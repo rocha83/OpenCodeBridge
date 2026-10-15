@@ -89,6 +89,81 @@ internal static class E2EDevPipeTests
         TestContext.Check(content3.Contains("DEVPIPE-FIM"), "devpipe final DEVPIPE-FIM");
     }
 
+    // ---- visão VL (ponte CPU :4125, mmproj): imagem -> texto + tool específica.
+    const string CpuBridge = "http://127.0.0.1:4125";
+
+    static string Img64(string name)
+    {
+        string dir = Path.Combine(AppContext.BaseDirectory, "TestData");
+        if (!File.Exists(Path.Combine(dir, name)))
+            dir = "/media/mint/Linux/opencodebridge/Rochas.OpenCodeBridge.Test/TestData";
+        return Convert.ToBase64String(File.ReadAllBytes(Path.Combine(dir, name)));
+    }
+
+    static JsonObject VisionMsg(string prompt, string img64) => new()
+    {
+        ["role"] = "user",
+        ["content"] = new JsonArray(
+            new JsonObject { ["type"] = "text", ["text"] = prompt },
+            new JsonObject { ["type"] = "image_url", ["image_url"] = new JsonObject { ["url"] = "data:image/png;base64," + img64 } }),
+    };
+
+    // VL lê a imagem e identifica o texto.
+    public static async Task DevPipeVision()
+    {
+        var body = new JsonObject
+        {
+            ["model"] = "qwen3-vl-4b", ["temperature"] = 0.3, ["max_tokens"] = 64, ["stream"] = false,
+            ["messages"] = new JsonArray(VisionMsg("O que esta escrito na imagem? Responda SOMENTE o texto.", Img64("placa.png"))),
+        };
+        var r = await TestContext.PostObj(CpuBridge + "/v1/chat/completions", body);
+        var content = r["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
+        TestContext.Check(content.Contains("TESTE") && content.Contains("456"), "visao identifica TESTE 456");
+    }
+
+    // VL decompõe o documento em texto, linha a linha.
+    public static async Task DevPipeDoc()
+    {
+        var body = new JsonObject
+        {
+            ["model"] = "qwen3-vl-4b", ["temperature"] = 0.3, ["max_tokens"] = 128, ["stream"] = false,
+            ["messages"] = new JsonArray(VisionMsg("Transcreva exatamente as tres linhas da imagem, uma por linha.", Img64("doc.png"))),
+        };
+        var r = await TestContext.PostObj(CpuBridge + "/v1/chat/completions", body);
+        var content = r["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
+        TestContext.Check(content.Contains("UM") && content.Contains("DOIS") && content.Contains("TRES"), "doc decomposto em 3 linhas");
+    }
+
+    // Visão + tool call específica: identifica e chama read no path exato.
+    // Dialeto Alibaba direto (o que o VL entende) + required; retry ×3 (Q3 flakey).
+    public static async Task DevPipeVisionTool()
+    {
+        string img64 = Img64("placa.png");
+        bool okName = false, okPath = false;
+        for (int attempt = 0; attempt < 3 && !(okName && okPath); attempt++)
+        {
+            var body = new JsonObject
+            {
+                ["model"] = "qwen3-vl-4b", ["temperature"] = 0.3, ["max_tokens"] = 256, ["stream"] = false,
+                ["tool_choice"] = "required",
+                ["messages"] = new JsonArray(
+                    new JsonObject { ["role"] = "system", ["content"] = "Voce e um desenvolvedor senior." },
+                    VisionMsg("Identifique o texto da imagem via visao e CHAME a tool read_file com file_path /tmp/vlimg/placa.png.", img64)),
+                ["tools"] = new JsonArray(Tool("read_file", "Le arquivo", new JsonObject { ["file_path"] = Str("caminho") }, "file_path")),
+            };
+            var r = await TestContext.PostObj(CpuBridge + "/v1/chat/completions", body);
+            var tc = r["choices"]?[0]?["message"]?["tool_calls"]?.AsArray();
+            if (tc is not { Count: > 0 }) continue;
+            var fn = tc[0]?["function"];
+            string name = fn?["name"]?.GetValue<string>() ?? "";
+            string args = fn?["arguments"]?.GetValue<string>() ?? "";
+            if (name is "read" or "read_file") okName = true;
+            if (args.Contains("placa")) okPath = true;
+        }
+        TestContext.Check(okName, "visao+tool chama read");
+        TestContext.Check(okPath, "visao+tool path exato");
+    }
+
     // Infra dev direto no executor da bridge: git, gh, fetch internet.
     public static async Task DevPipeInfra()
     {

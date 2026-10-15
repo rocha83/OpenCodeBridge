@@ -59,6 +59,9 @@ internal static class Program
             TestContext.Run("E-responses-tools", E2EToolTests.ToolResponses);
             TestContext.Run("E-devpipe-tools", E2EDevPipeTests.DevPipeTools);
             TestContext.Run("E-devpipe-infra", E2EDevPipeTests.DevPipeInfra);
+            TestContext.Run("E-devpipe-vision", E2EDevPipeTests.DevPipeVision);
+            TestContext.Run("E-devpipe-doc", E2EDevPipeTests.DevPipeDoc);
+            TestContext.Run("E-devpipe-vision-tool", E2EDevPipeTests.DevPipeVisionTool);
             TestContext.Run("E-stream-architect", E2EStreamTests.ArchitectStream);
             TestContext.Run("E-review-architect", E2EStreamTests.ArchitectReview);
             TestContext.Run("E-iot-event-queue", E2EArchitectureTests.IotEventQueue);
