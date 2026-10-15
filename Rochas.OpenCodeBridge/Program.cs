@@ -768,8 +768,8 @@ WriteJson(ctx, 200, new JsonObject
                 outBody = node.ToJsonString(SerOpts);
             }
             // tools quebram o parser do template 14B (400); vale p/ qualquer
-            // model id, com ou sem sufixo de perfil. Inibivel (--harness 0).
-            if (LegacyHarness && node is not null && node["tools"] is JsonArray toolsArr)
+            // model id, com ou sem sufixo de perfil. Strip incondicional.
+            if (node is not null && node["tools"] is JsonArray toolsArr)
             {
                 int dropped = StripUnanchoredPatterns(toolsArr);
                 if (dropped > 0)
@@ -1062,7 +1062,9 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             sys0["content"] = WithFormula(syst);
         // Converte as tools Responses (formato "chato") -> formato chat
         var tools = ToolsToChat(req["tools"]);
-        if (tools is not null && LegacyHarness)
+        // Compat llama.cpp: pattern sem ^...$ derruba o parser do template
+        // (400). Strip incondicional — não é harness, é sobrevivência.
+        if (tools is not null)
         {
             int droppedResp = StripUnanchoredPatterns(tools);
             if (droppedResp > 0) Log(new JsonObject { ["event"] = "pattern-strip", ["mode"] = "responses", ["dropped"] = droppedResp, ["tools"] = ToolNames(tools) });
