@@ -371,7 +371,7 @@ function toolConfirm(name, result, args, approveId, label) {
   d.innerHTML = `<summary class="small text-warning">🔒 O agente está tentando <b>${esc(lbl)}</b>, você permite?</summary>`
     + `<div class="small text-muted">${esc(name)}${a ? ' ' + esc(a) : ''}</div>`
     + `<div class="mt-1 d-flex gap-2"><button class="btn btn-sm btn-success" data-ap="1">Sim</button>`
-    + `<button class="btn btn-sm btn-outline-danger" data-ap="0">Não</button>`
+    + `<button class="btn btn-sm btn-danger text-black" data-ap="0">Não</button>`
     + `<span class="small text-muted">ou digite <b>pode fazer</b> no chat</span></div>`;
   const done = (txt) => {
     d.querySelectorAll('button').forEach(b => b.disabled = true);
