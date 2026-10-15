@@ -32,6 +32,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
+using Serilog;
+
 namespace Rochas.OpenCodeBridge;
 
 internal static partial class Program
@@ -63,6 +65,7 @@ internal static partial class Program
     static bool CoerceTextTools;
     static bool AntiRepeat = true;                               // AntiRepeat: observa o thinking em stream e conteve repeticao
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
+    static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
     static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida, mude a sua deducao para outra alternativa e responda, obrigado.";
     static bool CoerceFor(string modelId) => CoerceTextTools
         || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false);
@@ -116,6 +119,8 @@ internal static partial class Program
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
+            if (cfg["diagnostic"]?.GetValue<bool>() is bool dg) Diagnostic = dg;
+            if (Environment.GetEnvironmentVariable("DIAGNOSTIC") is "1" or "true" or "True") Diagnostic = true;
             if (cfg["profiles"]?.AsObject() is JsonObject profs)
                 foreach (var kv in profs)
                 {
@@ -291,6 +296,19 @@ internal static partial class Program
 
         LoadAppSettings();                                       // 1.1 arquivo (CLI vence)
         ParseArgs(cliArgs);                                        // 1.2 parse CLI
+        // Sonda Serilog: probe do AntiRepeat, SO com DIAGNOSTIC ligado
+        // (--diagnostic / appsettings diagnostic / env DIAGNOSTIC=1).
+        // Desligado = Serilog mudo; o JSONL do LogPath segue sempre ativo.
+        if (Diagnostic)
+            Serilog.Log.Logger = new Serilog.LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information,
+                    outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}")
+                .WriteTo.File("/tmp/bridge-sonda.log", rollingInterval: Serilog.RollingInterval.Day,
+                    retainedFileCountLimit: 7, restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Debug)
+                .CreateLogger();
+        Serilog.Log.Information("sonda diagnostic={Diagnostic} antiRepeat={AntiRepeat} window={Window}",
+            Diagnostic, AntiRepeat, AntiRepeatWindow);
         try
         {
             var logDir = Path.GetDirectoryName(LogPath);
@@ -340,6 +358,7 @@ internal static partial class Program
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
+                case "--diagnostic": Diagnostic = cliArgs[i + 1] is not "false" and not "0"; break;
             }
         }
     }
@@ -690,12 +709,36 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             using var reader = new StreamReader(upstreamStream, new UTF8Encoding(false));
             using var writer = new StreamWriter(ctx.Response.OutputStream, new UTF8Encoding(false)) { AutoFlush = true };
             string? line;
+            var sseText = new StringBuilder();
+            int sseChecked = 0;
+            bool sseTrip = false;
             while ((line = reader.ReadLine()) != null)
             {
                 if (line.Contains("\"reasoning\":"))
                     line = line.Replace("\"reasoning\":", "\"reasoning_content\":");
                 writer.WriteLine(line);
+                // Sonda bypass-chat-stream: acumula deltas; trip = early-stop (contencao).
+                if (isChat && !sseTrip && line.StartsWith("data:"))
+                {
+                    try
+                    {
+                        string data = line["data:".Length..].Trim();
+                        if (data is not ("[DONE]" or "")) WalkText(JsonNode.Parse(data), sseText);
+                    }
+                    catch { }
+                    if (sseText.Length - sseChecked >= 512)
+                    {
+                        sseChecked = sseText.Length;
+                        if (CheckRepeat(sseText.ToString(), "bypass-chat-stream"))
+                        {
+                            sseTrip = true;
+                            Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length });
+                        }
+                    }
+                }
+                if (sseTrip) break;
             }
+            if (sseTrip) { writer.WriteLine("data: [DONE]"); writer.WriteLine(); }
         }
         else
         {
@@ -704,6 +747,19 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             string json = reader.ReadToEnd();
             if (json.Contains("\"reasoning\":"))
                 json = json.Replace("\"reasoning\":", "\"reasoning_content\":");
+            // Sonda bypass-chat: repeticao no corpo = 1 retry de contencao.
+            if (isChat && CheckRepeat(ExtractChatText(json), "bypass-chat"))
+            {
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat", ["window"] = AntiRepeatWindow });
+                string? second = RetryBypassChat(outBody, ctx);
+                if (second is not null)
+                {
+                    json = second;
+                    if (json.Contains("\"reasoning\":"))
+                        json = json.Replace("\"reasoning\":", "\"reasoning_content\":");
+                    Log(new JsonObject { ["event"] = "anti-repeat-retry", ["where"] = "bypass-chat" });
+                }
+            }
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
         }
@@ -1011,12 +1067,49 @@ var shape = new StringBuilder();
             using var reader = new StreamReader(stream, new UTF8Encoding(false));
             using var writer = new StreamWriter(ctx.Response.OutputStream, new UTF8Encoding(false)) { AutoFlush = true };
             string? line;
-            while ((line = reader.ReadLine()) != null) writer.WriteLine(line);
+            // Sonda bypass-responses-stream: acumula texto; trip = early-stop (contencao).
+            var sseText = new StringBuilder();
+            int sseChecked = 0;
+            bool sseTrip = false;
+            while ((line = reader.ReadLine()) != null)
+            {
+                writer.WriteLine(line);
+                if (!sseTrip && line.StartsWith("data:"))
+                {
+                    try
+                    {
+                        string data = line["data:".Length..].Trim();
+                        if (data is not ("[DONE]" or "")) WalkText(JsonNode.Parse(data), sseText);
+                    }
+                    catch { }
+                    if (sseText.Length - sseChecked >= 512)
+                    {
+                        sseChecked = sseText.Length;
+                        if (CheckRepeat(sseText.ToString(), "bypass-responses-stream"))
+                        {
+                            sseTrip = true;
+                            Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length });
+                        }
+                    }
+                }
+                if (sseTrip) break;
+            }
         }
         else
         {
             using var reader = new StreamReader(stream, new UTF8Encoding(false));
             string json = reader.ReadToEnd();
+            // Sonda bypass-responses: repeticao no objeto = 1 retry de contencao.
+            if (CheckRepeat(ExtractResponsesText(json), "bypass-responses"))
+            {
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses", ["window"] = AntiRepeatWindow });
+                string? second = RetryBypassResponses(req, ctx);
+                if (second is not null)
+                {
+                    json = second;
+                    Log(new JsonObject { ["event"] = "anti-repeat-retry", ["where"] = "bypass-responses" });
+                }
+            }
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
         }
@@ -1085,9 +1178,117 @@ var shape = new StringBuilder();
     static bool ThinkingRepeats(string accumulated, int window)
     {
         if (string.IsNullOrEmpty(accumulated) || window < 32) return false;
-        if (accumulated.Length < 2 * window) return false;
-        string tail = accumulated[^window..];
-        return accumulated.AsSpan(0, accumulated.Length - window).IndexOf(tail.AsSpan(), StringComparison.Ordinal) >= 0;
+        // Normaliza (caixa/espaco) p/ pegar repeticao quase-verbatim do decoder.
+        string norm = NormRepeat(accumulated);
+        if (norm.Length < 2 * window) return false;
+        string tail = norm[^window..];
+        bool trip = norm.AsSpan(0, norm.Length - window).IndexOf(tail.AsSpan(), StringComparison.Ordinal) >= 0;
+        return trip;
+    }
+
+    /// <summary>Detector com sonda: avalia e registra o probe Serilog (trip=Warning, resto=Debug).</summary>
+    /// <param name="accumulated">Texto acumulado ate aqui.</param>
+    /// <param name="where">Ponto de observacao.</param>
+    /// <returns>True se repeticao detectada.</returns>
+    static bool CheckRepeat(string accumulated, string where)
+    {
+        bool trip = AntiRepeat && ThinkingRepeats(accumulated, AntiRepeatWindow);
+        // Sonda: loga no maximo 1x a cada 2k chars p/ nao afogar o sink em stream.
+        int chars = accumulated?.Length ?? 0;
+        if (trip || chars < 512 || (chars % 2048) < 256)
+            Sonda(where, chars, trip, Truncate(NormRepeat(accumulated ?? ""), 80));
+        return trip;
+    }
+
+    /// <summary>Extrai texto util de um chat/completions (content + reasoning) p/ a sonda do bypass.</summary>
+    static string ExtractChatText(string json)
+    {
+        try
+        {
+            var root = JsonNode.Parse(json)?.AsObject();
+            var b = new StringBuilder();
+            void Add(string? t) { if (!string.IsNullOrEmpty(t)) { if (b.Length > 0) b.Append('\n'); b.Append(t); } }
+            foreach (var ch in root?["choices"]?.AsArray() ?? new JsonArray())
+            {
+                var m = ch?.AsObject()?["message"]?.AsObject() ?? ch?.AsObject()?["delta"]?.AsObject();
+                if (m is null) continue;
+                if (m["content"]?.GetValue<string>() is string c) Add(c);
+                if (m["reasoning_content"]?.GetValue<string>() is string r) Add(r);
+                else if (m["reasoning"]?.GetValue<string>() is string r2) Add(r2);
+            }
+            return b.ToString();
+        }
+        catch { return ""; }
+    }
+
+    /// <summary>Coleta valores de chaves de texto ("text"/"delta") em qualquer JSON (SSE do bypass).</summary>
+    static void WalkText(JsonNode? node, StringBuilder b)
+    {
+        if (node is JsonObject o)
+            foreach (var kv in o)
+            {
+                if ((kv.Key is "text" or "delta") && kv.Value is JsonValue v
+                    && v.TryGetValue<string>(out string? t) && !string.IsNullOrEmpty(t))
+                { if (b.Length > 0) b.Append('\n'); b.Append(t); }
+                else WalkText(kv.Value, b);
+            }
+        else if (node is JsonArray a)
+            foreach (var it in a) WalkText(it, b);
+    }
+
+    /// <summary>Extrai todo texto de um objeto Responses (output) p/ a sonda do bypass.</summary>
+    static string ExtractResponsesText(string json)
+    {
+        try
+        {
+            var root = JsonNode.Parse(json)?.AsObject();
+            var b = new StringBuilder();
+            if (root?["output"] is JsonArray out_) foreach (var it in out_) WalkText(it, b);
+            else WalkText(root, b);
+            return b.ToString();
+        }
+        catch { return ""; }
+    }
+
+    /// <summary>Bypass chat: 1 retry de contencao com o aviso anexado as messages.</summary>
+    static string? RetryBypassChat(string outBody, HttpListenerContext ctx)
+    {
+        try
+        {
+            var node = JsonNode.Parse(outBody)?.AsObject();
+            if (node?["messages"] is not JsonArray msgs) return null;
+            msgs.Add(new JsonObject { ["role"] = "user", ["content"] = AntiRepeatNotice });
+            var retry = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/completions")
+            { Content = new StringContent(node.ToJsonString(SerOpts), Encoding.UTF8, "application/json") };
+            WithAuth(retry, ctx);
+            using var r = Http.Send(retry);
+            if (!r.IsSuccessStatusCode) return null;
+            using var rd = new StreamReader(r.Content.ReadAsStream(), new UTF8Encoding(false));
+            return rd.ReadToEnd();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Bypass responses: 1 retry de contencao com o aviso anexado ao input.</summary>
+    static string? RetryBypassResponses(JsonObject req, HttpListenerContext ctx)
+    {
+        try
+        {
+            if (req["input"] is not JsonArray input) return null;
+            input.Add(new JsonObject
+            {
+                ["type"] = "message", ["role"] = "user",
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = AntiRepeatNotice })
+            });
+            var retry = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/responses")
+            { Content = new StringContent(req.ToJsonString(SerOpts), Encoding.UTF8, "application/json") };
+            WithAuth(retry, ctx);
+            using var r = Http.Send(retry);
+            if (!r.IsSuccessStatusCode) return null;
+            using var rd = new StreamReader(r.Content.ReadAsStream(), new UTF8Encoding(false));
+            return rd.ReadToEnd();
+        }
+        catch { return null; }
     }
 
     /// <summary>Funde system/developer do input num unico system inicial (jinja Qwen exige system primeiro).</summary>
@@ -1245,7 +1446,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             thinkingText.Append(text);
             // AntiRepeat: cauda do thinking ja vista antes = loop invalido;
             // arma o flag (o loop de leitura aborta e o modelo e contido).
-            if (AntiRepeat && !repeatTrip && ThinkingRepeats(thinkingText.ToString(), AntiRepeatWindow))
+            if (!repeatTrip && CheckRepeat(thinkingText.ToString(), "thinking"))
             {
                 repeatTrip = true;
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "thinking", ["window"] = AntiRepeatWindow, ["thinking_chars"] = thinkingText.Length });
@@ -1283,7 +1484,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             }
             contentText.Append(text);
             // AntiRepeat tambem no content (agente sem thinking repete aqui).
-            if (AntiRepeat && !repeatTrip && ThinkingRepeats(contentText.ToString(), AntiRepeatWindow))
+            if (!repeatTrip && CheckRepeat(contentText.ToString(), "content"))
             {
                 repeatTrip = true;
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "content", ["window"] = AntiRepeatWindow, ["content_chars"] = contentText.Length });
@@ -2107,6 +2308,40 @@ if (type == "message")
             File.AppendAllText(LogPath, obj.ToJsonString(SerOpts) + "\n");
         }
         catch { /* log nunca derruba o pedido */ }
+    }
+
+    /// <summary>Sonda Serilog do AntiRepeat; nunca derruba o pedido.</summary>
+    /// <param name="where">Ponto de observacao (thinking/content/bypass-chat/bypass-responses).</param>
+    /// <param name="chars">Acumulado ate aqui.</param>
+    /// <param name="trip">Detector disparou?</param>
+    /// <param name="tail">Amostra da cauda (80 chars).</param>
+    static void Sonda(string where, int chars, bool trip, string tail)
+    {
+        if (!Diagnostic) return;
+        try
+        {
+            if (trip)
+                Serilog.Log.Warning("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} tail={Tail}",
+                    where, chars, AntiRepeatWindow, trip, tail);
+            else
+                Serilog.Log.Debug("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} tail={Tail}",
+                    where, chars, AntiRepeatWindow, trip, tail);
+        }
+        catch { /* sonda nunca derruba o pedido */ }
+    }
+
+    /// <summary>Normaliza texto p/ o detector (minusculo, espacos colapsados).</summary>
+    static string NormRepeat(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        var b = new StringBuilder(s.Length);
+        bool sp = false;
+        foreach (char c in s)
+        {
+            if (char.IsWhiteSpace(c)) { if (!sp) { b.Append(' '); sp = true; } }
+            else { b.Append(char.ToLowerInvariant(c)); sp = false; }
+        }
+        return b.ToString();
     }
 
     /// <summary>Id aleatorio hex de 16 chars.</summary>
