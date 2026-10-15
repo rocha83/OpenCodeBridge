@@ -1265,3 +1265,9 @@
 - Fix: `StripUnanchoredPatterns` incondicional nos dois caminhos que
   encaminham tools ao llama (`BuildChatRequest` e `Passthrough` de
   chat/completions). Provado via `:4125` com `pattern:*.cs` → 200.
+
+## repeat-penalty no 4B VL (2026-10-15)
+- 4B VL entrou em eco degenerado do catálogo de tools (repetindo `limit`,
+  truncando no meio). Causa: Q3 pequeno + thinking ecoa definição da tool.
+- Fix: `--repeat-penalty 1.15` na unit do `:4111` (igual ao 9B). Re-teste
+  "o que houve?" → frase curta, sem loop.
