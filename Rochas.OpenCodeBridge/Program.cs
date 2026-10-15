@@ -63,7 +63,7 @@ internal static partial class Program
     static bool CoerceTextTools;
     static bool AntiRepeat = true;                               // AntiRepeat: observa o thinking em stream e conteve repeticao
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
-    static readonly string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida, mude a sua deducao para outra alternativa e responda, obrigado.";
+    static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida, mude a sua deducao para outra alternativa e responda, obrigado.";
     static bool CoerceFor(string modelId) => CoerceTextTools
         || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false);
 
@@ -115,6 +115,7 @@ internal static partial class Program
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
+            if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
             if (cfg["profiles"]?.AsObject() is JsonObject profs)
                 foreach (var kv in profs)
                 {
@@ -1247,7 +1248,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             if (AntiRepeat && !repeatTrip && ThinkingRepeats(thinkingText.ToString(), AntiRepeatWindow))
             {
                 repeatTrip = true;
-                Log(new JsonObject { ["event"] = "anti-repeat", ["window"] = AntiRepeatWindow, ["thinking_chars"] = thinkingText.Length });
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "thinking", ["window"] = AntiRepeatWindow, ["thinking_chars"] = thinkingText.Length });
             }
             Emit("response.reasoning_summary_text.delta", new JsonObject
             {
@@ -1281,6 +1282,12 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                 msgOpen = true;
             }
             contentText.Append(text);
+            // AntiRepeat tambem no content (agente sem thinking repete aqui).
+            if (AntiRepeat && !repeatTrip && ThinkingRepeats(contentText.ToString(), AntiRepeatWindow))
+            {
+                repeatTrip = true;
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "content", ["window"] = AntiRepeatWindow, ["content_chars"] = contentText.Length });
+            }
             Emit("response.output_text.delta", new JsonObject
             {
                 ["type"] = "response.output_text.delta", ["item_id"] = messageId,
@@ -1408,6 +1415,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             // Contencao: descarta a janela repetida e devolve o aviso ao modelo.
             repeatTrip = false;
             thinkingText.Clear();
+            contentText.Clear();
             carry = "";
             inThink = false;
             chat["messages"]!.AsArray().Add(new JsonObject { ["role"] = "user", ["content"] = AntiRepeatNotice });
