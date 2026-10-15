@@ -38,7 +38,9 @@ public static class ConfirmGate
         "write" => "escrever em arquivos",
         "edit" => "editar arquivos",
         "shell" => IsGitPush(ShellInspector.ExtractCommand(args ?? ""))
-            ? "enviar código (git push)" : "executar comando",
+            ? "enviar código (git push)"
+            : ShellInspector.Classify(ShellInspector.ExtractCommand(args ?? "")) == ShellInspector.ShellClass.Install
+            ? "instalar pacotes" : "executar comando",
         _ => (name ?? "").Trim(),
     };
 
@@ -66,7 +68,7 @@ public static class ConfirmGate
                 Allowed.TryRemove(k, out _);
     }
 
-    /// <summary>Call mutante que exige aval? (push via shell, write, edit).</summary>
+    /// <summary>Call mutante que exige aval? (push/install via shell, write, edit).</summary>
     public static bool NeedsConfirmation(string name, string args)
     {
         string n = (name ?? "").Trim();
@@ -77,7 +79,13 @@ public static class ConfirmGate
             || n.Equals("sh", StringComparison.OrdinalIgnoreCase)
             || n.Equals("exec", StringComparison.OrdinalIgnoreCase)
             || n.Equals("proc", StringComparison.OrdinalIgnoreCase))
-            return IsGitPush(ShellInspector.ExtractCommand(args ?? ""));
+        {
+            string cmd = ShellInspector.ExtractCommand(args ?? "");
+            if (IsGitPush(cmd)) return true;
+            // Instalacao de pacotes pede aval uma vez (sticky por tool na sessao).
+            if (ShellInspector.Classify(cmd) == ShellInspector.ShellClass.Install) return true;
+            return false;
+        }
         return false;
     }
 
