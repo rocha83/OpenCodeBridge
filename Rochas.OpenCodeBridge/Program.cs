@@ -68,10 +68,17 @@ internal static partial class Program
     // bridge vira tubo puro (sem sufixo guardrail, sem stop, sem pattern-strip,
     // sem coercao, sem retry/aviso) — todo o conteudo vem do harness opencode.
     static bool Harness = true;
+    // Legado (nunca liga em producao): antigas insercoes da bridge
+    // (guardrail/coerce/strip/retry). --legacy-harness 1 reanima.
+    static bool LegacyHarness = false;
+    // Formula (harness=true): composta pela bridge p/ cliente web (model sem
+    // sufixo). Opencode (sufixo -build/-plan/-orch) passa limpo.
+    static string HarnessAgents = "REGRAS DE TOOLS: leitura: glob (lista), read (arquivo), grep (busca), fetch (GET http); escrita: write (cria), edit (trecho exato); execucao: shell (comando unico; && liberado; pipes/redirecionamento via bash -c); git leitura direta, escrita via shell; delegacao: subagent (uma fase).";
+    static string SystemPromptTail = "";
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
     static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida; quando informada a repeticao, nao responda mais nada, apenas encerre em silencio, obrigado.";
-    static bool CoerceFor(string modelId) => Harness && (CoerceTextTools
+    static bool CoerceFor(string modelId) => LegacyHarness && (CoerceTextTools
         || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false));
 
     // Perfis por sufixo no model (ex.: openai/qwen3-8b-awq-plan): plan =
@@ -121,11 +128,14 @@ internal static partial class Program
             if (cfg["passthroughResponses"]?.GetValue<bool>() is bool pt) PassthroughResponses = pt;
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
             if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
+            if (cfg["harnessAgentsMd"]?.GetValue<string>() is string ham && ham.Length > 0) HarnessAgents = ham;
+            if (cfg["systemPromptTail"]?.GetValue<string>() is string ht) SystemPromptTail = ht;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
             if (cfg["diagnostic"]?.GetValue<bool>() is bool dg) Diagnostic = dg;
             if (Environment.GetEnvironmentVariable("DIAGNOSTIC") is "1" or "true" or "True") Diagnostic = true;
+            if (Environment.GetEnvironmentVariable("HARNESS") is "0" or "false" or "False") Harness = false;
             if (cfg["profiles"]?.AsObject() is JsonObject profs)
                 foreach (var kv in profs)
                 {
@@ -417,6 +427,7 @@ internal static partial class Program
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--legacy-harness": LegacyHarness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
                 case "--diagnostic": Diagnostic = cliArgs[i + 1] is not "false" and not "0"; break;
             }
@@ -667,6 +678,8 @@ WriteJson(ctx, 200, new JsonObject
         try
         {
             var node = JsonNode.Parse(body)?.AsObject();
+            // Marca opencode ANTES do rewrite (model com sufixo = tubo puro).
+            bool opencodeIn = node is not null && IsOpencodeModel(node["model"]?.GetValue<string>());
             if (node is not null && node["model"]?.GetValue<string>() is string mid && mid != Model)
             {
                 bool hasProfile = TryProfile(mid, out double profTemp, out _);
@@ -680,13 +693,13 @@ WriteJson(ctx, 200, new JsonObject
                             if (m is JsonObject mo && mo["role"]?.GetValue<string>() is string mrole && (mrole == "system" || mrole == "developer"))
                             {
                                 if (mo["content"] is JsonValue mcv && mcv.TryGetValue<string>(out string? mtext) && !string.IsNullOrWhiteSpace(mtext))
-                                    mo["content"] = Harness ? WithSystemGuardrail(mtext) : mtext;
+                                    mo["content"] = LegacyHarness ? WithSystemGuardrail(mtext) : mtext;
                                 else if (mo["content"] is JsonArray mparts)
                                 {
                                     foreach (var p in mparts)
                                     {
                                         if (p is JsonObject po && po["text"] is JsonValue ptv && ptv.TryGetValue<string>(out string? ptext) && !string.IsNullOrWhiteSpace(ptext))
-                                        { po["text"] = Harness ? WithSystemGuardrail(ptext) : ptext; break; }
+                                        { po["text"] = LegacyHarness ? WithSystemGuardrail(ptext) : ptext; break; }
                                     }
                                 }
                             }
@@ -702,10 +715,23 @@ WriteJson(ctx, 200, new JsonObject
                     outBody = node.ToJsonString(SerOpts);
                 }
             }
+            // Formula (Harness, cliente web = model sem sufixo de perfil):
+            // system + agents + tail. Opencode (sufixo) passa limpo.
+            if (Harness && !opencodeIn && node is not null
+                && node["messages"] is JsonArray fm)
+            {
+                foreach (var m in fm)
+                {
+                    if (m is JsonObject mo && mo["role"]?.GetValue<string>() is "system" or "developer"
+                        && mo["content"] is JsonValue mcv && mcv.TryGetValue<string>(out string? mtext))
+                    { mo["content"] = WithFormula(mtext); break; }
+                }
+                outBody = node.ToJsonString(SerOpts);
+            }
             // Compat qwen3/qwen3.5: patterns nao-ancorados nos schemas das
             // tools quebram o parser do template 14B (400); vale p/ qualquer
             // model id, com ou sem sufixo de perfil. Inibivel (--harness 0).
-            if (Harness && node is not null && node["tools"] is JsonArray toolsArr)
+            if (LegacyHarness && node is not null && node["tools"] is JsonArray toolsArr)
             {
                 int dropped = StripUnanchoredPatterns(toolsArr);
                 if (dropped > 0)
@@ -727,7 +753,7 @@ WriteJson(ctx, 200, new JsonObject
         bool toolsAsked = false;
         try { toolsAsked = JsonNode.Parse(outBody)?.AsObject() is JsonObject ob && ob["tools"] is JsonArray ta && ta.Count > 0; }
         catch { }
-        bool coerceLine = Harness && (CoerceFor(Model) || (isChat && toolsAsked)) && isChat
+        bool coerceLine = LegacyHarness && (CoerceFor(Model) || (isChat && toolsAsked)) && isChat
             && ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH";
         bool wantStream = false;
         if (coerceLine)
@@ -827,7 +853,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             {
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat", ["window"] = AntiRepeatWindow });
                 // Retry inibivel (--harness 0): deteccao vira so sonda.
-                if (Harness)
+                if (LegacyHarness)
                 {
                     string? second = RetryBypassChat(outBody, ctx);
                     if (second is not null)
@@ -841,7 +867,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             }
             // ToolsCoercion no bypass: pedido com tools sem tool_calls = sintetiza.
             // Inibivel (--harness 0): caminho limpo p/ harness opencode.
-            if (isChat && toolsAsked && Harness)
+            if (isChat && toolsAsked && LegacyHarness)
             {
                 try
                 {
@@ -990,9 +1016,15 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
 
         // Converte a conversa Responses -> messages do formato chat
         var messages = InputToMessages(req["input"], req["instructions"]);
+        // Formula (Harness, cliente web): system + agents + tail. Opencode limpo.
+        if (Harness && !IsOpencodeModel(requestedModel)
+            && messages.Count > 0 && messages[0] is JsonObject sys0
+            && sys0["role"]?.GetValue<string>() == "system"
+            && sys0["content"] is JsonValue sysv && sysv.TryGetValue<string>(out string? syst))
+            sys0["content"] = WithFormula(syst);
         // Converte as tools Responses (formato "chato") -> formato chat
         var tools = ToolsToChat(req["tools"]);
-        if (tools is not null && Harness)
+        if (tools is not null && LegacyHarness)
         {
             int droppedResp = StripUnanchoredPatterns(tools);
             if (droppedResp > 0) Log(new JsonObject { ["event"] = "pattern-strip", ["mode"] = "responses", ["dropped"] = droppedResp, ["tools"] = ToolNames(tools) });
@@ -1150,6 +1182,19 @@ string outBody = body;
             if (dropped > 0 || moved) outBody = req.ToJsonString(SerOpts);
         }
         catch { outBody = body; }
+        // Formula (Harness, cliente web = model sem sufixo): instructions +
+        // agents + tail. Opencode (sufixo) passa limpo.
+        try
+        {
+            if (Harness && !IsOpencodeModel(req["model"]?.GetValue<string>())
+                && req.TryGetPropertyValue("instructions", out JsonNode? fins) && fins is JsonValue fiv
+                && fiv.TryGetValue<string>(out string? finst))
+            {
+                req["instructions"] = WithFormula(finst);
+                outBody = req.ToJsonString(SerOpts);
+            }
+        }
+        catch { }
         var forward = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/responses")
         {
             Content = new StringContent(outBody, Encoding.UTF8, "application/json")
@@ -1243,7 +1288,7 @@ var shape = new StringBuilder();
             if (CheckRepeat(ExtractResponsesText(json), "bypass-responses"))
             {
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses", ["window"] = AntiRepeatWindow });
-                if (Harness)
+                if (LegacyHarness)
                 {
                     string? second = RetryBypassResponses(req, ctx);
                     if (second is not null)
@@ -1303,6 +1348,24 @@ var shape = new StringBuilder();
         if (t.Length == 0) return t;
         if (t.Contains("mais 2 vezes", StringComparison.OrdinalIgnoreCase)) return t;
         return t + "\n\n" + SystemGuardrail;
+    }
+
+    /// <summary>Formula do harness (modo Harness, cliente web): system + agents + tail.</summary>
+    static string WithFormula(string sys)
+    {
+        string t = (sys ?? "").Trim();
+        if (HarnessAgents.Length > 0) t = (t.Length > 0 ? t + "\n\n" : "") + HarnessAgents;
+        if (SystemPromptTail.Length > 0) t += "\n\n" + SystemPromptTail;
+        return t;
+    }
+
+    /// <summary>Pedido opencode (perfil com sufixo)? Se sim, tubo puro, sem formula.</summary>
+    static bool IsOpencodeModel(string? modelId)
+    {
+        if (string.IsNullOrEmpty(modelId)) return false;
+        foreach (var k in Profiles.Keys)
+            if (modelId.EndsWith("-" + k, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
     }
 
     /// <summary>Remove chaves "pattern" nao-ancoradas dos schemas das tools (recursivo).</summary>
@@ -1515,7 +1578,7 @@ static bool NormalizeSystemFirst(JsonObject req)
             new JsonObject
             {
                 ["type"] = "message", ["role"] = "system",
-                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = Harness ? WithSystemGuardrail(sys.ToString()) : sys.ToString() })
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = LegacyHarness ? WithSystemGuardrail(sys.ToString()) : sys.ToString() })
             }
         };
         foreach (var it in rest) final.Add(it?.DeepClone());
@@ -1806,7 +1869,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         }
 
             if (!repeatTrip) break;
-            if (!Harness) break;   // inibido: sem aviso, sem descarte, fluxo intacto
+            if (!LegacyHarness) break;   // inibido: sem aviso, sem descarte, fluxo intacto
             if (attempt >= 1) break;   // 1 retry de contencao no maximo
             // Contencao: descarta a janela repetida e devolve o aviso ao modelo.
             repeatTrip = false;
@@ -1879,7 +1942,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
         // Coerção no fecho do stream: sem deltas de call e com tools pedidas,
         // extrai do texto acumulado (coder/deepseek via llama). Nativo nao passa aqui.
-        if (toolAccum.Count == 0 && Harness && (CoerceFor(requestedModel) || ReqHasTools(chat)))
+        if (toolAccum.Count == 0 && LegacyHarness && (CoerceFor(requestedModel) || ReqHasTools(chat)))
         {
             var knownResp = AnnouncedTools(chat["tools"]?.AsArray());
             foreach (var (name, args) in ExtractTextToolCalls(contentText.ToString(), knownResp))
@@ -2057,7 +2120,7 @@ if (type == "message")
             // sao ignorados de proposito: nao fazem falta no fluxo chat.
         }
         if (sysText.Length > 0)
-            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = Harness ? WithSystemGuardrail(sysText.ToString()) : sysText.ToString() });
+            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = LegacyHarness ? WithSystemGuardrail(sysText.ToString()) : sysText.ToString() });
         return messages;
     }
 
@@ -2213,7 +2276,7 @@ if (type == "message")
         // Coerção: sem tool_calls nativos e com tools pedidas, extrai do texto
         // (ToolsCoercion: hermes/plural/fence — coder/deepseek via llama).
         // So atua se o texto parsear; prosa normal passa intacta.
-        if (toolCalls.Count == 0 && Harness && (CoerceFor(model) || hadTools))
+        if (toolCalls.Count == 0 && LegacyHarness && (CoerceFor(model) || hadTools))
         {
             foreach (var (name, args) in ExtractTextToolCalls(content))
                 toolCalls.Add(("call_" + NewId(), name, args));
