@@ -52,8 +52,18 @@ namespace Rochas.OpenCodeBridge.Web.Services
             if (string.IsNullOrWhiteSpace(name))
                 return ToolResult.Fail("tool sem nome");
 
-            // Nomes alternativos do shell caem no handler "shell".
-            string key = name is "bash" or "sh" ? "shell" : name;
+            // Nomes alternativos caem no handler canônico (bash/sh→shell, webfetch→fetch).
+            string key = name is "bash" or "sh" ? "shell" : name is "webfetch" ? "fetch" : name;
+
+            // Ferramentas do harness opencode sem handler local: nega guiada.
+            if (key is "question")
+                return ToolResult.Fail("Sem interação com o usuário neste fluxo: responda direto com o melhor juízo.");
+            if (key is "skill")
+                return ToolResult.Fail("Skills indisponíveis aqui: use as tools anunciadas (shell/read/write/edit/grep/fetch).");
+            if (key is "websearch")
+                return ToolResult.Fail("Sem websearch aqui: use a tool fetch com a URL direta.");
+            if (key is "execute")
+                return ToolResult.Fail("Sem runtime JS aqui: use a tool shell.");
 
             // Modo plan: leitura + navegação shell (retaguarda; o anúncio já filtra).
             if (string.Equals(mode, "plan", StringComparison.OrdinalIgnoreCase) && (key is "write" or "edit"))

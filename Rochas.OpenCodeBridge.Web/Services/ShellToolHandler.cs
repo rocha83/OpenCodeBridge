@@ -168,9 +168,10 @@ public sealed class ShellToolHandler : IToolHandler
         // Demais comandos: sem shell, com checagens de metacaracteres e tokens.
         // Trechos entre aspas vão literais por argv (sem interpretador): só contam
         // metacaracteres fora de aspas. SplitChain já separou && e ; top-level.
+        // Liberados: | e > (jail contem no workspace; negar travava o modelo em loop).
         string rest = command.Length > name.Length ? command[name.Length..] : "";
         string bare = StripQuoted(rest);
-        foreach (char c in new[] { ';', '&', '|', '>', '<', '$', '`', '!', '\r', '\n' })
+        foreach (char c in new[] { ';', '&', '<', '$', '`', '!', '\r', '\n' })
             if (bare.Contains(c))
             {
                 why = $"metacaractere '{c}' negado";
