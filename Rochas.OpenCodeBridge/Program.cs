@@ -72,6 +72,8 @@ internal static partial class Program
     // Legado (nunca liga em producao): antigas insercoes da bridge
     // (guardrail/coerce/strip/retry). --legacy-harness 1 reanima.
     static bool LegacyHarness = false;
+    // QwenStandard (--qwen-standard): ModelPrompt sintetizado + tools Alibaba.
+    static bool QwenStd = false;
     // Formula (harness=true): composta pela bridge p/ cliente web (model sem
     // sufixo). Opencode (sufixo -build/-plan/-orch) passa limpo.
     static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada.";
@@ -135,6 +137,7 @@ internal static partial class Program
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
             if (cfg["diagnostic"]?.GetValue<bool>() is bool dg) Diagnostic = dg;
+            if (cfg["qwenStandard"]?.GetValue<bool>() is bool qs) QwenStd = qs;
             if (Environment.GetEnvironmentVariable("DIAGNOSTIC") is "1" or "true" or "True") Diagnostic = true;
             if (Environment.GetEnvironmentVariable("HARNESS") is "0" or "false" or "False") Harness = false;
             if (cfg["profiles"]?.AsObject() is JsonObject profs)
@@ -429,6 +432,7 @@ internal static partial class Program
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--legacy-harness": LegacyHarness = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--qwen-standard": QwenStd = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
                 case "--diagnostic": Diagnostic = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--workspace": WorkspaceRoot = cliArgs[i + 1]; break;
@@ -760,6 +764,13 @@ WriteJson(ctx, 200, new JsonObject
                 }
                 outBody = node.ToJsonString(SerOpts);
             }
+            // QwenStandard: tools OpenAI -> Alibaba + re-serializa p/ upstream.
+            if (QwenStd && node is not null && node["tools"] is JsonArray qtools && qtools.Count > 0)
+            {
+                int nq = QwenStandard.TranslateToolsForUpstream(qtools);
+                outBody = node.ToJsonString(SerOpts);
+                if (Diagnostic) Log(new JsonObject { ["event"] = "qwen-tools", ["count"] = nq });
+            }
             // Thinking default da linha (--thinking): sem o kwargs o template
             // Qwen liga thinking sozinho; vale p/ todo cliente sem flag propria.
             if (node is not null && node["chat_template_kwargs"] is null)
@@ -844,6 +855,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             {
                 if (line.Contains("\"reasoning\":"))
                     line = line.Replace("\"reasoning\":", "\"reasoning_content\":");
+                if (QwenStd) line = QwenStandard.TranslateChunkNames(line);
                 writer.WriteLine(line);
                 if (Diagnostic) rawChatSse.AppendLine(line);
                 // Sonda bypass-chat-stream: so observa e registra (o fluxo NAO
@@ -915,6 +927,24 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                         {
                             json = root.ToJsonString(SerOpts);
                             Log(new JsonObject { ["event"] = "coerced-chat", ["where"] = "bypass-chat", ["count"] = n });
+                        }
+                    }
+                }
+                catch { }
+            }
+            // QwenStandard: tool_calls Alibaba -> OpenAI p/ o cliente.
+            if (QwenStd)
+            {
+                try
+                {
+                    var qroot = JsonNode.Parse(json)?.AsObject();
+                    if (qroot is not null)
+                    {
+                        int nq = QwenStandard.TranslateCompletionForClient(qroot);
+                        if (nq > 0)
+                        {
+                            json = qroot.ToJsonString(SerOpts);
+                            if (Diagnostic) Log(new JsonObject { ["event"] = "qwen-tools-back", ["count"] = nq });
                         }
                     }
                 }
@@ -1379,6 +1409,9 @@ var shape = new StringBuilder();
     {
         string t = (text ?? "").Trim();
         if (t.Length == 0) return t;
+        // QwenStandard: ModelPrompt sintetizado PREFIXADO + system do agente;
+        // sem o guardrail legado (o anti-repeat textual vive só no ModelPrompt).
+        if (QwenStd) return QwenStandard.ComposeSystem(t);
         if (t.Contains("mais 2 vezes", StringComparison.OrdinalIgnoreCase)) return t;
         return t + "\n\n" + SystemGuardrail;
     }

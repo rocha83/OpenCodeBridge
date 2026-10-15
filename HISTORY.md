@@ -1271,3 +1271,32 @@
   truncando no meio). Causa: Q3 pequeno + thinking ecoa definição da tool.
 - Fix: `--repeat-penalty 1.15` na unit do `:4111` (igual ao 9B). Re-teste
   "o que houve?" → frase curta, sem loop.
+
+## Parse QwenStandard — ModelPrompt + Alibaba ⇄ OpenAI (2026-10-15, branch qwen-standard)
+- Motivação: sonda DIAGNOSTIC (`qwen serve --no-web :4127` → bridge :4128 →
+  llama :4110) capturou o harness real do QwenServe: system de ~38KB em inglês,
+  15 tools ACP (`read_file`, `run_shell_command`, `write_file`, `edit`, `glob`,
+  `grep_search`, `skill`, `ask_user_question`, `create_sub_session`, `artifact`,
+  `tool_call`, `tool_search`, `notebook_edit`, `enter/exit_plan_mode`),
+  SEM `temperature` (vale o default da bridge), `max_tokens` 15698, stream SSE
+  com `enable_thinking:true` mas zero blocos `reasoning_content` no VL-Q3.
+- Por que o VL "funcionava" ali: com schema ACP ele não quebra — conversa sem
+  emitir `tool_calls`; com o formato opencode ele recusa explícito (provado
+  direto na :4110, sem bridge: com tools recusa, sem tools responde).
+- Parse novo (`Rochas.OpenCodeBridge/QwenStandard.cs`, flag `--qwen-standard`):
+  `ModelPrompt` sintetizado (~2,5k EN: identidade ACP, mandates, workflow
+  plan/implement/verify, uso de tools, 1 exemplo `<tool_call>`, regra
+  anti-repeat textual única); `ComposeSystem` = ModelPrompt + system do agente
+  (SEM o guardrail legado); `TranslateToolsForUpstream` (nomes+args
+  OpenAI→Alibaba, ex. `read{path}`→`read_file{file_path}`); resposta volta por
+  `TranslateCompletionForClient` (non-stream) e `TranslateChunkNames` (SSE,
+  replaces exatos nome/chave); hooks em `Passthrough` (req antes de
+  serializar, chunks no loop, JSON final) + eventos sonda `qwen-tools` /
+  `qwen-tools-back`. Backend AntiRepeat INTACTO (só o texto saiu dos prompts).
+- Bateria 15/10 na sonda :4128: OI ok (`Oi-OK`); tópicos: capital ok,
+  17×23→409 (errado, 391 — limite do Q3, não do parse); devpipe parcial
+  (tradução req ok, VL não emite calls nativos e esvazia em turnos 83KB);
+  belt Azul GPU ok (Write executou); Playwright na Qwen Web :4220 ok
+  (title `Qwen Code Web chat`).
+- Armadilha operacional: `sudo` stripa `DIAGNOSTIC=1` do env — sonda exige
+  `appsettings.json` com `{"diagnostic": true}` no dir do DLL (não commitar).
