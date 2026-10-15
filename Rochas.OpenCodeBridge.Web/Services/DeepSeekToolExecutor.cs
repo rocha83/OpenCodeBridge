@@ -5,7 +5,7 @@ namespace Rochas.OpenCodeBridge.Web.Services;
 
 // Executor de tools para modelos DeepSeek sem tool_calls estruturadas.
 // Sem mudar prompts: o turno volta como texto e o caminho de parse do padrão
-// oficial (DeepSeekToolCoercion: <tool_name>/hermes/fence/tokens) vira Calls,
+// oficial (ToolsCoercion: <tool_name>/hermes/fence/tokens) vira Calls,
 // executadas no ToolExecutor interno; o retorno volta ao histórico como
 // <tool_response> (formato da doc oficial), até esgotar as chamadas.
 public sealed class DeepSeekToolExecutor
@@ -62,7 +62,7 @@ public sealed class DeepSeekToolExecutor
             // texto cai na coerção.
             var calls = t.Calls.Count > 0
                 ? t.Calls
-                : DeepSeekToolCoercion.Coerce(model, t.Content, out _, knownTools);
+                : ToolsCoercion.Coerce(model, t.Content, out _, knownTools);
             if (!string.IsNullOrWhiteSpace(t.Thinking)) thinking = t.Thinking;
             if (!string.IsNullOrWhiteSpace(t.Content)) collected.AppendLine(t.Content);
             if (calls.Count == 0)

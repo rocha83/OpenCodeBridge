@@ -139,18 +139,18 @@ public static class BridgeHelper
             .Select(t => new ToolCall(t.Id, t.Name, t.Args.ToString()))
             .ToList();
         // Choice forçado (required/nominal) pode voltar com finish "stop":
-        // aceita as calls mesmo assim (só deepseek; Qwen intacto).
+        // aceita as calls mesmo assim (deepseek/coder; Qwen3 nativo intacto).
         var calls = (finishReason == "tool_calls"
-                || (structured.Count > 0 && DeepSeekToolCoercion.IsDeepSeek(model)))
+                || (structured.Count > 0 && (ToolsCoercion.IsDeepSeek(model) || ToolsCoercion.IsCoder(model))))
             ? structured
             : new List<ToolCall>();
         string txt = content.ToString();
-        // Caminho DeepSeek: sem tool_calls estruturadas, o modelo escreve a
-        // chamada no texto — coage para Calls (só quando tools foram pedidas;
-        // texto puro de orquestração nunca é tocado).
+        // Sem tool_calls estruturadas, o modelo escreve a chamada no texto
+        // (hermes/plural/fence/tokens) — coage para Calls (só quando tools
+        // foram pedidas; texto puro de orquestração nunca é tocado).
         if (calls.Count == 0 && tools is not null && tools.Count > 0)
         {
-            var coerced = DeepSeekToolCoercion.Coerce(model, txt, out string cleaned);
+            var coerced = ToolsCoercion.Coerce(model, txt, out string cleaned, ToolsCoercion.NamesOf(tools));
             if (coerced.Count > 0) { calls = coerced; txt = cleaned; }
         }
         return new ChatTurn(true, txt, thinking.ToString(), promptTokens, completionTokens, calls, "");

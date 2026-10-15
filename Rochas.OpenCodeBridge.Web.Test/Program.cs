@@ -53,7 +53,7 @@ internal static class Program
             UnitContextWindow();
             UnitSessionService().GetAwaiter().GetResult();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ToolExecutorTests.Run();
-            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.DeepSeekToolCoercionTests.Run();
+            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ToolsCoercionTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.DiagnosticsTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ResponsesBypassTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.SessionTaskPanelTests.Run();

@@ -127,7 +127,7 @@ public sealed class SubagentToolHandler : IToolHandler
             JsonArray? tools = SubTools();
             var collected = new StringBuilder();
             string subthink = "";
-            if (DeepSeekToolCoercion.IsDeepSeek(context.Model))
+            if (ToolsCoercion.IsDeepSeek(context.Model))
             {
                 // DeepSeek sem tool_calls estruturadas: loop texto->parse->executa,
                 // retorno como <tool_response> (padrão oficial). Sem mudar prompts.

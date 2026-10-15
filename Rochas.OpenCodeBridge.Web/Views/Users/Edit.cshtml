@@ -1,0 +1,9 @@
+@model Rochas.OpenCodeBridge.Web.Models.User
+@{ Layout = "_Layout"; ViewData["Title"] = "Editar usuário"; ViewData["FormAction"] = "/Users/Edit/" + Model.Id; }
+<div class="card">
+  <div class="card-header p-3"><p class="fw-bold mb-0">Editar usuário</p></div>
+  <div class="card-body crud-form">
+    @if (ViewBag.Error is string err) { <div class="alert alert-danger py-2 small">@err</div> }
+    @await Html.PartialAsync("_UserForm", Model)
+  </div>
+</div>

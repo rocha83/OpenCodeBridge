@@ -27,4 +27,11 @@ public sealed class User
 
     [Column("is_admin")]
     public bool IsAdmin { get; set; } = false;
+
+    // Controle de tentativas de login (lockout apos falhas seguidas).
+    [Column("failed_attempts")]
+    public int FailedAttempts { get; set; } = 0;
+
+    [Column("locked_until")]
+    public string LockedUntil { get; set; } = "";
 }

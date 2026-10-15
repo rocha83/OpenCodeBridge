@@ -5,21 +5,30 @@ using System.Text.RegularExpressions;
 
 namespace Rochas.OpenCodeBridge.Web.Services;
 
-// Caminho de parse para o padrão DeepSeek (Coder V2-Lite não emite tool_calls
-// estruturadas: devolve a chamada como texto no content). Quando o turno volta
-// sem tool_calls, esta coerção extrai as chamadas do texto e devolve o conteúdo
-// limpo (blocos parseados removidos, sem duplicar na bolha).
-// Padrões (ordem de tentativa):
+// Coercao model-agnostica de tool calls em texto (ex-DeepSeekToolCoercion,
+// generalizada: Coder V2-Lite, Qwen2.5-Coder e outros que nao emitem
+// tool_calls estruturadas devolvem a chamada como texto no content).
+// Quando o turno volta sem tool_calls, esta coercao extrai as chamadas do
+// texto e devolve o conteudo limpo (blocos parseados removidos).
+// Padroes (ordem de tentativa):
 //  1. hermes em texto: <tool_call>{"name":"...","arguments":{...}|"..."}</tool_call>
-//  2. fence json: ```json {"name":"...","arguments":...} ```
-//  3. tokens DeepSeek-V3: <｜tool▁calls▁begin｜>...function<｜tool▁sep｜>nome...args...<｜tool▁call▁end｜>
-public static class DeepSeekToolCoercion
+//  2. wrapper plural do coder: <tools>{"name":"...","arguments":{...}}</tools>
+//  3. fence json: ```json {"name":"...","arguments":...} ```
+//  4. tokens DeepSeek-V3: <｜tool▁calls▁begin｜>...function<｜tool▁sep｜>nome...args...<｜tool▁call▁end｜>
+//  5. XML oficial DeepSeek (<tool_name><param>..</param></tool_name>, so knownTools).
+public static class ToolsCoercion
 {
     public const int MaxCalls = 8;
 
     public static bool IsDeepSeek(string? model) =>
         !string.IsNullOrWhiteSpace(model) &&
         model.Contains("deepseek", StringComparison.OrdinalIgnoreCase);
+
+    // Qwen2.5-Coder (alias qwen3.5-9b esconde o nome: detecta pelo padrao
+    // hermes/plural no texto, nao pelo id — ver Coerce).
+    public static bool IsCoder(string? model) =>
+        !string.IsNullOrWhiteSpace(model) &&
+        model.Contains("coder", StringComparison.OrdinalIgnoreCase);
 
     // Nomes anunciados (formato OpenAI) p/ restringir o parse XML ao válido.
     public static List<string> NamesOf(System.Text.Json.Nodes.JsonArray? tools)
@@ -34,11 +43,13 @@ public static class DeepSeekToolCoercion
     }
 
     // Devolve as chamadas extraídas; cleaned = content sem os blocos parseados.
+    // Model-agnostico: coage sempre que o texto parseia (o chamador ja garante
+    // que tools foram pedidas); o id do modelo so documenta a origem.
     public static List<BridgeHelper.ToolCall> Coerce(string? model, string content, out string cleaned, IEnumerable<string>? knownTools = null)
     {
         cleaned = content ?? "";
         var calls = new List<BridgeHelper.ToolCall>();
-        if (!IsDeepSeek(model) || string.IsNullOrWhiteSpace(content)) return calls;
+        if (string.IsNullOrWhiteSpace(content)) return calls;
         var known = knownTools?.ToList();
 
         string text = content;
@@ -54,6 +65,7 @@ public static class DeepSeekToolCoercion
             return calls;
         }
         text = ExtractHermes(text, calls);
+        if (calls.Count < MaxCalls) text = ExtractToolsPlural(text, calls);
         if (calls.Count < MaxCalls) text = ExtractJsonFences(text, calls, known);
         if (calls.Count < MaxCalls) text = ExtractV3Tokens(text, calls);
         if (calls.Count < MaxCalls) text = ExtractXml(text, calls, known);
@@ -66,6 +78,19 @@ public static class DeepSeekToolCoercion
     private static string ExtractHermes(string text, List<BridgeHelper.ToolCall> calls)
     {
         foreach (Match m in Regex.Matches(text, @"<tool_call>\s*(\{.*?\})\s*</tool_call>",
+                     RegexOptions.Singleline | RegexOptions.IgnoreCase))
+        {
+            if (calls.Count >= MaxCalls) break;
+            if (TryBuildCall(m.Groups[1].Value, calls)) text = text.Replace(m.Value, "\n");
+        }
+        return text;
+    }
+
+    private static string ExtractToolsPlural(string text, List<BridgeHelper.ToolCall> calls)
+    {
+        // Qwen2.5-Coder via llama: embrulha no plural <tools>{...}</tools>
+        // (o template poe as assinaturas em <tools> e o modelo ecoa o wrapper).
+        foreach (Match m in Regex.Matches(text, @"<tools>\s*(\{.*?\})\s*</tools>",
                      RegexOptions.Singleline | RegexOptions.IgnoreCase))
         {
             if (calls.Count >= MaxCalls) break;

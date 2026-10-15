@@ -1,5 +1,23 @@
 ﻿@model IEnumerable<Rochas.OpenCodeBridge.Web.Models.User>
 @{ Layout = "_Layout"; ViewData["Title"] = "Usuários"; ViewData["FormAction"] = "/Users/Create"; }
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" action="/Users" class="row g-2 align-items-end">
+      <div class="col-md-8">
+        <label class="form-label small text-muted mb-1" for="q">Critério (nome ou email)</label>
+        <input id="q" name="criterio" class="form-control form-control-sm" value="@ViewBag.Criterio" placeholder="ex.: admin, rocha..." />
+      </div>
+      <div class="col-md-4">
+        <div class="row g-2">
+          <div class="col-12 d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-sm btn-info">Buscar</button>
+            <a href="/Users" class="btn btn-sm btn-outline-secondary">Limpar</a>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
 <div class="card">
   <div class="card-header d-flex justify-content-between align-items-center p-3">
     <p class="fw-bold mb-0">Usuários</p>
@@ -10,14 +28,22 @@
   </div>
   <div class="list-group list-group-flush crud-list">
     @foreach (var u in Model) {
+    var locked = !string.IsNullOrEmpty(u.LockedUntil) && string.Compare(u.LockedUntil, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), StringComparison.Ordinal) > 0;
     <div class="list-group-item">
       <div class="d-flex justify-content-between align-items-center gap-2">
         <div>
           <span class="fw-bold">@u.Name</span>
-          @if (u.Active) { <span class="badge bg-success ms-2">ativo</span> } else { <span class="badge bg-warning ms-2">inativo</span> }
+          @if (u.IsAdmin) { <span class="badge bg-info ms-2">admin</span> }
+          @if (u.Active) { <span class="badge bg-success ms-1">ativo</span> } else { <span class="badge bg-warning ms-1">inativo</span> }
+          @if (locked) { <span class="badge bg-danger ms-1">bloqueado até @u.LockedUntil</span> }
+          else if (u.FailedAttempts > 0) { <span class="badge bg-warning ms-1">@u.FailedAttempts falha(s)</span> }
           <div class="small text-muted mt-1">@u.Email</div>
         </div>
         <div class="btn-group btn-group-sm flex-shrink-0">
+          <button class="btn btn-outline-secondary" data-mdb-toggle="modal" data-mdb-target="#userModal-@u.Id">Editar</button>
+          @if (locked || u.FailedAttempts > 0) {
+          <form method="post" action="/Users/Unlock/@u.Id" class="d-inline">@Html.AntiForgeryToken()<button class="btn btn-outline-warning">Desbloquear</button></form>
+          }
           <form method="post" action="/Users/Toggle/@u.Id" class="d-inline">@Html.AntiForgeryToken()<button class="btn btn-outline-secondary">Ativar/Desativar</button></form>
           <form method="post" action="/Users/Delete/@u.Id" class="d-inline" onsubmit="return confirm('Excluir @u.Email?')">@Html.AntiForgeryToken()<button class="btn btn-outline-danger">Excluir</button></form>
         </div>
@@ -37,3 +63,34 @@
     </div>
   </div>
 </div>
+@foreach (var u in Model) {
+<div class="modal fade" id="userModal-@u.Id" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title mb-0">Editar usuário</h6>
+        <button type="button" class="btn-close" data-mdb-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <form method="post" action="/Users/Edit/@u.Id">
+        @Html.AntiForgeryToken()
+        <div class="modal-body crud-form">
+          <div class="mb-2"><label class="form-label">Nome</label><input name="Name" class="form-control" value="@u.Name" /></div>
+          <div class="mb-2"><label class="form-label">Email</label><input name="Email" class="form-control" value="@u.Email" /></div>
+          <div class="mb-2"><label class="form-label">Senha (em branco = mantém)</label><input name="password" type="password" class="form-control" autocomplete="new-password" /></div>
+          <div class="row g-2 mb-2">
+            <div class="col-6"><div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" name="Active" value="true" id="um-active-@u.Id" @(u.Active ? "checked" : null) />
+              <label class="form-check-label small" for="um-active-@u.Id">Ativo</label>
+            </div></div>
+            <div class="col-6"><div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" name="IsAdmin" value="true" id="um-admin-@u.Id" @(u.IsAdmin ? "checked" : null) />
+              <label class="form-check-label small" for="um-admin-@u.Id">Admin</label>
+            </div></div>
+          </div>
+          <button class="btn btn-info">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+}

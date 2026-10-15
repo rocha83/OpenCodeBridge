@@ -88,6 +88,10 @@ builder.Services.AddScoped<IGenericRepository<SessionMessage>>(sp => sp.GetRequi
 builder.Services.AddScoped<IPersistenceRepository<SessionMessage>>(sp => sp.GetRequiredService<GenericRepository<SessionMessage>>());
 builder.Services.AddScoped(_ => new GenericRepository<User>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 builder.Services.AddScoped(_ => new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+builder.Services.AddScoped<IGenericRepository<PromptControl>>(sp => sp.GetRequiredService<GenericRepository<PromptControl>>());
+builder.Services.AddScoped<IPersistenceRepository<PromptControl>>(sp => sp.GetRequiredService<GenericRepository<PromptControl>>());
+builder.Services.AddScoped(_ => new GenericRepository<PromptControl>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+builder.Services.AddScoped<PromptControlService>();
 builder.Services.AddScoped(_ => new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 builder.Services.AddScoped(_ => new GenericRepository<SessionMessage>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 builder.Services.AddScoped<IGenericRepository<RefinementLesson>>(sp => sp.GetRequiredService<GenericRepository<RefinementLesson>>());

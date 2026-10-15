@@ -9,7 +9,7 @@ using Rochas.OpenCodeBridge.Web.Services;
 
 namespace Rochas.OpenCodeBridge.Web.Test.Unit;
 
-internal static class DeepSeekToolCoercionTests
+internal static class ToolsCoercionTests
 {
     private static int Failures;
     private const string DsModel = "deepseek-coder-v2-lite-instruct";
@@ -25,6 +25,7 @@ internal static class DeepSeekToolCoercionTests
         V3Tokens();
         PlainTextUntouched();
         NonDeepSeekUntouched();
+        CoderToolsPlural();
         EmptyInputs();
         BadNameSkipped();
         ChatTurnCoerces();
@@ -56,7 +57,7 @@ internal static class DeepSeekToolCoercionTests
     private static void HermesSingle()
     {
         string content = "Vou escrever o script.\n<tool_call>{\"name\": \"write\", \"arguments\": {\"path\": \"fase1.sh\", \"content\": \"echo oi\"}}</tool_call>\npronto.";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out string cleaned);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out string cleaned);
         Check(calls.Count == 1 && calls[0].Name == "write", "U-dsq-hermes-single");
         Check(cleaned.Contains("Vou escrever") && !cleaned.Contains("<tool_call>"), "U-dsq-hermes-cleaned");
         Check(calls.Count == 1 && calls[0].Args.Contains("fase1.sh"), "U-dsq-hermes-args");
@@ -65,7 +66,7 @@ internal static class DeepSeekToolCoercionTests
     private static void HermesMultiple()
     {
         string content = "<tool_call>{\"name\":\"shell\",\"arguments\":{\"command\":\"bash -n a.sh\"}}</tool_call>\n<tool_call>{\"name\":\"read\",\"arguments\":{\"path\":\"x.cs\"}}</tool_call>";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out _);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out _);
         Check(calls.Count == 2 && calls[0].Name == "shell" && calls[1].Name == "read", "U-dsq-hermes-multi");
         Check(calls[0].Id != calls[1].Id, "U-dsq-hermes-distinct-ids");
     }
@@ -73,21 +74,21 @@ internal static class DeepSeekToolCoercionTests
     private static void HermesArgsString()
     {
         string content = "<tool_call>{\"name\": \"shell\", \"arguments\": \"{\\\"command\\\": \\\"ls\\\"}\"}</tool_call>";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out _);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out _);
         Check(calls.Count == 1 && calls[0].Args.Contains("ls"), "U-dsq-hermes-args-string");
     }
 
     private static void HermesInvalidSkipped()
     {
         string content = "texto <tool_call>{nao json}</tool_call> fim";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out string cleaned);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out string cleaned);
         Check(calls.Count == 0 && cleaned == content, "U-dsq-hermes-invalid-skipped");
     }
 
     private static void JsonFence()
     {
         string content = "chamando:\n```json\n{\"name\": \"write\", \"arguments\": {\"path\": \"a.sh\", \"content\": \"x\"}}\n```\nfim";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out string cleaned);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out string cleaned);
         Check(calls.Count == 1 && calls[0].Name == "write", "U-dsq-fence-single");
         Check(!cleaned.Contains("```"), "U-dsq-fence-cleaned");
     }
@@ -95,14 +96,14 @@ internal static class DeepSeekToolCoercionTests
     private static void JsonFenceNonObjectIgnored()
     {
         string content = "exemplo:\n```sh\necho oi\n```\nfim";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out string cleaned);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out string cleaned);
         Check(calls.Count == 0 && cleaned == content, "U-dsq-fence-sh-ignored");
     }
 
     private static void V3Tokens()
     {
         string content = "ok <｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>shell\n```json\n{\"command\": \"ls\"}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜> fim";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out string cleaned);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out string cleaned);
         Check(calls.Count == 1 && calls[0].Name == "shell" && calls[0].Args.Contains("ls"), "U-dsq-v3-tokens");
         Check(!cleaned.Contains("tool▁calls"), "U-dsq-v3-cleaned");
     }
@@ -110,28 +111,37 @@ internal static class DeepSeekToolCoercionTests
     private static void PlainTextUntouched()
     {
         string content = "Só texto, sem chamadas.";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out string cleaned);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out string cleaned);
         Check(calls.Count == 0 && cleaned == content, "U-dsq-plain-untouched");
     }
 
     private static void NonDeepSeekUntouched()
     {
+        // ToolsCoercion e model-agnostica: qualquer modelo com chamada no texto coage.
         string content = "<tool_call>{\"name\": \"write\", \"arguments\": {}}</tool_call>";
-        var calls = DeepSeekToolCoercion.Coerce("qwen3-8b-awq", content, out string cleaned);
-        Check(calls.Count == 0 && cleaned == content, "U-dsq-gated-by-model");
+        var calls = ToolsCoercion.Coerce("qwen3-8b-awq", content, out string cleaned);
+        Check(calls.Count == 1 && calls[0].Name == "write", "U-dsq-model-agnostic");
+    }
+
+    private static void CoderToolsPlural()
+    {
+        // Qwen2.5-Coder via llama: wrapper plural <tools>{...}</tools>.
+        string content = "segue:\n<tools>\n{\"name\": \"bash\", \"arguments\": {\"command\": \"mkdir /tmp/t1\"}}\n</tools>";
+        var calls = ToolsCoercion.Coerce("qwen3.5-9b", content, out string cleaned);
+        Check(calls.Count == 1 && calls[0].Name == "bash" && !cleaned.Contains("<tools>"), "U-dsq-coder-plural");
     }
 
     private static void EmptyInputs()
     {
-        var a = DeepSeekToolCoercion.Coerce(DsModel, "", out _);
-        var b = DeepSeekToolCoercion.Coerce(null, "x", out _);
+        var a = ToolsCoercion.Coerce(DsModel, "", out _);
+        var b = ToolsCoercion.Coerce(null, "x", out _);
         Check(a.Count == 0 && b.Count == 0, "U-dsq-empty");
     }
 
     private static void BadNameSkipped()
     {
         string content = "<tool_call>{\"name\": \"rm -rf /\", \"arguments\": {}}</tool_call>";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out _);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out _);
         Check(calls.Count == 0, "U-dsq-bad-name-skipped");
     }
 
@@ -166,7 +176,7 @@ internal static class DeepSeekToolCoercionTests
     private static void XmlSingle()
     {
         string content = "Escrevendo.\n<write><path>f.sh</path><content>echo oi</content></write>\nfim.";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out string cleaned, Known);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out string cleaned, Known);
         Check(calls.Count == 1 && calls[0].Name == "write" && calls[0].Args.Contains("f.sh"), "U-dsq-xml-single");
         Check(!cleaned.Contains("<write>") && cleaned.Contains("Escrevendo"), "U-dsq-xml-cleaned");
     }
@@ -174,35 +184,35 @@ internal static class DeepSeekToolCoercionTests
     private static void XmlMulti()
     {
         string content = "<shell><command>bash -n f.sh</command></shell>\n<read><path>x.cs</path></read>";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out _, Known);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out _, Known);
         Check(calls.Count == 2 && calls[0].Name == "shell" && calls[1].Name == "read", "U-dsq-xml-multi");
     }
 
     private static void XmlUnknownSkipped()
     {
         string content = "texto <deletar><x>1</x></deletar> fim";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out string cleaned, Known);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out string cleaned, Known);
         Check(calls.Count == 0 && cleaned == content, "U-dsq-xml-unknown-skipped");
     }
 
     private static void XmlEntities()
     {
         string content = "<write><path>a &amp; b.sh</path><content>x &lt;y&gt;</content></write>";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out _, Known);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out _, Known);
         Check(calls.Count == 1 && calls[0].Args.Contains("a & b.sh") && calls[0].Args.Contains("x <y>"), "U-dsq-xml-entities");
     }
 
     private static void AttemptCompletion()
     {
         string content = "ruído <attempt_completion><result>feito</result></attempt_completion> cauda";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out string cleaned, Known);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out string cleaned, Known);
         Check(calls.Count == 0 && cleaned.Contains("feito") && !cleaned.Contains("<attempt_completion>"), "U-dsq-attempt-completion");
     }
 
     private static void FenceSingleKey()
     {
         string content = "```json\n{\n  \"subagent\": {\n    \"prompt\": \"Fase 1.\"\n  }\n}\n```";
-        var calls = DeepSeekToolCoercion.Coerce(DsModel, content, out string cleaned, Known);
+        var calls = ToolsCoercion.Coerce(DsModel, content, out string cleaned, Known);
         Check(calls.Count == 1 && calls[0].Name == "subagent" && calls[0].Args.Contains("Fase 1"), "U-dsq-fence-single-key");
         Check(!cleaned.Contains("```"), "U-dsq-fence-single-key-cleaned");
     }

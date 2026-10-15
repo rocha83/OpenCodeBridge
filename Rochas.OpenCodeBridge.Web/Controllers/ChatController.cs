@@ -22,6 +22,7 @@ public sealed class ChatController(
     IHttpClientFactory http,
     Services.IDiagnosticTelemetry telemetry,
     Microsoft.Extensions.Logging.ILogger<ChatController> log,
+    Services.PromptControlService promptControls,
     Microsoft.Extensions.Options.IOptions<Services.OrchestrationOptions> orchOptions) : Controller
 {
     private int CurrentUserId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
@@ -967,8 +968,8 @@ public sealed class ChatController(
             // com subagent anunciado, força nominal (foco: delegar); depois volta
             // a "auto" p/ poder concluir em texto (sem isto, loop infinito).
             System.Text.Json.Nodes.JsonNode toolChoice = System.Text.Json.Nodes.JsonValue.Create("auto");
-            if (DeepSeekToolCoercion.IsDeepSeek(agent.Model) && !anyToolRan && tools.Count > 0)
-                toolChoice = DeepSeekToolCoercion.NamesOf(tools).Contains("subagent")
+            if (ToolsCoercion.IsDeepSeek(agent.Model) && !anyToolRan && tools.Count > 0)
+                toolChoice = ToolsCoercion.NamesOf(tools).Contains("subagent")
                     ? new JsonObject { ["type"] = "function", ["function"] = new JsonObject { ["name"] = "subagent" } }
                     : System.Text.Json.Nodes.JsonValue.Create("required");
             var body = new JsonObject
@@ -1111,21 +1112,19 @@ public sealed class ChatController(
 
             // DeepSeek com choice forçado devolve calls com finish "stop":
             // normaliza p/ o fluxo normal (só deepseek; Qwen intacto).
-            if (DeepSeekToolCoercion.IsDeepSeek(agent.Model) && finishReason != "tool_calls"
+            if (ToolsCoercion.IsDeepSeek(agent.Model) && finishReason != "tool_calls"
                 && toolCallAccum.Values.Any(t => !string.IsNullOrEmpty(t.Id) && !string.IsNullOrEmpty(t.Name)))
                 finishReason = "tool_calls";
 
-            // Caminho DeepSeek (padrão oficial em texto): sem tool_calls
-            // estruturadas, o modelo escreve a chamada no texto
-            // (<tool_name>/hermes/fence/tokens). Coage para o fluxo normal de
-            // execução, sem mudar prompts.
+            // Modelo sem tool_calls estruturadas escreve a chamada no texto
+            // (hermes/plural/fence/tokens). Coage para o fluxo normal de
+            // execução, sem mudar prompts. So atua se o texto parsear.
             if ((toolCallAccum.Count == 0 || finishReason != "tool_calls")
-                && tools.Count > 0
-                && DeepSeekToolCoercion.IsDeepSeek(agent.Model))
+                && tools.Count > 0)
             {
-                var coerced = DeepSeekToolCoercion.Coerce(agent.Model,
+                var coerced = ToolsCoercion.Coerce(agent.Model,
                     assistantContent.ToString(), out string dsqCleaned,
-                    DeepSeekToolCoercion.NamesOf(tools));
+                    ToolsCoercion.NamesOf(tools));
                 int dsqIdx = toolCallAccum.Count;
                 foreach (var c in coerced)
                     toolCallAccum[dsqIdx++] = (c.Id, c.Name, new StringBuilder(c.Args));
@@ -1140,9 +1139,10 @@ public sealed class ChatController(
             // Sem tools anunciadas: sem tool_calls; sem coerção — só texto, termina.
             if (toolCallAccum.Count == 0 || finishReason != "tool_calls")
             {
-                // DeepSeek em prosa (vê as tools mas discursa): cutucada mecânica
-                // com o formato exato (máx 2, sem tocar prompts — linha anti-giro).
-                if (DeepSeekToolCoercion.IsDeepSeek(agent.Model) && tools.Count > 0
+                // Modelo em prosa (vê as tools mas discursa): cutucada mecânica
+                // em Hermes (<tool_call> — lingua franca do Qwen/DeepSeek/Coder),
+                // máx 2, sem tocar prompts — linha anti-giro.
+                if (tools.Count > 0
                     && dsqNudges < 2 && assistantContent.Length > 0)
                 {
                     dsqNudges++;
@@ -1150,12 +1150,10 @@ public sealed class ChatController(
                     if (!string.IsNullOrWhiteSpace(prose))
                         messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = prose });
                     messages.Add(new JsonObject { ["role"] = "user", ["content"] =
-                        $"[DeepSeek-tools {dsqNudges}/2] Você respondeu em prosa sem chamar tools. " +
+                        $"[tools-coerce {dsqNudges}/2] Você respondeu em prosa sem chamar tools. " +
                         "As tools estão no seu contexto (bloco # Tools). Para agir, emita a chamada " +
                         "no formato exato, sem prosa junto. Para delegar uma fase: " +
-                        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>subagent\n" +
-                        "```json\n{\"prompt\": \"enunciado da fase\"}\n```<｜tool▁call▁end｜>" +
-                        "<｜tool▁calls▁end｜>" });
+                        "<tool_call>{\"name\": \"subagent\", \"arguments\": {\"prompt\": \"enunciado da fase\"}}</tool_call>" });
                     assistantContent.Clear();
                     assistantThinking.Clear();
                     continue;
@@ -1467,6 +1465,8 @@ public sealed class ChatController(
         long turnStartMs = 0;
         // Retry único após compactar (contexto cheio), paridade com o loop chat.
         bool compactRetried = false;
+        // AntiRepeat do lado do modelo (máx 2 contenções por sessão).
+        int repeatFixes = 0;
         string originalTask = "";
         foreach (var m in messages)
             if (m?["role"]?.GetValue<string>() == "user"
@@ -1486,6 +1486,9 @@ public sealed class ChatController(
         {
             LoopTrace("turno", session?.Id, turn, $"input={input.Count}");
             turnStartMs = streamSw.ElapsedMilliseconds;
+            // Base do turno p/ o AntiRepeat (trunca o veneno no retry).
+            int turnStartLen = assistantContent.Length;
+            int thinkStartLen = assistantThinking.Length;
             var body = new JsonObject
             {
                 ["model"] = agent.Model,
@@ -1494,6 +1497,9 @@ public sealed class ChatController(
                 ["temperature"] = temp,
             };
             string instructions = agent.SystemPrompt ?? "";
+            // Calda global do Fluxo (prompt_controls.system_tail): vale p/ todo agente.
+            var tail = await promptControls.GetAsync("system_tail");
+            if (!string.IsNullOrWhiteSpace(tail)) instructions = (instructions.Trim() + "\n\n" + tail.Trim()).Trim();
             if (!string.IsNullOrWhiteSpace(instructions)) body["instructions"] = instructions;
             if (respTools.Count > 0) body["tools"] = respTools.DeepClone();
 
@@ -1585,6 +1591,31 @@ public sealed class ChatController(
                 // Sem corte de prosa: o sufixo pede declaração verbosa por ação;
                 // o loop segue até o teto de turnos (prosa conversa ou declara).
                 LoopTrace("turno-prosa", session?.Id, turn, "");
+                // AntiRepeat do lado do MODELO: repetição no acumulado = aviso
+                // de contenção no input + retry do turno (o veneno sai da bolha).
+                // Sem isso o modelo esquece a própria resposta e repete sempre.
+                if (repeatFixes < 2 && Services.RepeatLoop.Trips(assistantContent.ToString()))
+                {
+                    repeatFixes++;
+                    LoopTrace("anti-repeat", session?.Id, turn, $"chars={assistantContent.Length} fix={repeatFixes}");
+                    assistantContent.Length = turnStartLen;
+                    assistantThinking.Length = thinkStartLen;
+                    input.Add(new JsonObject
+                    {
+                        ["type"] = "message", ["role"] = "user",
+                        ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = Services.RepeatLoop.Notice }),
+                    });
+                    continue;
+                }
+                // Memória de conversa: a prosa do turno entra no input, senão o
+                // modelo esquece a própria resposta e repete no turno seguinte.
+                string turnText = assistantContent.ToString(turnStartLen, assistantContent.Length - turnStartLen).Trim();
+                if (turnText.Length > 0)
+                    input.Add(new JsonObject
+                    {
+                        ["type"] = "message", ["role"] = "assistant",
+                        ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = CutForContext(turnText) }),
+                    });
                 continue;
             }
             // Executa cada call e devolve outputs no próximo turno (a API exige

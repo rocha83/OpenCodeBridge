@@ -194,6 +194,9 @@ internal static partial class Program
     // o formato cru do 3B na CPU: <{"name": ..}}> (sem fences/tags).
     static readonly Regex ReFencedCall = new(@"```(?:json)?\s*(\{\s*""name""\s*:[\s\S]*?\})\s*```", RegexOptions.Compiled);
     static readonly Regex ReToolTag = new(@"<tool_call>([\s\S]*?)</tool_call(?:\|>)?", RegexOptions.Compiled);
+    // Coder/Hermes via llama: embrulha no plural <tools> (template poe as
+    // assinaturas em <tools> e o modelo ecoa o wrapper no lugar de <tool_call>).
+    static readonly Regex ReToolsTag = new(@"<tools>([\s\S]*?)</tools>", RegexOptions.Compiled);
 
     /// <summary>Extrai tool calls de texto (fenced JSON ou tags) p/ coercão.</summary>
     static List<(string Name, string Arguments)> ExtractTextToolCalls(string content)
@@ -201,6 +204,8 @@ internal static partial class Program
         var list = new List<(string, string)>();
         if (string.IsNullOrEmpty(content)) return list;
         foreach (Match m in ReToolTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
+        if (list.Count == 0)
+            foreach (Match m in ReToolsTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
         if (list.Count == 0)
             foreach (Match m in ReFencedCall.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
         if (list.Count == 0)
@@ -465,7 +470,7 @@ WriteJson(ctx, 200, new JsonObject
                     completion,
                     reqModel,
                     req["temperature"]?.GetValue<double>() ?? Temperature,
-                    reqThink);
+                    reqThink, req["tools"] is JsonArray cta && cta.Count > 0);
                 WriteJson(ctx, 200, responseObj);
                 return;
             }
@@ -662,7 +667,12 @@ WriteJson(ctx, 200, new JsonObject
         // opencode 1.x recebe texto puro, nenhuma tool executa e o agente entra
         // em loop re-planejando. Linha GPU segue em streaming real.
         bool isChat = ctx.Request.Url!.AbsolutePath.Contains("chat/completions");
-        bool coerceLine = CoerceFor(Model) && isChat
+        // Coerce quando o pedido traz tools e o upstream nao parseia de volta
+        // (coder/deepseek via llama): força non-stream + sintetiza tool_calls.
+        bool toolsAsked = false;
+        try { toolsAsked = JsonNode.Parse(outBody)?.AsObject() is JsonObject ob && ob["tools"] is JsonArray ta && ta.Count > 0; }
+        catch { }
+        bool coerceLine = (CoerceFor(Model) || (isChat && toolsAsked)) && isChat
             && ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH";
         bool wantStream = false;
         if (coerceLine)
@@ -766,13 +776,60 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                     Log(new JsonObject { ["event"] = "anti-repeat-retry", ["where"] = "bypass-chat" });
                 }
             }
+            // ToolsCoercion no bypass: pedido com tools sem tool_calls = sintetiza.
+            if (isChat && toolsAsked)
+            {
+                try
+                {
+                    var root = JsonNode.Parse(json)?.AsObject();
+                    if (root is not null)
+                    {
+                        int n = CoerceChatCalls(root);
+                        if (n > 0)
+                        {
+                            json = root.ToJsonString(SerOpts);
+                            Log(new JsonObject { ["event"] = "coerced-chat", ["where"] = "bypass-chat", ["count"] = n });
+                        }
+                    }
+                }
+                catch { }
+            }
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
         }
         ctx.Response.Close();
     }
 
-    /// <summary>Resposta chat da linha CPU: coage texto em tool_calls e devolve JSON ou SSE sintetizado.</summary>
+    /// <summary>Coage pseudo-calls do texto em tool_calls nativas (ToolsCoercion); 0 = nada a fazer.</summary>
+    /// <param name="root">Completion chat (mutado no lugar).</param>
+    /// <returns>No. de calls sintetizadas.</returns>
+    static int CoerceChatCalls(JsonObject root)
+    {
+        try
+        {
+            var msg = root?["choices"]?.AsArray().FirstOrDefault()?["message"]?.AsObject();
+            if (msg is null || msg["tool_calls"] is not null) return 0;
+            string content = msg["content"]?.GetValue<string>() ?? "";
+            var calls = ExtractTextToolCalls(content);
+            if (calls.Count == 0) return 0;
+            var arr = new JsonArray();
+            foreach (var (Name, Arguments) in calls)
+                arr.Add(new JsonObject
+                {
+                    ["index"] = arr.Count,
+                    ["id"] = "call_" + Guid.NewGuid().ToString("N")[..8],
+                    ["type"] = "function",
+                    ["function"] = new JsonObject { ["name"] = Name, ["arguments"] = Arguments }
+                });
+            msg["tool_calls"] = arr;
+            if (root!["choices"]!.AsArray()[0]?.AsObject() is JsonObject first)
+                first["finish_reason"] = "tool_calls";
+            return calls.Count;
+        }
+        catch { return 0; }
+    }
+
+    /// <summary>Resposta chat sem parser server-side: coage texto em tool_calls e devolve JSON ou SSE sintetizado.</summary>
     static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream, bool headersSent = false)
     {
         string json;
@@ -782,29 +839,10 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         try
         {
             var root = JsonNode.Parse(json)?.AsObject();
-            var msg = root?["choices"]?.AsArray().FirstOrDefault()?["message"]?.AsObject();
-            if (msg is not null && msg["tool_calls"] is null)
+            if (root is not null)
             {
-                string content = msg["content"]?.GetValue<string>() ?? "";
-                var calls = ExtractTextToolCalls(content);
-                if (calls.Count > 0)
-                {
-                    var arr = new JsonArray();
-                    foreach (var (Name, Arguments) in calls)
-                        arr.Add(new JsonObject
-                        {
-                            ["index"] = arr.Count,
-                            ["id"] = "call_" + Guid.NewGuid().ToString("N")[..8],
-                            ["type"] = "function",
-                            ["function"] = new JsonObject { ["name"] = Name, ["arguments"] = Arguments }
-                        });
-                    msg["tool_calls"] = arr;
-                    var choices = root!["choices"]!.AsArray();
-                    if (choices[0]?.AsObject() is JsonObject first)
-                        first["finish_reason"] = "tool_calls";
-                    coerced = calls.Count;
-                    json = root!.ToJsonString(SerOpts);
-                }
+                coerced = CoerceChatCalls(root);
+                if (coerced > 0) json = root.ToJsonString(SerOpts);
             }
         }
         catch { /* corpo inesperado: devolve cru */ }
@@ -956,7 +994,9 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
 // Bypass llama: upstream fala Responses nativo; so removemos os itens
         // reasoning (llama.cpp exige content array neles) e encaminhamos o
         // resto intacto — tools nativas, sem traducao p/ chat.
-        if (PassthroughResponses)
+        // EXCETO com tools: llama /v1/responses nao devolve function_call
+        // (so texto) — cai na traducao p/ chat + ToolsCoercion.
+        if (PassthroughResponses && !ReqHasTools(req))
         {
             ForwardResponses(ctx, body, req);
             return;
@@ -993,7 +1033,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
         // 4.6) Converte a resposta chat -> objeto Responses
         var chatJson = JsonNode.Parse(responseBody)?.AsObject() ?? new JsonObject();
-        var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking);
+        var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0);
 
         double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
         int inTok = responseObj["usage"]?["input_tokens"]?.GetValue<int>() ?? 0;
@@ -1143,6 +1183,9 @@ var shape = new StringBuilder();
         }
         return "";
     }
+
+    /// <summary>Request com tools anunciadas? (llama /v1/responses nao suporta tools).</summary>
+    static bool ReqHasTools(JsonObject req) => req["tools"] is JsonArray a && a.Count > 0;
 
     /// <summary>Complementa qualquer system prompt com o sufixo padrao anti-loop (sem duplicar).</summary>
     /// <param name="text">System prompt original.</param>
@@ -1726,9 +1769,9 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             });
         }
 
-        // Coerção no fecho do stream (perfil CPU/llama): sem deltas de call,
-        // extrai do texto acumulado. vLLM nativo nao passa por aqui com calls.
-        if (CoerceFor(requestedModel) && toolAccum.Count == 0)
+        // Coerção no fecho do stream: sem deltas de call e com tools pedidas,
+        // extrai do texto acumulado (coder/deepseek via llama). Nativo nao passa aqui.
+        if (toolAccum.Count == 0 && (CoerceFor(requestedModel) || ReqHasTools(chat)))
         {
             foreach (var (name, args) in ExtractTextToolCalls(contentText.ToString()))
                 toolAccum[toolAccum.Count] = ("call_" + NewId(), name, new StringBuilder(args));
@@ -1788,7 +1831,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             }),
             ["usage"] = new JsonObject { ["prompt_tokens"] = inputTokens, ["completion_tokens"] = outputTokens }
         };
-        var finalObj = ChatToResponses(synthetic, requestedModel, temperature, thinking);
+        var finalObj = ChatToResponses(synthetic, requestedModel, temperature, thinking, ReqHasTools(chat));
         finalObj["id"] = respId;
         // Ids do completed precisam casar com os itens ja anunciados no stream.
         foreach (var outputNode in finalObj["output"]!.AsArray())
@@ -2020,7 +2063,7 @@ if (type == "message")
     /// <param name="temperature">Efetiva.</param>
     /// <param name="thinkMode">Modo thinking efetivo.</param>
     /// <returns>Objeto Responses.</returns>
-    static JsonObject ChatToResponses(JsonObject chat, string model, double temperature, string? thinkMode = null)
+    static JsonObject ChatToResponses(JsonObject chat, string model, double temperature, string? thinkMode = null, bool hadTools = false)
     {
         thinkMode ??= Thinking;
         var choice = chat["choices"]?[0]?.AsObject() ?? new JsonObject();
@@ -2055,9 +2098,10 @@ if (type == "message")
                 toolCalls.Add((id, funcObj["name"]?.GetValue<string>() ?? "", JsonToString(funcObj["arguments"])));
             }
         }
-        // Coerção (só perfil CPU/llama): sem tool_calls nativos, extrai do texto.
-        // Caminho vLLM (hermes/qwen3_coder/gemma4) nunca entra aqui com calls.
-        if (toolCalls.Count == 0 && CoerceFor(model))
+        // Coerção: sem tool_calls nativos e com tools pedidas, extrai do texto
+        // (ToolsCoercion: hermes/plural/fence — coder/deepseek via llama).
+        // So atua se o texto parsear; prosa normal passa intacta.
+        if (toolCalls.Count == 0 && (CoerceFor(model) || hadTools))
         {
             foreach (var (name, args) in ExtractTextToolCalls(content))
                 toolCalls.Add(("call_" + NewId(), name, args));
@@ -2065,6 +2109,7 @@ if (type == "message")
             {
                 // Remove os blocos consumidos p/ nao duplicar texto + call.
                 content = ReToolTag.Replace(content, "");
+                content = ReToolsTag.Replace(content, "");
                 content = ReFencedCall.Replace(content, "");
                 Log(new JsonObject { ["event"] = "coerced", ["model"] = model, ["count"] = toolCalls.Count });
             }
