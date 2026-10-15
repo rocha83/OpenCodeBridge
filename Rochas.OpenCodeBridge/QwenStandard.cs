@@ -25,7 +25,9 @@ static class QwenStandard
         "absolute paths always; independent calls in parallel, dependent ones sequentially; " +
         "one tool call per step, wait for the result; on tool error read the message and vary approach (max 2 tries), " +
         "never repeat the identical failing call; respond in the user's language, concise.\n" +
-        "Example: <tool_call>{\"name\": \"read_file\", \"arguments\": {\"file_path\": \"/path/to/file\"}}</tool_call>";
+        "Example: <tool_call>{\"name\": \"read_file\", \"arguments\": {\"file_path\": \"/path/to/file\"}}</tool_call>\n" +
+        "TOOL FORMAT (mandatory): to call tools, output ONLY <tool_call>{\"name\": \"<exact-name>\", \"arguments\": {<args>}}</tool_call> " +
+        "with the exact names from # Tools above; one call per step, no prose inside the block.";
 
     // OpenAI (opencode/bridge) -> Alibaba (modelo).
     static readonly Dictionary<string, string> ToAlibaba = new(StringComparer.OrdinalIgnoreCase)
