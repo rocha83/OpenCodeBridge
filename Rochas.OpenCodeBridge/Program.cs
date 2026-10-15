@@ -678,6 +678,8 @@ WriteJson(ctx, 200, new JsonObject
         try
         {
             var node = JsonNode.Parse(body)?.AsObject();
+            // Marca opencode ANTES do rewrite (model com sufixo = tubo puro).
+            bool opencodeIn = node is not null && IsOpencodeModel(node["model"]?.GetValue<string>());
             if (node is not null && node["model"]?.GetValue<string>() is string mid && mid != Model)
             {
                 bool hasProfile = TryProfile(mid, out double profTemp, out _);
@@ -715,7 +717,7 @@ WriteJson(ctx, 200, new JsonObject
             }
             // Formula (Harness, cliente web = model sem sufixo de perfil):
             // system + agents + tail. Opencode (sufixo) passa limpo.
-            if (Harness && node is not null && !IsOpencodeModel(node["model"]?.GetValue<string>())
+            if (Harness && !opencodeIn && node is not null
                 && node["messages"] is JsonArray fm)
             {
                 foreach (var m in fm)
