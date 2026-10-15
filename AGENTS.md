@@ -56,3 +56,8 @@
 - Vale para o 4B **e** para subagentes do próprio 9B:
   1 tarefa por prompt, imperativo curto, exemplo de saída incluído,
   1 leitura + 1 escrita, verificação externa, temp 0.0.
+
+## Regra: legacy harness sempre desligado no opencode
+- Bridges nunca rodam com `--legacy-harness` servindo opencode (tubo puro).
+- Única exceção permanente: `ApplyPatternException` (strip de `pattern`
+  não-ancorado), sempre ligada, sem flag.
