@@ -1208,6 +1208,11 @@
   sem `bash -c`, sem git só-leitura — modelo decide as tools; teste valida
   `done/tools6/commits/txt/clima/zip` + `git log` + `unzip -l`.
 
+## Prioridade de execução por modelo (2026-10-15)
+- **9B Q4 (GPU :4100)**: `--prio 2` (high) — modelo principal, prioridade máxima
+- **4B Q3 (GPU :4111)**: `--prio 0` (normal) — executor secundário, prioridade normal
+- Flags: `--prio N` aceita -1/0/1/2 (low/normal/medium/high)
+
 ## Harness sob flag, tudo desligado (2026-10-15, tubo puro)
 - Bridge `--harness 0` (unit): sem guardrail/coerce/strip/retry/aviso;
   sonda traffic FULL só com `--diagnostic` (7 eventos). PROD sincronizado
@@ -1219,6 +1224,16 @@
 - Enunciado natural (sem forçar comandos): sem "1 tool por resposta",
   sem `bash -c`, sem git só-leitura — modelo decide as tools; teste valida
   `done/tools6/commits/txt/clima/zip` + `git log` + `unzip -l`.
+
+## Prioridade de execução por modelo (2026-10-15)
+- **9B Q4 (GPU :4100)**: `--prio 2` (high) — modelo principal, prioridade máxima
+- **4B Q3 (GPU :4111)**: `--prio 0` (normal) — executor secundário, prioridade normal
+- Flags: `--prio N` aceita -1/0/1/2 (low/normal/medium/high)
 - Enunciado natural (sem forçar comandos): sem "1 tool por resposta",
   sem `bash -c`, sem git só-leitura — modelo decide as tools; teste valida
   `done/tools6/commits/txt/clima/zip` + `git log` + `unzip -l`.
+
+## Prioridade de execução por modelo (2026-10-15)
+- **9B Q4 (GPU :4100)**: `--prio 2` (high) — modelo principal, prioridade máxima
+- **4B Q3 (GPU :4111)**: `--prio 0` (normal) — executor secundário, prioridade normal
+- Flags: `--prio N` aceita -1/0/1/2 (low/normal/medium/high)
