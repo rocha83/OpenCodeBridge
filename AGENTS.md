@@ -4,7 +4,7 @@
 - GPU `llama :4100`: `Qwen3.5-9B Q4_K_M` (drive persistente), ctx `159744` (156k),
   1 slot (`-np 1`), `--prio 2` → bridge `:4124` (`qwen3.5-9b`, saída `32768`).
 - GPU `llama :4111`: `Qwen3-VL-4B Q3_K_M` + `mmproj Q8_0` (drive persistente),
-  ctx `65536` (64k), 2 slots (`-np 2`), `--prio 0` → bridge `:4125`
+  ctx `32768` (32k), 2 slots (`-np 2`), `--prio 0` → bridge `:4125`
   (`qwen3-vl-4b`, saída `16384`). O 4B substitui os modelos pequenos anteriores (ex.: Coder 2.5):
   é o executor da linha CPU.
 - Web em `:4130` (config `Web:Port` no `appsettings.json`, override via env
