@@ -1269,8 +1269,6 @@
 ## repeat-penalty no 4B VL (2026-10-15)
 - 4B VL entrou em eco degenerado do catálogo de tools (repetindo `limit`,
   truncando no meio). Causa: Q3 pequeno + thinking ecoa definição da tool.
-- Fix: `--repeat-penalty 1.15` na unit do `:4111` (igual ao 9B). Re-teste
-  "o que houve?" → frase curta, sem loop.
 
 ## Parse QwenStandard — ModelPrompt + Alibaba ⇄ OpenAI (2026-10-15, branch qwen-standard)
 - Motivação: sonda DIAGNOSTIC (`qwen serve --no-web :4127` → bridge :4128 →
@@ -1300,3 +1298,6 @@
   (title `Qwen Code Web chat`).
 - Armadilha operacional: `sudo` stripa `DIAGNOSTIC=1` do env — sonda exige
   `appsettings.json` com `{"diagnostic": true}` no dir do DLL (não commitar).
+- Trava que conteve: AntiRepeat da bridge (não a penalidade do llama).
+  `--repeat-penalty 1.15` também aplicado na unit do `:4111`, mas o freio
+  efetivo foi o da bridge. Re-teste "o que houve?" → frase curta, sem loop.

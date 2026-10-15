@@ -61,3 +61,9 @@
 - Bridges nunca rodam com `--legacy-harness` servindo opencode (tubo puro).
 - Única exceção permanente: `ApplyPatternException` (strip de `pattern`
   não-ancorado), sempre ligada, sem flag.
+
+## Regra: fluxo persistente -> PROD
+- Edição de fonte só na pasta persistente (`/media/.../OpenCodeBridge`).
+- Push sempre do persistente para o `origin/main`.
+- PROD (`/usr/src/opencodebridge`) só faz pull + rebuild + restart (deploy).
+- Em conflito de merge, a prioridade é do persistente (`checkout --ours`).
