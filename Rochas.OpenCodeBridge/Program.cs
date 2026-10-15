@@ -64,11 +64,15 @@ internal static partial class Program
     // model contém "cpu". Qwen3/AWQ (parsers nativos) ficam intactos.
     static bool CoerceTextTools;
     static bool AntiRepeat = true;                               // AntiRepeat: observa o thinking em stream e conteve repeticao
+    // Inibidor mestre do harness da bridge (--harness 0): com ele desligado a
+    // bridge vira tubo puro (sem sufixo guardrail, sem stop, sem pattern-strip,
+    // sem coercao, sem retry/aviso) — todo o conteudo vem do harness opencode.
+    static bool Harness = true;
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
     static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida; quando informada a repeticao, nao responda mais nada, apenas encerre em silencio, obrigado.";
-    static bool CoerceFor(string modelId) => CoerceTextTools
-        || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false);
+    static bool CoerceFor(string modelId) => Harness && (CoerceTextTools
+        || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false));
 
     // Perfis por sufixo no model (ex.: openai/qwen3-8b-awq-plan): plan =
     // thinking ligado + temp alta p/ planejar; build = thinking fundido +
@@ -116,6 +120,7 @@ internal static partial class Program
             if (cfg["apiKey"]?.GetValue<string>() is string key && key.Length > 0) ApiKey = key;
             if (cfg["passthroughResponses"]?.GetValue<bool>() is bool pt) PassthroughResponses = pt;
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
+            if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
@@ -411,6 +416,7 @@ internal static partial class Program
                 case "--passthrough-responses": PassthroughResponses = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
                 case "--diagnostic": Diagnostic = cliArgs[i + 1] is not "false" and not "0"; break;
             }
@@ -674,13 +680,13 @@ WriteJson(ctx, 200, new JsonObject
                             if (m is JsonObject mo && mo["role"]?.GetValue<string>() is string mrole && (mrole == "system" || mrole == "developer"))
                             {
                                 if (mo["content"] is JsonValue mcv && mcv.TryGetValue<string>(out string? mtext) && !string.IsNullOrWhiteSpace(mtext))
-                                    mo["content"] = WithSystemGuardrail(mtext);
+                                    mo["content"] = Harness ? WithSystemGuardrail(mtext) : mtext;
                                 else if (mo["content"] is JsonArray mparts)
                                 {
                                     foreach (var p in mparts)
                                     {
                                         if (p is JsonObject po && po["text"] is JsonValue ptv && ptv.TryGetValue<string>(out string? ptext) && !string.IsNullOrWhiteSpace(ptext))
-                                        { po["text"] = WithSystemGuardrail(ptext); break; }
+                                        { po["text"] = Harness ? WithSystemGuardrail(ptext) : ptext; break; }
                                     }
                                 }
                             }
@@ -698,8 +704,8 @@ WriteJson(ctx, 200, new JsonObject
             }
             // Compat qwen3/qwen3.5: patterns nao-ancorados nos schemas das
             // tools quebram o parser do template 14B (400); vale p/ qualquer
-            // model id, com ou sem sufixo de perfil.
-            if (node is not null && node["tools"] is JsonArray toolsArr)
+            // model id, com ou sem sufixo de perfil. Inibivel (--harness 0).
+            if (Harness && node is not null && node["tools"] is JsonArray toolsArr)
             {
                 int dropped = StripUnanchoredPatterns(toolsArr);
                 if (dropped > 0)
@@ -721,7 +727,7 @@ WriteJson(ctx, 200, new JsonObject
         bool toolsAsked = false;
         try { toolsAsked = JsonNode.Parse(outBody)?.AsObject() is JsonObject ob && ob["tools"] is JsonArray ta && ta.Count > 0; }
         catch { }
-        bool coerceLine = (CoerceFor(Model) || (isChat && toolsAsked)) && isChat
+        bool coerceLine = Harness && (CoerceFor(Model) || (isChat && toolsAsked)) && isChat
             && ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH";
         bool wantStream = false;
         if (coerceLine)
@@ -820,17 +826,22 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             if (isChat && CheckRepeat(ExtractChatText(json), "bypass-chat"))
             {
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat", ["window"] = AntiRepeatWindow });
-                string? second = RetryBypassChat(outBody, ctx);
-                if (second is not null)
+                // Retry inibivel (--harness 0): deteccao vira so sonda.
+                if (Harness)
                 {
-                    json = second;
-                    if (json.Contains("\"reasoning\":"))
-                        json = json.Replace("\"reasoning\":", "\"reasoning_content\":");
-                    Log(new JsonObject { ["event"] = "anti-repeat-retry", ["where"] = "bypass-chat" });
+                    string? second = RetryBypassChat(outBody, ctx);
+                    if (second is not null)
+                    {
+                        json = second;
+                        if (json.Contains("\"reasoning\":"))
+                            json = json.Replace("\"reasoning\":", "\"reasoning_content\":");
+                        Log(new JsonObject { ["event"] = "anti-repeat-retry", ["where"] = "bypass-chat" });
+                    }
                 }
             }
             // ToolsCoercion no bypass: pedido com tools sem tool_calls = sintetiza.
-            if (isChat && toolsAsked)
+            // Inibivel (--harness 0): caminho limpo p/ harness opencode.
+            if (isChat && toolsAsked && Harness)
             {
                 try
                 {
@@ -981,7 +992,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         var messages = InputToMessages(req["input"], req["instructions"]);
         // Converte as tools Responses (formato "chato") -> formato chat
         var tools = ToolsToChat(req["tools"]);
-        if (tools is not null)
+        if (tools is not null && Harness)
         {
             int droppedResp = StripUnanchoredPatterns(tools);
             if (droppedResp > 0) Log(new JsonObject { ["event"] = "pattern-strip", ["mode"] = "responses", ["dropped"] = droppedResp, ["tools"] = ToolNames(tools) });
@@ -1228,14 +1239,18 @@ var shape = new StringBuilder();
             using var reader = new StreamReader(stream, new UTF8Encoding(false));
             string json = reader.ReadToEnd();
             // Sonda bypass-responses: repeticao no objeto = 1 retry de contencao.
+            // Retry inibivel (--harness 0): deteccao vira so sonda.
             if (CheckRepeat(ExtractResponsesText(json), "bypass-responses"))
             {
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses", ["window"] = AntiRepeatWindow });
-                string? second = RetryBypassResponses(req, ctx);
-                if (second is not null)
+                if (Harness)
                 {
-                    json = second;
-                    Log(new JsonObject { ["event"] = "anti-repeat-retry", ["where"] = "bypass-responses" });
+                    string? second = RetryBypassResponses(req, ctx);
+                    if (second is not null)
+                    {
+                        json = second;
+                        Log(new JsonObject { ["event"] = "anti-repeat-retry", ["where"] = "bypass-responses" });
+                    }
                 }
             }
             var bytes = new UTF8Encoding(false).GetBytes(json);
@@ -1500,7 +1515,7 @@ static bool NormalizeSystemFirst(JsonObject req)
             new JsonObject
             {
                 ["type"] = "message", ["role"] = "system",
-                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = WithSystemGuardrail(sys.ToString()) })
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = Harness ? WithSystemGuardrail(sys.ToString()) : sys.ToString() })
             }
         };
         foreach (var it in rest) final.Add(it?.DeepClone());
@@ -1791,6 +1806,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         }
 
             if (!repeatTrip) break;
+            if (!Harness) break;   // inibido: sem aviso, sem descarte, fluxo intacto
             if (attempt >= 1) break;   // 1 retry de contencao no maximo
             // Contencao: descarta a janela repetida e devolve o aviso ao modelo.
             repeatTrip = false;
@@ -1863,7 +1879,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
         // Coerção no fecho do stream: sem deltas de call e com tools pedidas,
         // extrai do texto acumulado (coder/deepseek via llama). Nativo nao passa aqui.
-        if (toolAccum.Count == 0 && (CoerceFor(requestedModel) || ReqHasTools(chat)))
+        if (toolAccum.Count == 0 && Harness && (CoerceFor(requestedModel) || ReqHasTools(chat)))
         {
             var knownResp = AnnouncedTools(chat["tools"]?.AsArray());
             foreach (var (name, args) in ExtractTextToolCalls(contentText.ToString(), knownResp))
@@ -2041,7 +2057,7 @@ if (type == "message")
             // sao ignorados de proposito: nao fazem falta no fluxo chat.
         }
         if (sysText.Length > 0)
-            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = WithSystemGuardrail(sysText.ToString()) });
+            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = Harness ? WithSystemGuardrail(sysText.ToString()) : sysText.ToString() });
         return messages;
     }
 
@@ -2197,7 +2213,7 @@ if (type == "message")
         // Coerção: sem tool_calls nativos e com tools pedidas, extrai do texto
         // (ToolsCoercion: hermes/plural/fence — coder/deepseek via llama).
         // So atua se o texto parsear; prosa normal passa intacta.
-        if (toolCalls.Count == 0 && (CoerceFor(model) || hadTools))
+        if (toolCalls.Count == 0 && Harness && (CoerceFor(model) || hadTools))
         {
             foreach (var (name, args) in ExtractTextToolCalls(content))
                 toolCalls.Add(("call_" + NewId(), name, args));

@@ -142,6 +142,9 @@ public sealed class ChatController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Calibrate([FromBody] CalibrateRequest req, CancellationToken ct)
     {
+        // Harness inibido = psicologo desligado: neutro, sem chamar o modelo.
+        if ((await promptControls.GetAsync("anti_repeat_enabled"))?.Trim() is ("false" or "0"))
+            return Json(new { ceded = true, balanced = true, attempts = 0, decode = "" });
         var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.AgentId);
         if (agent is null || !agent.Active) return NotFound();
         var history = new JsonArray();
@@ -988,6 +991,9 @@ public sealed class ChatController(
         // sem tools, ou texto igual 2x, encerram com nota honesta.
         var chatter = new Services.ChatterGuard();
         bool chatterAbort = false;
+        // Chave mestra do harness web (controle anti_repeat_enabled):
+        // false = tubo puro, sem retry/aviso/nota/corte — tudo vem do opencode.
+        bool harness = (await promptControls.GetAsync("anti_repeat_enabled"))?.Trim() is not ("false" or "0");
         // Vínculo tool->bolha: ids de tools gravadas sem mensagem dona (turno sem
         // texto ou internas de sub cujo card falhou) vão p/ a mensagem final.
         var unlinkedToolIds = new List<int>();
@@ -1247,8 +1253,8 @@ public sealed class ChatController(
             {
                 // Modelo em prosa (vê as tools mas discursa): cutucada mecânica
                 // em Hermes (<tool_call> — lingua franca do Qwen/DeepSeek/Coder),
-                // máx 2, sem tocar prompts — linha anti-giro.
-                if (tools.Count > 0
+                // máx 2, sem tocar prompts — linha anti-giro. Inibivel (harness).
+                if (harness && tools.Count > 0
                     && dsqNudges < 2 && assistantContent.Length > 0)
                 {
                     dsqNudges++;
@@ -1288,7 +1294,8 @@ public sealed class ChatController(
             if (!hasSubCall && readOnlyCall && turnTxt0.Length == 0) idleTurns++; else idleTurns = 0;
             string sig = string.Join(";", toolCalls.Select(t => t.Name + ":" + t.Args));
             if (sig == lastToolSig) repeatSig++; else { repeatSig = 1; lastToolSig = sig; }
-            if (idleTurns >= 3 || repeatSig >= 3)
+            // Anti-giro inibivel (harness): sem ele, o loop segue puro.
+            if (harness && (idleTurns >= 3 || repeatSig >= 3))
             {
                 if (giroFixes < 2)
                 {
@@ -1349,7 +1356,8 @@ public sealed class ChatController(
                 if (name == "subagent") await WriteProgressAsync(outputStream, "sub_start", name, null, ct);
                 // Gate de escopo: subagent recebe UMA fase, nunca o enunciado
                 // integral (máx 2 recusas; depois aceita p/ não travar).
-                if (name == "subagent" && subScopeRejects < 2)
+                // Inibivel (harness): sem ele, delega do jeito que veio.
+                if (harness && name == "subagent" && subScopeRejects < 2)
                 {
                     string subPrompt = "";
                     try
@@ -1452,7 +1460,8 @@ public sealed class ChatController(
 
             // Corta-espiral de prosa (loop boa-noite/encerrando): 3 turnos curtos
             // sem tools, ou texto igual 2x, encerra com nota honesta.
-            if (chatter.Note(turnText, toolCalls.Count))
+            // Inibivel (harness): sem ele, a prosa segue pura.
+            if (harness && chatter.Note(turnText, toolCalls.Count))
             {
                 chatterAbort = true;
                 break;
@@ -1597,6 +1606,9 @@ public sealed class ChatController(
         int sameToolStreak = 0;
         int toolFixes = 0;
         bool toolLoopAbort = false;
+        // Chave mestra do harness web (controle anti_repeat_enabled):
+        // false = tubo puro, sem retry/aviso/nota/corte — tudo vem do opencode.
+        bool harness = (await promptControls.GetAsync("anti_repeat_enabled"))?.Trim() is not ("false" or "0");
         // Fechamento com nota quando tools rodaram mas o modelo não devolveu
         // texto (sem isto a sessão termina sem bolha: "fez mas não falou nada").
         bool anyToolRan = false;
@@ -1783,7 +1795,8 @@ public sealed class ChatController(
                 // AntiRepeat do lado do MODELO: repetição no acumulado = aviso
                 // de contenção no input + retry do turno (o veneno sai da bolha).
                 // Sem isso o modelo esquece a própria resposta e repete sempre.
-                if (repeatFixes < 2 && Services.RepeatLoop.Trips(assistantContent.ToString()))
+                // Inibivel (harness): sem ele, a prosa segue pura.
+                if (harness && repeatFixes < 2 && Services.RepeatLoop.Trips(assistantContent.ToString()))
                 {
                     repeatFixes++;
                     LoopTrace("anti-repeat", session?.Id, turn, $"chars={assistantContent.Length} fix={repeatFixes}");
@@ -1831,7 +1844,7 @@ public sealed class ChatController(
                 string toolSig = name + "\n" + (args ?? "");
                 if (toolSig == lastToolSig) sameToolStreak++;
                 else { lastToolSig = toolSig; sameToolStreak = 1; }
-                if (sameToolStreak >= 3)
+                if (harness && sameToolStreak >= 3)
                 {
                     if (session?.Id is int sidTrip)
                         await sessionService.LogToolAsync(sidTrip, agent.Name, name, args ?? "", false,
@@ -1873,7 +1886,8 @@ public sealed class ChatController(
                 // Card imediato no "digitando": o sub real adota ao no primeiro chunk.
                 if (name == "subagent") await WriteProgressAsync(outputStream, "sub_start", name, null, ct);
                 // Gate de escopo: subagent recebe UMA fase (máx 2 recusas).
-                if (name == "subagent" && subScopeRejects < 2)
+                // Inibivel (harness): sem ele, delega do jeito que veio.
+                if (harness && name == "subagent" && subScopeRejects < 2)
                 {
                     string subPrompt = "";
                     try { subPrompt = JsonNode.Parse(args)?.AsObject()?["prompt"]?.GetValue<string>() ?? ""; }
@@ -2007,7 +2021,8 @@ public sealed class ChatController(
         }
 
         string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
-        if (finalText.Length == 0 && assistantThinking.Length == 0 && anyToolRan)
+        // Retorno silencioso (inibivel): sem harness, sem nota — mostra o real.
+        if (harness && finalText.Length == 0 && assistantThinking.Length == 0 && anyToolRan)
         {
             // Retorno silencioso após execução: fecha a bolha e grava no sqlite.
             finalText = "As ferramentas solicitadas foram executadas, verifique.";

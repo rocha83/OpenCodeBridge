@@ -1207,3 +1207,18 @@
 - Enunciado natural (sem forçar comandos): sem "1 tool por resposta",
   sem `bash -c`, sem git só-leitura — modelo decide as tools; teste valida
   `done/tools6/commits/txt/clima/zip` + `git log` + `unzip -l`.
+
+## Harness sob flag, tudo desligado (2026-10-15, tubo puro)
+- Bridge `--harness 0` (unit): sem guardrail/coerce/strip/retry/aviso;
+  sonda traffic FULL só com `--diagnostic` (7 eventos). PROD sincronizado
+  (`981283e`), unit com as duas flags.
+- Web sob `anti_repeat_enabled=false`: giro/dsq/subscoope/chatter/repeat/
+  toolloop/silentClose inibidos; `Calibrate` neutro (0s). ConfirmGate intacto.
+- Prova tubo: devpipe standalone `exit=0`, 15 tools 0 falhas (zip em /tmp,
+  fora do workspace — enunciado ambíguo); bridge 31 traffics, 0 inserções.
+- Enunciado natural (sem forçar comandos): sem "1 tool por resposta",
+  sem `bash -c`, sem git só-leitura — modelo decide as tools; teste valida
+  `done/tools6/commits/txt/clima/zip` + `git log` + `unzip -l`.
+- Enunciado natural (sem forçar comandos): sem "1 tool por resposta",
+  sem `bash -c`, sem git só-leitura — modelo decide as tools; teste valida
+  `done/tools6/commits/txt/clima/zip` + `git log` + `unzip -l`.
