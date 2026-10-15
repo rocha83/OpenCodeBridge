@@ -27,6 +27,21 @@ public sealed class ChatController(
 {
     private int CurrentUserId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
 
+    // Flag mestra do harness mora na bridge (GET /api/harness, fonte unica).
+    // Fallback ligado: sem resposta, os guards atuam.
+    static async Task<bool> HarnessOnAsync(IHttpClientFactory http, string bridgeUrl, CancellationToken ct)
+    {
+        try
+        {
+            var client = http.CreateClient();
+            using var res = await client.GetAsync(bridgeUrl.TrimEnd('/') + "/api/harness", ct);
+            if (!res.IsSuccessStatusCode) return true;
+            var h = System.Text.Json.Nodes.JsonNode.Parse(await res.Content.ReadAsStringAsync(ct))?["harness"];
+            return h is null || (h.GetValue<bool?>() ?? true);
+        }
+        catch { return true; }
+    }
+
     // Streams ativos por sessão p/ Parar via API (além do abort do fetch).
     private static readonly ConcurrentDictionary<int, CancellationTokenSource> ActiveStreams = new();
 
@@ -142,8 +157,8 @@ public sealed class ChatController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Calibrate([FromBody] CalibrateRequest req, CancellationToken ct)
     {
-        // Harness inibido = psicologo desligado: neutro, sem chamar o modelo.
-        if ((await promptControls.GetAsync("anti_repeat_enabled"))?.Trim() is ("false" or "0"))
+        // Harness desligado na bridge = psicologo desligado: neutro.
+        if (!await HarnessOnAsync(http, (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.AgentId)?.BridgeUrl ?? "", ct))
             return Json(new { ceded = true, balanced = true, attempts = 0, decode = "" });
         var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.AgentId);
         if (agent is null || !agent.Active) return NotFound();
@@ -991,9 +1006,8 @@ public sealed class ChatController(
         // sem tools, ou texto igual 2x, encerram com nota honesta.
         var chatter = new Services.ChatterGuard();
         bool chatterAbort = false;
-        // Chave mestra do harness web (controle anti_repeat_enabled):
-        // false = tubo puro, sem retry/aviso/nota/corte — tudo vem do opencode.
-        bool harness = (await promptControls.GetAsync("anti_repeat_enabled"))?.Trim() is not ("false" or "0");
+        // Flag mestra na bridge (fonte unica): sem ela, tubo puro.
+        bool harness = await HarnessOnAsync(http, agent.BridgeUrl, ct);
         // Vínculo tool->bolha: ids de tools gravadas sem mensagem dona (turno sem
         // texto ou internas de sub cujo card falhou) vão p/ a mensagem final.
         var unlinkedToolIds = new List<int>();
@@ -1402,7 +1416,7 @@ public sealed class ChatController(
                 // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
                 var gateDeny = await ConfirmGateAsync(outputStream, name, args,
                     Services.ConfirmGate.LastUserText(messages), session?.Id, session?.AutoApprove == true, ct);
-                var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
+                var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
                 toolExecutor.LogInnerAsync = null;
@@ -1606,9 +1620,8 @@ public sealed class ChatController(
         int sameToolStreak = 0;
         int toolFixes = 0;
         bool toolLoopAbort = false;
-        // Chave mestra do harness web (controle anti_repeat_enabled):
-        // false = tubo puro, sem retry/aviso/nota/corte — tudo vem do opencode.
-        bool harness = (await promptControls.GetAsync("anti_repeat_enabled"))?.Trim() is not ("false" or "0");
+        // Flag mestra na bridge (fonte unica): sem ela, tubo puro.
+        bool harness = await HarnessOnAsync(http, agent.BridgeUrl, ct);
         // Fechamento com nota quando tools rodaram mas o modelo não devolveu
         // texto (sem isto a sessão termina sem bolha: "fez mas não falou nada").
         bool anyToolRan = false;
@@ -1928,7 +1941,7 @@ public sealed class ChatController(
                 // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
                 var gateDeny = await ConfirmGateAsync(outputStream, name, args,
                     Services.ConfirmGate.LastUserInputText(input), session?.Id, session?.AutoApprove == true, ct);
-                var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
+                var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 anyToolRan = true;
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
