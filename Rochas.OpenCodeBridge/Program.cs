@@ -56,7 +56,7 @@ internal static partial class Program
     static readonly string Version = "2.1";
     // Trava anti-loop no nivel da bridge: complementa QUALQUER system
     // prompt no final (Responses e chat), sem depender do agente.
-    static readonly string SystemGuardrail = "ao listar arquivos locais preferencialmente use as tools glob ou read, atentando-se ao modo de uso correto destas, e ao navegar na web use somente enderecos externos, informando user agent Firefox no Windows 11 ao navegar via fetch ou curl; ao executar tools que resultem em erro, leia a mensagem de erro e adapte a proxima chamada, tentando no maximo mais 2 vezes, e sempre responda na lingua do usuario, seja verboso apenas ao declarar acoes com tools dentro do loop agentico e em conversa simples sem tools responda em no maximo 2 frases; porem envie apenas uma vez a cada mensagem do usuario JAMAIS repita a mesma pergunta varias vezes; se o usuario nao respondeu siga com a melhor suposicao e declare a decisao tomada";
+    static readonly string SystemGuardrail = "ao listar arquivos locais preferencialmente use as tools glob ou read, atentando-se ao modo de uso correto destas, e ao navegar na web use somente enderecos externos, informando user agent Firefox no Windows 11 ao navegar via fetch ou curl; ao executar tools que resultem em erro, leia a mensagem de erro e adapte a proxima chamada, tentando no maximo mais 2 vezes, e sempre responda na lingua do usuario, seja verboso apenas ao declarar acoes com tools dentro do loop agentico e em conversa simples sem tools responda em no maximo 2 frases; porem envie apenas uma vez a cada mensagem do usuario JAMAIS repita a mesma pergunta varias vezes; se o usuario nao respondeu siga com a melhor suposicao e declare a decisao tomada; FORMA DE USO DAS TOOLS (obrigatoria): use apenas as tools anunciadas no bloco # Tools, com os nomes exatos como anunciados, sem nenhum prefixo (nunca default., nunca outro namespace); cada chamada vai sozinha em <tool_call>{\"name\": \"<nome-exato>\", \"arguments\": {<args>}}</tool_call>, sem prosa antes, dentro ou depois do bloco; uma tool por vez, depois aguarde o resultado para a proxima acao";
 
     // Coerção texto->tool_calls p/ upstream sem parser server-side (llama.cpp
     // na CPU): extrai ```json{"name"..} ou <tool_call>..</tool_call> do content
@@ -735,7 +735,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 if (line.Contains("\"reasoning\":"))
                     line = line.Replace("\"reasoning\":", "\"reasoning_content\":");
                 writer.WriteLine(line);
-                // Sonda bypass-chat-stream: acumula deltas; trip = early-stop (contencao).
+                // Sonda bypass-chat-stream: so observa e registra (o fluxo NAO
+                // para; a contencao silenciosa mora no loop da Web).
                 if (isChat && !sseTrip && line.StartsWith("data:"))
                 {
                     try
@@ -754,15 +755,14 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                         }
                     }
                 }
-                if (sseTrip) break;
             }
             // Avaliacao de fecho: stream curto nunca atinge o passo de 512.
+            // Sem break/DONE: o fluxo segue ate o fim; a Web conteve em silencio.
             if (!sseTrip && sseText.Length > 0 && CheckRepeat(sseText.ToString(), "bypass-chat-stream"))
             {
                 sseTrip = true;
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
             }
-            if (sseTrip) { writer.WriteLine("data: [DONE]"); writer.WriteLine(); }
         }
         else
         {
@@ -1121,7 +1121,8 @@ var shape = new StringBuilder();
             using var reader = new StreamReader(stream, new UTF8Encoding(false));
             using var writer = new StreamWriter(ctx.Response.OutputStream, new UTF8Encoding(false)) { AutoFlush = true };
             string? line;
-            // Sonda bypass-responses-stream: acumula texto; trip = early-stop (contencao).
+            // Sonda bypass-responses-stream: so observa e registra (o fluxo NAO
+            // para; a contencao silenciosa mora no loop da Web).
             var sseText = new StringBuilder();
             int sseChecked = 0;
             bool sseTrip = false;
@@ -1146,9 +1147,9 @@ var shape = new StringBuilder();
                         }
                     }
                 }
-                if (sseTrip) break;
             }
             // Avaliacao de fecho: stream curto nunca atinge o passo de 512.
+            // Sem break: o fluxo segue ate o fim; a Web conteve em silencio.
             if (!sseTrip && sseText.Length > 0 && CheckRepeat(sseText.ToString(), "bypass-responses-stream"))
             {
                 sseTrip = true;
@@ -1330,13 +1331,13 @@ var shape = new StringBuilder();
         catch { return ""; }
     }
 
-    /// <summary>Coleta valores de chaves de texto ("text"/"delta") em qualquer JSON (SSE do bypass).</summary>
+    /// <summary>Coleta valores de chaves de texto ("text"/"delta"/"content") em qualquer JSON (SSE do bypass).</summary>
     static void WalkText(JsonNode? node, StringBuilder b)
     {
         if (node is JsonObject o)
             foreach (var kv in o)
             {
-                if ((kv.Key is "text" or "delta") && kv.Value is JsonValue v
+                if ((kv.Key is "text" or "delta" or "content") && kv.Value is JsonValue v
                     && v.TryGetValue<string>(out string? t) && !string.IsNullOrEmpty(t))
                 { if (b.Length > 0) b.Append('\n'); b.Append(t); }
                 else WalkText(kv.Value, b);
@@ -1478,7 +1479,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         if (!upstreamResponse.IsSuccessStatusCode)
         {
             string errorBody = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-            Log(new JsonObject { ["event"] = "error", ["mode"] = "live", ["status"] = (int)upstreamResponse.StatusCode });
+            Log(new JsonObject { ["event"] = "error", ["mode"] = "live", ["status"] = (int)upstreamResponse.StatusCode, ["upstream_error"] = Truncate(errorBody, 500) });
             ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
             byte[] errorBytes = Encoding.UTF8.GetBytes(errorBody);
             ctx.Response.ContentType = "application/json";

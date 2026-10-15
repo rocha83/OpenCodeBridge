@@ -1555,6 +1555,10 @@ public sealed class ChatController(
             using var reader = new System.IO.StreamReader(stream);
             string? line;
             bool done = false;
+            // Contencao silenciosa: apos o trip, os deltas do turno nao descem
+            // p/ a bolha (o stream segue aberto: UI fica "Processando..." ate a
+            // resposta corrigida do retry). O aviso vai so no input, sem exibir.
+            bool turnTripped = false;
             while (!done && (line = await reader.ReadLineAsync()) != null)
             {
                 if (ct.IsCancellationRequested) break;
@@ -1562,6 +1566,12 @@ public sealed class ChatController(
                 string data = line[6..].Trim();
                 var t = Services.ResponsesBypass.TranslateData(data, assistantContent, assistantThinking,
                     ref promptTokens, ref completionTokens, accum);
+                if (!turnTripped && assistantContent.Length - turnStartLen >= 72
+                    && Services.RepeatLoop.Trips(assistantContent.ToString()))
+                {
+                    turnTripped = true;
+                    LoopTrace("anti-repeat", session?.Id, turn, $"chars={assistantContent.Length} suprimido");
+                }
                 if (t.Error is not null)
                 {
                     try
@@ -1574,7 +1584,7 @@ public sealed class ChatController(
                     done = true;
                     break;
                 }
-                if (t.ChatData is not null && t.ChatData != "[DONE]")
+                if (t.ChatData is not null && t.ChatData != "[DONE]" && !turnTripped)
                 {
                     try
                     {
