@@ -1619,13 +1619,27 @@ public sealed class ChatController(
                 }
                 // Memória de conversa: a prosa do turno entra no input, senão o
                 // modelo esquece a própria resposta e repete no turno seguinte.
+                // Fundir com assistant anterior (llama nega 2+ assistant no fim).
                 string turnText = assistantContent.ToString(turnStartLen, assistantContent.Length - turnStartLen).Trim();
                 if (turnText.Length > 0)
-                    input.Add(new JsonObject
+                {
+                    bool merged = false;
+                    if (input.LastOrDefault() is JsonObject lo
+                        && lo["role"]?.GetValue<string>() == "assistant"
+                        && lo["content"] is JsonArray lc && lc.Count > 0
+                        && lc[0] is JsonObject part
+                        && part["text"] is JsonValue tv && tv.TryGetValue<string>(out string? prev))
                     {
-                        ["type"] = "message", ["role"] = "assistant",
-                        ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = CutForContext(turnText) }),
-                    });
+                        part["text"] = CutForContext(((prev ?? "") + "\n\n" + turnText).Trim());
+                        merged = true;
+                    }
+                    if (!merged)
+                        input.Add(new JsonObject
+                        {
+                            ["type"] = "message", ["role"] = "assistant",
+                            ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = CutForContext(turnText) }),
+                        });
+                }
                 continue;
             }
             // Executa cada call e devolve outputs no próximo turno (a API exige
