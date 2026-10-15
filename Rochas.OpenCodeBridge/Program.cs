@@ -73,8 +73,8 @@ internal static partial class Program
     static bool LegacyHarness = false;
     // Formula (harness=true): composta pela bridge p/ cliente web (model sem
     // sufixo). Opencode (sufixo -build/-plan/-orch) passa limpo.
-    static string HarnessAgents = "REGRAS DE TOOLS: leitura: glob (lista), read (arquivo), grep (busca), fetch (GET http); escrita: write (cria), edit (trecho exato); execucao: shell (comando unico; && liberado; pipes/redirecionamento via bash -c); git leitura direta, escrita via shell; delegacao: subagent (uma fase).";
-    static string SystemPromptTail = "";
+    static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada.";
+    static string HarnessGuardTail = "";
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
     static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida; quando informada a repeticao, nao responda mais nada, apenas encerre em silencio, obrigado.";
@@ -128,8 +128,8 @@ internal static partial class Program
             if (cfg["passthroughResponses"]?.GetValue<bool>() is bool pt) PassthroughResponses = pt;
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
             if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
-            if (cfg["harnessAgentsMd"]?.GetValue<string>() is string ham && ham.Length > 0) HarnessAgents = ham;
-            if (cfg["systemPromptTail"]?.GetValue<string>() is string ht) SystemPromptTail = ht;
+            if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham && ham.Length > 0) HarnessToolsTail = ham;
+            if (cfg["harnessGuardTail"]?.GetValue<string>() is string ht) HarnessGuardTail = ht;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
@@ -485,6 +485,13 @@ internal static partial class Program
             if (ctx.Request.HttpMethod == "GET" && path == "/api/status")
             {
                 WriteJson(ctx, 200, BuildStatus());
+                return;
+            }
+
+            // Flag mestra do harness (fonte unica: a web consulta aqui).
+            if (ctx.Request.HttpMethod == "GET" && path == "/api/harness")
+            {
+                WriteJson(ctx, 200, new JsonObject { ["harness"] = Harness });
                 return;
             }
 
@@ -1354,8 +1361,8 @@ var shape = new StringBuilder();
     static string WithFormula(string sys)
     {
         string t = (sys ?? "").Trim();
-        if (HarnessAgents.Length > 0) t = (t.Length > 0 ? t + "\n\n" : "") + HarnessAgents;
-        if (SystemPromptTail.Length > 0) t += "\n\n" + SystemPromptTail;
+        if (HarnessToolsTail.Length > 0) t = (t.Length > 0 ? t + "\n\n" : "") + HarnessToolsTail;
+        if (HarnessGuardTail.Length > 0) t += "\n\n" + HarnessGuardTail;
         return t;
     }
 
