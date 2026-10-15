@@ -735,7 +735,13 @@ WriteJson(ctx, 200, new JsonObject
                 }
                 outBody = node.ToJsonString(SerOpts);
             }
-            // Compat qwen3/qwen3.5: patterns nao-ancorados nos schemas das
+            // Thinking default da linha (--thinking): sem o kwargs o template
+            // Qwen liga thinking sozinho; vale p/ todo cliente sem flag propria.
+            if (node is not null && node["chat_template_kwargs"] is null)
+            {
+                node["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = Thinking == "events" };
+                outBody = node.ToJsonString(SerOpts);
+            }
             // tools quebram o parser do template 14B (400); vale p/ qualquer
             // model id, com ou sem sufixo de perfil. Inibivel (--harness 0).
             if (LegacyHarness && node is not null && node["tools"] is JsonArray toolsArr)
