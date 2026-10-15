@@ -66,6 +66,7 @@ public static class ToolsCoercion
         }
         text = ExtractHermes(text, calls);
         if (calls.Count < MaxCalls) text = ExtractToolsPlural(text, calls);
+        if (calls.Count < MaxCalls) text = ExtractFunction(text, calls);
         if (calls.Count < MaxCalls) text = ExtractJsonFences(text, calls, known);
         if (calls.Count < MaxCalls) text = ExtractV3Tokens(text, calls);
         if (calls.Count < MaxCalls) text = ExtractXml(text, calls, known);
@@ -91,6 +92,18 @@ public static class ToolsCoercion
         // Qwen2.5-Coder via llama: embrulha no plural <tools>{...}</tools>
         // (o template poe as assinaturas em <tools> e o modelo ecoa o wrapper).
         foreach (Match m in Regex.Matches(text, @"<tools>\s*(\{.*?\})\s*</tools>",
+                     RegexOptions.Singleline | RegexOptions.IgnoreCase))
+        {
+            if (calls.Count >= MaxCalls) break;
+            if (TryBuildCall(m.Groups[1].Value, calls)) text = text.Replace(m.Value, "\n");
+        }
+        return text;
+    }
+
+    private static string ExtractFunction(string text, List<BridgeHelper.ToolCall> calls)
+    {
+        // Qwen2.5-Coder com choice required: <function>{...}</function>.
+        foreach (Match m in Regex.Matches(text, @"<function>\s*(\{.*?\})\s*</function>",
                      RegexOptions.Singleline | RegexOptions.IgnoreCase))
         {
             if (calls.Count >= MaxCalls) break;
@@ -197,6 +210,10 @@ public static class ToolsCoercion
             ?? obj["function"]?.AsObject()?["name"]?.GetValue<string>()
             ?? obj["function"]?.GetValue<string>()
             ?? "";
+        // Prefixo alucinado do harness (default.shell): o registro usa nomes
+        // simples; "default." nunca e tool valida — remove sem risco.
+        if (name.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
+            name = name["default.".Length..];
         var argsNode = obj["arguments"] ?? obj["parameters"];
         if (!IsValidName(name)) return false;
         string args = argsNode switch

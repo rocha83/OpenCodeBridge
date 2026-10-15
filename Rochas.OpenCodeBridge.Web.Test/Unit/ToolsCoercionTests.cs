@@ -26,6 +26,8 @@ internal static class ToolsCoercionTests
         PlainTextUntouched();
         NonDeepSeekUntouched();
         CoderToolsPlural();
+        CoderDefaultPrefix();
+        CoderFunctionTag();
         EmptyInputs();
         BadNameSkipped();
         ChatTurnCoerces();
@@ -129,6 +131,22 @@ internal static class ToolsCoercionTests
         string content = "segue:\n<tools>\n{\"name\": \"bash\", \"arguments\": {\"command\": \"mkdir /tmp/t1\"}}\n</tools>";
         var calls = ToolsCoercion.Coerce("qwen3.5-9b", content, out string cleaned);
         Check(calls.Count == 1 && calls[0].Name == "bash" && !cleaned.Contains("<tools>"), "U-dsq-coder-plural");
+    }
+
+    private static void CoderDefaultPrefix()
+    {
+        // Prefixo alucinado default.* vira nome simples do registro.
+        string content = "<tool_call>{\"name\": \"default.shell\", \"arguments\": {\"command\": \"ls\"}}</tool_call>";
+        var calls = ToolsCoercion.Coerce("qwen3.5-9b", content, out _);
+        Check(calls.Count == 1 && calls[0].Name == "shell", "U-dsq-coder-prefix");
+    }
+
+    private static void CoderFunctionTag()
+    {
+        // Qwen2.5-Coder com choice required: <function>{...}</function>.
+        string content = "<function>\n{\"name\": \"shell\", \"arguments\": {\"command\": \"ls /tmp\"}}\n</function>";
+        var calls = ToolsCoercion.Coerce("qwen3.5-9b", content, out string cleaned);
+        Check(calls.Count == 1 && calls[0].Name == "shell" && !cleaned.Contains("<function>"), "U-dsq-coder-function");
     }
 
     private static void EmptyInputs()

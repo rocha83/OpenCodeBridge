@@ -197,6 +197,8 @@ internal static partial class Program
     // Coder/Hermes via llama: embrulha no plural <tools> (template poe as
     // assinaturas em <tools> e o modelo ecoa o wrapper no lugar de <tool_call>).
     static readonly Regex ReToolsTag = new(@"<tools>([\s\S]*?)</tools>", RegexOptions.Compiled);
+    // Coder com tool_choice required: <function>{...}</function> + flood de \n.
+    static readonly Regex ReFunctionTag = new(@"<function>([\s\S]*?)</function>", RegexOptions.Compiled);
 
     /// <summary>Extrai tool calls de texto (fenced JSON ou tags) p/ coercão.</summary>
     static List<(string Name, string Arguments)> ExtractTextToolCalls(string content)
@@ -206,6 +208,8 @@ internal static partial class Program
         foreach (Match m in ReToolTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
         if (list.Count == 0)
             foreach (Match m in ReToolsTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
+        if (list.Count == 0)
+            foreach (Match m in ReFunctionTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
         if (list.Count == 0)
             foreach (Match m in ReFencedCall.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
         if (list.Count == 0)
@@ -285,6 +289,10 @@ internal static partial class Program
             if (o is null) return;
             string name = o["name"]?.GetValue<string>() ?? "";
             if (name.Length == 0) return;
+            // Prefixo alucinado do harness (default.shell): o registro usa
+            // nomes simples; "default." nunca e tool valida — remove sem risco.
+            if (name.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
+                name = name["default.".Length..];
             list.Add((name, JsonToString(o["arguments"])));
         }
         catch { /* texto que parece call mas nao parseia: ignora */ }
@@ -926,7 +934,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         if (tools is not null)
         {
             int droppedResp = StripUnanchoredPatterns(tools);
-            if (droppedResp > 0) Log(new JsonObject { ["event"] = "pattern-strip", ["mode"] = "responses", ["dropped"] = droppedResp });
+            if (droppedResp > 0) Log(new JsonObject { ["event"] = "pattern-strip", ["mode"] = "responses", ["dropped"] = droppedResp, ["tools"] = ToolNames(tools) });
         }
         toolCount = tools?.Count ?? 0;
 
@@ -1182,6 +1190,20 @@ var shape = new StringBuilder();
             return b.ToString();
         }
         return "";
+    }
+
+    /// <summary>Nomes das tools anunciadas (diagnostico: o que o opencode mandou).</summary>
+    static JsonArray ToolNames(JsonArray? tools)
+    {
+        var arr = new JsonArray();
+        if (tools is null) return arr;
+        foreach (var t in tools)
+        {
+            string n = (t as JsonObject)?["function"]?["name"]?.GetValue<string>()
+                ?? (t as JsonObject)?["name"]?.GetValue<string>() ?? "?";
+            if (arr.Count < 24) arr.Add(n);
+        }
+        return arr;
     }
 
     /// <summary>Request com tools anunciadas? (llama /v1/responses nao suporta tools).</summary>
@@ -2095,7 +2117,10 @@ if (type == "message")
                 if (callNode is not JsonObject callObj) continue;
                 string id = callObj["id"]?.GetValue<string>() ?? ("call_" + NewId());
                 var funcObj = callObj["function"]?.AsObject() ?? new JsonObject();
-                toolCalls.Add((id, funcObj["name"]?.GetValue<string>() ?? "", JsonToString(funcObj["arguments"])));
+                string nativeName = funcObj["name"]?.GetValue<string>() ?? "";
+                if (nativeName.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
+                    nativeName = nativeName["default.".Length..];
+                toolCalls.Add((id, nativeName, JsonToString(funcObj["arguments"])));
             }
         }
         // Coerção: sem tool_calls nativos e com tools pedidas, extrai do texto
@@ -2110,6 +2135,7 @@ if (type == "message")
                 // Remove os blocos consumidos p/ nao duplicar texto + call.
                 content = ReToolTag.Replace(content, "");
                 content = ReToolsTag.Replace(content, "");
+                content = ReFunctionTag.Replace(content, "");
                 content = ReFencedCall.Replace(content, "");
                 Log(new JsonObject { ["event"] = "coerced", ["model"] = model, ["count"] = toolCalls.Count });
             }
