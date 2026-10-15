@@ -765,9 +765,11 @@ WriteJson(ctx, 200, new JsonObject
                 outBody = node.ToJsonString(SerOpts);
             }
             // QwenStandard: tools OpenAI -> Alibaba + re-serializa p/ upstream.
+            // Sem tool_choice explícito: força "required" (VL só emite calls assim).
             if (QwenStd && node is not null && node["tools"] is JsonArray qtools && qtools.Count > 0)
             {
                 int nq = QwenStandard.TranslateToolsForUpstream(qtools);
+                if (node["tool_choice"] is null) node["tool_choice"] = "required";
                 outBody = node.ToJsonString(SerOpts);
                 if (Diagnostic) Log(new JsonObject { ["event"] = "qwen-tools", ["count"] = nq });
             }

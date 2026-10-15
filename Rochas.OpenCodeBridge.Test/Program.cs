@@ -57,6 +57,8 @@ internal static class Program
             else Console.WriteLine("[test] skip E-vllm-tool-hermes (perfil coder)");
             TestContext.Run("E-responses-simple", E2EToolTests.SimpleResponses);
             TestContext.Run("E-responses-tools", E2EToolTests.ToolResponses);
+            TestContext.Run("E-devpipe-tools", E2EDevPipeTests.DevPipeTools);
+            TestContext.Run("E-devpipe-infra", E2EDevPipeTests.DevPipeInfra);
             TestContext.Run("E-stream-architect", E2EStreamTests.ArchitectStream);
             TestContext.Run("E-review-architect", E2EStreamTests.ArchitectReview);
             TestContext.Run("E-iot-event-queue", E2EArchitectureTests.IotEventQueue);
