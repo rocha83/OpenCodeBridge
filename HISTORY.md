@@ -1257,3 +1257,11 @@
   VRAM 11.4/12.2GB, `/health ok`.
 - Prova: PNG 1x1 vermelho → "fundo vermelho sólido" correto, decode 60 tok/s.
   Bridge `:4125` segue `--max-tokens 16384`.
+
+## pattern-strip incondicional (2026-10-15)
+- Erro conhecido de volta: `Unable to generate parser... Pattern must start
+  with '^'` no `/v1/responses` com tools — o strip estava gated por
+  `--legacy-harness` (desligado), então nada removia `pattern` não-ancorado.
+- Fix: `StripUnanchoredPatterns` incondicional nos dois caminhos que
+  encaminham tools ao llama (`BuildChatRequest` e `Passthrough` de
+  chat/completions). Provado via `:4125` com `pattern:*.cs` → 200.
