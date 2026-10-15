@@ -133,7 +133,7 @@ public static class AppDb
                 ('system_tail', 'Calda de system prompt (anexada a todo agente)', ''),
                 ('anti_repeat_enabled', 'AntiRepeat ligado (bridge)', 'true'),
                 ('anti_repeat_window', 'AntiRepeat janela em chars (bridge)', '128'),
-                ('anti_repeat_notice', 'AntiRepeat aviso de contencao (bridge)', 'Aqui e a ponte de contencao OpenCodeBridge pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida, mude a sua deducao para outra alternativa e responda, obrigado.'),
+                ('anti_repeat_notice', 'AntiRepeat aviso de contencao (bridge)', 'Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida; quando informada a repeticao, nao responda mais nada, apenas encerre em silencio, obrigado.'),
                 ('guardrail', 'Sufixo guardrail da bridge (espelho informativo)', '');
                 """;
             try { seedpc.ExecuteNonQuery(); } catch { }

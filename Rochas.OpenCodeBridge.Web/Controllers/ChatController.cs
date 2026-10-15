@@ -1558,7 +1558,23 @@ public sealed class ChatController(
             // Contencao silenciosa: apos o trip, os deltas do turno nao descem
             // p/ a bolha (o stream segue aberto: UI fica "Processando..." ate a
             // resposta corrigida do retry). O aviso vai so no input, sem exibir.
-            bool turnTripped = false;
+            // Pre-forward: os primeiros deltas aguardam a 1a avaliacao (72+),
+            // senao o veneno inicial vaza antes do trip.
+            bool turnTripped = false, evaluated = false;
+            var pending = new List<string>();
+            async Task FlushPendingAsync()
+            {
+                foreach (var p in pending)
+                {
+                    try
+                    {
+                        await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + p + "\n\n"), ct);
+                        await outputStream.FlushAsync(ct);
+                    }
+                    catch { break; }
+                }
+                pending.Clear();
+            }
             while (!done && (line = await reader.ReadLineAsync()) != null)
             {
                 if (ct.IsCancellationRequested) break;
@@ -1586,15 +1602,41 @@ public sealed class ChatController(
                 }
                 if (t.ChatData is not null && t.ChatData != "[DONE]" && !turnTripped)
                 {
-                    try
+                    // Pre-forward: segura ate a 1a avaliacao; trip = descarta.
+                    bool direct = true;
+                    if (!evaluated)
                     {
-                        await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + t.ChatData + "\n\n"), ct);
-                        await outputStream.FlushAsync(ct);
+                        pending.Add(t.ChatData);
+                        direct = false;
+                        if (assistantContent.Length - turnStartLen >= 72
+                            || assistantThinking.Length - thinkStartLen >= 72)
+                        {
+                            evaluated = true;
+                            if (Services.RepeatLoop.Trips(assistantContent.ToString() + "\n" + assistantThinking.ToString()))
+                            {
+                                turnTripped = true;
+                                pending.Clear();
+                                LoopTrace("anti-repeat", session?.Id, turn, $"chars={assistantContent.Length} pre-suprimido");
+                            }
+                            else await FlushPendingAsync();
+                        }
                     }
-                    catch { break; }
+                    if (direct)
+                    {
+                        try
+                        {
+                            await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + t.ChatData + "\n\n"), ct);
+                            await outputStream.FlushAsync(ct);
+                        }
+                        catch { break; }
+                    }
                 }
                 done = t.Completed;
             }
+
+            // Turno curto (<72, nunca avaliado): libera o buffer retido.
+            if (!turnTripped) await FlushPendingAsync();
+            else pending.Clear();
 
             if (accum.Calls.Count == 0)
             {

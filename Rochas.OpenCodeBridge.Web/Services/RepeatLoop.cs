@@ -7,7 +7,7 @@ namespace Rochas.OpenCodeBridge.Web.Services;
 internal static class RepeatLoop
 {
     // Aviso de contencao: devolvido ao modelo como mensagem user no retry.
-    internal const string Notice = "Aqui e a ponte de contencao OpenCodeBridge pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida, mude a sua deducao para outra alternativa e responda, obrigado.";
+    internal const string Notice = "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida; quando informada a repeticao, nao responda mais nada, apenas encerre em silencio, obrigado.";
 
     internal const int Window = 128;
 

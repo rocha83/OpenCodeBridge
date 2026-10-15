@@ -66,7 +66,7 @@ internal static partial class Program
     static bool AntiRepeat = true;                               // AntiRepeat: observa o thinking em stream e conteve repeticao
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
-    static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida, mude a sua deducao para outra alternativa e responda, obrigado.";
+    static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida; quando informada a repeticao, nao responda mais nada, apenas encerre em silencio, obrigado.";
     static bool CoerceFor(string modelId) => CoerceTextTools
         || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false);
 
