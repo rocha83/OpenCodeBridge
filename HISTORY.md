@@ -1237,3 +1237,16 @@
 - **9B Q4 (GPU :4100)**: `--prio 2` (high) — modelo principal, prioridade máxima
 - **4B Q3 (GPU :4111)**: `--prio 0` (normal) — executor secundário, prioridade normal
 - Flags: `--prio N` aceita -1/0/1/2 (low/normal/medium/high)
+
+## 4B vira VL com vision real (2026-10-15)
+- Achado: GGUFs texto (`qwen35`, 442 tensores, zero visuais) não enxergam;
+  `llama.cpp` barra `image_url` sem `mmproj`; o "sim, leio imagens" do 4B na
+  sessão `Teste pergunta imagem` era repetição do anúncio da tool, não vision.
+- Troca no `:4111`: removidos `Qwen_Qwen3.5-4B-Q3_K_M.gguf` e `Q4_K_M`;
+  baixados `Qwen_Qwen3-VL-4B-Instruct-Q3_K_M.gguf` (2.0GB, bartowski) +
+  `mmproj-Qwen3VL-4B-Q8_0.gguf` (433MB, oficial Qwen — menor que o F16 798MB;
+  `mmproj` não existe em Q4, só F16/BF16/Q8_0).
+- Unit `llama-cpu.service`: `-np 2 -c 65536` (2 slots, ctx 64k) + `--mmproj`,
+  `--prio 0`; bridge `:4125` com `--max-tokens 16384` (saída 16k).
+- OOM registrado: 2 slots x 96k não coube no KV (faltou 2.7GB); 48k coube mas
+  o dono fixou 64k/16k. `:4100` segue 1x 9B Q4 156k (`-np 1`, saída 32k).
