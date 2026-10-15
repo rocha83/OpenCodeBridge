@@ -1590,6 +1590,17 @@ public sealed class ChatController(
         bool compactRetried = false;
         // AntiRepeat do lado do modelo (máx 2 contenções por sessão).
         int repeatFixes = 0;
+        // Trava de call idêntica: mesma tool + mesmos args 3x seguidas =
+        // controle ping-pong no input (máx 2), depois disjuntor encerra.
+        // Sem nota na bolha: só o que foi realmente produzido aparece.
+        string lastToolSig = "";
+        int sameToolStreak = 0;
+        int toolFixes = 0;
+        bool toolLoopAbort = false;
+        // Fechamento com nota quando tools rodaram mas o modelo não devolveu
+        // texto (sem isto a sessão termina sem bolha: "fez mas não falou nada").
+        bool anyToolRan = false;
+        bool silentClose = false;
         string originalTask = "";
         foreach (var m in messages)
             if (m?["role"]?.GetValue<string>() == "user"
@@ -1604,8 +1615,8 @@ public sealed class ChatController(
         }
         try
         {
-        int maxTurns = orchOptions.Value.MaxTurns > 0 ? orchOptions.Value.MaxTurns : 8;
-        for (int turn = 0; turn < maxTurns && !ct.IsCancellationRequested; turn++)
+        int maxTurns = orchOptions.Value.MaxTurns; // <=0 = sem teto (era do ctx 32k do 8B; freios: anti-giro/repeat)
+        for (int turn = 0; (maxTurns <= 0 || turn < maxTurns) && !ct.IsCancellationRequested; turn++)
         {
             LoopTrace("turno", session?.Id, turn, $"input={input.Count}");
             turnStartMs = streamSw.ElapsedMilliseconds;
@@ -1814,6 +1825,37 @@ public sealed class ChatController(
             // function_call_output p/ toda call; sem isso o modelo trava).
             foreach (var (id, name, args) in accum.Calls)
             {
+                // Trava de call idêntica (ping-pong): 3x mesma tool+args
+                // seguidas = controle no input + retry do turno (a repetida
+                // não executa, sem nota na bolha). Após 2 controles, disjuntor.
+                string toolSig = name + "\n" + (args ?? "");
+                if (toolSig == lastToolSig) sameToolStreak++;
+                else { lastToolSig = toolSig; sameToolStreak = 1; }
+                if (sameToolStreak >= 3)
+                {
+                    if (session?.Id is int sidTrip)
+                        await sessionService.LogToolAsync(sidTrip, agent.Name, name, args ?? "", false,
+                            "contenção: mesma chamada 3x seguidas, não executada", 0);
+                    if (toolFixes < 2)
+                    {
+                        toolFixes++;
+                        LoopTrace("anti-toolloop", session?.Id, turn, $"{name} fix={toolFixes}");
+                        assistantContent.Length = turnStartLen;
+                        assistantThinking.Length = thinkStartLen;
+                        turnTripped = true;
+                        pending.Clear();
+                        input.Add(new JsonObject
+                        {
+                            ["type"] = "message", ["role"] = "user",
+                            ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text",
+                                ["text"] = $"Aqui é a ponte de contenção OpenCodeBridge: você repetiu a mesma chamada da tool '{name}' 3 vezes seguidas com os mesmos argumentos ({CutForContext(args ?? "", 200)}). Não repita: varie os argumentos, use outra tool ou conclua a tarefa com o que você já tem. Responda com uma ação diferente." }),
+                        });
+                        break;
+                    }
+                    toolLoopAbort = true;
+                    LoopTrace("anti-toolloop", session?.Id, turn, $"{name} disjuntor");
+                    break;
+                }
                 // Call vazia (sem prompt): nem anuncia (evita label fantasma).
                 if (name == "subagent" && string.IsNullOrWhiteSpace(SubPrompt(args)))
                 {
@@ -1873,6 +1915,7 @@ public sealed class ChatController(
                 var gateDeny = await ConfirmGateAsync(outputStream, name, args,
                     Services.ConfirmGate.LastUserInputText(input), session?.Id, session?.AutoApprove == true, ct);
                 var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
+                anyToolRan = true;
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
                 toolExecutor.LogInnerAsync = null;
@@ -1952,6 +1995,7 @@ public sealed class ChatController(
                 }
                 catch { /* histórico best-effort */ }
             }
+            if (toolLoopAbort) break;
         }
         }
         catch (OperationCanceledException)
@@ -1963,6 +2007,12 @@ public sealed class ChatController(
         }
 
         string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
+        if (finalText.Length == 0 && assistantThinking.Length == 0 && anyToolRan)
+        {
+            // Retorno silencioso após execução: fecha a bolha e grava no sqlite.
+            finalText = "As ferramentas solicitadas foram executadas, verifique.";
+            silentClose = true;
+        }
         if (session is not null && session.Id.HasValue && (finalText.Length > 0 || assistantThinking.Length > 0))
         {
             long streamMs = streamSw.ElapsedMilliseconds;
@@ -1992,6 +2042,16 @@ public sealed class ChatController(
         }
         try
         {
+            if (silentClose)
+            {
+                // Fechamento silencioso também digita na bolha ao vivo.
+                var fb = new JsonObject
+                {
+                    ["choices"] = new JsonArray { new JsonObject { ["delta"] = new JsonObject { ["content"] = finalText } } },
+                };
+                await outputStream.WriteAsync(Encoding.UTF8.GetBytes("data: " + fb.ToJsonString() + "\n\n"), ct);
+                await outputStream.FlushAsync(ct);
+            }
             var doneBytes = Encoding.UTF8.GetBytes("data: [DONE]\n\n");
             await outputStream.WriteAsync(doneBytes, ct);
             await outputStream.FlushAsync(ct);

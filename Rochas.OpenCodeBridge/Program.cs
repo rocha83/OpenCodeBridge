@@ -769,6 +769,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             using var writer = new StreamWriter(ctx.Response.OutputStream, new UTF8Encoding(false)) { AutoFlush = true };
             string? line;
             var sseText = new StringBuilder();
+            var rawChatSse = new StringBuilder();
             int sseChecked = 0;
             bool sseTrip = false;
             while ((line = reader.ReadLine()) != null)
@@ -776,6 +777,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 if (line.Contains("\"reasoning\":"))
                     line = line.Replace("\"reasoning\":", "\"reasoning_content\":");
                 writer.WriteLine(line);
+                if (Diagnostic) rawChatSse.AppendLine(line);
                 // Sonda bypass-chat-stream: so observa e registra (o fluxo NAO
                 // para; a contencao silenciosa mora no loop da Web).
                 if (isChat && !sseTrip && line.StartsWith("data:"))
@@ -804,6 +806,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 sseTrip = true;
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
             }
+            // Sonda traffic FULL (só com DIAGNOSTICS; chat stream: integros).
+            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "chat-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = rawChatSse.Length, ["res"] = rawChatSse.ToString() });
         }
         else
         {
@@ -845,6 +849,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             }
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            // Sonda traffic FULL (só com DIAGNOSTICS; chat sem stream: integros).
+            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "chat", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json });
         }
         ctx.Response.Close();
     }
@@ -897,6 +903,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         }
         catch { /* corpo inesperado: devolve cru */ }
         Log(new JsonObject { ["event"] = "coerced-chat", ["model"] = Model, ["count"] = coerced });
+        // Sonda traffic FULL (só com DIAGNOSTICS): resposta integra.
+        if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "coerced", ["model"] = Model, ["res_len"] = json.Length, ["res"] = json });
         if (!wantStream)
         {
             ctx.Response.StatusCode = 200;
@@ -1107,6 +1115,8 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             ["input_tokens"] = inTok, ["output_tokens"] = outTok,
             ["tps_output"] = Math.Round(elapsed > 0 ? outTok / elapsed : 0, 1)
         });
+        // Sonda traffic FULL (só com DIAGNOSTICS): traducao req/res integros.
+        if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "translate", ["model"] = requestedModel, ["req_len"] = chat.ToJsonString().Length, ["req"] = chat.ToJsonString(), ["res_len"] = responseObj.ToJsonString().Length, ["res"] = responseObj.ToJsonString() });
         AddMetrics(inTok, outTok, elapsed);
 
         // 4.7) Sem stream: devolve JSON direto.
@@ -1157,6 +1167,8 @@ var shape = new StringBuilder();
         }
         catch { }
         Log(new JsonObject { ["event"] = "passthrough-responses", ["model"] = Model, ["dropped_reasoning"] = dropped, ["status"] = (int)upstreamResponse.StatusCode, ["elapsed"] = Math.Round(elapsed, 2), ["shape"] = shape.ToString().Trim(), ["upstream_error"] = (errBody ?? "").Length > 500 ? errBody![..500] : (errBody ?? "") });
+        // Sonda FULL (só com DIAGNOSTICS): pedido integro que seguiu ao upstream.
+        if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "responses-req", ["model"] = Model, ["stream"] = (upstreamResponse.Content.Headers.ContentType?.ToString() ?? "").Contains("text/event-stream"), ["req_len"] = outBody.Length, ["req"] = outBody });
         ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
         ctx.Response.ContentType = upstreamResponse.Content.Headers.ContentType?.ToString() ?? "application/json";
         if (errBody is not null)
@@ -1175,11 +1187,13 @@ var shape = new StringBuilder();
             // Sonda bypass-responses-stream: so observa e registra (o fluxo NAO
             // para; a contencao silenciosa mora no loop da Web).
             var sseText = new StringBuilder();
+            var rawSse = new StringBuilder();
             int sseChecked = 0;
             bool sseTrip = false;
             while ((line = reader.ReadLine()) != null)
             {
                 writer.WriteLine(line);
+                if (Diagnostic) rawSse.AppendLine(line);
                 if (!sseTrip && line.StartsWith("data:"))
                 {
                     try
@@ -1206,6 +1220,8 @@ var shape = new StringBuilder();
                 sseTrip = true;
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
             }
+            // Sonda traffic FULL (só com DIAGNOSTICS): pedido e SSE integros.
+            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "responses-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = rawSse.Length, ["res"] = rawSse.ToString() });
         }
         else
         {
@@ -1224,6 +1240,8 @@ var shape = new StringBuilder();
             }
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            // Sonda traffic FULL (só com DIAGNOSTICS; sem stream: integros).
+            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "responses", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json });
         }
         ctx.Response.Close();
     }

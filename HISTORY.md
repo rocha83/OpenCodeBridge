@@ -1189,3 +1189,21 @@
   (`LiveLoopTests`: piloto Playwright com modelo real — saudação + Sim).
   `ToolExecutorTests.GlobAbsoluteOutside` tolerante a volume travado
   (sonda gravável + ramo jail nega fora de /media|/mnt).
+
+## Acuracidade do modelo > verde nos testes (2026-10-15, belt tools-dev-pipe)
+- Objetivo registrado: o verde do teste não basta; vale a acurácia do 9B Build
+  executando o pipeline natural (git init/config/add/commit, read/grep/edit,
+  clima SP, zip) com bolha viva e stream "Digitando".
+- Belt dirigida pela UI (sessão nasce na página, agente 3, send na UI):
+  via API a lista só aparecia no F5 com stream morto; na UI o stream pinta
+  as bolhas ao vivo e a sessão fica na lista p/ inspeção (sem DELETE).
+- Sessão 44 silenciosa (8 calls, 0 bolhas): teto `MaxTurns=8` (era do ctx 32k
+  do 8B) + epílogo sem nota. Fix: `MaxTurns=0` (sem teto; freios vivos:
+  anti-giro/repeat) em `OrchestrationOptions.cs` + `appsettings.json` +
+  loop `<=0 = sem teto`; `silentClose` ("As ferramentas solicitadas foram
+  executadas, verifique.") fecha bolha no sqlite e digita ao vivo.
+- Executor acoplado sozinho (sessão 44: agent 3 + executor 5/4B CPU):
+  belt desacopla via `PUT Chat/Sessions/{id}/Executor` (null) p/ 9B único.
+- Enunciado natural (sem forçar comandos): sem "1 tool por resposta",
+  sem `bash -c`, sem git só-leitura — modelo decide as tools; teste valida
+  `done/tools6/commits/txt/clima/zip` + `git log` + `unzip -l`.

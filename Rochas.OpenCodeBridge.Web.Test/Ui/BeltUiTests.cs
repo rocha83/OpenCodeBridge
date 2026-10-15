@@ -57,16 +57,12 @@ public static class BeltUiTests
         // Pipeline de tools por enunciado (10 passos: subpasta, git, write, commit,
         // edit, commit, read, grep, edit, fetch clima SP, append, zip).
         new("tools-dev-pipe", "Faixa TOOLS-DEV-PIPE",
-            "Crie a subpasta devpipe/ no seu workspace e inicialize um repositório git dentro dela " +
-            "(configure user.name e user.email locais do repo). Crie um arquivo de nome aleatório " +
-            "devpipe/devpipe-XXXX.txt (XXXX em letras minúsculas aleatórias) com o conteúdo exato 'A' " +
-            "e faça o primeiro commit. Depois edite o arquivo para o conteúdo 'ABC' e faça o segundo commit. " +
-            "Abra o arquivo com a tool read, procure a letra 'B' com a tool grep, troque 'B' por 'W' com a " +
-            "tool edit e salve. Busque o clima de hoje em São Paulo na internet com a tool fetch " +
-            "(https://wttr.in/Sao+Paulo?format=3; se der erro de rede, diga 'sem internet' e siga) e " +
-            "acrescente ao final do arquivo, salve. Depois compacte a pasta em devpipe.zip via shell. " +
-            "Ao final rode git log --oneline e unzip -l devpipe.zip e mostre as saídas. Faça tudo você " +
-            "mesmo com as suas tools, sem delegar. Diálogo em pt-br.",
+            "crie uma subpasta devpipe-test-<datahora> em seu workspace (descubra a data e hora atuais " +
+            "com segundos e use no nome), inicialize um repositorio git, crie um arquivo com nome aleatorio " +
+            ".txt com conteudo 'A', faca commit, depois edite este arquivo complementando 'ABC' faca outro " +
+            "commit, abra o arquivo, procure a letra 'B', mude para 'W', busque o clima hoje em sao paulo na " +
+            "internet utilizando webdriver playwright e incremente no arquivo, salve o arquivo depois faca um " +
+            "zip desta pasta. teste finalizado",
             0, 30),
     };
 
@@ -166,7 +162,7 @@ public static class BeltUiTests
                         break;
                     }
                     case "toolsfull": failures += await ToolsFullBeltAsync(api, belt); break;
-                    case "toolsdevpipe": failures += await ToolsDevPipeBeltAsync(api, belt); break;
+                    case "toolsdevpipe": failures += await ToolsDevPipeBeltAsync(api, context, web, belt); break;
                     case "reviewplan": failures += await ReviewPlanAsync(api, belt); break;
                     case "execute": failures += await ExecuteBeltAsync(api, belt); break;
                     case "review": failures += await ReviewBeltAsync(api, belt); break;
@@ -684,41 +680,52 @@ public static class BeltUiTests
 
     // Faixa TOOLS-DEV-PIPE: pipeline de 10 passos por enunciado via /Chat/Stream.
     // Fetch com skip sem internet (não falha o teste, só registra).
-    private static async Task<int> ToolsDevPipeBeltAsync(HttpClient api, Belt belt)
+    private static async Task<int> ToolsDevPipeBeltAsync(HttpClient api, IBrowserContext context, string web, Belt belt)
     {
+        // Dirige a UI como o usuário: a sessão nasce na página e o stream pinta
+        // as bolhas ao vivo nela (via API a lista só aparece no F5, com o stream morto).
+        var page = await context.NewPageAsync();
         try
         {
+            await page.GotoAsync(web + "/Chat");
+            await page.WaitForSelectorAsync("#conv, #prompt, select#agentId", new PageWaitForSelectorOptions { Timeout = 15000 });
+            // Agente 3 (Build GPU) no combo, como o usuário faria (dispara o Calibrando...).
+            await page.EvaluateAsync<string>(@"() => {
+              const sel = document.getElementById('agentId');
+              sel.value = '3'; sel.dispatchEvent(new Event('change'));
+              return sel.value;
+            }");
+            await page.ClickAsync("#newSession");
+            await page.WaitForFunctionAsync("() => { try { return !!localStorage.getItem('bridgeSessionId'); } catch { return false; } }", null, new PageWaitForFunctionOptions { Timeout = 15000 });
+            string sidRaw = await page.EvaluateAsync<string>("() => localStorage.getItem('bridgeSessionId')");
+            int sessionId = int.Parse(sidRaw);
+            Console.WriteLine($"[ui] {belt.Key}: sessao {sessionId} aberta na UI, enviando enunciado");
             string token = await ApiAfTokenAsync(api);
-            using (var sres = await ApiPostAsync(api, "Chat/Sessions",
-                JsonSerializer.Serialize(new { agentId = 3, executorAgentId = (int?)null, title = belt.Title + " Tools" }), token))
+            using (var ares = await ApiPostAsync(api, $"Chat/Sessions/{sessionId}/AutoApprove",
+                JsonSerializer.Serialize(new { auto = true }), token))
+                ares.EnsureSuccessStatusCode();
+            // 9B Build único: desacopla o executor que o servidor pendura sozinho.
+            using (var xreq = new HttpRequestMessage(HttpMethod.Put, $"Chat/Sessions/{sessionId}/Executor"))
             {
-                sres.EnsureSuccessStatusCode();
-                using var sdoc = JsonDocument.Parse(await sres.Content.ReadAsStringAsync());
-                int sessionId = sdoc.RootElement.GetProperty("id").GetInt32();
-                using (var ares = await ApiPostAsync(api, $"Chat/Sessions/{sessionId}/AutoApprove",
-                    JsonSerializer.Serialize(new { auto = true }), token))
-                    ares.EnsureSuccessStatusCode();
+                xreq.Content = JsonContent.Create(new { executorAgentId = (int?)null });
+                if (!string.IsNullOrEmpty(token)) xreq.Headers.Add("RequestVerificationToken", token);
+                using var xres = await api.SendAsync(xreq);
+                xres.EnsureSuccessStatusCode();
+            }
 
-                using var req = new HttpRequestMessage(HttpMethod.Post, "Chat/Stream");
-                if (!string.IsNullOrEmpty(token)) req.Headers.Add("RequestVerificationToken", token);
-                req.Content = JsonContent.Create(new
-                {
-                    sessionId,
-                    agentId = 3,
-                    messages = new[] { new { role = "user", content = belt.Prompt } },
-                });
-                req.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
-                using var resp = await api.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
-                resp.EnsureSuccessStatusCode();
-                using var reader = new System.IO.StreamReader(await resp.Content.ReadAsStreamAsync());
-                bool done = false;
-                string? line;
-                var deadline = DateTime.UtcNow.AddMinutes(Math.Max(20, belt.TimeoutMin));
-                while (DateTime.UtcNow < deadline && (line = await reader.ReadLineAsync()) is not null)
-                {
-                    if (!line.StartsWith("data: ")) continue;
-                    if (line[6..].Trim() == "[DONE]") { done = true; break; }
-                }
+            await page.FillAsync("#prompt", belt.Prompt);
+            await page.ClickAsync("#send");
+            // Aguarda o stream terminar na própria página (botão volta a ENVIAR).
+            bool done = false;
+            var sendStart = DateTime.UtcNow;
+            var deadline = DateTime.UtcNow.AddMinutes(Math.Max(20, belt.TimeoutMin));
+            while (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(10000);
+                bool idle = false;
+                try { idle = await page.EvaluateAsync<bool>(@"() => document.getElementById('send')?.textContent?.includes('ENVIAR') ?? false"); } catch { }
+                if (idle && DateTime.UtcNow - sendStart > TimeSpan.FromSeconds(60)) { done = true; break; }
+            }
 
                 var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var toolOutputs = new List<(string Name, string Output)>();
@@ -751,7 +758,7 @@ public static class BeltUiTests
                 await File.WriteAllTextAsync($"/tmp/opencode/toolsdevpipe_{belt.Key}.txt", all + "\n---ASSISTANT---\n" + assistantText);
 
                 bool tools6 = new[] { "shell", "write", "edit", "read", "grep", "fetch" }.All(names.Contains);
-                int hashes = System.Text.RegularExpressions.Regex.Matches(all, @"\b[0-9a-f]{7,40}\b").Count;
+                int hashes = System.Text.RegularExpressions.Regex.Matches(all, @"(?m)^[0-9a-f]{7}\b").Count;
                 bool commits = hashes >= 2;
                 string txtPath = "";
                 try
@@ -761,8 +768,9 @@ public static class BeltUiTests
                         using (var cdoc = JsonDocument.Parse(await cres.Content.ReadAsStringAsync()))
                             txtPath = cdoc.RootElement.EnumerateArray()
                                 .Select(m => m.TryGetProperty("path", out var p) ? p.GetString() ?? "" : "")
-                                .FirstOrDefault(p => p.StartsWith("devpipe/", StringComparison.OrdinalIgnoreCase)
-                                    && p.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)) ?? "";
+                                .Select(p => p.StartsWith("./") ? p[2..] : p)
+                                .FirstOrDefault(p => System.Text.RegularExpressions.Regex.IsMatch(p,
+                                    @"^devpipe-test-[^/]+/[^/]+\.txt$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) ?? "";
                 }
                 catch { }
                 bool txtOk = false;
@@ -788,12 +796,13 @@ public static class BeltUiTests
                     || fetchOut.Contains("error", StringComparison.OrdinalIgnoreCase)
                     || assistantText.Contains("sem internet", StringComparison.OrdinalIgnoreCase);
                 bool fetchSkipped = !climaOk && netError;
-                bool zipOk = all.Contains("devpipe.zip") && (all.Contains("Archive") || all.Contains("adding"));
+                bool zipOk = System.Text.RegularExpressions.Regex.IsMatch(all, @"devpipe-test-[\w\-]+\.zip")
+                    && (all.Contains("Archive") || all.Contains("adding"));
                 bool ok = done && tools6 && commits && txtOk && zipOk && (climaOk || fetchSkipped);
                 string rate = await SessionTpsAsync(api, sessionId);
                 Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: done={done} tools6={tools6} commits={commits} txt={txtOk} clima={(climaOk ? "ok" : fetchSkipped ? "skip-no-internet" : "FAIL")} zip={zipOk} {rate} (sessao {sessionId})");
+                // Sessão fica na lista como nas belts (página aberta p/ inspeção).
                 return ok ? 0 : 1;
-            }
         }
         catch (Exception ex)
         {

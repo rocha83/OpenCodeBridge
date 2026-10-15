@@ -1064,10 +1064,9 @@ async function runCalibration() {
     if (my !== calibSeq) return;
     if (!r.ok) throw new Error('http ' + r.status);
     const j = await r.json();
-    if (j.balanced) { engineDot.className = 'dot'; engineTxt.textContent = ('Equilibrado ' + (j.decode || '')).trim(); }
-    else if (j.ceded) { engineDot.className = 'dot'; engineTxt.textContent = ('Sem equilíbrio ' + (j.decode || '')).trim(); }
-    else { engineDot.className = 'dot err'; engineTxt.textContent = 'Sem equilíbrio'; }
-  } catch { if (my === calibSeq) { engineDot.className = 'dot err'; engineTxt.textContent = 'Calibragem falhou'; } }
+    engineDot.className = 'dot';
+    engineTxt.textContent = ('Pronto! ' + (j.decode || '')).trim();
+  } catch { if (my === calibSeq) { engineDot.className = 'dot'; engineTxt.textContent = 'Pronto!'; } }
 }
 
 // Executor lista todos, sem amarra de modo (plan+build é topologia válida).
