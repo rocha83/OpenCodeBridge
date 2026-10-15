@@ -61,6 +61,7 @@ internal static class Program
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.DiagnosticsTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ResponsesBypassTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.SessionTaskPanelTests.Run();
+            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ReadToolHandlerTests.Run();
             IntegrationCrud().GetAwaiter().GetResult();
         }
         if (!unitsOnly && !skipIntegration)
