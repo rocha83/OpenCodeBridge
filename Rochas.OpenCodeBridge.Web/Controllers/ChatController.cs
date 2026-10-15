@@ -129,6 +129,92 @@ public sealed class ChatController(
         }
     }
 
+    public sealed class CalibrateRequest
+    {
+        public int AgentId { get; set; }
+    }
+
+    // Calibragem básica invisível ao selecionar o modelo: ping + corretivo
+    // ("não repita...") + reforço ("ritmo correto..."), histórico efêmero
+    // (sem sessão/DB/SSE) e thinking off forçado no warmup (evita o vazamento
+    // de thinking que esvazia o content nos pequenos).
+    [HttpPost("/Chat/Calibrate")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Calibrate([FromBody] CalibrateRequest req, CancellationToken ct)
+    {
+        var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.AgentId);
+        if (agent is null || !agent.Active) return NotFound();
+        var history = new JsonArray();
+        var rates = new List<double>();
+        string? prev = null;
+        int attempts = 0;
+        bool Healthy(string t)
+        {
+            t = (t ?? "").Trim();
+            if (t.Length > 120) return true;
+            if (t.Length == 0) return false;
+            if (prev is not null && string.Equals(prev, t, StringComparison.Ordinal)) return false;
+            if (t.Contains("Como posso ajudar", StringComparison.OrdinalIgnoreCase)
+                || t.Contains("Encerrarei agora em silêncio", StringComparison.OrdinalIgnoreCase)
+                || t.Contains("Encerrando a conversa", StringComparison.OrdinalIgnoreCase)
+                || t.Contains("Boa noite", StringComparison.OrdinalIgnoreCase)) return false;
+            return true;
+        }
+        async Task<string> Ask(string prompt)
+        {
+            attempts++;
+            history.Add(new JsonObject { ["role"] = "user", ["content"] = prompt });
+            try
+            {
+                var client = http.CreateClient();
+                var body = new JsonObject
+                {
+                    ["model"] = agent.Model,
+                    ["messages"] = (JsonArray)history.DeepClone(),
+                    ["temperature"] = agent.Temperature,
+                    ["max_tokens"] = 256,
+                    ["stream"] = false,
+                    ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = false },
+                };
+                using var res = await client.PostAsync(agent.BridgeUrl.TrimEnd('/') + "/v1/chat/completions",
+                    new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json"), ct);
+                res.EnsureSuccessStatusCode();
+                var json = System.Text.Json.Nodes.JsonNode.Parse(await res.Content.ReadAsStringAsync(ct));
+                string text = json?["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
+                try
+                {
+                    if (json?["timings"]?["predicted_per_second"]?.GetValue<double>() is double r && r > 0)
+                        rates.Add(r);
+                }
+                catch { }
+                history.Add(new JsonObject { ["role"] = "assistant", ["content"] = text });
+                prev = text.Trim();
+                return prev;
+            }
+            catch
+            {
+                history.Add(new JsonObject { ["role"] = "assistant", ["content"] = "" });
+                return "";
+            }
+        }
+        string[] fixes =
+        [
+            "não repita. Responda só com ok.",
+            "não repita, mude de abordagem: você está repetindo saudação. Responda só com ok.",
+            "não repita. Pare de saudar/despedir, não explique, responda só com ok.",
+        ];
+        string t = await Ask("boa noite");
+        int f = 0;
+        while (!Healthy(t) && f < fixes.Length)
+            t = await Ask(fixes[f++]);
+        bool ceded = Healthy(t);
+        bool balanced = false;
+        if (ceded)
+            balanced = Healthy(await Ask("muito bem, você sossegou e está melhorando. Esse é o ritmo correto, busque o equilíbrio e responda só com ok-1."));
+        string decode = rates.Count > 0 ? $"{rates.Average():F1} tok/s" : "";
+        return Json(new { ceded, balanced, attempts, decode });
+    }
+
     // ---- Sessions CRUD ----
 
     // Datas UTC com designador Z (o SQLite devolve Unspecified; sem Z o browser lê como local).

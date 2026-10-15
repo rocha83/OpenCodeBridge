@@ -56,6 +56,8 @@ internal static class Program
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ToolsCoercionTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ConfirmGateTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ChatterGuardTests.Run();
+            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.CalibrationProbeTests.Run();
+            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.TopicsSweepTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.DiagnosticsTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ResponsesBypassTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.SessionTaskPanelTests.Run();
@@ -74,6 +76,10 @@ internal static class Program
             Failures += Ui.LiveLoopTests.RunAsync(web).GetAwaiter().GetResult();
         if (args.Contains("--ui-behavior"))
             Failures += Ui.ChatBehaviorTests.RunAsync(web).GetAwaiter().GetResult();
+        if (args.Contains("--calib-live"))
+            Failures += Integration.CalibrationLiveTests.RunAsync().GetAwaiter().GetResult();
+        if (args.Contains("--topics-live"))
+            Failures += Integration.TopicsLiveTests.RunAsync().GetAwaiter().GetResult();
 
         Console.WriteLine(Failures == 0 ? "[test] PASS" : $"[test] FAIL={Failures}");
         return Failures == 0 ? 0 : 1;

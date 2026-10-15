@@ -47,13 +47,26 @@ public static class BeltUiTests
         // Cognitivo standalone: plano completo em texto puro, sem citar segmentacao.
         new("preta-alone", "Faixa PRETA-ALONE",
             PretaAlonePrompt, 5, 30),
-        // Uso real de tools, standalone: agente Build sem executor (regra do front).
         new("tools-full", "Faixa TOOLS-FULL",
             "Navegue até https://example.com com a tool fetch e anote o conteúdo de referência. " +
             "Depois, usando as tools, crie um repositório git novo em tooltest/ dentro do workspace, " +
             "crie antes a subpasta tooltest/docs, escreva o resumo da referência e o plano em " +
             "tooltest/docs/plano.md e faça o commit inicial (configure user.name e user.email locais do " +
             "repo se preciso). Faça tudo você mesmo com as suas tools, sem delegar. Diálogo em pt-br.",
+            0, 30),
+        // Pipeline de tools por enunciado (10 passos: subpasta, git, write, commit,
+        // edit, commit, read, grep, edit, fetch clima SP, append, zip).
+        new("tools-dev-pipe", "Faixa TOOLS-DEV-PIPE",
+            "Crie a subpasta devpipe/ no seu workspace e inicialize um repositório git dentro dela " +
+            "(configure user.name e user.email locais do repo). Crie um arquivo de nome aleatório " +
+            "devpipe/devpipe-XXXX.txt (XXXX em letras minúsculas aleatórias) com o conteúdo exato 'A' " +
+            "e faça o primeiro commit. Depois edite o arquivo para o conteúdo 'ABC' e faça o segundo commit. " +
+            "Abra o arquivo com a tool read, procure a letra 'B' com a tool grep, troque 'B' por 'W' com a " +
+            "tool edit e salve. Busque o clima de hoje em São Paulo na internet com a tool fetch " +
+            "(https://wttr.in/Sao+Paulo?format=3; se der erro de rede, diga 'sem internet' e siga) e " +
+            "acrescente ao final do arquivo, salve. Depois compacte a pasta em devpipe.zip via shell. " +
+            "Ao final rode git log --oneline e unzip -l devpipe.zip e mostre as saídas. Faça tudo você " +
+            "mesmo com as suas tools, sem delegar. Diálogo em pt-br.",
             0, 30),
     };
 
@@ -153,6 +166,7 @@ public static class BeltUiTests
                         break;
                     }
                     case "toolsfull": failures += await ToolsFullBeltAsync(api, belt); break;
+                    case "toolsdevpipe": failures += await ToolsDevPipeBeltAsync(api, belt); break;
                     case "reviewplan": failures += await ReviewPlanAsync(api, belt); break;
                     case "execute": failures += await ExecuteBeltAsync(api, belt); break;
                     case "review": failures += await ReviewBeltAsync(api, belt); break;
@@ -618,8 +632,168 @@ public static class BeltUiTests
             bool toolsUi = outputs.Contains("executado com sucesso") || outputs.Contains("criado");
             bool planOk = outputs.Contains("plano.md");
             bool ok = done && toolsUi && calls >= 4 && planOk;
-            Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: done={done} toolsUi={toolsUi} calls={calls} plano.md={planOk} (sessao {sessionId}, {file})");
+            string rate = await SessionTpsAsync(api, sessionId);
+            Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: done={done} toolsUi={toolsUi} calls={calls} plano.md={planOk} {rate} (sessao {sessionId}, {file})");
             return ok ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ui] FAIL {belt.Key}: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+            return 1;
+        }
+    }
+
+    // Tps da última bolha do agente (persistido pela Web: completionTokens/streamMs).
+    private static async Task<string> SessionTpsAsync(HttpClient api, int sessionId)
+    {
+        try
+        {
+            using var res = await api.GetAsync($"Chat/Sessions/{sessionId}/Messages?limit=200");
+            if (!res.IsSuccessStatusCode) return "";
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+            var last = doc.RootElement.EnumerateArray().LastOrDefault(m =>
+                m.TryGetProperty("role", out var r) && r.GetString() == "assistant"
+                && m.TryGetProperty("tps", out var t) && t.ValueKind == JsonValueKind.Number);
+            if (last.ValueKind == JsonValueKind.Undefined) return "";
+            return $"{last.GetProperty("tps").GetDouble():F1} tok/s";
+        }
+        catch { return ""; }
+    }
+
+    // Token antiforgery fresco da sessão autenticada (anônimo pós-login não vale).
+    private static async Task<string> ApiAfTokenAsync(HttpClient api)
+    {
+        try
+        {
+            string html = await api.GetStringAsync("Chat");
+            var m = System.Text.RegularExpressions.Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
+            return m.Success ? m.Groups[1].Value : "";
+        }
+        catch { return ""; }
+    }
+
+    private static async Task<HttpResponseMessage> ApiPostAsync(HttpClient api, string path, string body, string token)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+        };
+        if (!string.IsNullOrEmpty(token)) req.Headers.Add("RequestVerificationToken", token);
+        return await api.SendAsync(req);
+    }
+
+    // Faixa TOOLS-DEV-PIPE: pipeline de 10 passos por enunciado via /Chat/Stream.
+    // Fetch com skip sem internet (não falha o teste, só registra).
+    private static async Task<int> ToolsDevPipeBeltAsync(HttpClient api, Belt belt)
+    {
+        try
+        {
+            string token = await ApiAfTokenAsync(api);
+            using (var sres = await ApiPostAsync(api, "Chat/Sessions",
+                JsonSerializer.Serialize(new { agentId = 3, executorAgentId = (int?)null, title = belt.Title + " Tools" }), token))
+            {
+                sres.EnsureSuccessStatusCode();
+                using var sdoc = JsonDocument.Parse(await sres.Content.ReadAsStringAsync());
+                int sessionId = sdoc.RootElement.GetProperty("id").GetInt32();
+                using (var ares = await ApiPostAsync(api, $"Chat/Sessions/{sessionId}/AutoApprove",
+                    JsonSerializer.Serialize(new { auto = true }), token))
+                    ares.EnsureSuccessStatusCode();
+
+                using var req = new HttpRequestMessage(HttpMethod.Post, "Chat/Stream");
+                if (!string.IsNullOrEmpty(token)) req.Headers.Add("RequestVerificationToken", token);
+                req.Content = JsonContent.Create(new
+                {
+                    sessionId,
+                    agentId = 3,
+                    messages = new[] { new { role = "user", content = belt.Prompt } },
+                });
+                req.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+                using var resp = await api.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+                resp.EnsureSuccessStatusCode();
+                using var reader = new System.IO.StreamReader(await resp.Content.ReadAsStreamAsync());
+                bool done = false;
+                string? line;
+                var deadline = DateTime.UtcNow.AddMinutes(Math.Max(20, belt.TimeoutMin));
+                while (DateTime.UtcNow < deadline && (line = await reader.ReadLineAsync()) is not null)
+                {
+                    if (!line.StartsWith("data: ")) continue;
+                    if (line[6..].Trim() == "[DONE]") { done = true; break; }
+                }
+
+                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var toolOutputs = new List<(string Name, string Output)>();
+                try
+                {
+                    using var tres = await api.GetAsync($"Chat/Sessions/{sessionId}/ToolCalls?limit=500");
+                    if (tres.IsSuccessStatusCode)
+                        using (var tdoc = JsonDocument.Parse(await tres.Content.ReadAsStringAsync()))
+                            foreach (var e in tdoc.RootElement.EnumerateArray())
+                            {
+                                string n = e.TryGetProperty("name", out var nn) ? nn.GetString() ?? "?" : "?";
+                                string o = e.TryGetProperty("output", out var oo) ? oo.GetString() ?? "" : "";
+                                names.Add(n);
+                                toolOutputs.Add((n, o));
+                            }
+                }
+                catch { }
+                string all = string.Join("\n", toolOutputs.Select(t => t.Output));
+                string assistantText = "";
+                try
+                {
+                    using var mres = await api.GetAsync($"Chat/Sessions/{sessionId}/Messages?limit=200");
+                    if (mres.IsSuccessStatusCode)
+                        using (var mdoc = JsonDocument.Parse(await mres.Content.ReadAsStringAsync()))
+                            assistantText = string.Join("\n", mdoc.RootElement.EnumerateArray()
+                                .Where(m => m.TryGetProperty("role", out var r) && r.GetString() == "assistant")
+                                .Select(m => m.TryGetProperty("content", out var c) ? c.GetString() ?? "" : ""));
+                }
+                catch { }
+                await File.WriteAllTextAsync($"/tmp/opencode/toolsdevpipe_{belt.Key}.txt", all + "\n---ASSISTANT---\n" + assistantText);
+
+                bool tools6 = new[] { "shell", "write", "edit", "read", "grep", "fetch" }.All(names.Contains);
+                int hashes = System.Text.RegularExpressions.Regex.Matches(all, @"\b[0-9a-f]{7,40}\b").Count;
+                bool commits = hashes >= 2;
+                string txtPath = "";
+                try
+                {
+                    using var cres = await api.GetAsync($"Chat/Sessions/{sessionId}/ChangedFiles");
+                    if (cres.IsSuccessStatusCode)
+                        using (var cdoc = JsonDocument.Parse(await cres.Content.ReadAsStringAsync()))
+                            txtPath = cdoc.RootElement.EnumerateArray()
+                                .Select(m => m.TryGetProperty("path", out var p) ? p.GetString() ?? "" : "")
+                                .FirstOrDefault(p => p.StartsWith("devpipe/", StringComparison.OrdinalIgnoreCase)
+                                    && p.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)) ?? "";
+                }
+                catch { }
+                bool txtOk = false;
+                if (txtPath != "")
+                {
+                    try
+                    {
+                        using var fres = await api.GetAsync($"Chat/Sessions/{sessionId}/File?path={Uri.EscapeDataString(txtPath)}");
+                        if (fres.IsSuccessStatusCode)
+                            using (var fdoc = JsonDocument.Parse(await fres.Content.ReadAsStringAsync()))
+                            {
+                                string content = fdoc.RootElement.TryGetProperty("content", out var cc) ? cc.GetString() ?? "" : "";
+                                txtOk = content.Contains("AWC");
+                            }
+                    }
+                    catch { }
+                }
+                string fetchOut = string.Join("\n", toolOutputs.Where(t => t.Name.Equals("fetch", StringComparison.OrdinalIgnoreCase)).Select(t => t.Output));
+                string hay = all + "\n" + assistantText;
+                bool climaOk = hay.Contains("°C") || hay.Contains("São Paulo") || hay.Contains("Sao Paulo");
+                bool netError = fetchOut.Contains("Could not", StringComparison.OrdinalIgnoreCase)
+                    || fetchOut.Contains("Failed", StringComparison.OrdinalIgnoreCase)
+                    || fetchOut.Contains("error", StringComparison.OrdinalIgnoreCase)
+                    || assistantText.Contains("sem internet", StringComparison.OrdinalIgnoreCase);
+                bool fetchSkipped = !climaOk && netError;
+                bool zipOk = all.Contains("devpipe.zip") && (all.Contains("Archive") || all.Contains("adding"));
+                bool ok = done && tools6 && commits && txtOk && zipOk && (climaOk || fetchSkipped);
+                string rate = await SessionTpsAsync(api, sessionId);
+                Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: done={done} tools6={tools6} commits={commits} txt={txtOk} clima={(climaOk ? "ok" : fetchSkipped ? "skip-no-internet" : "FAIL")} zip={zipOk} {rate} (sessao {sessionId})");
+                return ok ? 0 : 1;
+            }
         }
         catch (Exception ex)
         {

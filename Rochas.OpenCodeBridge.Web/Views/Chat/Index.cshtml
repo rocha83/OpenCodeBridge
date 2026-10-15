@@ -1049,7 +1049,26 @@ function msgItem(role, think, body, ts, tools, ms, tps, status) {
   return li;
 }
 
-agentSel.onchange = () => { currentAgentId = +agentSel.value; filterExecutors(); checkEngine(); };
+agentSel.onchange = () => { currentAgentId = +agentSel.value; filterExecutors(); checkEngine(); runCalibration(); };
+
+// Calibragem invisível ao selecionar o modelo: luz amarela "Calibrando..."
+// enquanto o servidor sossega o delírio; nada pinta bolha nem grava sessão.
+let calibSeq = 0;
+async function runCalibration() {
+  const my = ++calibSeq;
+  const id = +agentSel.value || 0;
+  if (!id) return;
+  engineDot.className = 'dot calib blink'; engineTxt.textContent = 'Calibrando...';
+  try {
+    const r = await fetch('/Chat/Calibrate', { method: 'POST', headers: afHeaders(), body: JSON.stringify({ agentId: id }) });
+    if (my !== calibSeq) return;
+    if (!r.ok) throw new Error('http ' + r.status);
+    const j = await r.json();
+    if (j.balanced) { engineDot.className = 'dot'; engineTxt.textContent = ('Equilibrado ' + (j.decode || '')).trim(); }
+    else if (j.ceded) { engineDot.className = 'dot'; engineTxt.textContent = ('Sem equilíbrio ' + (j.decode || '')).trim(); }
+    else { engineDot.className = 'dot err'; engineTxt.textContent = 'Sem equilíbrio'; }
+  } catch { if (my === calibSeq) { engineDot.className = 'dot err'; engineTxt.textContent = 'Calibragem falhou'; } }
+}
 
 // Executor lista todos, sem amarra de modo (plan+build é topologia válida).
 function orchMode() {
@@ -1440,6 +1459,7 @@ let initPromise = (async () => {
   Tracer.info('ui:init', 'iniciando');
   await loadSessions();
   checkEngine();
+  runCalibration();
   if (!currentSessionId) {
     const r = await fetch('/Chat/Sessions');
     const list = await r.json();

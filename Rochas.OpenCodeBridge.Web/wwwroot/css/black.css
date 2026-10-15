@@ -140,6 +140,7 @@ html, body {
 }
 .dot.blink { animation: blink 1s steps(1) infinite; }
 .dot.err { background: #f44747; box-shadow: 0 0 8px #f44747; animation: none; }
+.dot.calib { background: #ffc107; box-shadow: 0 0 8px #ffc107; }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* Caret "digitando" */

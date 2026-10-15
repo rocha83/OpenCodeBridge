@@ -99,6 +99,7 @@ internal static class ChatIntegrationTests
         Check(await AbortKeepsMessageThenResume(), "I-chat-abort-resume");
         Check(await ClientLogAcceptsBatch(), "I-chat-clientlog");
         Check(await PingEngine(), "I-chat-ping-engine");
+        Check(await CalibrateEndpoint(), "I-chat-calibrate");
         Check(await DiagnosticsEndpoint(), "I-chat-diagnostics");
         Check(await ToolProgressEvents(), "I-chat-tool-progress");
 
@@ -108,7 +109,7 @@ internal static class ChatIntegrationTests
             try { await JDelete($"{WebBase}/Chat/Sessions/{sid}"); } catch { }
         }
 
-        Console.WriteLine($"=== Chat Integration: {9 - Failures}/9 PASS, {Failures} FAIL ===");
+        Console.WriteLine($"=== Chat Integration: {10 - Failures}/10 PASS, {Failures} FAIL ===");
     }
 
     private static void Check(bool ok, string name)
@@ -306,6 +307,25 @@ internal static class ChatIntegrationTests
     {
         var resp = await Http.GetFromJsonAsync<JsonObject>($"{WebBase}/Chat/Ping?agentId=1");
         return resp?["ok"]?.GetValue<bool>() == true;
+    }
+
+    // Calibragem invisível: 404 p/ agente inexistente; 200 + cedeu p/ o build real.
+    private static async Task<bool> CalibrateEndpoint()
+    {
+        var bad = await JPost($"{WebBase}/Chat/Calibrate", new { agentId = 999999 });
+        if (bad.StatusCode != System.Net.HttpStatusCode.NotFound) return false;
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(6));
+        var req = new HttpRequestMessage(HttpMethod.Post, $"{WebBase}/Chat/Calibrate")
+        {
+            Content = JsonContent.Create(new { agentId = 1 })
+        };
+        if (!string.IsNullOrEmpty(AfToken)) req.Headers.Add("RequestVerificationToken", AfToken);
+        var resp = await Http.SendAsync(req, cts.Token);
+        if (!resp.IsSuccessStatusCode) return false;
+        var j = await resp.Content.ReadFromJsonAsync<JsonObject>(cts.Token);
+        bool ceded = j?["ceded"]?.GetValue<bool>() == true;
+        Console.WriteLine($"[calibrate] ceded={j?["ceded"]} balanced={j?["balanced"]} attempts={j?["attempts"]} decode={j?["decode"]}");
+        return ceded;
     }
 
     private static async Task<bool> DiagnosticsEndpoint()
