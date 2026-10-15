@@ -1142,3 +1142,50 @@
 - llama CPU `:4110` fixado em slot unico: `-c 16384 -np 1 -t/-tb >=2 -ngl 0` (CPU puro) em `start-llama-cpu.sh`, unit `llama-cpu.service` e desktop; prova na `:4111` com `n_slots=1, n_ctx_slot=16384` e inferencia "ok" (~11 tok/s CPU puro). `:4110` ativo ainda com 2 slots: reiniciar pelo icone aplica a nova config.
 - Web: `ContextWindow` parametrizavel via appsettings `ContextWindow` (`CpuContextTokens 16384`, `CpuMaxOutputTokens 4096`, `CpuMaxInputTokens 12288`, `GpuMaxInputTokens 229376`); `BridgeHelper.ChatAsync` default `8192->4096` (8k estourava o ctx 16k do 4B).
 - Prompts canonicos (base Build) replicados em opencode `plan/build/orch.md`; atomic agent tem prompt unico nao-editavel (segue o do Build) + `completionMaxTokens 8192->4096` na linha CPU; fonte em `AGENTS-PROMPTS.md` (secao Canonicos). `opencode.v2.json` 4B `32768/8192->16384/4096`.
+
+## Sim/Não sem bolha + anti-espiral + Q4 262k (2026-10-15)
+- **Causa da sessão 19** (gate não disparou p/ `write /tmp/aprovado.txt`):
+  `ApprovedBy` usava `Contains` — "aprovado" no nome do arquivo virou aval.
+  Agora: regex por aval com fronteira de palavra + `PathNoise` remove
+  caminho/arquivo antes de procurar (`/tmp/aprovado.txt`, `aprovado.txt`
+  não valem; "aprovado!", "pode fazer." valem). `NeedsConfirmation`
+  case-insensitive ("Write" também pede aval).
+- **Aval por tool, fixo na sessão** (`ConfirmGate.Allowed`, chave
+  `sessão:slot`; família shell = 1 slot): Sim ou "pode fazer" libera a tool
+  dali em diante; Não/timeout nega só a call. `ClearSession` p/ limpeza.
+- **Checkbox "Aprovar uso de ferramentas automaticamente"** abaixo da caixa
+  de mensagem: flag `sessions.auto_approve` (migração `EnsureColumn`),
+  `UpdateAutoApproveAsync`, `POST /Chat/Sessions/{id}/AutoApprove`,
+  `ConfirmGateAsync` libera tudo com flag on; UI sincroniza ao trocar de
+  sessão e desmarca em sessão nova.
+- **Card em minúsculo por categoria** (`ConfirmGate.Label/AskFor`, campo
+  `label` no SSE `tool_confirm`): "o agente está tentando escrever em
+  arquivos, você permite?" (push = "enviar código (git push)").
+- **Anti-espiral (`ChatterGuard`)**: anti-giro só pegava turnos de LEITURA;
+  o loop boa-noite/encerrando era prosa sem tools. `Note(texto, nCalls)`:
+  3 curtos (≤120 chars) sem tools, ou texto igual 2x, encerra com
+  `StopNote` honesta (entra no DONE ao vivo como `giroAbort`).
+- **Coação com allowlist (corta o combustível do loop)**: o `echo`
+  alucinado (`{"name":"echo",...}`) virava call de verdade → erro "tool
+  desconhecida" → desculpa → loop. Web `TryBuildCall`: exige lista
+  anunciada (`known`, canoniza caixa/apelido bash→shell) ou catálogo real.
+  Bridge `TryAddTextCall`: mesma regra, mas allowlist = tools anunciadas
+  NO REQUEST (`AnnouncedTools`, chat ou responses) — tool custom do harness
+  (ex. `soma`) continua passando; sem anunciadas, catálogo.
+- **Falso-culpado descartado**: 2 integrações falhando (`stream-sse`,
+  `tool-progress`) não eram código — `:4100` servia Coder-14B (sem
+  thinking; teste exige `reasoning_content`, agente 1 não executava `ls`
+  útil). Com o 9B de volta, 9/9 verdes sem tocar no código.
+- **Modelo**: `:4100` = `Qwen_Qwen3.5-9B-Q4_K_M.gguf` (volume externo,
+  sem espaço p/ cópia local) `-c 262144`, `--repeat-penalty 1.15`,
+  `llama-gpu.service` parada (brigava pela porta; spec dela era Q8 160k).
+  Thinking `off` nos 6 agentes 9B da Web (propagado via
+  `chat_template_kwargs.enable_thinking`; velocidade). `coder-direct` no
+  `opencode.json`: ctx `61440->262144`.
+- **Testes**: Web 281 PASS units + 18/18 integração; novos:
+  `ConfirmGateTests` (39: gate, armadilha aprovado.txt, sticky, labels),
+  `ChatterGuardTests` (16), `HallucinatedNameSkipped` (8),
+  `AutoApprove` no `SessionsCrud` + `SessionServiceTests`, `--ui-live`
+  (`LiveLoopTests`: piloto Playwright com modelo real — saudação + Sim).
+  `ToolExecutorTests.GlobAbsoluteOutside` tolerante a volume travado
+  (sonda gravável + ramo jail nega fora de /media|/mnt).

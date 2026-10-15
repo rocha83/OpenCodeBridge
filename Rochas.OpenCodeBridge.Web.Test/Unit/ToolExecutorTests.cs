@@ -146,11 +146,28 @@ internal static class ToolExecutorTests
         Check(okBashN.Success || okBashN.Error.Contains("run.sh"), "U-gate-bashn-validation");
     }
 
+    // Primeira base gravável (sonda com escrita real; volume externo vive travando).
+    private static string WritableBase(params string[] candidates)
+    {
+        foreach (var c in candidates)
+        {
+            try
+            {
+                string probe = System.IO.Path.Combine(c, $"probe-{System.Guid.NewGuid():N}");
+                System.IO.Directory.CreateDirectory(probe);
+                System.IO.Directory.Delete(probe);
+                return c;
+            }
+            catch { }
+        }
+        return candidates[^1];
+    }
+
     private static void GlobAbsoluteOutside()
     {
         // Fora do workspace: absoluto (sem cadeia "../../.."); dentro: relativo.
-        // Base no volume de dados (gravável; /media direto é root).
-        string wsbase = "/media/mint/3686C649614854E6";
+        // Base no volume de dados (gravável); cai p/ temp se o volume travar.
+        string wsbase = WritableBase("/media/mint/3686C649614854E6", System.IO.Path.GetTempPath());
         string ws = System.IO.Path.Combine(wsbase, $"globws-{System.Guid.NewGuid():N}");
         string other = System.IO.Path.Combine(wsbase, $"globout-{System.Guid.NewGuid():N}");
         System.IO.Directory.CreateDirectory(ws);
@@ -161,7 +178,12 @@ internal static class ToolExecutorTests
             var h = new GlobToolHandler();
             var r = h.Handle("{\"pattern\": \"*.txt\", \"path\": \"" + other + "\"}",
                 new ToolContext { WorkspaceRoot = ws, TimeoutSeconds = 30 });
-            Check(r.Success && r.Output.StartsWith(other), "U-glob-absolute-outside");
+            // Absoluto fora do workspace só resolve sob /media ou /mnt
+            // (WorkspaceGuard); fora dali o jail nega — ambos comportamentos ok.
+            bool extra = other.StartsWith("/media/", StringComparison.Ordinal)
+                || other.StartsWith("/mnt/", StringComparison.Ordinal);
+            Check(extra ? (r.Success && r.Output.StartsWith(other))
+                : (!r.Success && r.Error.Contains("fora do workspace")), "U-glob-absolute-outside");
             var r2 = h.Handle("{\"pattern\": \"*.txt\", \"path\": \".\"}",
                 new ToolContext { WorkspaceRoot = other, TimeoutSeconds = 30 });
             Check(r2.Success && !r2.Output.StartsWith("/"), "U-glob-relative-inside");

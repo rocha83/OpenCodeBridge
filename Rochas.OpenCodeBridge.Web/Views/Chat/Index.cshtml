@@ -61,6 +61,10 @@
             <div data-mdb-input-init class="form-outline mb-3">
               <textarea class="form-control bg-body-tertiary rounded-3" id="prompt" rows="4"></textarea>
             </div>
+            <div class="form-check mb-3">
+              <input class="form-check-input" type="checkbox" id="autoApprove">
+              <label class="form-check-label small text-white-50" for="autoApprove">Aprovar uso de ferramentas automaticamente</label>
+            </div>
           </li>
           <button type="button" data-mdb-button-init data-mdb-ripple-init class="btn btn-info float-end" id="send">ENVIAR</button>
         </ul>
@@ -349,8 +353,10 @@ function toolsOwnerBody(sub) {
 // Delegação externa (subagent sem id: o card ainda não existe) ancora no
 // grupo do agente: sucesso não despeja o resultado (o card já mostra);
 // falha sem card mostra o motivo (timeout/recusa ficavam invisíveis).
-function toolConfirm(name, result, args) {
-  // Card âmbar de confirmação: ação mutante aguardando "pode fazer" no chat.
+function toolConfirm(name, result, args, approveId, label) {
+  // Card âmbar com Sim/Nao: o clique aprova sem mensagem na bolha.
+  // Rótulo amigável da categoria ("Escrever em arquivos"); nome técnico
+  // fica pequeno no detalhe (o usuário decide pelo rótulo).
   const body = toolsOwnerBody(null);
   if (!body) return;
   const g = ensureToolsGroup(body);
@@ -361,8 +367,27 @@ function toolConfirm(name, result, args) {
   d.dataset.tool = name;
   d.setAttribute('open', '');
   const a = (args || '').replace(/\s+/g, ' ').trim().slice(0, 160);
-  d.innerHTML = `<summary class="small text-warning">🔒 Aguardando confirmação: ${esc(name)}${a ? ' ' + esc(a) : ''} — digite <b>pode fazer</b> no chat</summary>`
-    + `<div class="small text-muted">${esc(result || '')}</div>`;
+  const lbl = (label || '').trim() || name;
+  d.innerHTML = `<summary class="small text-warning">🔒 O agente está tentando <b>${esc(lbl)}</b>, você permite?</summary>`
+    + `<div class="small text-muted">${esc(name)}${a ? ' ' + esc(a) : ''}</div>`
+    + `<div class="mt-1 d-flex gap-2"><button class="btn btn-sm btn-success" data-ap="1">Sim</button>`
+    + `<button class="btn btn-sm btn-outline-danger" data-ap="0">Não</button>`
+    + `<span class="small text-muted">ou digite <b>pode fazer</b> no chat</span></div>`;
+  const done = (txt) => {
+    d.querySelectorAll('button').forEach(b => b.disabled = true);
+    const s = document.createElement('div');
+    s.className = 'small text-muted';
+    s.textContent = txt;
+    d.appendChild(s);
+  };
+  d.querySelectorAll('button').forEach(b => b.addEventListener('click', async () => {
+    const approved = b.dataset.ap === '1';
+    try {
+      await fetch('/Chat/Approve', { method: 'POST', headers: afHeaders(),
+        body: JSON.stringify({ sessionId: currentSessionId, approveId: approveId, approved: approved }) });
+    } catch { /* timeout do loop decide */ }
+    done(approved ? 'Aprovado — executando…' : 'Negado pelo usuário.');
+  }));
   list.appendChild(d);
   bumpToolsCount(g);
 }
@@ -588,6 +613,7 @@ async function selectSession(id, agentId, executorAgentId) {
   execSel.value = currentExecutorId ?? '';
   await loadMessages(id);
   await loadSessions();
+  await syncAutoApprove(id);
   checkEngine();
   updateCtxDonut();
   loadScripts(id);
@@ -918,6 +944,7 @@ async function createSession() {
   Tracer.session(s.id);
   try { localStorage.setItem('bridgeSessionId', String(s.id)); } catch {}
   try { document.getElementById('prompt').value = ''; } catch {}
+  try { const aa = document.getElementById('autoApprove'); if (aa) aa.checked = false; } catch {}
   currentAgentId = s.agentId;
   agentSel.value = s.agentId;
   currentExecutorId = s.executorAgentId ?? null;
@@ -1082,6 +1109,33 @@ execSel.onchange = async () => {
   }
   await loadSessions();
 };
+
+// Checkbox "aprovar tools sozinho": flag da sessão (default off; nova sessão desmarca).
+async function syncAutoApprove(id) {
+  const el = document.getElementById('autoApprove');
+  if (!el) return;
+  try {
+    const r = await fetch(`/Chat/Sessions/${id}`);
+    if (!r.ok) { el.checked = false; return; }
+    const s = await r.json();
+    el.checked = !!s.autoApprove;
+  } catch { el.checked = false; }
+}
+
+document.getElementById('autoApprove')?.addEventListener('change', async (e) => {
+  const el = e.target;
+  if (!currentSessionId) return;
+  try {
+    const r = await fetch(`/Chat/Sessions/${currentSessionId}/AutoApprove`, {
+      method: 'POST', headers: afHeaders(),
+      body: JSON.stringify({ auto: el.checked })
+    });
+    if (!r.ok) throw new Error('http ' + r.status);
+  } catch {
+    el.checked = !el.checked;
+    showToast('Falha ao salvar aprovação automática.', 'warning');
+  }
+});
 
 async function checkEngine() {
   try {
@@ -1257,7 +1311,7 @@ document.getElementById('send').onclick = async () => {
               toolStatus(evt.name, true, null, '', 0, evt.args || '', evt.sub || null);
             }
             else if (evt.progress === 'tool_done') toolStatus(evt.name, false, evt.ok, evt.result || '', evt.ms || 0, '', evt.sub || null);
-            else if (evt.progress === 'tool_confirm') toolConfirm(evt.name, evt.result || '', evt.args || '');
+            else if (evt.progress === 'tool_confirm') toolConfirm(evt.name, evt.result || '', evt.args || '', evt.approveId || 0, evt.label || '');
             else if (evt.progress === 'sub_chunk') subChunk(evt.sub, evt.kind, evt.text || '');
             else if (evt.progress === 'sub_start') subPlaceholder(subPromptOf(evt.args));
             continue;

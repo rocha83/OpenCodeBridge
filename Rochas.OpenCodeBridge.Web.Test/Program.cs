@@ -54,6 +54,8 @@ internal static class Program
             UnitSessionService().GetAwaiter().GetResult();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ToolExecutorTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ToolsCoercionTests.Run();
+            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ConfirmGateTests.Run();
+            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ChatterGuardTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.DiagnosticsTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ResponsesBypassTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.SessionTaskPanelTests.Run();
@@ -68,6 +70,8 @@ internal static class Program
             Failures += Ui.BeltUiTests.RunAsync(web, belts.ToArray(), mode, phase).GetAwaiter().GetResult();
         if (args.Contains("--simple"))
             Failures += Ui.SimpleHelloTests.RunAsync(web).GetAwaiter().GetResult();
+        if (args.Contains("--ui-live"))
+            Failures += Ui.LiveLoopTests.RunAsync(web).GetAwaiter().GetResult();
         if (args.Contains("--ui-behavior"))
             Failures += Ui.ChatBehaviorTests.RunAsync(web).GetAwaiter().GetResult();
 

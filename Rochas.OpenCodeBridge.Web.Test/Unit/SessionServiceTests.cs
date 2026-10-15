@@ -50,6 +50,7 @@ internal static class SessionServiceTests
             await GetAsync(svc, testUserId);
             await UpdateTitleAsync(svc);
             await UpdateAgentAsync(svc);
+            await AutoApproveAsync(svc);
             await DeleteAsync(svc, testUserId);
             await GetMessagesAsync(svc, testUserId, testAgentId);
             await AddMessageAsync(svc, testUserId, testAgentId);
@@ -127,6 +128,22 @@ internal static class SessionServiceTests
             await s.UpdateAgentAsync(id, execId);
             var updated = await s.GetAsync(id, 1);
             Check(updated?.AgentId == execId, "UpdateAgentAsync works");
+        }
+    }
+
+    private static async Task AutoApproveAsync(SessionService s)
+    {
+        var list = await new GenericRepository<Session>(DatabaseEngine.SQLite, AppDb.ConnectionString).Query(new Session { UserId = 1 });
+        var first = list.FirstOrDefault();
+        if (first?.Id is int id)
+        {
+            Check(first.AutoApprove == false, "AutoApprove default off");
+            await s.UpdateAutoApproveAsync(id, true);
+            var on = await s.GetAsync(id, 1);
+            Check(on?.AutoApprove == true, "UpdateAutoApproveAsync on");
+            await s.UpdateAutoApproveAsync(id, false);
+            var off = await s.GetAsync(id, 1);
+            Check(off?.AutoApprove == false, "UpdateAutoApproveAsync off");
         }
     }
 

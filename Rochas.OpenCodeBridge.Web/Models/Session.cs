@@ -24,6 +24,10 @@ public sealed class Session
     [Filterable]
     public string Title { get; set; } = "";
 
+    // Aprova tools mutantes sem perguntar (checkbox da UI; padrão desligado).
+    [Column("auto_approve")]
+    public bool AutoApprove { get; set; }
+
     [Column("created_at")]
     [RangeFilter(LinkedRangeProperty = "CreatedAte")]
     public DateTime CreatedAt { get; set; }

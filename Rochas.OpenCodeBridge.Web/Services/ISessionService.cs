@@ -11,6 +11,7 @@ public interface ISessionService
     Task UpdateTitleAsync(int sessionId, string title);
     Task UpdateAgentAsync(int sessionId, int agentId);
     Task UpdateExecutorAsync(int sessionId, int? executorAgentId);
+    Task UpdateAutoApproveAsync(int sessionId, bool auto);
     Task DeleteAsync(int sessionId, int userId);
     Task<List<SessionMessage>> GetMessagesAsync(int sessionId, int limit = 50);
     // Retorna o id inserido (vínculo tool->bolha). statusId nulo deriva do papel (user=1, demais=2).

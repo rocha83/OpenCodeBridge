@@ -20,6 +20,19 @@ public static class ToolsCoercion
 {
     public const int MaxCalls = 8;
 
+    // Catálogo real (fallback quando o chamador não informa knownTools):
+    // nome alucinado (echo, etc.) nunca vira call — fica como prosa e não
+    // alimenta o ciclo erro->desculpa->loop do modelo.
+    private static readonly HashSet<string> Catalog = new(StringComparer.OrdinalIgnoreCase)
+        { "shell", "read", "grep", "glob", "fetch", "git", "subagent", "write", "edit" };
+
+    // Apelidos da família shell que o modelo emite (canonizam p/ "shell").
+    private static string CanonAlias(string name) => name.Trim().ToLowerInvariant() switch
+    {
+        "bash" or "sh" or "exec" or "proc" => "shell",
+        _ => name.Trim(),
+    };
+
     public static bool IsDeepSeek(string? model) =>
         !string.IsNullOrWhiteSpace(model) &&
         model.Contains("deepseek", StringComparison.OrdinalIgnoreCase);
@@ -64,11 +77,11 @@ public static class ToolsCoercion
             cleaned = Regex.Replace(text, @"\n{3,}", "\n\n").Trim();
             return calls;
         }
-        text = ExtractHermes(text, calls);
-        if (calls.Count < MaxCalls) text = ExtractToolsPlural(text, calls);
-        if (calls.Count < MaxCalls) text = ExtractFunction(text, calls);
+        text = ExtractHermes(text, calls, known);
+        if (calls.Count < MaxCalls) text = ExtractToolsPlural(text, calls, known);
+        if (calls.Count < MaxCalls) text = ExtractFunction(text, calls, known);
         if (calls.Count < MaxCalls) text = ExtractJsonFences(text, calls, known);
-        if (calls.Count < MaxCalls) text = ExtractV3Tokens(text, calls);
+        if (calls.Count < MaxCalls) text = ExtractV3Tokens(text, calls, known);
         if (calls.Count < MaxCalls) text = ExtractXml(text, calls, known);
 
         if (calls.Count > 0)
@@ -76,18 +89,18 @@ public static class ToolsCoercion
         return calls;
     }
 
-    private static string ExtractHermes(string text, List<BridgeHelper.ToolCall> calls)
+    private static string ExtractHermes(string text, List<BridgeHelper.ToolCall> calls, List<string>? known)
     {
         foreach (Match m in Regex.Matches(text, @"<tool_call>\s*(\{.*?\})\s*</tool_call>",
                      RegexOptions.Singleline | RegexOptions.IgnoreCase))
         {
             if (calls.Count >= MaxCalls) break;
-            if (TryBuildCall(m.Groups[1].Value, calls)) text = text.Replace(m.Value, "\n");
+            if (TryBuildCall(m.Groups[1].Value, calls, known)) text = text.Replace(m.Value, "\n");
         }
         return text;
     }
 
-    private static string ExtractToolsPlural(string text, List<BridgeHelper.ToolCall> calls)
+    private static string ExtractToolsPlural(string text, List<BridgeHelper.ToolCall> calls, List<string>? known)
     {
         // Qwen2.5-Coder via llama: embrulha no plural <tools>{...}</tools>
         // (o template poe as assinaturas em <tools> e o modelo ecoa o wrapper).
@@ -95,19 +108,19 @@ public static class ToolsCoercion
                      RegexOptions.Singleline | RegexOptions.IgnoreCase))
         {
             if (calls.Count >= MaxCalls) break;
-            if (TryBuildCall(m.Groups[1].Value, calls)) text = text.Replace(m.Value, "\n");
+            if (TryBuildCall(m.Groups[1].Value, calls, known)) text = text.Replace(m.Value, "\n");
         }
         return text;
     }
 
-    private static string ExtractFunction(string text, List<BridgeHelper.ToolCall> calls)
+    private static string ExtractFunction(string text, List<BridgeHelper.ToolCall> calls, List<string>? known)
     {
         // Qwen2.5-Coder com choice required: <function>{...}</function>.
         foreach (Match m in Regex.Matches(text, @"<function>\s*(\{.*?\})\s*</function>",
                      RegexOptions.Singleline | RegexOptions.IgnoreCase))
         {
             if (calls.Count >= MaxCalls) break;
-            if (TryBuildCall(m.Groups[1].Value, calls)) text = text.Replace(m.Value, "\n");
+            if (TryBuildCall(m.Groups[1].Value, calls, known)) text = text.Replace(m.Value, "\n");
         }
         return text;
     }
@@ -120,7 +133,7 @@ public static class ToolsCoercion
             if (calls.Count >= MaxCalls) break;
             string body = m.Groups[1].Value.Trim();
             if (!body.StartsWith("{")) continue;
-            if (TryBuildCall(body, calls)) { text = text.Replace(m.Value, "\n"); continue; }
+            if (TryBuildCall(body, calls, known)) { text = text.Replace(m.Value, "\n"); continue; }
             // Variante sem "name": {"<tool>": {...args...}} (chave única = tool).
             if (known is not null && known.Count > 0)
             {
@@ -142,7 +155,7 @@ public static class ToolsCoercion
         return text;
     }
 
-    private static string ExtractV3Tokens(string text, List<BridgeHelper.ToolCall> calls)
+    private static string ExtractV3Tokens(string text, List<BridgeHelper.ToolCall> calls, List<string>? known)
     {
         // <｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>nome\n```json\nargs\n```<｜tool▁call▁end｜>...<｜tool▁calls▁end｜>
         foreach (Match outer in Regex.Matches(text, "<｜tool▁calls▁begin｜>(.*?)<｜tool▁calls▁end｜>",
@@ -157,7 +170,7 @@ public static class ToolsCoercion
                 if (calls.Count >= MaxCalls) break;
                 string name = inner.Groups["name"].Value.Trim();
                 string args = inner.Groups["args"].Value.Trim();
-                if (TryBuildCall($"{{\"name\": {JsonQuote(name)}, \"arguments\": {(StartsJson(args) ? args : JsonQuote(args))}}}", calls))
+                if (TryBuildCall($"{{\"name\": {JsonQuote(name)}, \"arguments\": {(StartsJson(args) ? args : JsonQuote(args))}}}", calls, known))
                     any = true;
             }
             if (any) text = text.Replace(outer.Value, "\n");
@@ -200,7 +213,7 @@ public static class ToolsCoercion
 
     private static JsonSerializerOptions JsonRelaxed() => RelaxedJson;
 
-    private static bool TryBuildCall(string json, List<BridgeHelper.ToolCall> calls)
+    private static bool TryBuildCall(string json, List<BridgeHelper.ToolCall> calls, List<string>? known)
     {        JsonObject? obj;
         try { obj = JsonNode.Parse(json)?.AsObject(); }
         catch { return false; }
@@ -216,13 +229,22 @@ public static class ToolsCoercion
             name = name["default.".Length..];
         var argsNode = obj["arguments"] ?? obj["parameters"];
         if (!IsValidName(name)) return false;
+        // Allowlist: com lista anunciada exige igualdade (canoniza a caixa);
+        // sem lista, exige o catálogo real. Alucinada (echo) volta false e o
+        // trecho fica como prosa (não vira call, não gera erro em loop).
+        string trimmed = CanonAlias(name);
+        string canonical = known is { Count: > 0 }
+            ? known.FirstOrDefault(k => k.Equals(trimmed, StringComparison.OrdinalIgnoreCase)
+                || (CanonAlias(k) == "shell" && trimmed == "shell")) ?? ""
+            : Catalog.Contains(trimmed) ? trimmed : "";
+        if (canonical.Length == 0) return false;
         string args = argsNode switch
         {
             null => "{}",
             JsonValue v when v.GetValueKind() == System.Text.Json.JsonValueKind.String => v.GetValue<string>(),
             _ => argsNode.ToJsonString(JsonRelaxed()),
         };
-        calls.Add(new BridgeHelper.ToolCall($"dsq-{calls.Count}", name.Trim(), args));
+        calls.Add(new BridgeHelper.ToolCall($"dsq-{calls.Count}", canonical, args));
         return true;
     }
 

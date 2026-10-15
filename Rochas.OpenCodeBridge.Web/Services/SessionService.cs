@@ -99,6 +99,12 @@ public sealed class SessionService(
         await UpdateSessionAsync(sessionId, s => { s.ExecutorAgentId = executorAgentId; s.UpdatedAt = stamp; });
     }
 
+    public async Task UpdateAutoApproveAsync(int sessionId, bool auto)
+    {
+        var stamp = System.DateTime.UtcNow;
+        await UpdateSessionAsync(sessionId, s => { s.AutoApprove = auto; s.UpdatedAt = stamp; });
+    }
+
     public async Task DeleteAsync(int sessionId, int userId)
     {
         var s = await GetAsync(sessionId, userId);

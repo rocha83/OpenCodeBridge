@@ -172,6 +172,16 @@ internal static class ChatIntegrationTests
         var putAgentResp = await JPut($"{WebBase}/Chat/Sessions/{id}/Agent", new { agentId = 2 });
         if (!putAgentResp.IsSuccessStatusCode) return false;
 
+        // AutoApprove: default off, liga, confere no GET, desliga.
+        var got0 = await Http.GetFromJsonAsync<JsonObject>($"{WebBase}/Chat/Sessions/{id}");
+        if (got0?["autoApprove"]?.GetValue<bool>() != false) return false;
+        var autoOn = await JPost($"{WebBase}/Chat/Sessions/{id}/AutoApprove", new { auto = true });
+        if (!autoOn.IsSuccessStatusCode) return false;
+        var got1 = await Http.GetFromJsonAsync<JsonObject>($"{WebBase}/Chat/Sessions/{id}");
+        if (got1?["autoApprove"]?.GetValue<bool>() != true) return false;
+        var autoOff = await JPost($"{WebBase}/Chat/Sessions/{id}/AutoApprove", new { auto = false });
+        if (!autoOff.IsSuccessStatusCode) return false;
+
         // Delete
         var delResp = await JDelete($"{WebBase}/Chat/Sessions/{id}");
         if (!delResp.IsSuccessStatusCode) return false;

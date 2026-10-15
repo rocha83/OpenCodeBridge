@@ -141,7 +141,7 @@ public sealed class ChatController(
         try
         {
         var list = await sessionService.GetByUserAsync(CurrentUserId);
-        return Json(list.Select(s => new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, CreatedAt = Utc(s.CreatedAt), UpdatedAt = Utc(s.UpdatedAt) }));
+        return Json(list.Select(s => new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, AutoApprove = s.AutoApprove, CreatedAt = Utc(s.CreatedAt), UpdatedAt = Utc(s.UpdatedAt) }));
         }
         catch (Exception ex) { try { telemetry.RegisterError(ex); } catch { } return Json(new object[0]); }
     }
@@ -173,7 +173,7 @@ public sealed class ChatController(
         }
         var title = string.IsNullOrWhiteSpace(req.Title) ? "Nova sessão" : req.Title;
         var s = await sessionService.CreateAsync(CurrentUserId, req.AgentId, title, execId);
-        return Json(new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, CreatedAt = Utc(s.CreatedAt) });
+        return Json(new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, AutoApprove = s.AutoApprove, CreatedAt = Utc(s.CreatedAt) });
     }
 
     [HttpGet("/Chat/Sessions/{id:int}")]
@@ -181,7 +181,23 @@ public sealed class ChatController(
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
-        return Json(new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, CreatedAt = Utc(s.CreatedAt), UpdatedAt = Utc(s.UpdatedAt) });
+        return Json(new { s.Id, s.AgentId, s.ExecutorAgentId, s.Title, AutoApprove = s.AutoApprove, CreatedAt = Utc(s.CreatedAt), UpdatedAt = Utc(s.UpdatedAt) });
+    }
+
+    public sealed class AutoApproveRequest
+    {
+        public bool Auto { get; set; }
+    }
+
+    // POST /Chat/Sessions/{id}/AutoApprove - checkbox "aprovar tools sozinho".
+    [HttpPost("/Chat/Sessions/{id:int}/AutoApprove")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetAutoApprove(int id, [FromBody] AutoApproveRequest req)
+    {
+        var s = await sessionService.GetAsync(id, CurrentUserId);
+        if (s is null) return NotFound();
+        await sessionService.UpdateAutoApproveAsync(id, req.Auto);
+        return Json(new { success = true, auto = req.Auto });
     }
 
     [HttpGet("/Chat/Sessions/{id:int}/Messages")]
@@ -882,6 +898,10 @@ public sealed class ChatController(
         int idleTurns = 0, giroFixes = 0, repeatSig = 0;
         string lastToolSig = "";
         bool giroAbort = false;
+        // Corta-espiral de prosa (loop boa-noite/encerrando): turnos curtos
+        // sem tools, ou texto igual 2x, encerram com nota honesta.
+        var chatter = new Services.ChatterGuard();
+        bool chatterAbort = false;
         // Vínculo tool->bolha: ids de tools gravadas sem mensagem dona (turno sem
         // texto ou internas de sub cujo card falhou) vão p/ a mensagem final.
         var unlinkedToolIds = new List<int>();
@@ -1286,14 +1306,9 @@ public sealed class ChatController(
                     }
                     : null;
                 // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
-                Services.ToolResult? execResult = null;
-                if (Services.ConfirmGate.NeedsConfirmation(name, args)
-                    && !Services.ConfirmGate.ApprovedBy(Services.ConfirmGate.LastUserText(messages)))
-                {
-                    execResult = Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
-                    await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args);
-                }
-                var result = execResult ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
+                var gateDeny = await ConfirmGateAsync(outputStream, name, args,
+                    Services.ConfirmGate.LastUserText(messages), session?.Id, session?.AutoApprove == true, ct);
+                var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
                 toolExecutor.LogInnerAsync = null;
@@ -1349,6 +1364,14 @@ public sealed class ChatController(
                 }
             }
 
+            // Corta-espiral de prosa (loop boa-noite/encerrando): 3 turnos curtos
+            // sem tools, ou texto igual 2x, encerra com nota honesta.
+            if (chatter.Note(turnText, toolCalls.Count))
+            {
+                chatterAbort = true;
+                break;
+            }
+
             // Reseta para próxima iteração
             assistantContent.Clear();
             assistantThinking.Clear();
@@ -1368,6 +1391,12 @@ public sealed class ChatController(
         {
             assistantContent.Clear();
             assistantContent.Append("Interrompido por giro em leitura: o agente navegou sem produzir texto nem delegar após 2 correções automáticas.");
+            assistantThinking.Clear();
+        }
+        if (chatterAbort)
+        {
+            assistantContent.Clear();
+            assistantContent.Append(Services.ChatterGuard.StopNote);
             assistantThinking.Clear();
         }
         string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
@@ -1406,7 +1435,7 @@ public sealed class ChatController(
         // Sempre tenta entregar (cliente abortado só ignora).
         try
         {
-            if (silentClose || giroAbort)
+            if (silentClose || giroAbort || chatterAbort)
             {
                 // Fechamento silencioso também digita na bolha ao vivo.
                 var fb = new JsonObject
@@ -1752,14 +1781,9 @@ public sealed class ChatController(
                     }
                     : null;
                 // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
-                Services.ToolResult? execResult = null;
-                if (Services.ConfirmGate.NeedsConfirmation(name, args)
-                    && !Services.ConfirmGate.ApprovedBy(Services.ConfirmGate.LastUserInputText(input)))
-                {
-                    execResult = Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
-                    await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args);
-                }
-                var result = execResult ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
+                var gateDeny = await ConfirmGateAsync(outputStream, name, args,
+                    Services.ConfirmGate.LastUserInputText(input), session?.Id, session?.AutoApprove == true, ct);
+                var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
                 toolExecutor.LogInnerAsync = null;
@@ -1938,14 +1962,16 @@ public sealed class ChatController(
     }
 
     // Evento de progresso ao cliente (a UI mostra "Executando [tool]..." / details com retorno).
-    private static async Task WriteProgressAsync(System.IO.Stream output, string stage, string name, bool? ok, CancellationToken ct, string result = "", long ms = 0, string sub = "", string args = "")
+    private static async Task WriteProgressAsync(System.IO.Stream output, string stage, string name, bool? ok, CancellationToken ct, string result = "", long ms = 0, string sub = "", string args = "", int approveId = 0, string label = "")
     {
         var evt = new JsonObject { ["progress"] = stage, ["name"] = name };
+        if (!string.IsNullOrEmpty(label)) evt["label"] = label;
         if (!string.IsNullOrEmpty(sub)) evt["sub"] = sub;
         if (ok.HasValue) evt["ok"] = ok.Value;
         if (ms > 0) evt["ms"] = ms;
         if (!string.IsNullOrEmpty(result)) evt["result"] = result;
         if (!string.IsNullOrEmpty(args)) evt["args"] = args.Length > 4000 ? args[..4000] : args;
+        if (approveId > 0) evt["approveId"] = approveId;
         var bytes = Encoding.UTF8.GetBytes("data: " + evt.ToJsonString() + "\n\n");
         await output.WriteAsync(bytes, ct);
         await output.FlushAsync(ct);
@@ -1962,6 +1988,49 @@ public sealed class ChatController(
         var bytes = Encoding.UTF8.GetBytes("data: " + evt.ToJsonString() + "\n\n");
         await output.WriteAsync(bytes, ct);
         await output.FlushAsync(ct);
+    }
+
+    // Portao de confirmacao com espera: null = pode executar; Fail = nega.
+    // Aval e por tool, fixo na sessao: Sim ou "pode fazer" libera a tool
+    // dali em diante (sem re-perguntar); Nao/timeout nega so a call atual.
+    // Checkbox da sessao (autoApprove) libera tudo sem perguntar.
+    private static async Task<Services.ToolResult?> ConfirmGateAsync(System.IO.Stream outputStream,
+        string name, string args, string? lastUser, int? sessionId, bool autoApprove, CancellationToken ct)
+    {
+        if (autoApprove) return null;
+        if (!Services.ConfirmGate.NeedsConfirmation(name, args)) return null;
+        if (sessionId is int sidSeen && Services.ConfirmGate.IsAllowed(sidSeen, name)) return null;
+        if (Services.ConfirmGate.ApprovedBy(lastUser))
+        {
+            if (sessionId is int sidTyped) Services.ConfirmGate.Allow(sidTyped, name);
+            return null;
+        }
+        if (sessionId is not int sid)
+        {
+            await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args, 0, Services.ConfirmGate.Label(name, args));
+            return Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
+        }
+        int approveId = Services.ConfirmGate.NextId();
+        await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args, approveId, Services.ConfirmGate.Label(name, args));
+        bool ok = await Services.ConfirmGate.WaitAsync(sid, approveId, ct);
+        if (ok) Services.ConfirmGate.Allow(sid, name);
+        return ok ? null : Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
+    }
+
+    // POST /Chat/Approve - Resolve pendencia Sim/Nao (sem mensagem na bolha).
+    [HttpPost("/Chat/Approve")]
+    [ValidateAntiForgeryToken]
+    public IActionResult Approve([FromBody] ApproveRequest request)
+    {
+        bool ok = Services.ConfirmGate.Answer(request.SessionId, request.ApproveId, request.Approved);
+        return Json(new { success = ok });
+    }
+
+    public sealed class ApproveRequest
+    {
+        public int SessionId { get; set; }
+        public int ApproveId { get; set; }
+        public bool Approved { get; set; }
     }
 
     // POST /Chat/Tool - Executa tool no servidor

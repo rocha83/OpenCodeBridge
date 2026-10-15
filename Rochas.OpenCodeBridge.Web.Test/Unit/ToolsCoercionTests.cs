@@ -30,6 +30,7 @@ internal static class ToolsCoercionTests
         CoderFunctionTag();
         EmptyInputs();
         BadNameSkipped();
+        HallucinatedNameSkipped();
         ChatTurnCoerces();
         ChatTurnKeepsStructured();
         XmlSingle();
@@ -128,9 +129,10 @@ internal static class ToolsCoercionTests
     private static void CoderToolsPlural()
     {
         // Qwen2.5-Coder via llama: wrapper plural <tools>{...}</tools>.
+        // Apelido bash canoniza p/ shell (mesmo slot do gate/executor).
         string content = "segue:\n<tools>\n{\"name\": \"bash\", \"arguments\": {\"command\": \"mkdir /tmp/t1\"}}\n</tools>";
         var calls = ToolsCoercion.Coerce("qwen3.5-9b", content, out string cleaned);
-        Check(calls.Count == 1 && calls[0].Name == "bash" && !cleaned.Contains("<tools>"), "U-dsq-coder-plural");
+        Check(calls.Count == 1 && calls[0].Name == "shell" && !cleaned.Contains("<tools>"), "U-dsq-coder-plural");
     }
 
     private static void CoderDefaultPrefix()
@@ -161,6 +163,41 @@ internal static class ToolsCoercionTests
         string content = "<tool_call>{\"name\": \"rm -rf /\", \"arguments\": {}}</tool_call>";
         var calls = ToolsCoercion.Coerce(DsModel, content, out _);
         Check(calls.Count == 0, "U-dsq-bad-name-skipped");
+    }
+
+    // Regressão do loop "boa noite/encerrando": nome alucinado (echo) nunca
+    // vira call — fica como prosa e não gera erro em loop. Vale p/ todos os
+    // formatos (hermes, plural, function, fence, bare).
+    private static void HallucinatedNameSkipped()
+    {
+        string echoArgs = "{\"message\": \"Repetição detectada. Encerrando.\"}";
+        var h = ToolsCoercion.Coerce(DsModel,
+            $"Boa noite! Como posso ajudar você hoje?<tool_call>{{\"name\": \"echo\", \"arguments\": {echoArgs}}}</tool_call>", out string cleanH);
+        Check(h.Count == 0, "U-dsq-echo-hermes-skipped");
+        Check(cleanH.Contains("Boa noite"), "U-dsq-echo-hermes-prosa");
+        var p = ToolsCoercion.Coerce(DsModel,
+            $"<tools>{{\"name\": \"echo\", \"arguments\": {echoArgs}}}</tools>", out _);
+        Check(p.Count == 0, "U-dsq-echo-plural-skipped");
+        var f = ToolsCoercion.Coerce(DsModel,
+            $"<function>{{\"name\": \"echo\", \"arguments\": {echoArgs}}}</function>", out _);
+        Check(f.Count == 0, "U-dsq-echo-function-skipped");
+        var fence = ToolsCoercion.Coerce(DsModel,
+            "```json\n{\"name\": \"echo\", \"arguments\": {\"message\": \"x\"}}\n```", out _);
+        Check(fence.Count == 0, "U-dsq-echo-fence-skipped");
+        // Com lista anunciada, nome fora dela também não passa (nem real).
+        var known = ToolsCoercion.Coerce(DsModel,
+            "<tool_call>{\"name\": \"write\", \"arguments\": {\"path\": \"a\"}}</tool_call>",
+            out _, new[] { "read", "glob" });
+        Check(known.Count == 0, "U-dsq-known-restricts");
+        // Real com caixa trocada canoniza p/ o anunciado.
+        var canon = ToolsCoercion.Coerce(DsModel,
+            "<tool_call>{\"name\": \"Write\", \"arguments\": {\"path\": \"a\"}}</tool_call>",
+            out _, new[] { "write", "read" });
+        Check(canon.Count == 1 && canon[0].Name == "write", "U-dsq-known-canon");
+        // Sem lista, catálogo real continua coagindo.
+        var cat = ToolsCoercion.Coerce(DsModel,
+            "<tool_call>{\"name\": \"write\", \"arguments\": {\"path\": \"a\"}}</tool_call>", out _);
+        Check(cat.Count == 1 && cat[0].Name == "write", "U-dsq-catalog-fallback");
     }
 
     // Integração (sem GPU): turno com SSE de texto deepseek vira Calls.

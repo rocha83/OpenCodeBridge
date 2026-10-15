@@ -200,20 +200,51 @@ internal static partial class Program
     // Coder com tool_choice required: <function>{...}</function> + flood de \n.
     static readonly Regex ReFunctionTag = new(@"<function>([\s\S]*?)</function>", RegexOptions.Compiled);
 
+    // Catálogo real de tools (+ apelidos shell -> shell): só estes nomes
+    // viram tool_call na coação; resto (echo alucinado) fica como prosa.
+    static readonly HashSet<string> RealTools = new(StringComparer.OrdinalIgnoreCase)
+        { "shell", "read", "grep", "glob", "fetch", "git", "subagent", "write", "edit" };
+    static string CanonToolAlias(string n) => n.Trim().ToLowerInvariant() switch
+    {
+        "bash" or "sh" or "exec" or "proc" => "shell",
+        _ => n.Trim(),
+    };
+
+    /// <summary>Nomes de tools anunciadas no pedido (chat ou responses).</summary>
+    static List<string> AnnouncedTools(JsonArray? tools)
+    {
+        var names = new List<string>();
+        if (tools is null) return names;
+        foreach (var t in tools)
+        {
+            var o = t?.AsObject();
+            string? n = o?["function"]?.AsObject()?["name"]?.GetValue<string>()
+                ?? o?["name"]?.GetValue<string>();
+            if (!string.IsNullOrWhiteSpace(n)) names.Add(n!);
+        }
+        return names;
+    }
+
+    static List<string> AnnouncedTools(string bodyJson)
+    {
+        try { return AnnouncedTools(JsonNode.Parse(bodyJson)?.AsObject()?["tools"]?.AsArray()); }
+        catch { return new List<string>(); }
+    }
+
     /// <summary>Extrai tool calls de texto (fenced JSON ou tags) p/ coercão.</summary>
-    static List<(string Name, string Arguments)> ExtractTextToolCalls(string content)
+    static List<(string Name, string Arguments)> ExtractTextToolCalls(string content, List<string>? known = null)
     {
         var list = new List<(string, string)>();
         if (string.IsNullOrEmpty(content)) return list;
-        foreach (Match m in ReToolTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
+        foreach (Match m in ReToolTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
         if (list.Count == 0)
-            foreach (Match m in ReToolsTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
+            foreach (Match m in ReToolsTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
         if (list.Count == 0)
-            foreach (Match m in ReFunctionTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
+            foreach (Match m in ReFunctionTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
         if (list.Count == 0)
-            foreach (Match m in ReFencedCall.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
+            foreach (Match m in ReFencedCall.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
         if (list.Count == 0)
-            foreach (string json in ExtractAngleCalls(content, false)) TryAddTextCall(json, list);
+            foreach (string json in ExtractAngleCalls(content, false)) TryAddTextCall(json, list, known);
         if (list.Count == 0)
         {
             // Ultimo recurso: resposta INTEIRA e um objeto {"name":..} cru
@@ -221,7 +252,7 @@ internal static partial class Program
             // confundir com codigo que mencione "name".
             string t = content.TrimStart();
             if (t.StartsWith("{\"name\"", StringComparison.Ordinal) && t.Contains("\"arguments\""))
-                foreach (string json in ExtractAngleCalls(t, true)) TryAddTextCall(json, list);
+                foreach (string json in ExtractAngleCalls(t, true)) TryAddTextCall(json, list, known);
         }
         return list;
     }
@@ -281,7 +312,7 @@ internal static partial class Program
         return false;
     }
 
-    static void TryAddTextCall(string json, List<(string Name, string Arguments)> list)
+    static void TryAddTextCall(string json, List<(string Name, string Arguments)> list, List<string>? known = null)
     {
         try
         {
@@ -293,7 +324,17 @@ internal static partial class Program
             // nomes simples; "default." nunca e tool valida — remove sem risco.
             if (name.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
                 name = name["default.".Length..];
-            list.Add((name, JsonToString(o["arguments"])));
+            // Allowlist: com anunciadas casa com elas (apelido shell conta
+            // como shell; custom do harness, ex. soma, passa); sem lista,
+            // exige o catálogo real. Alucinada (echo) não vira tool_call.
+            string canon = CanonToolAlias(name);
+            string emit = "";
+            if (known is { Count: > 0 })
+                emit = known.FirstOrDefault(k => CanonToolAlias(k) == canon) ?? "";
+            else if (RealTools.Contains(canon))
+                emit = canon;
+            if (emit.Length == 0) return;
+            list.Add((emit, JsonToString(o["arguments"])));
         }
         catch { /* texto que parece call mas nao parseia: ignora */ }
     }
@@ -712,7 +753,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHeadersRead);
         if (coerceLine && upstreamResponse.IsSuccessStatusCode)
         {
-            CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent);
+            CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent, AnnouncedTools(outBody));
             return;
         }
         ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
@@ -792,7 +833,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                     var root = JsonNode.Parse(json)?.AsObject();
                     if (root is not null)
                     {
-                        int n = CoerceChatCalls(root);
+                        int n = CoerceChatCalls(root, AnnouncedTools(outBody));
                         if (n > 0)
                         {
                             json = root.ToJsonString(SerOpts);
@@ -810,15 +851,16 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
 
     /// <summary>Coage pseudo-calls do texto em tool_calls nativas (ToolsCoercion); 0 = nada a fazer.</summary>
     /// <param name="root">Completion chat (mutado no lugar).</param>
+    /// <param name="known">Tools anunciadas no pedido (allowlist; vazio = catálogo).</param>
     /// <returns>No. de calls sintetizadas.</returns>
-    static int CoerceChatCalls(JsonObject root)
+    static int CoerceChatCalls(JsonObject root, List<string>? known = null)
     {
         try
         {
             var msg = root?["choices"]?.AsArray().FirstOrDefault()?["message"]?.AsObject();
             if (msg is null || msg["tool_calls"] is not null) return 0;
             string content = msg["content"]?.GetValue<string>() ?? "";
-            var calls = ExtractTextToolCalls(content);
+            var calls = ExtractTextToolCalls(content, known);
             if (calls.Count == 0) return 0;
             var arr = new JsonArray();
             foreach (var (Name, Arguments) in calls)
@@ -838,7 +880,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
     }
 
     /// <summary>Resposta chat sem parser server-side: coage texto em tool_calls e devolve JSON ou SSE sintetizado.</summary>
-    static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream, bool headersSent = false)
+    static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream, bool headersSent = false, List<string>? known = null)
     {
         string json;
         using (var reader = new StreamReader(upstreamResponse.Content.ReadAsStream(), new UTF8Encoding(false)))
@@ -849,7 +891,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             var root = JsonNode.Parse(json)?.AsObject();
             if (root is not null)
             {
-                coerced = CoerceChatCalls(root);
+                coerced = CoerceChatCalls(root, known);
                 if (coerced > 0) json = root.ToJsonString(SerOpts);
             }
         }
@@ -1796,7 +1838,8 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         // extrai do texto acumulado (coder/deepseek via llama). Nativo nao passa aqui.
         if (toolAccum.Count == 0 && (CoerceFor(requestedModel) || ReqHasTools(chat)))
         {
-            foreach (var (name, args) in ExtractTextToolCalls(contentText.ToString()))
+            var knownResp = AnnouncedTools(chat["tools"]?.AsArray());
+            foreach (var (name, args) in ExtractTextToolCalls(contentText.ToString(), knownResp))
                 toolAccum[toolAccum.Count] = ("call_" + NewId(), name, new StringBuilder(args));
         }
 

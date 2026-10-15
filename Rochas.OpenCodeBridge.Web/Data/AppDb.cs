@@ -80,6 +80,8 @@ public static class AppDb
         EnsureColumn(conn, "agents", "measured_tps", "ALTER TABLE agents ADD COLUMN measured_tps REAL NOT NULL DEFAULT 0;");
         // Migração: executor selecionado na sessão.
         EnsureColumn(conn, "sessions", "executor_agent_id", "ALTER TABLE sessions ADD COLUMN executor_agent_id INTEGER;");
+        // Migração: aprovar tools mutantes sem perguntar (checkbox por sessão).
+        EnsureColumn(conn, "sessions", "auto_approve", "ALTER TABLE sessions ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0;");
         // Migração: passado compactado (fora do contexto, visível no histórico).
         EnsureColumn(conn, "session_messages", "archived", "ALTER TABLE session_messages ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;");
         // Migração: vínculo tool->bolha (mensagem dona) + id do subagente dono.
