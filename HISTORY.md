@@ -1250,3 +1250,10 @@
   `--prio 0`; bridge `:4125` com `--max-tokens 16384` (saída 16k).
 - OOM registrado: 2 slots x 96k não coube no KV (faltou 2.7GB); 48k coube mas
   o dono fixou 64k/16k. `:4100` segue 1x 9B Q4 156k (`-np 1`, saída 32k).
+
+## VL no ar com vision provada (2026-10-15, ajuste de ctx)
+- `Qwen3-VL-4B Q3_K_M` + `mmproj Q8_0` subiu no `:4111` (`-np 2`, `--prio 0`).
+- OOM em 64k e 96k (KV 2 slots + 9B 156k residente); fixado `-c 32768` (32k):
+  VRAM 11.4/12.2GB, `/health ok`.
+- Prova: PNG 1x1 vermelho → "fundo vermelho sólido" correto, decode 60 tok/s.
+  Bridge `:4125` segue `--max-tokens 16384`.
