@@ -32,6 +32,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
+using Serilog;
+
 namespace Rochas.OpenCodeBridge;
 
 internal static partial class Program
@@ -54,15 +56,23 @@ internal static partial class Program
     static readonly string Version = "2.1";
     // Trava anti-loop no nivel da bridge: complementa QUALQUER system
     // prompt no final (Responses e chat), sem depender do agente.
-    static readonly string SystemGuardrail = "liste arquivos locais preferencialmente com as tools glob ou read, atentando-se ao modo de uso correto destas, e use navegacao web somente para enderecos externos, informando user agent Firefox no Windows 11 ao navegar via fetch ou curl; ao executar tools que resultem em erro, leia a mensagem de erro e adapte a proxima chamada, tentando no maximo mais 2 vezes, e sempre responde na lingua do usuario de forma concisa, porem e verboso na hora de declarar cada acao dentro do loop agentico";
+    static readonly string SystemGuardrail = "ao listar arquivos locais preferencialmente use as tools glob ou read, atentando-se ao modo de uso correto destas, e ao navegar na web use somente enderecos externos, informando user agent Firefox no Windows 11 ao navegar via fetch ou curl; ao executar tools que resultem em erro, leia a mensagem de erro e adapte a proxima chamada, tentando no maximo mais 2 vezes, e sempre responda na lingua do usuario, seja verboso apenas ao declarar acoes com tools dentro do loop agentico e em conversa simples sem tools responda em no maximo 2 frases; porem envie apenas uma vez a cada mensagem do usuario JAMAIS repita a mesma pergunta varias vezes; se o usuario nao respondeu siga com a melhor suposicao e declare a decisao tomada; FORMA DE USO DAS TOOLS (obrigatoria): catalogo — leitura: glob (lista por padrao), read (le arquivo), grep (busca regex), fetch (GET http somente-leitura), display (mostra na tela); edicao: write (grava/cria), edit (substitui trecho exato); execucao: shell (comando unico; pipes/redirecionamento via bash -c); git somente-leitura (status/log/diff; escrita via shell com cd + git); delegacao: subagent (uma fase por vez); use apenas as anunciadas no bloco # Tools, com os nomes exatos, sem nenhum prefixo (nunca default., nunca outro namespace); cada chamada vai sozinha em <tool_call>{\"name\": \"<nome-exato>\", \"arguments\": {<args>}}</tool_call>, sem prosa antes, dentro ou depois do bloco; uma tool por vez, depois aguarde o resultado para a proxima acao; utilize a tool echo apenas em composicao de scripts, NUNCA para enviar mensagens ao usuario";
 
     // Coerção texto->tool_calls p/ upstream sem parser server-side (llama.cpp
     // na CPU): extrai ```json{"name"..} ou <tool_call>..</tool_call> do content
     // e sintetiza tool_calls. Liga via --coerce-text-tools ou auto quando o
     // model contém "cpu". Qwen3/AWQ (parsers nativos) ficam intactos.
     static bool CoerceTextTools;
-    static bool CoerceFor(string modelId) => CoerceTextTools
-        || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false);
+    static bool AntiRepeat = true;                               // AntiRepeat: observa o thinking em stream e conteve repeticao
+    // Inibidor mestre do harness da bridge (--harness 0): com ele desligado a
+    // bridge vira tubo puro (sem sufixo guardrail, sem stop, sem pattern-strip,
+    // sem coercao, sem retry/aviso) — todo o conteudo vem do harness opencode.
+    static bool Harness = true;
+    static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
+    static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
+    static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida; quando informada a repeticao, nao responda mais nada, apenas encerre em silencio, obrigado.";
+    static bool CoerceFor(string modelId) => Harness && (CoerceTextTools
+        || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false));
 
     // Perfis por sufixo no model (ex.: openai/qwen3-8b-awq-plan): plan =
     // thinking ligado + temp alta p/ planejar; build = thinking fundido +
@@ -110,6 +120,12 @@ internal static partial class Program
             if (cfg["apiKey"]?.GetValue<string>() is string key && key.Length > 0) ApiKey = key;
             if (cfg["passthroughResponses"]?.GetValue<bool>() is bool pt) PassthroughResponses = pt;
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
+            if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
+            if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
+            if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
+            if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
+            if (cfg["diagnostic"]?.GetValue<bool>() is bool dg) Diagnostic = dg;
+            if (Environment.GetEnvironmentVariable("DIAGNOSTIC") is "1" or "true" or "True") Diagnostic = true;
             if (cfg["profiles"]?.AsObject() is JsonObject profs)
                 foreach (var kv in profs)
                 {
@@ -183,17 +199,57 @@ internal static partial class Program
     // o formato cru do 3B na CPU: <{"name": ..}}> (sem fences/tags).
     static readonly Regex ReFencedCall = new(@"```(?:json)?\s*(\{\s*""name""\s*:[\s\S]*?\})\s*```", RegexOptions.Compiled);
     static readonly Regex ReToolTag = new(@"<tool_call>([\s\S]*?)</tool_call(?:\|>)?", RegexOptions.Compiled);
+    // Coder/Hermes via llama: embrulha no plural <tools> (template poe as
+    // assinaturas em <tools> e o modelo ecoa o wrapper no lugar de <tool_call>).
+    static readonly Regex ReToolsTag = new(@"<tools>([\s\S]*?)</tools>", RegexOptions.Compiled);
+    // Coder com tool_choice required: <function>{...}</function> + flood de \n.
+    static readonly Regex ReFunctionTag = new(@"<function>([\s\S]*?)</function>", RegexOptions.Compiled);
+
+    // Catálogo real de tools (+ apelidos shell -> shell): só estes nomes
+    // viram tool_call na coação; resto (echo alucinado) fica como prosa.
+    static readonly HashSet<string> RealTools = new(StringComparer.OrdinalIgnoreCase)
+        { "shell", "read", "grep", "glob", "fetch", "git", "subagent", "write", "edit" };
+    static string CanonToolAlias(string n) => n.Trim().ToLowerInvariant() switch
+    {
+        "bash" or "sh" or "exec" or "proc" => "shell",
+        _ => n.Trim(),
+    };
+
+    /// <summary>Nomes de tools anunciadas no pedido (chat ou responses).</summary>
+    static List<string> AnnouncedTools(JsonArray? tools)
+    {
+        var names = new List<string>();
+        if (tools is null) return names;
+        foreach (var t in tools)
+        {
+            var o = t?.AsObject();
+            string? n = o?["function"]?.AsObject()?["name"]?.GetValue<string>()
+                ?? o?["name"]?.GetValue<string>();
+            if (!string.IsNullOrWhiteSpace(n)) names.Add(n!);
+        }
+        return names;
+    }
+
+    static List<string> AnnouncedTools(string bodyJson)
+    {
+        try { return AnnouncedTools(JsonNode.Parse(bodyJson)?.AsObject()?["tools"]?.AsArray()); }
+        catch { return new List<string>(); }
+    }
 
     /// <summary>Extrai tool calls de texto (fenced JSON ou tags) p/ coercão.</summary>
-    static List<(string Name, string Arguments)> ExtractTextToolCalls(string content)
+    static List<(string Name, string Arguments)> ExtractTextToolCalls(string content, List<string>? known = null)
     {
         var list = new List<(string, string)>();
         if (string.IsNullOrEmpty(content)) return list;
-        foreach (Match m in ReToolTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
+        foreach (Match m in ReToolTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
         if (list.Count == 0)
-            foreach (Match m in ReFencedCall.Matches(content)) TryAddTextCall(m.Groups[1].Value, list);
+            foreach (Match m in ReToolsTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
         if (list.Count == 0)
-            foreach (string json in ExtractAngleCalls(content, false)) TryAddTextCall(json, list);
+            foreach (Match m in ReFunctionTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
+        if (list.Count == 0)
+            foreach (Match m in ReFencedCall.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
+        if (list.Count == 0)
+            foreach (string json in ExtractAngleCalls(content, false)) TryAddTextCall(json, list, known);
         if (list.Count == 0)
         {
             // Ultimo recurso: resposta INTEIRA e um objeto {"name":..} cru
@@ -201,7 +257,7 @@ internal static partial class Program
             // confundir com codigo que mencione "name".
             string t = content.TrimStart();
             if (t.StartsWith("{\"name\"", StringComparison.Ordinal) && t.Contains("\"arguments\""))
-                foreach (string json in ExtractAngleCalls(t, true)) TryAddTextCall(json, list);
+                foreach (string json in ExtractAngleCalls(t, true)) TryAddTextCall(json, list, known);
         }
         return list;
     }
@@ -261,7 +317,7 @@ internal static partial class Program
         return false;
     }
 
-    static void TryAddTextCall(string json, List<(string Name, string Arguments)> list)
+    static void TryAddTextCall(string json, List<(string Name, string Arguments)> list, List<string>? known = null)
     {
         try
         {
@@ -269,7 +325,21 @@ internal static partial class Program
             if (o is null) return;
             string name = o["name"]?.GetValue<string>() ?? "";
             if (name.Length == 0) return;
-            list.Add((name, JsonToString(o["arguments"])));
+            // Prefixo alucinado do harness (default.shell): o registro usa
+            // nomes simples; "default." nunca e tool valida — remove sem risco.
+            if (name.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
+                name = name["default.".Length..];
+            // Allowlist: com anunciadas casa com elas (apelido shell conta
+            // como shell; custom do harness, ex. soma, passa); sem lista,
+            // exige o catálogo real. Alucinada (echo) não vira tool_call.
+            string canon = CanonToolAlias(name);
+            string emit = "";
+            if (known is { Count: > 0 })
+                emit = known.FirstOrDefault(k => CanonToolAlias(k) == canon) ?? "";
+            else if (RealTools.Contains(canon))
+                emit = canon;
+            if (emit.Length == 0) return;
+            list.Add((emit, JsonToString(o["arguments"])));
         }
         catch { /* texto que parece call mas nao parseia: ignora */ }
     }
@@ -285,6 +355,19 @@ internal static partial class Program
 
         LoadAppSettings();                                       // 1.1 arquivo (CLI vence)
         ParseArgs(cliArgs);                                        // 1.2 parse CLI
+        // Sonda Serilog: probe do AntiRepeat, SO com DIAGNOSTIC ligado
+        // (--diagnostic / appsettings diagnostic / env DIAGNOSTIC=1).
+        // Desligado = Serilog mudo; o JSONL do LogPath segue sempre ativo.
+        if (Diagnostic)
+            Serilog.Log.Logger = new Serilog.LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information,
+                    outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}")
+                .WriteTo.File("/tmp/bridge-sonda.log", rollingInterval: Serilog.RollingInterval.Day,
+                    retainedFileCountLimit: 7, restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Debug)
+                .CreateLogger();
+        Serilog.Log.Information("sonda diagnostic={Diagnostic} antiRepeat={AntiRepeat} window={Window}",
+            Diagnostic, AntiRepeat, AntiRepeatWindow);
         try
         {
             var logDir = Path.GetDirectoryName(LogPath);
@@ -332,6 +415,10 @@ internal static partial class Program
                 case "--api-key": ApiKey = cliArgs[i + 1]; break;
                 case "--passthrough-responses": PassthroughResponses = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
+                case "--diagnostic": Diagnostic = cliArgs[i + 1] is not "false" and not "0"; break;
             }
         }
     }
@@ -438,7 +525,7 @@ WriteJson(ctx, 200, new JsonObject
                     completion,
                     reqModel,
                     req["temperature"]?.GetValue<double>() ?? Temperature,
-                    reqThink);
+                    reqThink, req["tools"] is JsonArray cta && cta.Count > 0);
                 WriteJson(ctx, 200, responseObj);
                 return;
             }
@@ -593,13 +680,13 @@ WriteJson(ctx, 200, new JsonObject
                             if (m is JsonObject mo && mo["role"]?.GetValue<string>() is string mrole && (mrole == "system" || mrole == "developer"))
                             {
                                 if (mo["content"] is JsonValue mcv && mcv.TryGetValue<string>(out string? mtext) && !string.IsNullOrWhiteSpace(mtext))
-                                    mo["content"] = WithSystemGuardrail(mtext);
+                                    mo["content"] = Harness ? WithSystemGuardrail(mtext) : mtext;
                                 else if (mo["content"] is JsonArray mparts)
                                 {
                                     foreach (var p in mparts)
                                     {
                                         if (p is JsonObject po && po["text"] is JsonValue ptv && ptv.TryGetValue<string>(out string? ptext) && !string.IsNullOrWhiteSpace(ptext))
-                                        { po["text"] = WithSystemGuardrail(ptext); break; }
+                                        { po["text"] = Harness ? WithSystemGuardrail(ptext) : ptext; break; }
                                     }
                                 }
                             }
@@ -615,6 +702,18 @@ WriteJson(ctx, 200, new JsonObject
                     outBody = node.ToJsonString(SerOpts);
                 }
             }
+            // Compat qwen3/qwen3.5: patterns nao-ancorados nos schemas das
+            // tools quebram o parser do template 14B (400); vale p/ qualquer
+            // model id, com ou sem sufixo de perfil. Inibivel (--harness 0).
+            if (Harness && node is not null && node["tools"] is JsonArray toolsArr)
+            {
+                int dropped = StripUnanchoredPatterns(toolsArr);
+                if (dropped > 0)
+                {
+                    Log(new JsonObject { ["event"] = "pattern-strip", ["dropped"] = dropped });
+                    outBody = node.ToJsonString(SerOpts);
+                }
+            }
         }
         catch { outBody = body; }
         // Preserva o verbo original (GET p/ models, POST p/ completions).
@@ -623,7 +722,12 @@ WriteJson(ctx, 200, new JsonObject
         // opencode 1.x recebe texto puro, nenhuma tool executa e o agente entra
         // em loop re-planejando. Linha GPU segue em streaming real.
         bool isChat = ctx.Request.Url!.AbsolutePath.Contains("chat/completions");
-        bool coerceLine = CoerceFor(Model) && isChat
+        // Coerce quando o pedido traz tools e o upstream nao parseia de volta
+        // (coder/deepseek via llama): força non-stream + sintetiza tool_calls.
+        bool toolsAsked = false;
+        try { toolsAsked = JsonNode.Parse(outBody)?.AsObject() is JsonObject ob && ob["tools"] is JsonArray ta && ta.Count > 0; }
+        catch { }
+        bool coerceLine = Harness && (CoerceFor(Model) || (isChat && toolsAsked)) && isChat
             && ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH";
         bool wantStream = false;
         if (coerceLine)
@@ -655,7 +759,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHeadersRead);
         if (coerceLine && upstreamResponse.IsSuccessStatusCode)
         {
-            CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent);
+            CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent, AnnouncedTools(outBody));
             return;
         }
         ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
@@ -670,12 +774,46 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             using var reader = new StreamReader(upstreamStream, new UTF8Encoding(false));
             using var writer = new StreamWriter(ctx.Response.OutputStream, new UTF8Encoding(false)) { AutoFlush = true };
             string? line;
+            var sseText = new StringBuilder();
+            var rawChatSse = new StringBuilder();
+            int sseChecked = 0;
+            bool sseTrip = false;
             while ((line = reader.ReadLine()) != null)
             {
                 if (line.Contains("\"reasoning\":"))
                     line = line.Replace("\"reasoning\":", "\"reasoning_content\":");
                 writer.WriteLine(line);
+                if (Diagnostic) rawChatSse.AppendLine(line);
+                // Sonda bypass-chat-stream: so observa e registra (o fluxo NAO
+                // para; a contencao silenciosa mora no loop da Web).
+                if (isChat && !sseTrip && line.StartsWith("data:"))
+                {
+                    try
+                    {
+                        string data = line["data:".Length..].Trim();
+                        if (data is not ("[DONE]" or "")) WalkText(JsonNode.Parse(data), sseText);
+                    }
+                    catch { }
+                    if (sseText.Length - sseChecked >= 512)
+                    {
+                        sseChecked = sseText.Length;
+                        if (CheckRepeat(sseText.ToString(), "bypass-chat-stream"))
+                        {
+                            sseTrip = true;
+                            Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length });
+                        }
+                    }
+                }
             }
+            // Avaliacao de fecho: stream curto nunca atinge o passo de 512.
+            // Sem break/DONE: o fluxo segue ate o fim; a Web conteve em silencio.
+            if (!sseTrip && sseText.Length > 0 && CheckRepeat(sseText.ToString(), "bypass-chat-stream"))
+            {
+                sseTrip = true;
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
+            }
+            // Sonda traffic FULL (só com DIAGNOSTICS; chat stream: integros).
+            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "chat-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = rawChatSse.Length, ["res"] = rawChatSse.ToString() });
         }
         else
         {
@@ -684,14 +822,82 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             string json = reader.ReadToEnd();
             if (json.Contains("\"reasoning\":"))
                 json = json.Replace("\"reasoning\":", "\"reasoning_content\":");
+            // Sonda bypass-chat: repeticao no corpo = 1 retry de contencao.
+            if (isChat && CheckRepeat(ExtractChatText(json), "bypass-chat"))
+            {
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat", ["window"] = AntiRepeatWindow });
+                // Retry inibivel (--harness 0): deteccao vira so sonda.
+                if (Harness)
+                {
+                    string? second = RetryBypassChat(outBody, ctx);
+                    if (second is not null)
+                    {
+                        json = second;
+                        if (json.Contains("\"reasoning\":"))
+                            json = json.Replace("\"reasoning\":", "\"reasoning_content\":");
+                        Log(new JsonObject { ["event"] = "anti-repeat-retry", ["where"] = "bypass-chat" });
+                    }
+                }
+            }
+            // ToolsCoercion no bypass: pedido com tools sem tool_calls = sintetiza.
+            // Inibivel (--harness 0): caminho limpo p/ harness opencode.
+            if (isChat && toolsAsked && Harness)
+            {
+                try
+                {
+                    var root = JsonNode.Parse(json)?.AsObject();
+                    if (root is not null)
+                    {
+                        int n = CoerceChatCalls(root, AnnouncedTools(outBody));
+                        if (n > 0)
+                        {
+                            json = root.ToJsonString(SerOpts);
+                            Log(new JsonObject { ["event"] = "coerced-chat", ["where"] = "bypass-chat", ["count"] = n });
+                        }
+                    }
+                }
+                catch { }
+            }
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            // Sonda traffic FULL (só com DIAGNOSTICS; chat sem stream: integros).
+            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "chat", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json });
         }
         ctx.Response.Close();
     }
 
-    /// <summary>Resposta chat da linha CPU: coage texto em tool_calls e devolve JSON ou SSE sintetizado.</summary>
-    static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream, bool headersSent = false)
+    /// <summary>Coage pseudo-calls do texto em tool_calls nativas (ToolsCoercion); 0 = nada a fazer.</summary>
+    /// <param name="root">Completion chat (mutado no lugar).</param>
+    /// <param name="known">Tools anunciadas no pedido (allowlist; vazio = catálogo).</param>
+    /// <returns>No. de calls sintetizadas.</returns>
+    static int CoerceChatCalls(JsonObject root, List<string>? known = null)
+    {
+        try
+        {
+            var msg = root?["choices"]?.AsArray().FirstOrDefault()?["message"]?.AsObject();
+            if (msg is null || msg["tool_calls"] is not null) return 0;
+            string content = msg["content"]?.GetValue<string>() ?? "";
+            var calls = ExtractTextToolCalls(content, known);
+            if (calls.Count == 0) return 0;
+            var arr = new JsonArray();
+            foreach (var (Name, Arguments) in calls)
+                arr.Add(new JsonObject
+                {
+                    ["index"] = arr.Count,
+                    ["id"] = "call_" + Guid.NewGuid().ToString("N")[..8],
+                    ["type"] = "function",
+                    ["function"] = new JsonObject { ["name"] = Name, ["arguments"] = Arguments }
+                });
+            msg["tool_calls"] = arr;
+            if (root!["choices"]!.AsArray()[0]?.AsObject() is JsonObject first)
+                first["finish_reason"] = "tool_calls";
+            return calls.Count;
+        }
+        catch { return 0; }
+    }
+
+    /// <summary>Resposta chat sem parser server-side: coage texto em tool_calls e devolve JSON ou SSE sintetizado.</summary>
+    static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream, bool headersSent = false, List<string>? known = null)
     {
         string json;
         using (var reader = new StreamReader(upstreamResponse.Content.ReadAsStream(), new UTF8Encoding(false)))
@@ -700,33 +906,16 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         try
         {
             var root = JsonNode.Parse(json)?.AsObject();
-            var msg = root?["choices"]?.AsArray().FirstOrDefault()?["message"]?.AsObject();
-            if (msg is not null && msg["tool_calls"] is null)
+            if (root is not null)
             {
-                string content = msg["content"]?.GetValue<string>() ?? "";
-                var calls = ExtractTextToolCalls(content);
-                if (calls.Count > 0)
-                {
-                    var arr = new JsonArray();
-                    foreach (var (Name, Arguments) in calls)
-                        arr.Add(new JsonObject
-                        {
-                            ["index"] = arr.Count,
-                            ["id"] = "call_" + Guid.NewGuid().ToString("N")[..8],
-                            ["type"] = "function",
-                            ["function"] = new JsonObject { ["name"] = Name, ["arguments"] = Arguments }
-                        });
-                    msg["tool_calls"] = arr;
-                    var choices = root!["choices"]!.AsArray();
-                    if (choices[0]?.AsObject() is JsonObject first)
-                        first["finish_reason"] = "tool_calls";
-                    coerced = calls.Count;
-                    json = root!.ToJsonString(SerOpts);
-                }
+                coerced = CoerceChatCalls(root, known);
+                if (coerced > 0) json = root.ToJsonString(SerOpts);
             }
         }
         catch { /* corpo inesperado: devolve cru */ }
         Log(new JsonObject { ["event"] = "coerced-chat", ["model"] = Model, ["count"] = coerced });
+        // Sonda traffic FULL (só com DIAGNOSTICS): resposta integra.
+        if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "coerced", ["model"] = Model, ["res_len"] = json.Length, ["res"] = json });
         if (!wantStream)
         {
             ctx.Response.StatusCode = 200;
@@ -803,6 +992,11 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         var messages = InputToMessages(req["input"], req["instructions"]);
         // Converte as tools Responses (formato "chato") -> formato chat
         var tools = ToolsToChat(req["tools"]);
+        if (tools is not null && Harness)
+        {
+            int droppedResp = StripUnanchoredPatterns(tools);
+            if (droppedResp > 0) Log(new JsonObject { ["event"] = "pattern-strip", ["mode"] = "responses", ["dropped"] = droppedResp, ["tools"] = ToolNames(tools) });
+        }
         toolCount = tools?.Count ?? 0;
 
         // Monta o body do /v1/chat/completions
@@ -818,6 +1012,15 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         int asked = req["max_tokens"]?.GetValue<int>()
             ?? req["max_output_tokens"]?.GetValue<int>() ?? cap;
         if (asked <= 0) asked = cap;
+        // Thinking do cliente (Web manda o do cadastro; opencode não manda):
+        // presente vence o default da linha; ausente segue o flag --thinking.
+        bool wantThinking = thinking == "events";
+        try
+        {
+            var kw = req["chat_template_kwargs"]?.AsObject();
+            if (kw?["enable_thinking"] is JsonValue ev && ev.TryGetValue<bool>(out bool b)) wantThinking = b;
+        }
+        catch { }
         var chat = new JsonObject
         {
             ["model"] = Model,
@@ -825,7 +1028,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             ["temperature"] = temperature,
             ["max_tokens"] = Math.Min(asked, cap),
             ["stream"] = false,          // upstream sem stream: resposta unica, sintetizamos o SSE
-            ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = thinking == "events" }
+            ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = wantThinking }
         };
         if (tools is { Count: > 0 })
         {
@@ -869,7 +1072,9 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
 // Bypass llama: upstream fala Responses nativo; so removemos os itens
         // reasoning (llama.cpp exige content array neles) e encaminhamos o
         // resto intacto — tools nativas, sem traducao p/ chat.
-        if (PassthroughResponses)
+        // EXCETO com tools: llama /v1/responses nao devolve function_call
+        // (so texto) — cai na traducao p/ chat + ToolsCoercion.
+        if (PassthroughResponses && !ReqHasTools(req))
         {
             ForwardResponses(ctx, body, req);
             return;
@@ -906,7 +1111,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
         // 4.6) Converte a resposta chat -> objeto Responses
         var chatJson = JsonNode.Parse(responseBody)?.AsObject() ?? new JsonObject();
-        var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking);
+        var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0);
 
         double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
         int inTok = responseObj["usage"]?["input_tokens"]?.GetValue<int>() ?? 0;
@@ -921,6 +1126,8 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             ["input_tokens"] = inTok, ["output_tokens"] = outTok,
             ["tps_output"] = Math.Round(elapsed > 0 ? outTok / elapsed : 0, 1)
         });
+        // Sonda traffic FULL (só com DIAGNOSTICS): traducao req/res integros.
+        if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "translate", ["model"] = requestedModel, ["req_len"] = chat.ToJsonString().Length, ["req"] = chat.ToJsonString(), ["res_len"] = responseObj.ToJsonString().Length, ["res"] = responseObj.ToJsonString() });
         AddMetrics(inTok, outTok, elapsed);
 
         // 4.7) Sem stream: devolve JSON direto.
@@ -971,6 +1178,8 @@ var shape = new StringBuilder();
         }
         catch { }
         Log(new JsonObject { ["event"] = "passthrough-responses", ["model"] = Model, ["dropped_reasoning"] = dropped, ["status"] = (int)upstreamResponse.StatusCode, ["elapsed"] = Math.Round(elapsed, 2), ["shape"] = shape.ToString().Trim(), ["upstream_error"] = (errBody ?? "").Length > 500 ? errBody![..500] : (errBody ?? "") });
+        // Sonda FULL (só com DIAGNOSTICS): pedido integro que seguiu ao upstream.
+        if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "responses-req", ["model"] = Model, ["stream"] = (upstreamResponse.Content.Headers.ContentType?.ToString() ?? "").Contains("text/event-stream"), ["req_len"] = outBody.Length, ["req"] = outBody });
         ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
         ctx.Response.ContentType = upstreamResponse.Content.Headers.ContentType?.ToString() ?? "application/json";
         if (errBody is not null)
@@ -986,14 +1195,68 @@ var shape = new StringBuilder();
             using var reader = new StreamReader(stream, new UTF8Encoding(false));
             using var writer = new StreamWriter(ctx.Response.OutputStream, new UTF8Encoding(false)) { AutoFlush = true };
             string? line;
-            while ((line = reader.ReadLine()) != null) writer.WriteLine(line);
+            // Sonda bypass-responses-stream: so observa e registra (o fluxo NAO
+            // para; a contencao silenciosa mora no loop da Web).
+            var sseText = new StringBuilder();
+            var rawSse = new StringBuilder();
+            int sseChecked = 0;
+            bool sseTrip = false;
+            while ((line = reader.ReadLine()) != null)
+            {
+                writer.WriteLine(line);
+                if (Diagnostic) rawSse.AppendLine(line);
+                if (!sseTrip && line.StartsWith("data:"))
+                {
+                    try
+                    {
+                        string data = line["data:".Length..].Trim();
+                        if (data is not ("[DONE]" or "")) WalkText(JsonNode.Parse(data), sseText);
+                    }
+                    catch { }
+                    if (sseText.Length - sseChecked >= 512)
+                    {
+                        sseChecked = sseText.Length;
+                        if (CheckRepeat(sseText.ToString(), "bypass-responses-stream"))
+                        {
+                            sseTrip = true;
+                            Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length });
+                        }
+                    }
+                }
+            }
+            // Avaliacao de fecho: stream curto nunca atinge o passo de 512.
+            // Sem break: o fluxo segue ate o fim; a Web conteve em silencio.
+            if (!sseTrip && sseText.Length > 0 && CheckRepeat(sseText.ToString(), "bypass-responses-stream"))
+            {
+                sseTrip = true;
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
+            }
+            // Sonda traffic FULL (só com DIAGNOSTICS): pedido e SSE integros.
+            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "responses-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = rawSse.Length, ["res"] = rawSse.ToString() });
         }
         else
         {
             using var reader = new StreamReader(stream, new UTF8Encoding(false));
             string json = reader.ReadToEnd();
+            // Sonda bypass-responses: repeticao no objeto = 1 retry de contencao.
+            // Retry inibivel (--harness 0): deteccao vira so sonda.
+            if (CheckRepeat(ExtractResponsesText(json), "bypass-responses"))
+            {
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses", ["window"] = AntiRepeatWindow });
+                if (Harness)
+                {
+                    string? second = RetryBypassResponses(req, ctx);
+                    if (second is not null)
+                    {
+                        json = second;
+                        Log(new JsonObject { ["event"] = "anti-repeat-retry", ["where"] = "bypass-responses" });
+                    }
+                }
+            }
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            // Sonda traffic FULL (só com DIAGNOSTICS; sem stream: integros).
+            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "responses", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json });
         }
         ctx.Response.Close();
     }
@@ -1014,6 +1277,23 @@ var shape = new StringBuilder();
         return "";
     }
 
+    /// <summary>Nomes das tools anunciadas (diagnostico: o que o opencode mandou).</summary>
+    static JsonArray ToolNames(JsonArray? tools)
+    {
+        var arr = new JsonArray();
+        if (tools is null) return arr;
+        foreach (var t in tools)
+        {
+            string n = (t as JsonObject)?["function"]?["name"]?.GetValue<string>()
+                ?? (t as JsonObject)?["name"]?.GetValue<string>() ?? "?";
+            if (arr.Count < 24) arr.Add(n);
+        }
+        return arr;
+    }
+
+    /// <summary>Request com tools anunciadas? (llama /v1/responses nao suporta tools).</summary>
+    static bool ReqHasTools(JsonObject req) => req["tools"] is JsonArray a && a.Count > 0;
+
     /// <summary>Complementa qualquer system prompt com o sufixo padrao anti-loop (sem duplicar).</summary>
     /// <param name="text">System prompt original.</param>
     /// <returns>System prompt com o sufixo no final.</returns>
@@ -1023,6 +1303,186 @@ var shape = new StringBuilder();
         if (t.Length == 0) return t;
         if (t.Contains("mais 2 vezes", StringComparison.OrdinalIgnoreCase)) return t;
         return t + "\n\n" + SystemGuardrail;
+    }
+
+    /// <summary>Remove chaves "pattern" nao-ancoradas dos schemas das tools (recursivo).</summary>
+    /// <remarks>Compat qwen3/qwen3.5: o template do 14B gera parser gramatical e
+    /// rejeita pattern sem ^...$ (400); o do 9B ignorava. Remover equivale ao
+    /// comportamento do 9B (geracao livre, description continua guiando).</remarks>
+    /// <param name="node">Tools ou sub-schema (mutado no lugar).</param>
+    /// <returns>Quantas chaves removidas.</returns>
+    static int StripUnanchoredPatterns(JsonNode? node)
+    {
+        int dropped = 0;
+        if (node is JsonObject obj)
+        {
+            if (obj["pattern"] is JsonValue pv && pv.TryGetValue<string>(out string? pat)
+                && !string.IsNullOrEmpty(pat) && !(pat.StartsWith('^') && pat.EndsWith('$')))
+            {
+                obj.Remove("pattern");
+                dropped++;
+            }
+            foreach (var kv in obj)
+                dropped += StripUnanchoredPatterns(kv.Value);
+        }
+        else if (node is JsonArray arr)
+        {
+            foreach (var item in arr)
+                dropped += StripUnanchoredPatterns(item);
+        }
+        return dropped;
+    }
+
+    /// <summary>AntiRepeat: a cauda (janela) do thinking ja apareceu antes no proprio stream?</summary>
+    /// <param name="accumulated">Thinking acumulado ate aqui.</param>
+    /// <param name="window">Tamanho da cauda comparada (chars).</param>
+    /// <returns>True se a sequencia se repete (loop invalido provavel).</returns>
+    static bool ThinkingRepeats(string accumulated, int window)
+    {
+        if (string.IsNullOrEmpty(accumulated) || window < 32) return false;
+        // Normaliza (caixa/espaco) p/ pegar repeticao quase-verbatim do decoder.
+        string norm = NormRepeat(accumulated);
+        // Cauda verbatim (loops longos exatos).
+        if (norm.Length >= 2 * window)
+        {
+            string tail = norm[^window..];
+            if (norm.AsSpan(0, norm.Length - window).IndexOf(tail.AsSpan(), StringComparison.Ordinal) >= 0)
+                return true;
+        }
+        // Loop curto com variacao ("Olá!" no meio): 3 blocos finais
+        // consecutivos similares (>=0.85) = repeticao invalida provavel.
+        foreach (int u in new[] { 24, 32, 40, 48, 64, 80, 96, 128 })
+        {
+            if (norm.Length < 3 * u) continue;
+            var a = norm.AsSpan(norm.Length - u);
+            var b = norm.AsSpan(norm.Length - 2 * u, u);
+            var c = norm.AsSpan(norm.Length - 3 * u, u);
+            if (BlockSim(a, b) >= 0.85 && BlockSim(b, c) >= 0.85) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Similaridade 0..1 entre blocos (1 - levenshtein/tamanho).</summary>
+    static double BlockSim(ReadOnlySpan<char> a, ReadOnlySpan<char> b)
+    {
+        int n = a.Length, m = b.Length;
+        if (n == 0 || m == 0) return 0;
+        Span<int> prev = stackalloc int[m + 1];
+        Span<int> cur = stackalloc int[m + 1];
+        for (int j = 0; j <= m; j++) prev[j] = j;
+        for (int i = 1; i <= n; i++)
+        {
+            cur[0] = i;
+            for (int j = 1; j <= m; j++)
+                cur[j] = Math.Min(prev[j] + 1, Math.Min(cur[j - 1] + 1, prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1)));
+            var t = prev; prev = cur; cur = t;
+        }
+        return 1.0 - (double)prev[m] / Math.Max(n, m);
+    }
+
+    /// <summary>Detector com sonda: avalia e registra o probe Serilog (trip=Warning, resto=Debug).</summary>
+    /// <param name="accumulated">Texto acumulado ate aqui.</param>
+    /// <param name="where">Ponto de observacao.</param>
+    /// <returns>True se repeticao detectada.</returns>
+    static bool CheckRepeat(string accumulated, string where)
+    {
+        bool trip = AntiRepeat && ThinkingRepeats(accumulated, AntiRepeatWindow);
+        // Sonda: loga no maximo 1x a cada 2k chars p/ nao afogar o sink em stream.
+        int chars = accumulated?.Length ?? 0;
+        if (trip || chars < 512 || (chars % 2048) < 256)
+            Sonda(where, chars, trip, Truncate(NormRepeat(accumulated ?? ""), 80));
+        return trip;
+    }
+
+    /// <summary>Extrai texto util de um chat/completions (content + reasoning) p/ a sonda do bypass.</summary>
+    static string ExtractChatText(string json)
+    {
+        try
+        {
+            var root = JsonNode.Parse(json)?.AsObject();
+            var b = new StringBuilder();
+            void Add(string? t) { if (!string.IsNullOrEmpty(t)) { if (b.Length > 0) b.Append('\n'); b.Append(t); } }
+            foreach (var ch in root?["choices"]?.AsArray() ?? new JsonArray())
+            {
+                var m = ch?.AsObject()?["message"]?.AsObject() ?? ch?.AsObject()?["delta"]?.AsObject();
+                if (m is null) continue;
+                if (m["content"]?.GetValue<string>() is string c) Add(c);
+                if (m["reasoning_content"]?.GetValue<string>() is string r) Add(r);
+                else if (m["reasoning"]?.GetValue<string>() is string r2) Add(r2);
+            }
+            return b.ToString();
+        }
+        catch { return ""; }
+    }
+
+    /// <summary>Coleta valores de chaves de texto ("text"/"delta"/"content") em qualquer JSON (SSE do bypass).</summary>
+    static void WalkText(JsonNode? node, StringBuilder b)
+    {
+        if (node is JsonObject o)
+            foreach (var kv in o)
+            {
+                if ((kv.Key is "text" or "delta" or "content") && kv.Value is JsonValue v
+                    && v.TryGetValue<string>(out string? t) && !string.IsNullOrEmpty(t))
+                { if (b.Length > 0) b.Append('\n'); b.Append(t); }
+                else WalkText(kv.Value, b);
+            }
+        else if (node is JsonArray a)
+            foreach (var it in a) WalkText(it, b);
+    }
+
+    /// <summary>Extrai todo texto de um objeto Responses (output) p/ a sonda do bypass.</summary>
+    static string ExtractResponsesText(string json)
+    {
+        try
+        {
+            var root = JsonNode.Parse(json)?.AsObject();
+            var b = new StringBuilder();
+            if (root?["output"] is JsonArray out_) foreach (var it in out_) WalkText(it, b);
+            else WalkText(root, b);
+            return b.ToString();
+        }
+        catch { return ""; }
+    }
+
+    /// <summary>Bypass chat: 1 retry de contencao com o aviso anexado as messages.</summary>
+    static string? RetryBypassChat(string outBody, HttpListenerContext ctx)
+    {
+        try
+        {
+            var node = JsonNode.Parse(outBody)?.AsObject();
+            if (node?["messages"] is not JsonArray msgs) return null;
+            msgs.Add(new JsonObject { ["role"] = "user", ["content"] = AntiRepeatNotice });
+            var retry = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/completions")
+            { Content = new StringContent(node.ToJsonString(SerOpts), Encoding.UTF8, "application/json") };
+            WithAuth(retry, ctx);
+            using var r = Http.Send(retry);
+            if (!r.IsSuccessStatusCode) return null;
+            using var rd = new StreamReader(r.Content.ReadAsStream(), new UTF8Encoding(false));
+            return rd.ReadToEnd();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Bypass responses: 1 retry de contencao com o aviso anexado ao input.</summary>
+    static string? RetryBypassResponses(JsonObject req, HttpListenerContext ctx)
+    {
+        try
+        {
+            if (req["input"] is not JsonArray input) return null;
+            input.Add(new JsonObject
+            {
+                ["type"] = "message", ["role"] = "user",
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = AntiRepeatNotice })
+            });
+            var retry = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/responses")
+            { Content = new StringContent(req.ToJsonString(SerOpts), Encoding.UTF8, "application/json") };
+            WithAuth(retry, ctx);
+            using var r = Http.Send(retry);
+            if (!r.IsSuccessStatusCode) return null;
+            using var rd = new StreamReader(r.Content.ReadAsStream(), new UTF8Encoding(false));
+            return rd.ReadToEnd();
+        }
+        catch { return null; }
     }
 
     /// <summary>Funde system/developer do input num unico system inicial (jinja Qwen exige system primeiro).</summary>
@@ -1055,7 +1515,7 @@ static bool NormalizeSystemFirst(JsonObject req)
             new JsonObject
             {
                 ["type"] = "message", ["role"] = "system",
-                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = WithSystemGuardrail(sys.ToString()) })
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = Harness ? WithSystemGuardrail(sys.ToString()) : sys.ToString() })
             }
         };
         foreach (var it in rest) final.Add(it?.DeepClone());
@@ -1103,7 +1563,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         if (!upstreamResponse.IsSuccessStatusCode)
         {
             string errorBody = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-            Log(new JsonObject { ["event"] = "error", ["mode"] = "live", ["status"] = (int)upstreamResponse.StatusCode });
+            Log(new JsonObject { ["event"] = "error", ["mode"] = "live", ["status"] = (int)upstreamResponse.StatusCode, ["upstream_error"] = Truncate(errorBody, 500) });
             ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
             byte[] errorBytes = Encoding.UTF8.GetBytes(errorBody);
             ctx.Response.ContentType = "application/json";
@@ -1149,6 +1609,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         string reasoningId = "";
         string messageId = "";
         bool thinkOpen = false, msgOpen = false, inThink = false;
+        bool repeatTrip = false;   // AntiRepeat: thinking repetido detectado, aborta e conteve (1 retry)
         string carry = "";   // texto ainda nao classificado (tag pode partir no meio do chunk)
         var toolAccum = new SortedDictionary<int, (string Id, string Name, StringBuilder Args)>();
         int inputTokens = 0, outputTokens = 0;
@@ -1177,6 +1638,13 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             if (!thinkOpen && thinking != "events") { FlushMessage(text); return; }
             if (!thinkOpen) return;
             thinkingText.Append(text);
+            // AntiRepeat: cauda do thinking ja vista antes = loop invalido;
+            // arma o flag (o loop de leitura aborta e o modelo e contido).
+            if (!repeatTrip && CheckRepeat(thinkingText.ToString(), "thinking"))
+            {
+                repeatTrip = true;
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "thinking", ["window"] = AntiRepeatWindow, ["thinking_chars"] = thinkingText.Length });
+            }
             Emit("response.reasoning_summary_text.delta", new JsonObject
             {
                 ["type"] = "response.reasoning_summary_text.delta", ["item_id"] = reasoningId,
@@ -1209,6 +1677,12 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                 msgOpen = true;
             }
             contentText.Append(text);
+            // AntiRepeat tambem no content (agente sem thinking repete aqui).
+            if (!repeatTrip && CheckRepeat(contentText.ToString(), "content"))
+            {
+                repeatTrip = true;
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "content", ["window"] = AntiRepeatWindow, ["content_chars"] = contentText.Length });
+            }
             Emit("response.output_text.delta", new JsonObject
             {
                 ["type"] = "response.output_text.delta", ["item_id"] = messageId,
@@ -1254,8 +1728,31 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         }
 
         // ---- Le o SSE do upstream e traduz delta a delta
-        using var stream = upstreamResponse.Content.ReadAsStream();
-        using var reader = new StreamReader(stream, Encoding.UTF8);
+        // AntiRepeat: ate 2 passagens; a 1a usa o fetch acima, na 2a o chat
+        // ja leva o aviso e o upstream e buscado de novo.
+        HttpResponseMessage RefetchUpstream()
+        {
+            var retryReq = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/completions")
+            {
+                Content = new StringContent(chat.ToJsonString(SerOpts), Encoding.UTF8, "application/json")
+            };
+            WithAuth(retryReq, ctx);
+            return Http.Send(retryReq, HttpCompletionOption.ResponseHeadersRead);
+        }
+        HttpResponseMessage? retryResp = null;
+        for (int attempt = 0; ; attempt++)
+        {
+            HttpResponseMessage srcResp;
+            if (attempt == 0) srcResp = upstreamResponse;
+            else
+            {
+                retryResp = RefetchUpstream();
+                if (!retryResp.IsSuccessStatusCode) break;
+                srcResp = retryResp;
+            }
+            using var attemptScope = attempt == 0 ? null as IDisposable : retryResp;
+            using var stream = srcResp.Content.ReadAsStream();
+            using var reader = new StreamReader(stream, Encoding.UTF8);
         string? line;
         while ((line = reader.ReadLine()) != null)
         {
@@ -1305,6 +1802,20 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                         acc.Args.Append(argsChunk);
                 }
             }
+            if (repeatTrip) break;   // AntiRepeat: para de consumir o loop invalido
+        }
+
+            if (!repeatTrip) break;
+            if (!Harness) break;   // inibido: sem aviso, sem descarte, fluxo intacto
+            if (attempt >= 1) break;   // 1 retry de contencao no maximo
+            // Contencao: descarta a janela repetida e devolve o aviso ao modelo.
+            repeatTrip = false;
+            thinkingText.Clear();
+            contentText.Clear();
+            carry = "";
+            inThink = false;
+            chat["messages"]!.AsArray().Add(new JsonObject { ["role"] = "user", ["content"] = AntiRepeatNotice });
+            Log(new JsonObject { ["event"] = "anti-repeat-retry" });
         }
 
         // ---- Fecho: descarrega o resto, fecha itens, emite tool calls
@@ -1366,11 +1877,12 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             });
         }
 
-        // Coerção no fecho do stream (perfil CPU/llama): sem deltas de call,
-        // extrai do texto acumulado. vLLM nativo nao passa por aqui com calls.
-        if (CoerceFor(requestedModel) && toolAccum.Count == 0)
+        // Coerção no fecho do stream: sem deltas de call e com tools pedidas,
+        // extrai do texto acumulado (coder/deepseek via llama). Nativo nao passa aqui.
+        if (toolAccum.Count == 0 && Harness && (CoerceFor(requestedModel) || ReqHasTools(chat)))
         {
-            foreach (var (name, args) in ExtractTextToolCalls(contentText.ToString()))
+            var knownResp = AnnouncedTools(chat["tools"]?.AsArray());
+            foreach (var (name, args) in ExtractTextToolCalls(contentText.ToString(), knownResp))
                 toolAccum[toolAccum.Count] = ("call_" + NewId(), name, new StringBuilder(args));
         }
 
@@ -1428,7 +1940,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             }),
             ["usage"] = new JsonObject { ["prompt_tokens"] = inputTokens, ["completion_tokens"] = outputTokens }
         };
-        var finalObj = ChatToResponses(synthetic, requestedModel, temperature, thinking);
+        var finalObj = ChatToResponses(synthetic, requestedModel, temperature, thinking, ReqHasTools(chat));
         finalObj["id"] = respId;
         // Ids do completed precisam casar com os itens ja anunciados no stream.
         foreach (var outputNode in finalObj["output"]!.AsArray())
@@ -1545,7 +2057,7 @@ if (type == "message")
             // sao ignorados de proposito: nao fazem falta no fluxo chat.
         }
         if (sysText.Length > 0)
-            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = WithSystemGuardrail(sysText.ToString()) });
+            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = Harness ? WithSystemGuardrail(sysText.ToString()) : sysText.ToString() });
         return messages;
     }
 
@@ -1660,7 +2172,7 @@ if (type == "message")
     /// <param name="temperature">Efetiva.</param>
     /// <param name="thinkMode">Modo thinking efetivo.</param>
     /// <returns>Objeto Responses.</returns>
-    static JsonObject ChatToResponses(JsonObject chat, string model, double temperature, string? thinkMode = null)
+    static JsonObject ChatToResponses(JsonObject chat, string model, double temperature, string? thinkMode = null, bool hadTools = false)
     {
         thinkMode ??= Thinking;
         var choice = chat["choices"]?[0]?.AsObject() ?? new JsonObject();
@@ -1692,12 +2204,16 @@ if (type == "message")
                 if (callNode is not JsonObject callObj) continue;
                 string id = callObj["id"]?.GetValue<string>() ?? ("call_" + NewId());
                 var funcObj = callObj["function"]?.AsObject() ?? new JsonObject();
-                toolCalls.Add((id, funcObj["name"]?.GetValue<string>() ?? "", JsonToString(funcObj["arguments"])));
+                string nativeName = funcObj["name"]?.GetValue<string>() ?? "";
+                if (nativeName.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
+                    nativeName = nativeName["default.".Length..];
+                toolCalls.Add((id, nativeName, JsonToString(funcObj["arguments"])));
             }
         }
-        // Coerção (só perfil CPU/llama): sem tool_calls nativos, extrai do texto.
-        // Caminho vLLM (hermes/qwen3_coder/gemma4) nunca entra aqui com calls.
-        if (toolCalls.Count == 0 && CoerceFor(model))
+        // Coerção: sem tool_calls nativos e com tools pedidas, extrai do texto
+        // (ToolsCoercion: hermes/plural/fence — coder/deepseek via llama).
+        // So atua se o texto parsear; prosa normal passa intacta.
+        if (toolCalls.Count == 0 && Harness && (CoerceFor(model) || hadTools))
         {
             foreach (var (name, args) in ExtractTextToolCalls(content))
                 toolCalls.Add(("call_" + NewId(), name, args));
@@ -1705,6 +2221,8 @@ if (type == "message")
             {
                 // Remove os blocos consumidos p/ nao duplicar texto + call.
                 content = ReToolTag.Replace(content, "");
+                content = ReToolsTag.Replace(content, "");
+                content = ReFunctionTag.Replace(content, "");
                 content = ReFencedCall.Replace(content, "");
                 Log(new JsonObject { ["event"] = "coerced", ["model"] = model, ["count"] = toolCalls.Count });
             }
@@ -1992,6 +2510,40 @@ if (type == "message")
             File.AppendAllText(LogPath, obj.ToJsonString(SerOpts) + "\n");
         }
         catch { /* log nunca derruba o pedido */ }
+    }
+
+    /// <summary>Sonda Serilog do AntiRepeat; nunca derruba o pedido.</summary>
+    /// <param name="where">Ponto de observacao (thinking/content/bypass-chat/bypass-responses).</param>
+    /// <param name="chars">Acumulado ate aqui.</param>
+    /// <param name="trip">Detector disparou?</param>
+    /// <param name="tail">Amostra da cauda (80 chars).</param>
+    static void Sonda(string where, int chars, bool trip, string tail)
+    {
+        if (!Diagnostic) return;
+        try
+        {
+            if (trip)
+                Serilog.Log.Warning("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} tail={Tail}",
+                    where, chars, AntiRepeatWindow, trip, tail);
+            else
+                Serilog.Log.Debug("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} tail={Tail}",
+                    where, chars, AntiRepeatWindow, trip, tail);
+        }
+        catch { /* sonda nunca derruba o pedido */ }
+    }
+
+    /// <summary>Normaliza texto p/ o detector (minusculo, espacos colapsados).</summary>
+    static string NormRepeat(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        var b = new StringBuilder(s.Length);
+        bool sp = false;
+        foreach (char c in s)
+        {
+            if (char.IsWhiteSpace(c)) { if (!sp) { b.Append(' '); sp = true; } }
+            else { b.Append(char.ToLowerInvariant(c)); sp = false; }
+        }
+        return b.ToString();
     }
 
     /// <summary>Id aleatorio hex de 16 chars.</summary>
