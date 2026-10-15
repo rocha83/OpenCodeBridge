@@ -10,7 +10,7 @@ public static class AgentSeeder
         double Temp, string Thinking, string Prompt, string Role, string Mode,
         double Tps, int Active, string Tools);
 
-    // Snapshot da revisão de 15/10 (9B Q4 ctx 128k na GPU :4124, VL-Q3 48k na CPU :4110).
+    // Snapshot da revisão de 15/10 (9B Q4 ctx 128k na GPU :4124, VL-Q3 48k GPU2-CPU :4110).
     private static readonly Seed[] Seeds =
     [
         new(1, "Agente Generalista Global - MoE - Q4 GPU", "qwen3.5-9b", "http://127.0.0.1:4124",
@@ -33,7 +33,7 @@ public static class AgentSeeder
             "Voce e um agente arquiteto engenheiro de software e dados (ML e NN) senior, analise o enunciado expanda o compreendido divida em fases e delegue para subagentes desenvolvedores senior (porem menor capacidade de inferencia), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito. ",
             "executor", "Build", 30.0, 1,
             "glob,read,grep,git,fetch,display,subagent"),
-        new(5, "Agente Generalista Global - MoE - VL-Q3 CPU", "qwen3-vl-4b", "http://127.0.0.1:4125",
+        new(5, "Agente Generalista Global - MoE - VL-Q3 GPU2-CPU", "qwen3-vl-4b", "http://127.0.0.1:4125",
             0.8, "events",
             "Voce e um agente autonomo generalista senior entende sobre todos assuntos em esfera global delega tarefas a subagentes quando entende que o contexto ficou limitado (48k), nunca se auto-apresente salvo pedido direto",
             "executor", "Plan", 2.5, 1,
@@ -43,17 +43,17 @@ public static class AgentSeeder
             "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
             "", "Build", 30.0, 1,
             "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec,install"),
-        new(7, "Engenheiro de Software - Plan - VL-Q3 CPU", "qwen3-vl-4b", "http://127.0.0.1:4125",
+        new(7, "Engenheiro de Software - Plan - VL-Q3 GPU2-CPU", "qwen3-vl-4b", "http://127.0.0.1:4125",
             0.5, "events",
             "Voce e um agente autonomo arquiteto engenheiro de software e dados (ML e NN) senior adepto das melhores praticas SOLID, design DDD clean arch e uso de ORM, delega tarefas a subagentes quando entende que o contexto ficou limitado (48k), nunca se auto-apresente salvo pedido direto",
             "executor", "Plan", 2.5, 1,
             "glob,read,grep,git,fetch,display,subagent"),
-        new(8, "Desenvolvedor de Software - Scripter - VL-Q3 CPU", "qwen3-vl-4b", "http://127.0.0.1:4125",
+        new(8, "Desenvolvedor de Software - Scripter - VL-Q3 GPU2-CPU", "qwen3-vl-4b", "http://127.0.0.1:4125",
             0.5, "off",
             "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto ",
             "", "Build", 2.5, 1,
             "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec"),
-        new(9, "Desenvolvedor de Software - Build - VL-Q3 CPU", "qwen3-vl-4b", "http://127.0.0.1:4125",
+        new(9, "Desenvolvedor de Software - Build - VL-Q3 GPU2-CPU", "qwen3-vl-4b", "http://127.0.0.1:4125",
             0.5, "events",
             "Voce e um agente autonomo arquiteto desenvolvedor de software e dados (ML e NN) senior, executa todas as tools e implementa os artefatos e testes conforme enunciado seguindo as melhores praticas de desenvolvimento, delega tarefas a subagentes quando entende que o contexto ficou limitado (48k), nunca se auto-apresente salvo pedido direto",
             "orchestrator", "Build", 2.5, 1,
