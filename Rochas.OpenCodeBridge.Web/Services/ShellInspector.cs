@@ -9,7 +9,7 @@ namespace Rochas.OpenCodeBridge.Web.Services;
 // com motivo e o modelo reformula na retry.
 public static class ShellInspector
 {
-    public enum ShellClass { Other, Validation, Execution, Proc }
+    public enum ShellClass { Other, Validation, Execution, Proc, Install }
 
     // rm/kill/pkill + demais com prejuízo; mv/rmdir negados, só cp liberado.
     // Vale na string integral (inclusive dentro de bash -c); fronteiras de
@@ -78,6 +78,7 @@ public static class ShellInspector
     {
         string first = FirstToken(command);
         if (first is "ps" or "top" or "pgrep") return ShellClass.Proc;
+        if (first is "pip" or "pip3" or "apt" or "apt-get") return ShellClass.Install;
         if (first is "bash" or "sh" or "shell")
             return Regex.IsMatch(command ?? "", @"(?:^|\s)-n(?:\s|$)")
                 ? ShellClass.Validation

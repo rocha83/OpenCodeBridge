@@ -89,6 +89,8 @@ namespace Rochas.OpenCodeBridge.Web.Services
                     return ToolResult.Fail($"Não permitido: visualização de processos exige 'proc' no harness do agente '{gate.Name}'");
                 if (cls == ShellInspector.ShellClass.Execution && !set.Contains("exec"))
                     return ToolResult.Fail($"Não permitido: execução de scripts exige 'exec' no harness do agente '{gate.Name}'");
+                if (cls == ShellInspector.ShellClass.Install && !set.Contains("install"))
+                    return ToolResult.Fail($"Não permitido: instalação de pacotes exige 'install' no harness do agente '{gate.Name}'");
             }
             // Preset display (sem shell): shell anunciada só p/ `echo` simples.
             if (agent is not null && key == "shell" && !ToolDefinitions.ToolSet(agent).Contains("shell")
