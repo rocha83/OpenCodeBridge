@@ -738,6 +738,12 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 }
                 if (sseTrip) break;
             }
+            // Avaliacao de fecho: stream curto nunca atinge o passo de 512.
+            if (!sseTrip && sseText.Length > 0 && CheckRepeat(sseText.ToString(), "bypass-chat-stream"))
+            {
+                sseTrip = true;
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
+            }
             if (sseTrip) { writer.WriteLine("data: [DONE]"); writer.WriteLine(); }
         }
         else
@@ -1094,6 +1100,12 @@ var shape = new StringBuilder();
                 }
                 if (sseTrip) break;
             }
+            // Avaliacao de fecho: stream curto nunca atinge o passo de 512.
+            if (!sseTrip && sseText.Length > 0 && CheckRepeat(sseText.ToString(), "bypass-responses-stream"))
+            {
+                sseTrip = true;
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
+            }
         }
         else
         {
@@ -1180,10 +1192,42 @@ var shape = new StringBuilder();
         if (string.IsNullOrEmpty(accumulated) || window < 32) return false;
         // Normaliza (caixa/espaco) p/ pegar repeticao quase-verbatim do decoder.
         string norm = NormRepeat(accumulated);
-        if (norm.Length < 2 * window) return false;
-        string tail = norm[^window..];
-        bool trip = norm.AsSpan(0, norm.Length - window).IndexOf(tail.AsSpan(), StringComparison.Ordinal) >= 0;
-        return trip;
+        // Cauda verbatim (loops longos exatos).
+        if (norm.Length >= 2 * window)
+        {
+            string tail = norm[^window..];
+            if (norm.AsSpan(0, norm.Length - window).IndexOf(tail.AsSpan(), StringComparison.Ordinal) >= 0)
+                return true;
+        }
+        // Loop curto com variacao ("Olá!" no meio): 3 blocos finais
+        // consecutivos similares (>=0.85) = repeticao invalida provavel.
+        foreach (int u in new[] { 24, 32, 40, 48, 64, 80, 96, 128 })
+        {
+            if (norm.Length < 3 * u) continue;
+            var a = norm.AsSpan(norm.Length - u);
+            var b = norm.AsSpan(norm.Length - 2 * u, u);
+            var c = norm.AsSpan(norm.Length - 3 * u, u);
+            if (BlockSim(a, b) >= 0.85 && BlockSim(b, c) >= 0.85) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Similaridade 0..1 entre blocos (1 - levenshtein/tamanho).</summary>
+    static double BlockSim(ReadOnlySpan<char> a, ReadOnlySpan<char> b)
+    {
+        int n = a.Length, m = b.Length;
+        if (n == 0 || m == 0) return 0;
+        Span<int> prev = stackalloc int[m + 1];
+        Span<int> cur = stackalloc int[m + 1];
+        for (int j = 0; j <= m; j++) prev[j] = j;
+        for (int i = 1; i <= n; i++)
+        {
+            cur[0] = i;
+            for (int j = 1; j <= m; j++)
+                cur[j] = Math.Min(prev[j] + 1, Math.Min(cur[j - 1] + 1, prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1)));
+            var t = prev; prev = cur; cur = t;
+        }
+        return 1.0 - (double)prev[m] / Math.Max(n, m);
     }
 
     /// <summary>Detector com sonda: avalia e registra o probe Serilog (trip=Warning, resto=Debug).</summary>
