@@ -134,6 +134,12 @@ internal static partial class Program
             if (cfg["cpuMaxTokens"]?.GetValue<int>() is int cmt && cmt > 0) CpuMaxTokens = cmt;
             if (cfg["logPath"]?.GetValue<string>() is string log && log.Length > 0) LogPath = log;
             if (cfg["apiKey"]?.GetValue<string>() is string key && key.Length > 0) ApiKey = key;
+            if (cfg["jwt"]?.AsObject() is JsonObject jwt)
+            {
+                if (jwt["secret"]?.GetValue<string>() is string js && js.Length >= 16) Auth.JwtSecret = js;
+                if (jwt["expiryMinutes"]?.GetValue<int>() is int je && je > 0) Auth.JwtExpiryMinutes = je;
+            }
+            if (cfg["usersDb"]?.GetValue<string>() is string udb && udb.Length > 0) Auth.UsersDbPath = udb;
             if (cfg["passthroughResponses"]?.GetValue<bool>() is bool pt) PassthroughResponses = pt;
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
             if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
@@ -439,6 +445,9 @@ internal static partial class Program
                 case "--cpu-max-tokens": CpuMaxTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--log": LogPath = cliArgs[i + 1]; break;
                 case "--api-key": ApiKey = cliArgs[i + 1]; break;
+                case "--jwt-secret": if (cliArgs[i + 1].Length >= 16) Auth.JwtSecret = cliArgs[i + 1]; break;
+                case "--jwt-expiry": if (int.TryParse(cliArgs[i + 1], out int jexp) && jexp > 0) Auth.JwtExpiryMinutes = jexp; break;
+                case "--users-db": Auth.UsersDbPath = cliArgs[i + 1]; break;
                 case "--passthrough-responses": PassthroughResponses = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
@@ -480,9 +489,38 @@ internal static partial class Program
                 return;
             }
 
+            // ---- Autenticacao JWT (login contra a base de usuarios do Web)
+            if (ctx.Request.HttpMethod == "POST" && path == "/api/auth/login")
+            {
+                var loginBody = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
+                string email = loginBody["email"]?.GetValue<string>() ?? "";
+                string password = loginBody["password"]?.GetValue<string>() ?? "";
+                var found = Auth.Login(email, password);
+                if (found is null)
+                {
+                    Log(new JsonObject { ["event"] = "auth", ["result"] = "denied", ["email"] = email });
+                    WriteJson(ctx, 401, new JsonObject { ["error"] = "credenciais invalidas" });
+                    return;
+                }
+                string? token = Auth.CreateToken(email.Trim().ToLowerInvariant(), found.Value.IsAdmin);
+                if (token is null)
+                {
+                    WriteJson(ctx, 500, new JsonObject { ["error"] = "jwt nao configurado na bridge (jwt.secret)" });
+                    return;
+                }
+                Log(new JsonObject { ["event"] = "auth", ["result"] = "ok", ["email"] = email, ["admin"] = found.Value.IsAdmin });
+                WriteJson(ctx, 200, new JsonObject
+                {
+                    ["token"] = token, ["token_type"] = "Bearer",
+                    ["expires_in"] = Auth.JwtExpiryMinutes * 60, ["admin"] = found.Value.IsAdmin,
+                });
+                return;
+            }
+
             // Metricas de vazao (tokens/s) p/ o e2e exibir no console/arquivo.
             if (ctx.Request.HttpMethod == "GET" && path == "/api/metrics")
             {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
                 double elapsed, tpsOut, tpsTotal;
                 long inTok, outTok;
                 lock (MetricsLock)
@@ -505,6 +543,7 @@ internal static partial class Program
             // ---- API de gerenciamento (permite operar a bridge remotamente)
             if (ctx.Request.HttpMethod == "GET" && path == "/api/status")
             {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
                 WriteJson(ctx, 200, BuildStatus());
                 return;
             }
@@ -571,6 +610,7 @@ WriteJson(ctx, 200, new JsonObject
 
             if (ctx.Request.HttpMethod == "POST" && path == "/api/config")
             {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
                 // Ajuste remoto de parametros (parcial: so o que vier no corpo).
                 var req = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
                 if (req["thinking"]?.GetValue<string>() is string thinking && thinking is "events" or "off")
@@ -621,6 +661,7 @@ WriteJson(ctx, 200, new JsonObject
 
             if (ctx.Request.HttpMethod == "POST" && (path == "/v1/responses" || path == "/responses"))
             {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
                 string body = ReadBody(ctx);
                 HandleResponses(ctx, body);
                 return;
@@ -635,6 +676,7 @@ WriteJson(ctx, 200, new JsonObject
             {
                 // PASSA-DIRETO: util pra testar o vLLM sem passar pela traducao
                 // (e pra qwen CLI e clientes antigos apontarem aqui sem quebrar nada).
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
                 Passthrough(ctx, ReadBody(ctx));
                 return;
             }
@@ -642,6 +684,7 @@ WriteJson(ctx, 200, new JsonObject
             // GET de compatibilidade (ex.: /v1/models p/ clientes listarem o modelo)
             if (ctx.Request.HttpMethod == "GET" && (path == "/v1/models" || path == "/models"))
             {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
                 Passthrough(ctx, "");
                 return;
             }
@@ -649,6 +692,7 @@ WriteJson(ctx, 200, new JsonObject
             // Qualquer outra rota (models, embeddings, ...) tambem passa direto
             if (ctx.Request.HttpMethod == "POST")
             {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
                 Passthrough(ctx, ReadBody(ctx));
                 return;
             }
@@ -698,10 +742,24 @@ WriteJson(ctx, 200, new JsonObject
         return reader.ReadToEnd();
     }
 
+    // Auth do cliente na bridge: Bearer JWT valido OU ApiKey legada.
+    // ApiKey vazia = somente JWT. Sem credencial = 401.
+    static bool ClientAuthorized(HttpListenerContext ctx)
+    {
+        string? h = ctx.Request.Headers["Authorization"];
+        if (!string.IsNullOrWhiteSpace(h) && h.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            string tok = h["Bearer ".Length..].Trim();
+            if (Auth.TryValidate(tok, out _, out _)) return true;
+            if (!string.IsNullOrEmpty(ApiKey) && tok == ApiKey) return true;
+        }
+        return false;
+    }
     /// <summary>Responde JSON com status e Content-Length.</summary>
     /// <param name="ctx">Contexto HTTP.</param>
     /// <param name="status">HTTP status.</param>
     /// <param name="obj">Payload.</param>
+
     static void WriteJson(HttpListenerContext ctx, int status, JsonNode obj)
     {
         byte[] bytes = Encoding.UTF8.GetBytes(obj.ToJsonString(SerOpts));
@@ -1555,8 +1613,13 @@ var shape = new StringBuilder();
         return 1.0 - (double)prev[m] / Math.Max(n, m);
     }
 
+    internal static bool ContextGuardEnabled() => ContextGuard;
+    internal static (bool Enabled, double Threshold, int Tokens) ContextGuardConfig() => (ContextGuard, ContextThreshold, ContextTokens);
+    internal static void ContextGuardSetup(bool enabled, double threshold, int tokens)
+    { ContextGuard = enabled; ContextThreshold = threshold; ContextTokens = tokens; }
+
     // Guarda de ctx: prompt atingiu o limiar configurado.
-    static bool ContextGuardTripped(string json, out int promptTokens, out double fraction)
+    internal static bool ContextGuardTripped(string json, out int promptTokens, out double fraction)
     {
         promptTokens = 0; fraction = 0;
         if (!ContextGuard || ContextTokens <= 0) return false;

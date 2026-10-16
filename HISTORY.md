@@ -1341,3 +1341,32 @@
   Nao deployado nas units vivas (aguardando ordem) — bateria ctx80 rodou
   sem ele.
 - Build `Release` verde, 0 erros, 0 warnings novos.
+
+## JWT + Swagger obsidian + testes Auth (2026-10-16)
+- Auth na bridge (`Auth.cs`, BCL + Microsoft.Data.Sqlite, sem NuGet novo
+  além do sqlite): `POST /api/auth/login` valida email/senha na tabela
+  `users` do `web.db` (mesmo PBKDF2 do Web) e emite JWT HS256 com
+  `sub/admin/exp`. Guarda nos endpoints `/v1/*`, `/api/status`,
+  `/api/metrics`, `/api/config`: Bearer JWT válido OU ApiKey legada;
+  públicos seguem `/health`, `/swagger`, `/api/swagger.json`,
+  `/api/harness` (Web consulta sem auth) e dry-runs. Config
+  `jwt:{secret,expiryMinutes}` + `usersDb` (appsettings e CLI).
+- Swagger: tema obsidian (paleta do `black.css`: chumbo #1e1e1e), v1.4,
+  13 paths (novos `/api/auth/login`, `/api/harness`),
+  `securitySchemes bearerAuth`, cadeado nos 7 protegidos, barra de login
+  com token em localStorage e envio do Bearer no try-it. Títulos:
+  `ai.bridge.api` (Swagger) e `ai.bridge.web` (layout + brand da Web UI).
+- Web replica o JWT: `BridgeAuthService` (login com conta de serviço,
+  cache por bridge, refresh em 401) + `BridgeAuthHandler` no HttpClient
+  nomeado `"bridge"`; 7 call sites migrados; `BridgeAuth` no appsettings.
+- Testes: `InternalsVisibleTo` p/ suite, `UnitAuthTests` (JWT
+  roundtrip/tamper/expiry/segredo-curto, PBKDF2, guarda 95%,
+  login-negado e doc adaptativos com SKIP em bridge legada), flags
+  `--api-key/--jwt` no runner. U-auth 9/9 PASS; unit geral 23/26
+  (3 FAILs pré-existentes contra a bridge viva antiga: clamp cpu,
+  coerce text/angle — binário sem o código novo).
+- Bateria modelos ctx80 (pausada p/ commit): 9B sem thinking = respostas
+  longas e rigorosas, 3 armadilhas corrigidas, t/s 17→14 com KV;
+  4B-VL sem thinking degenera (`toolchain` loop); com thinking 9B
+  esvazia content (700 thinking/0 resposta) e 4B responde curto.
+  Decisão pendente do operador: thinking por perfil/modelo.

@@ -16,4 +16,8 @@
     <Description>Suite de testes unit + e2e da bridge Responses para chat-completions.</Description>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Rochas.OpenCodeBridge\Rochas.OpenCodeBridge.csproj" />
+  </ItemGroup>
+
 </Project>

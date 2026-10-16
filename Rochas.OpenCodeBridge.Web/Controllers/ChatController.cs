@@ -33,7 +33,7 @@ public sealed class ChatController(
     {
         try
         {
-            var client = http.CreateClient();
+            var client = http.CreateClient("bridge");
             using var res = await client.GetAsync(bridgeUrl.TrimEnd('/') + "/api/harness", ct);
             if (!res.IsSuccessStatusCode) return true;
             var h = System.Text.Json.Nodes.JsonNode.Parse(await res.Content.ReadAsStringAsync(ct))?["harness"];
@@ -133,7 +133,7 @@ public sealed class ChatController(
         if (agent is null) return Json(new { ok = false });
         try
         {
-            var client = http.CreateClient();
+            var client = http.CreateClient("bridge");
             client.Timeout = TimeSpan.FromSeconds(3);
             using var r = await client.GetAsync(agent.BridgeUrl.TrimEnd('/') + "/api/status");
             return Json(new { ok = r.IsSuccessStatusCode });
@@ -184,7 +184,7 @@ public sealed class ChatController(
             history.Add(new JsonObject { ["role"] = "user", ["content"] = prompt });
             try
             {
-                var client = http.CreateClient();
+                var client = http.CreateClient("bridge");
                 var body = new JsonObject
                 {
                     ["model"] = agent.Model,
@@ -742,7 +742,7 @@ public sealed class ChatController(
                 {
                     Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
                 };
-                using var sumClient = http.CreateClient();
+                using var sumClient = http.CreateClient("bridge");
                 using var res = await sumClient.SendAsync(req, ct);
                 if (!res.IsSuccessStatusCode) return null;
                 try
@@ -987,7 +987,7 @@ public sealed class ChatController(
             return;
         }
         var outputStream = Response.Body;
-        var client = http.CreateClient();
+        var client = http.CreateClient("bridge");
         client.Timeout = Timeout.InfiniteTimeSpan;
 
         var assistantContent = new System.Text.StringBuilder();
@@ -1580,7 +1580,7 @@ public sealed class ChatController(
         // Cronômetro do stream inteiro: duração da bolha final do agente.
         var streamSw = System.Diagnostics.Stopwatch.StartNew();
         var outputStream = Response.Body;
-        var client = http.CreateClient();
+        var client = http.CreateClient("bridge");
         client.Timeout = Timeout.InfiniteTimeSpan;
 
         var assistantContent = new System.Text.StringBuilder();

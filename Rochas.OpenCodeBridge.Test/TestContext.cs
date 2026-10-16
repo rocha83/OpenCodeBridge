@@ -11,7 +11,9 @@ internal static class TestContext
     public static string Bridge = "http://127.0.0.1:4124";
     public static string Vllm = "http://127.0.0.1:4100";
     public static bool SkipE2E;
-    public static string Only = "";
+    public static string Only = "";
+    public static string? ApiKey;
+    public static string? Jwt;
     public static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(10) };
 
     // Modelo servido pela bridge alvo (qwen3|coder): expectativas por perfil.

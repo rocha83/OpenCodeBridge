@@ -41,7 +41,7 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
             // template default emite as tags como texto e o StripThink limpa depois.
             if (enableThinking.HasValue)
                 body["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = enableThinking.Value };
-            var client = http.CreateClient();
+            var client = http.CreateClient("bridge");
             client.Timeout = Timeout.InfiniteTimeSpan;
             using var res = await client.PostAsync(bridgeUrl.TrimEnd('/') + "/v1/chat/completions",
                 new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);

@@ -45,6 +45,10 @@ builder.Host.UseSerilog();
 
 builder.Services.AddControllersWithViews();
 builder.Services.AddHttpClient();
+builder.Services.Configure<BridgeAuthOptions>(builder.Configuration.GetSection("BridgeAuth"));
+builder.Services.AddSingleton<BridgeAuthService>();
+builder.Services.AddTransient<BridgeAuthHandler>();
+builder.Services.AddHttpClient("bridge").AddHttpMessageHandler<BridgeAuthHandler>();
 builder.Services.Configure<MockBridgeOptions>(builder.Configuration.GetSection("MockBridge"));
 builder.Services.Configure<DiagnosticOptions>(builder.Configuration.GetSection("Diagnostics"));
 builder.Services.Configure<OrchestrationOptions>(builder.Configuration.GetSection("Orchestration"));
