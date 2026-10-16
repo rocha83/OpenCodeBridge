@@ -76,7 +76,7 @@ internal static partial class Program
     static bool QwenStd = false;
     // Formula (harness=true): composta pela bridge p/ cliente web (model sem
     // sufixo). Opencode (sufixo -build/-plan/-orch) passa limpo.
-    static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada.";
+    static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada. F#: rode com `dotnet run --project <dir>` (nunca o dll direto); prefira pipe |> e match com fallback; erro de compilacao = leia a mensagem e ajuste o trecho exato.";
     static string HarnessGuardTail = "";
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
