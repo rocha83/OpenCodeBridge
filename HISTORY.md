@@ -1378,3 +1378,15 @@
 - Aceite: `:4124 qwen3.5-9b-orch → has_reasoning=True`.
 - Nota: este ajuste é config de deploy (não commitável); o default de
   código segue `orch=(0.6, events)` nos Profiles.
+
+## Combo 11GB: 9B-Q4 192k + 4B-Q3-TEXTO 64k, tudo na VRAM (2026-10-16)
+- Retorno do Qwen3.5-4B-Q3 texto (`bartowski/...-4B-GGUF/Qwen_Qwen3.5-4B-Q3_K_M.gguf`,
+  2.4GB em `llama-models/`): assume o stack padrao :4110/:4125 no lugar do
+  VL (que degenerava em loops e derrubava 500 no parser peg-native).
+  Bridge-cpu `--model qwen3.5-4b`; ids opencode `qwen3-vl-4b-*` mantidos
+  (sufixo = tubo limpo, sem formula de tools).
+- 9B-Q4 (`/opt/models`, 5.8GB) em 192k (`-c 196608 -np 1 -ngl 99`).
+- Medido via nvidia-smi: 9B **7466MiB** + 4B **3276MiB** + video 223MiB =
+  **10965/12288 (89%)**. Decode 4B a 57 t/s prova GPU puro (CPU daria ~5).
+- Q3 no 9B testado e descartado: mesmo t/s que o Q4 (~33 vs ~33 aos 6k),
+  sem ganho; Q4 de volta.
