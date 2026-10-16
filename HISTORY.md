@@ -1370,3 +1370,11 @@
   4B-VL sem thinking degenera (`toolchain` loop); com thinking 9B
   esvazia content (700 thinking/0 resposta) e 4B responde curto.
   Decisão pendente do operador: thinking por perfil/modelo.
+
+## Orch mantém thinking (2026-10-16)
+- Decisão do operador: só Build fica sem thinking. Matriz viva em
+  `/usr/src/.../bin/Release/net9.0/appsettings.json`: plan events,
+  build off, **orch events**, moe events. Bridges reiniciadas.
+- Aceite: `:4124 qwen3.5-9b-orch → has_reasoning=True`.
+- Nota: este ajuste é config de deploy (não commitável); o default de
+  código segue `orch=(0.6, events)` nos Profiles.
