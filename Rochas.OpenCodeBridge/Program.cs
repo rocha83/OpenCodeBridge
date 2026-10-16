@@ -79,6 +79,12 @@ internal static partial class Program
     static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada.";
     static string HarnessGuardTail = "";
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
+    // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
+    // devolve 413 pedindo compactacao em vez da resposta. Parametrizavel
+    // via appsettings (contextGuard) ou CLI; ContextTokens=0 = inativo.
+    static bool ContextGuard = false;
+    static double ContextThreshold = 0.95;                       // fracao do ctx (0.5..0.99)
+    static int ContextTokens = 0;                                // tamanho do ctx do modelo servido
     static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
     static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida; quando informada a repeticao, nao responda mais nada, apenas encerre em silencio, obrigado.";
     static bool CoerceFor(string modelId) => LegacyHarness && (CoerceTextTools
@@ -137,6 +143,12 @@ internal static partial class Program
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
             if (cfg["diagnostic"]?.GetValue<bool>() is bool dg) Diagnostic = dg;
+            if (cfg["contextGuard"]?.AsObject() is JsonObject cg)
+            {
+                if (cg["enabled"]?.GetValue<bool>() is bool cge) ContextGuard = cge;
+                if (cg["threshold"]?.GetValue<double>() is double cgt && cgt >= 0.5 && cgt <= 0.99) ContextThreshold = cgt;
+                if (cg["contextTokens"]?.GetValue<int>() is int cct && cct > 0) ContextTokens = cct;
+            }
             if (cfg["qwenStandard"]?.GetValue<bool>() is bool qs) QwenStd = qs;
             if (Environment.GetEnvironmentVariable("DIAGNOSTIC") is "1" or "true" or "True") Diagnostic = true;
             if (Environment.GetEnvironmentVariable("HARNESS") is "0" or "false" or "False") Harness = false;
@@ -434,6 +446,9 @@ internal static partial class Program
                 case "--legacy-harness": LegacyHarness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--qwen-standard": QwenStd = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
+                case "--context-guard": ContextGuard = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--context-threshold": { double v = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); if (v >= 0.5 && v <= 0.99) ContextThreshold = v; break; }
+                case "--context-tokens": ContextTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--diagnostic": Diagnostic = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--workspace": WorkspaceRoot = cliArgs[i + 1]; break;
             }
@@ -900,6 +915,21 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             string json = reader.ReadToEnd();
             if (json.Contains("\"reasoning\":"))
                 json = json.Replace("\"reasoning\":", "\"reasoning_content\":");
+            // Guarda de ctx: prompt atingiu o limiar -> 413 pedindo compactacao.
+            if (isChat && ContextGuardTripped(json, out int cgPrompt, out double cgFrac))
+            {
+                Log(new JsonObject { ["event"] = "context-guard", ["where"] = "bypass-chat", ["prompt_tokens"] = cgPrompt, ["fraction"] = Math.Round(cgFrac, 4) });
+                WriteJson(ctx, 413, new JsonObject
+                {
+                    ["error"] = new JsonObject
+                    {
+                        ["message"] = $"Contexto em {cgFrac:P0} ({cgPrompt} tokens de {ContextTokens}). Compacte a sessao e tente de novo.",
+                        ["type"] = "invalid_request_error",
+                        ["code"] = "context_compact_required",
+                    }
+                });
+                return;
+            }
             // Sonda bypass-chat: repeticao no corpo = 1 retry de contencao.
             if (isChat && CheckRepeat(ExtractChatText(json), "bypass-chat"))
             {
@@ -1523,6 +1553,17 @@ var shape = new StringBuilder();
             var t = prev; prev = cur; cur = t;
         }
         return 1.0 - (double)prev[m] / Math.Max(n, m);
+    }
+
+    // Guarda de ctx: prompt atingiu o limiar configurado.
+    static bool ContextGuardTripped(string json, out int promptTokens, out double fraction)
+    {
+        promptTokens = 0; fraction = 0;
+        if (!ContextGuard || ContextTokens <= 0) return false;
+        try { promptTokens = JsonNode.Parse(json)?.AsObject()?["usage"]?["prompt_tokens"]?.GetValue<int>() ?? 0; }
+        catch { return false; }
+        fraction = (double)promptTokens / ContextTokens;
+        return fraction >= ContextThreshold;
     }
 
     /// <summary>Detector com sonda: avalia e registra o probe Serilog (trip=Warning, resto=Debug).</summary>

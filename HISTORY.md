@@ -1323,3 +1323,21 @@
   `plan→has_reasoning=True`. Build `Release` verde (0 erros).
 - Nota: seeder usa `INSERT OR IGNORE` — `web.db` já criado precisa de
   `UPDATE agents SET thinking='off' WHERE mode='Build'` manual p/ valer.
+
+## Guarda de ctx com comando de compactacao 95% (2026-10-16)
+- Pedido: bridge envia comando de compactacao ao atingir 95% do ctx,
+  parametrizavel no appsettings.
+- Implementacao (`Rochas.OpenCodeBridge/Program.cs`, caminho chat
+  `/v1/chat/completions` nao-stream): apos a resposta do upstream le
+  `usage.prompt_tokens`; se `contextGuard.enabled` e
+  `prompt/contextTokens >= threshold`, devolve **HTTP 413**
+  `{"code":"context_compact_required"}` com a fracao e orienta compactar,
+  em vez do texto (log `context-guard`). CLI:
+  `--context-guard 0/1`, `--context-threshold 0.5..0.99`,
+  `--context-tokens N`; appsettings `contextGuard: {enabled, threshold,
+  contextTokens}` (exemplos gpu/cpu com 114688/40960 @95%).
+- Limite honesto: vale p/ clientes stateless que reenviam o historico
+  (prompt_tokens ~= ctx atual); sem `contextTokens` o guarda fica inativo.
+  Nao deployado nas units vivas (aguardando ordem) — bateria ctx80 rodou
+  sem ele.
+- Build `Release` verde, 0 erros, 0 warnings novos.
