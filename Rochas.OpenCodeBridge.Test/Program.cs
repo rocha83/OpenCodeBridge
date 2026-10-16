@@ -67,6 +67,7 @@ internal static class Program
         {
         TestContext.Run("E-science-gpu", E2EScienceTests.ScienceGpu);
         TestContext.Run("E-science-cpu", E2EScienceTests.ScienceCpu);
+        TestContext.Run("E-mission-tools", E2EMissionTests.MissionTools);
             // Sonda direta do parser hermes no vLLM: so faz sentido no Qwen3.
             if (!TestContext.ServedIsCoder) TestContext.Run("E-vllm-tool-hermes", E2EToolTests.VllmToolHermes);
             else Console.WriteLine("[test] skip E-vllm-tool-hermes (perfil coder)");

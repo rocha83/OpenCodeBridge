@@ -43,6 +43,7 @@ internal static class TestContext
         {
             Failed++;
             Console.WriteLine($"FAIL {name}: {ex.Message}");
+            if (Environment.GetEnvironmentVariable("E2E_STACK") == "1") Console.WriteLine(ex.ToString());
         }
     }
 
