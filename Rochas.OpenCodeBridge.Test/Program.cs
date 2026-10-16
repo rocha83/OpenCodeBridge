@@ -22,6 +22,8 @@ internal static class Program
             else if (args[i] == "--jwt" && i + 1 < args.Length) TestContext.Jwt = args[++i];
         }
         Console.WriteLine($"[test] bridge={TestContext.Bridge} vllm={TestContext.Vllm} skipE2E={TestContext.SkipE2E}");
+        string? cred = TestContext.Jwt ?? TestContext.ApiKey;
+        if (cred is not null) TestContext.Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
 
         // Descobre o modelo servido p/ ajustar as expectativas (qwen3|coder).
         try
@@ -63,6 +65,8 @@ internal static class Program
         // ---- e2e (modelo vivo)
         if (!TestContext.SkipE2E)
         {
+        TestContext.Run("E-science-gpu", E2EScienceTests.ScienceGpu);
+        TestContext.Run("E-science-cpu", E2EScienceTests.ScienceCpu);
             // Sonda direta do parser hermes no vLLM: so faz sentido no Qwen3.
             if (!TestContext.ServedIsCoder) TestContext.Run("E-vllm-tool-hermes", E2EToolTests.VllmToolHermes);
             else Console.WriteLine("[test] skip E-vllm-tool-hermes (perfil coder)");
