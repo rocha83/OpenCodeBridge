@@ -716,9 +716,10 @@ WriteJson(ctx, 200, new JsonObject
             var node = JsonNode.Parse(body)?.AsObject();
             // Marca opencode ANTES do rewrite (model com sufixo = tubo puro).
             bool opencodeIn = node is not null && IsOpencodeModel(node["model"]?.GetValue<string>());
+            string profThinkMid = "";
             if (node is not null && node["model"]?.GetValue<string>() is string mid && mid != Model)
             {
-                bool hasProfile = TryProfile(mid, out double profTemp, out _);
+                bool hasProfile = TryProfile(mid, out double profTemp, out profThinkMid);
                 if (hasProfile || CoerceFor(mid))
                 {
                     node["model"] = Model;
@@ -777,7 +778,8 @@ WriteJson(ctx, 200, new JsonObject
             // Qwen liga thinking sozinho; vale p/ todo cliente sem flag propria.
             if (node is not null && node["chat_template_kwargs"] is null)
             {
-                node["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = Thinking == "events" };
+                bool wantThinking = profThinkMid.Length > 0 ? profThinkMid == "events" : Thinking == "events";
+                node["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = wantThinking };
                 outBody = node.ToJsonString(SerOpts);
             }
             // tools quebram o parser do template 14B (400); vale p/ qualquer

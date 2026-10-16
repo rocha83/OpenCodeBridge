@@ -1301,3 +1301,25 @@
 - Trava que conteve: AntiRepeat da bridge (não a penalidade do llama).
   `--repeat-penalty 1.15` também aplicado na unit do `:4111`, mas o freio
   efetivo foi o da bridge. Re-teste "o que houve?" → frase curta, sem loop.
+
+## Thinking OFF só no perfil Build (2026-10-16)
+- Motivo: roles Build geravam `reasoning_content` antes de responder
+  (tokens de thinking consumindo a janela de saída e derrubando o t/s
+  efetivo); Plan e MoE mantêm `events`.
+- Mudanças: `profiles.build.thinking: events→off` (runtime
+  `bin/Release/net9.0/appsettings.json` + exemplo
+  `appsettings.4124.gpu-example.json`); seeder Web ids Build 3,4,9
+  `thinking events→off` (Plan/MoE intactos); `Qwen CLI settings.json`
+  `contextWindowSize` 131072→114688 (9B) e 49152→32768 (VL-4B).
+  Qwen CLI fala direto no llama (sem bridge), sem flag de thinking —
+  thinking ali vem cru do modelo.
+- Bug real no `Passthrough` (`Program.cs`): o caminho
+  `/v1/chat/completions` usava o global `--thinking` p/ montar
+  `chat_template_kwargs.enable_thinking`, ignorando o perfil — por isso
+  o Build ainda raciocinava mesmo com o perfil `off`. Agora resolve o
+  thinking do perfil pelo sufixo do modelo (`-build→off`, demais seguem
+  o global); kwarg explícito do cliente continua respeitado.
+- Aceite: `:4124 build→'build-ok', has_reasoning=False`;
+  `plan→has_reasoning=True`. Build `Release` verde (0 erros).
+- Nota: seeder usa `INSERT OR IGNORE` — `web.db` já criado precisa de
+  `UPDATE agents SET thinking='off' WHERE mode='Build'` manual p/ valer.
