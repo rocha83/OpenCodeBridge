@@ -113,7 +113,7 @@ internal static class E2EMissionTests
         Console.WriteLine($"  [mission] C# ok:\n{runOut.Trim()}");
 
         // Fase 2: portabilidade para F# (mesma matematica, System.Math qualificado).
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) shell: dotnet new console -lang F# -n mfs (UMA vez, cwd {ws}). (2) write no caminho ABSOLUTO {ws}/mfs/Program.fs (nao recrie o projeto): mesmo programa do C# - Simpson de sin em [0,pi] (n=10 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}} - com Math.Sin/Math.Sqrt qualificados. Nao use indexacao (.[i]) nem parametrize a funcao: use List.init/List.map/List.sum com Math.Sin direto. (3) shell: dotnet run --project {ws}/mfs -c Release. Se o dotnet run retornar erro, leia a mensagem, corrija Program.fs (write) e rode de novo; repita ate imprimir 2.000000 e 5.000000." });
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) shell: dotnet new console -lang F# -n mfs (UMA vez, cwd {ws}). (2) write no caminho ABSOLUTO {ws}/mfs/Program.fs (nao recrie o projeto): mesmo programa do C# - Simpson de sin em [0,pi] (n=10 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}} - com Math.Sin/Math.Sqrt qualificados. Nao use indexacao (.[i]) nem parametrize a funcao: use List.init/List.map/List.sum com Math.Sin direto. Formate com printfn \"%.6f\" x (sintaxe %, nunca {{0:F6}}). (3) shell: dotnet run --project {ws}/mfs -c Release. Se o dotnet run retornar erro, leia a mensagem, corrija Program.fs (write) e rode de novo; repita ate imprimir 2.000000 e 5.000000." });
         for (int turn = 0; turn < 22; turn++)
         {
             var rf = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());
