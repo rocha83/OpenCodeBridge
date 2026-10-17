@@ -20,7 +20,7 @@ internal static class E2EMissionTests
 
     static async Task<JsonObject> Chat(string bridge, string model, JsonArray messages, JsonArray? tools)
     {
-        var body = new JsonObject { ["model"] = model, ["messages"] = messages, ["max_tokens"] = 1500 };
+        var body = new JsonObject { ["model"] = model, ["messages"] = messages };
         if (tools is not null) body["tools"] = tools;
         return await TestContext.PostObj(bridge + "/v1/chat/completions", body);
     }
@@ -61,9 +61,11 @@ internal static class E2EMissionTests
 
         var sys = new JsonObject { ["role"] = "system", ["content"] = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls (uma por vez), sem prosa. Matematica sempre qualificada: C# Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# System.Math.Sin ou open System + Math.Sin - nunca sin/cos/pi minusculos. F# usa let/printfn/List.map e roda com dotnet run --project <dir>." };
         var history = new JsonArray(sys);
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = "Use tools, uma por turno. (1) dotnet new console -n mcs (UMA vez). (2) write em mcs/Program.cs (nunca recrie o projeto, nunca use echo/heredoc): programa que calcula Simpson de Math.Sin em [0,pi] e media/desvio de {2,4,4,4,5,5,7,9}, imprimindo os 3 numeros com 6 casas. (3) shell: dotnet run --project mcs -c Release." });
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) shell: dotnet new console -n mcs (UMA vez, cwd {ws}). (2) write no caminho ABSOLUTO {ws}/mcs/Program.cs (nao recrie o projeto, nao use echo/heredoc): programa que calcula Simpson de Math.Sin em [0,pi] e media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. (3) shell: dotnet run --project {ws}/mcs -c Release." });
 
-        string code = "", fcode = "", final = "";
+        string fcode = "", final = "";
+        string logPath = Path.Combine(ws, "_mission.log");
+        void LogT(string s) { try { File.AppendAllText(logPath, s + "\n"); } catch { } }
         for (int turn = 0; turn < 14; turn++)
         {
             var r = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());
@@ -72,6 +74,7 @@ internal static class E2EMissionTests
             if (calls is null || calls.Count == 0)
             {
                 final = msg["content"]?.GetValue<string>() ?? "";
+                LogT($"[C#] T{turn} SEM CALLS: {final[..Math.Min(200, final.Length)]}");
                 history.Add(new JsonObject { ["role"] = "assistant", ["content"] = final });
                 if (turn >= 2) break;
                 history.Add(new JsonObject { ["role"] = "user", ["content"] = "Sem prosa: emita a proxima tool call agora." });
@@ -85,7 +88,7 @@ internal static class E2EMissionTests
                 try { args = JsonNode.Parse(tc?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject(); }
                 catch { args = new JsonObject(); }
                 string res = Exec(ws, fn, args);
-                if (fn == "write" && (args["path"]?.GetValue<string>() ?? "").EndsWith("Program.cs")) code = args["content"]?.GetValue<string>() ?? code;
+                LogT($"[C#] T{turn} {fn} {args.ToJsonString()[..Math.Min(160, args.ToJsonString().Length)]} -> {res[..Math.Min(180, res.Length)]}");
                 if (fn == "write" && (args["path"]?.GetValue<string>() ?? "").EndsWith("Program.fs")) fcode = args["content"]?.GetValue<string>() ?? fcode;
                 echo.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = tc?["id"]?.GetValue<string>() ?? "", ["content"] = res });
             }
@@ -97,17 +100,18 @@ internal static class E2EMissionTests
             history.Add(new JsonObject { ["role"] = "assistant", ["content"] = msg["content"]?.GetValue<string>() ?? "", ["tool_calls"] = freshCalls });
             foreach (var e in echo) history.Add((JsonObject)e!.DeepClone());
         }
-        TestContext.Check(code.Contains("Sin") || code.Contains("sin"), "Program.cs com Simpson escrito");
         string csFile = Path.Combine(ws, "mcs", "Program.cs");
         string csSrc = File.Exists(csFile) ? File.ReadAllText(csFile) : "";
-        TestContext.Check(csSrc.Contains("2") && csSrc.Length > 60, "mcs/Program.cs gravado (nao template), veio: " + csSrc[..Math.Min(80, csSrc.Length)]);
+        TestContext.Check((csSrc.Contains("Sin") || csSrc.Contains("sin")) && csSrc.Length > 60,
+            "mcs/Program.cs com Simpson (nao template), veio: " + csSrc[..Math.Min(100, csSrc.Length)]);
         string runOut = Run("dotnet", "run --project mcs -c Release", ws, 240);
+        LogT($"[C#] RUN -> {runOut[..Math.Min(220, runOut.Length)]}");
         TestContext.Check(runOut.Contains("2,000000") || runOut.Contains("2.000000"), "Simpson = 2.0, saiu: " + runOut[..Math.Min(120, runOut.Length)]);
         TestContext.Check(runOut.Contains("5,000000") || runOut.Contains("5.000000"), "media = 5.0");
         Console.WriteLine($"  [mission] C# ok:\n{runOut.Trim()}");
 
         // Fase 2: portabilidade para F# (mesma matematica, System.Math qualificado).
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = "Use tools, uma por turno. (1) dotnet new console -lang F# -n mfs (UMA vez). (2) write em mfs/Program.fs (nunca recrie o projeto): mesmo programa do C# - Simpson de sin em [0,pi] e media/desvio de {2,4,4,4,5,5,7,9} - com System.Math/Math.Sin/Math.Sqrt qualificados. Nao indexe lista com float: use List.map (fun xi -> Math.Sin xi) xs. (3) shell: dotnet run --project mfs -c Release." });
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) shell: dotnet new console -lang F# -n mfs (UMA vez, cwd {ws}). (2) write no caminho ABSOLUTO {ws}/mfs/Program.fs (nao recrie o projeto): mesmo programa do C# - Simpson de sin em [0,pi] (n=10 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}} - com Math.Sin/Math.Sqrt qualificados. Escreva o calculo DIRETO com Math.Sin (sem parametrizar funcao f). Nao indexe lista com float: use List.map (fun xi -> Math.Sin xi) xs. (3) shell: dotnet run --project {ws}/mfs -c Release." });
         for (int turn = 0; turn < 22; turn++)
         {
             var rf = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());
@@ -115,6 +119,7 @@ internal static class E2EMissionTests
             var cf = mf["tool_calls"]?.AsArray();
             if (cf is null || cf.Count == 0)
             {
+                LogT($"[F#] T{turn} SEM CALLS: {(mf["content"]?.GetValue<string>() ?? "")[..Math.Min(200, (mf["content"]?.GetValue<string>() ?? "").Length)]}");
                 history.Add(new JsonObject { ["role"] = "assistant", ["content"] = mf["content"]?.GetValue<string>() ?? "" });
                 if (turn >= 4) break;
                 history.Add(new JsonObject { ["role"] = "user", ["content"] = "Sem prosa: leia o erro de build (se houver) e emita ja a proxima tool call (write corrigindo Program.fs ou shell dotnet run)." });
@@ -133,6 +138,7 @@ internal static class E2EMissionTests
                 catch { af = new JsonObject(); }
                 string fnf = c?["function"]?["name"]?.GetValue<string>() ?? "";
                 string resf = Exec(ws, fnf, af);
+                LogT($"[F#] T{turn} {fnf} {af.ToJsonString()[..Math.Min(160, af.ToJsonString().Length)]} -> {resf[..Math.Min(180, resf.Length)]}");
                 if (fnf == "write" && (af["path"]?.GetValue<string>() ?? "").EndsWith("Program.fs")) fcode = af["content"]?.GetValue<string>() ?? fcode;
                 history.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = resf });
             }
@@ -142,6 +148,7 @@ internal static class E2EMissionTests
         string fsSrc = File.Exists(fsFile) ? File.ReadAllText(fsFile) : "";
         TestContext.Check(fsSrc.Contains("Math"), "mfs/Program.fs gravado com Math, veio: " + fsSrc[..Math.Min(100, fsSrc.Length)]);
         string fsOut = Run("dotnet", "run --project mfs -c Release", ws, 240);
+        LogT($"[F#] RUN -> {fsOut[..Math.Min(220, fsOut.Length)]}");
         TestContext.Check(fsOut.Contains("2,000000") || fsOut.Contains("2.000000"), "F# Simpson = 2.0, saiu: " + fsOut[..Math.Min(160, fsOut.Length)]);
         TestContext.Check(fsOut.Contains("5,000000") || fsOut.Contains("5.000000"), "F# media = 5.0");
         Console.WriteLine($"  [mission] F# ok:\n{fsOut.Trim()}");
@@ -179,8 +186,10 @@ internal static class E2EMissionTests
         var psi = new ProcessStartInfo("/bin/bash", "-c \"" + cmd.Replace("\"", "\\\"") + "\"")
         { WorkingDirectory = ws, RedirectStandardOutput = true, RedirectStandardError = true };
         using var p = Process.Start(psi)!;
+        var soTask = p.StandardOutput.ReadToEndAsync();
+        var seTask = p.StandardError.ReadToEndAsync();
         if (!p.WaitForExit(180000)) { try { p.Kill(true); } catch { } return "TIMEOUT."; }
-        return $"exit={p.ExitCode}\n" + (p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd())[^4000..];
+        return $"exit={p.ExitCode}\n" + soTask.Result + seTask.Result;
     }
 
     static string Exec(string ws, string fn, JsonObject args)
@@ -190,7 +199,7 @@ internal static class E2EMissionTests
             if (fn == "shell")
             {
                 string cmd = args["command"]?.GetValue<string>() ?? "";
-                if (cmd.Contains("rm -rf /") || cmd.Contains("sudo")) return "NEGADO.";
+                if (cmd.Contains("rm ") || cmd.Contains("sudo") || cmd.Contains("rm -")) return "NEGADO.";
                 return Shell(ws, cmd);
             }
             if (fn == "git")
