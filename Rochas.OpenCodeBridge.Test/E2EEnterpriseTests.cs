@@ -12,7 +12,8 @@ internal static class E2EEnterpriseTests
         ["input"] = new JsonArray(new JsonObject
         {
             ["type"] = "message", ["role"] = "user",
-            ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = text })
+            ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text",
+                ["text"] = text + " Nunca deixe TODO, placeholder ou NotImplementedException no codigo: implemente tudo por completo, sem esqueleto nem '...' no meio." })
         })
     };
 
@@ -25,7 +26,11 @@ internal static class E2EEnterpriseTests
 
     static void CheckNoStub(string text, string ctx)
     {
-        TestContext.Check(!text.Contains("TODO", StringComparison.OrdinalIgnoreCase), ctx + " sem TODO");
+        // Marcador REAL de stub (comentario TODO / TODO:), case-sensitive de propositio:
+        // nao pode casar a palavra portuguesa "todo/todos" ("todo o fluxo") — falso positivo.
+        var todo = System.Text.RegularExpressions.Regex.Match(text,
+            @"(?://|#|/\*|\*|<!--|--)\s*TODO\b|\bTODO\s*[:\-]");
+        TestContext.Check(!todo.Success, ctx + " sem TODO" + (todo.Success ? $" (achei: '{todo.Value.Trim()}')" : ""));
         TestContext.Check(!text.Contains("NotImplementedException"), ctx + " sem NotImplemented");
         TestContext.Check(!text.Contains("/* ... */") && !text.Contains("// ..."), ctx + " sem esqueleto");
     }
