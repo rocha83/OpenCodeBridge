@@ -46,10 +46,10 @@ internal static partial class Program
     static string Upstream = "http://127.0.0.1:4100";              // vLLM
     static string Model = "qwen3-8b-awq";                          // id servido pelo vLLM
     static string Thinking = "events";                             // "events" = mostra | "off" = descarta
-    static double Temperature = 0.4;                                 // direto e objetivo (0.1-0.4); tool calling continua deterministico via tool_choice
-    static int MaxTokens = 4096;                                   // teto de saida padrao (fabrica 4k); pedido menor e honrado, nunca maior
-    static int CpuMaxTokens = 2048;                                // teto p/ upstream sem parser server-side (llama/CPU): decode ~5 tok/s, teto alto = divagacao de minutos. GPU usa MaxTokens.
-    static int ToolOutputLimit = 32768;                             // corte por resultado de tool
+    static double Temperature = 0.5;                                 // medio (escala 0.3 min / 0.5 medio / 0.8 max); tool calling continua deterministico via tool_choice
+    static int MaxTokens;                                          // teto de saida da linha GPU: 0 = SEM TETO (a infra/llama controla via -c/--n-predict e o cliente decide via max_tokens); >0 = clamp
+    static int CpuMaxTokens;                                       // teto da linha CPU: 0 = SEM TETO (deixa o llama controlar); >0 = clamp p/ conter divagacao em decode lento (~5 tok/s)
+    static int ToolOutputLimit;                                      // corte por resultado de tool: 0 = SEM CORTE (padrao); config via appsettings "toolOutputLimit" / --tool-output-limit
     static string WorkspaceRoot = "";                               // raiz p/ POST /api/tools/execute; vazio = cwd do processo
     static string LogPath = "/tmp/qwen3-bridge.log";
     static string ApiKey = "";
@@ -90,18 +90,21 @@ internal static partial class Program
     static bool CoerceFor(string modelId) => LegacyHarness && (CoerceTextTools
         || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false));
 
-    // Perfis por sufixo no model (ex.: openai/qwen3-8b-awq-plan): plan =
-    // thinking ligado + temp alta p/ planejar; build = thinking fundido +
-    // temp baixa p/ executar; orch = coordena 3B; moe = uso geral hibrido
-    // (Qwen3 decide sozinho quando delegar). Request sem sufixo usa os
+    // Perfis por sufixo no model (ex.: openai/qwen3.5-9b-plan): plan =
+    // thinking ligado + temp media p/ planejar; build = thinking fundido +
+    // temp media p/ executar; orch = coordena subagentes; moe = uso geral
+    // hibrido; scripter = temp baixa (determinismo) e thinking off.
+    // Escala: 0.3 (min) / 0.5 (medio) / 0.8 (max). Request sem sufixo usa os
     // globais. O caminho Qwen3 padrao (sem sufixo) fica byte-identico.
     static readonly Dictionary<string, (double Temp, string Think)> Profiles =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["plan"] = (0.4, "events"),
-            ["build"] = (0.4, "off"),
-            ["orch"] = (0.6, "events"),
-            ["moe"] = (0.4, "events"),
+            ["plan"] = (0.5, "events"),
+            ["build"] = (0.5, "off"),
+            ["orch"] = (0.5, "events"),
+            ["moe"] = (0.8, "events"),
+            ["scripter"] = (0.3, "off"),
+            ["exec"] = (0.3, "off"),
         };
 
     /// <summary>Descobre o perfil pelo sufixo do model (-plan/-build).</summary>
@@ -130,8 +133,9 @@ internal static partial class Program
             if (cfg["model"]?.GetValue<string>() is string model && model.Length > 0) Model = model;
             if (cfg["thinking"]?.GetValue<string>() is string thinking && thinking is "events" or "off") Thinking = thinking;
             if (cfg["temperature"]?.GetValue<double>() is double temp) Temperature = temp;
-            if (cfg["maxTokens"]?.GetValue<int>() is int mt && mt > 0) MaxTokens = mt;
-            if (cfg["cpuMaxTokens"]?.GetValue<int>() is int cmt && cmt > 0) CpuMaxTokens = cmt;
+            if (cfg["maxTokens"]?.GetValue<int>() is int mt && mt >= 0) MaxTokens = mt;
+            if (cfg["cpuMaxTokens"]?.GetValue<int>() is int cmt && cmt >= 0) CpuMaxTokens = cmt;
+            if (cfg["toolOutputLimit"]?.GetValue<int>() is int tol && tol >= 0) ToolOutputLimit = tol;
             if (cfg["logPath"]?.GetValue<string>() is string log && log.Length > 0) LogPath = log;
             if (cfg["apiKey"]?.GetValue<string>() is string key && key.Length > 0) ApiKey = key;
             if (cfg["jwt"]?.AsObject() is JsonObject jwt)
@@ -441,8 +445,11 @@ internal static partial class Program
                 case "--thinking": Thinking = cliArgs[i + 1]; break;
                 // Invariante: em locale pt-BR, Parse("0.7") quebraria sem isso
                 case "--temperature": Temperature = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); break;
+                // 0 = sem teto: a infra (llama -c/--n-predict) e o cliente mandam.
                 case "--max-tokens": MaxTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--cpu-max-tokens": CpuMaxTokens = int.Parse(cliArgs[i + 1]); break;
+                // 0 = sem corte do resultado de tool (conteudo integral).
+                case "--tool-output-limit": ToolOutputLimit = int.Parse(cliArgs[i + 1]); break;
                 case "--log": LogPath = cliArgs[i + 1]; break;
                 case "--api-key": ApiKey = cliArgs[i + 1]; break;
                 case "--jwt-secret": if (cliArgs[i + 1].Length >= 16) Auth.JwtSecret = cliArgs[i + 1]; break;
@@ -617,9 +624,9 @@ WriteJson(ctx, 200, new JsonObject
                     Thinking = thinking;
                 if (req["temperature"]?.GetValue<double>() is double tempValue)
                     Temperature = tempValue;
-                if (req["max_tokens"]?.GetValue<int>() is int maxTokens && maxTokens > 0)
+                if (req["max_tokens"]?.GetValue<int>() is int maxTokens && maxTokens >= 0)
                     MaxTokens = maxTokens;
-                if (req["cpu_max_tokens"]?.GetValue<int>() is int cpuMax && cpuMax > 0)
+                if (req["cpu_max_tokens"]?.GetValue<int>() is int cpuMax && cpuMax >= 0)
                     CpuMaxTokens = cpuMax;
                 Log(new JsonObject { ["event"] = "config", ["thinking"] = Thinking, ["temperature"] = Temperature, ["max_tokens"] = MaxTokens, ["cpu_max_tokens"] = CpuMaxTokens });
                 WriteJson(ctx, 200, BuildStatus());
@@ -638,9 +645,9 @@ WriteJson(ctx, 200, new JsonObject
                 var executor = new Tools.BridgeToolExecutor(root);
                 var result = executor.Execute(name, args, Math.Clamp(timeout, 1, 600));
                 string output = result.Success ? result.Output : "";
-                if (output.Length > ToolOutputLimit) output = output[..ToolOutputLimit];
+                if (ToolOutputLimit > 0 && output.Length > ToolOutputLimit) output = output[..ToolOutputLimit];
                 string error = result.Success ? "" : result.Error;
-                if (error.Length > ToolOutputLimit) error = error[..ToolOutputLimit];
+                if (ToolOutputLimit > 0 && error.Length > ToolOutputLimit) error = error[..ToolOutputLimit];
                 Log(new JsonObject { ["event"] = "tool_exec", ["tool"] = name, ["ok"] = result.Success });
                 WriteJson(ctx, 200, new JsonObject
                 {
@@ -1188,18 +1195,21 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         toolCount = tools?.Count ?? 0;
 
         // Monta o body do /v1/chat/completions
-        // Teto 4k de fabrica (8k no remaster); CPU sem parser usa CpuMaxTokens
-        // (decode lento: teto alto = divagacao de minutos sem tool call).
-        // Honra pedido menor, nunca maior que o teto da linha.
+        // Sem teto por padrao (MaxTokens/CpuMaxTokens = 0): a infra (llama
+        // -c/--n-predict) e o cliente (max_tokens) controlam o tamanho da saida.
+        // So ha clamp quando o operador define >0 via appsettings/--max-tokens.
         // A linha e CPU quando o MODEL servido exige coercion (instancia 3B)
-        // ou o id pedido contem "cpu": nesses casos valem teto e stop proprios.
+        // ou o id pedido contem "cpu": nesses casos vale CpuMaxTokens e stop proprio.
         // (Suite E2E usa ids 8b mesmo na linha CPU — decidir só pelo pedido
         // deixava o 3B divagar até 8k.)
         bool cpuLine = CoerceFor(requestedModel) || CoerceFor(Model);
-        int cap = cpuLine ? CpuMaxTokens : MaxTokens;
-        int asked = req["max_tokens"]?.GetValue<int>()
-            ?? req["max_output_tokens"]?.GetValue<int>() ?? cap;
-        if (asked <= 0) asked = cap;
+        int cap = cpuLine ? CpuMaxTokens : MaxTokens;   // 0 = sem teto
+        int? asked = req["max_tokens"]?.GetValue<int>()
+            ?? req["max_output_tokens"]?.GetValue<int>();
+        if (asked is <= 0) asked = null;
+        // null = omite max_tokens e deixa o llama decidir; senao honra o pedido,
+        // com clamp apenas quando ha teto explicito (>0).
+        int? outTokens = cap > 0 ? Math.Min(asked ?? cap, cap) : asked;
         // Thinking do cliente (Web manda o do cadastro; opencode não manda):
         // presente vence o default da linha; ausente segue o flag --thinking.
         bool wantThinking = thinking == "events";
@@ -1214,10 +1224,11 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             ["model"] = Model,
             ["messages"] = messages,
             ["temperature"] = temperature,
-            ["max_tokens"] = Math.Min(asked, cap),
             ["stream"] = false,          // upstream sem stream: resposta unica, sintetizamos o SSE
             ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = wantThinking }
         };
+        // Sem teto e sem pedido do cliente: omite max_tokens (llama decide).
+        if (outTokens.HasValue) chat["max_tokens"] = outTokens.Value;
         if (tools is { Count: > 0 })
         {
             chat["tools"] = tools;
@@ -2300,7 +2311,7 @@ if (type == "message")
             {
                 string callId = entry["call_id"]?.GetValue<string>() ?? entry["id"]?.GetValue<string>() ?? "";
                 string resultText = ExtractText(entry["output"] ?? entry["result"] ?? entry["content"]);
-                if (resultText.Length > ToolOutputLimit) resultText = resultText[..ToolOutputLimit];
+                if (ToolOutputLimit > 0 && resultText.Length > ToolOutputLimit) resultText = resultText[..ToolOutputLimit];
                 messages.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = callId, ["content"] = resultText });
             }
 // Outros tipos (reasoning, item_reference, calls ainda nao executados)

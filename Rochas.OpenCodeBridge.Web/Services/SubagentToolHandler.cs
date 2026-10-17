@@ -11,7 +11,7 @@ public sealed class SubagentToolHandler : IToolHandler
 {
     public string ToolName => "subagent";
 
-    private const double FixedTemperature = 0.4;
+    private const double FixedTemperature = 0.5;
     private const string SubagentSystem =
         "Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga. Para o enunciado, componha script shell sh de implementacao em batch com CAMINHOS alternativos: o script traz um questionario interativo com parametros para o executor escolher o caminho; cada caminho deve ser executável pelo usuario ou pelo agente menor qwen3-vl-4b com parametros. Quando nao interativo, o executor segue as opcoes 'Recomendadas' do questionario (marque-as no script). Ao final escreva o script na pasta atual com a tool write: o nome do script deve conter o titulo da fase + data e hora juliana (<titulo-da-fase>_<dia-do-ano+hora-minuto>.sh, com dia/hora informados no enunciado, ex.: reembolsos_2860113), valide a sintaxe com a tool shell usando 'bash -n <arquivo>', se a validação acusar erro corrija o script e valide de novo até limpar, porém não execute o script. O uso das tools write e shell (bash -n) é OBRIGATÓRIO em toda fase, sem elas o script não existe; 'não executar' refere-se apenas a rodar o script final, validar a sintaxe é validação, não execução. Estime o tempo de execução do script e registre na primeira linha como `# ETA: ~<minutos> min` (ex.: `# ETA: ~5 min`); se imprevisível, omita a linha.";
 
@@ -104,7 +104,7 @@ public sealed class SubagentToolHandler : IToolHandler
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(30, context.TimeoutSeconds)));
-            // Mesmas specs do chamador: mesmo modelo, 0.4, thinking on, mesmas tools.
+            // Mesmas specs do chamador: mesmo modelo, 0.5, thinking on, mesmas tools.
             // Trava de profundidade estrutural: executor interno sem "subagent".
             // Id do subagente p/ UI ao vivo (card + labels próprios; execução serial).
             string subId = "sub-" + Guid.NewGuid().ToString("N")[..8];
@@ -120,7 +120,7 @@ public sealed class SubagentToolHandler : IToolHandler
             var chunkSink = context.SubChunkAsync;
             var now = System.DateTime.Now;
             var history = new JsonArray { new JsonObject { ["role"] = "user", ["content"] = prompt.Trim() + $"\n(Data-hora-juliana atual: {now.DayOfYear}{now:HHmm}.)" } };
-            // Sub É build (9B-build): temp 0.4 fixa, thinking OFF (doutrina plan
+            // Sub É build (9B-build): temp 0.5 fixa, thinking OFF (doutrina plan
             // true / build false; pensar no executor come orçamento e murcha ato).
             // Trava: shell do sub só valida (`bash -n`), compacta (zip/unzip) ou
             // navega (ls/cat/pwd); nada executa — ver SubShellAllowed.

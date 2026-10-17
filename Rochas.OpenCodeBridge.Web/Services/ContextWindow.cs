@@ -20,14 +20,17 @@ public static class ContextWindow
     public static int CpuMaxOutputTokens { get; set; } = 4096;
     public static int CpuMaxInputTokens { get; set; } = 12288;
     public static int GpuMaxInputTokens { get; set; } = MaxInputTokens;
+    // Corte do args de tool ecoado no evento SSE de progresso: 0 = sem corte.
+    public static int ToolArgLimit { get; set; } = 0;
 
-    public static void Configure(int cpuContext, int cpuOutput, int cpuInput, int gpuInput)
+    public static void Configure(int cpuContext, int cpuOutput, int cpuInput, int gpuInput, int toolArgLimit = 0)
     {
         if (cpuContext > 0) CpuContextTokens = cpuContext;
         if (cpuOutput > 0) CpuMaxOutputTokens = cpuOutput;
         if (cpuInput > 0) CpuMaxInputTokens = cpuInput;
         else if (cpuContext > 0 && cpuOutput > 0) CpuMaxInputTokens = cpuContext - cpuOutput;
         if (gpuInput > 0) GpuMaxInputTokens = gpuInput;
+        if (toolArgLimit >= 0) ToolArgLimit = toolArgLimit;
     }
 
     // Orçamento de entrada por linha: CPU (:4125/4b) = CpuMaxInputTokens (12k =

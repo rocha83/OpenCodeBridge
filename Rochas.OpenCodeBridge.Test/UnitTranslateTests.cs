@@ -114,10 +114,10 @@ internal static class UnitTranslateTests
             })
         };
         var status = await TestContext.GetObj(TestContext.Bridge + "/api/status");
-        double globalTemp = status["temperature"]?.GetValue<double>() ?? 0.4;
+        double globalTemp = status["temperature"]?.GetValue<double>() ?? 0.5;
         var plan = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq-plan"));
         var planChat = plan["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request plan");
-        TestContext.Check(plan["temperature"]?.GetValue<double>() >= globalTemp, "plan temp >= global (perfil plan 0.6 sobre global 0.4)");
+        TestContext.Check(plan["temperature"]?.GetValue<double>() >= globalTemp, "plan temp >= global (perfil plan 0.5 sobre global 0.5)");
         TestContext.Check(planChat["chat_template_kwargs"]?["enable_thinking"]?.GetValue<bool>() == true, "plan thinking on");
         var build = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen2.5-coder-3b-build"));
         var buildChat = build["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request build");

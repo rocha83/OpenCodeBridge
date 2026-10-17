@@ -53,10 +53,11 @@ internal static partial class Program
     static string CfgBridge = "http://127.0.0.1:4125";
     static string CfgModel = "qwen2.5-coder-3b-cpu";
     static string CfgLog = "/tmp/runner-exec.log";
-    static string CfgTemp = "0.4";
+    static string CfgTemp = "0.5";
     static string CfgVerbosity = "normal";
     static int CfgMaxTurns = 5;
     static int CfgTimeoutS = 120;
+    static int CfgOutputLimit;          // corte do retorno de tool p/ o modelo: 0 = SEM CORTE (padrao); config toolOutputLimit / --output-limit
 
     /// <summary>appsettings.json ao lado do DLL: allow/sudoExact + escalares.</summary>
     static void LoadSettings()
@@ -86,6 +87,7 @@ internal static partial class Program
             if (cfg["verbosity"]?.GetValue<string>() is string v && v.Length > 0) CfgVerbosity = v.ToLowerInvariant();
             if (cfg["maxTurns"]?.GetValue<int>() is int turns && turns > 0) CfgMaxTurns = turns;
             if (cfg["timeoutSeconds"]?.GetValue<int>() is int sec && sec > 0) CfgTimeoutS = sec;
+            if (cfg["toolOutputLimit"]?.GetValue<int>() is int tol && tol >= 0) CfgOutputLimit = tol;
         }
         catch (Exception ex)
         {
@@ -99,7 +101,7 @@ internal static partial class Program
     {
         if (args.Length == 0 || args[0] is "--help" or "-h")
         {
-            Console.WriteLine("Uso: Runner exec \"<tarefa>\" [--bridge URL] [--model ID] [--repo DIR] [--max-turns N] [--timeout S] [--log PATH] [--verbosity quiet|normal|verbose]");
+            Console.WriteLine("Uso: Runner exec \"<tarefa>\" [--bridge URL] [--model ID] [--repo DIR] [--max-turns N] [--timeout S] [--output-limit N] [--log PATH] [--verbosity quiet|normal|verbose]");
             return 0;
         }
         if (args[0] != "exec" || args.Length < 2) { Console.Error.WriteLine("Uso: Runner exec \"<tarefa>\" [...]"); return 1; }
@@ -110,11 +112,13 @@ internal static partial class Program
         string repo = Flag(args, "--repo", Directory.GetCurrentDirectory());
         int maxTurns = int.TryParse(Flag(args, "--max-turns", CfgMaxTurns.ToString()), out int mt) ? mt : CfgMaxTurns;
         int timeoutS = int.TryParse(Flag(args, "--timeout", CfgTimeoutS.ToString()), out int ts) ? ts : CfgTimeoutS;
+        // 0 = sem corte: retorno integral do tool vai p/ o modelo.
+        int outputLimit = int.TryParse(Flag(args, "--output-limit", CfgOutputLimit.ToString()), out int ol) ? ol : CfgOutputLimit;
         string logPath = Flag(args, "--log", CfgLog);
         string temp = Flag(args, "--temperature", CfgTemp);
         string verbosity = Flag(args, "--verbosity", CfgVerbosity).ToLowerInvariant();
         if (verbosity is not ("quiet" or "normal" or "verbose")) verbosity = "normal";
-        return RunAsync(task, bridge.TrimEnd('/'), model, repo, maxTurns, timeoutS, logPath, verbosity, temp).GetAwaiter().GetResult();
+        return RunAsync(task, bridge.TrimEnd('/'), model, repo, maxTurns, timeoutS, logPath, verbosity, temp, outputLimit).GetAwaiter().GetResult();
     }
 
     static string Flag(string[] args, string name, string def)
@@ -126,7 +130,7 @@ internal static partial class Program
 
     /// <summary>Loop principal: chat -> fence -> valida -> executa -> devolve.</summary>
     /// <param name="verbosity">quiet (so resultado), normal (1 linha/volta), verbose (tudo).</param>
-    static async Task<int> RunAsync(string task, string bridge, string model, string repo, int maxTurns, int timeoutS, string logPath, string verbosity, string temp)
+    static async Task<int> RunAsync(string task, string bridge, string model, string repo, int maxTurns, int timeoutS, string logPath, string verbosity, string temp, int outputLimit)
     {
         var messages = new JsonArray
         {
@@ -161,7 +165,7 @@ internal static partial class Program
                 Console.WriteLine($"[volta {turn}] $ {name} {arguments} ({output.Length} bytes){FirstLine(drift)}");
             messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = text });
             int lines = output.Split('\n').Count(l => l.Trim().Length > 0);
-            messages.Add(new JsonObject { ["role"] = "user", ["content"] = $"Saida de `{name} {arguments}` (total: {lines} linhas):\n{Truncate(output, 4000)}\nProssiga ou de o resultado final." });
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = $"Saida de `{name} {arguments}` (total: {lines} linhas):\n{(outputLimit > 0 ? Truncate(output, outputLimit) : output)}\nProssiga ou de o resultado final." });
         }
         Console.WriteLine($"LIMITE de {maxTurns} voltas atingido.");
         return 1;
@@ -175,7 +179,7 @@ internal static partial class Program
             {
                 ["model"] = model,
                 ["messages"] = messages.DeepClone(),
-                ["temperature"] = double.TryParse(temp, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double t) ? t : 0.4,
+                ["temperature"] = double.TryParse(temp, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double t) ? t : 0.5,
                 ["max_tokens"] = 512,
                 ["stream"] = false,
             }.ToJsonString(), Encoding.UTF8, "application/json"));

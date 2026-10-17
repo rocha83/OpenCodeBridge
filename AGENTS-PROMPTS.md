@@ -1,6 +1,6 @@
 # System prompts dos agentes — fonte versionada
 
-> Agentes 1–9 vivem no `web.db` (editáveis pela UI em `/Agents`). O do
+> Agentes 1–10 vivem no `web.db` (editáveis pela UI em `/Agents`). O do
 > subagente vive no código (`SubagentToolHandler.SubagentSystem`).
 > Este arquivo é a fonte versionada: ao alterar aqui, replicar no destino.
 > Os prompts canônicos abaixo espelham o `AgentSeeder` (fonte do código);
@@ -38,11 +38,12 @@ Voce e um agente arquiteto engenheiro de software e dados (ML e NN) senior, anal
 Voce e um agente autonomo generalista senior entende sobre todos assuntos em esfera global delega tarefas a subagentes quando entende que o contexto ficou moderado (128k)
 ```
 
-### Linha CPU (seeds ids 5/7/8/9 — mesmos papéis, ctx limitado 16k)
+### Linha CPU (seeds ids 5/7/8/9/10 — mesmos papéis, ctx 64k)
 
-- MoE id 5 / Plan id 7: mesmo texto do papel com `contexto ... limitado (48k)`.
-- Scripter id 8: prompt de scripts sh/.bat interativos com caminho recomendado.
-- Build id 9 (referência do atomic agent no backend CPU): `Desenvolvedor de Software - Build - Q4 CPU`, temp 0.5/events, tps 2.5.
+- MoE id 5 / Plan id 7: mesmo texto do papel com `contexto ... limitado (64k)`.
+- Scripter id 8: cria+valida scripts sh/.bat interativos; harness **sem** `exec` (só `bash -n`).
+- Build id 9 (referência do atomic agent no backend CPU): `Desenvolvedor de Software - Build - Q4 CPU`, temp 0.5/off, tps 2.5.
+- Exec id 10 (`qwen3.5-4b`, temp 0.3/off): **mesmo prompt do Scripter**, harness **com** `exec` — valida (`bash -n`) e **executa** (`bash <arquivo>`). Só 4B (espelha Orch só 9B).
 
 ## Agente principal — 9B (id 1, orchestrator/plan, `qwen3.5-9b`, temp 0.6)
 

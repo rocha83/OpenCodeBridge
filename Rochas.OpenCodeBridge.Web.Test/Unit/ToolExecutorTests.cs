@@ -34,6 +34,7 @@ internal static class ToolExecutorTests
             PlanToolsFilter();
             ShellInspectorBlocks();
             ShellProcExecGates(exec);
+            ScripterVsExec(exec);
             GitRepoPath(exec, ctx);
             GlobAbsoluteOutside();
             CpuEtaTps();
@@ -87,7 +88,7 @@ internal static class ToolExecutorTests
     {
         var plan = ToolDefinitions.GetTools("plan");
         var names = plan.Select(t => (t as System.Text.Json.Nodes.JsonObject)?["function"]?["name"]?.GetValue<string>()).ToList();
-        Check(plan.Count == 9 && names.Contains("shell") && names.Contains("write") && names.Contains("edit")
+        Check(plan.Count == 12 && names.Contains("shell") && names.Contains("write") && names.Contains("edit")
             && names.Contains("read") && names.Contains("grep") && names.Contains("glob"), "U-exec-plan-tools");
         string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"plan-{System.Guid.NewGuid():N}");
         System.IO.Directory.CreateDirectory(root);
@@ -144,6 +145,26 @@ internal static class ToolExecutorTests
         Check(okPs.Success, "U-gate-ps-ok");
         var okBashN = exec.Execute("shell", "{\"command\": \"bash -n run.sh\"}", 30, "build", shellOnly);
         Check(okBashN.Success || okBashN.Error.Contains("run.sh"), "U-gate-bashn-validation");
+    }
+
+    // Scripter cria+valida ('bash -n') sem 'exec'; Exec valida e executa.
+    private static void ScripterVsExec(ToolExecutor exec)
+    {
+        var scripter = new Models.Agent { Name = "scripter", Mode = "build",
+            Tools = "glob,read,grep,git,fetch,display,write,edit,proc,shell,install" };
+        var execRole = new Models.Agent { Name = "exec", Mode = "build",
+            Tools = "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec" };
+        exec.Execute("write", "{\"path\": \"run.sh\", \"content\": \"echo exec-ok\"}");
+        var v = exec.Execute("shell", "{\"command\": \"bash -n run.sh\"}", 30, "build", scripter);
+        Check(v.Success || v.Error.Contains("run.sh"), "U-scripter-bashn-validation");
+        var deny = exec.Execute("shell", "{\"command\": \"bash run.sh\"}", 30, "build", scripter);
+        Check(!deny.Success && deny.Error.Contains("exec"), "U-scripter-no-exec");
+        var run = exec.Execute("shell", "{\"command\": \"bash run.sh\"}", 30, "build", execRole);
+        Check(run.Success && run.Output.Contains("exec-ok"), "U-exec-runs-script");
+        var runC = exec.Execute("shell", "{\"command\": \"bash -c \\\"echo via-c\\\"\"}", 30, "build", execRole);
+        Check(runC.Success && runC.Output.Contains("via-c"), "U-exec-bash-c");
+        var denyC = exec.Execute("shell", "{\"command\": \"bash -c \\\"echo via-c\\\"\"}", 30, "build", scripter);
+        Check(!denyC.Success && denyC.Error.Contains("exec"), "U-scripter-bash-c-no-exec");
     }
 
     // Primeira base gravável (sonda com escrita real; volume externo vive travando).
@@ -250,7 +271,7 @@ internal static class ToolExecutorTests
         var q = h.Handle("echo \"a;b\"", ctx);
         Check(q.Success && q.Output.Contains("a;b"), "U-tool-shell-quoted");
         var p = h.Handle("echo x | cat", ctx);
-        Check(!p.Success && p.Error.Contains("metacaractere"), "U-tool-shell-metachar");
+        Check(p.Success && p.Output.Contains("x"), "U-tool-shell-pipe-ok");
     }
 
     private static void UnknownTool(ToolExecutor exec)
@@ -326,7 +347,7 @@ internal static class ToolExecutorTests
         var tools = ToolDefinitions.GetTools();
         bool hasTask = tools.Any(t => (t as System.Text.Json.Nodes.JsonObject)?["function"]?["name"]?.GetValue<string>() == "task");
         var names = tools.Select(t => (t as System.Text.Json.Nodes.JsonObject)?["function"]?["name"]?.GetValue<string>()).ToList();
-        Check(tools.Count == 9 && !hasTask && names.Contains("shell") && names.Contains("subagent") && names.Contains("glob") && names.Contains("write") && names.Contains("edit"), "U-tool-definitions");        var missing = exec.Execute("read", "{\"path\": \"nao-existe.txt\"}");
+        Check(tools.Count == 12 && !hasTask && names.Contains("shell") && names.Contains("subagent") && names.Contains("glob") && names.Contains("write") && names.Contains("edit"), "U-tool-definitions");        var missing = exec.Execute("read", "{\"path\": \"nao-existe.txt\"}");
         Check(!missing.Success && missing.Error.Contains("não encontrado"), "U-tool-read-missing");
 
         exec.Execute("write", "{\"path\": \"sub/ninho.txt\", \"content\": \"l1\\nl2\\nl3\\nl4\"}");

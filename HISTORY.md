@@ -1,5 +1,47 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Bridge — role Exec (4B): cria E executa scripts; Scripter só valida (2026-10-16)
+- **Novo role `Exec`** (`AgentSeeder`, id 10, `qwen3.5-4b`, CPU `:4125`, temp
+  0.3/off): **mesmo system prompt do Scripter**, porém com o checkbox
+  **"Execução de scripts"** (`exec`) no harness — cria o `.sh`, valida com
+  `bash -n` e **executa** com `bash <arquivo>`. Só **4B** (espelha o Orch só 9B).
+- **Scripter** (ids 6 GPU / 8 CPU): removido `exec` do CSV — passa a só
+  criar+validar (`bash -n`), sem executar. O campo "Executar scripts" **já
+  existia** na UI (`Views/Agents/_AgentForm.cshtml:61`, token `exec`), separado
+  de "Validação de scripts" (`shell`); **nenhum campo novo** foi necessário.
+- **Guard de `bash -c`** (`ToolExecutor.cs` L84-94 + `ShellInspector`): a
+  execução de `bash`/`sh` fora de `-n` já é gated pelo token `exec` (classe
+  `Execution`); o `ShellInspector.Validate` continua negando tokens destrutivos
+  (rm/kill/exec/eval/su...) inclusive dentro de `bash -c`. Nada a afrouxar — o
+  que faltava era o papel certo com `exec` no CSV.
+- **opencode**: novo agente `agents/exec.md` (primary, `llama/qwen3.5-4b-exec`)
+  + modelo `qwen3.5-4b-exec` no `opencode.json` (temp 0.3, ctx 64k/16k).
+- **Qwen CLI**: profile `llama-cpu/qwen3.5-4b-exec` (`model qwen3.5-4b`,
+  `:4110`) nos 3 `settings.json` (root/mint/skel).
+- Teste novo `U-scripter-*`/`U-exec-*` (`ToolExecutorTests`): Scripter nega
+  `bash run.sh` e `bash -c`; Exec executa e devolve a saída.
+
+## Bridge — max-tokens deixa de ser hardcoded; infra/llama controla (2026-10-16)
+- `Program.cs`: `MaxTokens`/`CpuMaxTokens` passam a default **0 = sem teto**. A
+  saida passa a ser controlada pela infra (llama `-c`/`--n-predict`) e pelo
+  cliente (`max_tokens` no request). Clamp so quando o operador define `>0`
+  (`appsettings` `maxTokens`/`cpuMaxTokens`, `--max-tokens`/`--cpu-max-tokens`
+  ou `POST /api/config` — agora aceitam `0` p/ limpar o teto). Sem teto e sem
+  pedido do cliente, o body do `/v1/chat/completions` **omite** `max_tokens`.
+- Units `bridge-gpu`/`bridge-cpu`: removidos `--max-tokens`/`--cpu-max-tokens`
+  do `ExecStart` (nao mais hardcoded no remaster; a infra no llama manda).
+- Examples `appsettings.4124.gpu-example.json`, `appsettings.4125.cpu-example.json`
+  e `appsettings.4124.orch-off-example.json`: teto em `0` + comentarios, e
+  perfis de temperatura alinhados (Plan/Build/Orch 0.5, MoE 0.8).
+- `AgentSeeder` (`Rochas.OpenCodeBridge.Web`): temperaturas Plan/Build/Orch 0.5,
+  MoE 0.8, Scripter **0.3**; contexto do snapshot atualizado (192k GPU / 64k CPU).
+- **Corte de conteudo parametrizavel (nada hardcoded)**: `ToolOutputLimit`
+  (bridge, corte do resultado de tool) + `Truncate(output, 4000)` do Runner +
+  `args[..4000]` do Web viraram `toolOutputLimit`/`--tool-output-limit` (bridge),
+  `toolOutputLimit`/`--output-limit` (Runner) e `ContextWindow:ToolArgLimit` (Web).
+  Default em codigo = **0 = sem corte**; so appsettings definem valor.
+- Build Release `0 erros`; smoke das bridges :4124/:4125 ok.
+
 ## Bridge — SystemGuardrail anti-loop ajustado (2026-10-14)
 - `Program.cs` linha 57: `SystemGuardrail` atualizado com diretrizes
   de comportamento do loop agentico: "ao listar arquivos locais preferencialmente
