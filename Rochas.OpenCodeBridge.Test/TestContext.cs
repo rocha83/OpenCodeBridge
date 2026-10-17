@@ -1,5 +1,6 @@
 // Contexto compartilhado da suite (estado + runner + helpers HTTP + fixture soma).
 
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -101,8 +102,26 @@ internal static class TestContext
         } // for: retry unico em corpo vazio
     }
 
-    public static JsonObject SomaToolResponses() => new()
+    /// <summary>
+    /// Gera o scaffold do projeto pelo template `dotnet new` (mesmo conceito dos project
+    /// templates do Visual Studio): cria o .csproj/.fsproj + o fonte template na pasta alvo.
+    /// O harness faz isso (nao o modelo) para os testes nao dependerem de o modelo acertar o
+    /// `dotnet new`; o valor do teste fica em escrever o fonte e iterar ate rodar.
+    /// </summary>
+    public static void ScaffoldProject(string name, string dir, string lang = "C#", string kind = "console", int secs = 180)
     {
+        Directory.CreateDirectory(dir);
+        string args = $"new {kind} -n {name} -o {dir}" + (lang.Equals("C#", StringComparison.OrdinalIgnoreCase) ? "" : $" -lang {lang}");
+        var psi = new ProcessStartInfo("dotnet", args) { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
+        psi.Environment["DOTNET_ROLL_FORWARD"] = "LatestMajor";
+        psi.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
+        using var p = Process.Start(psi) ?? throw new Exception("sem processo: dotnet new");
+        if (!p.WaitForExit(secs * 1000)) { try { p.Kill(true); } catch { } throw new Exception("timeout dotnet new " + name); }
+        string outp = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+        if (p.ExitCode != 0) throw new Exception($"dotnet new {name} falhou ({p.ExitCode}): {outp[..Math.Min(300, outp.Length)]}");
+    }
+
+    public static JsonObject SomaToolResponses() => new()    {
         ["type"] = "function",
         ["name"] = "soma",
         ["description"] = "Soma dois inteiros",

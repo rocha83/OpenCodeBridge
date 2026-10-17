@@ -58,10 +58,10 @@ internal static class E2EMissionTests
         string ws = Path.Combine(Path.GetTempPath(), "e2e-mission");
         if (Directory.Exists(ws)) Directory.Delete(ws, true);
         Directory.CreateDirectory(ws);
-        // Scaffold dos projetos e' do harness (o modelo so escreve o fonte e roda): elimina a
-        // variabilidade do `dotnet new` feito pelo modelo, sem tirar o valor do teste.
-        Run("dotnet", $"new console -n mcs -o {ws}/mcs", ws, 180);
-        Run("dotnet", $"new console -lang F# -n mfs -o {ws}/mfs", ws, 180);
+        // Scaffold dos projetos e' do harness (template `dotnet new`, estilo Visual Studio):
+        // o modelo so escreve o fonte e roda; elimina a variabilidade do `dotnet new` no modelo.
+        TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
+        TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
 
         var sys = new JsonObject { ["role"] = "system", ["content"] = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls (uma por vez), sem prosa. Matematica sempre qualificada: C# Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# System.Math.Sin ou open System + Math.Sin - nunca sin/cos/pi minusculos. F# usa let/printfn/List.map e roda com dotnet run --project <dir>." };
         var history = new JsonArray(sys);
