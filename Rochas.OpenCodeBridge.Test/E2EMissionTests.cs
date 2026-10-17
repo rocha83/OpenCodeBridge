@@ -45,8 +45,8 @@ internal static class E2EMissionTests
         var arr = new JsonArray();
         arr.Add(P("shell", new JsonObject { ["command"] = new JsonObject { ["type"] = "string" } }, "command"));
         arr.Add(P("write", new JsonObject { ["path"] = new JsonObject { ["type"] = "string" }, ["content"] = new JsonObject { ["type"] = "string" } }, "path", "content"));
-        arr.Add(P("git", new JsonObject { ["action"] = new JsonObject { ["type"] = "string", ["description"] = "init|add|commit|status|log" }, ["message"] = new JsonObject { ["type"] = "string" }, ["paths"] = new JsonObject { ["type"] = "string" } }, "action"));
-        arr.Add(P("zip", new JsonObject { ["output"] = new JsonObject { ["type"] = "string" }, ["inputs"] = new JsonObject { ["type"] = "string", ["description"] = "espaco-separado, relativo ao projeto" } }, "output", "inputs"));
+        arr.Add(P("git", new JsonObject { ["action"] = new JsonObject { ["type"] = "string", ["description"] = "init|add|commit|status|log" }, ["message"] = new JsonObject { ["type"] = "string", ["description"] = "mensagem do commit (obrigatoria no commit)" }, ["paths"] = new JsonObject { ["type"] = "string", ["description"] = "caminhos a adicionar (vazio = tudo)" } }, "action"));
+        arr.Add(P("zip", new JsonObject { ["output"] = new JsonObject { ["type"] = "string", ["description"] = "nome do arquivo .zip de saida" }, ["inputs"] = new JsonObject { ["type"] = "string", ["description"] = "caminhos relativos ao workspace, separados por espaco (bin/obj excluidos)" } }, "output", "inputs"));
         return arr;
     }
 
@@ -63,9 +63,9 @@ internal static class E2EMissionTests
         TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
         TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
 
-        var sys = new JsonObject { ["role"] = "system", ["content"] = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls (uma por vez), sem prosa. Matematica sempre qualificada: C# Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# System.Math.Sin ou open System + Math.Sin - nunca sin/cos/pi minusculos. F# usa let/printfn/List.map e roda com dotnet run --project <dir>." };
+        var sys = new JsonObject { ["role"] = "system", ["content"] = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls (uma por vez), sem prosa." };
         var history = new JsonArray(sys);
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) write no caminho ABSOLUTO {ws}/mcs/Program.cs (o projeto ja existe em {ws}/mcs; nao recrie, nao use echo/heredoc): programa que calcula Simpson de Math.Sin em [0,pi] (n=100 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. (2) shell: dotnet run --project {ws}/mcs -c Release. Se o dotnet run retornar erro, leia a mensagem, corrija Program.cs (write) e rode de novo; repita ate imprimir 2.000000 e 5.000000." });
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) write no caminho ABSOLUTO {ws}/mcs/Program.cs (o projeto ja existe em {ws}/mcs; nao recrie, nao use echo/heredoc): programa que calcula Simpson de Math.Sin em [0,pi] (n=100 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. (2) rode o projeto e confira a saida; se falhar, leia o erro, corrija Program.cs e rode de novo ate imprimir 2.000000 e 5.000000." });
 
         string fcode = "", final = "";
         string logPath = Path.Combine(ws, "_mission.log");
@@ -127,7 +127,7 @@ internal static class E2EMissionTests
                 while (history.Count > historyBeforeFs) history.RemoveAt(history.Count - 1);
                 LogT($"[F#] retry {attempt}: F# anterior nao compilou/rodou");
             }
-            history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) write no caminho ABSOLUTO {ws}/mfs/Program.fs (o projeto ja existe em {ws}/mfs; nao recrie): mesmo programa do C# - Simpson de sin em [0,pi] (n=100 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}}. Em F# escreva SEMPRE o prefixo completo `System.Math.Sin`/`System.Math.Sqrt`/`System.Math.PI`; NUNCA use `open System.Math` (invalido em F#: Math e tipo, nao namespace). F# NAO tem operadores OCaml (`+.`, `-.`, `*.`, `/.`) - isso quebra o build: use `+ - * /` normais. `%` so vale para int: para a paridade do Simpson some com indice via `List.mapi (fun i x -> if i = 0 || i = n then fx x elif i % 2 = 1 then 4.0 * fx x else 2.0 * fx x) xs |> List.sum`. Nao use indexacao (.[i]) nem parametrize a funcao: use List.init/List.mapi/List.sum com System.Math.Sin direto; media = List.average (List.map float xs); variancia = List.averageBy (fun x -> (x - media) ** 2.0) xs; desvio = System.Math.Sqrt variancia. Formate com printfn \"%.6f\" x (sintaxe %, nunca {{0:F6}}). (2) shell: dotnet run --project {ws}/mfs -c Release. Se o dotnet run retornar erro, leia a mensagem, corrija Program.fs (write) e rode de novo; repita ate imprimir 2.000000 e 5.000000." });
+            history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) write no caminho ABSOLUTO {ws}/mfs/Program.fs (o projeto ja existe em {ws}/mfs; nao recrie): mesmo programa do C# - Simpson de sin em [0,pi] (n=100 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. (2) rode o projeto e confira a saida; se falhar, leia o erro, corrija Program.fs e rode de novo ate imprimir 2.000000 e 5.000000." });
         for (int turn = 0; turn < 22; turn++)
         {
             var rf = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());
@@ -138,7 +138,7 @@ internal static class E2EMissionTests
                 LogT($"[F#] T{turn} SEM CALLS: {(mf["content"]?.GetValue<string>() ?? "")[..Math.Min(200, (mf["content"]?.GetValue<string>() ?? "").Length)]}");
                 history.Add(new JsonObject { ["role"] = "assistant", ["content"] = mf["content"]?.GetValue<string>() ?? "" });
                 if (turn >= 4) break;
-                history.Add(new JsonObject { ["role"] = "user", ["content"] = "Sem prosa: leia o erro de build (se houver) e emita ja a proxima tool call (write corrigindo Program.fs ou shell dotnet run)." });
+                history.Add(new JsonObject { ["role"] = "user", ["content"] = "Sem prosa: leia o erro de build (se houver) e emita ja a proxima tool call." });
                 continue;
             }
             var ff = new JsonArray();
@@ -177,7 +177,7 @@ internal static class E2EMissionTests
         Console.WriteLine($"  [mission] F# ok:\n{fsOut.Trim()}");
 
         // Fase 3: versionamento + pacote com as tools nativas git/zip.
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = "Use tools NESTA ordem, uma por resposta: git(init), git(add), git(commit com mensagem) e, por ultimo, OBRIGATORIAMENTE a tool zip (output entrega.zip, inputs mcs mfs). Sao 4 tool calls: sem a zip a entrega nao esta pronta. So tool calls, sem texto." });
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = "Conclua a entrega: versione o workspace no git (a entrega final deve estar commitada) e gere o pacote entrega.zip na raiz do workspace. So tool calls ate concluir, sem texto." });
         for (int turn = 0; turn < 12; turn++)
         {
             var r2 = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());
@@ -189,7 +189,7 @@ internal static class E2EMissionTests
                 if (Directory.GetFiles(ws, "entrega.zip").Length == 1) break;
                 LogT($"[git/zip] T{turn + 1} sem tool call e sem entrega.zip; pedindo a tool zip");
                 history.Add(new JsonObject { ["role"] = "user",
-                    ["content"] = "Faltou a tool zip: chame zip com output entrega.zip e inputs mcs mfs. So a tool call." });
+                    ["content"] = "Voce encerrou sem concluir a entrega. Verifique o que falta e emita a tool call correspondente, sem texto." });
                 continue;
             }
             var f2 = new JsonArray();
