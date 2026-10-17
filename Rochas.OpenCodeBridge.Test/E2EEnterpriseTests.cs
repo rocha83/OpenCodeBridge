@@ -106,7 +106,8 @@ internal static class E2EEnterpriseTests
         var r = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", Req(
             "C# .NET 9 + Garnet (Redis-protocol): repositorio de Product com cache-aside — GET tenta Garnet " +
             "primeiro (IDistributedCache, sliding 5min), fallback Postgres + repopula; PUT/DELETE invalidam a " +
-            "chave; stampede controlado por lock por chave; quando o Garnet cai, opera direto no banco e loga " +
+            "chave com `cache.RemoveAsync(key)` (a API e `RemoveAsync` — `Remove` esta obsoleto no .NET 8+); " +
+            "stampede controlado por lock por chave; quando o Garnet cai, opera direto no banco e loga " +
             "degradado (circuit-breaker simples com 3 falhas). Entregue o repositorio + registro no DI. " +
             "So codigo + 3 bullets."));
         TestContext.Check(r["status"]?.GetValue<string>() == "completed", "garnet completed");

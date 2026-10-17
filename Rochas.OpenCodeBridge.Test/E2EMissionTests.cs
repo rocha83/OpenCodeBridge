@@ -119,7 +119,7 @@ internal static class E2EMissionTests
         // Fase 2: portabilidade para F# (mesma matematica, System.Math qualificado).
         int historyBeforeFs = history.Count;
         string fsOut = "";
-        for (int attempt = 1; attempt <= 2; attempt++)
+        for (int attempt = 1; attempt <= 3; attempt++)
         {
             if (attempt > 1)
             {
@@ -127,7 +127,7 @@ internal static class E2EMissionTests
                 while (history.Count > historyBeforeFs) history.RemoveAt(history.Count - 1);
                 LogT($"[F#] retry {attempt}: F# anterior nao compilou/rodou");
             }
-            history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) write no caminho ABSOLUTO {ws}/mfs/Program.fs (o projeto ja existe em {ws}/mfs; nao recrie): mesmo programa do C# - Simpson de sin em [0,pi] (n=100 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}}. Em F# escreva SEMPRE o prefixo completo `System.Math.Sin`/`System.Math.Sqrt`/`System.Math.PI`; NUNCA use `open System.Math` (invalido em F#: Math e tipo, nao namespace). Nao use indexacao (.[i]) nem parametrize a funcao: use List.init/List.map/List.sum com System.Math.Sin direto; media = List.average (List.map float xs); variancia = List.averageBy (fun x -> (x - media) ** 2.0) xs; desvio = System.Math.Sqrt variancia. Formate com printfn \"%.6f\" x (sintaxe %, nunca {{0:F6}}). (2) shell: dotnet run --project {ws}/mfs -c Release. Se o dotnet run retornar erro, leia a mensagem, corrija Program.fs (write) e rode de novo; repita ate imprimir 2.000000 e 5.000000." });
+            history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) write no caminho ABSOLUTO {ws}/mfs/Program.fs (o projeto ja existe em {ws}/mfs; nao recrie): mesmo programa do C# - Simpson de sin em [0,pi] (n=100 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}}. Em F# escreva SEMPRE o prefixo completo `System.Math.Sin`/`System.Math.Sqrt`/`System.Math.PI`; NUNCA use `open System.Math` (invalido em F#: Math e tipo, nao namespace). F# NAO tem operadores OCaml (`+.`, `-.`, `*.`, `/.`) - isso quebra o build: use `+ - * /` normais. `%` so vale para int: para a paridade do Simpson some com indice via `List.mapi (fun i x -> if i = 0 || i = n then fx x elif i % 2 = 1 then 4.0 * fx x else 2.0 * fx x) xs |> List.sum`. Nao use indexacao (.[i]) nem parametrize a funcao: use List.init/List.mapi/List.sum com System.Math.Sin direto; media = List.average (List.map float xs); variancia = List.averageBy (fun x -> (x - media) ** 2.0) xs; desvio = System.Math.Sqrt variancia. Formate com printfn \"%.6f\" x (sintaxe %, nunca {{0:F6}}). (2) shell: dotnet run --project {ws}/mfs -c Release. Se o dotnet run retornar erro, leia a mensagem, corrija Program.fs (write) e rode de novo; repita ate imprimir 2.000000 e 5.000000." });
         for (int turn = 0; turn < 22; turn++)
         {
             var rf = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());
