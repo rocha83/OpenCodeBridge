@@ -15,7 +15,9 @@ internal static class TestContext
     public static string Only = "";
     public static string? ApiKey;
     public static string? Jwt;
-    public static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(10) };
+    // 20 min: os E2E enterprise (crud-*/garnet/worker) geram muito e, sob carga da suite
+    // inteira, passavam de 600s (visto 16/10); isolados ficam em ~110-215s.
+    public static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(20) };
 
     // Modelo servido pela bridge alvo (qwen3|coder): expectativas por perfil.
     public static string ServedModel = "";
