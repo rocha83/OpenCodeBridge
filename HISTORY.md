@@ -1,5 +1,26 @@
 # HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
 
+## Bridge — tail genérico de tools (git/zip) e enunciados só com tarefa+aceite (2026-10-17)
+- **Princípio adotado:** uso de tool é **conhecimento genérico** (vive no `HarnessToolsTail`);
+  o enunciado do teste carrega só a **tarefa + aceite**. Nada de receita de cenário no
+  enunciado — trava o modelo e só serve ao verde.
+- **Tail (`Program.cs`):** git completo (`init/add/commit`, commit com mensagem, identidade
+  local), **zip** (`output` + `inputs` relativos ao workspace, exclui `bin`/`obj`), a nota de que
+  **git e zip são independentes** (a ordem só importa se o enunciado pedir; se pedir versionar E
+  empacotar, versione antes) e a regra **"Tarefa de N passos: só responda texto depois de
+  concluir TODOS"** (se anunciou um passo e falta, emita a tool call).
+- **`E2EMissionTests`:** removida a receita ordenada das 4 calls (`git(init) → git(add) →
+  git(commit) → zip(output, inputs)`) e o nudge que citava tool+args; o nudge agora é genérico
+  ("encerrou sem concluir: emita a tool call que falta"). Sintaxe F# e `dotnet run --project`
+  saíram do enunciado (já estão no tail); **aceite inalterado** (`.git/HEAD` + `entrega.zip`) —
+  nunca houve assert de ordem.
+- **Schema das tools (`Tools()`):** descrições de `git.message` ("obrigatória no commit"),
+  `git.paths` ("vazio = tudo"), `zip.output` e `zip.inputs` (relativos, espaço-separados).
+- **Deploy:** `/usr/src/opencodebridge` fetch+merge (sem conflitos) + rebuild (0 erros) +
+  restart dos dois (`bridge-gpu`/`bridge-cpu` `active`; `api/status` ok).
+- **Pendente (não rodado — dia encerrado a pedido):** A/B da missão sem receita (3×, aceite
+  PASS com **nudge = 0 em ≥2 de 3**) e suíte completa (`FAIL=0`).
+
 ## Bridge — role Exec (4B): cria E executa scripts; Scripter só valida (2026-10-16)
 - **Novo role `Exec`** (`AgentSeeder`, id 10, `qwen3.5-4b`, CPU `:4125`, temp
   0.3/off): **mesmo system prompt do Scripter**, porém com o checkbox
