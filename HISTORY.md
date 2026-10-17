@@ -1390,3 +1390,28 @@
   **10965/12288 (89%)**. Decode 4B a 57 t/s prova GPU puro (CPU daria ~5).
 - Q3 no 9B testado e descartado: mesmo t/s que o Q4 (~33 vs ~33 aos 6k),
   sem ganho; Q4 de volta.
+## Linha CPU vira GPU2-CPU + toggle de runtime (2026-10-15, remaster-06)
+- Motivo: ctx `49152` + `Q3_K_M` calibrados em 2 dias para rodar o VL-4B
+  também na GPU; forçar `-ngl 0` fixo desperdiçava a calibragem. Mesma unit
+  `llama-cpu.service` (só `Description`→GPU2-CPU); template
+  `start-llama-cpu.sh` com padrão GPU `-ngl 99`; benchmark em CPU puro via
+  toggle (novo `llama-gpu2-cpu-toggle.sh`: alterna `-ngl 99↔0` no template +
+  na unit viva, `daemon-reload` + restart + health `:4110`).
+  Atalhos: `Llama GPU2-CPU.desktop` (launcher) + `Llama GPU2-CPU Toggle.desktop`.
+- Renome `qwen3.5-4b`→`qwen3-vl-4b`: `bridge-cpu.service` (`--model`),
+  `appsettings.4125.cpu-example.json`, prompt ativo `SubagentToolHandler.cs`,
+  seeder (4 nomes `VL-Q3 CPU`→`VL-Q3 GPU2-CPU`), `AGENTS.md`
+  (`:4111` 2 slots 32k → `:4110` slot único 48k GPU2-CPU).
+- Gitea pré-seed sem setup: `app.ini` com `APP_DATA_PATH` + `INSTALL_LOCK=true`
+  (perms `git:git/660`); serviço segue `disabled` (só Desktop).
+- Bridge Web: removido `start-bridge-webui.sh` (apontava p/ `:4200` do
+  OpenCode, nome errado); `start-bridge-web-4130.sh`→`start-bridge-web.sh`
+  (sem porta no nome); `Bridge Web UI.desktop` reapontado + `+x`.
+- Rebuild `Release` verde (0 erros; 7 warnings pré-existentes, nenhum novo).
+- Mapa da stack em 3 camadas (motores → bridges C# → consumidores; Qwen fora
+  da bridge, direto no llama) + receita vencedora de cada circuito
+  (QwenStandard/ACP na sonda, tubo puro no devpipe) documentados na sessão.
+- PENDENTE p/ fechar: `oi` verde via `:4125` (travado por queda do `:4110`
+  após tropeço do HD USB); sync `/usr/src`→persistente `/media` (disco
+  `...61` fora no momento); decisão `--harness 0` nas units prod
+  (vivo = `harness:true` legado, nenhuma das 2 receitas consagradas).
