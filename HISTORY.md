@@ -16,10 +16,10 @@
   nunca houve assert de ordem.
 - **Schema das tools (`Tools()`):** descrições de `git.message` ("obrigatória no commit"),
   `git.paths` ("vazio = tudo"), `zip.output` e `zip.inputs` (relativos, espaço-separados).
-- **Deploy:** `/usr/src/opencodebridge` fetch+merge (sem conflitos) + rebuild (0 erros) +
-  restart dos dois (`bridge-gpu`/`bridge-cpu` `active`; `api/status` ok).
-- **Pendente (não rodado — dia encerrado a pedido):** A/B da missão sem receita (3×, aceite
-  PASS com **nudge = 0 em ≥2 de 3**) e suíte completa (`FAIL=0`).
+- **Validação:** build Release `0 erros` na bridge e nos testes antes do push; o tail genérico
+  vale para qualquer harness que injete o `HarnessToolsTail`.
+- **Pendente (não rodado nesta sessão):** A/B da missão sem receita (3×, aceite PASS com
+  **nudge = 0 em ≥2 de 3**) e suíte completa (`FAIL=0`).
 
 ## Bridge — role Exec (4B): cria E executa scripts; Scripter só valida (2026-10-16)
 - **Novo role `Exec`** (`AgentSeeder`, id 10, `qwen3.5-4b`, CPU `:4125`, temp
