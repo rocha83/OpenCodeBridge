@@ -177,13 +177,21 @@ internal static class E2EMissionTests
         Console.WriteLine($"  [mission] F# ok:\n{fsOut.Trim()}");
 
         // Fase 3: versionamento + pacote com as tools nativas git/zip.
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = "Use tools: versione com a tool git (init, add, commit com mensagem) e empacote com a tool zip (output entrega.zip, inputs mcs mfs). So tool calls." });
-        for (int turn = 0; turn < 8; turn++)
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = "Use tools NESTA ordem, uma por resposta: git(init), git(add), git(commit com mensagem) e, por ultimo, OBRIGATORIAMENTE a tool zip (output entrega.zip, inputs mcs mfs). Sao 4 tool calls: sem a zip a entrega nao esta pronta. So tool calls, sem texto." });
+        for (int turn = 0; turn < 12; turn++)
         {
             var r2 = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());
             var m2 = r2["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message (git/zip)");
             var c2 = m2["tool_calls"]?.AsArray();
-            if (c2 is null || c2.Count == 0) break;
+            if (c2 is null || c2.Count == 0)
+            {
+                // Modelo encerrou sem tool call: se a entrega ja existe, ok; senao cutuca so o que falta.
+                if (Directory.GetFiles(ws, "entrega.zip").Length == 1) break;
+                LogT($"[git/zip] T{turn + 1} sem tool call e sem entrega.zip; pedindo a tool zip");
+                history.Add(new JsonObject { ["role"] = "user",
+                    ["content"] = "Faltou a tool zip: chame zip com output entrega.zip e inputs mcs mfs. So a tool call." });
+                continue;
+            }
             var f2 = new JsonArray();
             foreach (var c in c2)
                 f2.Add(new JsonObject { ["id"] = c?["id"]?.GetValue<string>() ?? "", ["type"] = "function",
@@ -195,7 +203,9 @@ internal static class E2EMissionTests
                 JsonObject a2;
                 try { a2 = JsonNode.Parse(c?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject(); }
                 catch { a2 = new JsonObject(); }
-                string res2 = Exec(ws, c?["function"]?["name"]?.GetValue<string>() ?? "", a2);
+                string fnName = c?["function"]?["name"]?.GetValue<string>() ?? "";
+                string res2 = Exec(ws, fnName, a2);
+                LogT($"[git/zip] T{turn + 1} {fnName} -> {res2.Split('\n')[0]}");
                 history.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = res2 });
             }
         }

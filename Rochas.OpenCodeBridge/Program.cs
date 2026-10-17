@@ -206,7 +206,7 @@ internal static partial class Program
         }
     }
 
-    static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(10) };
+    static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(30) };
 
     /// <summary>Auth no upstream: repassa o Authorization do cliente ou usa a ApiKey configurada.</summary>
     /// <param name="req">Request upstream.</param>
