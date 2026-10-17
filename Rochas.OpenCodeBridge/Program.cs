@@ -76,7 +76,7 @@ internal static partial class Program
     static bool QwenStd = false;
     // Formula (harness=true): composta pela bridge p/ cliente web (model sem
     // sufixo). Opencode (sufixo -build/-plan/-orch) passa limpo.
-    static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada. Projetos: crie com `dotnet new` UMA vez e escreva o fonte na pasta do projeto com a tool write (nunca recrie o projeto nem use echo/heredoc). Matematica sempre qualificada: C# use Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# use System.Math.Sin ou `open System` e depois Math.Sin — nunca `sin`/`cos`/`sqrt`/`pi` minusculos. F#: rode com `dotnet run --project <dir>` (nunca o dll direto); use let/printfn/List.map, pipe |>, match com fallback; erro de compilacao = leia a mensagem e ajuste o trecho exato.";
+    static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada. Projetos: crie com `dotnet new` UMA vez e escreva o fonte na pasta do projeto com a tool write (nunca recrie o projeto nem use echo/heredoc). Matematica sempre qualificada: C# use Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# use System.Math.Sin ou `open System` e depois Math.Sin — nunca `sin`/`cos`/`sqrt`/`pi` minusculos. F#: nao indexe lista com indice float (`x.[i]`); use `[0..n]` int ou `List.map (fun xi -> Math.Sin xi) xs` direto. F#: rode com `dotnet run --project <dir>` (nunca o dll direto); use let/printfn/List.map, pipe |>, match com fallback; erro de compilacao = leia a mensagem e ajuste o trecho exato.";
     static string HarnessGuardTail = "";
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
@@ -2421,6 +2421,7 @@ if (type == "message")
     /// <param name="model">Model id p/ eco.</param>
     /// <param name="temperature">Efetiva.</param>
     /// <param name="thinkMode">Modo thinking efetivo.</param>
+    /// <param name="hadTools">A resposta tinha tools disponiveis.</param>
     /// <returns>Objeto Responses.</returns>
     static JsonObject ChatToResponses(JsonObject chat, string model, double temperature, string? thinkMode = null, bool hadTools = false)
     {

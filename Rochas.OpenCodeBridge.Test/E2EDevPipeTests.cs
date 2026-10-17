@@ -65,7 +65,7 @@ internal static class E2EDevPipeTests
                 new JsonObject
                 {
                     ["role"] = "assistant", ["content"] = null,
-                    ["tool_calls"] = JsonNode.Parse(tc1.ToJsonString())!.AsArray(),
+                    ["tool_calls"] = JsonNode.Parse(tc1!.ToJsonString())!.AsArray(),
                 },
                 new JsonObject { ["role"] = "tool", ["tool_call_id"] = tc1[0]?["id"]?.GetValue<string>() ?? "c1", ["content"] = "[\"a.md\", \"b.md\"]" }),
             ["tools"] = DevTools(),
@@ -78,7 +78,7 @@ internal static class E2EDevPipeTests
 
         var t3 = new JsonObject
         {
-            ["model"] = Model(), ["temperature"] = 0.3, ["max_tokens"] = 256, ["stream"] = false,
+            ["model"] = Model(), ["temperature"] = 0.3, ["max_tokens"] = 512, ["stream"] = false,
             ["messages"] = new JsonArray(new JsonObject
             {
                 ["role"] = "user", ["content"] = "O conteúdo lido foi 'DEVPIPE-OK'. Responda SOMENTE: DEVPIPE-FIM"
@@ -104,6 +104,19 @@ internal static class E2EDevPipeTests
         return Convert.ToBase64String(File.ReadAllBytes(Path.Combine(dir, name)));
     }
 
+    // Pontes CPU so servem VL quando o modelo tem "vl"/"vision" no nome; sem
+    // isso os testes de visao nao tem mmproj e devem ser pulados (nao falhar).
+    static async Task<bool> CpuServesVision()
+    {
+        try
+        {
+            var st = await TestContext.GetObj(CpuBridge + "/api/status");
+            string m = st["model"]?.GetValue<string>() ?? "";
+            return m.Contains("vl", StringComparison.OrdinalIgnoreCase) || m.Contains("vision", StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
     static JsonObject VisionMsg(string prompt, string img64) => new()
     {
         ["role"] = "user",
@@ -115,6 +128,7 @@ internal static class E2EDevPipeTests
     // VL lê a imagem e identifica o texto.
     public static async Task DevPipeVision()
     {
+        if (!await CpuServesVision()) TestContext.Skip("sem modelo VL na ponte CPU :4125 (vision requer mmproj)");
         var body = new JsonObject
         {
             ["model"] = "qwen3-vl-4b", ["temperature"] = 0.3, ["max_tokens"] = 64, ["stream"] = false,
@@ -128,6 +142,7 @@ internal static class E2EDevPipeTests
     // VL decompõe o documento em texto, linha a linha.
     public static async Task DevPipeDoc()
     {
+        if (!await CpuServesVision()) TestContext.Skip("sem modelo VL na ponte CPU :4125 (vision requer mmproj)");
         var body = new JsonObject
         {
             ["model"] = "qwen3-vl-4b", ["temperature"] = 0.3, ["max_tokens"] = 128, ["stream"] = false,
@@ -142,6 +157,7 @@ internal static class E2EDevPipeTests
     // Dialeto Alibaba direto (o que o VL entende) + required; retry ×3 (Q3 flakey).
     public static async Task DevPipeVisionTool()
     {
+        if (!await CpuServesVision()) TestContext.Skip("sem modelo VL na ponte CPU :4125 (vision requer mmproj)");
         string img64 = Img64("placa.png");
         bool okName = false, okPath = false;
         for (int attempt = 0; attempt < 3 && !(okName && okPath); attempt++)
@@ -181,8 +197,13 @@ internal static class E2EDevPipeTests
 
         string git = await Exec("shell", new JsonObject { ["command"] = "git --version" });
         TestContext.Check(git.Contains("git version"), "infra git version");
-        string gh = await Exec("shell", new JsonObject { ["command"] = "gh --version" });
-        TestContext.Check(gh.Contains("gh version"), "infra gh version");
+        // gh e opcional: ausente no host/allowlist nao invalida a infra (git+fetch).
+        var gh = await TestContext.PostObj(TestContext.Bridge + "/api/tools/execute",
+            new JsonObject { ["name"] = "shell", ["arguments"] = new JsonObject { ["command"] = "gh --version" } });
+        if (gh["ok"]?.GetValue<bool>() == true)
+            TestContext.Check((gh["output"]?.GetValue<string>() ?? "").Contains("gh version"), "infra gh version");
+        else
+            Console.WriteLine("  [infra] gh indisponivel/negado - assert gh pulado");
 
         var fetch = await TestContext.PostObj(TestContext.Bridge + "/api/tools/execute",
             new JsonObject { ["name"] = "fetch", ["arguments"] = new JsonObject { ["url"] = "https://example.com" } });

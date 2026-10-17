@@ -95,7 +95,7 @@ internal static class E2EMissionTests
                     ["function"] = new JsonObject { ["name"] = c?["function"]?["name"]?.GetValue<string>() ?? "",
                         ["arguments"] = c?["function"]?["arguments"]?.GetValue<string>() ?? "{}" } });
             history.Add(new JsonObject { ["role"] = "assistant", ["content"] = msg["content"]?.GetValue<string>() ?? "", ["tool_calls"] = freshCalls });
-            foreach (var e in echo) history.Add((JsonObject)e.DeepClone());
+            foreach (var e in echo) history.Add((JsonObject)e!.DeepClone());
         }
         TestContext.Check(code.Contains("Sin") || code.Contains("sin"), "Program.cs com Simpson escrito");
         string csFile = Path.Combine(ws, "mcs", "Program.cs");
@@ -107,8 +107,8 @@ internal static class E2EMissionTests
         Console.WriteLine($"  [mission] C# ok:\n{runOut.Trim()}");
 
         // Fase 2: portabilidade para F# (mesma matematica, System.Math qualificado).
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = "Use tools, uma por turno. (1) dotnet new console -lang F# -n mfs (UMA vez). (2) write em mfs/Program.fs (nunca recrie o projeto): mesmo programa do C# - Simpson de sin em [0,pi] e media/desvio de {2,4,4,4,5,5,7,9} - com System.Math qualificado (Math.Sin/Math.Sqrt). (3) shell: dotnet run --project mfs -c Release." });
-        for (int turn = 0; turn < 18; turn++)
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = "Use tools, uma por turno. (1) dotnet new console -lang F# -n mfs (UMA vez). (2) write em mfs/Program.fs (nunca recrie o projeto): mesmo programa do C# - Simpson de sin em [0,pi] e media/desvio de {2,4,4,4,5,5,7,9} - com System.Math/Math.Sin/Math.Sqrt qualificados. Nao indexe lista com float: use List.map (fun xi -> Math.Sin xi) xs. (3) shell: dotnet run --project mfs -c Release." });
+        for (int turn = 0; turn < 22; turn++)
         {
             var rf = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());
             var mf = rf["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message (F#)");
@@ -116,8 +116,8 @@ internal static class E2EMissionTests
             if (cf is null || cf.Count == 0)
             {
                 history.Add(new JsonObject { ["role"] = "assistant", ["content"] = mf["content"]?.GetValue<string>() ?? "" });
-                if (turn >= 2) break;
-                history.Add(new JsonObject { ["role"] = "user", ["content"] = "Sem prosa: emita a proxima tool call agora." });
+                if (turn >= 4) break;
+                history.Add(new JsonObject { ["role"] = "user", ["content"] = "Sem prosa: leia o erro de build (se houver) e emita ja a proxima tool call (write corrigindo Program.fs ou shell dotnet run)." });
                 continue;
             }
             var ff = new JsonArray();
