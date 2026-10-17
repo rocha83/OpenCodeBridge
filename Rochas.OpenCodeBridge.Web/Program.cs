@@ -55,7 +55,7 @@ builder.Services.Configure<OrchestrationOptions>(builder.Configuration.GetSectio
 builder.Services.Configure<ContextWindowOptions>(builder.Configuration.GetSection("ContextWindow"));
 // Aplica o orçamento de contexto (CPU 16k slot único por padrão) ao estático.
 var ctxOpts = builder.Configuration.GetSection("ContextWindow").Get<ContextWindowOptions>() ?? new ContextWindowOptions();
-ContextWindow.Configure(ctxOpts.CpuContextTokens, ctxOpts.CpuMaxOutputTokens, ctxOpts.CpuMaxInputTokens, ctxOpts.GpuMaxInputTokens);
+ContextWindow.Configure(ctxOpts.CpuContextTokens, ctxOpts.CpuMaxOutputTokens, ctxOpts.CpuMaxInputTokens, ctxOpts.GpuMaxInputTokens, ctxOpts.ToolArgLimit);
 builder.Services.AddSingleton<IDiagnosticTelemetry, DiagnosticTelemetry>();
 builder.Services.AddScoped<IBridgeClient>(sp =>
 {

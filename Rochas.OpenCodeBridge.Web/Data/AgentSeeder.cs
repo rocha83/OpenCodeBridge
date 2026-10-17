@@ -10,7 +10,10 @@ public static class AgentSeeder
         double Temp, string Thinking, string Prompt, string Role, string Mode,
         double Tps, int Active, string Tools);
 
-    // Snapshot da revisão de 15/10 (9B Q4 ctx 128k na GPU :4124, VL-Q3 48k GPU2-CPU :4110).
+    // Snapshot da revisão (9B Q4 ctx 192k na GPU :4124, Q3 texto 64k CPU :4110 :4125).
+    // Temperaturas: Plan/Build/Orch 0.5, MoE 0.8, Scripter 0.3, Exec 0.3 (espelha opencode.json).
+    // Scripter e Exec compartilham o prompt; só o Exec tem 'exec' no harness
+    // (Scripter cria+valida com 'bash -n'; Exec valida e executa 'bash <arquivo>').
     private static readonly Seed[] Seeds =
     [
         new(1, "Agente Generalista Global - MoE - Q4 GPU", "qwen3.5-9b", "http://127.0.0.1:4124",
@@ -39,25 +42,33 @@ public static class AgentSeeder
             "executor", "Plan", 2.5, 1,
             "glob,read,grep,git,fetch,display,subagent"),
         new(6, "Desenvolvedor de Software - Scripter - Q4 GPU", "qwen3.5-9b", "http://127.0.0.1:4124",
-            0.5, "off",
+            0.3, "off",
             "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
             "", "Build", 30.0, 1,
-            "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec,install"),
+            "glob,read,grep,git,fetch,display,write,edit,proc,shell,install"),
         new(7, "Engenheiro de Software - Plan - Q3 CPU", "qwen3.5-4b", "http://127.0.0.1:4125",
             0.5, "events",
             "Voce e um agente autonomo arquiteto engenheiro de software e dados (ML e NN) senior adepto das melhores praticas SOLID, design DDD clean arch e uso de ORM, delega tarefas a subagentes quando entende que o contexto ficou limitado (64k), nunca se auto-apresente salvo pedido direto",
             "executor", "Plan", 2.5, 1,
             "glob,read,grep,git,fetch,display,subagent"),
         new(8, "Desenvolvedor de Software - Scripter - Q3 CPU", "qwen3.5-4b", "http://127.0.0.1:4125",
-            0.5, "off",
+            0.3, "off",
             "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto ",
             "", "Build", 2.5, 1,
-            "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec"),
+            "glob,read,grep,git,fetch,display,write,edit,proc,shell"),
         new(9, "Desenvolvedor de Software - Build - Q3 CPU", "qwen3.5-4b", "http://127.0.0.1:4125",
             0.5, "off",
             "Voce e um agente autonomo arquiteto desenvolvedor de software e dados (ML e NN) senior, executa todas as tools e implementa os artefatos e testes conforme enunciado seguindo as melhores praticas de desenvolvimento, delega tarefas a subagentes quando entende que o contexto ficou limitado (64k), nunca se auto-apresente salvo pedido direto",
             "orchestrator", "Build", 2.5, 1,
             "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec,subagent"),
+        // Exec = só 4B (como Orch é só 9B): mesmo prompt do Scripter, mas com
+        // 'Executar scripts' (exec) — valida ('bash -n') e ENTÃO executa
+        // ('bash <arquivo>'). Scripter cria+valida; Exec cria+valida+executa.
+        new(10, "Desenvolvedor de Software - Exec - Q3 CPU", "qwen3.5-4b", "http://127.0.0.1:4125",
+            0.3, "off",
+            "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto. Diferenca do Scripter: valide a sintaxe com 'bash -n <arquivo>' e ENTAO EXECUTE com 'bash <arquivo>', reportando a saida; se o script falhar, leia o erro, corrija e execute de novo ate passar.",
+            "", "Build", 2.5, 1,
+            "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec"),
     ];
 
     public static void SeedIfEmpty(SqliteConnection conn)

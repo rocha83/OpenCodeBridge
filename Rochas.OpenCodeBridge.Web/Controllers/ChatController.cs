@@ -2147,7 +2147,7 @@ public sealed class ChatController(
         if (ok.HasValue) evt["ok"] = ok.Value;
         if (ms > 0) evt["ms"] = ms;
         if (!string.IsNullOrEmpty(result)) evt["result"] = result;
-        if (!string.IsNullOrEmpty(args)) evt["args"] = args.Length > 4000 ? args[..4000] : args;
+        if (!string.IsNullOrEmpty(args)) evt["args"] = ContextWindow.ToolArgLimit > 0 && args.Length > ContextWindow.ToolArgLimit ? args[..ContextWindow.ToolArgLimit] : args;
         if (approveId > 0) evt["approveId"] = approveId;
         var bytes = Encoding.UTF8.GetBytes("data: " + evt.ToJsonString() + "\n\n");
         await output.WriteAsync(bytes, ct);

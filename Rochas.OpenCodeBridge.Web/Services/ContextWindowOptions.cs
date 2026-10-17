@@ -9,4 +9,6 @@ public sealed class ContextWindowOptions
     public int CpuMaxOutputTokens { get; set; } = 4096;
     public int CpuMaxInputTokens { get; set; } = 12288;
     public int GpuMaxInputTokens { get; set; } = 229376;
+    // Corte do args de tool ecoado no evento SSE de progresso: 0 = sem corte.
+    public int ToolArgLimit { get; set; } = 0;
 }
