@@ -61,7 +61,7 @@ internal static class E2EMissionTests
 
         var sys = new JsonObject { ["role"] = "system", ["content"] = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls (uma por vez), sem prosa. Matematica sempre qualificada: C# Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# System.Math.Sin ou open System + Math.Sin - nunca sin/cos/pi minusculos. F# usa let/printfn/List.map e roda com dotnet run --project <dir>." };
         var history = new JsonArray(sys);
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) shell: dotnet new console -n mcs (UMA vez, cwd {ws}). (2) write no caminho ABSOLUTO {ws}/mcs/Program.cs (nao recrie o projeto, nao use echo/heredoc): programa que calcula Simpson de Math.Sin em [0,pi] e media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. (3) shell: dotnet run --project {ws}/mcs -c Release." });
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) shell: dotnet new console -n mcs (UMA vez, cwd {ws}). (2) write no caminho ABSOLUTO {ws}/mcs/Program.cs (nao recrie o projeto, nao use echo/heredoc): programa que calcula Simpson de Math.Sin em [0,pi] e media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. (3) shell: dotnet run --project {ws}/mcs -c Release. Se o dotnet run retornar erro, leia a mensagem, corrija Program.cs (write) e rode de novo; repita ate imprimir 2.000000 e 5.000000." });
 
         string fcode = "", final = "";
         string logPath = Path.Combine(ws, "_mission.log");
@@ -99,6 +99,8 @@ internal static class E2EMissionTests
                         ["arguments"] = c?["function"]?["arguments"]?.GetValue<string>() ?? "{}" } });
             history.Add(new JsonObject { ["role"] = "assistant", ["content"] = msg["content"]?.GetValue<string>() ?? "", ["tool_calls"] = freshCalls });
             foreach (var e in echo) history.Add((JsonObject)e!.DeepClone());
+            // Sucesso atingido: para de editar (o modelo tende a quebrar o que ja funciona).
+            if (echo.Any(e => { var s = e?["content"]?.GetValue<string>() ?? ""; return (s.Contains("2,000000") || s.Contains("2.000000")) && (s.Contains("5,000000") || s.Contains("5.000000")); })) break;
         }
         string csFile = Path.Combine(ws, "mcs", "Program.cs");
         string csSrc = File.Exists(csFile) ? File.ReadAllText(csFile) : "";
@@ -111,7 +113,7 @@ internal static class E2EMissionTests
         Console.WriteLine($"  [mission] C# ok:\n{runOut.Trim()}");
 
         // Fase 2: portabilidade para F# (mesma matematica, System.Math qualificado).
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) shell: dotnet new console -lang F# -n mfs (UMA vez, cwd {ws}). (2) write no caminho ABSOLUTO {ws}/mfs/Program.fs (nao recrie o projeto): mesmo programa do C# - Simpson de sin em [0,pi] (n=10 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}} - com Math.Sin/Math.Sqrt qualificados. Escreva o calculo DIRETO com Math.Sin (sem parametrizar funcao f). Nao indexe lista com float: use List.map (fun xi -> Math.Sin xi) xs. (3) shell: dotnet run --project {ws}/mfs -c Release." });
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) shell: dotnet new console -lang F# -n mfs (UMA vez, cwd {ws}). (2) write no caminho ABSOLUTO {ws}/mfs/Program.fs (nao recrie o projeto): mesmo programa do C# - Simpson de sin em [0,pi] (n=10 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}} - com Math.Sin/Math.Sqrt qualificados. Nao use indexacao (.[i]) nem parametrize a funcao: use List.init/List.map/List.sum com Math.Sin direto. (3) shell: dotnet run --project {ws}/mfs -c Release. Se o dotnet run retornar erro, leia a mensagem, corrija Program.fs (write) e rode de novo; repita ate imprimir 2.000000 e 5.000000." });
         for (int turn = 0; turn < 22; turn++)
         {
             var rf = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());
@@ -131,6 +133,7 @@ internal static class E2EMissionTests
                     ["function"] = new JsonObject { ["name"] = c?["function"]?["name"]?.GetValue<string>() ?? "",
                         ["arguments"] = c?["function"]?["arguments"]?.GetValue<string>() ?? "{}" } });
             history.Add(new JsonObject { ["role"] = "assistant", ["content"] = mf["content"]?.GetValue<string>() ?? "", ["tool_calls"] = ff });
+            var fres = new List<string>();
             foreach (var c in cf)
             {
                 JsonObject af;
@@ -140,8 +143,11 @@ internal static class E2EMissionTests
                 string resf = Exec(ws, fnf, af);
                 LogT($"[F#] T{turn} {fnf} {af.ToJsonString()[..Math.Min(160, af.ToJsonString().Length)]} -> {resf[..Math.Min(180, resf.Length)]}");
                 if (fnf == "write" && (af["path"]?.GetValue<string>() ?? "").EndsWith("Program.fs")) fcode = af["content"]?.GetValue<string>() ?? fcode;
+                fres.Add(resf);
                 history.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = resf });
             }
+            // Sucesso atingido: para de editar (o modelo tende a quebrar o F# que ja compila).
+            if (fres.Any(s => (s.Contains("2,000000") || s.Contains("2.000000")) && (s.Contains("5,000000") || s.Contains("5.000000")))) break;
         }
         TestContext.Check(fcode.Contains("Math"), "Program.fs com System.Math qualificado");
         string fsFile = Path.Combine(ws, "mfs", "Program.fs");
