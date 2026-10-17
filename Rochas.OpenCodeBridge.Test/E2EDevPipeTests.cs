@@ -96,7 +96,11 @@ internal static class E2EDevPipeTests
     {
         string dir = Path.Combine(AppContext.BaseDirectory, "TestData");
         if (!File.Exists(Path.Combine(dir, name)))
-            dir = "/media/mint/Linux/opencodebridge/Rochas.OpenCodeBridge.Test/TestData";
+        {
+            var probe = new DirectoryInfo(AppContext.BaseDirectory);
+            while (probe is not null && !File.Exists(Path.Combine(probe.FullName, "TestData", name))) probe = probe.Parent;
+            if (probe is not null) dir = Path.Combine(probe.FullName, "TestData");
+        }
         return Convert.ToBase64String(File.ReadAllBytes(Path.Combine(dir, name)));
     }
 

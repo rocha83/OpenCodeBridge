@@ -85,6 +85,9 @@ internal static class UnitConvertTests
     {
         // Linha llama/CPU: texto com fenced call vira function_call quando o
         // model id contém "cpu". Caminho vLLM (hermes & cia) jamais entra aqui.
+        var st = await TestContext.GetObj(TestContext.Bridge + "/api/status");
+        if (st["legacy_harness"]?.GetValue<bool>() != true)
+            TestContext.Skip("coercao texto->function_call e do caminho legado (legacy_harness off)");
         var body = new JsonObject
         {
             ["model"] = "openai/qwen-cpu-3b",
@@ -113,6 +116,9 @@ internal static class UnitConvertTests
     {
         // Formato cru do 3B na CPU (observado ao vivo): <{"name": ..}}> sem
         // fences nem tags — tem que coagir igual.
+        var st2 = await TestContext.GetObj(TestContext.Bridge + "/api/status");
+        if (st2["legacy_harness"]?.GetValue<bool>() != true)
+            TestContext.Skip("coercao angle->function_call e do caminho legado (legacy_harness off)");
         var body = new JsonObject
         {
             ["model"] = "llama/qwen25-coder-3b-cpu-build",

@@ -101,8 +101,9 @@ internal static class UnitTranslateTests
 
     public static async Task TranslateProfiles()
     {
-        // Perfis por sufixo: plan = temp alta + thinking; build = temp baixa
-        // COM thinking (executor precisa raciocinar); sem sufixo valem os globais.
+        // Perfis por sufixo: plan = temp alta + thinking ON; build = temp baixa
+        // + thinking OFF (executor responde direto, sem tail de raciocinio);
+        // sem sufixo valem os globais.
         static JsonObject Body(string model) => new()
         {
             ["model"] = model,
@@ -121,7 +122,7 @@ internal static class UnitTranslateTests
         var build = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen2.5-coder-3b-build"));
         var buildChat = build["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request build");
         TestContext.Check(build["temperature"]?.GetValue<double>() <= globalTemp, "build temp abaixo da global");
-        TestContext.Check(buildChat["chat_template_kwargs"]?["enable_thinking"]?.GetValue<bool>() == true, "build thinking on");
+        TestContext.Check(buildChat["chat_template_kwargs"]?["enable_thinking"]?.GetValue<bool>() == false, "build thinking off");
         var plain = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq"));
         TestContext.Check(plain["temperature"]?.GetValue<double>() == globalTemp, "sem sufixo usa global");
     }
@@ -141,6 +142,8 @@ internal static class UnitTranslateTests
             })
         };
         var status = await TestContext.GetObj(TestContext.Bridge + "/api/status");
+        if (status["legacy_harness"]?.GetValue<bool>() != true)
+            TestContext.Skip("clamp CPU e do caminho legado (legacy_harness off)");
         int cpuCap = status["cpu_max_tokens"]?.GetValue<int>() ?? 2048;
         int gpuCap = status["max_tokens"]?.GetValue<int>() ?? 8192;
         var cpu = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("llama/qwen25-coder-3b-cpu-build", 8192));

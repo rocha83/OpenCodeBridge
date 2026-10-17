@@ -20,4 +20,9 @@
     <ProjectReference Include="..\Rochas.OpenCodeBridge\Rochas.OpenCodeBridge.csproj" />
   </ItemGroup>
 
+  <!-- Dados de visão (placa.png/doc.png) vão para o output: Img64 lê de BaseDirectory. -->
+  <ItemGroup>
+    <None Update="TestData/**/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

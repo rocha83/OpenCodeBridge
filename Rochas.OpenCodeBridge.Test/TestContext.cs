@@ -24,6 +24,15 @@ internal static class TestContext
     public static bool WantsReasoning => ServedThinking == "events" && !ServedIsCoder;
     static int Passed;
     static int Failed;
+    static int Skipped;
+
+    /// <summary>Marca o teste como pulado (ex.: cobre caminho legado desligado).</summary>
+    public sealed class SkipException : Exception
+    {
+        public SkipException(string reason) : base(reason) { }
+    }
+
+    public static void Skip(string reason) => throw new SkipException(reason);
 
     public static void Run(string name, Func<Task> fn)
     {
@@ -38,6 +47,11 @@ internal static class TestContext
             fn().GetAwaiter().GetResult();
             Passed++;
             Console.WriteLine($"PASS {name} ({(DateTime.UtcNow - t0).TotalSeconds:F1}s)");
+        }
+        catch (SkipException ex)
+        {
+            Skipped++;
+            Console.WriteLine($"SKIP {name} ({ex.Message})");
         }
         catch (Exception ex)
         {
@@ -106,7 +120,7 @@ internal static class TestContext
 
     public static int Summary()
     {
-        Console.WriteLine($"[test] PASS={Passed} FAIL={Failed}");
+        Console.WriteLine($"[test] PASS={Passed} FAIL={Failed} SKIP={Skipped}");
         return Failed == 0 ? 0 : 1;
     }
 }
