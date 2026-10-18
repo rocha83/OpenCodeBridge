@@ -1,5 +1,83 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Anti-repeat cross-turn, blacklist por role e enunciados separados (2026-10-18)
+- **Motivo:** o E2B entrou em loop na sessão "Gemma e2b - 1": reenfileirou por
+  12+ turnos o mesmo comando inventado (`service_manager update service ...`,
+  que **não existe** nesta máquina), com o shell devolvendo "comando não
+  encontrado" e o modelo repetindo a mesma abordagem.
+- **Por que o `--anti-repeat` existente não pegava:** `ThinkingRepeats`
+  (`Program.cs`) compara a cauda do thinking **dentro de um único stream**.
+  Rodei a mesma heurística sobre os 26 blocos de reasoning da sessão e deu
+  **zero trips** — o E2B repete o *template* entre turnos
+  (`Thinking Process: 1. Analyze... 2. Review...`), mas cada resposta é um texto
+  diferente. Repetição *entre* turnos é outra classe.
+- **O que foi feito (extensão do anti-repeat, não mecanismo paralelo):**
+  - `ToolSig(nome, args)` — assinatura canônica de uma tool call;
+  - `LoopedToolSigs(messages, minCount)` — assinaturas que já repetiram no
+    **histórico do request**;
+  - na emissão da chamada, se a assinatura já apareceu `>= 2` vezes, a chamada
+    **não sai** e entra o `AntiRepeatNotice` como texto (log
+    `anti-repeat-loop`). Coberto nos **dois** caminhos: `HandleResponsesStream`
+    (stream, o do opencode) e `ChatToResponses` (não-stream, o da Web UI).
+  - **Bug encontrado no meio:** `ChatToResponses` recebia o parâmetro `chat`
+    que é a **resposta** do upstream (`choices/message`), não o request — então
+    `chat["messages"]` era nulo e o histórico nunca era lido. Passou a receber
+    `historyMessages` (as `messages` do request montado).
+- **`--anti-repeat-retry` sai da condicional do `LegacyHarness`.** O retry de
+  contenção (2ª chamada ao modelo com o aviso, descartando a janela repetida)
+  estava preso ao harness legado — desligado por "tubo puro", então nunca rodava.
+  Agora é flag própria (`AntiRepeatRetry`, default `true`), então **cortar o
+  loop** e **tentar de novo** são decisões independentes.
+- **Enunciados separados por peça.** Tudo que é indução de comportamento tem
+  morar na sua própria peça, porque são coisas diferentes e mexer numa não pode
+  tocar na outra:
+
+  | peça | appsettings | CLI | assunto |
+  |---|---|---|---|
+  | `harnessToolsTail` | `harnessToolsTail` | `--harness-tools-tail` | **como usar a tool** |
+  | `harnessGuardTail` | `harnessGuardTail` | `--harness-guard-tail` | guardrails |
+  | **`behaviorPrompt`** | `behaviorPrompt` | `--behavior-prompt` | **disciplina de comportamento** |
+
+  O `behaviorPrompt` é novo: um passo = uma ação, só escrever depois da última
+  ação com evidência real, se falhar 2× **parar e relatar** em vez de insistir,
+  não anunciar passo futuro, tom e tamanho da resposta.
+- **⚠️ A exceção do opencode saiu do gate.** As causas ficavam atrás de
+  `Harness && !IsOpencodeModel(...)` — ou seja, com os ids de role que passaram
+  a ter sufixo, `--harness 1` era **inerte** para o opencode (confirmado pela
+  sonda: o `system` ia com 0 chars). Agora é só `Harness`: **não há exceção por
+  "ser opencode"** — as regras de uso de tools valem para cliente web e opencode,
+  porque são sobre *como usar a tool*, não sobre o tubo de prompt do agente. O
+  parâmetro `isOpencode` do `WithFormula` foi removido por inteiro, e as flags
+  `HarnessToolsTailExplicit`/`HarnessGuardTailExplicit` ficaram obsoletas e
+  saíram junto.
+- **`ToolBlacklist` bloqueia; não esconde.** A primeira versão **removia** a
+  tool do schema enviado ao modelo — isso *limita* o que ele pode usar, e na
+  prática hindersava os agents (o Plan via só `shell`/`read`, podia contornar
+  por shell, ou não saber por que a tool sumiu). Agora a tool **continua
+  anunciada** e é a **chamada** que não sai, com aviso explicando que a ação
+  cabe a outro role. O modelo sabe que a tool existe e pode explicar ao usuário.
+- **`ThinkingOffRoles`** (Build, Scripter, Exec) desliga o reasoning por **nome
+  de role**, acima do perfil do sufixo — o operador corrige sem renomear id.
+- **Sonda full ligada no E2B** (`--diagnostic 1` em `bridge-cpu`), o que permitiu
+  **medir** em vez de supor: é ela que mostrou o `system` de 0 chars e o
+  `service_manager` no histórico do E2B.
+- **Aceite:**
+  - anti-repeat cross-turn: mesmo comando 2× no histórico → `function_calls:
+    NENHUMA` + aviso; caminho stream → `0` `function_call` no SSE; comando
+    **novo** (`df -h`) → segue passando, sem falso positivo;
+  - `Plan` pedindo `write` → bloqueado, arquivo não criado; `Build` pedindo
+    `write` → passa;
+  - `system` entregue ao modelo = 1504 chars com **ToolsTail e BehaviorPrompt
+    separados** e legíveis;
+  - Build Release: 0 erros, 5 warnings (4 pré-existentes);
+  - suíte: `PASS=23 FAIL=0 SKIP=3`. Uma falha intermediária foi **colisão de
+    texto**, não de lógica: o `behaviorPrompt` continha a palavra "resumo", que
+    o fixture de `U-translate-drops-reasoning` usa como marcador de reasoning
+    vazado. Reformulado.
+- **Ponto em aberto:** a contenção entrega o aviso no mesmo turno. Com
+  `--anti-repeat-retry` ligado o retry passa a existir de fato (2ª chamada), e
+  isso ainda não foi medido ponta a ponta com o E2B real.
+
 ## Config final de contexto: 12B 128k/1 slot + E2B 128k/2 slots (2026-10-18)
 - **Caminho percorrido até aqui.** O E2B começou em 80k/1 slot com o KV
   rebaixado para `q8_0` (ver seção anterior). Depois de forçar turbo3 subiu

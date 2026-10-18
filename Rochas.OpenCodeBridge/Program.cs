@@ -78,6 +78,14 @@ internal static partial class Program
     // sufixo). Opencode (sufixo -build/-plan/-orch) passa limpo.
     static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit; versione com init/add/commit (commit sempre com mensagem informada). Git e zip sao comandos independentes (a ordem so importa se o enunciado pedir); se o enunciado pedir versionar E empacotar, versione primeiro e empacote depois - assim o pacote nao entra no commit. Zip: empacote com output (o arquivo .zip) e inputs (caminhos relativos ao workspace, separados por espaco), excluindo bin/obj. Tarefa de N passos: so responda texto depois de concluir TODOS - se voce anunciou um passo e ainda falta, emita a tool call em vez de texto. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada. Se um build/teste falhar, leia a mensagem de erro e ajuste o trecho exato antes de rodar de novo. Projetos: crie com `dotnet new` UMA vez e escreva o fonte na pasta do projeto com a tool write (nunca recrie o projeto nem use echo/heredoc). Arquivos grandes (>32kb): leia em blocos (offset+limit, ou head/tail/`sed -n 'N,Mp'`), nunca o arquivo inteiro de uma vez. Matematica sempre qualificada: C# use Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# use System.Math.Sin (ou `open System` e depois Math.Sin) — nunca `sin`/`cos`/`sqrt`/`pi` minusculos nem `open System.Math` (invalido em F#). F# NAO tem operadores OCaml (`+.`/`-.`/`*.`/`/.`) - isso quebra o build: use `+ - * /` normais (valem para float) e `%` so com int. F#: nao indexe lista com indice float (`x.[i]`); use `[0..n]` int ou `List.map (fun xi -> Math.Sin xi) xs` direto. F#: formate com `printfn \"%f\"`/`\"%.6f\"` (sintaxe `%`), NUNCA `{0:F6}` (isso e C#, quebra o F#). F#: rode com `dotnet run --project <dir>` (nunca o dll direto); use let/printfn/List.map, pipe |>, match com fallback.";
     static string HarnessGuardTail = "";
+    // Retry de contencao do anti-repeat: 1 segunda chamada ao modelo com o aviso,
+    // descartando a janela repetida. Governado por --anti-repeat-retry, nao pelo
+    // LegacyHarness (ver o bloco do retry).
+    static bool AntiRepeatRetry = true;
+    // Enunciado de inducAO a COMPORTAMENTO (nao e uso de tools): disciplina de execucao,
+    // como parar e entregar, como reagir a erro, tom de resposta. Vive separado da
+    // ToolsTail de proposito: COMO USAR A TOOL e uma coisa, COMO SE COMPORTAR e outra.
+    static string BehaviorPrompt = "";
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
     // devolve 413 pedindo compactacao em vez da resposta. Parametrizavel
@@ -87,6 +95,35 @@ internal static partial class Program
     static int ContextTokens = 0;                                // tamanho do ctx do modelo servido
     static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
     static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida; quando informada a repeticao, nao responda mais nada, apenas encerre em silencio, obrigado.";
+
+    // ThinkingOffRoles: roles que NUNCA devem mostrar reasoning, por nome de role
+    // ("Build", "Scripter", "Exec"). Vence sobre o perfil/sufixo do model id, para
+    // o operador corrigir sem renomear id. Vazio = usa so o Profiles.
+    static HashSet<string> ThinkingOffRoles = new(StringComparer.OrdinalIgnoreCase);
+
+    // ToolBlacklist: tools proibidas por role ("Plan" => write, sed, rm). Nome da
+    // tool do lado do MODELO (o que ele pede), nao do harness. Vazio = libera.
+    // A tool CONTINUA anunciada ao modelo: o bloqueio e na emissao da chamada, nao
+    // escondendo o schema. Assim o modelo sabe que a tool existe (e pode explicar ao
+    // usuario que ela e de outro role) mas nao consegue executar.    // ToolBlacklist: tools proibidas por role ("Plan" => write, sed, rm). Nome da
+    // tool do lado do MODELO (o que ele pede), nao do harness. Vazio = libera.
+    static string ToolBlockNotice = "Aqui e a ponte de conteudo OpenCodeBridge: a tool '{0}' esta bloqueada para o role '{1}' e nao sera executada; use uma alternativa permitida (shell, read) ou explique ao usuario que essa acao cabe a outro role.";
+    static Dictionary<string, HashSet<string>> ToolBlacklist = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Tools bloqueadas para o role do model pedido (vazio = nenhuma).</summary>
+    static HashSet<string> BannedFor(string? modelId)
+        => ToolBlacklist.TryGetValue(RoleOfModel(modelId), out var set) ? set
+           : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Role extraido do sufixo do model id ("...-build" => "Build").</summary>
+    static string RoleOfModel(string? modelId)
+    {
+        if (string.IsNullOrEmpty(modelId)) return "";
+        foreach (var k in Profiles.Keys)
+            if (modelId.EndsWith("-" + k, StringComparison.OrdinalIgnoreCase))
+                return char.ToUpperInvariant(k[0]) + k[1..];
+        return "";
+    }
     static bool CoerceFor(string modelId) => LegacyHarness && (CoerceTextTools
         || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false));
 
@@ -150,6 +187,8 @@ internal static partial class Program
             if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
             if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham && ham.Length > 0) HarnessToolsTail = ham;
             if (cfg["harnessGuardTail"]?.GetValue<string>() is string ht) HarnessGuardTail = ht;
+            if (cfg["behaviorPrompt"]?.GetValue<string>() is string bp) BehaviorPrompt = bp;
+            if (cfg["antiRepeatRetry"]?.GetValue<bool>() is bool arr) AntiRepeatRetry = arr;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
@@ -163,6 +202,17 @@ internal static partial class Program
             if (cfg["qwenStandard"]?.GetValue<bool>() is bool qs) QwenStd = qs;
             if (Environment.GetEnvironmentVariable("DIAGNOSTIC") is "1" or "true" or "True") Diagnostic = true;
             if (Environment.GetEnvironmentVariable("HARNESS") is "0" or "false" or "False") Harness = false;
+            if (cfg["thinkingOffRoles"] is JsonArray tor)
+                foreach (var r in tor)
+                    if (r?.GetValue<string>() is { Length: > 0 } rn) ThinkingOffRoles.Add(rn.Trim());
+            if (cfg["toolBlacklist"]?.AsObject() is JsonObject tbl)
+                foreach (var kv in tbl)
+                {
+                    if (kv.Value is not JsonArray tools) continue;
+                    var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var t in tools) if (t?.GetValue<string>() is { Length: > 0 } tn) set.Add(tn.Trim());
+                    ToolBlacklist[kv.Key] = set;
+                }
             if (cfg["profiles"]?.AsObject() is JsonObject profs)
                 foreach (var kv in profs)
                 {
@@ -459,10 +509,27 @@ internal static partial class Program
                 case "--passthrough-responses": PassthroughResponses = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--anti-repeat-retry": AntiRepeatRetry = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--behavior-prompt": BehaviorPrompt = cliArgs[i + 1]; break;
                 case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--legacy-harness": LegacyHarness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--qwen-standard": QwenStd = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
+                case "--thinking-off-roles":
+                    foreach (var r in (cliArgs[i + 1] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        ThinkingOffRoles.Add(r);
+                    break;
+                case "--tool-blacklist":   // "Plan=write,sed,rm;MoE=write"
+                    foreach (var grp in (cliArgs[i + 1] ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        int eq = grp.IndexOf('=');
+                        if (eq <= 0) continue;
+                        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var t in grp[(eq + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                            set.Add(t);
+                        ToolBlacklist[grp[..eq].Trim()] = set;
+                    }
+                    break;
                 case "--context-guard": ContextGuard = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--context-threshold": { double v = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); if (v >= 0.5 && v <= 0.99) ContextThreshold = v; break; }
                 case "--context-tokens": ContextTokens = int.Parse(cliArgs[i + 1]); break;
@@ -836,7 +903,7 @@ WriteJson(ctx, 200, new JsonObject
             }
             // Formula (Harness, cliente web = model sem sufixo de perfil):
             // system + agents + tail. Opencode (sufixo) passa limpo.
-            if (Harness && !opencodeIn && node is not null
+            if (Harness && node is not null
                 && node["messages"] is JsonArray fm)
             {
                 foreach (var m in fm)
@@ -1176,6 +1243,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // explicita no request vence o perfil; sem perfil valem os globais.
         bool hasProfile = TryProfile(requestedModel, out double profTemp, out string profThink);
         thinking = hasProfile && !string.IsNullOrEmpty(profThink) ? profThink : Thinking;
+        // ThinkingOffRoles: o operador manda desligar por NOME de role, acima do perfil.
+        if (ThinkingOffRoles.Contains(RoleOfModel(requestedModel))) thinking = "off";
         // Temperatura: a do opencode tem prioridade; a da linha de comando
         // e so o padrao quando o request nao informa nenhuma.
         temperature = req["temperature"]?.GetValue<double>()
@@ -1184,7 +1253,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // Converte a conversa Responses -> messages do formato chat
         var messages = InputToMessages(req["input"], req["instructions"]);
         // Formula (Harness, cliente web): system + agents + tail. Opencode limpo.
-        if (Harness && !IsOpencodeModel(requestedModel)
+        if (Harness
             && messages.Count > 0 && messages[0] is JsonObject sys0
             && sys0["role"]?.GetValue<string>() == "system"
             && sys0["content"] is JsonValue sysv && sysv.TryGetValue<string>(out string? syst))
@@ -1311,7 +1380,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
         // 4.6) Converte a resposta chat -> objeto Responses
         var chatJson = JsonNode.Parse(responseBody)?.AsObject() ?? new JsonObject();
-        var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0);
+        var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0, chat["messages"]);
 
         double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
         int inTok = responseObj["usage"]?["input_tokens"]?.GetValue<int>() ?? 0;
@@ -1354,7 +1423,7 @@ string outBody = body;
         // agents + tail. Opencode (sufixo) passa limpo.
         try
         {
-            if (Harness && !IsOpencodeModel(req["model"]?.GetValue<string>())
+            if (Harness
                 && req.TryGetPropertyValue("instructions", out JsonNode? fins) && fins is JsonValue fiv
                 && fiv.TryGetValue<string>(out string? finst))
             {
@@ -1521,12 +1590,16 @@ var shape = new StringBuilder();
         return t + "\n\n" + SystemGuardrail;
     }
 
-    /// <summary>Formula do harness (modo Harness, cliente web): system + agents + tail.</summary>
+    /// <remarks>As duas caudas entram sempre que o Harness esta ligado: nao ha excecao
+    /// por "ser opencode". As regras de uso de tools valem para todo mundo - cliente web
+    /// e opencode - porque sao sobre COMO usar a tool, nao sobre o tubo de prompt do agente.</remarks>
+    /// <param name="sys">System prompt original.</param>
     static string WithFormula(string sys)
     {
         string t = (sys ?? "").Trim();
         if (HarnessToolsTail.Length > 0) t = (t.Length > 0 ? t + "\n\n" : "") + HarnessToolsTail;
         if (HarnessGuardTail.Length > 0) t += "\n\n" + HarnessGuardTail;
+        if (BehaviorPrompt.Length > 0) t += "\n\n" + BehaviorPrompt;
         return t;
     }
 
@@ -1606,6 +1679,34 @@ var shape = new StringBuilder();
             if (BlockSim(a, b) >= 0.85 && BlockSim(b, c) >= 0.85) return true;
         }
         return false;
+    }
+
+    /// <summary>AntiRepeat cross-turn: assinatura canonica de uma tool call ("nome(args)").</summary>
+    /// <remarks>Repeticao entre turnos nao aparece no thinking de um unico stream, entao
+    /// <see cref="ThinkingRepeats"/> nunca a ve. Esta assinatura compara a chamada nova
+    /// com as que ja constam no historico do proprio request.</remarks>
+    static string ToolSig(string name, string args)
+        => NormRepeat((name ?? "").Trim().ToLowerInvariant() + "(" + NormRepeat(args ?? "") + ")");
+
+    /// <summary>Assinaturas de tool call que ja se repetiram no historico (>= minCount).</summary>
+    static HashSet<string> LoopedToolSigs(JsonNode? messages, int minCount)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (messages is JsonArray arr)
+            foreach (var m in arr)
+            {
+                if (m is not JsonObject mo || mo["tool_calls"] is not JsonArray calls) continue;
+                foreach (var c in calls)
+                {
+                    if (c is not JsonObject co || co["function"] is not JsonObject fn) continue;
+                    string sig = ToolSig(fn["name"]?.GetValue<string>() ?? "",
+                                         fn["arguments"]?.GetValue<string>() ?? "");
+                    if (sig == "()") continue;
+                    counts[sig] = counts.TryGetValue(sig, out int n) ? n + 1 : 1;
+                }
+            }
+        return new HashSet<string>(counts.Where(kv => kv.Value >= minCount).Select(kv => kv.Key),
+                                   StringComparer.Ordinal);
     }
 
     /// <summary>Similaridade 0..1 entre blocos (1 - levenshtein/tamanho).</summary>
@@ -2068,7 +2169,10 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         }
 
             if (!repeatTrip) break;
-            if (!LegacyHarness) break;   // inibido: sem aviso, sem descarte, fluxo intacto
+            // O retry de contencao e do ANTI-REPEAT, nao do harness legado: governa-lo
+            // por --anti-repeat-retry deixa "cortar o loop" e "tentar de novo" como
+            // coisas independentes, em vez de amarradas ao tubo puro.
+            if (!AntiRepeatRetry) break;
             if (attempt >= 1) break;   // 1 retry de contencao no maximo
             // Contencao: descarta a janela repetida e devolve o aviso ao modelo.
             repeatTrip = false;
@@ -2150,9 +2254,54 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
         int callIndex = (thinkOpen ? 1 : 0) + (msgOpen ? 1 : 0);
         var toolList = new List<(string Id, string Name, string Arguments)>();
+        // AntiRepeat cross-turn: a chamada ja repetiu no historico, entao e loop. Nao
+        // emitimos (o modelo so reenfileiraria o mesmo comando e o turno travaria aqui);
+        // no lugar, devolve o aviso de contencao como texto para mudar de abordagem.
+        var loopedSigs = AntiRepeat ? LoopedToolSigs(chat["messages"], 2)
+                                     : new HashSet<string>(StringComparer.Ordinal);
+        var bannedHere = ToolBlacklist.TryGetValue(RoleOfModel(requestedModel), out var bh) ? bh
+                         : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (_, acc) in toolAccum)
         {
             string arguments = acc.Args.ToString();
+            // Bloqueio por role: a tool foi anunciada, mas a chamada nao sai.
+            if (bannedHere.Contains(acc.Name))
+            {
+                Log(new JsonObject { ["event"] = "tool-blocked", ["tool"] = acc.Name, ["role"] = RoleOfModel(requestedModel) });
+                if (!msgOpen)
+                {
+                    messageId = "msg_" + NewId();
+                    Emit("response.output_item.added", new JsonObject
+                    {
+                        ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                        ["item"] = new JsonObject { ["id"] = messageId, ["type"] = "message",
+                            ["role"] = "assistant", ["content"] = new JsonArray(), ["status"] = "in_progress" }
+                    });
+                    msgOpen = true;
+                    callIndex++;
+                }
+                FlushMessage("\n\n" + string.Format(ToolBlockNotice, acc.Name, RoleOfModel(requestedModel)) + "\n\n");
+                continue;
+            }
+            if (loopedSigs.Contains(ToolSig(acc.Name, arguments)))
+            {
+                repeatTrip = true;
+                Log(new JsonObject { ["event"] = "anti-repeat-loop", ["tool"] = acc.Name });
+                if (!msgOpen)
+                {
+                    messageId = "msg_" + NewId();
+                    Emit("response.output_item.added", new JsonObject
+                    {
+                        ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                        ["item"] = new JsonObject { ["id"] = messageId, ["type"] = "message",
+                            ["role"] = "assistant", ["content"] = new JsonArray(), ["status"] = "in_progress" }
+                    });
+                    msgOpen = true;
+                    callIndex++;
+                }
+                FlushMessage("\n\n" + AntiRepeatNotice + "\n\n");
+                continue;
+            }
             toolList.Add((acc.Id, acc.Name, arguments));
             var item = new JsonObject
             {
@@ -2434,8 +2583,10 @@ if (type == "message")
     /// <param name="temperature">Efetiva.</param>
     /// <param name="thinkMode">Modo thinking efetivo.</param>
     /// <param name="hadTools">A resposta tinha tools disponiveis.</param>
+    /// <param name="historyMessages">Mensagens do REQUEST (nao da resposta): o anti-repeat
+    /// cross-turn compara as tool calls do historico com a chamada nova.</param>
     /// <returns>Objeto Responses.</returns>
-    static JsonObject ChatToResponses(JsonObject chat, string model, double temperature, string? thinkMode = null, bool hadTools = false)
+    static JsonObject ChatToResponses(JsonObject chat, string model, double temperature, string? thinkMode = null, bool hadTools = false, JsonNode? historyMessages = null)
     {
         thinkMode ??= Thinking;
         var choice = chat["choices"]?[0]?.AsObject() ?? new JsonObject();
@@ -2460,6 +2611,10 @@ if (type == "message")
         content = ReTemplate.Replace(content, "");
 
         var toolCalls = new List<(string Id, string Name, string Arguments)>();
+        string blockedNotice = "";
+        // AntiRepeat cross-turn: a chamada ja repetiu no historico, entao e loop.
+        var loopedSigs = AntiRepeat ? LoopedToolSigs(historyMessages, 2)
+                                     : new HashSet<string>(StringComparer.Ordinal);
         if (message["tool_calls"] is JsonArray callArray)
         {
             foreach (var callNode in callArray)
@@ -2470,6 +2625,24 @@ if (type == "message")
                 string nativeName = funcObj["name"]?.GetValue<string>() ?? "";
                 if (nativeName.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
                     nativeName = nativeName["default.".Length..];
+                // Bloqueio por role: a tool foi anunciada ao modelo, mas a chamada nao
+                // sai. O aviso entra como texto, para o modelo explicar a recusa.
+                if (BannedFor(model).Contains(nativeName))
+                {
+                    Log(new JsonObject { ["event"] = "tool-blocked", ["tool"] = nativeName, ["role"] = RoleOfModel(model) });
+                    if (blockedNotice.Length == 0)
+                        blockedNotice = "\n\n" + string.Format(ToolBlockNotice, nativeName, RoleOfModel(model)) + "\n\n";
+                    continue;
+                }
+                // AntiRepeat cross-turn: nao emitimos a chamada que ja repetiu; o modelo
+                // so reenfileiraria o mesmo comando e o turno travaria aqui.
+                if (loopedSigs.Contains(ToolSig(nativeName, JsonToString(funcObj["arguments"]))))
+                {
+                    Log(new JsonObject { ["event"] = "anti-repeat-loop", ["tool"] = nativeName });
+                    if (blockedNotice.Length == 0)
+                        blockedNotice = "\n\n" + AntiRepeatNotice + "\n\n";
+                    continue;
+                }
                 toolCalls.Add((id, nativeName, JsonToString(funcObj["arguments"])));
             }
         }
@@ -2514,7 +2687,9 @@ if (type == "message")
             });
         }
 
-        if (!string.IsNullOrWhiteSpace(content))
+        // blockedNotice conta mesmo com content vazio: o modelo costuma emitir SO a tool
+        // call, e sem isso o turno ficaria sem texto nenhum para o usuario ler.
+        if (!string.IsNullOrWhiteSpace(content) || blockedNotice.Length > 0)
         {
             output.Add(new JsonObject
             {
@@ -2522,7 +2697,7 @@ if (type == "message")
                 ["status"] = "completed",
                 ["content"] = new JsonArray(new JsonObject
                 {
-                    ["type"] = "output_text", ["text"] = content,
+                    ["type"] = "output_text", ["text"] = content + blockedNotice,
                     ["annotations"] = new JsonArray(), ["logprobs"] = null
                 })
             });
