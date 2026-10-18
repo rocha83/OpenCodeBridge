@@ -1,5 +1,64 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Política de tools é UM serviço da bridge: permissão interativa em vez de omissão (2026-10-18)
+
+**Princípio corrigido.** Manipular tools não pode ser radical omissivo. O padrão é
+**permissivo**: a chamada acontece; o que está declarado vira **alerta + pergunta**
+ao usuário, e o humano decide. A bridge não recusa por conta própria — ela decide
+*se pergunta* e *a quem*.
+
+**Violação SOLID corrigida na mesma sessão.** Eu havia implementado a política
+duas vezes: `RiskToolsAlerts` na bridge **e** uma segunda cópia na Web
+(`LoadRiskAlerts`, `IsRisk`, `RiskLabel`, `LabelFor` + `agentId` nos gates). Duas
+fontes de verdade para a mesma regra — SRP/DRY quebrados. A Web não deve decidir
+política: ela **interage e exibe**. Agora:
+
+| camada | responsabilidade |
+|---|---|
+| **bridge** | dona da política; `POST /api/permission/check` → `{action, reason, role, notice}` |
+| **opencode** | recebe `function_call` da tool `question` (nativa) e abre o formulário |
+| **Web UI** | consulta a bridge e **apresenta** (botões Sim/Não, aval digitado, `/Chat/Approve`) |
+
+**O padrão já existia no projeto** e foi seguido: `GET /api/harness` já era
+"fonte única: a web consulta aqui". O endpoint de permissão é o irmão dele.
+
+- `PermissionOf(modelId, tool, args)` — decisão única: `ask` (RiskAsk ligado) ou
+  `deny` (`--risk-ask 0`), com motivo `risco` ou `papel`. `BannedFor` e
+  `IsRiskCall` são insumos dela, não caminhos paralelos.
+- `POST /api/permission/check` — body `{model, tool, arguments}`; resposta com
+  `action`, `reason`, `role` e `notice`. Mesma fórmula dos 4 caminhos internos.
+- **Web**: `ConfirmGate` perdeu toda a política (`LoadRiskAlerts`, `IsRisk`,
+  `RiskLabel`, `LabelFor`, o `agentId` condicional) e manteve só o que é dela —
+  os botões, a espera de 120s, o aval digitado e o release por sessão.
+  `ConfirmGateAsync` consulta a bridge; **falha de rede = `ask`** (fail-closed:
+  nunca libera por omissão). `PermissionCheckAsync` é estático e recebe o
+  `IHttpClientFactory` + o `Agent` já resolvido no call site (sem query extra e
+  sem estado de instância, que era o que impedia o `static`).
+- `NeedsConfirmation(name, args)` voltou à assinatura de 2 parâmetros.
+
+**Matriz medida no endpoint (8/8):**
+
+| modelo | tool | comando | decisão |
+|---|---|---|---|
+| plan | shell | `ls -la` | allow |
+| plan | write | — | **ask / papel** |
+| plan | git | `git log --oneline` | allow |
+| plan | git | `git push origin main` | **ask / risco** |
+| build | write | — | allow |
+| build | shell | `git push` | **ask / risco** |
+| build | shell | `rm -rf /tmp/x` | **ask / risco** |
+| build | shell | `ls -la` | allow |
+
+**Config real aplicada** (`appsettings.json`, que tem precedência sobre a CLI):
+`riskToolsAlerts` por role, `riskAsk: true`, `riskAskMinutes: 30`. Plan/Orch/MoE
+**leem** git (`log`/`status`/`diff` fora do risco); `git push`, `rm`, `rsync`,
+`dd`, `mkfs`, `shutdown`, `reset --hard` e `/dev/sd*` alertam em todos. As units
+perderam `git,push,sync` da blacklist — era resquício que fazia `git push` cair
+como `papel` em vez de `risco`, e impedia o Plan de ler repositório.
+
+Verificação: 0 avisos / 0 erros nos 2 projetos · bridge `PASS=23 FAIL=0 SKIP=3` ·
+Web units 0 fails. Plano de fechamento em `PENDINGS.md`.
+
 ## Build sem warnings e o switch mestre `--harness` sai da linha de comando (2026-10-18)
 - **Os 3 testes SKIP sao os mesmos de antes, por decisao, nao por falha:**
   `U-cpu-max-tokens-clamp`, `U-convert-coerced-text-call` e

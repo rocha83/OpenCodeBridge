@@ -42,6 +42,28 @@ public sealed class ChatController(
         catch { return true; }
     }
 
+    // Politica de tools: consulta a BRIDGE (fonte unica; a Web so apresenta).
+    // Falha de rede => "ask" (fail-closed: nunca libera por omissao).
+    private static async Task<string> PermissionCheckAsync(IHttpClientFactory http, Models.Agent? agent,
+        string name, string args, CancellationToken ct)
+    {
+        try
+        {
+            if (agent is null) return "ask";
+            var client = http.CreateClient("bridge");
+            var body = System.Text.Json.Nodes.JsonNode.Parse("{}")!.AsObject();
+            body["model"] = agent.Model;
+            body["tool"] = name;
+            body["arguments"] = args;
+            var content = new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
+            using var res = await client.PostAsync(agent.BridgeUrl.TrimEnd('/') + "/api/permission/check", content, ct);
+            if (!res.IsSuccessStatusCode) return "ask";
+            var node = System.Text.Json.Nodes.JsonNode.Parse(await res.Content.ReadAsStringAsync(ct));
+            return node?["action"]?.GetValue<string>() ?? "ask";
+        }
+        catch { return "ask"; }
+    }
+
     // Streams ativos por sessão p/ Parar via API (além do abort do fetch).
     private static readonly ConcurrentDictionary<int, CancellationTokenSource> ActiveStreams = new();
 
@@ -1419,7 +1441,7 @@ public sealed class ChatController(
                 // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
                 var gateDeny = await ConfirmGateAsync(outputStream, name, args,
                     Services.ConfirmGate.LastUserText(messages), session?.Id, session?.AutoApprove == true, ct,
-                    (name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent)?.Id.ToString());
+                    http, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent);
                 var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
@@ -1949,7 +1971,7 @@ public sealed class ChatController(
                 // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
                 var gateDeny = await ConfirmGateAsync(outputStream, name, args,
                     Services.ConfirmGate.LastUserInputText(input), session?.Id, session?.AutoApprove == true, ct,
-                    (name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent)?.Id.ToString());
+                    http, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent);
                 var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 anyToolRan = true;
                 toolExecutor.ProgressAsync = null;
@@ -2182,10 +2204,19 @@ public sealed class ChatController(
     // Checkbox da sessao (autoApprove) libera tudo sem perguntar.
     private static async Task<Services.ToolResult?> ConfirmGateAsync(System.IO.Stream outputStream,
         string name, string args, string? lastUser, int? sessionId, bool autoApprove, CancellationToken ct,
-        string? riskAgentId = null)
+        IHttpClientFactory? http = null, Models.Agent? riskAgent = null)
     {
         if (autoApprove) return null;
-        if (!Services.ConfirmGate.NeedsConfirmation(name, args, riskAgentId)) return null;
+        // Decisao na BRIDGE (fonte unica): o que a Web sabe e so apresentar.
+        var verdict = http is null ? "ask" : await PermissionCheckAsync(http, riskAgent, name, args, ct);
+        if (verdict == "deny")
+        {
+            await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct,
+                Services.ConfirmGate.DenyMessage, 0, "", args, 0, Services.ConfirmGate.Label(name, args));
+            return Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
+        }
+        if (verdict == "allow" && !Services.ConfirmGate.NeedsConfirmation(name, args)) return null;
+        if (verdict == "allow") return null;
         if (sessionId is int sidSeen && Services.ConfirmGate.IsAllowed(sidSeen, name)) return null;
         if (Services.ConfirmGate.ApprovedBy(lastUser))
         {
@@ -2194,11 +2225,11 @@ public sealed class ChatController(
         }
         if (sessionId is not int sid)
         {
-            await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args, 0, Services.ConfirmGate.LabelFor(riskAgentId, name, args));
+            await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args, 0, Services.ConfirmGate.Label(name, args));
             return Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
         }
         int approveId = Services.ConfirmGate.NextId();
-        await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args, approveId, Services.ConfirmGate.LabelFor(riskAgentId, name, args));
+        await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args, approveId, Services.ConfirmGate.Label(name, args));
         bool ok = await Services.ConfirmGate.WaitAsync(sid, approveId, ct);
         if (ok) Services.ConfirmGate.Allow(sid, name);
         return ok ? null : Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);

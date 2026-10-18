@@ -208,8 +208,23 @@ internal static partial class Program
         return System.Text.RegularExpressions.Regex.IsMatch(a, @"\b(sim|autoriza|autorizado|aprova|aprovado|pode|executa|ok|yes|confirmo|confirmado)\b");
     }
 
+    /// <summary>DECISAO UNICA da politica de tools (fonte de verdade da ponte,
+    /// consumida tambem pela Web em /api/permission/check). Devolve:
+    /// "allow" (roda), "ask" (pergunta ao usuario; a chamada so sai com aval) ou
+    /// "deny" (nao roda e nao se pergunta: autonomia do operador desligada).</summary>
+    static (string Action, string Reason) PermissionOf(string? modelId, string tool, string args)
+    {
+        // Risco declarado: pergunta quando RiskAsk esta ligado; nega quando nao.
+        if (IsRiskCall(modelId, tool, args))
+            return (RiskAsk ? "ask" : "deny", "risco");
+        // Fora do papel: idem — permissao interativa em vez de omissao.
+        if (BannedFor(modelId).Contains(tool))
+            return (RiskAsk ? "ask" : "deny", "papel");
+        return ("allow", "");
+    }
+
     /// <summary>A chamada e de risco e ainda nao foi autorizada: vira pergunta.</summary>
-    static bool IsRiskCall(string modelId, string tool, string args)
+    static bool IsRiskCall(string? modelId, string tool, string args)
     {
         if (!RiskAsk) return false;
         var pats = RiskPatternsFor(RoleOfModel(modelId));
@@ -836,6 +851,27 @@ internal static partial class Program
             if (ctx.Request.HttpMethod == "GET" && path == "/api/harness")
             {
                 WriteJson(ctx, 200, new JsonObject { ["harness"] = TailsAtivas() });
+                return;
+            }
+
+            // Politica de tools: a Web consulta AQUI (fonte unica), em vez de
+            // manter regra propria. Body: { model, tool, arguments }.
+            if (ctx.Request.HttpMethod == "POST" && path == "/api/permission/check")
+            {
+                var pr = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
+                string pModel = pr["model"]?.GetValue<string>() ?? "";
+                string pTool = pr["tool"]?.GetValue<string>() ?? "";
+                string pArgs = pr["arguments"] is JsonValue pv && pv.TryGetValue<string>(out string? ps)
+                    ? ps : JsonToString(pr["arguments"]);
+                var (action, reason) = PermissionOf(pModel, pTool, pArgs);
+                Log(new JsonObject { ["event"] = "permission-check", ["tool"] = pTool,
+                                     ["role"] = RoleOfModel(pModel), ["action"] = action, ["reason"] = reason });
+                WriteJson(ctx, 200, new JsonObject
+                {
+                    ["action"] = action, ["reason"] = reason,
+                    ["role"] = RoleOfModel(pModel), ["tool"] = pTool,
+                    ["notice"] = reason.Length == 0 ? "" : string.Format(ToolBlockNotice, pTool, RoleOfModel(pModel)),
+                });
                 return;
             }
 

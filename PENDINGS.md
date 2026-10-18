@@ -183,3 +183,42 @@ O que ja esta em `main` (build 0 avisos / 0 erros nos 2 projetos):
 ---
 
 *Última atualização: 2026-10-15*
+
+## Politica de tools em endpoint unico (`/api/permission/check`) — estado no commit
+
+**Feito e verificado nesta rodada (sem build novo no push):**
+- Bridge e a dona da politica: `PermissionOf(modelId, tool, args)` -> `allow` /
+  `ask` / `deny`, com motivo `risco` (RiskToolsAlerts) ou `papel` (ToolBlacklist).
+- `POST /api/permission/check` (irmao de `GET /api/harness`, mesmo padrao
+  "fonte unica: a web consulta aqui") devolve `{action, reason, role, tool, notice}`.
+- Web: `ConfirmGate` perdeu a politica local (`LoadRiskAlerts`, `IsRisk`,
+  `RiskLabel`, `LabelFor`, o `agentId` condicional). `ConfirmGateAsync` consulta
+  a bridge; falha de rede = `ask` (fail-closed).
+- Config real: `riskToolsAlerts` por role no `appsettings.json` (precedencia
+  sobre a CLI), `riskAsk: true`, `riskAskMinutes: 30`. Plan/Orch/MoE **leem**
+  git; `git push`, `rm`, `dd`, `mkfs`, `shutdown`, `reset --hard`, `/dev/sd*`
+  alertam. Units perderam `git,push,sync` da blacklist.
+- Matriz medida no endpoint: 8/8 (plan shell allow, plan write ask/papel,
+  plan `git log` allow, plan `git push` ask/risco, build write allow,
+  build `git push` ask/risco, build `rm -rf` ask/risco, build `ls` allow).
+
+**PENDENTE 1 — a pergunta da bridge precisa ser APRESENTADA pela Web**
+(achado depois do commit; patch pronto em `/tmp/opencode/patch_question_present.py`,
+**nao aplicado**): no caminho padrao (`Orchestration:UseResponsesBypass =
+/v1/responses`), a bridge **ja** emite a tool nativa `question` (com
+`PendingRisks[call_id]`); a Web hoje manda essa chamada ao `ToolExecutor`, que a
+nega ("Sem interacao com o usuario neste fluxo") — ou seja, no caminho padrao a
+permissao interativa **nao** chega a aparecer. O patch: `ConfirmGate.IsQuestion`,
+`AskText`, `RiskHeader`, `AnswerFor` (Sim = primeiro rotulo, Nao = ultimo ->
+"Autorizar"/"Negar", que e o que `RiskAnswerYes` reconhece) e
+`PresentQuestionAsync` devolvendo o rotulo no MESMO `call_id`;
+`ConfirmGateAsync` ganha `bridgeDecided: true` no call site do bypass (a bridge
+filtrou: nao re-decidir) e remove o `NeedsConfirmation` morto.
+
+**PENDENTE 2 — bateria de testes com cobertura >= 80%**: falta (a) testes de
+integracao do endpoint na suite da bridge (matriz role x tool x args) e
+(b) instrumentacao de cobertura. **Bloqueio honesto: nao ha ferramenta de
+cobertura disponivel offline** — `coverlet`/`Microsoft.CodeCoverage` nao existem
+no cache NuGet (cache vazio), sem `dotnet tool` global e sem .nupkg no disco;
+instalar depende de rede. Alternativas se a rede voltar: `coverlet.msbuild` nos
+2 projetos de teste, ou `dotnet-coverage` como tool global.

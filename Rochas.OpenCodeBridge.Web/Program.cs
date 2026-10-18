@@ -56,9 +56,6 @@ builder.Services.Configure<ContextWindowOptions>(builder.Configuration.GetSectio
 // Aplica o orçamento de contexto (CPU 16k slot único por padrão) ao estático.
 var ctxOpts = builder.Configuration.GetSection("ContextWindow").Get<ContextWindowOptions>() ?? new ContextWindowOptions();
 ContextWindow.Configure(ctxOpts.CpuContextTokens, ctxOpts.CpuMaxOutputTokens, ctxOpts.CpuMaxInputTokens, ctxOpts.GpuMaxInputTokens, ctxOpts.ToolArgLimit);
-// Padroes de risco por agente: o que vira pergunta Sim/Nao no ConfirmGate.
-// Chave = id do agente no cadastro (1 = orquestrador padrao).
-ConfirmGate.LoadRiskAlerts(builder.Configuration.GetSection("RiskToolsAlerts"));
 builder.Services.AddSingleton<IDiagnosticTelemetry, DiagnosticTelemetry>();
 builder.Services.AddScoped<IBridgeClient>(sp =>
 {
