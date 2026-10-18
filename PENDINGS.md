@@ -1,5 +1,59 @@
 # PENDINGS — OpenCodeBridge
 
+## Permissao interativa de tools (RiskToolsAlerts) — plano para fechar
+
+**Mudanca de principio (2026-10-18):** manipular tools NAO pode mais ser radical
+omissiva. O padrao e PERMISSIVO: deixa a chamada acontecer, e o que esta na
+blacklist vira **alerta + pergunta** ao usuario — o humano decide, a bridge nao
+recusa por conta propria. `--risk-ask 0` restaura a recusa antiga (fail-closed).
+
+O que ja esta em `main` (build 0 avisos / 0 erros nos 2 projetos):
+
+| caminho | mecanismo |
+|---|---|
+| opencode (`/v1/responses`) | tool `question` nativa, com motivo `papel` ou `risco` |
+| Web UI (2 loops `ChatController`) | `ConfirmGate` (botoes Sim/Nao / aval digitado) |
+
+- **Bridge** — `ToolBlacklist` e `RiskToolsAlerts` caem na MESMA primitive
+  `PendingRisks`: emite `question`, espera `function_call_output`.
+  - `RiskQuestionArgs(tool, args, role, reason)` — texto por motivo:
+    `"papel"` (tool fora do role) / `"risco"` (comando perigoso).
+  - `RiskScanAnswers(input)` — SIM: `RiskApprovedOnce[ToolSig]` (1 execucao,
+    `TryRemove`, TTL `--risk-ask-minutes`, default 30) + aviso no historico do
+    MODELO reemitindo a chamada exata. NAO: `RiskRefused` + aviso "nao execute".
+  - `RiskToolsAlerts` por role = regex (`--risk-tools-alerts` /
+    appsettings `riskToolsAlerts`) casando `nome + argumentos` normalizados.
+  - `IsRiskCall` passa a aceitar papel+risco; precedencia: **avaliacao do
+    usuario > blacklist** (a blacklist so pergunta, nao barra).
+- **Web** — `ConfirmGate.LoadRiskAlerts(config)` no startup; `NeedsConfirmation`
+  e `ConfirmGateAsync` ganharam `agentId`; risco declarado tem precedencia no
+  rotulo (`LabelFor`).
+
+### Pendencias para concluir
+1. **Config real** nos dois `appsettings.json`:
+   - bridge: `riskToolsAlerts` (ex. `Plan`: `git\s+push`, `\brm\b`, `\bdd\b`,
+     `\bmkfs\b`, `reset --hard`, `/dev/sd`).
+   - Web: `RiskToolsAlerts` (`{ "<agentId>": [ ... ] }`) — id = id do agente.
+   - units systemd: `--risk-tools-alerts "Plan=...;Orch=..."` se preferir CLI.
+2. **Reiniciar** `bridge-gpu bridge-cpu` + o servico da Web apos a config.
+3. **Testes ao vivo**:
+   - opencode: Plan pede `write`/`git push` -> item `function_call` `question`
+     na saida, `event: tool-ask` no log; SIM -> `risk-approved` + chamada real;
+     NAO -> `risk-answer approved=false`, nada roda.
+   - Web: MESMA tool + padrao -> evento `tool_confirm` no SSE + `/Chat/Approve`;
+     `bash -n` nao pergunta (inspetor mantem `Validation` liberado).
+4. **Suítes**: `dotnet run --project Rochas.OpenCodeBridge.Test -c Release
+   --no-build -- --skip-e2e` (ultimo verde: PASS=23 FAIL=0) + `Web.Test`.
+5. **`HISTORY.md`** com a secao nova + **sync do remaster**
+   (`units/`, `web-ui/appsettings.json`).
+
+### Nao quebrar
+- tools proibidas continuam ANUNCIADAS ao modelo (a chamada que vira pergunta;
+  nunca se esconde o schema).
+- `question` no `ToolExecutor` da Web segue negada no executor — quem pergunta
+  e o `ConfirmGate` APOS a traducao (o executor nao deve perguntar 2x).
+- `write`/`edit` do `ConfirmGate` nao deixam de ser cobertos pelo `RiskToolsAlerts`.
+
 ## tools-dev-pipe (plano do enunciado de 10 passos)
 - Belt `tools-dev-pipe` em `BeltUiTests` + fase `toolsdevpipe`: enunciado via `/Chat/Stream` (agente 8, `AutoApprove=true`, sem delegar).
 - Adaptações: sem webdriver no bridge — clima SP via tool `fetch` (`wttr.in`); nome aleatório `devpipe-*.txt` gerado pelo modelo, teste casa por padrão; zip via `shell`.

@@ -6,6 +6,59 @@ namespace Rochas.OpenCodeBridge.Web.Services;
 
 public static class ConfirmGate
 {
+    // ---- RISCO: padroes de comando que exigem aval, por agent (opcional).
+    // Diferente do NeedsConfirmation fixo (write/edit/push/install), aqui o
+    // operador declara o que e risco no SEU ambiente: appsettings
+    // RiskToolsAlerts: { "<agenteId>": ["\\brm\\b", "\\bmv\\b", ...] }.
+    // Vazio = so vale o NeedsConfirmation fixo (comportamento anterior).
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string,
+        System.Collections.Generic.List<System.Text.RegularExpressions.Regex>> RiskToolsAlerts =
+        new(System.StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Carrega os padroes de risco do appsettings (padrao invalido e ignorado).</summary>
+    public static void LoadRiskAlerts(Microsoft.Extensions.Configuration.IConfigurationSection? section)
+    {
+        if (section is null) return;
+        foreach (var agent in section.GetChildren())
+        {
+            var rx = new System.Collections.Generic.List<System.Text.RegularExpressions.Regex>();
+            foreach (var item in agent.GetChildren().Select(c => c.Value).OfType<string>())
+            {
+                if (string.IsNullOrWhiteSpace(item)) continue;
+                try
+                {
+                    rx.Add(new System.Text.RegularExpressions.Regex(item.Trim(),
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                        | System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+                        TimeSpan.FromMilliseconds(100)));
+                }
+                catch (System.Text.RegularExpressions.RegexParseException) { /* padrao invalido: ignora */ }
+            }
+            if (rx.Count > 0) RiskToolsAlerts[agent.Key] = rx;
+        }
+    }
+
+    /// <summary>A chamada casa com algum padrao de risco declarado p/ o agente?</summary>
+    public static bool IsRisk(string? agentId, string name, string args)
+    {
+        if (string.IsNullOrEmpty(agentId)) return false;
+        if (!RiskToolsAlerts.TryGetValue(agentId, out var rx) || rx.Count == 0) return false;
+        string hay = (name ?? "") + " " + (args ?? "");
+        foreach (var r in rx)
+            if (r.IsMatch(hay)) return true;
+        return false;
+    }
+
+    /// <summary>Rotulo do risco declarado, para a pergunta ao usuario.</summary>
+    public static string RiskLabel(string name, string args)
+    {
+        string cmd = name.Equals("shell", System.StringComparison.OrdinalIgnoreCase)
+            || name is "bash" or "sh" or "exec" || name.Equals("proc", System.StringComparison.OrdinalIgnoreCase)
+            ? ShellInspector.ExtractCommand(args ?? "") : args ?? "";
+        cmd = cmd.Replace('\n', ' ').Trim();
+        return cmd.Length > 120 ? cmd[..120] + "..." : cmd;
+    }
+
     // Palavras de aval (explicitas; "sim"/"ok" sozinhos nao valem).
     private static readonly string[] Approvals =
     {
@@ -47,6 +100,11 @@ public static class ConfirmGate
     /// <summary>Pergunta ao usuário com o rótulo da categoria.</summary>
     public static string AskFor(string name, string args) =>
         $"O agente está tentando {Label(name, args)}, você permite?";
+    /// <summary>Rotulo final da pergunta: o do risco declarado tem precedencia
+    /// sobre a categoria generica (diz o QUE sera rodado, nao so a familia).</summary>
+    public static string LabelFor(string? agentId, string name, string args)
+        => IsRisk(agentId, name, args) ? RiskLabel(name, args) : Label(name, args);
+
     /// <summary>Slot da tool p/ o aval fixo (familia shell conta como uma).</summary>
     public static string ToolSlot(string name)
     {
@@ -68,9 +126,11 @@ public static class ConfirmGate
                 Allowed.TryRemove(k, out _);
     }
 
-    /// <summary>Call mutante que exige aval? (push/install via shell, write, edit).</summary>
-    public static bool NeedsConfirmation(string name, string args)
+    /// <summary>Call mutante que exige aval? (push/install via shell, write, edit,
+    /// e qualquer comando que case com um padrao de risco do agente).</summary>
+    public static bool NeedsConfirmation(string name, string args, string? agentId = null)
     {
+        if (IsRisk(agentId, name, args)) return true;
         string n = (name ?? "").Trim();
         if (n.Equals("write", StringComparison.OrdinalIgnoreCase)
             || n.Equals("edit", StringComparison.OrdinalIgnoreCase)) return true;

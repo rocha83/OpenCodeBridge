@@ -24,6 +24,7 @@
 //  USO:  dotnet run -c Release -- --port 4143 --upstream http://127.0.0.1:4100
 // ===========================================================================
 
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Text;
@@ -114,8 +115,150 @@ internal static partial class Program
     // escondendo o schema. Assim o modelo sabe que a tool existe (e pode explicar ao
     // usuario que ela e de outro role) mas nao consegue executar.    // ToolBlacklist: tools proibidas por role ("Plan" => write, sed, rm). Nome da
     // tool do lado do MODELO (o que ele pede), nao do harness. Vazio = libera.
-    static string ToolBlockNotice = "Aqui e a ponte de conteudo OpenCodeBridge: a tool '{0}' esta bloqueada para o role '{1}' e nao sera executada; use uma alternativa permitida (shell, read) ou explique ao usuario que essa acao cabe a outro role.";
+    static string ToolBlockNotice = "Aqui e a ponte de conteudo OpenCodeBridge: a tool '{0}' nao esta liberada para o role '{1}' (permissao interativa desligada: --risk-ask 0) e nao sera executada; use uma alternativa permitida (shell, read) ou explique ao usuario que essa acao cabe a outro role.";
     static Dictionary<string, HashSet<string>> ToolBlacklist = new(StringComparer.OrdinalIgnoreCase);
+
+    // RiskToolsAlerts: comandos de RISCO que nao sao executados sem confirmacao
+    // do usuario na interface. Diferente do ToolBlacklist (que barra a TOOL
+    // inteira por role), aqui o alvo e o COMANDO: "git push" casa com o git
+    // dentro de um shell, mas "git log" passa livre. O papel do role e o de
+    // decidir QUEM pergunta (Plan pergunta; Build tambem, se listado).
+    static Dictionary<string, List<Regex>> RiskToolsAlerts = new(StringComparer.OrdinalIgnoreCase);
+
+    // Pergunta em voo: call_id da pergunta -> a chamada de risco original.
+    // Cruza o turno: o opencode devolve function_call_output com esse call_id.
+    record PendingRisk(string Tool, string Args, string Role);
+    static ConcurrentDictionary<string, PendingRisk> PendingRisks = new(StringComparer.Ordinal);
+
+    // Autorizacoes concedidas: assinatura da chamada -> validade. Uma concessao
+    // vale para UMA execucao (TryRemove no consume), nao abrePermanente.
+    static ConcurrentDictionary<string, DateTime> RiskApprovedOnce = new(StringComparer.Ordinal);
+
+    /// <summary>Envia a pergunta de risco ao usuario (default ligado).</summary>
+    static bool RiskAsk = true;
+
+    /// <summary>Tempo que a pergunta de risco fica pendente (minutos).</summary>
+    static int RiskAskMinutes = 30;
+
+    /// <summary>Tools que disparam pergunta de risco: padroes regex, por role.</summary>
+    static List<Regex> RiskPatternsFor(string? role)
+        => role is not null && RiskToolsAlerts.TryGetValue(role, out var pats) ? pats : new List<Regex>();
+
+    /// <summary>Le a resposta do usuario a uma pergunta de risco; concede (uma
+    /// vez) a assinatura da chamada ou registra a recusa. Devolve true se a
+    /// chamada foi autorizada e deve sair agora.</summary>
+    static bool RiskConsumeApproval(string modelId, string tool, string args)
+    {
+        string sig = ToolSig(tool, args);
+        if (!RiskApprovedOnce.TryRemove(sig, out DateTime exp)) return false;
+        if (exp < DateTime.UtcNow) return false;
+        Log(new JsonObject { ["event"] = "risk-approved", ["tool"] = tool, ["role"] = RoleOfModel(modelId) });
+        return true;
+    }
+
+    /// <summary>Registra os function_call_output que respondem a uma pergunta de
+    /// risco. Roda na entrada do request: o opencode traz a resposta do usuario
+    /// no turno seguinte, e e la que a concessao (ou a recusa) e reconhecida.
+    /// Devolve o aviso a injetar no historico, para o modelo reemitir a chamada
+    /// exata (a concessao vale para uma unica execucao, casada por assinatura).</summary>
+    static List<string> RiskScanAnswers(JsonNode? input)
+    {
+        var notices = new List<string>();
+        if (PendingRisks.IsEmpty || input is not JsonArray arr) return notices;
+        foreach (var entry in arr)
+        {
+            if (entry is not JsonObject e) continue;
+            string type = e["type"]?.GetValue<string>() ?? "";
+            if (type is not ("function_call_output" or "custom_tool_call_output")) continue;
+            string callId = e["call_id"]?.GetValue<string>() ?? e["id"]?.GetValue<string>() ?? "";
+            if (!PendingRisks.TryRemove(callId, out PendingRisk? risk)) continue;
+            string answer = ExtractText(e["output"] ?? e["result"] ?? e["content"]);
+            bool approved = RiskAnswerYes(answer);
+            Log(new JsonObject { ["event"] = "risk-answer", ["tool"] = risk.Tool,
+                                 ["role"] = risk.Role, ["approved"] = approved });
+            if (approved)
+            {
+                RiskApprovedOnce[ToolSig(risk.Tool, risk.Args)] = DateTime.UtcNow.AddMinutes(RiskAskMinutes);
+                notices.Add($"Ponte OpenCodeBridge: o usuario AUTORIZOU a chamada de risco pendente. "
+                          + $"Reemita agora, sem mudar nada, a tool '{risk.Tool}' com os argumentos: {risk.Args}");
+            }
+            else
+            {
+                RiskRefused.Add(ToolSig(risk.Tool, risk.Args));
+                notices.Add($"Ponte OpenCodeBridge: o usuario NEGOU a chamada de risco pendente "
+                          + $"({risk.Tool}: {Truncate(risk.Args, 200)}). Nao a tente de novo e explique ao usuario "
+                          + "o que ficou por fazer.");
+            }
+        }
+        return notices;
+    }
+
+    /// <summary>Assinaturas recusadas pelo usuario neste request (o modelo precisa
+    /// saber que a acao nao aconteceu, em vez de reemitir em loop).</summary>
+    static HashSet<string> RiskRefused = new(StringComparer.Ordinal);
+
+    /// <summary>Resposta do usuario a pergunta de risco: sim/nao. Default e nao
+    /// (recusa) — o silencio do usuario nao autoriza.</summary>
+    static bool RiskAnswerYes(string answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer)) return false;
+        string a = NormRepeat(answer).ToLowerInvariant();
+        if (System.Text.RegularExpressions.Regex.IsMatch(a, @"\b(nao|nunca|negar|recusar|cancelar|deixa|rejeitar)\b"))
+            return false;
+        return System.Text.RegularExpressions.Regex.IsMatch(a, @"\b(sim|autoriza|autorizado|aprova|aprovado|pode|executa|ok|yes|confirmo|confirmado)\b");
+    }
+
+    /// <summary>A chamada e de risco e ainda nao foi autorizada: vira pergunta.</summary>
+    static bool IsRiskCall(string modelId, string tool, string args)
+    {
+        if (!RiskAsk) return false;
+        var pats = RiskPatternsFor(RoleOfModel(modelId));
+        if (pats.Count == 0) return false;
+        string sig = ToolSig(tool, args);
+        if (RiskRefused.Contains(sig)) return false;   // ja recusado: nao insiste
+        string hay = NormRepeat(tool + " " + args);
+        foreach (var rx in pats)
+            if (rx.IsMatch(hay)) return true;
+        return false;
+    }
+
+    /// <summary>Texto legivel da chamada para a pergunta (achata o JSON).</summary>
+    static string RiskReadable(string tool, string args)
+    {
+        string flat;
+        try
+        {
+            if (JsonNode.Parse(args) is JsonObject o)
+                flat = string.Join("  ", o.Select(kv => kv.Key + "=" + ExtractText(kv.Value)));
+            else flat = args;
+        }
+        catch { flat = args; }
+        return Truncate(flat.Replace('\n', ' ').Trim(), 400);
+    }
+
+    /// <summary>Monta a chamada da tool question (nativa do opencode) pedindo a
+    /// confirmacao do usuario. E o schema que o opencode abre como formulario.
+    /// <paramref name="reason"/> = "risco" (comando perigoso) ou "papel"
+    /// (a tool nao e do role). O texto muda, o mecanismo e o mesmo.</summary>
+    static string RiskQuestionArgs(string tool, string args, string role, string reason)
+    {
+        string ask = reason == "papel"
+            ? $"O role {role} normalmente nao pode usar a tool '{tool}'. Voce autoriza esta execucao?\n\n"
+            : $"O role {role} pediu uma acao de risco, que precisa da sua autorizacao antes de rodar.\n\n";
+        var payload = new JsonObject
+        {
+            ["questions"] = new JsonArray(new JsonObject
+            {
+                ["header"] = Truncate(reason == "papel" ? "Fora do papel: " + tool : "Risco: " + tool, 30),
+                ["question"] = ask + $"{tool}: {RiskReadable(tool, args)}\n\nConfirma a execucao?",
+                ["options"] = new JsonArray(
+                    new JsonObject { ["label"] = "Autorizar", ["description"] = "Executar agora, com a autorizacao do usuario" },
+                    new JsonObject { ["label"] = "Negar", ["description"] = "Nao executar; o agente deve explicar o motivo ao usuario" }),
+                ["multiple"] = false
+            })
+        };
+        return payload.ToJsonString(SerOpts);
+    }
 
     /// <summary>Tools bloqueadas para o role do model pedido (vazio = nenhuma).</summary>
     static HashSet<string> BannedFor(string? modelId)
@@ -197,6 +340,17 @@ internal static partial class Program
             if (cfg["antiRepeatRetry"]?.GetValue<bool>() is bool arr) AntiRepeatRetry = arr;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
             if (cfg["coerceNarrated"]?.GetValue<bool>() is bool cn) CoerceNarrated = cn;
+            if (cfg["riskAsk"]?.GetValue<bool>() is bool ra) RiskAsk = ra;
+            if (cfg["riskAskMinutes"]?.GetValue<int>() is int ram && ram > 0) RiskAskMinutes = ram;
+            if (cfg["riskToolsAlerts"]?.AsObject() is JsonObject rta)
+                foreach (var kv in rta)
+                {
+                    if (kv.Value is not JsonArray pats) continue;
+                    var rx = new List<Regex>();
+                    foreach (var p in pats)
+                        if (p?.GetValue<string>() is { Length: > 0 } pn && TryRegex(pn, out var compiled)) rx.Add(compiled);
+                    if (rx.Count > 0) RiskToolsAlerts[kv.Key] = rx;
+                }
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
             if (cfg["diagnostic"]?.GetValue<bool>() is bool dg) Diagnostic = dg;
@@ -572,6 +726,19 @@ internal static partial class Program
                         ToolBlacklist[grp[..eq].Trim()] = set;
                     }
                     break;
+                case "--risk-tools-alerts":   // "Plan=git\\s+push,\\brm\\b;Orch=\\bdd\\b"
+                    foreach (var grp in (cliArgs[i + 1] ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        int eq = grp.IndexOf('=');
+                        if (eq <= 0) continue;
+                        var rx = new List<Regex>();
+                        foreach (var p in grp[(eq + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                            if (TryRegex(p, out var compiled)) rx.Add(compiled);
+                        if (rx.Count > 0) RiskToolsAlerts[grp[..eq].Trim()] = rx;
+                    }
+                    break;
+                case "--risk-ask": RiskAsk = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--risk-ask-minutes": if (int.TryParse(cliArgs[i + 1], out int ramc) && ramc > 0) RiskAskMinutes = ramc; break;
                 case "--context-guard": ContextGuard = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--context-threshold": { double v = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); if (v >= 0.5 && v <= 0.99) ContextThreshold = v; break; }
                 case "--context-tokens": ContextTokens = int.Parse(cliArgs[i + 1]); break;
@@ -2323,11 +2490,66 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                                      : new HashSet<string>(StringComparer.Ordinal);
         var bannedHere = ToolBlacklist.TryGetValue(RoleOfModel(requestedModel), out var bh) ? bh
                          : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        RiskRefused.Clear();   // recusa vale no request corrente, nao para sempre
         foreach (var (_, acc) in toolAccum)
         {
             string arguments = acc.Args.ToString();
             // Bloqueio por role: a tool foi anunciada, mas a chamada nao sai.
-            if (bannedHere.Contains(acc.Name))
+            // Risco autorizado no turno anterior: a chamada sai, com o aval do
+            // usuario registrado. Uma concessao = uma execucao.
+            bool riskOk = RiskConsumeApproval(requestedModel, acc.Name, arguments);
+            // Ordem de precedencia: blacklist de role > risco. A recusa do role
+            // e limite de papel e nao se resolve com autorizacao do usuario.
+            // Bloqueio de role virou PERMISSAO: o usuario decide, em vez de a
+            // bridge recusar por conta propria. Mesmo primitive do risco.
+            if (!riskOk && bannedHere.Contains(acc.Name) && RiskAsk)
+            {
+                string roleB = RoleOfModel(requestedModel);
+                string bid = "risk_" + NewId();
+                PendingRisks[bid] = new PendingRisk(acc.Name, arguments, roleB);
+                Log(new JsonObject { ["event"] = "tool-ask", ["tool"] = acc.Name, ["role"] = roleB,
+                                     ["reason"] = "papel", ["call_id"] = bid });
+                if (!msgOpen)
+                {
+                    messageId = "msg_" + NewId();
+                    Emit("response.output_item.added", new JsonObject
+                    {
+                        ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                        ["item"] = new JsonObject { ["id"] = messageId, ["type"] = "message",
+                            ["role"] = "assistant", ["content"] = new JsonArray(), ["status"] = "in_progress" }
+                    });
+                    msgOpen = true;
+                    callIndex++;
+                }
+                FlushMessage("\n\nEsta tool fica fora do meu papel. Pedi a confirmacao ao usuario na interface; aguardo a resposta.\n\n");
+                var bitem = new JsonObject
+                {
+                    ["type"] = "function_call", ["id"] = bid, ["call_id"] = bid,
+                    ["name"] = "question", ["arguments"] = RiskQuestionArgs(acc.Name, arguments, roleB, "papel")
+                };
+                Emit("response.output_item.added", new JsonObject
+                {
+                    ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                    ["item"] = (JsonNode)bitem.DeepClone()
+                });
+                Emit("response.function_call_arguments.delta", new JsonObject
+                {
+                    ["type"] = "response.function_call_arguments.delta", ["item_id"] = bid,
+                    ["output_index"] = callIndex, ["delta"] = bitem["arguments"]!.GetValue<string>()
+                });
+                Emit("response.function_call_arguments.done", new JsonObject
+                {
+                    ["type"] = "response.function_call_arguments.done", ["item_id"] = bid,
+                    ["output_index"] = callIndex, ["arguments"] = bitem["arguments"]!.GetValue<string>()
+                });
+                Emit("response.output_item.done", new JsonObject
+                {
+                    ["type"] = "response.output_item.done", ["output_index"] = callIndex, ["item"] = bitem
+                });
+                callIndex++;
+                continue;
+            }
+            if (!riskOk && bannedHere.Contains(acc.Name))
             {
                 Log(new JsonObject { ["event"] = "tool-blocked", ["tool"] = acc.Name, ["role"] = RoleOfModel(requestedModel) });
                 if (!msgOpen)
@@ -2345,6 +2567,55 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                 FlushMessage("\n\n" + string.Format(ToolBlockNotice, acc.Name, RoleOfModel(requestedModel)) + "\n\n");
                 continue;
             }
+            // Comando de risco sem aval: a chamada vira pergunta na interface.
+            if (!riskOk && IsRiskCall(requestedModel, acc.Name, arguments))
+            {
+                string role = RoleOfModel(requestedModel);
+                string qid = "risk_" + NewId();
+                PendingRisks[qid] = new PendingRisk(acc.Name, arguments, role);
+                Log(new JsonObject { ["event"] = "risk-ask", ["tool"] = acc.Name, ["role"] = role, ["call_id"] = qid });
+                if (!msgOpen)
+                {
+                    messageId = "msg_" + NewId();
+                    Emit("response.output_item.added", new JsonObject
+                    {
+                        ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                        ["item"] = new JsonObject { ["id"] = messageId, ["type"] = "message",
+                            ["role"] = "assistant", ["content"] = new JsonArray(), ["status"] = "in_progress" }
+                    });
+                    msgOpen = true;
+                    callIndex++;
+                }
+                FlushMessage("\n\nEsta acao e de risco. Pedi a confirmacao ao usuario na interface;aguardo a resposta antes de rodar.\n\n");
+                var qitem = new JsonObject
+                {
+                    ["type"] = "function_call", ["id"] = qid, ["call_id"] = qid,
+                    ["name"] = "question", ["arguments"] = RiskQuestionArgs(acc.Name, arguments, role, "risco")
+                };
+                Emit("response.output_item.added", new JsonObject
+                {
+                    ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                    ["item"] = (JsonNode)qitem.DeepClone()
+                });
+                Emit("response.function_call_arguments.delta", new JsonObject
+                {
+                    ["type"] = "response.function_call_arguments.delta", ["item_id"] = qid,
+                    ["output_index"] = callIndex, ["delta"] = qitem["arguments"]!.GetValue<string>()
+                });
+                Emit("response.function_call_arguments.done", new JsonObject
+                {
+                    ["type"] = "response.function_call_arguments.done", ["item_id"] = qid,
+                    ["output_index"] = callIndex, ["arguments"] = qitem["arguments"]!.GetValue<string>()
+                });
+                Emit("response.output_item.done", new JsonObject
+                {
+                    ["type"] = "response.output_item.done", ["output_index"] = callIndex, ["item"] = qitem
+                });
+                callIndex++;
+                continue;
+            }
+            if (riskOk)
+                FlushMessage("\n\nO usuario autorizou esta acao; executando agora.\n\n");
             if (loopedSigs.Contains(ToolSig(acc.Name, arguments)))
             {
                 repeatTrip = true;
@@ -2529,6 +2800,11 @@ if (type == "message")
 // Outros tipos (reasoning, item_reference, calls ainda nao executados)
             // sao ignorados de proposito: nao fazem falta no fluxo chat.
         }
+        // Respostas as perguntas de risco do turno anterior viram instrucao no
+        // historico do MODELO (nao texto de prosa): e o que o reemite a chamada.
+        foreach (string notice in RiskScanAnswers(input))
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = notice });
+
         if (sysText.Length > 0)
             messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = LegacyHarness ? WithSystemGuardrail(sysText.ToString()) : sysText.ToString() });
         return messages;
@@ -2691,9 +2967,23 @@ if (type == "message")
                 string nativeName = funcObj["name"]?.GetValue<string>() ?? "";
                 if (nativeName.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
                     nativeName = nativeName["default.".Length..];
+                // Risco autorizado no turno anterior: uma concessao = uma execucao.
+                bool riskOk = RiskConsumeApproval(model, nativeName, JsonToString(funcObj["arguments"]));
                 // Bloqueio por role: a tool foi anunciada ao modelo, mas a chamada nao
                 // sai. O aviso entra como texto, para o modelo explicar a recusa.
-                if (BannedFor(model).Contains(nativeName))
+                if (!riskOk && BannedFor(model).Contains(nativeName) && RiskAsk)
+                {
+                    string roleB = RoleOfModel(model);
+                    string bid = "risk_" + NewId();
+                    PendingRisks[bid] = new PendingRisk(nativeName, JsonToString(funcObj["arguments"]), roleB);
+                    Log(new JsonObject { ["event"] = "tool-ask", ["tool"] = nativeName, ["role"] = roleB,
+                                         ["reason"] = "papel", ["call_id"] = bid });
+                    toolCalls.Add((bid, "question", RiskQuestionArgs(nativeName, JsonToString(funcObj["arguments"]), roleB, "papel")));
+                    if (blockedNotice.Length == 0)
+                        blockedNotice = "\n\nEsta tool fica fora do meu papel. Pedi a confirmacao ao usuario na interface; aguardo a resposta.\n\n";
+                    continue;
+                }
+                if (!riskOk && BannedFor(model).Contains(nativeName))
                 {
                     Log(new JsonObject { ["event"] = "tool-blocked", ["tool"] = nativeName, ["role"] = RoleOfModel(model) });
                     if (blockedNotice.Length == 0)
@@ -2709,6 +2999,20 @@ if (type == "message")
                         blockedNotice = "\n\n" + AntiRepeatNotice + "\n\n";
                     continue;
                 }
+                // Comando de risco sem aval: a chamada vira pergunta na interface.
+                if (!riskOk && IsRiskCall(model, nativeName, JsonToString(funcObj["arguments"])))
+                {
+                    string role = RoleOfModel(model);
+                    string qid = "risk_" + NewId();
+                    PendingRisks[qid] = new PendingRisk(nativeName, JsonToString(funcObj["arguments"]), role);
+                    Log(new JsonObject { ["event"] = "risk-ask", ["tool"] = nativeName, ["role"] = role, ["call_id"] = qid });
+                    toolCalls.Add((qid, "question", RiskQuestionArgs(nativeName, JsonToString(funcObj["arguments"]), role, "risco")));
+                    if (blockedNotice.Length == 0)
+                        blockedNotice = "\n\nEsta acao e de risco. Pedi a confirmacao ao usuario na interface; aguardo a resposta antes de rodar.\n\n";
+                    continue;
+                }
+                if (riskOk && blockedNotice.Length == 0)
+                    blockedNotice = "\n\nO usuario autorizou esta acao; executando agora.\n\n";
                 toolCalls.Add((id, nativeName, JsonToString(funcObj["arguments"])));
             }
         }
@@ -3056,6 +3360,14 @@ if (type == "message")
     /// <summary>Id aleatorio hex de 16 chars.</summary>
     /// <returns>Id.</returns>
     static string NewId() => Guid.NewGuid().ToString("N")[..16];
+
+    /// <summary>Compila um padrao de risco; padrao invalido nao derruba a bridge.</summary>
+    static bool TryRegex(string pattern, out Regex rx)
+    {
+        try { rx = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+                            TimeSpan.FromMilliseconds(100)); return true; }
+        catch { rx = null!; return false; }
+    }
     /// <summary>Corta string no tamanho maximo.</summary>
     /// <param name="s">Texto.</param>
     /// <param name="n">Maximo.</param>

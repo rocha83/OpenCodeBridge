@@ -1418,7 +1418,8 @@ public sealed class ChatController(
                     : null;
                 // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
                 var gateDeny = await ConfirmGateAsync(outputStream, name, args,
-                    Services.ConfirmGate.LastUserText(messages), session?.Id, session?.AutoApprove == true, ct);
+                    Services.ConfirmGate.LastUserText(messages), session?.Id, session?.AutoApprove == true, ct,
+                    (name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent)?.Id.ToString());
                 var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
@@ -1947,7 +1948,8 @@ public sealed class ChatController(
                     : null;
                 // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
                 var gateDeny = await ConfirmGateAsync(outputStream, name, args,
-                    Services.ConfirmGate.LastUserInputText(input), session?.Id, session?.AutoApprove == true, ct);
+                    Services.ConfirmGate.LastUserInputText(input), session?.Id, session?.AutoApprove == true, ct,
+                    (name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent)?.Id.ToString());
                 var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 anyToolRan = true;
                 toolExecutor.ProgressAsync = null;
@@ -2179,10 +2181,11 @@ public sealed class ChatController(
     // dali em diante (sem re-perguntar); Nao/timeout nega so a call atual.
     // Checkbox da sessao (autoApprove) libera tudo sem perguntar.
     private static async Task<Services.ToolResult?> ConfirmGateAsync(System.IO.Stream outputStream,
-        string name, string args, string? lastUser, int? sessionId, bool autoApprove, CancellationToken ct)
+        string name, string args, string? lastUser, int? sessionId, bool autoApprove, CancellationToken ct,
+        string? riskAgentId = null)
     {
         if (autoApprove) return null;
-        if (!Services.ConfirmGate.NeedsConfirmation(name, args)) return null;
+        if (!Services.ConfirmGate.NeedsConfirmation(name, args, riskAgentId)) return null;
         if (sessionId is int sidSeen && Services.ConfirmGate.IsAllowed(sidSeen, name)) return null;
         if (Services.ConfirmGate.ApprovedBy(lastUser))
         {
@@ -2191,11 +2194,11 @@ public sealed class ChatController(
         }
         if (sessionId is not int sid)
         {
-            await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args, 0, Services.ConfirmGate.Label(name, args));
+            await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args, 0, Services.ConfirmGate.LabelFor(riskAgentId, name, args));
             return Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
         }
         int approveId = Services.ConfirmGate.NextId();
-        await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args, approveId, Services.ConfirmGate.Label(name, args));
+        await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args, approveId, Services.ConfirmGate.LabelFor(riskAgentId, name, args));
         bool ok = await Services.ConfirmGate.WaitAsync(sid, approveId, ct);
         if (ok) Services.ConfirmGate.Allow(sid, name);
         return ok ? null : Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
