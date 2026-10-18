@@ -1,5 +1,140 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Escalas de temperatura 0.3 / 0.6 / 0.8 e TurboQuant forçado no E2B Q3 (2026-10-18)
+- **Recalibração dos perfis:** a escala deixa de ser `0.3 / 0.5 / 0.8` e passa a
+  **`0.3` (execução) / `0.6` (planejamento) / `0.8` (exploração)**. O build,
+  scripter e exec caem para 0.3 (determinismo: o build executa, o scripter
+  escreve shell que precisa passar em `bash -n` na primeira); plan e orch sobem
+  para 0.6 (planejamento de fato ganha com folga); MoE fica em 0.8.
+- **Régua de decisão:** temperatura é um eixo **de papel**, não de escada de
+  criatividade — build/scripter/exec executam, plan/orch raciocinam, MoE explora.
+- **Onde o perfil é decidido (`Program.cs`, `TryProfile`):** pelo **sufixo do
+  model id** (`-build`, `-plan`, ...), o que exige que os ids carreguem o
+  sufixo do role (ver item anterior). Sem sufixo, cai no `--temperature`/`--thinking`
+  globais da unit.
+- **⚠️ Armadilha encontrada — `appsettings.json` ao lado do DLL tem precedência
+  sobre o dicionário em código** (`LoadAppSettings`, bloco `profiles`). Sem
+  atualizar esse arquivo, `--no-incremental` recompila, o build fica verde e o
+  perfil em runtime continua no valor antigo.Foi o que mascarou a primeira
+  aplicação: `build` respondia `temp=0.5` mesmo com `["build"] = (0.3, ...)` no
+  fonte. **Regra:** mudar perfil em `Program.cs` ⇒ atualizar também
+  `bin/Release/net9.0/appsettings.json` (é gerado, não versionado) e reiniciar.
+- **Onde a temperatura também aparece (tudo alinhado nesta sessão):**
+
+  | lugar | arquivo | ajuste |
+  |---|---|---|
+  | perfis da bridge | `Rochas.OpenCodeBridge/Program.cs` | plan/orch 0.6, build 0.3 |
+  | perfis de runtime | `bin/Release/net9.0/appsettings.json` | idem (precede o código) |
+  | config do opencode | `~/.config/opencode/opencode.json` | 9 models com temp por role |
+  | agents do opencode | `~/.config/opencode/agents/*.md` | 7 agents com `temperature:` explícito |
+  | seed da Web UI | `Rochas.OpenCodeBridge.Web/Data/AgentSeeder.cs` | 10 seeds por role |
+  | agentes já semeados | `.../Web/bin/Release/net9.0/web.db` | `UPDATE agents` (o seeder é `INSERT OR IGNORE`, não sobrescreve) |
+  | subagente da Web | `SubagentToolHandler.FixedTemperature` | 0.5 → **0.3** (é o executor de script: mesmo papel do Scripter) |
+  | resumo de compactação | `ChatController` | 0.4 → **0.6** (sintetiza/planeja: mesmo papel do Plan) |
+  | decomposição | `Web/appsettings.json` `DecomposeTemperature` | 0.6 (já batia) |
+
+- **TurboQuant forçado no E2B Q3 (o ponto do `agentes+gemma-turboquant`):** o
+  llama.cpp rebaixa o `--cache-type-k turbo3` para `q8_0` quando o modelo tem
+  GQA assimétrico; o **E2B Q3 é exatamente o caso** (GQA 8:1, `n_head=8`,
+  `n_head_kv=1`), e o aviso era:
+
+  ```
+  W llama_kv_cache: auto-asymmetric: GQA ratio 8:1 (n_head=8, n_head_kv=1)
+  — upgrading K from turbo3 to q8_0 to prevent quality degradation.
+  Disable with TURBO_AUTO_ASYMMETRIC=0
+  ```
+
+  Correção: `Environment=TURBO_AUTO_ASYMMETRIC=0` nos dois units
+  `llama-{gpu,cpu}.service`, mantendo `--cache-type-k turbo3 --cache-type-v
+  turbo3`. No E2B Q3 isso recupera o cache KV em turbo3 (VRAM que ia para o
+  q8_0). O 12B (não assimétrico) recebe a env por uniformidade.
+  **Aceite:** o aviso sumiu do startup — o log vai direto de
+  `loaded multimodal model` → `n_slots = 1` → `model loaded` → `listening`.
+- **Prioridade entre os modelos (flag do llama, não systemd):** `--prio 2`
+  (high) no 12B e `--prio -1` (low) no E2B, para o orquestrador ganhar da
+  subagente quando disputam a GPU.
+- **Seeder sincronizado com o stack real:** o `AgentSeeder` ainda semeava
+  `qwen3.5-9b`/`qwen3.5-4b` (linha Qwen que não existe mais) enquanto a DB já
+  estava em Gemma. Nomes, models e bridge URLs foram para Gemma 4 (12B Q4 GPU
+  `:4124` / E2B Q3 `:4125`) e o prompt deixou de citar `qwen3-vl-4b` /
+  "contexto 192k|64k" (agora 160k|80k). Sem isso o seeder, em DB nova, recriaria
+  config morta.
+- **Aceite:**
+  - Build Release: **0 avisos, 0 erros**.
+  - Suíte unitária (`--skip-e2e --api-key guest@123`): **PASS=23 FAIL=0 SKIP=3**.
+  - `/api/translate` na bridge viva (o que importa — vai no payload real):
+    12B `build` 0.3/off, `orch` 0.6/events, `plan` 0.6/events, `moe` 0.8/events,
+    `scripter` 0.3/off; E2B `exec` 0.3/off, `build` 0.3/off.
+  - Teste `U-translate-profiles` continua valendo sem ajuste de lógica (a
+    asserção é `plan >= global` e `build <= global`, que 0.6/0.3 respeitam);
+    só a mensagem foi atualizada.
+- **Armadilha de edição neste repo:** `Program.cs` e os testes são CRLF. Editar
+  via escrita normal converte o arquivo inteiro e infla o diff (316 linhas
+ falsas). Editar preservando os bytes da linha ou aplicando `git checkout` + patch
+  binário; conferir com `git diff --numstat` antes de commitar.
+
+## Saída 2:1 vira 4:1 — teto de `--max-tokens` derrubado pelo `Decode error` (2026-10-18)
+- **Diagnóstico (triangulado sessão opencode + log da bridge + journal do llama):**
+  o `Decode error (200 POST /v1/responses)` **não é falha de rede nem do llama** —
+  é o modelo batendo no teto de saída e a stream morrendo sem `finish_reason`
+  válido para o cliente decodificar.
+- **Evidência 1 — storage do opencode** (sessão `Gemma 12b - 1 : Oi`, role `build`,
+  modelo `gemma-4-12b`): `finish: "error"` com
+  `{"type":"provider.transport","message":"Decode error (200 POST .../v1/responses)","status":200}`
+  e `retry.attempt: 4`; o texto chega **cortado no meio da palavra**
+  (`...no ToolE`), com stream de **476 s** (10:22:55 → 10:30:51).
+- **Evidência 2 — `/tmp/bridge-gpu.log`**: 6× `{"event":"cancel","path":"/v1/responses"}`
+  em 2 s de intervalo (10:24:55–10:25:04) — o cliente cortando, a bridge sem erro.
+- **Evidência 3 — journal do llama-gpu**: `task 39220` decodificou até
+  **`n_decoded = 32763`** (teto era 32768), com `cancel task, id_task = 26158/27749/32195`
+  nos retries. **26 tasks** no dia atingiram ≥32000 tokens, sempre coladas no teto.
+- **Erros da mesma janela que NÃO são do llama** (registrados para não reprocessar):
+  - `503 unavailable_error / "Loading model"` ×24 (09:19:27–09:24:24): **race de
+    startup** — a bridge sobe 09:18:13 e o 12B só fecha `model loaded` às 09:24:35
+    (9 min de carga). Resolve sozinho quando o modelo sobe; **pendência de correção**
+    ainda aberta (ver "Pendências").
+  - `Model muse-spark-1.3-contributor-free has been deprecated` (outra sessão):
+    modelo **cloud** do opencode, sem relação com a bridge local.
+  - `Step interrupted`: consequência direta dos dois acima.
+- **Sintoma de alucinação ligada ao mesmo bug:** com 32k tokens de saída, o 12B
+  entra em *rambling* e cita arquivos inexistentes no repo (`PromptControlService`,
+  `ToolExecutor.cs`, `ThinkingOffRoles`, `ToolBlacklist` não existem em
+  `Rochas.OpenCodeBridge`). Resposta de 32k tokens é sintoma de loop, não de
+  raciocínio — o teto menor corrige a causa, não só o sintoma.
+- **Mudança (config de deploy, nas units):**
+
+  | linha | saída (bridge `--max-tokens`) | antes | ratio vs ctx |
+  |---|---|---|---|
+  | 12B `:4124` | **16384** | 32768 | 160k ctx : 16k out |
+  | E2B `:4125` | **8192** | 16384 | 80k ctx : 8k out |
+
+  A razão **2:1** vira **4:1**. O `--max-tokens` da bridge é o clamp de
+  `limit.output` do opencode (`Program.cs`: `MaxTokens`/`CpuMaxTokens`, `0 = sem teto`).
+- **Aceite (request real, não smoke test):** ambas as pontes `active`, `/health`
+  200 em :4124 e :4125; `POST /v1/chat/completions` retornou
+  `finish_reason: "stop"` (não `"length"`) — 12B 147 tok em 5.35 s, E2B 142 tok em
+  2.19 s. **Os dois `llama-server` foram reiniciados** (E2B 3.5 s, 12B ~9 min de
+  carga) para propagar `--prio`/`TURBO_AUTO_ASYMMETRIC=0` pendentes do tuning.
+- **Tuning de prioridade gravado no mesmo restart** (flag do llama, não systemd):
+  `--prio 2` (high) no 12B e `--prio -1` (low) no E2B, para o orquestrador ganhar
+  da subagente quando disputam a GPU; `Environment=TURBO_AUTO_ASYMMETRIC=0` nos
+  dois units força K/V em **turbo3** — sem isso o E2B (GQA 8:1) tinha o
+  `--cache-type-k turbo3` rebaixado para `q8_0` pelo próprio llama.cpp.
+- **Pendências que sobraram (não resolvidas aqui):**
+  1. `Decode error` por **cancelamento do cliente** ainda é possível: quando o
+     opencode aborta o step, a stream morre sem `finish_reason`. Retry de 4×
+     em request de 8 min é desperdício.
+  2. **Race de startup** bridge-vs-modelo (503 "Loading model"): a bridge não
+     espera `/health` ficar ok. Alternativas: `After=llama-gpu.service` +
+     `ExecStartPre` com wait no health, ou retry da bridge em 503.
+  3. **`question` fora do `RealTools`** (`Program.cs`): o mapeamento
+     `question` ⇄ `ask_user_question` existe em `QwenStandard.cs`, mas o conjunto
+     que a coação reconhece como tool real não inclui `question` — só `shell`,
+     `read`, `grep`, `glob`, `fetch`, `git`, `subagent`, `write`, `edit`.
+  4. **Contexto acumulado**: sessão chegou a 36k tokens de prompt sem poda;
+     `appsettings`/`opencode.json` seguem com os tetos antigos
+     (`gemma4-12b-qa` 163840/32768) e precisam acompanhar as units.
+
 ## Bridge — Gemma 4 (12B denso + E2B): tubo puro e bateria E2E (2026-10-18, **parcial**)
 - **Escopo:** validar a bridge como frente única para a família **Gemma 4** (12B denso
   e E2B multimodal) no papel de modelo QA, no lugar da linha Qwen 9B/4B.
