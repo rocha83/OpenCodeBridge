@@ -1,4 +1,43 @@
-# HISTORY.md — sessão de construção da bridge C# (`vllm-ocode-bridge`)
+# HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
+
+## Bridge — Gemma 4 (12B denso + E2B): tubo puro e bateria E2E (2026-10-18, **parcial**)
+- **Escopo:** validar a bridge como frente única para a família **Gemma 4** (12B denso
+  e E2B multimodal) no papel de modelo QA, no lugar da linha Qwen 9B/4B.
+- **Configuração definitiva (até o momento):** `--harness 0 --legacy-harness 0
+  --anti-repeat 0` → **tubo puro**: sem harness, sem anti-repeat e **sem tail guard**
+  (a bridge **não injeta nada** no system/prompt do modelo; caminho livre, igual ao
+  "modo" opencode). `--thinking events` (on) e `off` como perfis separados.
+- **Serviço dos modelos (só GPU, sem offload):** 12B Q4 com ctx **160k** (1 slot);
+  E2B em **Q3_K_M** — o **Q4 foi removido** por falta de VRAM/ctx — com ctx **64k**.
+  VRAM ocupada: 12B ≈ 8372 MiB + E2B ≈ 2808 MiB ≈ **11770 MiB** (teto saudável
+  ~11.3–11.6 GB).
+- **Decode medido (log `print_timing` do llama-server):** 12B ≈ **47 tok/s**
+  agregado (~55 tok/s por geração, thinking off); E2B ≈ **123 tok/s** médio
+  (picos de 100–700 tok/s em respostas curtas).
+- **Bateria E2E por `--only`:** `E-responses-simple`, `E-stream-architect`
+  (tópicos), `E-devpipe-tools` e `E-science-gpu` (científico, **thinking on
+  obrigatório**), em 6 combinações: 12B off, 12B on, E2B off, E2B on e duas fases
+  **TOGETHER** (12B e E2B servindo **em paralelo** no mesmo GPU). Científico por
+  último em cada fase, primeiro solo.
+- **Teste científico (`E2EScienceTests`):** 12 rounds com armadilhas de premissa
+  falsa (ex.: "0.999… < 1", triângulo esférico 180°). Nesta sessão: **removidos os
+  limites de ida/volta** e os asserts de **tamanho de conteúdo** e de
+  **crescimento de ctx** (o passthrough nem sempre devolve `usage`); marcadores
+  ficaram **específicos por round** e o falso "teorema de Bell-Everett" foi
+  corrigido para **teorema de Bell**. Aceite = marcador correto presente e
+  armadilha corrigida.
+- **Resultados já medidos (em configs anteriores à final — ver ressalva):**
+  - 12B Q4 @160k, thinking **off**: **4/4 PASS** (científico ~292 s).
+  - 12B Q4 @160k, thinking **on**: **4/4 PASS** (científico ~294 s).
+  - E2B Q4 @48k, thinking **off**: **4/4 PASS** (científico ~77 s).
+  - E2B Q4 @48k, thinking **on**: **2/4** — falha em `E-responses-simple`
+    (sem `reasoning_content` no stream) e em `E-devpipe-tools` (sem `tool_calls`
+    no 1º turno); científico **PASS** (~83 s).
+  - **Ressalva:** essas linhas saíram com o **tail guard ainda ligado** e, no caso
+    do E2B, com o **Q4 a 48k**; valem como referência, não como aceite.
+- **Pendente para fechar:** rodada final com a config definitiva (**tubo puro, sem
+  tail guard**; 12B @160k + E2B **Q3** @64k) incluindo as fases **TOGETHER**, e então
+  o aceite formal (FAIL=0 nas 6 fases).
 
 ## Bridge — tail genérico de tools (git/zip) e enunciados só com tarefa+aceite (2026-10-17)
 - **Princípio adotado:** uso de tool é **conhecimento genérico** (vive no `HarnessToolsTail`);
