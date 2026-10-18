@@ -1,5 +1,28 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## `HarnessBehaviorTail` antes de `HarnessToolsTail` na montagem do prompt (2026-10-18)
+- **Renomeado** o enunciado de comportamento: `BehaviorPrompt` (variavel),
+  chave `behaviorPrompt` (appsettings) e flag `--behavior-prompt` viraram
+  **`HarnessBehaviorTail`** / `harnessBehaviorTail` / `--harness-behavior-tail`,
+  para ficar na mesma familia de `HarnessToolsTail` e do (removido)
+  `HarnessGuardTail`.
+- **Ordem de concat invertida:** o comportamento agora entra **antes** do uso
+  de tools. A ordem importa porque uma ancora a outra: o "como agir" (parar,
+  evidenciar, mudar de abordagem ao errar) e o enquadramento geral; "como
+  chamar a ferramenta" (uma call por vez, `command -v` antes de inventar comando)
+  e o especifico. Vindo depois, o especifico nao contradiz o geral.
+
+  ```
+  system = prompt original
+         + HarnessBehaviorTail   (como agir)
+         + HarnessToolsTail       (como usar a tool)
+  ```
+- **Verificado na sonda do E2B:** o `system` entregue ao modelo tem 1502 chars,
+  com `COMPORTAMENTO ESPERADO` na posicao 21 e `GUARD DE USO DE TOOLS` na 682 —
+  ou seja, comportamento primeiro, confirmado por **medicao**, nao por leitura
+  de codigo.
+- Build 0 erros; suite `PASS=23 FAIL=0 SKIP=3`.
+
 ## Anti-repeat cross-turn, blacklist por role e enunciados separados (2026-10-18)
 - **Motivo:** o E2B entrou em loop na sessão "Gemma e2b - 1": reenfileirou por
   12+ turnos o mesmo comando inventado (`service_manager update service ...`,

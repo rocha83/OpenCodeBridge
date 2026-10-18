@@ -84,7 +84,7 @@ internal static partial class Program
     // Enunciado de inducAO a COMPORTAMENTO (nao e uso de tools): disciplina de execucao,
     // como parar e entregar, como reagir a erro, tom de resposta. Vive separado da
     // ToolsTail de proposito: COMO USAR A TOOL e uma coisa, COMO SE COMPORTAR e outra.
-    static string BehaviorPrompt = "";
+    static string HarnessBehaviorTail = "";
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
     // devolve 413 pedindo compactacao em vez da resposta. Parametrizavel
@@ -185,7 +185,7 @@ internal static partial class Program
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
             if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
             if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham && ham.Length > 0) HarnessToolsTail = ham;
-            if (cfg["behaviorPrompt"]?.GetValue<string>() is string bp) BehaviorPrompt = bp;
+            if (cfg["harnessBehaviorTail"]?.GetValue<string>() is string bt) HarnessBehaviorTail = bt;
             if (cfg["antiRepeatRetry"]?.GetValue<bool>() is bool arr) AntiRepeatRetry = arr;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
@@ -508,7 +508,7 @@ internal static partial class Program
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-retry": AntiRepeatRetry = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--behavior-prompt": BehaviorPrompt = cliArgs[i + 1]; break;
+                case "--harness-behavior-tail": HarnessBehaviorTail = cliArgs[i + 1]; break;
                 case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--legacy-harness": LegacyHarness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--qwen-standard": QwenStd = cliArgs[i + 1] is not "false" and not "0"; break;
@@ -1596,8 +1596,10 @@ var shape = new StringBuilder();
     static string WithFormula(string sys)
     {
         string t = (sys ?? "").Trim();
+        // Ordem: comportamento primeiro (o enquadramento geral), depois uso de tools
+        // (o especifico). Assim o "como agir" vem antes do "como chamar a ferramenta".
+        if (HarnessBehaviorTail.Length > 0) t = (t.Length > 0 ? t + "\n\n" : "") + HarnessBehaviorTail;
         if (HarnessToolsTail.Length > 0) t = (t.Length > 0 ? t + "\n\n" : "") + HarnessToolsTail;
-        if (BehaviorPrompt.Length > 0) t += "\n\n" + BehaviorPrompt;
         return t;
     }
 
