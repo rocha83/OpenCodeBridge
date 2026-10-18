@@ -46,7 +46,7 @@ internal static class E2EScienceTests
         {
             // sem limite de rounds/mensagens (pedido: tire limites de ida e volta)
             history.Add(new JsonObject { ["role"] = "user", ["content"] = q });
-            var body = new JsonObject { ["model"] = model, ["messages"] = (JsonArray)history.DeepClone(), ["max_tokens"] = 700 };
+            var body = new JsonObject { ["model"] = model, ["messages"] = (JsonArray)history.DeepClone() };
             JsonObject r;
             try { r = await TestContext.PostObj(bridge + "/v1/chat/completions", body); }
             catch (Exception ex) { throw new Exception($"round{rounds} HTTP: {ex.Message}"); }

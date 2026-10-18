@@ -30,7 +30,6 @@ internal static class E2EToolTests
                 }
             }),
             ["tool_choice"] = new JsonObject { ["type"] = "function", ["function"] = new JsonObject { ["name"] = "soma" } },
-            ["max_tokens"] = 256,
             ["temperature"] = 0.1
         };
         var r = await TestContext.PostObj(TestContext.Vllm + "/v1/chat/completions", body);

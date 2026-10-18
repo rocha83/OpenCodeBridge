@@ -7,13 +7,32 @@
   --anti-repeat 0` → **tubo puro**: sem harness, sem anti-repeat e **sem tail guard**
   (a bridge **não injeta nada** no system/prompt do modelo; caminho livre, igual ao
   "modo" opencode). `--thinking events` (on) e `off` como perfis separados.
-- **Serviço dos modelos (só GPU, sem offload):** 12B Q4 com ctx **160k** (1 slot);
-  E2B em **Q3_K_M** — o **Q4 foi removido** por falta de VRAM/ctx — com ctx **64k**.
-  VRAM ocupada: 12B ≈ 8372 MiB + E2B ≈ 2808 MiB ≈ **11770 MiB** (teto saudável
-  ~11.3–11.6 GB).
-- **Decode medido (log `print_timing` do llama-server):** 12B ≈ **47 tok/s**
-  agregado (~55 tok/s por geração, thinking off); E2B ≈ **123 tok/s** médio
-  (picos de 100–700 tok/s em respostas curtas).
+- **Serviço dos modelos (só GPU, sem offload — `-ngl 99`, KV `turbo3` + `fa` on):**
+  12B Q4 (`mmproj-F16`, 175 MB) com ctx **160k** (1 slot); E2B em **Q3_K_M** — o
+  **Q4 foi removido** por falta de VRAM/ctx — com ctx **80k** (1 slot) e mmproj
+  **Q8_0** (531 MB; o repo `ggml-org/gemma-4-E2B-it-GGUF` publica esse quantizado,
+  contra 985 MB do F16 → **−482 MiB** de VRAM, visão preservada).
+- **Configuração definitiva de ctx/saída — 2:1 exato ponta a ponta:**
+
+  | linha | ctx (llama `-c`) | saída (bridge `--max-tokens` = opencode `limit.output`) |
+  |---|---|---|
+  | 12B | `163840` (160k) | `32768` (32k) |
+  | E2B | `81920` (80k) | `16384` (16k) |
+
+  O **ctx é do llama** (a bridge nunca o altera); o **`max_tokens` é da bridge/
+  opencode**. **Nenhum teste tem `max_tokens` hardcoded** — os E2E foram limpos e
+  quem governa é o teto da bridge. `opencode.json` (`.v1`/`.v2`): `gemma4-12b-qa`
+  163840/32768 e provider `gemma-e2b` → `gemma4-e2b-qa` 81920/16384.
+- **VRAM medida (os dois residentes ao mesmo tempo):** 12B **8524 MiB** + E2B
+  **2486 MiB** = **11394 MiB / 12288** (livre 641 MiB), ambos 100% em GPU.
+- **Decode medido (log `print_timing` do llama-server):**
+  - 12B: ≈ **47 tok/s** agregado (~55 tok/s por geração) na config leve; com os dois
+    modelos residentes o GPU fica **limitado por potência** (`155/170 W`, SM
+    `1867/2100 MHz`, util 97%) e a geração estabiliza em **~19–27 tok/s**, com
+    prefill de **370–530 tok/s**.
+  - E2B: ≈ **53 tok/s** por geração (solo, Q3 @64k) — ≈1,8–2,1× o 12B.
+  - **TOGETHER** (os dois gerando ao mesmo tempo no mesmo GPU): a taxa de cada um
+    cai para ~metade, como esperado — número final registrado na bateria.
 - **Bateria E2E por `--only`:** `E-responses-simple`, `E-stream-architect`
   (tópicos), `E-devpipe-tools` e `E-science-gpu` (científico, **thinking on
   obrigatório**), em 6 combinações: 12B off, 12B on, E2B off, E2B on e duas fases
@@ -33,11 +52,22 @@
   - E2B Q4 @48k, thinking **on**: **2/4** — falha em `E-responses-simple`
     (sem `reasoning_content` no stream) e em `E-devpipe-tools` (sem `tool_calls`
     no 1º turno); científico **PASS** (~83 s).
-  - **Ressalva:** essas linhas saíram com o **tail guard ainda ligado** e, no caso
-    do E2B, com o **Q4 a 48k**; valem como referência, não como aceite.
-- **Pendente para fechar:** rodada final com a config definitiva (**tubo puro, sem
-  tail guard**; 12B @160k + E2B **Q3** @64k) incluindo as fases **TOGETHER**, e então
-  o aceite formal (FAIL=0 nas 6 fases).
+  - E2B **Q3** @64k, thinking **off** (tail guard já desligado): `E-responses-simple`
+    PASS, `E-stream-architect` PASS, `E-devpipe-tools` PASS (1,2 s) e científico
+    PASS (138,6 s, **todas as 5 armadilhas corrigidas** — melhor conteúdo do E2B).
+  - **Ressalva:** essas linhas saíram em configs anteriores à final (E2B Q4 @48k /
+    Q3 @64k) e, no caso do E2B Q4, com o **tail guard ainda ligado**; valem como
+    referência, não como aceite.
+- **Aceite (status):**
+  - **12B Q4 @160k — ACEITE:** `4/4` thinking **off** e `4/4` thinking **on**
+    (científico ~292–294 s, conteúdo real; nenhum PASS vazio). O 12B é a linha
+    fechada para uso em QA.
+  - **E2B Q3 @80k/16k — PENDENTE:** falta a rodada final dos testes complexos
+    (`E-devpipe-tools` **com uso de tools** nos 3 turnos e `E-science-gpu` com
+    **thinking on**). É o único item em aberto para fechar a seção.
+- **Pendente para fechar:** bateria só do **E2B Q3** na config `80k/16k` (tubo puro,
+  sem tail guard): `E-devpipe-tools` (tools) e `E-science-gpu` (thinking on), e então
+  o aceite formal do E2B neste documento.
 
 ## Bridge — tail genérico de tools (git/zip) e enunciados só com tarefa+aceite (2026-10-17)
 - **Princípio adotado:** uso de tool é **conhecimento genérico** (vive no `HarnessToolsTail`);
