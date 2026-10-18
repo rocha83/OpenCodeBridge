@@ -1,6 +1,62 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Config final de contexto: 12B 128k/1 slot + E2B 128k/2 slots (2026-10-18)
+- **Caminho percorrido até aqui.** O E2B começou em 80k/1 slot com o KV
+  rebaixado para `q8_0` (ver seção anterior). Depois de forçar turbo3 subiu
+  para 96k, tentou-se 112k/1 slot e o llama avisou
+  `failed to fit params to free device memory: n_gpu_layers already set by
+  user to 99, abort` — ou seja, **112k era o teto da VRAM, não uma escolha**.
+  A saída foi cortar contexto do 12B para caber **mais paralelismo no E2B**.
+- **⚠️ `n_ctx_slot` é o total dividido pelos slots.** Com `-c 98304 -np 2` o
+  llama loga `n_ctx_slot = 49152`: 48k **por slot**, não 96k. Para 2 slots de
+  64k cada o total tem de ser 131072.
+- **Config final:**
+
+  | | `-c` (total) | `-np` | `n_ctx_slot` real | KV | `--prio` | `--max-tokens` (bridge) |
+  |---|---|---|---|---|---|---|
+  | 12B `:4100` | **131072** | 1 | 131072 | turbo3 | 2 (high) | 16384 |
+  | E2B `:4110` | **131072** | **2** | **65536** | turbo3 | -1 (low) | 8192 |
+
+  Continua `-ngl 99` nos dois (100% GPU) e `TURBO_AUTO_ASYMMETRIC=0` + `--cache-type-k/v
+  turbo3` — **os dois modelos em TurboQuant, regra permanente** (checagem de
+  aceite = ausência do aviso `auto-asymmetric` no journal).
+- **O resultado contra-intuitivo: cortar o 12B DEVOLVEU VRAM.** Medido na mesma
+  sessão, com os dois modelos residentes:
+
+  | configuração | 12B | E2B | used | free |
+  |---|---|---|---|---|
+  | 12B 160k + E2B 96k/1 | 8512 | 2572 | 11234 | 802 |
+  | 12B 160k + E2B 112k/1 | 8512 | 2604 | 11266 | 770 |
+  | **12B 128k + E2B 128k/2** | **8298** | **2702** | **11154** | **882** |
+
+  O 12B perdeu 214 MiB cortando 32k de contexto, e o E2B gastou 130 MiB
+  dobrando os slots: **11234 → 11154 MiB**. Ou seja, o corte no 12B pagou com
+  sobra a duplicação do E2B — e os 2×64k são mais úteis que 112k num slot só,
+  porque dois subagentes rodam script em paralelo. Também sumiu o
+  `fit params` warning: os dois sobem folgados.
+- **Consumidor alinhado:** `opencode.json` foi de `ctx 163840` (12B) e `98304`
+  (E2B) para **131072 nos dois**, nos 12 ids (6 por provider). Se o
+  `limit.context` do client não acompanhar o `-c` do llama, o cliente planeja
+  prompts maiores do que o modelo aceita.
+- **Aceite:**
+  - startup: 12B `n_slots = 1, n_ctx_slot = 131072`; E2B `n_slots = 2,
+    n_ctx_slot = 65536`; ambos `model loaded` → `listening`, **zero**
+    `auto-asymmetric` e **zero** `fit params` nos dois;
+  - requests reais: 12B `stop`/OK; E2B `stop`/OK em duas chamadas;
+  - **2 slots servindo em paralelo de verdade** (o motivo da mudança): duas
+    gerações simultâneas voltaram completas (896 e 764 tokens), com o slot
+    reportando **64.6 tok/s** sob concorrência contra ~70 tok/s solo — metade
+    da taxa, como esperado quando dois slots dividem a mesma GPU;
+  - `/health` `ok` em `:4100` e `:4110`.
+- **Ordem de carga:** o 12B precisa subir **antes** do E2B. Invertido, o E2B
+  pega a VRAM primeiro e o 12B não cabe (`-ngl 99` é fixo, então ele aborta o
+  auto-fit em vez de cair para CPU). O script de reinício faz isso sequencial.
+
 ## E2B em 96k com turbo3 no KV — VRAM caiu apesar do ctx maior (2026-10-18)
+> **SUPERADO pela seção seguinte (12B 128k + E2B 128k/2 slots)**, que baixa o
+> 12B de 160k para 128k e troca o E2B de 96k/1 slot por 128k/2 slots de 64k.
+> Esta entrada fica como registro do passo intermediário e da descoberta do
+> turbo3 render mais VRAM que o q8_0.
 - **Pedido:** subir o ctx do E2B de 80k para **96k**, agora que o TurboQuant
   está corretamente em vigor. Feito: `-c 81920` → `-c 98304` em
   `llama-cpu.service`.
