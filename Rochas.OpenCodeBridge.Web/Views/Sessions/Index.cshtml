@@ -1,7 +1,7 @@
 @model IEnumerable<Rochas.OpenCodeBridge.Web.Models.Session>
 @{ Layout = "_Layout"; ViewData["Title"] = "Sessões"; }
 @{ var isAdmin = (User.FindFirst("IsAdmin")?.Value ?? "false").ToLower() == "true"; }
-@{ var agentNames = (System.Collections.Generic.Dictionary<int?, string>)ViewBag.AgentNames; }
+@{ var agentNames = (System.Collections.Generic.Dictionary<int, string>)ViewBag.AgentNames; }
 @{ var userNames = (System.Collections.Generic.Dictionary<int, string>)ViewBag.UserNames; }
 <div class="card mb-3">
   <div class="card-body">

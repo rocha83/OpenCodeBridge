@@ -22,7 +22,7 @@ public sealed class SessionsController(
         var allUsers = (await users.Query(new User())).OrderBy(u => u.Name).ToList();
         var allAgents = await agents.Query(new Agent());
         ViewBag.Users = allUsers;
-        ViewBag.AgentNames = allAgents.ToDictionary(a => a.Id, a => a.Name ?? "");
+        ViewBag.AgentNames = allAgents.Where(a => a.Id.HasValue).ToDictionary(a => a.Id!.Value, a => a.Name ?? "");
         ViewBag.UserNames = allUsers.Where(u => u.Id.HasValue).ToDictionary(u => u.Id!.Value, u => u.Name ?? "");
         ViewBag.Criterio = criterio ?? "";
         ViewBag.SelUserId = userId;

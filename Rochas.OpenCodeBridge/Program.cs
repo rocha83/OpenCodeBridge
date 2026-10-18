@@ -85,6 +85,9 @@ internal static partial class Program
     // como parar e entregar, como reagir a erro, tom de resposta. Vive separado da
     // ToolsTail de proposito: COMO USAR A TOOL e uma coisa, COMO SE COMPORTAR e outra.
     static string HarnessBehaviorTail = "";
+    // Ha alguma cauda de inducAO configurada? E o que o /api/harness reporta:
+    // nao existe mais switch mestre, o que vale e ter cauda ou nao.
+    static bool TailsAtivas() => HarnessBehaviorTail.Length > 0 || HarnessToolsTail.Length > 0;
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
     // devolve 413 pedindo compactacao em vez da resposta. Parametrizavel
@@ -509,6 +512,7 @@ internal static partial class Program
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-retry": AntiRepeatRetry = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--harness-behavior-tail": HarnessBehaviorTail = cliArgs[i + 1]; break;
+                case "--harness-tools-tail": HarnessToolsTail = cliArgs[i + 1]; break;
                 case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--legacy-harness": LegacyHarness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--qwen-standard": QwenStd = cliArgs[i + 1] is not "false" and not "0"; break;
@@ -624,7 +628,7 @@ internal static partial class Program
             // Flag mestra do harness (fonte unica: a web consulta aqui).
             if (ctx.Request.HttpMethod == "GET" && path == "/api/harness")
             {
-                WriteJson(ctx, 200, new JsonObject { ["harness"] = Harness });
+                WriteJson(ctx, 200, new JsonObject { ["harness"] = TailsAtivas() });
                 return;
             }
 
@@ -802,7 +806,7 @@ WriteJson(ctx, 200, new JsonObject
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
         ["passthrough_responses"] = PassthroughResponses,
         ["cpu_max_tokens"] = CpuMaxTokens,
-        ["harness"] = Harness, ["legacy_harness"] = LegacyHarness,
+        ["harness"] = TailsAtivas(), ["legacy_harness"] = LegacyHarness,
         ["uptime_seconds"] = (long)(DateTime.UtcNow - StartedAt).TotalSeconds,
         ["total_requests"] = TotalRequests, ["failed_requests"] = FailedRequests
     };
@@ -901,7 +905,9 @@ WriteJson(ctx, 200, new JsonObject
             }
             // Formula (Harness, cliente web = model sem sufixo de perfil):
             // system + agents + tail. Opencode (sufixo) passa limpo.
-            if (Harness && node is not null
+            // Sem switch mestre: cada cauda se aplica por estar configurada
+            // (appsettings ou --harness-behavior-tail / --harness-tools-tail).
+            if (node is not null
                 && node["messages"] is JsonArray fm)
             {
                 foreach (var m in fm)
@@ -1251,8 +1257,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // Converte a conversa Responses -> messages do formato chat
         var messages = InputToMessages(req["input"], req["instructions"]);
         // Formula (Harness, cliente web): system + agents + tail. Opencode limpo.
-        if (Harness
-            && messages.Count > 0 && messages[0] is JsonObject sys0
+        if (messages.Count > 0 && messages[0] is JsonObject sys0
             && sys0["role"]?.GetValue<string>() == "system"
             && sys0["content"] is JsonValue sysv && sysv.TryGetValue<string>(out string? syst))
             sys0["content"] = WithFormula(syst);
@@ -1421,8 +1426,7 @@ string outBody = body;
         // agents + tail. Opencode (sufixo) passa limpo.
         try
         {
-            if (Harness
-                && req.TryGetPropertyValue("instructions", out JsonNode? fins) && fins is JsonValue fiv
+            if (req.TryGetPropertyValue("instructions", out JsonNode? fins) && fins is JsonValue fiv
                 && fiv.TryGetValue<string>(out string? finst))
             {
                 req["instructions"] = WithFormula(finst);

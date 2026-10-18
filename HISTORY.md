@@ -1,5 +1,46 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Build sem warnings e o switch mestre `--harness` sai da linha de comando (2026-10-18)
+- **Os 3 testes SKIP sao os mesmos de antes, por decisao, nao por falha:**
+  `U-cpu-max-tokens-clamp`, `U-convert-coerced-text-call` e
+  `U-convert-coerced-angle-call`. Os tres se auto-pulam com
+  `if (status["legacy_harness"] != true) Skip(...)` — sao do **caminho legado**
+  (coercao texto -> tool_call e o clamp de `CpuMaxTokens`), que esta desligado
+  de proposito pelo "tubo puro". Nao ha o que corrigir neles: ligariam apenas se
+  `--legacy-harness 1` estivesse ligado, o que nao queremos.
+- **Warnings zerados (5 -> 0), sem suprimir nada:**
+  - `CS8714` x2 (`SessionsController.cs` e `Index.cshtml`): `Agent.Id` e `int?` e
+    nao pode ser chave de dicionario. Agora filtra `Where(a => a.Id.HasValue)`,
+    como ja era feito com `UserNames`, e a chave vira `int` — o controller e a
+    view passam a concordar.
+  - `CS8604` x2 (`ChatController`): a causa nao era a assinatura, era o
+    `(args ?? "")` dentro do laco. Num local ja declarado nao-nulo, o `??`
+    faz o compilador marcar a variavel como *maybe-null* e propaga para todos os
+    usos. Removido o `??` redundante e a afirmacao ficou **na fronteira do
+    laco** (`call.Args!`, `foreach ((string id, string name, string args) in
+    toolCalls)`) — uma vez, em vez de repetir em cada chamada.
+  - `CS0219`: `gotReasoning` era atribuida e nunca lida no
+    `ChatIntegrationTests`. O helper so verifica conteudo, `[DONE]` e as duas
+    mensagens, entao a variavel foi removida em vez de virar assercao nao
+    pedida.
+- **`--harness` (switch mestre) saiu da linha de comando.** Ele gateava as
+  caudas, mas com os ids de role com sufixo ja era **inerte** para o opencode.
+  Agora **nao existe switch**: cada enunciado se aplica por estar configurado.
+  Cada peca ganhou sua propria ativacao:
+
+  | peca | appsettings | CLI |
+  |---|---|---|
+  | comportamento | `harnessBehaviorTail` | `--harness-behavior-tail` |
+  | uso de tools | `harnessToolsTail` | `--harness-tools-tail` (novo) |
+
+  `--harness 1` saiu das duas units. `/api/harness` e `/api/status` passam a
+  reportar `TailsAtivas()` — o **fato** (ha cauda configurada?), nao um switch
+  que ninguem mais controla.
+- **Aceite:** as caudas continuam chegando sem o switch — `system` com 1502
+  chars, comportamento na posicao 21 e tools na 682; `/api/harness` →
+  `{"harness":true}`. Build Release **0 avisos, 0 erros**; suite
+  `PASS=23 FAIL=0 SKIP=3`.
+
 ## `HarnessBehaviorTail` antes de `HarnessToolsTail` na montagem do prompt (2026-10-18)
 - **Renomeado** o enunciado de comportamento: `BehaviorPrompt` (variavel),
   chave `behaviorPrompt` (appsettings) e flag `--behavior-prompt` viraram

@@ -1352,7 +1352,10 @@ public sealed class ChatController(
 
             // Executa cada tool e adiciona resultado às mensagens.
             // Progresso vai ao cliente em tempo real para a UI indicar execução.
-            foreach (var (id, name, args) in toolCalls)
+            // ToolCall.Args vem do JSON do modelo: o compilador o trata como
+            // possivelmente nulo. Afirma-se aqui, na fronteira do laco, em vez de
+            // repetir a mesma verificacao em cada uso.
+            foreach ((string id, string name, string args) in toolCalls)
             {
                 anyToolRan = true;
                 if (name == "subagent") anySubRan = true;
@@ -1849,12 +1852,16 @@ public sealed class ChatController(
             }
             // Executa cada call e devolve outputs no próximo turno (a API exige
             // function_call_output p/ toda call; sem isso o modelo trava).
-            foreach (var (id, name, args) in accum.Calls)
+            foreach (var call in accum.Calls)
             {
+                // Args vem do acumulador (JSON do modelo): o compilador o trata como
+                // possivelmente nulo. Afirma-se na fronteira do laco, uma vez, em vez
+                // de repetir a verificacao em cada uso.
+                string id = call.Id, name = call.Name, args = call.Args!;
                 // Trava de call idêntica (ping-pong): 3x mesma tool+args
                 // seguidas = controle no input + retry do turno (a repetida
                 // não executa, sem nota na bolha). Após 2 controles, disjuntor.
-                string toolSig = name + "\n" + (args ?? "");
+                string toolSig = name + "\n" + args;
                 if (toolSig == lastToolSig) sameToolStreak++;
                 else { lastToolSig = toolSig; sameToolStreak = 1; }
                 if (harness && sameToolStreak >= 3)
