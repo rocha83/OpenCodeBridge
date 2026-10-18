@@ -69,6 +69,11 @@ internal static partial class Program
     // bridge vira tubo puro (sem sufixo guardrail, sem stop, sem pattern-strip,
     // sem coercao, sem retry/aviso) — todo o conteudo vem do harness opencode.
     static bool Harness = true;
+    // Coerção de tool call NARRADA: o modelo escreveu a chamada no corpo da mensagem
+    // ("[Assistant tool call]: nome({...})") em vez de emitir tool_calls estruturados.
+    // Diferente de CoerceFor (que cobre modelo sem parser nenhum): aqui ja houve intencao
+    // de tool call, so que no formato errado. Independe do LegacyHarness.
+    static bool CoerceNarrated = true;
     // Legado (nunca liga em producao): antigas insercoes da bridge
     // (guardrail/coerce/strip/retry). --legacy-harness 1 reanima.
     static bool LegacyHarness = false;
@@ -191,6 +196,7 @@ internal static partial class Program
             if (cfg["harnessBehaviorTail"]?.GetValue<string>() is string bt) HarnessBehaviorTail = bt;
             if (cfg["antiRepeatRetry"]?.GetValue<bool>() is bool arr) AntiRepeatRetry = arr;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
+            if (cfg["coerceNarrated"]?.GetValue<bool>() is bool cn) CoerceNarrated = cn;
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
             if (cfg["diagnostic"]?.GetValue<bool>() is bool dg) Diagnostic = dg;
@@ -293,6 +299,15 @@ internal static partial class Program
     // Coder com tool_choice required: <function>{...}</function> + flood de \n.
     static readonly Regex ReFunctionTag = new(@"<function>([\s\S]*?)</function>", RegexOptions.Compiled);
 
+    // opencode serializa a tool call no historico como "[Assistant tool call]: nome({...})".
+    // Em contexto longo o modelo copia esse formato em vez de emitir a chamada estruturada, e
+    // o parser nativo do llama nao ve nada: o turno vira prosa e trava. Aqui devolvemos a
+    // chamada de verdade. Nome segue a allowlist de tools anunciadas, entao prosa
+    // que so menciona uma tool nao vira chamada.
+    static readonly Regex ReAssistantToolCall = new(
+        @"\[\s*Assistant\s+tool\s+call\s*\]\s*:?\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\(",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     // Catálogo real de tools (+ apelidos shell -> shell): só estes nomes
     // viram tool_call na coação; resto (echo alucinado) fica como prosa.
     static readonly HashSet<string> RealTools = new(StringComparer.OrdinalIgnoreCase)
@@ -338,6 +353,8 @@ internal static partial class Program
             foreach (Match m in ReFencedCall.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
         if (list.Count == 0)
             foreach (string json in ExtractAngleCalls(content, false)) TryAddTextCall(json, list, known);
+        if (list.Count == 0)
+            ExtractAssistantToolCalls(content, list, known);
         if (list.Count == 0)
         {
             // Ultimo recurso: resposta INTEIRA e um objeto {"name":..} cru
@@ -405,6 +422,30 @@ internal static partial class Program
         return false;
     }
 
+    /// <summary>Formato "[Assistant tool call]: nome({...})" -> tool call de verdade.</summary>
+    /// <remarks>Reconstroi o envelope {"name","arguments"} a partir do nome do regex e dos <see cref="TryAddTextCall"/>,
+    /// que aplica a allowlist. Le ate o fechamento balanceado do objeto de argumentos, entao
+    /// nao depende de chaves balanceadas no texto todo.</remarks>
+    static void ExtractAssistantToolCalls(string content, List<(string Name, string Arguments)> list, List<string>? known)
+    {
+        foreach (Match m in ReAssistantToolCall.Matches(content))
+        {
+            int i = m.Index + m.Length;              // logo apos o '(' do nome
+            if (i >= content.Length || content[i] != '{') continue;
+            if (!TryBalanced(content, i, out string obj)) continue;
+            try
+            {
+                // TryBalanced devolve o que esta entre as chaves do nome: sao os ARGUMENTOS,
+                // nao um envelope {"name","arguments"}. O nome vem do grupo do regex.
+                var argObj = JsonNode.Parse(obj)?.AsObject();
+                if (argObj is null) continue;
+                var envelope = new JsonObject { ["name"] = m.Groups[1].Value, ["arguments"] = argObj };
+                TryAddTextCall(envelope.ToJsonString(SerOpts), list, known);
+            }
+            catch { /* prosa que nao e JSON: segue como texto */ }
+        }
+    }
+
     static void TryAddTextCall(string json, List<(string Name, string Arguments)> list, List<string>? known = null)
     {
         try
@@ -417,15 +458,13 @@ internal static partial class Program
             // nomes simples; "default." nunca e tool valida — remove sem risco.
             if (name.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
                 name = name["default.".Length..];
-            // Allowlist: com anunciadas casa com elas (apelido shell conta
-            // como shell; custom do harness, ex. soma, passa); sem lista,
-            // exige o catálogo real. Alucinada (echo) não vira tool_call.
+            // Sem allowlist: uso geral de tools. Com lista anunciada, casa o apelido
+            // (shell -> shell); sem lista, usa o nome como veio. O limite de escrita/
+            // execucao por role e feito na emissao (ToolBlacklist), nao aqui.
             string canon = CanonToolAlias(name);
-            string emit = "";
-            if (known is { Count: > 0 })
-                emit = known.FirstOrDefault(k => CanonToolAlias(k) == canon) ?? "";
-            else if (RealTools.Contains(canon))
-                emit = canon;
+            string emit = known is { Count: > 0 }
+                ? known.FirstOrDefault(k => CanonToolAlias(k) == canon) ?? canon
+                : canon;
             if (emit.Length == 0) return;
             list.Add((emit, JsonToString(o["arguments"])));
         }
@@ -510,6 +549,7 @@ internal static partial class Program
                 case "--passthrough-responses": PassthroughResponses = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--coerce-narrated": CoerceNarrated = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-retry": AntiRepeatRetry = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--harness-behavior-tail": HarnessBehaviorTail = cliArgs[i + 1]; break;
                 case "--harness-tools-tail": HarnessToolsTail = cliArgs[i + 1]; break;
@@ -1256,13 +1296,31 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
 
         // Converte a conversa Responses -> messages do formato chat
         var messages = InputToMessages(req["input"], req["instructions"]);
-        // Formula (Harness, cliente web): system + agents + tail. Opencode limpo.
+        // Caudas por peca, penduradas no system que InputToMessages ja consolida
+        // (instructions + os system do meio). Em producao esse system sempre existe:
+        // no opencode vem do agent.md, na Web UI do system_prompt do agente. O gate
+        // fica como estava — sem fallback, para nao duplicar system quando o
+        // conteudo vier em lista de partes (visão/multimodal) em vez de string.
         if (messages.Count > 0 && messages[0] is JsonObject sys0
             && sys0["role"]?.GetValue<string>() == "system"
             && sys0["content"] is JsonValue sysv && sysv.TryGetValue<string>(out string? syst))
             sys0["content"] = WithFormula(syst);
+        if (Diagnostic)
+            Log(new JsonObject
+            {
+                ["event"] = "tails",
+                ["has_system"] = messages.Count > 0 && messages[0]?["role"]?.GetValue<string>() == "system",
+                ["attached"] = messages.Count > 0 && messages[0] is JsonObject s1
+                               && s1["content"] is JsonValue s1v
+                               && (s1v.TryGetValue<string>(out string? t1) ? t1.Contains(HarnessToolsTail[..20]) : false),
+                ["behavior_chars"] = HarnessBehaviorTail.Length,
+                ["tools_chars"] = HarnessToolsTail.Length
+            });
         // Converte as tools Responses (formato "chato") -> formato chat
         var tools = ToolsToChat(req["tools"]);
+        // Allowlist das tools pedidas: a coercao de tool call narrada depende dela
+        // (sem lista, so passaria o catalogo RealTools, que nao cobre write/edit/glob).
+        ChatToResponsesAnnounced = AnnouncedTools(req["tools"] as JsonArray);
         // Exceção permanente do pattern (sempre ligada, só este caso).
         ApplyPatternException(tools, "responses");
         toolCount = tools?.Count ?? 0;
@@ -2249,7 +2307,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
         // Coerção no fecho do stream: sem deltas de call e com tools pedidas,
         // extrai do texto acumulado (coder/deepseek via llama). Nativo nao passa aqui.
-        if (toolAccum.Count == 0 && LegacyHarness && (CoerceFor(requestedModel) || ReqHasTools(chat)))
+        if (toolAccum.Count == 0 && (LegacyHarness || CoerceNarrated) && ReqHasTools(chat))
         {
             var knownResp = AnnouncedTools(chat["tools"]?.AsArray());
             foreach (var (name, args) in ExtractTextToolCalls(contentText.ToString(), knownResp))
@@ -2581,6 +2639,10 @@ if (type == "message")
     //   tool_calls                       -> item "function_call" (SEM status:
     //                                        o opencode conduz in_progress->completed)
     // ---------------------------------------------------------------------
+    /// <summary>Allowlist de tools vista pela ultima traducao: a coercao de tool call
+    /// narrada depende dela (sem lista, so passaria o catalogo RealTools).</summary>
+    static List<string> ChatToResponsesAnnounced = new();
+
     /// <summary>Converte resposta chat em objeto Responses (reasoning+message+calls).</summary>
     /// <param name="chat">Chat completion.</param>
     /// <param name="model">Model id p/ eco.</param>
@@ -2653,9 +2715,9 @@ if (type == "message")
         // Coerção: sem tool_calls nativos e com tools pedidas, extrai do texto
         // (ToolsCoercion: hermes/plural/fence — coder/deepseek via llama).
         // So atua se o texto parsear; prosa normal passa intacta.
-        if (toolCalls.Count == 0 && LegacyHarness && (CoerceFor(model) || hadTools))
+        if (toolCalls.Count == 0 && (LegacyHarness || CoerceNarrated) && hadTools)
         {
-            foreach (var (name, args) in ExtractTextToolCalls(content))
+            foreach (var (name, args) in ExtractTextToolCalls(content, ChatToResponsesAnnounced))
                 toolCalls.Add(("call_" + NewId(), name, args));
             if (toolCalls.Count > 0)
             {
@@ -2664,8 +2726,11 @@ if (type == "message")
                 content = ReToolsTag.Replace(content, "");
                 content = ReFunctionTag.Replace(content, "");
                 content = ReFencedCall.Replace(content, "");
+                content = ReAssistantToolCall.Replace(content, "");
                 Log(new JsonObject { ["event"] = "coerced", ["model"] = model, ["count"] = toolCalls.Count });
             }
+            else if (CoerceNarrated && ReAssistantToolCall.IsMatch(content))
+                Log(new JsonObject { ["event"] = "coerce-narrated-miss", ["model"] = model, ["had_tools"] = hadTools });
         }
 
         // 4.6.3) Uso de tokens: chat usa prompt/completion, Responses usa input/output
