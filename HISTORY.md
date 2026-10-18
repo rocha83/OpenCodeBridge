@@ -1,5 +1,52 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Paridade de roles E2B no opencode e fim do agent órfão `build-exec` (2026-10-18)
+- **Lacuna encontrada (por auditoria cruzada, não por falha visível):** o
+  `AgentSeeder` e a `web.db` tinham 5 roles E2B (MoE, Plan, Scripter, Build,
+  Exec), mas o `opencode.json` só declarava **3 ids** E2B
+  (`gemma-4-e2b`, `-build`, `-exec`). Plan, MoE e Scripter existiam na stack da
+  bridge/Web mas eram inalcançáveis pelo opencode — sem id com sufixo, o perfil
+  nunca era casado. A 12B tinha 6 ids; o E2B ficou com 6 também.
+- **Ids adicionados (`~/.config/opencode/opencode.json`, provider `llama`):**
+
+  | id | temp | thinking |
+  |---|---|---|
+  | `gemma-4-e2b-plan` | 0.6 | events |
+  | `gemma-4-e2b-moe` | 0.8 | events |
+  | `gemma-4-e2b-scripter` | 0.3 | off |
+
+  **Aceite:** `/api/translate` em `:4125` devolve `plan -> 0.6/events`,
+  `moe -> 0.8/events`, `scripter -> 0.3/off`. Paridade final: 12B = 6 ids,
+  E2B = 6 ids (Plan, Orch, MoE, Build, Scripter, Exec).
+- **`build-exec` era um agent órfão:** existia `agents/build-exec.md`
+  (`model: llama/gemma-4-e2b-build`) e o `orch.md` permitia `subagent` apenas
+  para `resource: "build-exec"` — ou seja, o único subagente permitido era ele
+  mesmo, que é exatamente o mesmo papel do `build` (o próprio AGENTS.md define
+  `Exec` como role **adicional só do E2B**, e `build-exec` não é role da
+  plataforma). Removido o arquivo; `orch.md` passou a `resource: "*"`, que é o
+  que o bloco já autorizava para o resto das tools.
+- **`AGENTS.md` alinhado com o estado real** (estava descrevendo a linha Qwen e
+  a escala antiga):
+  - `default.subagent.model` e a delegação via `task`: `llama/gemma-4-e2b` →
+    `llama/gemma-4-e2b-exec` (o id que casa o perfil `exec` = 0.3/off; o id
+    genérico caía no `--thinking events` da unit e abria reasoning no subagente).
+  - Escala de temperatura da seção TEMPERATURA: `Plan/Build/Orch 0.5` →
+    escala `0.3/0.6/0.8` por papel, com a regra do sufixo escrita (id sem
+    sufixo NÃO casa e cai no global da unit).
+  - Bloco MODELOS LOCAIS: temps por role (Plan/Orch 0.6, MoE 0.8,
+    Build/Scripter 0.3) e os roles E2B (`Exec` off + Plan/MoE/Scripter na mesma
+    calibragem do 12B).
+  - PIPELINE: `plan (0.6) -> build (0.3)`.
+- **Reinício do 12B agendado, não bloqueante:** o `llama-gpu` leva ~9 min para
+  recarregar o GGUF + mmproj, o que estouraria o timeout de foreground e
+  deixaria a sessão sem resposta. O restart foi disparado com `nohup` +
+  poll de saúde em script próprio (`restart-llama.sh`, log em
+  `/tmp/opencode/restart-12b.log`): **saúde em 13 s** nesta carga (a anterior
+  levou 9 min). Comprovado no processo: `-c 163840 --prio 2`.
+- **Aceite pós-restart:** as 4 units `active`; perfis da bridge viva —
+  12B `build` 0.3/off, `plan` 0.6/events, `moe` 0.8/events, `orch` 0.6/events,
+  `scripter` 0.3/off.
+
 ## Escalas de temperatura 0.3 / 0.6 / 0.8 e TurboQuant forçado no E2B Q3 (2026-10-18)
 - **Recalibração dos perfis:** a escala deixa de ser `0.3 / 0.5 / 0.8` e passa a
   **`0.3` (execução) / `0.6` (planejamento) / `0.8` (exploração)**. O build,
