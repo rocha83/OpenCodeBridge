@@ -1,5 +1,41 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## E2B em 96k com turbo3 no KV — VRAM caiu apesar do ctx maior (2026-10-18)
+- **Pedido:** subir o ctx do E2B de 80k para **96k**, agora que o TurboQuant
+  está corretamente em vigor. Feito: `-c 81920` → `-c 98304` em
+  `llama-cpu.service`.
+- **⚠️ REGRA PERMANENTE: os DOIS modelos têm de rodar em TurboQuant.**
+  `Environment=TURBO_AUTO_ASYMMETRIC=0` nos units `llama-gpu.service` e
+  `llama-cpu.service`, junto de `--cache-type-k turbo3 --cache-type-v turbo3`.
+  Sem isso o llama.cpp rebaixa o K para `q8_0` no E2B (GQA 8:1) e emite
+  `auto-asymmetric: GQA ratio 8:1 ... upgrading K from turbo3 to q8_0`.
+  **Verificação de startup = ausência desse aviso no journal.** Foi aplicado em
+  10:08 e revalidado a cada restart desde então (último: 14:04:59, limpo).
+- **Achado que reverte a intuição — mais contexto gastou MENOS VRAM.** O KV do
+  E2B é o que cresce com `n_ctx`; se o K estivesse em `q8_0`, subir 80k→96k
+  seria só acréscimo. O medido foi o contrário:
+
+  | | ctx | VRAM do E2B | total na GPU |
+  |---|---|---|---|
+  | com K em `q8_0` (rebaixado) | 81920 | 2602 MiB | 11160 / 12288 MiB |
+  | com K em `turbo3` (correto) | 98304 | **2022 MiB** | **10580 / 12288 MiB** |
+
+  O turbo3 comprimido **cabe mais tokens por byte** que o q8_0. Ou seja: o
+  upgrade automático não era só um par de qualidade, estava comprometendo o
+  orçamento de VRAM — e é por isso que subir o ctx só foi viável depois de
+  forçar o turbo3. Livre subiu de 1128 para **1708 MiB**.
+- **Aceite:**
+  - startup: `n_slots = 1, n_ctx_slot = 98304` → `model loaded` →
+    `listening on http://127.0.0.1:4110`, sem aviso de asymmetric;
+  - `/health` `:4110` → `ok`;
+  - request real em `:4125` → `finish_reason: stop`, 167 tok;
+  - `opencode.json`: `limit.context` dos 6 ids E2B (`gemma-4-e2b` +
+    `-build/-exec/-plan/-moe/-scripter`) ajustado de 81920 para **98304**, para
+    o client não degradar o ctx que o llama serve.
+- **Nota de capacidade:** os dois modelos seguem residentes ao mesmo tempo
+  (12B 8494 MiB + E2B 2022 MiB + Xorg 49 MiB = 10580 MiB / 12288), como
+  calibrado.
+
 ## Paridade de roles E2B no opencode e fim do agent órfão `build-exec` (2026-10-18)
 - **Lacuna encontrada (por auditoria cruzada, não por falha visível):** o
   `AgentSeeder` e a `web.db` tinham 5 roles E2B (MoE, Plan, Scripter, Build,
