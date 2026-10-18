@@ -77,7 +77,6 @@ internal static partial class Program
     // Formula (harness=true): composta pela bridge p/ cliente web (model sem
     // sufixo). Opencode (sufixo -build/-plan/-orch) passa limpo.
     static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit; versione com init/add/commit (commit sempre com mensagem informada). Git e zip sao comandos independentes (a ordem so importa se o enunciado pedir); se o enunciado pedir versionar E empacotar, versione primeiro e empacote depois - assim o pacote nao entra no commit. Zip: empacote com output (o arquivo .zip) e inputs (caminhos relativos ao workspace, separados por espaco), excluindo bin/obj. Tarefa de N passos: so responda texto depois de concluir TODOS - se voce anunciou um passo e ainda falta, emita a tool call em vez de texto. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada. Se um build/teste falhar, leia a mensagem de erro e ajuste o trecho exato antes de rodar de novo. Projetos: crie com `dotnet new` UMA vez e escreva o fonte na pasta do projeto com a tool write (nunca recrie o projeto nem use echo/heredoc). Arquivos grandes (>32kb): leia em blocos (offset+limit, ou head/tail/`sed -n 'N,Mp'`), nunca o arquivo inteiro de uma vez. Matematica sempre qualificada: C# use Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# use System.Math.Sin (ou `open System` e depois Math.Sin) — nunca `sin`/`cos`/`sqrt`/`pi` minusculos nem `open System.Math` (invalido em F#). F# NAO tem operadores OCaml (`+.`/`-.`/`*.`/`/.`) - isso quebra o build: use `+ - * /` normais (valem para float) e `%` so com int. F#: nao indexe lista com indice float (`x.[i]`); use `[0..n]` int ou `List.map (fun xi -> Math.Sin xi) xs` direto. F#: formate com `printfn \"%f\"`/`\"%.6f\"` (sintaxe `%`), NUNCA `{0:F6}` (isso e C#, quebra o F#). F#: rode com `dotnet run --project <dir>` (nunca o dll direto); use let/printfn/List.map, pipe |>, match com fallback.";
-    static string HarnessGuardTail = "";
     // Retry de contencao do anti-repeat: 1 segunda chamada ao modelo com o aviso,
     // descartando a janela repetida. Governado por --anti-repeat-retry, nao pelo
     // LegacyHarness (ver o bloco do retry).
@@ -186,7 +185,6 @@ internal static partial class Program
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
             if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
             if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham && ham.Length > 0) HarnessToolsTail = ham;
-            if (cfg["harnessGuardTail"]?.GetValue<string>() is string ht) HarnessGuardTail = ht;
             if (cfg["behaviorPrompt"]?.GetValue<string>() is string bp) BehaviorPrompt = bp;
             if (cfg["antiRepeatRetry"]?.GetValue<bool>() is bool arr) AntiRepeatRetry = arr;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
@@ -1591,14 +1589,14 @@ var shape = new StringBuilder();
     }
 
     /// <remarks>As duas caudas entram sempre que o Harness esta ligado: nao ha excecao
-    /// por "ser opencode". As regras de uso de tools valem para todo mundo - cliente web
-    /// e opencode - porque sao sobre COMO usar a tool, nao sobre o tubo de prompt do agente.</remarks>
+    /// por "ser opencode". Cada enunciado de inducAO mora na sua propria peca: ToolsTail
+    /// (como usar a tool) e BehaviorPrompt (disciplina de comportamento), porque sao coisas
+    /// diferentes e mexer numa nao deve tocar na outra.</remarks>
     /// <param name="sys">System prompt original.</param>
     static string WithFormula(string sys)
     {
         string t = (sys ?? "").Trim();
         if (HarnessToolsTail.Length > 0) t = (t.Length > 0 ? t + "\n\n" : "") + HarnessToolsTail;
-        if (HarnessGuardTail.Length > 0) t += "\n\n" + HarnessGuardTail;
         if (BehaviorPrompt.Length > 0) t += "\n\n" + BehaviorPrompt;
         return t;
     }
