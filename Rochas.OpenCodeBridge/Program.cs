@@ -1204,12 +1204,12 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // deixava o 3B divagar até 8k.)
         bool cpuLine = CoerceFor(requestedModel) || CoerceFor(Model);
         int cap = cpuLine ? CpuMaxTokens : MaxTokens;   // 0 = sem teto
-        int? asked = req["max_tokens"]?.GetValue<int>()
-            ?? req["max_output_tokens"]?.GetValue<int>();
-        if (asked is <= 0) asked = null;
-        // null = omite max_tokens e deixa o llama decidir; senao honra o pedido,
-        // com clamp apenas quando ha teto explicito (>0).
-        int? outTokens = cap > 0 ? Math.Min(asked ?? cap, cap) : asked;
+        // O pedido do cliente NAO limita a saida: o bridge ignora
+        // max_tokens/max_output_tokens do corpo e usa apenas o teto do operador.
+        // Motivo: Gemma 4 com thinking ON gasta centenas de tokens em raciocinio;
+        // um teto baixo do cliente (ex.: 100) zerava o content. Truncamento
+        // ficou proibido por design — quem decide e o EOS do modelo.
+        int? outTokens = cap > 0 ? cap : null;
         // Thinking do cliente (Web manda o do cadastro; opencode não manda):
         // presente vence o default da linha; ausente segue o flag --thinking.
         bool wantThinking = thinking == "events";
