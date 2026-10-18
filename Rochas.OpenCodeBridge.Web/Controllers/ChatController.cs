@@ -730,7 +730,7 @@ public sealed class ChatController(
                 var body = new JsonObject
                 {
                     ["model"] = agent.Model,
-                    ["temperature"] = 0.4,
+                    ["temperature"] = 0.6,   // resumo de compactacao = papel Plan
                     ["stream"] = false,
                     ["messages"] = new JsonArray
                     {
