@@ -63,6 +63,7 @@ internal static class E2EBeltsBuildTests
                 int totalChars = 0;
                 int lastFiles = 0;
                 int stall = 0;
+                int nudges = 0;
                 for (int turn = 0; turn < 10 && filesCreated < 8; turn++)
                 {
                     var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
@@ -71,7 +72,16 @@ internal static class E2EBeltsBuildTests
                     string content = msg?["content"]?.GetValue<string>() ?? "";
                     totalChars += content.Length;
                     var calls = msg?["tool_calls"]?.AsArray();
-                    if (calls is null || calls.Count == 0) { Log($"  [belt-build:{key}] turno {turn}: sem tools, encerrando"); break; }
+                    if (calls is null || calls.Count == 0)
+                    {
+                        Log($"  [belt-build:{key}] turno {turn}: sem tools (chars={content.Length}) — nudge {nudges + 1}");
+                        history.Add(new JsonObject { ["role"]="assistant", ["content"]=content });
+                        if (nudges >= 2) { Log($"  [belt-build:{key}] sem tools apos 2 nudges, encerrando"); break; }
+                        nudges++;
+                        history.Add(new JsonObject { ["role"]="user", ["content"]="Voce respondeu com texto mas NAO chamou a tool write. OBRIGATORIO agora: chame a tool write com path e content para criar o proximo arquivo real (.cs/.sql/.tsx). Nao explique, apenas chame write." });
+                        continue;
+                    }
+                    nudges = 0;
                     var echo = new JsonArray();
                     foreach (var c in calls) echo.Add(new JsonObject { ["id"]=c?["id"]?.GetValue<string>()??"", ["type"]="function", ["function"]=new JsonObject { ["name"]=c?["function"]?["name"]?.GetValue<string>()??"", ["arguments"]=c?["function"]?["arguments"]?.GetValue<string>()??"{}" } });
                     history.Add(new JsonObject { ["role"]="assistant", ["content"]=content, ["tool_calls"]=echo });
