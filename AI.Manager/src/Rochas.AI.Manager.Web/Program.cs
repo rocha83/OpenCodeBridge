@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Rochas.AI.Manager.Domain.Interfaces;
 using Rochas.AI.Manager.Infrastructure.Data;
 using Rochas.AI.Manager.TrainingEngine;
@@ -17,6 +18,7 @@ using Rochas.AI.Manager.Domain.Entities;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllersWithViews();
+builder.Services.AddSingleton<IPasswordHasher, Rochas.AI.Manager.Infrastructure.Services.PasswordHasherService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -115,6 +117,10 @@ builder.Services.AddScoped<IBridgeCaptureService, BridgeCaptureService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(o => { o.LoginPath = "/Account/Login"; o.Cookie.Name = "ai.manager"; });
+builder.Services.AddAuthorization();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -132,6 +138,17 @@ app.MapControllerRoute(
     pattern: "{controller=Harness}/{action=Index}/{id?}");
 
 Rochas.AI.Manager.Infrastructure.Data.AppDb.Init();
+using (var scope = app.Services.CreateScope())
+{
+    var users = scope.ServiceProvider.GetRequiredService<IGenericRepository<User>>();
+    var passwords = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
+    var existing = await users.QueryRaw("SELECT * FROM users WHERE email=@e", new Dictionary<string, object> { ["@e"] = "admin@ai.manager.local" });
+    if (!existing.Any())
+    {
+        await users.Add(new User { Name = "Admin", Email = "admin@ai.manager.local", PasswordHash = passwords.Hash("admin"), IsAdmin = true, IsActive = true });
+        await users.Add(new User { Name = "E2E", Email = "teste@e2e.local", PasswordHash = passwords.Hash("Teste@123"), IsAdmin = false, IsActive = true });
+    }
+}
 using (var scope = app.Services.CreateScope())
 {
     var profiles = scope.ServiceProvider.GetRequiredService<IHarnessProfileService>();

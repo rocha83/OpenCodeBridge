@@ -1,0 +1,22 @@
+@{ ViewData["Title"] = "Login"; Layout = null; }
+<!DOCTYPE html>
+<html lang="pt-BR" data-bs-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Login - Rochas.AI.Manager</title>
+<link href="~/lib/mdb/mdb.min.css" rel="stylesheet" />
+</head>
+<body class="d-flex align-items-center justify-content-center" style="min-height:100vh;">
+<div class="card p-4" style="width:360px;">
+  <h4 class="mb-3">Rochas.AI.Manager</h4>
+  @if (ViewBag.Error != null) { <div class="alert alert-danger">@ViewBag.Error</div> }
+  <form method="post" action="/Account/Login">
+    @Html.AntiForgeryToken()
+    <input name="email" class="form-control mb-2" placeholder="Email" required />
+    <input name="password" type="password" class="form-control mb-3" placeholder="Senha" required />
+    <button type="submit" class="btn btn-primary w-100">Entrar</button>
+  </form>
+</div>
+</body>
+</html>
