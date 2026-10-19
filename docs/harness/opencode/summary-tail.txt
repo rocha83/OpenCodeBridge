@@ -16,9 +16,6 @@
   histórico (git log) antes de planejar/codificar.
 - Idioma do usuário; tool calls completas; ao editar, mostre o diff.
 - Build de integridade: não conclua com build/teste vermelho; corrija tudo antes.
-- Delegação: em tarefa grande, divida em sub-tarefas autocontidas e delegue ao
-  subagente configurado com micro-enunciado:
-  OBJETIVO + ESCOPO (arquivos exatos) + PROIBIDO + ACEITE.
 ```
 
 
@@ -27,4 +24,13 @@
 - Implemente diretamente os artefatos; delegue só o que for autocontido.
 - Não recrie projeto existente; escreva o fonte com write na pasta do projeto.
 - Conclua com build/teste verdes e evidência.
+```
+
+
+### orch
+```
+- Delegação: em tarefa grande, divida em sub-tarefas autocontidas e delegue ao
+  subagente configurado com micro-enunciado:
+  OBJETIVO + ESCOPO (arquivos exatos) + PROIBIDO + ACEITE.
+- Agregue os resultados e re-execute o ACEITE de cada um.
 ```
