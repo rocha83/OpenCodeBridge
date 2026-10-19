@@ -2118,3 +2118,13 @@ bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
 - Trilhas verdes: bridge pura (devpipe, science-gpu, scripter-gen, companion-gen,
   exec-read) + standalone (oi, tools, write, devpipe, science, mission).
 - Frontpipe (gen/edit/verify) pendente de validação.
+
+## 2026-10-19 — Belts bloqueados por infra de stream (web app)
+
+- Os belts (azul→preta) via --phase ui enviam o enunciado via /Chat/Stream,
+  mas o stream não retorna (conversa 0 chars, msgs=0, toolcalls=0).
+- Os integration tests (I-chat-stream-sse) também falham, indicando problema
+  de infra (web app → bridge stream), não do modelo.
+- Belts ficam em backlog até a correção do stream SSE no web app.
+- Trilhas verdes: bridge pura (devpipe, science, scripter-gen, companion-gen,
+  exec-read) + standalone (opencode real) + frontpipe (gen/edit/verify).
