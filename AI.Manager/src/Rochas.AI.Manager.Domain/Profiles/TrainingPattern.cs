@@ -1,11 +1,15 @@
+using System.ComponentModel.DataAnnotations.Schema;
+using Rochas.AI.Manager.Domain.Entities.Base;
+
 namespace Rochas.AI.Manager.Domain.Profiles;
 
-public sealed class TrainingPattern
+[Table("training_patterns")]
+public sealed class TrainingPattern : BaseEntity
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
-    public string Name { get; set; } = string.Empty;
-    public Guid? ProfileId { get; set; }
-    public Guid? ModelArtifactId { get; set; }
+    [Column("profile_id")]
+    public int? ProfileId { get; set; }
+    [Column("model_artifact_id")]
+    public int? ModelArtifactId { get; set; }
+    [Column("pattern_json")]
     public string? PatternJson { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -1,5 +1,15 @@
 using Rochas.AI.Manager.Application.Abstractions;
 using Rochas.AI.Manager.Application.Services;
+using Rochas.AI.Manager.Web.Data;
+using Rochas.DapperRepository;
+using Rochas.Data.Specification.Enums;
+using Rochas.Data.Specification.Interfaces;
+using Rochas.AI.Manager.Domain.Datasets;
+using Rochas.AI.Manager.Domain.Experiments;
+using Rochas.AI.Manager.Domain.Harness;
+using Rochas.AI.Manager.Domain.Models;
+using Rochas.AI.Manager.Domain.Profiles;
+using Rochas.AI.Manager.Domain.Training;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,9 +25,79 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-builder.Services.AddSingleton<IHarnessProfileService, InMemoryHarnessProfileService>();
-builder.Services.AddSingleton<ITrainingJobService, InMemoryTrainingJobService>();
-builder.Services.AddSingleton<IHarnessLinter, HarnessLinter>();
+// Repositorios Dapper (SQLite), padrao da bridge.
+builder.Services.AddScoped<IGenericRepository<ModelArtifact>>(sp => sp.GetRequiredService<GenericRepository<ModelArtifact>>());
+builder.Services.AddScoped<IPersistenceRepository<ModelArtifact>>(sp => sp.GetRequiredService<GenericRepository<ModelArtifact>>());
+builder.Services.AddScoped(_ => new GenericRepository<ModelArtifact>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<Dataset>>(sp => sp.GetRequiredService<GenericRepository<Dataset>>());
+builder.Services.AddScoped<IPersistenceRepository<Dataset>>(sp => sp.GetRequiredService<GenericRepository<Dataset>>());
+builder.Services.AddScoped(_ => new GenericRepository<Dataset>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<InstructionProfile>>(sp => sp.GetRequiredService<GenericRepository<InstructionProfile>>());
+builder.Services.AddScoped<IPersistenceRepository<InstructionProfile>>(sp => sp.GetRequiredService<GenericRepository<InstructionProfile>>());
+builder.Services.AddScoped(_ => new GenericRepository<InstructionProfile>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<TrainingPattern>>(sp => sp.GetRequiredService<GenericRepository<TrainingPattern>>());
+builder.Services.AddScoped<IPersistenceRepository<TrainingPattern>>(sp => sp.GetRequiredService<GenericRepository<TrainingPattern>>());
+builder.Services.AddScoped(_ => new GenericRepository<TrainingPattern>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<Experiment>>(sp => sp.GetRequiredService<GenericRepository<Experiment>>());
+builder.Services.AddScoped<IPersistenceRepository<Experiment>>(sp => sp.GetRequiredService<GenericRepository<Experiment>>());
+builder.Services.AddScoped(_ => new GenericRepository<Experiment>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<TrainingJob>>(sp => sp.GetRequiredService<GenericRepository<TrainingJob>>());
+builder.Services.AddScoped<IPersistenceRepository<TrainingJob>>(sp => sp.GetRequiredService<GenericRepository<TrainingJob>>());
+builder.Services.AddScoped(_ => new GenericRepository<TrainingJob>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<HarnessProfile>>(sp => sp.GetRequiredService<GenericRepository<HarnessProfile>>());
+builder.Services.AddScoped<IPersistenceRepository<HarnessProfile>>(sp => sp.GetRequiredService<GenericRepository<HarnessProfile>>());
+builder.Services.AddScoped(_ => new GenericRepository<HarnessProfile>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<HarnessProfileVersion>>(sp => sp.GetRequiredService<GenericRepository<HarnessProfileVersion>>());
+builder.Services.AddScoped<IPersistenceRepository<HarnessProfileVersion>>(sp => sp.GetRequiredService<GenericRepository<HarnessProfileVersion>>());
+builder.Services.AddScoped(_ => new GenericRepository<HarnessProfileVersion>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<HarnessAttachment>>(sp => sp.GetRequiredService<GenericRepository<HarnessAttachment>>());
+builder.Services.AddScoped<IPersistenceRepository<HarnessAttachment>>(sp => sp.GetRequiredService<GenericRepository<HarnessAttachment>>());
+builder.Services.AddScoped(_ => new GenericRepository<HarnessAttachment>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<ToolPolicy>>(sp => sp.GetRequiredService<GenericRepository<ToolPolicy>>());
+builder.Services.AddScoped<IPersistenceRepository<ToolPolicy>>(sp => sp.GetRequiredService<GenericRepository<ToolPolicy>>());
+builder.Services.AddScoped(_ => new GenericRepository<ToolPolicy>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<ModelBinding>>(sp => sp.GetRequiredService<GenericRepository<ModelBinding>>());
+builder.Services.AddScoped<IPersistenceRepository<ModelBinding>>(sp => sp.GetRequiredService<GenericRepository<ModelBinding>>());
+builder.Services.AddScoped(_ => new GenericRepository<ModelBinding>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<HarnessRun>>(sp => sp.GetRequiredService<GenericRepository<HarnessRun>>());
+builder.Services.AddScoped<IPersistenceRepository<HarnessRun>>(sp => sp.GetRequiredService<GenericRepository<HarnessRun>>());
+builder.Services.AddScoped(_ => new GenericRepository<HarnessRun>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<BridgeCapture>>(sp => sp.GetRequiredService<GenericRepository<BridgeCapture>>());
+builder.Services.AddScoped<IPersistenceRepository<BridgeCapture>>(sp => sp.GetRequiredService<GenericRepository<BridgeCapture>>());
+builder.Services.AddScoped(_ => new GenericRepository<BridgeCapture>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+// Servicos de aplicacao (scoped por causa dos repositorios).
+builder.Services.AddScoped<IHarnessProfileService>(sp => new HarnessProfileService(
+    sp.GetRequiredService<IGenericRepository<HarnessProfile>>(),
+    sp.GetRequiredService<IPersistenceRepository<HarnessProfile>>(),
+    sp.GetRequiredService<IGenericRepository<HarnessProfileVersion>>(),
+    sp.GetRequiredService<IPersistenceRepository<HarnessProfileVersion>>(),
+    AppDb.ConnectionString));
+builder.Services.AddScoped<ITrainingJobService, TrainingJobService>();
+builder.Services.AddScoped<IHarnessLinter, HarnessLinter>();
+builder.Services.AddScoped<IModelArtifactService, ModelArtifactService>();
+builder.Services.AddScoped<IDatasetService, DatasetService>();
+builder.Services.AddScoped<IInstructionProfileService, InstructionProfileService>();
+builder.Services.AddScoped<ITrainingPatternService, TrainingPatternService>();
+builder.Services.AddScoped<IExperimentService, ExperimentService>();
+builder.Services.AddScoped<IHardwareService, HardwareService>();
+builder.Services.AddScoped<IHarnessAttachmentService, HarnessAttachmentService>();
+builder.Services.AddScoped<IToolPolicyService, ToolPolicyService>();
+builder.Services.AddScoped<IModelBindingService, ModelBindingService>();
+builder.Services.AddScoped<IHarnessRunService, HarnessRunService>();
+builder.Services.AddScoped<IBridgeCaptureService, BridgeCaptureService>();
 
 var app = builder.Build();
 
@@ -35,4 +115,5 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Harness}/{action=Index}/{id?}");
 
+AppDb.Init();
 app.Run();

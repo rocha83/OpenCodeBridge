@@ -29,7 +29,7 @@ public sealed class HarnessController(IHarnessProfileService service, IHarnessLi
 
     [HttpPost("Version")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AddVersion([FromForm] Guid profileId, [FromForm] string mode, [FromForm] string? checksum, CancellationToken ct)
+    public async Task<IActionResult> AddVersion([FromForm] int profileId, [FromForm] string mode, [FromForm] string? checksum, CancellationToken ct)
     {
         var vid = await service.AddVersionAsync(profileId, mode, checksum, ct);
         return Json(new { id = vid });
@@ -37,7 +37,7 @@ public sealed class HarnessController(IHarnessProfileService service, IHarnessLi
 
     [HttpPost("Approve")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Approve([FromForm] Guid versionId, [FromForm] string approvedBy, CancellationToken ct)
+    public async Task<IActionResult> Approve([FromForm] int versionId, [FromForm] string approvedBy, CancellationToken ct)
     {
         await service.ApproveVersionAsync(versionId, approvedBy, ct);
         return NoContent();
@@ -50,8 +50,8 @@ public sealed class HarnessController(IHarnessProfileService service, IHarnessLi
         return Json(new { ok = findings.Count == 0, findings });
     }
 
-    [HttpGet("Partial/Preview/{id:guid}")]
-    public async Task<IActionResult> Preview(Guid id, CancellationToken ct)
+    [HttpGet("Partial/Preview/{id:int}")]
+    public async Task<IActionResult> Preview(int id, CancellationToken ct)
     {
         var profile = await service.GetAsync(id, ct);
         if (profile is null) return NotFound();

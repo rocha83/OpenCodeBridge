@@ -1,13 +1,19 @@
+using System.ComponentModel.DataAnnotations.Schema;
+using Rochas.AI.Manager.Domain.Entities.Base;
+
 namespace Rochas.AI.Manager.Domain.Experiments;
 
-public sealed class Experiment
+[Table("experiments")]
+public sealed class Experiment : BaseEntity
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
-    public string Name { get; set; } = string.Empty;
+    [Column("hypothesis")]
     public string? Hypothesis { get; set; }
-    public Guid? BaseArtifactId { get; set; }
-    public Guid? TunedArtifactId { get; set; }
+    [Column("base_artifact_id")]
+    public int? BaseArtifactId { get; set; }
+    [Column("tuned_artifact_id")]
+    public int? TunedArtifactId { get; set; }
+    [Column("metrics_json")]
     public string? MetricsJson { get; set; }
-    public string Status { get; set; } = "Planned"; // Planned, Running, Approved, Rejected
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    [Column("status")]
+    public string Status { get; set; } = "Planned";
 }

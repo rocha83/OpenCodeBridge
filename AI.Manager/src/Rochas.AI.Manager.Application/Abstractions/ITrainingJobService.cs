@@ -2,8 +2,12 @@ namespace Rochas.AI.Manager.Application.Abstractions;
 
 public interface ITrainingJobService
 {
-    Task<Guid> CreateAsync(Guid? modelArtifactId, Guid? datasetId, bool advancedMode, string? configurationJson, CancellationToken ct = default);
-    Task<Rochas.AI.Manager.Domain.Training.TrainingJob?> GetAsync(Guid id, CancellationToken ct = default);
+    Task<int> CreateAsync(int? modelArtifactId, int? datasetId, bool advancedMode, string? configurationJson, CancellationToken ct = default);
+    Task<Rochas.AI.Manager.Domain.Training.TrainingJob?> GetAsync(int id, CancellationToken ct = default);
     Task<IReadOnlyList<Rochas.AI.Manager.Domain.Training.TrainingJob>> ListAsync(CancellationToken ct = default);
-    Task CancelAsync(Guid id, CancellationToken ct = default);
+    Task CancelAsync(int id, CancellationToken ct = default);
+    Task StartAsync(int id, CancellationToken ct = default);
+    Task ReportProgressAsync(int id, double? lastLoss, double? vramUsedMb, CancellationToken ct = default);
+    Task CompleteAsync(int id, CancellationToken ct = default);
+    Task FailAsync(int id, string errorMessage, CancellationToken ct = default);
 }

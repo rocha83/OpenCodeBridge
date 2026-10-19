@@ -23,4 +23,7 @@
     <ProjectReference Include="..\..\src\Rochas.AI.Manager.Application\Rochas.AI.Manager.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Rochas.DapperRepository" Version="2.0.5" />
+  </ItemGroup>
 </Project>

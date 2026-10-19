@@ -11,8 +11,8 @@ public sealed class HarnessProfilesApiController(IHarnessProfileService service)
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken ct) => Ok(await service.ListAsync(ct));
 
-    [HttpGet("{id:guid}")]
-    public async Task<IActionResult> Get(Guid id, CancellationToken ct)
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> Get(int id, CancellationToken ct)
     {
         var p = await service.GetAsync(id, ct);
         return p is null ? NotFound() : Ok(p);
@@ -25,15 +25,15 @@ public sealed class HarnessProfilesApiController(IHarnessProfileService service)
         return CreatedAtAction(nameof(Get), new { id }, new { id });
     }
 
-    [HttpPost("{id:guid}/versions")]
-    public async Task<IActionResult> AddVersion(Guid id, [FromBody] AddVersionRequest req, CancellationToken ct)
+    [HttpPost("{id:int}/versions")]
+    public async Task<IActionResult> AddVersion(int id, [FromBody] AddVersionRequest req, CancellationToken ct)
     {
         var vid = await service.AddVersionAsync(id, req.Mode, req.Checksum, ct);
         return Created(string.Empty, new { id = vid });
     }
 
-    [HttpPost("versions/{versionId:guid}/approve")]
-    public async Task<IActionResult> Approve(Guid versionId, [FromBody] ApproveRequest req, CancellationToken ct)
+    [HttpPost("versions/{versionId:int}/approve")]
+    public async Task<IActionResult> Approve(int versionId, [FromBody] ApproveRequest req, CancellationToken ct)
     {
         await service.ApproveVersionAsync(versionId, req.ApprovedBy, ct);
         return NoContent();

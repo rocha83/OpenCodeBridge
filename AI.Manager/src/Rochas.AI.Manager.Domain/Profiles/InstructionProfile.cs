@@ -1,12 +1,17 @@
+using System.ComponentModel.DataAnnotations.Schema;
+using Rochas.AI.Manager.Domain.Entities.Base;
+
 namespace Rochas.AI.Manager.Domain.Profiles;
 
-public sealed class InstructionProfile
+[Table("instruction_profiles")]
+public sealed class InstructionProfile : BaseEntity
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
-    public string Name { get; set; } = string.Empty;
+    [Column("description")]
     public string? Description { get; set; }
+    [Column("instructions_json")]
     public string? InstructionsJson { get; set; }
+    [Column("version")]
     public string? Version { get; set; }
-    public string Status { get; set; } = "Draft"; // Draft, Approved, Deprecated
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    [Column("status")]
+    public string Status { get; set; } = "Draft";
 }

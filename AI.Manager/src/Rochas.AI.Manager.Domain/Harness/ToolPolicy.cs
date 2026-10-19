@@ -1,12 +1,21 @@
+using System.ComponentModel.DataAnnotations.Schema;
+using Rochas.AI.Manager.Domain.Entities.Base;
+
 namespace Rochas.AI.Manager.Domain.Harness;
 
-public sealed class ToolPolicy
+[Table("tool_policies")]
+public sealed class ToolPolicy : BaseEntity
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
+    [Column("role")]
     public string Role { get; set; } = "general";
-    public string Allow { get; set; } = string.Empty; // comma-separated
+    [Column("allow")]
+    public string Allow { get; set; } = string.Empty;
+    [Column("deny")]
     public string Deny { get; set; } = string.Empty;
+    [Column("require_call")]
     public bool RequireCall { get; set; }
+    [Column("max_turns")]
     public int MaxTurns { get; set; } = 10;
+    [Column("stall_limit")]
     public int StallLimit { get; set; } = 3;
 }
