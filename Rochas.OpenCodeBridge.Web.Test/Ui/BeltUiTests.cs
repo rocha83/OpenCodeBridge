@@ -1059,8 +1059,14 @@ public static class BeltUiTests
         {
             try
             {
-                return int.Parse(await PostAsync(api, "Chat/Sessions",
-                    JsonSerializer.Serialize(new { agentId = orch, executorAgentId = executor, title }), "id"));
+                string token = await ApiAfTokenAsync(api);
+                using var res = await ApiPostAsync(api, "Chat/Sessions",
+                    JsonSerializer.Serialize(new { agentId = orch, executorAgentId = executor, title }), token);
+                string text = await res.Content.ReadAsStringAsync();
+                if (!res.IsSuccessStatusCode)
+                    throw new InvalidOperationException(((int)res.StatusCode) + " " + text[..Math.Min(200, text.Length)]);
+                using var doc = JsonDocument.Parse(text);
+                return int.Parse(doc.RootElement.GetProperty("id").GetRawText());
             }
             catch when (attempt < 3)
             {
