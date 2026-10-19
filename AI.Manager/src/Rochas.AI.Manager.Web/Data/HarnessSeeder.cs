@@ -16,7 +16,8 @@ public static class HarnessSeeder
 - Fail-fast honesto: nao invente tool/modelo/comando.
 - Contexto primeiro: leia docs e historico antes de planejar.
 - Idioma do usuario; tool calls completas; diffs ao editar.
-- Build de integridade: nao conclua com build/teste vermelho.";
+- Build de integridade: nao conclua com build/teste vermelho.
+- Subagente: use a ferramenta de subagente do mesmo tipo (mesmo nome) para dividir tarefas em contextos <=64k.";
 
         var linterFindings = linter.FindHardcodes(core);
         if (linterFindings.Count > 0) return;
@@ -25,7 +26,6 @@ public static class HarnessSeeder
         var vid = await profiles.AddVersionAsync(id, "BridgeBypass", "opencode-summary-v1");
         await attachments.CreateAsync(vid, "Core", "general", core);
         var orchTail = @"- Delegacao: em tarefa grande, divida em sub-tarefas autocontidas.
-- Use a ferramenta de subagente do mesmo tipo (mesmo nome) para dividir tarefas em contextos <=64k.
 - Agregue os resultados e re-execute o ACEITE de cada um.";
         await attachments.CreateAsync(vid, "RoleTail", "orch", orchTail);
         await profiles.ApproveVersionAsync(vid, "system");
