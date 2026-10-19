@@ -2191,3 +2191,40 @@ bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
   em /tmp/opencode/belts/<key>_result.json e /tmp/opencode/belts-build/<key>_result.json.
 - A conformidade final dos artefatos resultantes e criterio de aceite do 12B
   para ambos os modos do circuito (Build ou Orch).
+
+## 2026-10-19 — Trilha "opencode standalone" (harness nativo do opencode)
+
+Motivo: a trilha build via harness custom (E2EBeltsBuildTests) mostrou que
+`tool_choice=required` nao e honrado de forma confiavel pelo llama/Gemma4 — em
+faixas como a verde o modelo respondeu ~42k chars de texto e nao chamou `write`
+(0 arquivos). Em vez de endurecer mais o harness caseiro, decidimos testar o
+modelo **puro**, deixando o harness maduro do opencode conduzir as tools.
+
+### O que foi desligado na bridge (harness/behavior)
+- Removido `--tool-blacklist` (blacklist por role).
+- Removido `--thinking-off-roles` (override de thinking por role).
+- `--legacy-harness 0` mantido: guardrail/formula legados desligados.
+- Mantidos apenas: **fix** (cap `--max-tokens`, agora **8192** nos dois modelos),
+  **anti-repeat** (`--anti-repeat 1 --anti-repeat-window 512`), `--passthrough-responses`
+  e a API key. System prompt e roles passam a vir dos **agentes registrados no
+  opencode** (`~/.config/opencode/agents/*.md`), nao da bridge.
+
+### Por que opencode standalone
+O opencode tem harness de tools maduro (loop agentico, permissoes, leitura de
+resultado). O enunciado das belts e fruto de um *listening* feito na bridge que
+capturou o harness completo do Qwen CLI na epoca. Se o modo standalone funcionar,
+repetiremos o trabalho do "modo qwen": capturar o conteudo completo do harness,
+sintetizar uma versao bem pequena e aplica-la como **harness nativo + tails** na
+bridge (modo bypass/legacy), sempre que o cliente nao trouxer harness proprio.
+
+### Procedimento desta etapa
+1. Reiniciar `llama-gpu`/`llama-cpu` e `bridge-gpu`/`bridge-cpu`.
+2. Rodar a bateria build (azul->preta) via
+   `opencode run --standalone --auto -m openai/gemma-4-12b-build --agent build`
+   em workspace limpo por faixa.
+3. Critério de aceite: solucao implementada em arquivos reais no disco
+   (>=3 arquivos) e, quando aplicavel, compilando.
+4. Resultados/logs em `/tmp/opencode/opencode-belts/<key>/`.
+
+Nota: a trilha build custom (E2EBeltsBuildTests) fica preservada como trilha
+alternativa; esta etapa nao a remove.
