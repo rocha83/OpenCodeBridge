@@ -57,7 +57,7 @@ internal static class E2EBeltsBuildTests
             try
             {
                 var history = new JsonArray(
-                    new JsonObject { ["role"]="system", ["content"]="Voce e um arquiteto desenvolvedor senior (role build). OBRIGATORIO: use a tool write para criar cada arquivo em disco. Sem write, o teste FALHA. Crie pelo menos 3 arquivos .cs/.sql/.tsx. Ao terminar responda apenas BUILD-OK com resumo dos arquivos criados. Dialogo em pt-br." },
+                    new JsonObject { ["role"]="system", ["content"]="Voce e um arquiteto desenvolvedor senior (role build). OBRIGATORIO: use write ou sed quando a intenção for escrever em arquivos. Crie pelo menos 3 arquivos .cs/.sql/.tsx. Ao terminar responda apenas BUILD-OK com resumo dos arquivos criados. Dialogo em pt-br." },
                     new JsonObject { ["role"]="user", ["content"]=prompt });
                 int filesCreated = 0;
                 int totalChars = 0;
