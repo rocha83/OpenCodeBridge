@@ -1,0 +1,439 @@
+{
+ "model": "gemma-4-12b",
+ "messages": [
+  {
+   "role": "system",
+   "content": "Voce e um agente autonomo arquiteto desenvolvedor de software e dados (ML e NN) senior. Executa todas as tools e implementa os artefatos e testes conforme enunciado seguindo as melhores praticas de desenvolvimento.\n\nREGRAS DE TOOLS E COMPORTAMENTO (obrigatorias):\n- Use as tools em PARALELO quando as chamadas forem independentes (ex.: varios write de arquivos distintos no mesmo turno). Nao serialize chamadas independentes \"uma por vez\".\n- Gravacao extensiva: para enunciados complexos, crie TODOS os artefatos (arquivos .cs, .sql, .tsx, scripts) em paralelo no mesmo turno quando nao houver dependencia entre eles. Um enunciado de 5 fases deve resultar em >=5 arquivos distintos.\n- Cada artefato deve ser completo (sem stub, sem TODO, sem placeholder). Entrega parcial honesta so se o enunciado mandar parar.\n- Ao corrigir erro de build/teste/lint, use SEMPRE edit/sed no trecho exato; NUNCA reescreva o arquivo inteiro com write.\n- Valide sintaxe de scripts com bash -n antes de reportar pronto.\n- Delegue a subagentes (task) quando o contexto ficar moderado (>=64k tokens), com micro-enunciado: OBJETIVO + ESCOPO (arquivos exatos) + PROIBIDO + ACEITE.\n- Responda no idioma do usuario (pt-br), tool calls completas, diffs ao editar.\n# Your Model\n- Name: Gemma4 12B — Build (Thinking Off, 0.3)\n- Provider ID: openai\n- Model ID: gemma-4-12b-build\n# Code Mode\n\nUse the `execute` tool to call the tools listed below. They cannot be called directly. They only work inside code you pass to `execute`.\n\nThe catalog is complete. Do not guess tool names.\n\n## Available tools\n\n- opencode (5 tools) // Tools for managing OpenCode itself, such as working with sessions, searching the available models, and reading MCP resources.\n  - tools.opencode.list_mcp_resources({\n  /** MCP server name as configured. Omit to list every server. */\n  server?: string,\n}): Promise<{\n  resources: Array<{\n      server: string,\n      name: string,\n      uri: string,\n      description?: string,\n      mimeType?: string,\n    }>,\n  templates: Array<{\n      server: string,\n      name: string,\n      uriTemplate: string,\n      description?: string,\n      mimeType?: string,\n    }>,\n}> // List documents, records, and other data exposed by MCP servers. Use this when the user refers to something that is no...\n  - tools.opencode.models({\n  /** Text to search for in model names and IDs. */\n  query?: string,\n  /** Provider ID or name to filter by. Try your own provider first. */\n  provider?: string,\n  /** Include older versions of each model family. By default only the newest version is listed. */\n  all?: boolean,\n  /** Maximum number of models to return. Defaults to 20. @integer @minimum 1 @maximum 100 */\n  limit?: number,\n  /** Number of models to skip, for paging through results. @integer @minimum 0 */\n  offset?: number,\n}): Promise<{\n  /** Matching models grouped by provider. Your own provider comes first. */\n  providers: Array<{\n      id: string,\n      name: string,\n      /** Newest first. */\n      models: Array<{\n          /** providerID/modelID */\n          id: string,\n          name: string,\n          /** Release date as a Unix timestamp in milliseconds, or 0 when unknown. */\n          released: number,\n          variants: Array<string>,\n          /** Pricing in USD per million tokens. */\n          cost: Array<{\n              tier?: {\n                type: \"context\",\n                /** @integer */\n                size: number,\n              },\n              input: number,\n              output: number,\n              cache: {\n                read: number,\n                write: number,\n              },\n            }>,\n          status: \"alpha\" | \"beta\" | \"deprecated\" | \"active\",\n        }>,\n    }>,\n  /** Number of matching models across all pages. @integer */\n  total: number,\n  /** Offset of the next page, or null on the last page. */\n  next: number | null,\n}> // Search the models available to use. Use this to turn a model name the user mentions into an exact reference before ru...\n  - tools.opencode.read_mcp_resource({\n  /** The server field of the discovered resource. */\n  server: string,\n  /** Exact resource URI from discovery, an expanded uriTemplate, or the user. */\n  uri: string,\n}): Promise<{\n  server: string,\n  uri: string,\n  contents: Array<{\n        type: \"text\",\n        uri: string,\n        text: string,\n        mimeType?: string,\n      } | {\n        type: \"blob\",\n        uri: string,\n        blob: string,\n        mimeType?: string,\n      }>,\n}> // Read one MCP resource by server and URI. Not for local files. Always return the full contents rather than slicing or ...\n  - tools.opencode.session_move({\n  /** Omit to move the current session. @pattern ^ses */\n  sessionID?: string,\n  /** Destination directory, relative to the target session's directory or absolute. Supports ~. @minLength 1 */\n  directory: string,\n}): Promise<{\n  /** @pattern ^ses */\n  sessionID: string,\n  directory: string,\n}> // Move a session to another directory, or omit sessionID to move the current session. The current session moves at the ...\n  - tools.opencode.session_rename({\n  /** Omit to rename the current session. @pattern ^ses */\n  sessionID?: string,\n  /** New session title. @minLength 1 */\n  title: string,\n}): Promise<{\n  /** @pattern ^ses */\n  sessionID: string,\n  title: string,\n}> // Rename a session, or omit sessionID to rename the current session. Use a short, specific title that summarizes the wo...\n\nSkills provide specialized instructions and workflows for specific tasks.\nUse the skill tool to load a skill when a task matches its description.\nThe user may also invoke a skill directly. When that happens, its instructions appear in the conversation as a <skill_content> block, the same shape the skill tool returns. A skill that is already present this way does not need to be invoked again.\n<available_skills>\n  <skill>\n    <id>opencode</id>\n    <name>OpenCode</name>\n    <description>Use this skill for any question about OpenCode itself, including how OpenCode works, using or configuring it, migrating from V1 to V2, troubleshooting it, developing plugins or integrations, using the OpenCode SDK, clients, server, or API, and contributing to the OpenCode codebase. Also use it for OpenCode agents, commands, skills, tools, permissions, MCP servers, providers, models, themes, keybinds, formatters, the CLI, TUI, desktop app, and web app.</description>\n  </skill>\n  <skill>\n    <id>report</id>\n    <name>Report</name>\n    <description>Use when the user wants to report an opencode issue or bug. Collect standard diagnostics, add user-specific reproduction context, and publish the issue with GitHub CLI.</description>\n  </skill>\n</available_skills>\n\nInstructions from: /home/mint/.config/opencode/AGENTS.md\n# Instruções globais do agente (offline Cubic remaster)\n\nVocê é backend C# sênior, DDD/SOLID, clean code, baixa complexidade.\n\nREGRAS DE TOOL IRREFUTÁVEIS:\n1. Só chame recipients `default.*`. Nunca invente tool. Console é só via `default.shell`.\n2. `opencode.*` NUNCA direto. Só dentro de `default.execute` via `tools.opencode.*`. Código em `execute`: CommonJS simples, SEM `import`/`export` (o sandbox é `sourceType: script` — ESM quebra com `'import' may appear only with 'sourceType: module'`).\n3. `default.subagent.model` = SEMPRE `llama/gemma-4-e2b` (se o usuário pedir outro modelo, liste via `default.execute` + `tools.opencode.models` e use o ID exato `providerID/modelID`; nunca chute).\n4. Tool calls em paralelo quando independentes (varios write/read/glob no mesmo turno). Serializar apenas quando houver dependencia (ex.: read antes de edit do mesmo arquivo).\n5. Context first: leia `AGENTS.md`, `docs/*.md`, `git log --oneline -30` antes de criar plano/código. Arquivos históricos: ler do fim ao começo em blocos de 8k.\n6. Fail fast honesto: se tool/modelo não existe, diga, liste alternativas, pare o loop. NUNCA alucinar supera NUNCA dizer não.\n7. Conciso: assistente direto, no máximo duas frases ou parágrafo curto, sem introduções. Código e tool calls sempre completos, nunca truncados.\n\nMODELOS LOCAIS (OpenCode via bridges C# :4124/:4125 → llama TurboQuant, nada vai p/ nuvem). Apenas 2 modelos para as 6 roles:\n- `openai/gemma-4-12b` (bridge GPU :4124 → llama :4100 Gemma4 12B Q4_K_M 160k/32k, temp 0.5, thinking events): base das roles Plan, Build, Orch, MoE e Scripter — a temperatura por role fica no `agents/*.md` (Plan/Build/Orch 0.5, MoE 0.8, Scripter 0.3). Tool calling nativo (template peg-gemma4).\n- `llama/gemma-4-e2b` (bridge CPU :4125 → llama :4110 Gemma4 E2B Q3_K_M 64k/16k slot único, temp 0.3, thinking off): role **Exec** — cria, valida (`bash -n`) e **executa** (`bash <arquivo>`) os scripts — e subagentes de micro-enunciado. **Só E2B** (como Plan/Build/Orch são só 12B). Harness: checkbox \"Execução de scripts\" = token `exec` no CSV do agente (o Scripter NÃO tem `exec`; só valida).\n- Sem Qwen CLI: removidos CLI serve, web, ícones e scripts. Atomic Agent também removido.\n\nORQUESTRAÇÃO MULTI-AGENTE (GPU tem 160k mas a CPU tem 64k — dividir sempre):\n1. ORCH = `openai/gemma-4-12b` (role orch): delega micro-enunciados aos subagentes `llama/gemma-4-e2b` e agrega. Micro-enunciados independentes (cada um cabe no 64k do E2B, saída de 16k inclusa).\n2. Formato obrigatório do micro-enunciado: OBJETIVO (1 frase) + ESCOPO (arquivos exatos + trechos; histórico lido do fim ao começo em blocos de 8k) + PROIBIDO (o que não tocar) + ACEITE (comando exato de verificação: build/teste/grep).\n3. Delega via tool NATIVA `task`, chamada DIRETA como tool (name=`task`, params `description` + `prompt` + `model`) — NUNCA via `execute` (sandbox sem ESM e sem tools), NUNCA via `shell` (timeout 120s estoura no E2B), NUNCA via `skill` (só carrega docs): um `task` por enunciado, `prompt` = micro-enunciado integral, `model` = `llama/gemma-4-e2b`; agrega os resultados, re-executa o ACEITE de cada um e só então conclui.\n4. Se um enunciado volta ambíguo ou estourado, o orch refatia em dois menores — nunca pede para o E2B \"improvisar\".\n\nREGRAS DO SUBAGENTE E2B (vale para `llama/gemma-4-e2b`, inegociáveis):\n1. NÃO INVENTE NADA: execute exatamente o enunciado. Sem arquivo, sem função, sem dependência além do pedido. Dúvida = fail fast com a pergunta exata, nunca chute.\n2. NÃO CRIE NADA VAZIO: proibido placeholder, stub, `TODO`, `NotImplemented`, teste vazio ou arquivo só com esqueleto. Entrega parcial honesta > entrega vazia.\n3. FERRAMENTAS COM ÊNFASE; QUESTIONÁRIO SÓ SE INTERATIVO: no TUI/Web o agente pode fazer 1 rodada de perguntas objetivas SE o escopo estiver ambíguo. Em execução console (`opencode run`, subagente do 12B) é PROIBIDO questionário — execute direto (`ls cat echo sed grep git` sem pedir, e demais ferramentas que ele conheça). Decidiu, executou, mostrou evidência.\n4. NÃO TOQUE em arquivos existentes que não pertençam ao enunciado: sem \"melhorias de passagem\", sem reformatar vizinho, sem renomear. Leitura fora do escopo só via `read`/`grep`, nunca `edit`.\n5. Todo enunciado termina com o ACEITE executado de verdade (ação real nas tools, não micro-enunciado de faz-de-conta): anexe a evidência (trecho do log/teste) no retorno.\n\nPIPELINE PADRÃO: role `plan` (0.5) elucida e fatia em micro-enunciados -> role `build` (0.5) executa -> plan verifica o ACEITE de cada um.\n\nTEMPERATURA (perfis na bridge, espelhados no `opencode.json`): Plan 0.5 (criatividade p/ planejar), Build 0.5 (equilíbrio p/ executar), Orch 0.5, MoE 0.8 (exploração), Scripter 0.3 e Exec 0.3 (determinismo).\n\nSYSTEM PROMPT GERAL (12b, amplo, propósitos gerais):\nVocê é um arquiteto desenvolvedor de software generalista de esferas globais: artes, biologia, ciências, química, física (inclusive quântica), matemática, filosofia, sociologia, tecnologia e demais assuntos globais — além de arquitetura e engenharia de software, backend C# (DDD/SOLID), frontend (React/Blazor/Angular), dados e SQL, redes e infra, IoT/ARM embarcado. Atende qualquer pedido direto, com profundidade sob demanda, sem enrolação. Roteie sozinho: atue nas tarefas por completo, porém, quando solicitado, resuma em tarefas menores em fases, esteja ciente que a execução será por subagentes Gemma4 E2B (`llama/gemma-4-e2b`) com menos capacidade, que você agrega e verifica. Responda no idioma do usuário, tool calls completas e código diff ao editar arquivos.\n\nESCRITA EXTREMA + BUILD DE INTEGRIDADE (vale para 12b e E2B):\n1. Feature multi-arquivo já planejada = codifica TUDO de uma vez, completo, sem truncar, sem stub, sem \"resto depois\". Entrega parcial honesta só se o enunciado mandar parar.\n2. DIFFS, NÃO REIMPRESSÃO: nunca reemita arquivo inteiro na resposta; mostre só o diff (trecho alterado + 3 linhas de contexto) ou `edit` aplicado + resumo de 1 linha por arquivo. Arquivo inteiro só via tool (`read`), nunca colado no chat.\n3. CORREÇÃO É EDIT, NUNCA REWRITE: ao corrigir erro de build/teste/lint, use SEMPRE `edit` (ou `sed` via shell) no trecho exato; PROIBIDO reescrever o arquivo inteiro com `write` para corrigir (foi medido: 4 rewrites de 14k num loop de fix). `write` só para arquivo novo.\n4. Só considera pronto após BUILD DE INTEGRIDADE no final (ex.: `dotnet build -c Release`, zero warnings novos, zero erros) + testes do ACEITE verdes, com evidência (trecho do log) no retorno.\n5. Se o build quebra, corrige tudo antes de concluir — nunca entrega vermelho. O orch só agrega subagente com build verde.\n\n\nToday's date: Mon Oct 19 2026\n\nHere is some useful information about the environment you are running in:\n<env>\n  Working directory: /tmp/opencode/harness-capture\n  Workspace root folder: /tmp/opencode/harness-capture\n  Is directory a git repo: no\n  Platform: linux\n  Prefer /tmp/opencode over generic system temporary directories such as /tmp; it is pre-created and approved for external access.\n</env>\nWhen you create a worktree outside the current working directory and intend to use it as your primary working directory, consider using `execute` to call `tools.opencode.session_move` and make the worktree the session's working directory."
+  },
+  {
+   "role": "user",
+   "content": "\"Devpipe: crie hello.cs com Console.WriteLine(\\\"Hi\\\") e responda DEV-OK.\""
+  },
+  {
+   "role": "assistant",
+   "content": null,
+   "tool_calls": [
+    {
+     "id": "amitUB3g8xG2SgSzr01pc2e85qcme4q0",
+     "type": "function",
+     "function": {
+      "name": "write",
+      "arguments": "{\"content\":\"using System;\\n\\nclass Program\\n{\\n    static void Main()\\n    {\\n        Console.WriteLine(\\\"Hi\\\");\\n    }\\n}\\n\",\"path\":\"hello.cs\"}"
+     }
+    }
+   ]
+  },
+  {
+   "role": "tool",
+   "tool_call_id": "amitUB3g8xG2SgSzr01pc2e85qcme4q0",
+   "content": "Created file successfully: hello.cs"
+  }
+ ],
+ "temperature": 0.3,
+ "stream": false,
+ "chat_template_kwargs": {
+  "enable_thinking": false
+ },
+ "max_tokens": 8192,
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "edit",
+    "description": "Edit the contents of a file by finding and replacing exact text. When editing text from Read output, preserve the exact indentation (tabs or spaces) and omit the line-number prefix, such as `1: `. Never include the prefix in oldString or newString. The edit fails if oldString is not found. By default, oldString must identify a UNIQUE location. Multiple matches FAIL unless replaceAll is true. Add more surrounding context to disambiguate, or set replaceAll to true to replace every occurrence. Use replaceAll when the change should apply to every occurrence, such as renaming a variable.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string",
+       "description": "File to edit"
+      },
+      "oldString": {
+       "type": "string",
+       "description": "Exact text to find and replace"
+      },
+      "newString": {
+       "type": "string",
+       "description": "Text to replace oldString with (must differ from oldString)"
+      },
+      "replaceAll": {
+       "type": "boolean",
+       "description": "Whether to replace every occurrence of oldString. When false, oldString must match exactly once. Defaults to false."
+      }
+     },
+     "required": [
+      "path",
+      "oldString",
+      "newString"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "glob",
+    "description": "Search file paths using a glob pattern (examples: \"**/*.ts\", \"src/**/*.tsx\").",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "pattern": {
+       "type": "string",
+       "description": "Glob pattern to match files against"
+      },
+      "path": {
+       "type": "string",
+       "description": "Directory to search. Defaults to the current working directory."
+      },
+      "hidden": {
+       "type": "boolean",
+       "description": "Include hidden files and directories (default: false)."
+      },
+      "limit": {
+       "type": "integer",
+       "exclusiveMinimum": 0,
+       "description": "Maximum number of matching files to return (default: 100)"
+      }
+     },
+     "required": [
+      "pattern"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "grep",
+    "description": "Search file contents using ripgrep's regular expression syntax or literal text matching. Use it to locate specific code, symbols, or text patterns, and narrow searches with `path` or `include`. Returns matching file paths, line numbers, and line previews.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "pattern": {
+       "type": "string",
+       "minLength": 1,
+       "description": "Regular expression or literal text to match in file contents."
+      },
+      "path": {
+       "type": "string",
+       "description": "File or directory to search. Defaults to the current working directory."
+      },
+      "include": {
+       "type": "string",
+       "description": "Glob pattern to filter files (for example, \"*.js\" or \"*.{ts,tsx}\")"
+      },
+      "literal": {
+       "type": "boolean",
+       "description": "Treat `pattern` as exact text instead of a regular expression (default: false)."
+      },
+      "caseSensitive": {
+       "type": "boolean",
+       "description": "Use case-sensitive matching (default: true)."
+      },
+      "limit": {
+       "type": "integer",
+       "exclusiveMinimum": 0,
+       "description": "Maximum number of matching lines to return (default: 100)"
+      }
+     },
+     "required": [
+      "pattern"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "question",
+    "description": "Use this tool when you need to ask the user questions during execution. This allows you to:\n1. Gather user preferences or requirements\n2. Clarify ambiguous instructions\n3. Get decisions on implementation choices as you work\n4. Offer choices to the user about what direction to take.\n\nUsage notes:\n- A \"Type your own answer\" option is added automatically; don't include a separate option for free form answers\n- Set `multiple: true` to allow selecting more than one option\n- If you recommend a specific option, make that the first option in the list and add \"(Recommended)\" at the end of the label",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "questions": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "question": {
+          "type": "string",
+          "description": "Complete question"
+         },
+         "header": {
+          "type": "string",
+          "description": "Very short label (max 30 chars)"
+         },
+         "options": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "label": {
+             "type": "string",
+             "description": "Display text (1-5 words, concise)"
+            },
+            "description": {
+             "type": "string",
+             "description": "Explanation of choice"
+            }
+           },
+           "required": [
+            "label",
+            "description"
+           ],
+           "additionalProperties": false
+          },
+          "description": "Available choices"
+         },
+         "multiple": {
+          "type": "boolean"
+         }
+        },
+        "required": [
+         "question",
+         "header",
+         "options"
+        ],
+        "additionalProperties": false
+       },
+       "minItems": 1,
+       "description": "Questions to ask"
+      }
+     },
+     "required": [
+      "questions"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "read",
+    "description": "Read the contents of a file or directory. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Use offset and limit to read large files or directories in sections. Prefer one larger read over many small slices, and use grep to find specific content in large files.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string",
+       "description": "File or directory to read"
+      },
+      "offset": {
+       "type": "integer",
+       "minimum": 0,
+       "description": "The line or directory entry to start reading from (1-based)"
+      },
+      "limit": {
+       "type": "integer",
+       "minimum": 0,
+       "description": "The maximum number of lines or directory entries to read (defaults to and capped at 2000)"
+      }
+     },
+     "required": [
+      "path"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "shell",
+    "description": "Execute a shell command and return its output. Commands run on Linux using bash. Quote file paths containing spaces or special characters. Prefer dedicated tools over shell commands when possible. When output is large, the full result is saved to a file and a truncated preview is returned. Rely on automatic truncation unless filtering the output is more useful. Commands accept an optional timeout, background commands have no timeout by default. Background commands return immediately, and you will be notified when they complete.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "command": {
+       "type": "string",
+       "description": "Shell command string to execute"
+      },
+      "workdir": {
+       "type": "string",
+       "description": "Working directory to execute the command in. Defaults to the current working directory. When possible, avoid changing directories in the command and set the working directory here instead."
+      },
+      "timeout": {
+       "type": "integer",
+       "minimum": 0,
+       "description": "Timeout in milliseconds. Set to 0 to disable the timeout. Defaults to 120000 for foreground commands. Background commands have no timeout by default."
+      },
+      "background": {
+       "type": "boolean",
+       "description": "Run the command in the background and return immediately (useful for dev servers and long-running builds). You do not need to use '&' at the end of the command when using this parameter. You will be notified when it completes. DO NOT poll for completion."
+      }
+     },
+     "required": [
+      "command"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "skill",
+    "description": "Load a specialized skill's instructions and resources into the current conversation when the task at hand matches its description.\n\nThe skill ID must match an available skill or a skill explicitly referenced by the user.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "string",
+       "description": "The ID of an available skill or a skill explicitly referenced by the user"
+      }
+     },
+     "required": [
+      "id"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "subagent",
+    "description": "Spawns an agent in a child session to work on the specified task.\nThe output includes a sessionID you can pass back later to continue that specific conversation with the subagent.\nNew child sessions start with fresh context, so include all relevant context and instructions when you don't pass a sessionID.\nForeground (default) runs the subagent to completion and returns its final response.\nBackground mode (background=true) launches it asynchronously and returns immediately; you are notified when it finishes.\nUse background only for independent work that can run while you continue elsewhere.\n\nAvailable subagents:\n- build-exec: Subagente executor Build 12B chamado pelo Orch\n- explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/components/**/*.tsx\"), search code for keywords (eg. \"API endpoints\"), or answer questions about the codebase (eg. \"how do API endpoints work?\"). When calling this agent, specify the desired thoroughness level: \"quick\" for basic searches, \"medium\" for moderate exploration, or \"very thorough\" for comprehensive analysis across multiple locations and naming conventions.\n- general: General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "agent": {
+       "type": "string",
+       "description": "The type of specialized agent to use for this task. If the user asks for a subagent by a name that is not one of the available subagents, they most likely mean a model: pick a suitable agent and pass the name through the model parameter instead."
+      },
+      "description": {
+       "type": "string",
+       "description": "A short 3-5 word label for the task, displayed to the user"
+      },
+      "prompt": {
+       "type": "string",
+       "description": "The task for the subagent to perform"
+      },
+      "model": {
+       "type": "string",
+       "description": "NEVER set this unless the user explicitly asks for a particular model or variant. The value is written as \"providerID/modelID\", or \"providerID/modelID#variant\" to include a variant. Do not guess the ID: look the model up with the models tool, filtering to your own provider first."
+      },
+      "sessionID": {
+       "type": "string",
+       "description": "Continue a specific previous subagent conversation by passing its sessionID. Calls without a sessionID start a new conversation."
+      },
+      "background": {
+       "type": "boolean",
+       "description": "Run the subagent in the background and return immediately. You will be notified when it completes. DO NOT sleep, poll, or proactively check on its progress."
+      }
+     },
+     "required": [
+      "agent",
+      "description",
+      "prompt"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "webfetch",
+    "description": "Fetch content from an HTTP or HTTPS URL and return it as text, markdown, or HTML. Markdown is the default.\n\nUse a more targeted tool when one is available. This tool is read-only. Large text results may be replaced with a preview while the complete output is retained in managed storage.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "url": {
+       "type": "string",
+       "description": "The HTTP or HTTPS URL to fetch content from"
+      },
+      "format": {
+       "type": "string",
+       "enum": [
+        "text",
+        "markdown",
+        "html"
+       ],
+       "description": "The format to return the content in. Defaults to markdown."
+      },
+      "timeout": {
+       "type": "number",
+       "exclusiveMinimum": 0,
+       "maximum": 120,
+       "description": "Optional timeout in seconds (maximum: 120)"
+      }
+     },
+     "required": [
+      "url"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "websearch",
+    "description": "Search the web using the user's selected search integration. Use this for current information beyond knowledge cutoff.\n\nThe current year is 2026. Use this year when searching for recent information or current events.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "query": {
+       "type": "string",
+       "description": "Websearch query"
+      }
+     },
+     "required": [
+      "query"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "write",
+    "description": "Writes a file to the local filesystem, overwriting if one exists.\n\nMissing parent directories are created automatically.\n\nUse this tool to create new files or overwrite existing files. For partial changes, use the edit tool instead.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string",
+       "description": "Path to the file to write to"
+      },
+      "content": {
+       "type": "string",
+       "description": "Content to write to the file"
+      }
+     },
+     "required": [
+      "path",
+      "content"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "execute",
+    "description": "Run JavaScript in a confined Code Mode runtime to script tool calls and HTTP requests and compose their results.\n`fetch` is available for HTTP requests. Imports, direct filesystem access, and timers are unavailable; all other external access goes through `tools`.\nWithin `{ code }`, the only callable tools are those explicitly listed in the Code Mode catalog instructions or returned by the `search` function. Inside `{ code }`, ignore tools shown outside the Code Mode catalog. They are not available in the Code Mode runtime.\nCall tools through `tools` using only exact paths and signatures from the catalog. Do not infer or normalize tool names; preserve bracket notation such as `tools.<namespace>[\"tool-name\"](input)`.\nPrefer an explicit `return`; if omitted, the final top-level expression becomes the result.\nAwait every call whose completion matters; pending calls are interrupted when execution ends. Run independent calls concurrently with `Promise.all`.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "code": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "code"
+     ],
+     "additionalProperties": false
+    }
+   }
+  }
+ ],
+ "tool_choice": "auto"
+}
