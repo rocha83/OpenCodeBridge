@@ -1,4 +1,5 @@
 using Rochas.AI.Manager.Application.Abstractions;
+using Rochas.AI.Manager.TrainingEngine;
 using Rochas.AI.Manager.Application.Data;
 using Rochas.AI.Manager.Application.Services;
 using Rochas.DapperRepository;
@@ -93,6 +94,7 @@ builder.Services.AddScoped(_ => new GenericRepository<Agent>(DatabaseEngine.SQLi
 // Servicos
 builder.Services.AddScoped<IHarnessProfileService, HarnessProfileService>();
 builder.Services.AddScoped<ITrainingJobService, TrainingJobService>();
+builder.Services.AddScoped<ITrainingEngine, TrainingEngine>();
 builder.Services.AddScoped<IHarnessLinter, HarnessLinter>();
 builder.Services.AddScoped<IModelArtifactService, ModelArtifactService>();
 builder.Services.AddScoped<IDatasetService, DatasetService>();

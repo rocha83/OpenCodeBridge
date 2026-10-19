@@ -18,4 +18,7 @@
     <ProjectReference Include="..\Rochas.AI.Manager.Domain\Rochas.AI.Manager.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Rochas.AI.Manager.TrainingEngine\Rochas.AI.Manager.TrainingEngine.csproj" />
+  </ItemGroup>
 </Project>

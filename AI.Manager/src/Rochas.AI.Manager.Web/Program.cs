@@ -1,4 +1,5 @@
 using Rochas.AI.Manager.Application.Abstractions;
+using Rochas.AI.Manager.TrainingEngine;
 using Rochas.AI.Manager.Application.Services;
 using Rochas.AI.Manager.Application.Data;
 using Rochas.DapperRepository;
@@ -97,6 +98,7 @@ builder.Services.AddScoped<IHarnessProfileService>(sp => new HarnessProfileServi
     sp.GetRequiredService<IPersistenceRepository<HarnessProfileVersion>>(),
     AppDb.ConnectionString));
 builder.Services.AddScoped<ITrainingJobService, TrainingJobService>();
+builder.Services.AddScoped<ITrainingEngine, TrainingEngine>();
 builder.Services.AddScoped<IHarnessLinter, HarnessLinter>();
 builder.Services.AddScoped<IModelArtifactService, ModelArtifactService>();
 builder.Services.AddScoped<IDatasetService, DatasetService>();

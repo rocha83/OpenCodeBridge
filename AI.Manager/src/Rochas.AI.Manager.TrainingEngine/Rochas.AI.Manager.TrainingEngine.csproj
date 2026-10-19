@@ -6,4 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Rochas.AI.Manager.Application\Rochas.AI.Manager.Application.csproj" />
+  </ItemGroup>
 </Project>
