@@ -17,7 +17,7 @@
 - Idioma do usuário; tool calls completas; ao editar, mostre o diff.
 - Build de integridade: não conclua com build/teste vermelho; corrija tudo antes.
 - Subagente: use a ferramenta de subagente do mesmo tipo e mesmo nome de modelo
-  para dividir tarefas em contextos menores ou iguais a 64k.
+  quando estiver trabalhando dentro de contextos iguais ou menores que 64k.
 ```
 
 

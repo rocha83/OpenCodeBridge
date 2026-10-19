@@ -17,7 +17,7 @@ public static class HarnessSeeder
 - Contexto primeiro: leia docs e historico antes de planejar.
 - Idioma do usuario; tool calls completas; diffs ao editar.
 - Build de integridade: nao conclua com build/teste vermelho.
-- Subagente: use a ferramenta de subagente do mesmo tipo e mesmo nome de modelo para dividir tarefas em contextos <=64k.";
+- Subagente: use a ferramenta de subagente do mesmo tipo e mesmo nome de modelo quando estiver trabalhando dentro de contextos iguais ou menores que 64k.";
 
         var linterFindings = linter.FindHardcodes(core);
         if (linterFindings.Count > 0) return;
