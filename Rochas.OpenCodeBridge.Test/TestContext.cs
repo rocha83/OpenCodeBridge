@@ -125,6 +125,7 @@ internal static class TestContext
         };
         string model = StandaloneModel.Length > 0 ? StandaloneModel : AutoStandaloneModel();
         psi.ArgumentList.Add("run");
+        psi.ArgumentList.Add("--standalone");   // servidor privado: nao depende do background service (evita "Timed out waiting for the background service to start")
         psi.ArgumentList.Add("--agent"); psi.ArgumentList.Add(StandaloneAgent);
         psi.ArgumentList.Add("--model"); psi.ArgumentList.Add(model);
         psi.ArgumentList.Add(prompt);

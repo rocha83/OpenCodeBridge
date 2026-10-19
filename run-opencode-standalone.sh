@@ -19,7 +19,7 @@ run() {
   local expect="${1:-}"
   echo "=== [$name] agent=$AGENT model=$MODEL ==="
   local out
-  out="$(timeout 300 opencode run --agent "$AGENT" --model "$MODEL" "$prompt" 2>&1)"
+  out="$(timeout 300 opencode run --standalone --agent "$AGENT" --model "$MODEL" "$prompt" 2>&1)"
   echo "$out" | tail -20
   if [[ -n "$expect" ]]; then
     if echo "$out" | grep -qiE "$expect"; then echo "PASS $name"; else echo "FAIL $name (esperado: $expect)"; fi
