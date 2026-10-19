@@ -1,0 +1,31 @@
+@model IEnumerable<Rochas.AI.Manager.Domain.Harness.HarnessProfile>
+@{
+    ViewData["Title"] = "Harness Profiles";
+}
+<div class="row">
+  <div class="col-12">
+    <h2>Harness Profiles</h2>
+    <form id="createForm" class="row g-2 mb-3">
+      <div class="col-md-4"><input name="name" class="form-control" placeholder="Nome do perfil" required /></div>
+      <div class="col-md-5"><input name="description" class="form-control" placeholder="Descrição" /></div>
+      <div class="col-md-3"><button type="submit" class="btn btn-primary w-100">Criar</button></div>
+    </form>
+    <div id="listContainer">
+      @await Html.PartialAsync("_ProfileList", Model)
+    </div>
+  </div>
+</div>
+@section Scripts {
+<script>
+async function reloadList() {
+  const r = await fetch('/Harness/Partial/List');
+  document.getElementById('listContainer').innerHTML = await r.text();
+}
+document.getElementById('createForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const res = await fetch('/Harness/Create', { method: 'POST', body: fd, headers: { 'RequestVerificationToken': document.querySelector('input[name=__RequestVerificationToken]').value } });
+  if (res.ok) { e.target.reset(); await reloadList(); }
+});
+</script>
+}

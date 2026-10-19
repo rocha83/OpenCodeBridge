@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-bs-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@ViewData["Title"] - Rochas.AI.Manager</title>
+<link href="~/lib/mdb/mdb.min.css" rel="stylesheet" />
+<link href="~/lib/fontawesome/css/all.min.css" rel="stylesheet" />
+<script>
+  (function() {
+    var theme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-bs-theme', theme);
+  })();
+</script>
+</head>
+<body>
+<main class="container-fluid py-3">@RenderBody()</main>
+<script src="~/lib/mdb/mdb.min.js"></script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

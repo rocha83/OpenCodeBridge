@@ -1,0 +1,39 @@
+@model IEnumerable<Rochas.AI.Manager.Domain.Harness.HarnessProfile>
+<table class="table table-sm table-striped">
+  <thead><tr><th>Nome</th><th>Status</th><th>Versões</th><th>Ações</th></tr></thead>
+  <tbody>
+  @foreach (var p in Model)
+  {
+    <tr>
+      <td>@p.Name</td>
+      <td>@p.Status</td>
+      <td>@p.Versions.Count</td>
+      <td>
+        <button class="btn btn-sm btn-secondary" onclick="addVersion('@p.Id')">+Versão</button>
+        <button class="btn btn-sm btn-info" onclick="lintText()">Lint</button>
+      </td>
+    </tr>
+  }
+  </tbody>
+</table>
+<script>
+async function addVersion(profileId) {
+  const mode = prompt('Modo (ClientNative/BridgeBypass/BridgeLegacy/Hybrid):', 'ClientNative');
+  if (!mode) return;
+  const checksum = prompt('Checksum (opcional):', '');
+  const fd = new FormData();
+  fd.append('profileId', profileId);
+  fd.append('mode', mode);
+  if (checksum) fd.append('checksum', checksum);
+  const token = document.querySelector('input[name=__RequestVerificationToken]')?.value;
+  const res = await fetch('/Harness/Version', { method: 'POST', body: fd, headers: token ? { 'RequestVerificationToken': token } : {} });
+  if (res.ok) { await reloadList(); }
+}
+async function lintText() {
+  const content = prompt('Texto do harness para lint:');
+  if (content === null) return;
+  const res = await fetch('/Harness/Lint', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }) });
+  const data = await res.json();
+  alert(data.ok ? 'OK: sem hardcodes.' : 'Hardcodes: ' + data.findings.join('; '));
+}
+</script>
