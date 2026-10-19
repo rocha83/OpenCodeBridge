@@ -31,11 +31,10 @@ internal static class E2EToolsFullTests
 
         // 3. edit (sed)
         var e = await Exec("shell", new JsonObject { ["command"] = "sed -i 's/int X = 1/int X = 42/' a.cs && echo OK" });
-        Console.WriteLine($"  [toolsfull:{label}] sed output: {e["output"]?.GetValue<string>()} err: {e["error"]?.GetValue<string>()}");
         TestContext.Check(e["ok"]?.GetValue<bool>() == true, $"{label} edit/sed ok");
 
         // 4. glob
-        var g = await Exec("glob", new JsonObject { ["pattern"] = "*.cs", ["path"] = ws });
+        var g = await Exec("glob", new JsonObject { ["pattern"] = "*.cs" });
         TestContext.Check(g["ok"]?.GetValue<bool>() == true && (g["output"]?.GetValue<string>() ?? "").Contains("a.cs"), $"{label} glob ok");
 
         // 5. grep
