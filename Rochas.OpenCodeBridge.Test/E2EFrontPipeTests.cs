@@ -104,7 +104,7 @@ internal static class E2EFrontPipeTests
         if (!File.Exists(Path.Combine(App, AppName + ".csproj")))
         {
             if (Directory.Exists(App)) Directory.Delete(App, true);
-            TestContext.ScaffoldProject(AppName, App);   // template `dotnet new mvc`
+            TestContext.ScaffoldProject(AppName, App, kind: "mvc");   // template `dotnet new mvc`
             Console.WriteLine($"  [front] scaffold {AppName} (dotnet new mvc) em {App}");
         }
         string repoAssets = RepoDir("frontpipe/assets");
@@ -324,9 +324,9 @@ internal static class E2EFrontPipeTests
             ["model"] = model,
             ["temperature"] = 0.3,
             ["stream"] = false,
-            ["messages"] = messages,
+            ["messages"] = messages.DeepClone(),
         };
-        if (tools is { Count: > 0 }) body["tools"] = tools;
+        if (tools is { Count: > 0 }) body["tools"] = tools.DeepClone();
         return await TestContext.PostObj(bridge + "/v1/chat/completions", body);
     }
 
@@ -491,7 +491,7 @@ internal static class E2EFrontPipeTests
 
         // ACEITE: o front tem que buildar (integro) antes de servir.
         var (code, buildOut) = Run("dotnet", App, 900, "build", "-c", "Release", "--nologo", "-v", "q");
-        TestContext.Check(code == 0 && buildOut.Contains("Build succeeded"),
+        TestContext.Check(code == 0 && (buildOut.Contains("Build succeeded") || buildOut.Contains("êxito") || buildOut.Contains("succeeded")),
             "app builda (dotnet build -c Release): " + Clip(buildOut.Split('\n')[0], 200));
 
         EnsureServer();

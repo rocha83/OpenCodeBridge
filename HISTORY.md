@@ -2157,3 +2157,10 @@ bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
 - Enunciados citam explicitamente o modelo/agente responsavel por cada etapa.
 - Pipeline paralelo: 6 processos em paralelo (devpipe, orch-segment, scripter-gen,
   companion-gen, exec-read, science-gpu2).
+
+## 2026-10-19 — Frontpipe bloqueado por Playwright (WaitForSelectorAsync timeout)
+
+- O frontpipe (gen/edit/verify) falha no FrontMeasure: WaitForSelectorAsync("#root")
+  timeout 30s, embora a pagina retorne 200 com #root no HTML.
+- Playwright (chrome canal) nao renderiza/executa o JS da pagina no ambiente atual.
+- Frontpipe fica em backlog ate a correcao do Playwright/browser.
