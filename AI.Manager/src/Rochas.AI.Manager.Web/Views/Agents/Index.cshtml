@@ -3,11 +3,11 @@
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
 <div class="table-responsive d-none d-md-block">
   <table class="table table-striped data-grid">
-    <thead><tr><th>Id</th><th>Nome</th><th>Model</th><th>Mode</th><th>Ativo</th><th>Ações</th></tr></thead>
+    <thead><tr><th>Nome</th><th>Modelo</th><th>Modo</th><th>Ativo</th><th>Ações</th></tr></thead>
     <tbody>
     @foreach (var a in Model)
     {
-      <tr><td>@a.Id</td><td>@a.Name</td><td>@a.Model</td><td>@a.Mode</td><td>@a.IsActive</td>
+      <tr><td>@a.Name</td><td>@a.Model</td><td>@a.Mode</td><td>@a.IsActive</td>
         <td><form method="post" action="/Agents/Delete/@a.Id" style="display:inline">@Html.AntiForgeryToken()<button class="btn btn-sm btn-danger">Excluir</button></form></td></tr>
     }
     </tbody>

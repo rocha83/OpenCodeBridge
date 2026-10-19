@@ -44,23 +44,49 @@
 </div>
 <script src="~/lib/mdb/mdb.min.js"></script>
 
+
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('table.data-grid').forEach(function(table) {
     var wrapper = table.parentElement;
-    // search input
+    var tbody = table.tBodies[0];
+    var allRows = Array.from(tbody.rows);
+    var pageSize = 8;
+    var currentPage = 1;
+
     var search = document.createElement('input');
     search.type = 'search';
     search.placeholder = 'Buscar...';
     search.className = 'form-control form-control-sm mb-2';
     wrapper.insertBefore(search, table);
-    var rows = Array.from(table.tBodies[0].rows);
-    search.addEventListener('input', function() {
+
+    var pag = document.createElement('div');
+    pag.className = 'd-flex justify-content-between align-items-center mt-2';
+    pag.innerHTML = '<button class="btn btn-sm btn-outline-light" id="prev">Anterior</button><span id="info"></span><button class="btn btn-sm btn-outline-light" id="next">Próximo</button>';
+    wrapper.appendChild(pag);
+
+    function filteredRows() {
       var q = search.value.toLowerCase();
-      rows.forEach(function(r) {
-        r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
-      });
-    });
+      return allRows.filter(function(r){ return r.textContent.toLowerCase().includes(q); });
+    }
+    function render() {
+      var fr = filteredRows();
+      var total = fr.length;
+      var pages = Math.max(1, Math.ceil(total / pageSize));
+      if (currentPage > pages) currentPage = pages;
+      var start = (currentPage - 1) * pageSize;
+      var end = start + pageSize;
+      allRows.forEach(function(r){ r.style.display = 'none'; });
+      fr.slice(start, end).forEach(function(r){ r.style.display = ''; });
+      pag.querySelector('#info').textContent = 'Página ' + currentPage + ' de ' + pages + ' (' + total + ' registros)';
+      pag.querySelector('#prev').disabled = currentPage <= 1;
+      pag.querySelector('#next').disabled = currentPage >= pages;
+    }
+    search.addEventListener('input', function(){ currentPage = 1; render(); });
+    pag.querySelector('#prev').addEventListener('click', function(){ if (currentPage > 1) { currentPage--; render(); } });
+    pag.querySelector('#next').addEventListener('click', function(){ currentPage++; render(); });
+    render();
   });
 });
 </script>

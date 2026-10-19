@@ -1,7 +1,7 @@
 @model IEnumerable<Rochas.AI.Manager.Domain.Harness.BridgeCapture>
 @{ ViewData["Title"] = "Bridge Captures"; }
 <div class="table-responsive d-none d-md-block">
-  <table class="table table-striped data-grid"><thead><tr><th>Id</th><th>Mode</th><th>RequestHash</th><th>CreatedAt</th></tr></thead>
-  <tbody>@foreach(var c in Model){<tr><td>@c.Id</td><td>@c.Mode</td><td>@c.RequestHash</td><td>@c.CreatedAt</td></tr>}</tbody></table>
+  <table class="table table-striped data-grid"><thead><tr><th>Modo</th><th>Hash</th><th>Criado em</th></tr></thead>
+  <tbody>@foreach(var c in Model){<tr><td>@c.Mode</td><td>@c.RequestHash</td><td>@c.CreatedAt</td></tr>}</tbody></table>
 </div>
 <div class="d-md-none">@foreach(var c in Model){<div class="card mb-2"><div class="card-body"><h6>@c.Mode</h6><p>Hash: @c.RequestHash</p></div></div>}</div>

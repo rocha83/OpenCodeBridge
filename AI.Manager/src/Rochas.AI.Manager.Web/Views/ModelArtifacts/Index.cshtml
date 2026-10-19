@@ -3,12 +3,12 @@
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
 <div class="table-responsive d-none d-md-block">
   <table class="table table-striped data-grid">
-    <thead><tr><th>Id</th><th>Nome</th><th>Família</th><th>Formato</th><th>Status</th><th>Ações</th></tr></thead>
+    <thead><tr><th>Nome</th><th>Família</th><th>Formato</th><th>Status</th><th>Ações</th></tr></thead>
     <tbody>
     @foreach (var m in Model)
     {
       <tr>
-        <td>@m.Id</td><td>@m.Name</td><td>@m.Family</td><td>@m.Format</td><td>@m.Status</td>
+        <td>@m.Name</td><td>@m.Family</td><td>@m.Format</td><td>@m.Status</td>
         <td><form method="post" action="/ModelArtifacts/Approve/@m.Id" style="display:inline">@Html.AntiForgeryToken()<button class="btn btn-sm btn-success">Aprovar</button></form></td>
       </tr>
     }

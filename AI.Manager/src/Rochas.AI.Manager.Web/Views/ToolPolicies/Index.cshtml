@@ -2,8 +2,8 @@
 @{ ViewData["Title"] = "Tool Policies"; }
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
 <div class="table-responsive d-none d-md-block">
-  <table class="table table-striped data-grid"><thead><tr><th>Id</th><th>Role</th><th>Allow</th><th>Deny</th></tr></thead>
-  <tbody>@foreach(var t in Model){<tr><td>@t.Id</td><td>@t.Role</td><td>@t.Allow</td><td>@t.Deny</td></tr>}</tbody></table>
+  <table class="table table-striped data-grid"><thead><tr><th>Role</th><th>Allow</th><th>Deny</th></tr></thead>
+  <tbody>@foreach(var t in Model){<tr><td>@t.Role</td><td>@t.Allow</td><td>@t.Deny</td></tr>}</tbody></table>
 </div>
 <div class="d-md-none">@foreach(var t in Model){<div class="card mb-2"><div class="card-body"><h6>@t.Role</h6><p>Allow: @t.Allow</p><p>Deny: @t.Deny</p></div></div>}</div>
 <div class="modal fade" id="createModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">

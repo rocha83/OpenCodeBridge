@@ -3,12 +3,12 @@
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
 <div class="table-responsive d-none d-md-block">
   <table class="table table-striped data-grid">
-    <thead><tr><th>Id</th><th>Status</th><th>ModelArtifactId</th><th>DatasetId</th><th>Advanced</th><th>Ações</th></tr></thead>
+    <thead><tr><th>Status</th><th>ModelArtifactId</th><th>DatasetId</th><th>Avançado</th><th>Ações</th></tr></thead>
     <tbody>
     @foreach (var j in Model)
     {
       <tr>
-        <td>@j.Id</td><td>@j.Status</td><td>@j.ModelArtifactId</td><td>@j.DatasetId</td><td>@j.AdvancedMode</td>
+        <td>@j.Status</td><td>@j.ModelArtifactId</td><td>@j.DatasetId</td><td>@j.AdvancedMode</td>
         <td><form method="post" action="/TrainingJobs/Start/@j.Id" style="display:inline">@Html.AntiForgeryToken()<button class="btn btn-sm btn-success">Iniciar</button></form></td>
       </tr>
     }

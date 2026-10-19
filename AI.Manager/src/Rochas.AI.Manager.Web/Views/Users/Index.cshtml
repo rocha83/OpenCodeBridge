@@ -3,11 +3,11 @@
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
 <div class="table-responsive d-none d-md-block">
   <table class="table table-striped data-grid">
-    <thead><tr><th>Id</th><th>Nome</th><th>Email</th><th>Admin</th><th>Ativo</th><th>Ações</th></tr></thead>
+    <thead><tr><th>Nome</th><th>Email</th><th>Admin</th><th>Ativo</th><th>Ações</th></tr></thead>
     <tbody>
     @foreach (var u in Model)
     {
-      <tr><td>@u.Id</td><td>@u.Name</td><td>@u.Email</td><td>@u.IsAdmin</td><td>@u.IsActive</td>
+      <tr><td>@u.Name</td><td>@u.Email</td><td>@u.IsAdmin</td><td>@u.IsActive</td>
         <td><form method="post" action="/Users/Delete/@u.Id" style="display:inline">@Html.AntiForgeryToken()<button class="btn btn-sm btn-danger">Excluir</button></form></td></tr>
     }
     </tbody>

@@ -2,8 +2,8 @@
 @{ ViewData["Title"] = "Model Bindings"; }
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
 <div class="table-responsive d-none d-md-block">
-  <table class="table table-striped data-grid"><thead><tr><th>Id</th><th>Provider</th><th>Model</th><th>MaxTokens</th></tr></thead>
-  <tbody>@foreach(var m in Model){<tr><td>@m.Id</td><td>@m.Provider</td><td>@m.ModelId</td><td>@m.MaxTokens</td></tr>}</tbody></table>
+  <table class="table table-striped data-grid"><thead><tr><th>Provider</th><th>Modelo</th><th>MaxTokens</th></tr></thead>
+  <tbody>@foreach(var m in Model){<tr><td>@m.Provider</td><td>@m.ModelId</td><td>@m.MaxTokens</td></tr>}</tbody></table>
 </div>
 <div class="d-md-none">@foreach(var m in Model){<div class="card mb-2"><div class="card-body"><h6>@m.Provider / @m.ModelId</h6><p>MaxTokens: @m.MaxTokens</p></div></div>}</div>
 <div class="modal fade" id="createModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">

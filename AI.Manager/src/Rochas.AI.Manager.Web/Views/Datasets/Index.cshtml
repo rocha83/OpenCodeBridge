@@ -2,8 +2,8 @@
 @{ ViewData["Title"] = "Datasets"; }
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
 <div class="table-responsive d-none d-md-block">
-  <table class="table table-striped data-grid"><thead><tr><th>Id</th><th>Nome</th><th>Formato</th><th>Validado</th></tr></thead>
-  <tbody>@foreach(var d in Model){<tr><td>@d.Id</td><td>@d.Name</td><td>@d.Format</td><td>@d.IsValidated</td></tr>}</tbody></table>
+  <table class="table table-striped data-grid"><thead><tr><th>Nome</th><th>Formato</th><th>Validado</th></tr></thead>
+  <tbody>@foreach(var d in Model){<tr><td>@d.Name</td><td>@d.Format</td><td>@d.IsValidated</td></tr>}</tbody></table>
 </div>
 <div class="d-md-none">@foreach(var d in Model){<div class="card mb-2"><div class="card-body"><h6>@d.Name</h6><p>Formato: @d.Format</p><p>Validado: @d.IsValidated</p></div></div>}</div>
 <div class="modal fade" id="createModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
