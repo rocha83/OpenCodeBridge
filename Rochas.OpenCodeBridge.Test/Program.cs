@@ -76,7 +76,7 @@ internal static class Program
             TestContext.Run("E-standalone-tools", E2EStandaloneTests.Tools);
             TestContext.Run("E-standalone-write", E2EStandaloneTests.Write);
             TestContext.Run("E-standalone-devpipe", E2EStandaloneTests.DevPipe);
-            TestContext.Run("E-standalone-science", E2EStandaloneTests.Science);
+            TestContext.Run("E-standalone-science-tools", E2EStandaloneTests.ScienceTools);
             TestContext.Run("E-standalone-mission-tools", E2EStandaloneTests.MissionTools);
         }
 
