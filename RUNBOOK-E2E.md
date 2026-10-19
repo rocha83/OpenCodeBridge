@@ -59,6 +59,18 @@ dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
 - VRAM medida: ~11248 MiB usados / 789 MiB livres (12 GB).
 - `journalctl` sem `auto-asymmetric`; `n_ctx_slot`: 12B 131072, E2B 65536.
 
+## Métricas (tok/s) — bench limpo 2026-10-19 (GPU/CPU ociosos)
+
+`./bench-tok-s.sh 3 256` (prompt de contagem, `n_predict=256`, `ignore_eos=true`):
+
+| modelo | onde | geração (média / mediana) | prompt eval |
+|---|---|---|---|
+| **gemma-4-12b** (Q4_K_M) | GPU :4100 | **24.32 / 24.32 tok/s** (24.29–24.36) | ~59–65 tok/s |
+| **gemma-4-e2b** (Q3_K_M) | CPU :4110 | **56.16 / 56.03 tok/s** (56.01–56.43) | ~216–257 tok/s |
+
+Do log do llama (`journalctl -u llama-gpu`, gerações ≥100 tokens): 12B **mediana 24.95 tok/s** (máx 28.65), consistente com o bench.
+Obs.: medições E2B mais baixas (21–28 tok/s) vistas antes eram contenção de CPU, não o regime limpo.
+
 ## Regras de deploy
 
 - **Dev**: repo `/media/mint/3686C649614854E61/Projetos/Git/OpenCodeBridge`.
