@@ -90,3 +90,35 @@ Cada run deve registrar:
 - `Rochas.AI.Manager-Arquitetura.md` (seções 28, 29, 30, 31).
 - `HISTORY.md` / `LAB-SETUP.md` (OpenCodeBridge).
 - Swagger da API: `/swagger`.
+
+## 10. Testes E2E de Belts (exemplo)
+Para validar a eficiência do harness e do modelo em tarefas reais:
+
+### Faixas (complexidade crescente)
+- Azul → Verde → Roxa → Marrom → Preta.
+
+### Modos
+- **Build**: 12B implementa diretamente os artefatos (sem scripts sh).
+- **Orch**: 12B segmenta → Scripter compõe scripts → Exec (E2B) executa.
+
+### Critério de aceite
+- Solução implementada em arquivos reais (>=3 arquivos).
+- Quando aplicável, compilando (`dotnet build` verde).
+- Tools usadas de forma suficiente (read/write/edit/glob/grep/shell/git).
+
+### Execução
+```bash
+# standalone (opencode real)
+opencode run --standalone --auto -m openai/gemma-4-12b-build --agent build "<enunciado>"
+# ou pipeline
+./run-e2e-pipeline.sh --phase 3
+```
+
+### Resultado esperado
+- 5/5 PASS em ~12 min (harness nativo do opencode).
+- Artefatos reais no disco, com extensões esperadas por faixa.
+
+### Observações
+- Harness custom (tool_choice=required) não é confiável; preferir harness nativo.
+- max_tokens explícito (8192) evita respostas gigantes.
+- Anti-repeat ativo (janela 512).
