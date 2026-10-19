@@ -25,7 +25,7 @@ public sealed class TrainingPatternService(
         return p.Id;
     }
 
-    public async Task<TrainingPattern?> GetAsync(int id, CancellationToken ct = default) => await _repo.Get(id);
+    public async Task<TrainingPattern?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM training_patterns WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
 
     public async Task<IReadOnlyList<TrainingPattern>> ListAsync(CancellationToken ct = default)
     {

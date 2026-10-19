@@ -1,4 +1,6 @@
 using Rochas.AI.Manager.Domain.Interfaces;
+using Serilog;
+using Serilog.Events;
 using Rochas.AI.Manager.Infrastructure.Data;
 using Rochas.AI.Manager.TrainingEngine;
 using Rochas.AI.Manager.Application.Services;
@@ -14,6 +16,14 @@ using Rochas.AI.Manager.Domain.Training;
 using Rochas.AI.Manager.Domain.Entities;
 
 var builder = WebApplication.CreateBuilder(args);
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .CreateLogger();
+builder.Host.UseSerilog();
+
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -83,6 +93,10 @@ builder.Services.AddScoped<IGenericRepository<BridgeCapture>>(sp => sp.GetRequir
 builder.Services.AddScoped<IPersistenceRepository<BridgeCapture>>(sp => sp.GetRequiredService<GenericRepository<BridgeCapture>>());
 builder.Services.AddScoped(_ => new GenericRepository<BridgeCapture>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 
+builder.Services.AddScoped<IGenericRepository<TrainingWorkflowCard>>(sp => sp.GetRequiredService<GenericRepository<TrainingWorkflowCard>>());
+builder.Services.AddScoped<IPersistenceRepository<TrainingWorkflowCard>>(sp => sp.GetRequiredService<GenericRepository<TrainingWorkflowCard>>());
+builder.Services.AddScoped(_ => new GenericRepository<TrainingWorkflowCard>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
 builder.Services.AddScoped<IGenericRepository<User>>(sp => sp.GetRequiredService<GenericRepository<User>>());
 builder.Services.AddScoped<IPersistenceRepository<User>>(sp => sp.GetRequiredService<GenericRepository<User>>());
 builder.Services.AddScoped(_ => new GenericRepository<User>(DatabaseEngine.SQLite, AppDb.ConnectionString));
@@ -101,6 +115,7 @@ builder.Services.AddScoped<IHarnessProfileService>(sp => new HarnessProfileServi
 builder.Services.AddScoped<ITrainingJobService, TrainingJobService>();
 builder.Services.AddScoped<ITrainingEngine, TrainingEngine>();
 builder.Services.AddScoped<IHarnessLinter, HarnessLinter>();
+builder.Services.AddScoped<IAccuracyEvaluator, AccuracyEvaluator>();
 builder.Services.AddScoped<IModelArtifactService, ModelArtifactService>();
 builder.Services.AddScoped<IDatasetService, DatasetService>();
 builder.Services.AddScoped<IInstructionProfileService, InstructionProfileService>();
@@ -112,6 +127,11 @@ builder.Services.AddScoped<IToolPolicyService, ToolPolicyService>();
 builder.Services.AddScoped<IModelBindingService, ModelBindingService>();
 builder.Services.AddScoped<IHarnessRunService, HarnessRunService>();
 builder.Services.AddScoped<IBridgeCaptureService, BridgeCaptureService>();
+builder.Services.AddScoped<ITrainingWorkflowService>(sp => new TrainingWorkflowService(
+    sp.GetRequiredService<IGenericRepository<TrainingWorkflowCard>>(),
+    sp.GetRequiredService<IPersistenceRepository<TrainingWorkflowCard>>(),
+    sp.GetRequiredService<IAccuracyEvaluator>(),
+    AppDb.ConnectionString));
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 
@@ -129,4 +149,5 @@ app.MapControllers();
 
 // AppDb is in Web project; replicate init here
 Rochas.AI.Manager.Infrastructure.Data.AppDb.Init();
+app.MapGet("/health", () => Results.Ok(new { status = "ok", timestamp = DateTime.UtcNow }));
 app.Run();

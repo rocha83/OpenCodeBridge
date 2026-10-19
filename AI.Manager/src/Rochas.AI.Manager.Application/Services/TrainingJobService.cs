@@ -24,7 +24,7 @@ public sealed class TrainingJobService(
         return job.Id;
     }
 
-    public async Task<TrainingJob?> GetAsync(int id, CancellationToken ct = default) => await _repo.Get(id);
+    public async Task<TrainingJob?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM training_jobs WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
 
     public async Task<IReadOnlyList<TrainingJob>> ListAsync(CancellationToken ct = default)
     {
@@ -34,7 +34,7 @@ public sealed class TrainingJobService(
 
     public async Task CancelAsync(int id, CancellationToken ct = default)
     {
-        var job = await _repo.Get(id) ?? throw new KeyNotFoundException($"Training job {id} not found.");
+        var job = (await _repo.QueryRaw("SELECT * FROM training_jobs WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Training job {id} not found.");
         job.Status = "Cancelled";
         job.CompletedAt = DateTime.UtcNow;
         await _write.Update(job, new TrainingJob { Id = id });
@@ -42,7 +42,7 @@ public sealed class TrainingJobService(
 
     public async Task StartAsync(int id, CancellationToken ct = default)
     {
-        var job = await _repo.Get(id) ?? throw new KeyNotFoundException($"Training job {id} not found.");
+        var job = (await _repo.QueryRaw("SELECT * FROM training_jobs WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Training job {id} not found.");
         if (job.Status != "Queued") throw new InvalidOperationException("Only Queued jobs can start.");
         job.Status = "Running";
         job.StartedAt = DateTime.UtcNow;
@@ -51,7 +51,7 @@ public sealed class TrainingJobService(
 
     public async Task ReportProgressAsync(int id, double? lastLoss, double? vramUsedMb, CancellationToken ct = default)
     {
-        var job = await _repo.Get(id) ?? throw new KeyNotFoundException($"Training job {id} not found.");
+        var job = (await _repo.QueryRaw("SELECT * FROM training_jobs WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Training job {id} not found.");
         if (job.Status != "Running") throw new InvalidOperationException("Only Running jobs can report progress.");
         if (lastLoss.HasValue) job.LastLoss = lastLoss.Value;
         if (vramUsedMb.HasValue) job.VramUsedMb = vramUsedMb.Value;
@@ -60,7 +60,7 @@ public sealed class TrainingJobService(
 
     public async Task CompleteAsync(int id, CancellationToken ct = default)
     {
-        var job = await _repo.Get(id) ?? throw new KeyNotFoundException($"Training job {id} not found.");
+        var job = (await _repo.QueryRaw("SELECT * FROM training_jobs WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Training job {id} not found.");
         if (job.Status != "Running") throw new InvalidOperationException("Only Running jobs can complete.");
         job.Status = "Completed";
         job.CompletedAt = DateTime.UtcNow;
@@ -69,7 +69,7 @@ public sealed class TrainingJobService(
 
     public async Task FailAsync(int id, string errorMessage, CancellationToken ct = default)
     {
-        var job = await _repo.Get(id) ?? throw new KeyNotFoundException($"Training job {id} not found.");
+        var job = (await _repo.QueryRaw("SELECT * FROM training_jobs WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Training job {id} not found.");
         job.Status = "Failed";
         job.ErrorMessage = errorMessage;
         job.CompletedAt = DateTime.UtcNow;

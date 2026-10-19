@@ -29,7 +29,7 @@ public sealed class HarnessRunService(
         return r.Id;
     }
 
-    public async Task<HarnessRun?> GetAsync(int id, CancellationToken ct = default) => await _repo.Get(id);
+    public async Task<HarnessRun?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM harness_runs WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
 
     public async Task<IReadOnlyList<HarnessRun>> ListAsync(CancellationToken ct = default)
     {

@@ -24,7 +24,7 @@ public sealed class BridgeCaptureService(
         return c.Id;
     }
 
-    public async Task<BridgeCapture?> GetAsync(int id, CancellationToken ct = default) => await _repo.Get(id);
+    public async Task<BridgeCapture?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM bridge_captures WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
 
     public async Task<IReadOnlyList<BridgeCapture>> ListAsync(CancellationToken ct = default)
     {

@@ -9,4 +9,5 @@ public interface ITrainingWorkflowService
     Task<IReadOnlyList<TrainingWorkflowCard>> ListAsync(CancellationToken ct = default);
     Task MoveAsync(int id, int statusId, CancellationToken ct = default);
     Task UpdateAccuracyAsync(int id, double accuracy, CancellationToken ct = default);
+    Task<AccuracyResult> EvaluateAsync(int id, string expected, string actual, CancellationToken ct = default);
 }

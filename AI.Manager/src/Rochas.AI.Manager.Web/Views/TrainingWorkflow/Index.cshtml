@@ -1,0 +1,37 @@
+@model IEnumerable<Rochas.AI.Manager.Domain.Entities.TrainingWorkflowCard>
+@{
+    ViewData["Title"] = "Fluxo de Treinamento";
+}
+<h2>Fluxo de Treinamento</h2>
+<form id="createForm" class="row g-2 mb-3">
+  <div class="col-md-3"><input name="title" class="form-control" placeholder="Título" required /></div>
+  <div class="col-md-3"><input name="description" class="form-control" placeholder="Descrição" /></div>
+  <div class="col-md-2"><input name="experimentId" type="number" class="form-control" placeholder="Exp #" /></div>
+  <div class="col-md-2"><input name="targetAccuracy" type="number" step="0.01" class="form-control" placeholder="Alvo" value="0.9" /></div>
+  <div class="col-md-2"><button type="submit" class="btn btn-primary w-100">Criar</button></div>
+</form>
+<table class="table table-sm">
+  <thead><tr><th>Título</th><th>Status</th><th>Acurácia</th><th>Alvo</th><th>Ações</th></tr></thead>
+  <tbody>
+  @foreach (var c in Model)
+  {
+    <tr>
+      <td>@c.Title</td>
+      <td>@c.StatusId</td>
+      <td>@(c.Accuracy?.ToString("P2") ?? "-")</td>
+      <td>@c.TargetAccuracy.ToString("P2")</td>
+      <td>
+        <button class="btn btn-sm btn-secondary" onclick="move(@c.Id)">Mover</button>
+        <button class="btn btn-sm btn-info" onclick="acc(@c.Id)">Acurácia</button>
+      </td>
+    </tr>
+  }
+  </tbody>
+</table>
+@section Scripts {
+<script>
+async function move(id){ const s=prompt('Novo status (1..):','2'); if(!s) return; const fd=new FormData(); fd.append('id',id); fd.append('statusId',s); const t=document.querySelector('input[name=__RequestVerificationToken]')?.value; await fetch('/TrainingWorkflow/Move',{method:'POST',body:fd,headers:t?{'RequestVerificationToken':t}:{}}); location.reload(); }
+async function acc(id){ const a=prompt('Acurácia (0..1):'); if(a===null) return; const fd=new FormData(); fd.append('id',id); fd.append('accuracy',a); const t=document.querySelector('input[name=__RequestVerificationToken]')?.value; await fetch('/TrainingWorkflow/Accuracy',{method:'POST',body:fd,headers:t?{'RequestVerificationToken':t}:{}}); location.reload(); }
+document.getElementById('createForm').addEventListener('submit', async e=>{ e.preventDefault(); const fd=new FormData(e.target); const t=document.querySelector('input[name=__RequestVerificationToken]')?.value; const r=await fetch('/TrainingWorkflow/Create',{method:'POST',body:fd,headers:t?{'RequestVerificationToken':t}:{}}); if(r.ok) location.reload(); });
+</script>
+}

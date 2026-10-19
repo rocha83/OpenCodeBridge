@@ -2,30 +2,117 @@
 @{
     ViewData["Title"] = "Harness Profiles";
 }
-<div class="row">
-  <div class="col-12">
-    <h2>Harness Profiles</h2>
-    <form id="createForm" class="row g-2 mb-3">
-      <div class="col-md-4"><input name="name" class="form-control" placeholder="Nome do perfil" required  required/></div>
-      <div class="col-md-5"><input name="description" class="form-control" placeholder="Descrição"  required/></div>
-      <div class="col-md-3"><button type="submit" class="btn btn-primary w-100">Criar</button></div>
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" action="/Harness" class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label small text-muted mb-1">Critério (nome)</label>
+        <input name="criterio" class="form-control form-control-sm" value="@ViewBag.Criterio" placeholder="ex.: opencode..." />
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-sm btn-info">Buscar</button>
+        <a href="/Harness" class="btn btn-sm btn-outline-secondary">Limpar</a>
+      </div>
     </form>
-    <div id="listContainer">
-      @await Html.PartialAsync("_ProfileList", Model)
+  </div>
+</div>
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center p-3">
+    <p class="fw-bold mb-0">Harness Profiles</p>
+    <div>
+      <span class="small text-muted me-2">@Model.Count() cadastrados</span>
+      <button class="btn btn-sm btn-info" data-mdb-toggle="modal" data-mdb-target="#harnessModal-new">Novo perfil</button>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-striped data-grid">
+      <thead><tr><th>Nome</th><th>Status</th><th>Versões</th><th>Ações</th></tr></thead>
+      <tbody>
+      @foreach (var p in Model)
+      {
+        <tr>
+          <td>@p.Name</td>
+          <td>@p.Status</td>
+          <td>@p.Versions.Count</td>
+          <td>
+            <button class="btn btn-sm btn-secondary" data-mdb-toggle="modal" data-mdb-target="#harnessModal-@p.Id">Editar</button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="addVersion('@p.Id')">+Versão</button>
+            <button class="btn btn-sm btn-info" onclick="lintText()">Lint</button>
+          </td>
+        </tr>
+      }
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="harnessModal-new" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-fullscreen-md-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title mb-0">Novo perfil de harness</h6>
+        <button type="button" class="btn-close" data-mdb-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <form method="post" action="/Harness/Create">
+        @Html.AntiForgeryToken()
+        <div class="modal-body">
+          <div class="mb-2"><label class="form-label">Nome</label><input name="name" class="form-control" required /></div>
+          <div class="mb-2"><label class="form-label">Descrição</label><input name="description" class="form-control" /></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-mdb-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-info">Salvar</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
+
+@foreach (var p in Model)
+{
+  <div class="modal fade" id="harnessModal-@p.Id" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-fullscreen-md-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title mb-0">Editar perfil: @p.Name</h6>
+          <button type="button" class="btn-close" data-mdb-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <form method="post" action="/Harness/Create">
+          @Html.AntiForgeryToken()
+          <div class="modal-body">
+            <div class="mb-2"><label class="form-label">Nome</label><input name="name" class="form-control" value="@p.Name" required /></div>
+            <div class="mb-2"><label class="form-label">Descrição</label><input name="description" class="form-control" value="@p.Description" /></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-mdb-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-info">Salvar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+}
+
 @section Scripts {
 <script>
-async function reloadList() {
-  const r = await fetch('/Harness/Partial/List');
-  document.getElementById('listContainer').innerHTML = await r.text();
+async function addVersion(profileId) {
+  const mode = prompt('Modo (ClientNative/BridgeBypass/BridgeLegacy/Hybrid):', 'ClientNative');
+  if (!mode) return;
+  const checksum = prompt('Checksum (opcional):', '');
+  const fd = new FormData();
+  fd.append('profileId', profileId);
+  fd.append('mode', mode);
+  if (checksum) fd.append('checksum', checksum);
+  const token = document.querySelector('input[name=__RequestVerificationToken]')?.value;
+  const res = await fetch('/Harness/Version', { method: 'POST', body: fd, headers: token ? { 'RequestVerificationToken': token } : {} });
+  if (res.ok) { location.reload(); }
 }
-document.getElementById('createForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const res = await fetch('/Harness/Create', { method: 'POST', body: fd, headers: { 'RequestVerificationToken': document.querySelector('input[name=__RequestVerificationToken]').value } });
-  if (res.ok) { e.target.reset(); await reloadList(); }
-});
+async function lintText() {
+  const content = prompt('Texto do harness para lint:');
+  if (content === null) return;
+  const res = await fetch('/Harness/Lint', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }) });
+  const data = await res.json();
+  alert(data.ok ? 'OK: sem hardcodes.' : 'Hardcodes: ' + data.findings.join('; '));
+}
 </script>
 }

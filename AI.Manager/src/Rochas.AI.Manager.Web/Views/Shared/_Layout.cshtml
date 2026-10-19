@@ -6,6 +6,13 @@
 <title>@ViewData["Title"] - Rochas.AI.Manager</title>
 <link href="~/lib/mdb/mdb.min.css" rel="stylesheet" />
 <link href="~/lib/fontawesome/css/all.min.css" rel="stylesheet" />
+<link href="~/css/black.css" rel="stylesheet" />
+<script>
+  (function() {
+    var theme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-bs-theme', theme);
+  })();
+</script>
 <style>
   .sidebar { width: 240px; min-height: 100vh; }
   @@media (max-width: 768px) { .sidebar { position: fixed; left: -240px; z-index: 1040; transition: left .3s; } .sidebar.show { left: 0; } }
@@ -13,11 +20,13 @@
 </style>
 </head>
 <body>
+@Html.AntiForgeryToken()
 <div class="d-flex">
   <nav class="sidebar bg-dark text-white p-3" id="sidebar">
     <h5 class="mb-3">Rochas.AI.Manager</h5>
     <ul class="nav flex-column">
       <li class="nav-item"><a class="nav-link text-white" href="/Harness"><i class="fas fa-sliders-h me-2"></i>Harness</a></li>
+      <li class="nav-item"><a class="nav-link text-white" href="/TrainingWorkflow"><i class="fas fa-stream me-2"></i>Fluxo Treino</a></li>
       <li class="nav-item"><a class="nav-link text-white" href="/ModelArtifacts"><i class="fas fa-cube me-2"></i>Model Artifacts</a></li>
       <li class="nav-item"><a class="nav-link text-white" href="/Datasets"><i class="fas fa-database me-2"></i>Datasets</a></li>
       <li class="nav-item"><a class="nav-link text-white" href="/InstructionProfiles"><i class="fas fa-file-alt me-2"></i>Instruction Profiles</a></li>
@@ -28,24 +37,33 @@
       <li class="nav-item"><a class="nav-link text-white" href="/ModelBindings"><i class="fas fa-link me-2"></i>Model Bindings</a></li>
       <li class="nav-item"><a class="nav-link text-white" href="/Users"><i class="fas fa-users me-2"></i>Usuários</a></li>
       <li class="nav-item"><a class="nav-link text-white" href="/Agents"><i class="fas fa-robot me-2"></i>Agentes</a></li>
-          <li class="nav-item"><a class="nav-link text-white" href="/HarnessRuns"><i class="fas fa-running me-2"></i>Harness Runs</a></li>
+      <li class="nav-item"><a class="nav-link text-white" href="/HarnessRuns"><i class="fas fa-running me-2"></i>Harness Runs</a></li>
       <li class="nav-item"><a class="nav-link text-white" href="/BridgeCaptures"><i class="fas fa-camera me-2"></i>Bridge Captures</a></li>
     </ul>
   </nav>
   <div class="content">
-    <nav class="navbar navbar-dark bg-dark">
+    <nav class="navbar navbar-expand navbar-dark topbar">
       <div class="container-fluid">
         <button class="btn btn-sm btn-outline-light d-md-none" onclick="document.getElementById('sidebar').classList.toggle('show')"><i class="fas fa-bars"></i></button>
         <span class="navbar-brand mb-0 h1">@ViewData["Title"]</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="themeToggle" title="Alternar tema">
+          <i class="fas fa-sun"></i>
+        </button>
       </div>
     </nav>
     <main class="container-fluid py-3">@RenderBody()</main>
   </div>
 </div>
 <script src="~/lib/mdb/mdb.min.js"></script>
-
-
-
+<script>
+  document.getElementById('themeToggle')?.addEventListener('click', function() {
+    var html = document.documentElement;
+    var theme = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-bs-theme', theme);
+    localStorage.setItem('theme', theme);
+    this.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+  });
+</script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('table.data-grid').forEach(function(table) {
@@ -54,18 +72,15 @@ document.addEventListener('DOMContentLoaded', function() {
     var allRows = Array.from(tbody.rows);
     var pageSize = 8;
     var currentPage = 1;
-
     var search = document.createElement('input');
     search.type = 'search';
     search.placeholder = 'Buscar...';
     search.className = 'form-control form-control-sm mb-2';
     wrapper.insertBefore(search, table);
-
     var pag = document.createElement('div');
     pag.className = 'd-flex justify-content-between align-items-center mt-2';
     pag.innerHTML = '<button class="btn btn-sm btn-outline-light" id="prev">Anterior</button><span id="info"></span><button class="btn btn-sm btn-outline-light" id="next">Próximo</button>';
     wrapper.appendChild(pag);
-
     function filteredRows() {
       var q = search.value.toLowerCase();
       return allRows.filter(function(r){ return r.textContent.toLowerCase().includes(q); });
@@ -90,7 +105,6 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 </script>
-
 @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

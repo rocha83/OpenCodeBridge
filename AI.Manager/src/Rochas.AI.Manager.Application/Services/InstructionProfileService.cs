@@ -25,7 +25,7 @@ public sealed class InstructionProfileService(
         return p.Id;
     }
 
-    public async Task<InstructionProfile?> GetAsync(int id, CancellationToken ct = default) => await _repo.Get(id);
+    public async Task<InstructionProfile?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM instruction_profiles WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
 
     public async Task<IReadOnlyList<InstructionProfile>> ListAsync(CancellationToken ct = default)
     {
@@ -35,7 +35,7 @@ public sealed class InstructionProfileService(
 
     public async Task ApproveAsync(int id, CancellationToken ct = default)
     {
-        var p = await _repo.Get(id) ?? throw new KeyNotFoundException($"Instruction profile {id} not found.");
+        var p = (await _repo.QueryRaw("SELECT * FROM instruction_profiles WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Instruction profile {id} not found.");
         if (p.Status != "Draft") throw new InvalidOperationException("Only Draft profiles can be approved.");
         p.Status = "Approved";
         await _write.Update(p, new InstructionProfile { Id = id });
@@ -43,7 +43,7 @@ public sealed class InstructionProfileService(
 
     public async Task DeprecateAsync(int id, CancellationToken ct = default)
     {
-        var p = await _repo.Get(id) ?? throw new KeyNotFoundException($"Instruction profile {id} not found.");
+        var p = (await _repo.QueryRaw("SELECT * FROM instruction_profiles WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Instruction profile {id} not found.");
         p.Status = "Deprecated";
         await _write.Update(p, new InstructionProfile { Id = id });
     }

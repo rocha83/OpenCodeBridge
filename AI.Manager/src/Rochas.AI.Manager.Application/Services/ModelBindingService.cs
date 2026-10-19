@@ -28,7 +28,7 @@ public sealed class ModelBindingService(
         return b.Id;
     }
 
-    public async Task<ModelBinding?> GetAsync(int id, CancellationToken ct = default) => await _repo.Get(id);
+    public async Task<ModelBinding?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM model_bindings WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
 
     public async Task<IReadOnlyList<ModelBinding>> ListAsync(CancellationToken ct = default)
     {
@@ -38,7 +38,7 @@ public sealed class ModelBindingService(
 
     public async Task UpdateAsync(int id, int maxTokens, int contextWindow, string thinking, double temperature, CancellationToken ct = default)
     {
-        var b = await _repo.Get(id) ?? throw new KeyNotFoundException($"ModelBinding {id} not found.");
+        var b = (await _repo.QueryRaw("SELECT * FROM model_bindings WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"ModelBinding {id} not found.");
         b.MaxTokens = maxTokens <= 0 ? b.MaxTokens : maxTokens;
         b.ContextWindow = contextWindow <= 0 ? b.ContextWindow : contextWindow;
         b.Thinking = string.IsNullOrWhiteSpace(thinking) ? b.Thinking : thinking.Trim();

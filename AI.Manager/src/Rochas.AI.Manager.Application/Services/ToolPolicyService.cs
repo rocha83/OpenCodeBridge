@@ -26,7 +26,7 @@ public sealed class ToolPolicyService(
         return p.Id;
     }
 
-    public async Task<ToolPolicy?> GetAsync(int id, CancellationToken ct = default) => await _repo.Get(id);
+    public async Task<ToolPolicy?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM tool_policies WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
 
     public async Task<IReadOnlyList<ToolPolicy>> ListAsync(CancellationToken ct = default)
     {
@@ -36,7 +36,7 @@ public sealed class ToolPolicyService(
 
     public async Task UpdateAsync(int id, string allow, string deny, bool requireCall, int maxTurns, int stallLimit, CancellationToken ct = default)
     {
-        var p = await _repo.Get(id) ?? throw new KeyNotFoundException($"ToolPolicy {id} not found.");
+        var p = (await _repo.QueryRaw("SELECT * FROM tool_policies WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"ToolPolicy {id} not found.");
         p.Allow = allow ?? string.Empty;
         p.Deny = deny ?? string.Empty;
         p.RequireCall = requireCall;

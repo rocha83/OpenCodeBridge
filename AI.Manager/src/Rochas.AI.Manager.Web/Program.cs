@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Rochas.AI.Manager.Domain.Interfaces;
+using Serilog;
+using Serilog.Events;
 using Rochas.AI.Manager.Infrastructure.Data;
 using Rochas.AI.Manager.TrainingEngine;
 using Rochas.AI.Manager.Application.Services;
@@ -16,6 +18,14 @@ using Rochas.AI.Manager.Domain.Training;
 using Rochas.AI.Manager.Domain.Entities;
 
 var builder = WebApplication.CreateBuilder(args);
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .CreateLogger();
+builder.Host.UseSerilog();
+
 
 builder.Services.AddControllersWithViews();
 builder.Services.AddSingleton<IPasswordHasher, Rochas.AI.Manager.Infrastructure.Services.PasswordHasherService>();
@@ -83,6 +93,10 @@ builder.Services.AddScoped<IGenericRepository<BridgeCapture>>(sp => sp.GetRequir
 builder.Services.AddScoped<IPersistenceRepository<BridgeCapture>>(sp => sp.GetRequiredService<GenericRepository<BridgeCapture>>());
 builder.Services.AddScoped(_ => new GenericRepository<BridgeCapture>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 
+builder.Services.AddScoped<IGenericRepository<TrainingWorkflowCard>>(sp => sp.GetRequiredService<GenericRepository<TrainingWorkflowCard>>());
+builder.Services.AddScoped<IPersistenceRepository<TrainingWorkflowCard>>(sp => sp.GetRequiredService<GenericRepository<TrainingWorkflowCard>>());
+builder.Services.AddScoped(_ => new GenericRepository<TrainingWorkflowCard>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
 // Users
 builder.Services.AddScoped<IGenericRepository<User>>(sp => sp.GetRequiredService<GenericRepository<User>>());
 builder.Services.AddScoped<IPersistenceRepository<User>>(sp => sp.GetRequiredService<GenericRepository<User>>());
@@ -103,6 +117,7 @@ builder.Services.AddScoped<IHarnessProfileService>(sp => new HarnessProfileServi
 builder.Services.AddScoped<ITrainingJobService, TrainingJobService>();
 builder.Services.AddScoped<ITrainingEngine, TrainingEngine>();
 builder.Services.AddScoped<IHarnessLinter, HarnessLinter>();
+builder.Services.AddScoped<IAccuracyEvaluator, AccuracyEvaluator>();
 builder.Services.AddScoped<IModelArtifactService, ModelArtifactService>();
 builder.Services.AddScoped<IDatasetService, DatasetService>();
 builder.Services.AddScoped<IInstructionProfileService, InstructionProfileService>();
@@ -114,6 +129,11 @@ builder.Services.AddScoped<IToolPolicyService, ToolPolicyService>();
 builder.Services.AddScoped<IModelBindingService, ModelBindingService>();
 builder.Services.AddScoped<IHarnessRunService, HarnessRunService>();
 builder.Services.AddScoped<IBridgeCaptureService, BridgeCaptureService>();
+builder.Services.AddScoped<ITrainingWorkflowService>(sp => new TrainingWorkflowService(
+    sp.GetRequiredService<IGenericRepository<TrainingWorkflowCard>>(),
+    sp.GetRequiredService<IPersistenceRepository<TrainingWorkflowCard>>(),
+    sp.GetRequiredService<IAccuracyEvaluator>(),
+    AppDb.ConnectionString));
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 
@@ -156,4 +176,20 @@ using (var scope = app.Services.CreateScope())
     var linter = scope.ServiceProvider.GetRequiredService<IHarnessLinter>();
     await HarnessSeeder.SeedAsync(profiles, attachments, linter);
 }
+app.MapGet("/health", () =>
+{
+    var diag = Environment.GetEnvironmentVariable("DIAGNOSTICS_ENABLED") is "1" or "true" or "True";
+    var payload = new Dictionary<string, object>
+    {
+        ["status"] = "ok",
+        ["timestamp"] = DateTime.UtcNow,
+        ["diagnostics"] = diag
+    };
+    if (diag)
+    {
+        payload["memory_mb"] = GC.GetTotalMemory(false) / (1024 * 1024);
+        payload["uptime_s"] = (DateTime.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalSeconds;
+    }
+    return Results.Ok(payload);
+});
 app.Run();

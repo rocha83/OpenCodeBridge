@@ -24,4 +24,4 @@
   <ItemGroup>
     <ProjectReference Include="..\Rochas.AI.Manager.Infrastructure\Rochas.AI.Manager.Infrastructure.csproj" />
   </ItemGroup>
-</Project>
+<ItemGroup><PackageReference Include="Rochas.Telemetry" Version="1.1.1" /></ItemGroup><ItemGroup><PackageReference Include="Serilog" Version="4.4.0" /><PackageReference Include="Serilog.AspNetCore" Version="10.0.0" /><PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" /></ItemGroup></Project>

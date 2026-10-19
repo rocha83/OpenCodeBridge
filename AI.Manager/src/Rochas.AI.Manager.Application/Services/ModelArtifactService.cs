@@ -33,7 +33,7 @@ public sealed class ModelArtifactService(
         return a.Id;
     }
 
-    public async Task<ModelArtifact?> GetAsync(int id, CancellationToken ct = default) => await _repo.Get(id);
+    public async Task<ModelArtifact?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM model_artifacts WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
 
     public async Task<IReadOnlyList<ModelArtifact>> ListAsync(CancellationToken ct = default)
     {
@@ -43,23 +43,29 @@ public sealed class ModelArtifactService(
 
     public async Task ApproveAsync(int id, CancellationToken ct = default)
     {
-        var a = await _repo.Get(id) ?? throw new KeyNotFoundException($"Model artifact {id} not found.");
+        var a = (await _repo.QueryRaw("SELECT * FROM model_artifacts WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Model artifact {id} not found.");
         if (a.Status != "Draft") throw new InvalidOperationException("Only Draft artifacts can be approved.");
+        var old = new ModelArtifact();
+        foreach (var prop in typeof(ModelArtifact).GetProperties()) prop.SetValue(old, prop.GetValue(a));
         a.Status = "Approved";
-        await _write.Update(a, new ModelArtifact { Id = id });
+        await _write.Update(a, old);
     }
 
     public async Task DeprecateAsync(int id, CancellationToken ct = default)
     {
-        var a = await _repo.Get(id) ?? throw new KeyNotFoundException($"Model artifact {id} not found.");
+        var a = (await _repo.QueryRaw("SELECT * FROM model_artifacts WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Model artifact {id} not found.");
+        var old = new ModelArtifact();
+        foreach (var prop in typeof(ModelArtifact).GetProperties()) prop.SetValue(old, prop.GetValue(a));
         a.Status = "Deprecated";
-        await _write.Update(a, new ModelArtifact { Id = id });
+        await _write.Update(a, old);
     }
 
     public async Task UpdateHashAsync(int id, string hash, CancellationToken ct = default)
     {
-        var a = await _repo.Get(id) ?? throw new KeyNotFoundException($"Model artifact {id} not found.");
+        var a = (await _repo.QueryRaw("SELECT * FROM model_artifacts WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Model artifact {id} not found.");
+        var old = new ModelArtifact();
+        foreach (var prop in typeof(ModelArtifact).GetProperties()) prop.SetValue(old, prop.GetValue(a));
         a.FileHash = hash;
-        await _write.Update(a, new ModelArtifact { Id = id });
+        await _write.Update(a, old);
     }
 }

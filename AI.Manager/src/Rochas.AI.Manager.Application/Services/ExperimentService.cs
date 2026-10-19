@@ -25,7 +25,7 @@ public sealed class ExperimentService(
         return e.Id;
     }
 
-    public async Task<Experiment?> GetAsync(int id, CancellationToken ct = default) => await _repo.Get(id);
+    public async Task<Experiment?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM experiments WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
 
     public async Task<IReadOnlyList<Experiment>> ListAsync(CancellationToken ct = default)
     {
@@ -35,7 +35,7 @@ public sealed class ExperimentService(
 
     public async Task StartAsync(int id, CancellationToken ct = default)
     {
-        var e = await _repo.Get(id) ?? throw new KeyNotFoundException($"Experiment {id} not found.");
+        var e = (await _repo.QueryRaw("SELECT * FROM experiments WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Experiment {id} not found.");
         if (e.Status != "Planned") throw new InvalidOperationException("Only Planned experiments can start.");
         e.Status = "Running";
         await _write.Update(e, new Experiment { Id = id });
@@ -43,7 +43,7 @@ public sealed class ExperimentService(
 
     public async Task CompleteAsync(int id, string? metricsJson, CancellationToken ct = default)
     {
-        var e = await _repo.Get(id) ?? throw new KeyNotFoundException($"Experiment {id} not found.");
+        var e = (await _repo.QueryRaw("SELECT * FROM experiments WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Experiment {id} not found.");
         if (e.Status != "Running") throw new InvalidOperationException("Only Running experiments can complete.");
         e.Status = "Completed";
         e.MetricsJson = metricsJson;
@@ -52,7 +52,7 @@ public sealed class ExperimentService(
 
     public async Task ApproveAsync(int id, CancellationToken ct = default)
     {
-        var e = await _repo.Get(id) ?? throw new KeyNotFoundException($"Experiment {id} not found.");
+        var e = (await _repo.QueryRaw("SELECT * FROM experiments WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Experiment {id} not found.");
         if (e.Status != "Completed") throw new InvalidOperationException("Only Completed experiments can be approved.");
         e.Status = "Approved";
         await _write.Update(e, new Experiment { Id = id });
@@ -60,7 +60,7 @@ public sealed class ExperimentService(
 
     public async Task RejectAsync(int id, CancellationToken ct = default)
     {
-        var e = await _repo.Get(id) ?? throw new KeyNotFoundException($"Experiment {id} not found.");
+        var e = (await _repo.QueryRaw("SELECT * FROM experiments WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Experiment {id} not found.");
         e.Status = "Rejected";
         await _write.Update(e, new Experiment { Id = id });
     }

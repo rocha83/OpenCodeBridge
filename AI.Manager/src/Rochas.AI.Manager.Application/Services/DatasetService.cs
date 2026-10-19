@@ -30,7 +30,7 @@ public sealed class DatasetService(
         return d.Id;
     }
 
-    public async Task<Dataset?> GetAsync(int id, CancellationToken ct = default) => await _repo.Get(id);
+    public async Task<Dataset?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM datasets WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
 
     public async Task<IReadOnlyList<Dataset>> ListAsync(CancellationToken ct = default)
     {
@@ -40,7 +40,7 @@ public sealed class DatasetService(
 
     public async Task ValidateAsync(int id, bool isValid, CancellationToken ct = default)
     {
-        var d = await _repo.Get(id) ?? throw new KeyNotFoundException($"Dataset {id} not found.");
+        var d = (await _repo.QueryRaw("SELECT * FROM datasets WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Dataset {id} not found.");
         d.IsValidated = isValid;
         await _write.Update(d, new Dataset { Id = id });
     }

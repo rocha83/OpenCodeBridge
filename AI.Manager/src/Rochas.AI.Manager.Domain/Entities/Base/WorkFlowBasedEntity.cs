@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Rochas.AI.Manager.Domain.Entities.Base;
 
-public abstract class WorkFlowBasedEntity : AuditableEntity
+public abstract class WorkFlowBasedEntity : AuditableEntity, Rochas.AI.Manager.Domain.Interfaces.Base.IWorkflowBasedEntity
 {
     [Column("status_id")]
     public int StatusId { get; set; }
@@ -36,5 +36,25 @@ public abstract class WorkFlowBasedEntity : AuditableEntity
     {
         StatusId = statusId;
         NextStatusId = nextStatusId;
+    }
+
+    public virtual void RequestApproval(int requesterId, string? requestNote = null)
+    {
+        RequesterId = requesterId;
+        RequestNote = requestNote;
+    }
+
+    public virtual void Approve(int approverId, string? approvalNote = null)
+    {
+        ApproverId = approverId;
+        ApprovalNote = approvalNote;
+        Approved = true;
+    }
+
+    public virtual void Reject(int approverId, string? approvalNote = null)
+    {
+        ApproverId = approverId;
+        ApprovalNote = approvalNote;
+        Approved = false;
     }
 }
