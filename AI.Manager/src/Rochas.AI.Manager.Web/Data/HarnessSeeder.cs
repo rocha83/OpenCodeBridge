@@ -16,8 +16,7 @@ public static class HarnessSeeder
 - Fail-fast honesto: nao invente tool/modelo/comando.
 - Contexto primeiro: leia docs e historico antes de planejar.
 - Idioma do usuario; tool calls completas; diffs ao editar.
-- Build de integridade: nao conclua com build/teste vermelho.
-- Delegacao: divida em sub-tarefas autocontidas com OBJETIVO+ESCOPO+PROIBIDO+ACEITE.";
+- Build de integridade: nao conclua com build/teste vermelho.";
 
         var linterFindings = linter.FindHardcodes(core);
         if (linterFindings.Count > 0) return;
