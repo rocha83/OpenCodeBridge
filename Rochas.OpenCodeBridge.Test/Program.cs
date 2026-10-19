@@ -18,6 +18,7 @@ internal static class Program
             else if (args[i] == "--vllm" && i + 1 < args.Length) TestContext.Vllm = args[++i].TrimEnd('/');
             else if (args[i] == "--skip-e2e") TestContext.SkipE2E = true;
             else if (args[i] == "--only" && i + 1 < args.Length) TestContext.Only = args[++i];
+            else if (args[i] == "--belts" && i + 1 < args.Length) TestContext.BeltsFilter = args[++i];
 
             else if (args[i] == "--api-key" && i + 1 < args.Length) TestContext.ApiKey = args[++i];
             else if (args[i] == "--jwt" && i + 1 < args.Length) TestContext.Jwt = args[++i];

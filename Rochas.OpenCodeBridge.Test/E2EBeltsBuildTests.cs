@@ -42,7 +42,7 @@ internal static class E2EBeltsBuildTests
             new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write", ["description"]="escreve arquivo em disco", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
         };
         int pass = 0, fail = 0;
-        var keysEnv = Environment.GetEnvironmentVariable("BELTS_KEYS");
+        var keysEnv = string.IsNullOrWhiteSpace(TestContext.BeltsFilter) ? Environment.GetEnvironmentVariable("BELTS_KEYS") : TestContext.BeltsFilter;
         var beltsToRun = string.IsNullOrWhiteSpace(keysEnv)
             ? Belts
             : Belts.Where(b => keysEnv.Split(',').Select(x=>x.Trim()).Contains(b.Key)).ToArray();

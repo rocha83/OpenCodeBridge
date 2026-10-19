@@ -12,8 +12,11 @@ internal static class TestContext
     public static string Bridge = "http://127.0.0.1:4124";
     public static string Vllm = "http://127.0.0.1:4100";
     public static bool SkipE2E;
-    public static string Only = "";
-    public static string? ApiKey;
+    public static string Only = "";
+    public static string BeltsFilter = "";
+
+    public static string? ApiKey;
+
     public static string? Jwt;
     // 20 min: os E2E enterprise (crud-*/garnet/worker) geram muito e, sob carga da suite
     // inteira, passavam de 600s (visto 16/10); isolados ficam em ~110-215s.
