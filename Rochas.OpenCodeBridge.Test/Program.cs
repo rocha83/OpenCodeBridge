@@ -17,7 +17,8 @@ internal static class Program
             if (args[i] == "--bridge" && i + 1 < args.Length) TestContext.Bridge = args[++i].TrimEnd('/');
             else if (args[i] == "--vllm" && i + 1 < args.Length) TestContext.Vllm = args[++i].TrimEnd('/');
             else if (args[i] == "--skip-e2e") TestContext.SkipE2E = true;
-            else if (args[i] == "--only" && i + 1 < args.Length) TestContext.Only = args[++i];
+            else if (args[i] == "--only" && i + 1 < args.Length) TestContext.Only = args[++i];
+
             else if (args[i] == "--api-key" && i + 1 < args.Length) TestContext.ApiKey = args[++i];
             else if (args[i] == "--jwt" && i + 1 < args.Length) TestContext.Jwt = args[++i];
             else if (args[i] == "--role" && i + 1 < args.Length) TestContext.Role = args[++i];
@@ -58,15 +59,24 @@ internal static class Program
         TestContext.Run("U-tools-execute", UnitToolsExecuteTests.ToolsExecute);
         TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
         TestContext.Run("U-sanitize-system-first", UnitBypassTests.SanitizeSystemFirst);
-        TestContext.Run("U-translate-system-first", UnitBypassTests.TranslateSystemFirst);
-        TestContext.Run("U-auth-jwt-roundtrip", UnitAuthTests.JwtRoundtrip);
-        TestContext.Run("U-auth-jwt-tamper", UnitAuthTests.JwtTamper);
-        TestContext.Run("U-auth-jwt-expiry", UnitAuthTests.JwtExpiry);
-        TestContext.Run("U-auth-jwt-short-secret", UnitAuthTests.JwtShortSecret);
-        TestContext.Run("U-auth-pbkdf2", UnitAuthTests.Pbkdf2);
-        TestContext.Run("U-auth-guard-trips", UnitAuthTests.GuardTrips);
-        TestContext.Run("U-auth-login-denied", UnitAuthTests.LoginDenied);
-        TestContext.Run("U-auth-swagger-jwt-doc", UnitAuthTests.SwaggerJwtDoc);
+        TestContext.Run("U-translate-system-first", UnitBypassTests.TranslateSystemFirst);
+
+        TestContext.Run("U-auth-jwt-roundtrip", UnitAuthTests.JwtRoundtrip);
+
+        TestContext.Run("U-auth-jwt-tamper", UnitAuthTests.JwtTamper);
+
+        TestContext.Run("U-auth-jwt-expiry", UnitAuthTests.JwtExpiry);
+
+        TestContext.Run("U-auth-jwt-short-secret", UnitAuthTests.JwtShortSecret);
+
+        TestContext.Run("U-auth-pbkdf2", UnitAuthTests.Pbkdf2);
+
+        TestContext.Run("U-auth-guard-trips", UnitAuthTests.GuardTrips);
+
+        TestContext.Run("U-auth-login-denied", UnitAuthTests.LoginDenied);
+
+        TestContext.Run("U-auth-swagger-jwt-doc", UnitAuthTests.SwaggerJwtDoc);
+
         TestContext.Run("U-auth-status-guard", UnitAuthTests.StatusGuard);
 
         // ---- e2e standalone (opencode real, mesmos enunciados)
@@ -92,6 +102,8 @@ internal static class Program
             TestContext.Run("E-responses-simple", E2EToolTests.SimpleResponses);
             TestContext.Run("E-responses-tools", E2EToolTests.ToolResponses);
             TestContext.Run("E-devpipe-tools", E2EDevPipeTests.DevPipeTools);
+            // Teste de tools completo nos 2 modelos (GPU1 12B + GPU2 E2B) em paralelo.
+            TestContext.Run("E-tools-full", E2EToolsFullTests.FullTools);
             TestContext.Run("E-devpipe-infra", E2EDevPipeTests.DevPipeInfra);
             TestContext.Run("E-devpipe-vision", E2EDevPipeTests.DevPipeVision);
             TestContext.Run("E-devpipe-doc", E2EDevPipeTests.DevPipeDoc);
