@@ -47,9 +47,9 @@ internal static class E2EToolsFullTests
         TestContext.Check(w2["ok"]?.GetValue<bool>() == true, $"{label} write subpasta ok");
 
         // 8. git read-only (status + log) — escrita git validada em DevPipeInfra
-        var gst = await Exec("shell", new JsonObject { ["command"] = "git status --short 2>&1 | head -1" });
+        var gst = await Exec("shell", new JsonObject { ["command"] = "git status --short" });
         TestContext.Check(gst["ok"]?.GetValue<bool>() == true, $"{label} git status ok");
-        var glog = await Exec("shell", new JsonObject { ["command"] = "git log --oneline 2>&1 | head -1" });
+        var glog = await Exec("shell", new JsonObject { ["command"] = "git log --oneline" });
         TestContext.Check(glog["ok"]?.GetValue<bool>() == true, $"{label} git log ok");
 
         // 9. compilacao C# (dotnet new + build + run)
