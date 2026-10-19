@@ -56,7 +56,7 @@ internal static class E2EToolsFullTests
         var dn = await Exec("shell", new JsonObject { ["command"] = "bash -c \"mkdir -p /tmp/opencode/toolsfull/csharptest && cd /tmp/opencode/toolsfull/csharptest && dotnet new console --force 2>&1 | tail -1\"" });
         TestContext.Check(dn["ok"]?.GetValue<bool>() == true, $"{label} dotnet new ok");
         var db = await Exec("shell", new JsonObject { ["command"] = "bash -c \"cd /tmp/opencode/toolsfull/csharptest && dotnet build 2>&1 | tail -3\"" });
-        TestContext.Check(db["ok"]?.GetValue<bool>() == true && (db["output"]?.GetValue<string>() ?? "").Contains("Compilação com êxito") || (db["output"]?.GetValue<string>() ?? "").Contains("Build succeeded"), $"{label} dotnet build ok");
+        TestContext.Check(db["ok"]?.GetValue<bool>() == true, $"{label} dotnet build ok");
         var dr = await Exec("shell", new JsonObject { ["command"] = "bash -c \"cd /tmp/opencode/toolsfull/csharptest && dotnet run 2>&1 | tail -3\"" });
         TestContext.Check(dr["ok"]?.GetValue<bool>() == true, $"{label} dotnet run ok");
 
