@@ -32,5 +32,7 @@
 - Delegação: em tarefa grande, divida em sub-tarefas autocontidas e delegue ao
   subagente configurado com micro-enunciado:
   OBJETIVO + ESCOPO (arquivos exatos) + PROIBIDO + ACEITE.
+- Use a ferramenta de subagente do mesmo tipo (mesmo nome) para dividir
+  tarefas em contextos menores ou iguais a 64k.
 - Agregue os resultados e re-execute o ACEITE de cada um.
 ```

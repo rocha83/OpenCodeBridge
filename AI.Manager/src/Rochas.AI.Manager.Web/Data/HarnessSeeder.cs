@@ -24,6 +24,10 @@ public static class HarnessSeeder
         var id = await profiles.CreateAsync("OpenCode Summarized", "Resumo do harness do OpenCode sem hardcodes");
         var vid = await profiles.AddVersionAsync(id, "BridgeBypass", "opencode-summary-v1");
         await attachments.CreateAsync(vid, "Core", "general", core);
+        var orchTail = @"- Delegacao: em tarefa grande, divida em sub-tarefas autocontidas.
+- Use a ferramenta de subagente do mesmo tipo (mesmo nome) para dividir tarefas em contextos <=64k.
+- Agregue os resultados e re-execute o ACEITE de cada um.";
+        await attachments.CreateAsync(vid, "RoleTail", "orch", orchTail);
         await profiles.ApproveVersionAsync(vid, "system");
     }
 }
