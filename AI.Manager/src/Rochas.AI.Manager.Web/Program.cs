@@ -12,6 +12,7 @@ using Rochas.Data.Specification.Interfaces;
 using Rochas.AI.Manager.Domain.Datasets;
 using Rochas.AI.Manager.Domain.Experiments;
 using Rochas.AI.Manager.Domain.Harness;
+using Rochas.AI.Manager.Domain.Entities.Management;
 using Rochas.AI.Manager.Domain.Models;
 using Rochas.AI.Manager.Domain.Profiles;
 using Rochas.AI.Manager.Domain.Training;
@@ -92,6 +93,14 @@ builder.Services.AddScoped(_ => new GenericRepository<HarnessRun>(DatabaseEngine
 builder.Services.AddScoped<IGenericRepository<BridgeCapture>>(sp => sp.GetRequiredService<GenericRepository<BridgeCapture>>());
 builder.Services.AddScoped<IPersistenceRepository<BridgeCapture>>(sp => sp.GetRequiredService<GenericRepository<BridgeCapture>>());
 builder.Services.AddScoped(_ => new GenericRepository<BridgeCapture>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<EntityStatus>>(sp => sp.GetRequiredService<GenericRepository<EntityStatus>>());
+builder.Services.AddScoped<IPersistenceRepository<EntityStatus>>(sp => sp.GetRequiredService<GenericRepository<EntityStatus>>());
+builder.Services.AddScoped(_ => new GenericRepository<EntityStatus>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+builder.Services.AddScoped<IGenericRepository<WorkflowStep>>(sp => sp.GetRequiredService<GenericRepository<WorkflowStep>>());
+builder.Services.AddScoped<IPersistenceRepository<WorkflowStep>>(sp => sp.GetRequiredService<GenericRepository<WorkflowStep>>());
+builder.Services.AddScoped(_ => new GenericRepository<WorkflowStep>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 
 builder.Services.AddScoped<IGenericRepository<TrainingWorkflowCard>>(sp => sp.GetRequiredService<GenericRepository<TrainingWorkflowCard>>());
 builder.Services.AddScoped<IPersistenceRepository<TrainingWorkflowCard>>(sp => sp.GetRequiredService<GenericRepository<TrainingWorkflowCard>>());
@@ -175,6 +184,12 @@ using (var scope = app.Services.CreateScope())
     var attachments = scope.ServiceProvider.GetRequiredService<IHarnessAttachmentService>();
     var linter = scope.ServiceProvider.GetRequiredService<IHarnessLinter>();
     await HarnessSeeder.SeedAsync(profiles, attachments, linter);
+}
+using (var scope = app.Services.CreateScope())
+{
+    var statuses = scope.ServiceProvider.GetRequiredService<IGenericRepository<EntityStatus>>();
+    var steps = scope.ServiceProvider.GetRequiredService<IGenericRepository<WorkflowStep>>();
+    await WorkflowSeeder.SeedAsync(statuses, steps);
 }
 app.MapGet("/health", () =>
 {
