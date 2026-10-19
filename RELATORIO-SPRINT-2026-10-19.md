@@ -65,6 +65,9 @@ limpo o E2B faz ~56 tok/s (é um 2B Q3).
 3. **F# é o ponto frágil do 12B** em multi-turno (erros de inferência: FS0039/FS0193/
    FS0001). Resolvido tornando o enunciado F# **prescritivo** (acumulador mutável +
    `for`, sem `Seq`/`List.fold`): `E-mission-tools` PASS.
+4. **`opencode run` sem `--standalone`** depende do background service compartilhado
+   e, sob carga, falha com `Timed out waiting for the background service to start`.
+   Fix: harness usa `opencode run --standalone` (servidor privado por execução).
 
 ## 7. Como reproduzir
 
