@@ -2164,3 +2164,12 @@ bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
   timeout 30s, embora a pagina retorne 200 com #root no HTML.
 - Playwright (chrome canal) nao renderiza/executa o JS da pagina no ambiente atual.
 - Frontpipe fica em backlog ate a correcao do Playwright/browser.
+
+## 2026-10-19 — U-tools-execute (cwd do bridge)
+
+- U-tools-execute falhava com "Unable to find the specified file." (GetCwd) porque
+  o WorkingDirectory da unit apontava para bin/Release/net9.0 (removido pelo
+  git clean) ou cwd invalido.
+- Correcao: WorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net9.0
+  + ExecStart com caminho absoluto para o dll.
+- U-tools-execute agora PASS.
