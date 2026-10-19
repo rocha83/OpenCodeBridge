@@ -150,6 +150,7 @@ public static class BeltUiTests
                         failures += await UiChatSendAsync(api, bpage, belt);
                         break;
                     }
+                    case "decompose": failures += await DecomposeBeltAsync(api, belt); break;
                     case "plan": failures += await PlanBeltAsync(api, belt); break;
                     case "cognitive": failures += await CognitiveBeltAsync(api, belt); break;
                     case "cognitive-ui":
