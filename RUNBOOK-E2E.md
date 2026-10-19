@@ -86,5 +86,8 @@ Obs.: medições E2B mais baixas (21–28 tok/s) vistas antes eram contenção d
   sudo REPO=/usr/src/opencodebridge bash run-e2e-pipeline.sh --phase all --no-build
   ```
 - O `harnessToolsTail` é **fonte única no código** (`Program.cs`); não definir nos appsettings.
+- Sob `sudo`, o `HOME` vira `/root` e o `opencode` perde o config de modelos/agents
+  (erro `Model unavailable`). O pipeline exporta `XDG_CONFIG_HOME` do usuário
+  invocador (`SUDO_USER`) — necessário para a fase 3 standalone.
 - Subir sempre **12B antes do E2B** (senão o auto-fit do E2B falha com `-ngl 99`).
 - Remaster: `units/`, `opencode.json`, `agents/`, `web-ui/` em `/media/mint/Linux/remaster-fix/`.

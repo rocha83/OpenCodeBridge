@@ -68,6 +68,8 @@ limpo o E2B faz ~56 tok/s (é um 2B Q3).
 4. **`opencode run` sem `--standalone`** depende do background service compartilhado
    e, sob carga, falha com `Timed out waiting for the background service to start`.
    Fix: harness usa `opencode run --standalone` (servidor privado por execução).
+5. **Fase 3 sob `sudo`**: `HOME=/root` sem `opencode.json` → `Model unavailable`.
+   Fix: pipeline exporta `XDG_CONFIG_HOME` do usuário invocador (`SUDO_USER`).
 
 ## 7. Como reproduzir
 
