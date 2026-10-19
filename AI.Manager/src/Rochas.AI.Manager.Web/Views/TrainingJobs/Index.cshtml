@@ -1,0 +1,42 @@
+@model IEnumerable<Rochas.AI.Manager.Domain.Training.TrainingJob>
+@{ ViewData["Title"] = "Training Jobs"; }
+<button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
+<div class="table-responsive d-none d-md-block">
+  <table class="table table-striped">
+    <thead><tr><th>Id</th><th>Status</th><th>ModelArtifactId</th><th>DatasetId</th><th>Advanced</th><th>Ações</th></tr></thead>
+    <tbody>
+    @foreach (var j in Model)
+    {
+      <tr>
+        <td>@j.Id</td><td>@j.Status</td><td>@j.ModelArtifactId</td><td>@j.DatasetId</td><td>@j.AdvancedMode</td>
+        <td><form method="post" action="/TrainingJobs/Start/@j.Id" style="display:inline">@Html.AntiForgeryToken()<button class="btn btn-sm btn-success">Iniciar</button></form></td>
+      </tr>
+    }
+    </tbody>
+  </table>
+</div>
+<div class="d-md-none">
+  @foreach (var j in Model)
+  {
+    <div class="card mb-2"><div class="card-body">
+      <h6>Job #@j.Id - @j.Status</h6>
+      <p class="mb-1">ModelArtifact: @j.ModelArtifactId</p>
+      <p class="mb-1">Dataset: @j.DatasetId</p>
+      <form method="post" action="/TrainingJobs/Start/@j.Id">@Html.AntiForgeryToken()<button class="btn btn-sm btn-success">Iniciar</button></form>
+    </div></div>
+  }
+</div>
+<div class="modal fade" id="createModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form method="post" action="/TrainingJobs/Create">
+      @Html.AntiForgeryToken()
+      <div class="modal-header"><h5 class="modal-title">Novo Training Job</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input name="modelArtifactId" class="form-control mb-2" placeholder="ModelArtifactId" />
+        <input name="datasetId" class="form-control mb-2" placeholder="DatasetId" />
+        <div class="form-check"><input type="checkbox" name="advancedMode" value="true" class="form-check-input" id="am" /><label class="form-check-label" for="am">Modo avançado</label></div>
+      </div>
+      <div class="modal-footer"><button type="submit" class="btn btn-primary">Salvar</button></div>
+    </form>
+  </div></div>
+</div>

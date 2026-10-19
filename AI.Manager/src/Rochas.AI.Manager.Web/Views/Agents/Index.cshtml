@@ -1,0 +1,40 @@
+@model IEnumerable<Rochas.AI.Manager.Domain.Entities.Agent>
+@{ ViewData["Title"] = "Agentes"; }
+<button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
+<div class="table-responsive d-none d-md-block">
+  <table class="table table-striped">
+    <thead><tr><th>Id</th><th>Nome</th><th>Model</th><th>Mode</th><th>Ativo</th><th>Ações</th></tr></thead>
+    <tbody>
+    @foreach (var a in Model)
+    {
+      <tr><td>@a.Id</td><td>@a.Name</td><td>@a.Model</td><td>@a.Mode</td><td>@a.IsActive</td>
+        <td><form method="post" action="/Agents/Delete/@a.Id" style="display:inline">@Html.AntiForgeryToken()<button class="btn btn-sm btn-danger">Excluir</button></form></td></tr>
+    }
+    </tbody>
+  </table>
+</div>
+<div class="d-md-none">
+  @foreach (var a in Model)
+  {
+    <div class="card mb-2"><div class="card-body">
+      <h6>@a.Name</h6><p class="mb-1">Model: @a.Model</p><p class="mb-1">Mode: @a.Mode | Ativo: @a.IsActive</p>
+      <form method="post" action="/Agents/Delete/@a.Id">@Html.AntiForgeryToken()<button class="btn btn-sm btn-danger">Excluir</button></form>
+    </div></div>
+  }
+</div>
+<div class="modal fade" id="createModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form method="post" action="/Agents/Create">
+      @Html.AntiForgeryToken()
+      <div class="modal-header"><h5 class="modal-title">Novo Agente</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input name="name" class="form-control mb-2" placeholder="Nome" required />
+        <input name="model" class="form-control mb-2" placeholder="Model" required />
+        <input name="bridgeUrl" class="form-control mb-2" placeholder="Bridge URL" value="http://127.0.0.1:4124" />
+        <input name="temperature" type="number" step="0.1" class="form-control mb-2" placeholder="Temperatura" value="0.4" />
+        <input name="mode" class="form-control mb-2" placeholder="Mode (Plan/Build)" value="Build" />
+      </div>
+      <div class="modal-footer"><button type="submit" class="btn btn-primary">Salvar</button></div>
+    </form>
+  </div></div>
+</div>

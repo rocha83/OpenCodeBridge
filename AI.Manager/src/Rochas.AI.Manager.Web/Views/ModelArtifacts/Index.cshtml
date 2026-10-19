@@ -1,0 +1,43 @@
+@model IEnumerable<Rochas.AI.Manager.Domain.Models.ModelArtifact>
+@{ ViewData["Title"] = "Model Artifacts"; }
+<button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
+<div class="table-responsive d-none d-md-block">
+  <table class="table table-striped">
+    <thead><tr><th>Id</th><th>Nome</th><th>Família</th><th>Formato</th><th>Status</th><th>Ações</th></tr></thead>
+    <tbody>
+    @foreach (var m in Model)
+    {
+      <tr>
+        <td>@m.Id</td><td>@m.Name</td><td>@m.Family</td><td>@m.Format</td><td>@m.Status</td>
+        <td><form method="post" action="/ModelArtifacts/Approve/@m.Id" style="display:inline">@Html.AntiForgeryToken()<button class="btn btn-sm btn-success">Aprovar</button></form></td>
+      </tr>
+    }
+    </tbody>
+  </table>
+</div>
+<div class="d-md-none">
+  @foreach (var m in Model)
+  {
+    <div class="card mb-2"><div class="card-body">
+      <h6>@m.Name (@m.Family)</h6>
+      <p class="mb-1">Formato: @m.Format</p>
+      <p class="mb-1">Status: @m.Status</p>
+      <form method="post" action="/ModelArtifacts/Approve/@m.Id">@Html.AntiForgeryToken()<button class="btn btn-sm btn-success">Aprovar</button></form>
+    </div></div>
+  }
+</div>
+<div class="modal fade" id="createModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form method="post" action="/ModelArtifacts/Create">
+      @Html.AntiForgeryToken()
+      <div class="modal-header"><h5 class="modal-title">Novo Model Artifact</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input name="name" class="form-control mb-2" placeholder="Nome" required />
+        <input name="family" class="form-control mb-2" placeholder="Família (Gemma4/Llama/Qwen/DeepSeek)" required />
+        <input name="format" class="form-control mb-2" placeholder="Formato (safetensors/gguf)" value="safetensors" />
+        <div class="form-check"><input type="checkbox" name="isTrainable" value="true" class="form-check-input" id="it" /><label class="form-check-label" for="it">Treinável</label></div>
+      </div>
+      <div class="modal-footer"><button type="submit" class="btn btn-primary">Salvar</button></div>
+    </form>
+  </div></div>
+</div>

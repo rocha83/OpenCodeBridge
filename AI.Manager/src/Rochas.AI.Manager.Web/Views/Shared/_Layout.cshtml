@@ -6,15 +6,40 @@
 <title>@ViewData["Title"] - Rochas.AI.Manager</title>
 <link href="~/lib/mdb/mdb.min.css" rel="stylesheet" />
 <link href="~/lib/fontawesome/css/all.min.css" rel="stylesheet" />
-<script>
-  (function() {
-    var theme = localStorage.getItem('theme') || 'dark';
-    document.documentElement.setAttribute('data-bs-theme', theme);
-  })();
-</script>
+<style>
+  .sidebar { width: 240px; min-height: 100vh; }
+  @@media (max-width: 768px) { .sidebar { position: fixed; left: -240px; z-index: 1040; transition: left .3s; } .sidebar.show { left: 0; } }
+  .content { flex: 1; }
+</style>
 </head>
 <body>
-<main class="container-fluid py-3">@RenderBody()</main>
+<div class="d-flex">
+  <nav class="sidebar bg-dark text-white p-3" id="sidebar">
+    <h5 class="mb-3">Rochas.AI.Manager</h5>
+    <ul class="nav flex-column">
+      <li class="nav-item"><a class="nav-link text-white" href="/Harness"><i class="fas fa-sliders-h me-2"></i>Harness</a></li>
+      <li class="nav-item"><a class="nav-link text-white" href="/ModelArtifacts"><i class="fas fa-cube me-2"></i>Model Artifacts</a></li>
+      <li class="nav-item"><a class="nav-link text-white" href="/Datasets"><i class="fas fa-database me-2"></i>Datasets</a></li>
+      <li class="nav-item"><a class="nav-link text-white" href="/InstructionProfiles"><i class="fas fa-file-alt me-2"></i>Instruction Profiles</a></li>
+      <li class="nav-item"><a class="nav-link text-white" href="/TrainingPatterns"><i class="fas fa-project-diagram me-2"></i>Training Patterns</a></li>
+      <li class="nav-item"><a class="nav-link text-white" href="/Experiments"><i class="fas fa-flask me-2"></i>Experiments</a></li>
+      <li class="nav-item"><a class="nav-link text-white" href="/TrainingJobs"><i class="fas fa-tasks me-2"></i>Training Jobs</a></li>
+      <li class="nav-item"><a class="nav-link text-white" href="/ToolPolicies"><i class="fas fa-shield-alt me-2"></i>Tool Policies</a></li>
+      <li class="nav-item"><a class="nav-link text-white" href="/ModelBindings"><i class="fas fa-link me-2"></i>Model Bindings</a></li>
+      <li class="nav-item"><a class="nav-link text-white" href="/Users"><i class="fas fa-users me-2"></i>Usuários</a></li>
+      <li class="nav-item"><a class="nav-link text-white" href="/Agents"><i class="fas fa-robot me-2"></i>Agentes</a></li>
+    </ul>
+  </nav>
+  <div class="content">
+    <nav class="navbar navbar-dark bg-dark">
+      <div class="container-fluid">
+        <button class="btn btn-sm btn-outline-light d-md-none" onclick="document.getElementById('sidebar').classList.toggle('show')"><i class="fas fa-bars"></i></button>
+        <span class="navbar-brand mb-0 h1">@ViewData["Title"]</span>
+      </div>
+    </nav>
+    <main class="container-fluid py-3">@RenderBody()</main>
+  </div>
+</div>
 <script src="~/lib/mdb/mdb.min.js"></script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>

@@ -10,6 +10,7 @@ using Rochas.AI.Manager.Domain.Harness;
 using Rochas.AI.Manager.Domain.Models;
 using Rochas.AI.Manager.Domain.Profiles;
 using Rochas.AI.Manager.Domain.Training;
+using Rochas.AI.Manager.Domain.Entities;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -78,6 +79,16 @@ builder.Services.AddScoped<IGenericRepository<BridgeCapture>>(sp => sp.GetRequir
 builder.Services.AddScoped<IPersistenceRepository<BridgeCapture>>(sp => sp.GetRequiredService<GenericRepository<BridgeCapture>>());
 builder.Services.AddScoped(_ => new GenericRepository<BridgeCapture>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 
+// Users
+builder.Services.AddScoped<IGenericRepository<User>>(sp => sp.GetRequiredService<GenericRepository<User>>());
+builder.Services.AddScoped<IPersistenceRepository<User>>(sp => sp.GetRequiredService<GenericRepository<User>>());
+builder.Services.AddScoped(_ => new GenericRepository<User>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
+// Agents
+builder.Services.AddScoped<IGenericRepository<Agent>>(sp => sp.GetRequiredService<GenericRepository<Agent>>());
+builder.Services.AddScoped<IPersistenceRepository<Agent>>(sp => sp.GetRequiredService<GenericRepository<Agent>>());
+builder.Services.AddScoped(_ => new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString));
+
 // Servicos de aplicacao (scoped por causa dos repositorios).
 builder.Services.AddScoped<IHarnessProfileService>(sp => new HarnessProfileService(
     sp.GetRequiredService<IGenericRepository<HarnessProfile>>(),
@@ -98,6 +109,8 @@ builder.Services.AddScoped<IToolPolicyService, ToolPolicyService>();
 builder.Services.AddScoped<IModelBindingService, ModelBindingService>();
 builder.Services.AddScoped<IHarnessRunService, HarnessRunService>();
 builder.Services.AddScoped<IBridgeCaptureService, BridgeCaptureService>();
+builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IAgentService, AgentService>();
 
 var app = builder.Build();
 
