@@ -6,7 +6,7 @@ namespace Rochas.OpenCodeBridge.Test;
 // repositório git, pacotes/versões e internet — modelo vivo via bridge.
 internal static class E2EDevPipeTests
 {
-    static string Model() => TestContext.ServedModel.Length > 0 ? TestContext.ServedModel : "qwen3.5-9b";
+    static string Model() => TestContext.SuiteModel;
 
     static JsonObject Tool(string name, string desc, JsonObject props, params string[] required)
     {

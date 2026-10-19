@@ -72,7 +72,7 @@ internal static class E2EScienceTests
     }
 
     public static Task ScienceGpu() =>
-        Run(TestContext.Bridge, TestContext.ServedModel.Length > 0 ? TestContext.ServedModel : "qwen3.5-9b-build", 12000);
+        Run(TestContext.Bridge, TestContext.SuiteModel, 12000);
 
     public static Task ScienceCpu() => Run(CpuBridge, "qwen3-vl-4b-build", 8000);
 }

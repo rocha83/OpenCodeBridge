@@ -18,8 +18,10 @@ internal static class Program
             else if (args[i] == "--vllm" && i + 1 < args.Length) TestContext.Vllm = args[++i].TrimEnd('/');
             else if (args[i] == "--skip-e2e") TestContext.SkipE2E = true;
             else if (args[i] == "--only" && i + 1 < args.Length) TestContext.Only = args[++i];
-            else if (args[i] == "--api-key" && i + 1 < args.Length) TestContext.ApiKey = args[++i];
+            else if (args[i] == "--api-key" && i + 1 < args.Length) TestContext.ApiKey = args[++i];
             else if (args[i] == "--jwt" && i + 1 < args.Length) TestContext.Jwt = args[++i];
+            else if (args[i] == "--role" && i + 1 < args.Length) TestContext.Role = args[++i];
+            else if (args[i] == "--model" && i + 1 < args.Length) TestContext.Model = args[++i];
         }
         Console.WriteLine($"[test] bridge={TestContext.Bridge} vllm={TestContext.Vllm} skipE2E={TestContext.SkipE2E}");
         string? cred = TestContext.Jwt ?? TestContext.ApiKey;

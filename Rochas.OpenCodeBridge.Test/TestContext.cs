@@ -22,6 +22,22 @@ internal static class TestContext
     // Modelo servido pela bridge alvo (qwen3|coder): expectativas por perfil.
     public static string ServedModel = "";
     public static bool ServedIsCoder => ServedModel.Contains("coder", StringComparison.OrdinalIgnoreCase);
+    // Role alvo da suite (default build): a suite chama o modelo com o sufixo
+    // de role para exercitar o perfil real (temp/thinking) do Build.
+    public static string Role = "build";
+    // --model explicito vence; sem ele, aplica o sufixo de role ao servido.
+    public static string Model = "";
+    public static string SuiteModel
+    {
+        get
+        {
+            if (Model.Length > 0) return Model;
+            string m = ServedModel.Length > 0 ? ServedModel : "gemma-4-12b";
+            bool hasRole = m.EndsWith("-plan") || m.EndsWith("-build") || m.EndsWith("-orch")
+                || m.EndsWith("-moe") || m.EndsWith("-scripter") || m.EndsWith("-exec");
+            return !hasRole && Role.Length > 0 ? m + "-" + Role : m;
+        }
+    }
     // Modo thinking da bridge (events|off): asserts de reasoning só em events.
     public static string ServedThinking = "events";
     public static bool WantsReasoning => ServedThinking == "events" && !ServedIsCoder;

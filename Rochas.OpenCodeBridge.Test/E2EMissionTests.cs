@@ -53,7 +53,7 @@ internal static class E2EMissionTests
     public static async Task MissionTools()
     {
         string bridge = TestContext.Bridge;
-        string model = TestContext.ServedModel.Length > 0 ? TestContext.ServedModel : "qwen3.5-9b";
+        string model = TestContext.SuiteModel;
         if (!model.EndsWith("-build")) model += "-build";
         string ws = Path.Combine(Path.GetTempPath(), "e2e-mission");
         if (Directory.Exists(ws)) Directory.Delete(ws, true);
