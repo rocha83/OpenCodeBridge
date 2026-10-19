@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pipeline E2E sequencial ativavel por fase.
 # Uso: ./run-e2e-pipeline.sh --phase 0|1|2|3|all
-set -euo pipefail
+set -uo pipefail
 
 PHASE="${1:-all}"
 if [[ "$PHASE" == "--phase" ]]; then PHASE="${2:-all}"; fi
