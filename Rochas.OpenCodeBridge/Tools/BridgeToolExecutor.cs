@@ -9,10 +9,14 @@ public sealed class BridgeToolExecutor
 {
     private readonly Dictionary<string, IToolHandler> _handlers;
     private readonly string _workspaceRoot;
+    private readonly string _upstreamUrl;
+    private readonly string _apiKey;
 
-    public BridgeToolExecutor(string workspaceRoot)
+    public BridgeToolExecutor(string workspaceRoot, string upstreamUrl = "http://127.0.0.1:4100", string apiKey = "")
     {
         _workspaceRoot = workspaceRoot;
+        _upstreamUrl = upstreamUrl;
+        _apiKey = apiKey;
         _handlers = DefaultHandlers().ToDictionary(h => h.ToolName, StringComparer.Ordinal);
     }
 
@@ -26,16 +30,17 @@ public sealed class BridgeToolExecutor
         yield return new GlobToolHandler();
         yield return new FetchToolHandler();
         yield return new GitToolHandler();
+        yield return new SubagentToolHandler();
     }
 
     public ToolResult Execute(string name, string arguments, int timeoutSeconds = 300)
     {
         if (string.IsNullOrWhiteSpace(name))
             return ToolResult.Fail("tool sem nome");
-        string key = name is "bash" or "sh" ? "shell" : name is "webfetch" ? "fetch" : name;
+        string key = name is "bash" or "sh" ? "shell" : name is "webfetch" ? "fetch" : name is "task" ? "subagent" : name;
         if (!_handlers.TryGetValue(key, out IToolHandler? handler))
             return ToolResult.Fail($"tool desconhecida: '{name}' (válidas: shell, read, write, edit, grep, glob, fetch, git)");
-        var context = new ToolContext { WorkspaceRoot = _workspaceRoot, TimeoutSeconds = timeoutSeconds };
+        var context = new ToolContext { WorkspaceRoot = _workspaceRoot, TimeoutSeconds = timeoutSeconds, UpstreamUrl = _upstreamUrl, ApiKey = _apiKey };
         try { return handler.Handle(arguments ?? "", context); }
         catch (Exception ex) { return ToolResult.Fail($"falha interna na tool '{name}': {ex.Message}"); }
     }

@@ -955,7 +955,7 @@ WriteJson(ctx, 200, new JsonObject
                 string args = req["arguments"]?.ToJsonString() ?? "{}";
                 int timeout = req["timeout"]?.GetValue<int>() ?? 300;
                 string root = WorkspaceRoot.Length > 0 ? WorkspaceRoot : Environment.CurrentDirectory;
-                var executor = new Tools.BridgeToolExecutor(root);
+                var executor = new Tools.BridgeToolExecutor(root, Upstream, ApiKey);
                 var result = executor.Execute(name, args, Math.Clamp(timeout, 1, 600));
                 string output = result.Success ? result.Output : "";
                 if (ToolOutputLimit > 0 && output.Length > ToolOutputLimit) output = output[..ToolOutputLimit];
