@@ -1,4 +1,4 @@
-using Rochas.AI.Manager.Application.Abstractions;
+using Rochas.AI.Manager.Domain.Interfaces;
 using Rochas.AI.Manager.Application.Services;
 using Rochas.DapperRepository;
 using Rochas.Data.Specification.Annotations;

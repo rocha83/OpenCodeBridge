@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Rochas.AI.Manager.Application.Abstractions;
+using Rochas.AI.Manager.Domain.Interfaces;
 using Rochas.AI.Manager.Domain.Models;
 
 namespace Rochas.AI.Manager.Api.Controllers;

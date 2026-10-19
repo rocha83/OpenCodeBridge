@@ -1,4 +1,4 @@
-namespace Rochas.AI.Manager.Application.Abstractions;
+namespace Rochas.AI.Manager.Domain.Interfaces;
 
 public interface ITrainingJobService
 {

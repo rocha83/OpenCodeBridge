@@ -1,7 +1,7 @@
 namespace Rochas.AI.Manager.Application.Services;
 
 using System.Text.RegularExpressions;
-using Rochas.AI.Manager.Application.Abstractions;
+using Rochas.AI.Manager.Domain.Interfaces;
 
 /// <summary>
 /// Linter de hardcodes de infraestrutura no texto do harness.

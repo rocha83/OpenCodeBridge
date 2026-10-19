@@ -1,7 +1,7 @@
 using Microsoft.Data.Sqlite;
 using System.IO;
 
-namespace Rochas.AI.Manager.Application.Data;
+namespace Rochas.AI.Manager.Infrastructure.Data;
 
 public static class AppDb
 {

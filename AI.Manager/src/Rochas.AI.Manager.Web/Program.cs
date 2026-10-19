@@ -1,7 +1,8 @@
-using Rochas.AI.Manager.Application.Abstractions;
+using Rochas.AI.Manager.Domain.Interfaces;
+using Rochas.AI.Manager.Infrastructure.Data;
 using Rochas.AI.Manager.TrainingEngine;
 using Rochas.AI.Manager.Application.Services;
-using Rochas.AI.Manager.Application.Data;
+using Rochas.AI.Manager.Web.Data;
 using Rochas.DapperRepository;
 using Rochas.Data.Specification.Enums;
 using Rochas.Data.Specification.Interfaces;
@@ -130,5 +131,12 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Harness}/{action=Index}/{id?}");
 
-Rochas.AI.Manager.Application.Data.AppDb.Init();
+Rochas.AI.Manager.Infrastructure.Data.AppDb.Init();
+using (var scope = app.Services.CreateScope())
+{
+    var profiles = scope.ServiceProvider.GetRequiredService<IHarnessProfileService>();
+    var attachments = scope.ServiceProvider.GetRequiredService<IHarnessAttachmentService>();
+    var linter = scope.ServiceProvider.GetRequiredService<IHarnessLinter>();
+    await HarnessSeeder.SeedAsync(profiles, attachments, linter);
+}
 app.Run();

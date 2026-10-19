@@ -21,4 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Rochas.AI.Manager.TrainingEngine\Rochas.AI.Manager.TrainingEngine.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Rochas.AI.Manager.Infrastructure\Rochas.AI.Manager.Infrastructure.csproj" />
+  </ItemGroup>
 </Project>

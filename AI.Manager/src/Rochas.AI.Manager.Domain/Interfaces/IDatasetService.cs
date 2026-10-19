@@ -1,6 +1,6 @@
 using Rochas.AI.Manager.Domain.Datasets;
 
-namespace Rochas.AI.Manager.Application.Abstractions;
+namespace Rochas.AI.Manager.Domain.Interfaces;
 
 public interface IDatasetService
 {

@@ -1,5 +1,5 @@
 using Rochas.Data.Specification.Interfaces;
-using Rochas.AI.Manager.Application.Abstractions;
+using Rochas.AI.Manager.Domain.Interfaces;
 using Rochas.AI.Manager.Domain.Profiles;
 
 namespace Rochas.AI.Manager.Application.Services;

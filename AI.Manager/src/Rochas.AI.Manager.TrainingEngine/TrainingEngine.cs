@@ -1,4 +1,4 @@
-using Rochas.AI.Manager.Application.Abstractions;
+using Rochas.AI.Manager.Domain.Interfaces;
 
 namespace Rochas.AI.Manager.TrainingEngine;
 

@@ -1,6 +1,6 @@
 using Rochas.AI.Manager.Domain.Entities;
 
-namespace Rochas.AI.Manager.Application.Abstractions;
+namespace Rochas.AI.Manager.Domain.Interfaces;
 
 public interface IAgentService
 {
