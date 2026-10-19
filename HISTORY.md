@@ -2260,3 +2260,8 @@ Ressalvas registradas:
 Proximo passo sugerido: sintetizar o harness do opencode (captura) e aplica-lo
 como harness nativo + tails na bridge em modo bypass/legacy (equivalente ao
 "modo qwen"), para clientes que nao tragam harness proprio.
+
+## 2026-10-19 — Harness resumido (OpenCode) + subagente mesmo modelo
+- Núcleo global do harness inclui regra de subagente do mesmo tipo/nome de modelo
+  para contextos <=64k.
+- Resumo armazenado em docs/harness/opencode/summary-tail.txt e seed no AI.Manager.

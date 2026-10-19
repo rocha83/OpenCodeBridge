@@ -16,8 +16,8 @@
   histórico (git log) antes de planejar/codificar.
 - Idioma do usuário; tool calls completas; ao editar, mostre o diff.
 - Build de integridade: não conclua com build/teste vermelho; corrija tudo antes.
-- Subagente: use a ferramenta de subagente do mesmo tipo (mesmo nome) para
-  dividir tarefas em contextos menores ou iguais a 64k.
+- Subagente: use a ferramenta de subagente do mesmo tipo e mesmo nome de modelo
+  para dividir tarefas em contextos menores ou iguais a 64k.
 ```
 
 
