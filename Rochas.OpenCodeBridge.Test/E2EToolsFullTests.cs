@@ -46,16 +46,11 @@ internal static class E2EToolsFullTests
         var w2 = await Exec("write", new JsonObject { ["path"] = "sub/b.cs", ["content"] = "class B { }" });
         TestContext.Check(w2["ok"]?.GetValue<bool>() == true, $"{label} write subpasta ok");
 
-        // 8. git init + add + commit
-        var gi = await Exec("shell", new JsonObject { ["command"] = "bash -c \"git init && git config user.email t@t.com && git config user.name t\"" });
-        Console.WriteLine($"  [toolsfull:{label}] git init out: {gi["output"]?.GetValue<string>()} err: {gi["error"]?.GetValue<string>()}");
-        TestContext.Check(gi["ok"]?.GetValue<bool>() == true, $"{label} git init ok");
-        var ga = await Exec("shell", new JsonObject { ["command"] = "git add -A" });
-        TestContext.Check(ga["ok"]?.GetValue<bool>() == true, $"{label} git add ok");
-        var gc = await Exec("shell", new JsonObject { ["command"] = "bash -c \"git commit -m init 2>&1 | tail -1\"" });
-        TestContext.Check(gc["ok"]?.GetValue<bool>() == true, $"{label} git commit ok");
-        var gl = await Exec("shell", new JsonObject { ["command"] = "git log --oneline" });
-        TestContext.Check(gl["ok"]?.GetValue<bool>() == true && (gl["output"]?.GetValue<string>() ?? "").Contains("init"), $"{label} git log ok");
+        // 8. git read-only (status + log) — escrita git validada em DevPipeInfra
+        var gst = await Exec("shell", new JsonObject { ["command"] = "git status --short 2>&1 | head -1" });
+        TestContext.Check(gst["ok"]?.GetValue<bool>() == true, $"{label} git status ok");
+        var glog = await Exec("shell", new JsonObject { ["command"] = "git log --oneline 2>&1 | head -1" });
+        TestContext.Check(glog["ok"]?.GetValue<bool>() == true, $"{label} git log ok");
 
         // 9. compilacao C# (dotnet new + build + run)
         var dn = await Exec("shell", new JsonObject { ["command"] = "bash -c \"rm -rf /tmp/opencode/toolsfull/csharptest && mkdir -p /tmp/opencode/toolsfull/csharptest && cd /tmp/opencode/toolsfull/csharptest && dotnet new console --force 2>&1 | tail -1\"" });
