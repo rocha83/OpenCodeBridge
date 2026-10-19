@@ -48,6 +48,7 @@ internal static class E2EToolsFullTests
 
         // 8. git init + add + commit
         var gi = await Exec("shell", new JsonObject { ["command"] = "bash -c \"git init && git config user.email t@t.com && git config user.name t\"" });
+        Console.WriteLine($"  [toolsfull:{label}] git init out: {gi["output"]?.GetValue<string>()} err: {gi["error"]?.GetValue<string>()}");
         TestContext.Check(gi["ok"]?.GetValue<bool>() == true, $"{label} git init ok");
         var ga = await Exec("shell", new JsonObject { ["command"] = "git add -A" });
         TestContext.Check(ga["ok"]?.GetValue<bool>() == true, $"{label} git add ok");
