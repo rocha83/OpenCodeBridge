@@ -47,6 +47,9 @@ dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
 - `--standalone-agent` (default `build`) escolhe o agent do opencode; `exec` usa `llama/` (E2B).
 - `--standalone-model` força `provider/model`; sem ele deriva do agent (`openai/` GPU, `llama/` CPU).
 - `--standalone-timeout` (default 300s) limita cada chamada `opencode run`.
+- O harness chama `opencode run --standalone` (servidor **privado** por execução) para
+  não depender do background service compartilhado — evita o erro
+  `Timed out waiting for the background service to start` sob carga.
 - Enunciados são idênticos aos da trilha HTTP — só muda o caminho (opencode real vs bridge pura).
 
 ## Estado do ambiente (2026-10-18/19)
