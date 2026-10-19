@@ -1178,6 +1178,21 @@ WriteJson(ctx, 200, new JsonObject
                 node["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = wantThinking };
                 outBody = node.ToJsonString(SerOpts);
             }
+            // Convencao do operador: cap de saida TAMBEM no repasse
+            // /v1/chat/completions. Sem isso, cliente sem max_tokens deixava o
+            // llama gerar ate o EOS (divagacao de 40k+ tokens, ~26 min/turno).
+            // O valor do cliente (ex.: belts, 4096) prevalece; so injeta quando
+            // ausente. cpuLine escolhe o teto (GPU 16k x CPU 8k).
+            if (node is not null && node["max_tokens"] is null && node["max_completion_tokens"] is null)
+            {
+                bool cpuLinePt = CoerceFor(node["model"]?.GetValue<string>() ?? "") || CoerceFor(Model);
+                int capPt = cpuLinePt ? CpuMaxTokens : MaxTokens;
+                if (capPt > 0)
+                {
+                    node["max_tokens"] = capPt;
+                    outBody = node.ToJsonString(SerOpts);
+                }
+            }
             // tools quebram o parser do template 14B (400); vale p/ qualquer
             // model id, com ou sem sufixo de perfil. Exceção permanente.
             if (node is not null && node["tools"] is JsonArray toolsArr)
