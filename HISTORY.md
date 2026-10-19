@@ -2099,3 +2099,11 @@ bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
 - Sonda (diagnostic) ligada; blacklist (dinâmica inversa) ativa.
 - Belts (azul→preta) e frontpipe ficam para fases posteriores.
 - Consumo: GPU ~154 W + CPU ~10 W ≈ 164 W; VRAM 11.4/12 GB.
+
+## 2026-10-19 — Scripter/Exec (arquitetura corrigida)
+
+- Scripter 12B COMPÕE o script bash + valida sintaxe (bash -n).
+- Scripter E2B LÊ o script e gera o companion .md (descrição para o Exec).
+- Exec (role exec, backlog) LÊ o companion .md e EXECUTA os scripts (fase futura).
+- Testes: E-scripter-gen (12B), E-companion-gen (E2B), E-exec-read (valida sintaxe + le companion).
+- Pipeline paralelo atualizado: 5 processos em paralelo (devpipe, scripter-gen, companion-gen, exec-read, science-gpu2).

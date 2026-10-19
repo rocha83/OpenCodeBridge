@@ -117,9 +117,10 @@ internal static class Program
             TestContext.Run("E-front-gen", E2EFrontPipeTests.Gen);
             TestContext.Run("E-front-edit", E2EFrontPipeTests.Edit);
             TestContext.Run("E-front-verify", E2EFrontPipeTests.Verify);
-            // Scripter (12B) compõe script bash + companion .md; Exec (E2B) valida sintaxe.
+            // Scripter 12B compoe script bash (+ valida sintaxe); Scripter E2B gera companion .md; Exec (backlog) le companion e executa.
             TestContext.Run("E-scripter-gen", E2EScripterTests.ScripterGen);
-            TestContext.Run("E-exec-validate", E2EScripterTests.ExecValidate);
+            TestContext.Run("E-companion-gen", E2EScripterTests.CompanionGen);
+            TestContext.Run("E-exec-read", E2EScripterTests.ExecValidate);
         }
 
         return TestContext.Summary();
