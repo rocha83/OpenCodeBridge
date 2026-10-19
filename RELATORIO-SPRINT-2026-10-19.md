@@ -39,11 +39,15 @@ limpo o E2B faz ~56 tok/s (é um 2B Q3).
 |---|---|---|
 | 0 | health llama :4100/:4110 + bridge :4124/:4125 + VRAM | `ok` |
 | 1 | unit (skip e2e) | `PASS=26 FAIL=0 SKIP=1` (skip: `U-cpu-max-tokens-clamp`, `cpu_max_tokens=0`) |
-| 2 | science (`E-science-gpu`, `E-science-cpu`) | `PASS` (gpu ~230s, cpu ~100s) |
-| 2 | missão tools (`E-mission-tools`: C# + F# + git + zip) | `PASS` (380.0s) |
+| 2 | science (`E-science-gpu`, `E-science-cpu`) | `PASS` (gpu ~200s, cpu ~64s) |
+| 2 | missão tools (`E-mission-tools`: C# + F# + git + zip) | `PASS` (~94s; 86–380s conforme carga) |
 | 3 | standalone opencode build (GPU) `E-standalone-*` | `6/6 PASS` |
 | 3b | standalone opencode exec (E2B CPU) | `PASS` |
 | E2B | tools no E2B (agent exec) | `PASS` (13.2s) |
+
+**Resultado consolidado (bateria `--phase all --no-build`, 2026-10-19):** fases 0–3
+**todas verdes** — `26+2+1` testes de bridge (fases 1–2), `6` standalone GPU,
+`1` standalone E2B, sem `FAIL`.
 
 ## 5. Entregas de engenharia
 
