@@ -55,53 +55,9 @@ read/write/edit/glob/grep/mkdir/git/`bash -n`/exec nos **dois** modelos em
 paralelo.
 
 Detalhe de contextos, units, VRAM, cenários A–E e como cortar VRAM:
-**`LAB-SETUP.md`**.
-
-### Forçar a GPU2 em CPU (`-ngl 0`) e rodar o devpipe
-
-O teste CPU da GPU2 usa a **mesma unit** `llama-cpu.service`, trocando só o
-offload: **`-ngl 0`** (= `--n-gpu-layers 0`, zero camadas na GPU; `-np` é o
-número de **slots** e **não** é o interruptor de CPU). Toggle pronto, que
-reescreve `-ngl` no unit + template, dá `daemon-reload` e reinicia:
-
-```bash
-llama-gpu2-cpu-toggle.sh        # ou o atalho "Llama GPU2-CPU Toggle"
-# -ngl 99 (GPU full) <-> -ngl 0 (CPU puro); o script repete para voltar
-```
-
-Manual via drop-in (não edita o unit original):
-
-```bash
-sudo systemctl edit llama-cpu.service
-# [Service]
-# ExecStart=
-# ExecStart=/usr/local/bin/llama-server --alias gemma-4-e2b --host 127.0.0.1 --port 4110 \
-#   -m /opt/models/gemma4-e2b/gemma-4-E2B-it-Q3_K_M.gguf \
-#   --mmproj /opt/models/gemma4-e2b/mmproj-gemma-4-E2B-it-Q8_0.gguf \
-#   -c 131072 -np 2 -ngl 0 -fa on -t 4 -tb 4 \
-#   --cache-type-k turbo3 --cache-type-v turbo3 --prio -1 --api-key guest@123
-sudo systemctl daemon-reload && sudo systemctl restart llama-cpu
-# conferir: journalctl -u llama-cpu | grep "n_ctx_slot" (e "offloaded 0/N layers to GPU")
-```
-
-Exemplo — devpipe (o filtro `--only` é "contém", então `E-devpipe` roda os 5):
-
-```bash
-# GPU2 em CPU (-ngl 0), HTTP direto na bridge :4125, role exec
-dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
-  --only E-devpipe --api-key guest@123 --bridge http://127.0.0.1:4125 --role exec
-
-# um caso só (ferramentas de dev: read/write/edit/glob/grep/git/bash)
-dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
-  --only E-devpipe-tools --api-key guest@123 --bridge http://127.0.0.1:4125
-
-# devpipe pelo opencode real (agente exec -> provider llama/ = GPU2)
-dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
-  --standalone --only E-standalone-devpipe --standalone-agent exec \
-  --api-key guest@123 --bridge http://127.0.0.1:4125
-
-llama-gpu2-cpu-toggle.sh        # ao final: devolve a GPU2 para GPU full
-```
+**`LAB-SETUP.md`**. Para rodar a GPU2 (E2B) em **CPU** com `-ngl 0` (toggle
+`llama-gpu2-cpu-toggle.sh`, drop-in do `llama-cpu.service` e exemplos de devpipe
+`--only E-devpipe`), veja **`LAB-SETUP.md` — Cenário E**.
 
 ## Harness — argumentos e exemplos
 
