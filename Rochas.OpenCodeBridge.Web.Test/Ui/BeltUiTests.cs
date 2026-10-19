@@ -141,6 +141,15 @@ public static class BeltUiTests
                 switch (phase)
                 {
                     // Nova janela por faixa (as anteriores ficam abertas p/ comparar).
+                    case "ui":
+                    {
+                        var upage = await context.NewPageAsync();
+                        await upage.GotoAsync(web + "/Chat");
+                        await upage.WaitForSelectorAsync("#conv, #prompt, select#agentId",
+                            new PageWaitForSelectorOptions { Timeout = 15000 });
+                        failures += await UiChatSendAsync(api, upage, belt);
+                        break;
+                    }
                     case "batch":
                     {
                         var bpage = await context.NewPageAsync();
