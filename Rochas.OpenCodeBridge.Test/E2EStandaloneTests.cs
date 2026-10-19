@@ -9,6 +9,8 @@ internal static class E2EStandaloneTests
     static string Run(string prompt, params string[] expect)
     {
         string outText = TestContext.OpencodeRun(prompt);
+        TestContext.Check(!outText.Contains("Error:") && !outText.Contains("Timed out"),
+            $"opencode retornou erro: {outText[..Math.Min(300, outText.Length)]}");
         if (expect.Length > 0)
             TestContext.Check(expect.Any(e => outText.Contains(e, StringComparison.OrdinalIgnoreCase)),
                 $"esperado {string.Join("|", expect)}; veio: {outText[..Math.Min(300, outText.Length)]}");

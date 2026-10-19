@@ -9,6 +9,11 @@ NOBUILD=0
 for a in "$@"; do [[ "$a" == "--no-build" ]] && NOBUILD=1; done
 
 REPO="${REPO:-/media/mint/3686C649614854E61/Projetos/Git/OpenCodeBridge}"
+# Sob sudo, o HOME vira /root: o opencode perde o config de modelos/agents.
+# Aponta o XDG_CONFIG_HOME para o home do usuario invocador.
+CFG_USER="${SUDO_USER:-$(id -un)}"
+CFG_HOME="$(getent passwd "$CFG_USER" | cut -d: -f6)"
+[[ -n "$CFG_HOME" ]] && export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$CFG_HOME/.config}"
 LOG=/tmp/opencode/pipeline.log
 mkdir -p /tmp/opencode
 exec > >(tee -a "$LOG") 2>&1
