@@ -30,7 +30,7 @@ internal static class WorkspaceGuard
     }
 
     // Raízes extras permitidas além do workspace: /mnt e /media e subpastas.
-    private static readonly string[] ExtraRoots = { "/mnt", "/media" };
+    private static readonly string[] ExtraRoots = { "/mnt", "/media", "/tmp" };
 
     private static bool UnderExtraRoot(string candidate)
     {

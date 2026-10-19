@@ -38,8 +38,10 @@ public sealed class SubagentToolHandler : IToolHandler
         string model = args["model"]?.GetValue<string>() ?? "";
         double temp = args["temperature"]?.GetValue<double>() ?? 0.4;
 
+        string ws = args["workspace"]?.GetValue<string>() ?? context.WorkspaceRoot;
+        if (string.IsNullOrWhiteSpace(ws)) ws = context.WorkspaceRoot;
         string upstream = string.IsNullOrWhiteSpace(context.UpstreamUrl) ? "http://127.0.0.1:4100" : context.UpstreamUrl;
-        var executor = new BridgeToolExecutor(context.WorkspaceRoot, upstream, context.ApiKey);
+        var executor = new BridgeToolExecutor(ws, upstream, context.ApiKey);
 
         var messages = new JsonArray(
             new JsonObject { ["role"] = "system", ["content"] = system },
