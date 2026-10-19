@@ -12,18 +12,19 @@ public static class WorkflowSeeder
         IGenericRepository<WorkflowStep> steps)
     {
         // Estados possiveis (Gemma Forge)
+        // Nomes de exibicao em pt-BR; codigos (Code) em en-US para o codigo.
         var statusDefs = new (string Code, string Name)[]
         {
-            ("DRAFT", "Draft"),
-            ("APPROVED", "Approved"),
-            ("DEPRECATED", "Deprecated"),
-            ("PLANNED", "Planned"),
-            ("RUNNING", "Running"),
-            ("COMPLETED", "Completed"),
-            ("REJECTED", "Rejected"),
-            ("QUEUED", "Queued"),
-            ("CANCELLED", "Cancelled"),
-            ("FAILED", "Failed"),
+            ("DRAFT", "Rascunho"),
+            ("APPROVED", "Aprovado"),
+            ("DEPRECATED", "Descontinuado"),
+            ("PLANNED", "Planejado"),
+            ("RUNNING", "Em execucao"),
+            ("COMPLETED", "Concluido"),
+            ("REJECTED", "Rejeitado"),
+            ("QUEUED", "Na fila"),
+            ("CANCELLED", "Cancelado"),
+            ("FAILED", "Falhou"),
             ("NOVO", "Novo"),
             ("ACEITE", "Aceite"),
             ("REPROVADO", "Reprovado"),
@@ -48,32 +49,32 @@ public static class WorkflowSeeder
         {
             (typeof(Rochas.AI.Manager.Domain.Models.ModelArtifact), new[]
             {
-                ("Draft -> Approved", 1, "DRAFT", "APPROVED"),
-                ("Approved -> Deprecated", 2, "APPROVED", "DEPRECATED"),
+                ("Rascunho -> Aprovado", 1, "DRAFT", "APPROVED"),
+                ("Aprovado -> Descontinuado", 2, "APPROVED", "DEPRECATED"),
             }),
             (typeof(Rochas.AI.Manager.Domain.Profiles.InstructionProfile), new[]
             {
-                ("Draft -> Approved", 1, "DRAFT", "APPROVED"),
-                ("Approved -> Deprecated", 2, "APPROVED", "DEPRECATED"),
+                ("Rascunho -> Aprovado", 1, "DRAFT", "APPROVED"),
+                ("Aprovado -> Descontinuado", 2, "APPROVED", "DEPRECATED"),
             }),
             (typeof(Rochas.AI.Manager.Domain.Harness.HarnessProfile), new[]
             {
-                ("Draft -> Approved", 1, "DRAFT", "APPROVED"),
-                ("Approved -> Deprecated", 2, "APPROVED", "DEPRECATED"),
+                ("Rascunho -> Aprovado", 1, "DRAFT", "APPROVED"),
+                ("Aprovado -> Descontinuado", 2, "APPROVED", "DEPRECATED"),
             }),
             (typeof(Rochas.AI.Manager.Domain.Experiments.Experiment), new[]
             {
-                ("Planned -> Running", 1, "PLANNED", "RUNNING"),
-                ("Running -> Completed", 2, "RUNNING", "COMPLETED"),
-                ("Completed -> Approved", 3, "COMPLETED", "APPROVED"),
-                ("Completed -> Rejected", 4, "COMPLETED", "REJECTED"),
+                ("Planejado -> Em execucao", 1, "PLANNED", "RUNNING"),
+                ("Em execucao -> Concluido", 2, "RUNNING", "COMPLETED"),
+                ("Concluido -> Aprovado", 3, "COMPLETED", "APPROVED"),
+                ("Concluido -> Rejeitado", 4, "COMPLETED", "REJECTED"),
             }),
             (typeof(Rochas.AI.Manager.Domain.Training.TrainingJob), new[]
             {
-                ("Queued -> Running", 1, "QUEUED", "RUNNING"),
-                ("Running -> Completed", 2, "RUNNING", "COMPLETED"),
-                ("Running -> Failed", 3, "RUNNING", "FAILED"),
-                ("Queued -> Cancelled", 4, "QUEUED", "CANCELLED"),
+                ("Na fila -> Em execucao", 1, "QUEUED", "RUNNING"),
+                ("Em execucao -> Concluido", 2, "RUNNING", "COMPLETED"),
+                ("Em execucao -> Falhou", 3, "RUNNING", "FAILED"),
+                ("Na fila -> Cancelado", 4, "QUEUED", "CANCELLED"),
             }),
             (typeof(Rochas.AI.Manager.Domain.Entities.TrainingWorkflowCard), new[]
             {
