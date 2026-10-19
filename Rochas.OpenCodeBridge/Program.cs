@@ -1633,6 +1633,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // Stream real sai por caminho proprio (sem a chamada unica abaixo).
         if (wantStream)
         {
+            // Sonda: dump do request CHAT completo (system + tools) do caminho stream.
+            if (Diagnostic) Log(new JsonObject { ["event"]="traffic", ["mode"]="translate-stream-req", ["model"]=requestedModel, ["req_len"]=chat.ToJsonString().Length, ["req"]=chat.ToJsonString() });
             HandleResponsesStream(ctx, chat, requestedModel, temperature, thinking, startedAt);
             return;
         }
@@ -1875,6 +1877,8 @@ var shape = new StringBuilder();
     /// <param name="sys">System prompt original.</param>
     static string WithFormula(string sys)
     {
+        // --harness 0: sem caudas (cliente traz o proprio harness, ex.: opencode).
+        if (!Harness) return sys ?? "";
         string t = (sys ?? "").Trim();
         // Ordem: comportamento primeiro (o enquadramento geral), depois uso de tools
         // (o especifico). Assim o "como agir" vem antes do "como chamar a ferramenta".
