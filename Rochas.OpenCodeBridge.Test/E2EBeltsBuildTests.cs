@@ -12,11 +12,11 @@ internal static class E2EBeltsBuildTests
 {
     static readonly (string Key, string Prompt)[] Belts =
     {
-        ("azul", "Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Divida em fases por escopo de backend e divida a tarefa de implementacao usando subagent tool, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie arquivos .cs com as classes, interfaces e repositorios."),
-        ("verde", "Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ. Escopo: dominio + banco SQL. Premissas: backend .NET C#. Divida em fases por escopo e divida a tarefa usando subagent tool, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs (entidades/VOs) e .sql (DDL)."),
-        ("roxa", "Especifique o dominio backend C# de cadastro de clientes e fornecedores, o banco de dados SQL (DDL, indices, constraints) e os repositorios e servicos: repositorio generico Dapper, servicos de aplicacao, validacao e mascaras de e-mail, telefone BR com DDD e CEP. Escopo: dominio + banco SQL + repositorios e servicos. Premissas: backend .NET C#. Divida em fases e divida a tarefa usando subagent tool, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs e .sql."),
-        ("marrom", "Especifique o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL, os repositorios e servicos (Dapper), a API REST e o frontend React. Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida em fases por escopo e divida a tarefa usando subagent tool, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs, .sql e .tsx/.jsx."),
-        ("preta", "Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador, banco de dados SQL, repositorios e servicos, API REST, servicos bus, pipeline de Big Data com ML (regressao, classificacao, rede neural perceptron). Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida em fases por escopo e divida a tarefa usando subagent tool, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs, .sql e scripts de treino."),
+        ("azul", "Crie consulta de dados em tabela reembolsos usando repositorio generico ORM. Backend .NET C#. Crie arquivos .cs. Critério de aceite: solução implementada, codificada em arquivos no disco e compilando. crie arquivos .cs com as classes, interfaces e repositorios."),
+        ("verde", "CRUD reembolsos: entidades, value objects, regras aprovacao, DDL SQL, indices, constraints, seeds, validacao CPF/CNPJ. Backend .NET C#. Crie arquivos .cs e .sql. Critério de aceite: solução implementada, codificada em arquivos no disco e compilando. arquivos .cs (entidades/VOs) e .sql (DDL)."),
+        ("roxa", "Cadastro clientes/fornecedores: dominio C#, DDL SQL, repositorios Dapper, servicos, validacao/mascaras email, telefone BR DDD, CEP. Crie arquivos .cs e .sql. Critério de aceite: solução implementada, codificada em arquivos no disco e compilando. arquivos .cs e .sql."),
+        ("marrom", "CRUD reembolsos: dominio C#, SQL, repositorios Dapper, servicos, API REST, frontend React. Crie arquivos .cs, .sql, .tsx. Critério de aceite: solução implementada, codificada em arquivos no disco e compilando. arquivos .cs, .sql e .tsx/.jsx."),
+        ("preta", "Portal Colaborador: dominio C#, SQL, repositorios, servicos, API REST, servicos bus, ML (regressao, classificacao, perceptron). Crie arquivos .cs, .sql, scripts. Critério de aceite: solução implementada, codificada em arquivos no disco e compilando. arquivos .cs, .sql e scripts de treino."),
     };
 
     static void Log(string msg) { Console.WriteLine(msg); Console.Out.Flush(); }
@@ -66,7 +66,7 @@ internal static class E2EBeltsBuildTests
                 for (int turn = 0; turn < 10 && filesCreated < 8; turn++)
                 {
                     var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                        new JsonObject { ["model"]=model, ["temperature"]=0.5, ["stream"]=false, ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
+                        new JsonObject { ["model"]=model, ["temperature"]=0.5, ["stream"]=false, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
                     var msg = r["choices"]?[0]?["message"]?.AsObject();
                     string content = msg?["content"]?.GetValue<string>() ?? "";
                     totalChars += content.Length;
