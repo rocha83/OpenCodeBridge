@@ -83,6 +83,36 @@ internal static class E2EBeltsBuildTests
                     }
                     Log($"  [belt-build:{key}] turno {turn}: {calls.Count} write(s), total arquivos={filesCreated}");
                 }
+                // Fase de revisao: 12B le os arquivos criados e revisa.
+                if (filesCreated >= 3)
+                {
+                    var readTools = new JsonArray
+                    {
+                        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="read", ["description"]="le arquivo", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path") } } }
+                    };
+                    history.Add(new JsonObject { ["role"]="user", ["content"]="Revise os arquivos criados (leia-os com read) e responda REVIEW-OK com um resumo de 1 linha por arquivo." });
+                    for (int turn = 0; turn < 4; turn++)
+                    {
+                        var r2 = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
+                            new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["messages"]=history.DeepClone(), ["tools"]=readTools.DeepClone() });
+                        var msg2 = r2["choices"]?[0]?["message"]?.AsObject();
+                        string content2 = msg2?["content"]?.GetValue<string>() ?? "";
+                        totalChars += content2.Length;
+                        var calls2 = msg2?["tool_calls"]?.AsArray();
+                        if (calls2 is null || calls2.Count == 0) { Log($"  [belt-build:{key}] revisao: {content2[..Math.Min(80,content2.Length)]}"); break; }
+                        var echo2 = new JsonArray();
+                        foreach (var c in calls2) echo2.Add(new JsonObject { ["id"]=c?["id"]?.GetValue<string>()??"", ["type"]="function", ["function"]=new JsonObject { ["name"]=c?["function"]?["name"]?.GetValue<string>()??"", ["arguments"]=c?["function"]?["arguments"]?.GetValue<string>()??"{}" } });
+                        history.Add(new JsonObject { ["role"]="assistant", ["content"]=content2, ["tool_calls"]=echo2 });
+                        foreach (var c in calls2)
+                        {
+                            var a = JsonNode.Parse(c?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject();
+                            string path = a["path"]?.GetValue<string>() ?? "";
+                            string full = System.IO.Path.Combine(ws, path);
+                            string fileContent = System.IO.File.Exists(full) ? System.IO.File.ReadAllText(full) : "(nao existe)";
+                            history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c?["id"]?.GetValue<string>()??"", ["content"]=fileContent[..Math.Min(500,fileContent.Length)] });
+                        }
+                    }
+                }
                 bool ok = filesCreated >= 3 && totalChars > 500;
                 Log($"  [belt-build:{key}] {(ok ? "PASS" : "FAIL")} arquivos={filesCreated} chars={totalChars}");
                 SaveResult(key, ok ? "PASS" : "FAIL", $"arquivos={filesCreated} chars={totalChars}");
