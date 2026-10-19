@@ -47,21 +47,21 @@ internal static class E2EToolsFullTests
         TestContext.Check(w2["ok"]?.GetValue<bool>() == true, $"{label} write subpasta ok");
 
         // 8. git init + add + commit
-        var gi = await Exec("shell", new JsonObject { ["command"] = "git init && git config user.email t@t.com && git config user.name t" });
+        var gi = await Exec("shell", new JsonObject { ["command"] = "bash -c \"git init && git config user.email t@t.com && git config user.name t\"" });
         TestContext.Check(gi["ok"]?.GetValue<bool>() == true, $"{label} git init ok");
         var ga = await Exec("shell", new JsonObject { ["command"] = "git add -A" });
         TestContext.Check(ga["ok"]?.GetValue<bool>() == true, $"{label} git add ok");
-        var gc = await Exec("shell", new JsonObject { ["command"] = "git commit -m 'init' 2>&1 | tail -1" });
+        var gc = await Exec("shell", new JsonObject { ["command"] = "bash -c \"git commit -m init 2>&1 | tail -1\"" });
         TestContext.Check(gc["ok"]?.GetValue<bool>() == true, $"{label} git commit ok");
         var gl = await Exec("shell", new JsonObject { ["command"] = "git log --oneline" });
         TestContext.Check(gl["ok"]?.GetValue<bool>() == true && (gl["output"]?.GetValue<string>() ?? "").Contains("init"), $"{label} git log ok");
 
         // 9. compilacao C# (dotnet new + build + run)
-        var dn = await Exec("shell", new JsonObject { ["command"] = "rm -rf /tmp/opencode/toolsfull/csharptest && mkdir -p /tmp/opencode/toolsfull/csharptest && cd /tmp/opencode/toolsfull/csharptest && dotnet new console --force 2>&1 | tail -1" });
+        var dn = await Exec("shell", new JsonObject { ["command"] = "bash -c \"rm -rf /tmp/opencode/toolsfull/csharptest && mkdir -p /tmp/opencode/toolsfull/csharptest && cd /tmp/opencode/toolsfull/csharptest && dotnet new console --force 2>&1 | tail -1\"" });
         TestContext.Check(dn["ok"]?.GetValue<bool>() == true, $"{label} dotnet new ok");
-        var db = await Exec("shell", new JsonObject { ["command"] = "cd /tmp/opencode/toolsfull/csharptest && dotnet build 2>&1 | tail -3" });
+        var db = await Exec("shell", new JsonObject { ["command"] = "bash -c \"cd /tmp/opencode/toolsfull/csharptest && dotnet build 2>&1 | tail -3\"" });
         TestContext.Check(db["ok"]?.GetValue<bool>() == true && (db["output"]?.GetValue<string>() ?? "").Contains("Compilação com êxito") || (db["output"]?.GetValue<string>() ?? "").Contains("Build succeeded"), $"{label} dotnet build ok");
-        var dr = await Exec("shell", new JsonObject { ["command"] = "cd /tmp/opencode/toolsfull/csharptest && dotnet run 2>&1 | tail -3" });
+        var dr = await Exec("shell", new JsonObject { ["command"] = "bash -c \"cd /tmp/opencode/toolsfull/csharptest && dotnet run 2>&1 | tail -3\"" });
         TestContext.Check(dr["ok"]?.GetValue<bool>() == true, $"{label} dotnet run ok");
 
         // 10. validacao e execucao de script
