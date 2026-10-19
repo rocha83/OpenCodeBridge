@@ -1,6 +1,6 @@
 using Rochas.AI.Manager.Application.Abstractions;
 using Rochas.AI.Manager.Application.Services;
-using Rochas.AI.Manager.Web.Data;
+using Rochas.AI.Manager.Application.Data;
 using Rochas.DapperRepository;
 using Rochas.Data.Specification.Enums;
 using Rochas.Data.Specification.Interfaces;
@@ -128,5 +128,5 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Harness}/{action=Index}/{id?}");
 
-AppDb.Init();
+Rochas.AI.Manager.Application.Data.AppDb.Init();
 app.Run();

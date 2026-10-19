@@ -1,0 +1,15 @@
+@model IEnumerable<Rochas.AI.Manager.Domain.Profiles.TrainingPattern>
+@{ ViewData["Title"] = "Training Patterns"; }
+<button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
+<div class="table-responsive d-none d-md-block">
+  <table class="table table-striped"><thead><tr><th>Id</th><th>Nome</th></tr></thead>
+  <tbody>@foreach(var p in Model){<tr><td>@p.Id</td><td>@p.Name</td></tr>}</tbody></table>
+</div>
+<div class="d-md-none">@foreach(var p in Model){<div class="card mb-2"><div class="card-body"><h6>@p.Name</h6></div></div>}</div>
+<div class="modal fade" id="createModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/TrainingPatterns/Create">@Html.AntiForgeryToken()
+    <div class="modal-header"><h5 class="modal-title">Novo Training Pattern</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body"><input name="name" class="form-control mb-2" placeholder="Nome" required /></div>
+    <div class="modal-footer"><button type="submit" class="btn btn-primary">Salvar</button></div>
+  </form>
+</div></div></div>
