@@ -2228,3 +2228,35 @@ bridge (modo bypass/legacy), sempre que o cliente nao trouxer harness proprio.
 
 Nota: a trilha build custom (E2EBeltsBuildTests) fica preservada como trilha
 alternativa; esta etapa nao a remove.
+
+### Resultado da bateria build — opencode standalone (2026-10-19)
+
+Comando por faixa: `opencode run --standalone --auto -m openai/gemma-4-12b-build
+--agent build "<enunciado>"`, workspace limpo, timeout 40 min/faixa.
+Bridge com harness desligado (sem tool-blacklist/thinking-off-roles), max_tokens
+8192, anti-repeat on.
+
+| Faixa  | Status | Arquivos | Extensoes         | Tempo  |
+|--------|--------|----------|-------------------|--------|
+| azul   | PASS   | 5        | .cs, .csproj      | ~1,5m  |
+| verde  | PASS   | 4        | .cs               | ~2,2m  |
+| roxa   | PASS   | 6        | .cs               | ~2,2m  |
+| marrom | PASS   | 4        | .cs, .sql         | ~2,6m  |
+| preta  | PASS   | 8        | .cs, .sql, .py    | ~3,9m  |
+
+Total: **5/5 PASS em ~12,4 min** (o harness custom levava horas e falhava a verde).
+Confirmacao pratica de que o harness nativo do opencode e o caminho: tools
+chamadas de forma consistente, sem `tool_choice=required` forçado.
+
+Ressalvas registradas:
+- **azul**: o `.csproj` saiu malformado (`<Project S_u_e_l_l_e>` em vez de
+  `<Project Sdk="...">`) -> `dotnet build` falha (MSB4025). Arquivos entregues,
+  mas nao compila. Investigar se e ruido do modelo/anti-repeat ou do template.
+- **verde/roxa**: nao criaram `.sql` (DDL ficou declarado no texto). Exigir
+  extensao esperada por faixa no criterio.
+- **marrom**: sem `.tsx`/API (escopo front/API parcial).
+- **preta**: melhor cobertura (dominio + repos + SQL + 3 scripts ML em Python).
+
+Proximo passo sugerido: sintetizar o harness do opencode (captura) e aplica-lo
+como harness nativo + tails na bridge em modo bypass/legacy (equivalente ao
+"modo qwen"), para clientes que nao tragam harness proprio.
