@@ -92,7 +92,12 @@ builder.Services.AddScoped<IPersistenceRepository<Agent>>(sp => sp.GetRequiredSe
 builder.Services.AddScoped(_ => new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString));
 
 // Servicos
-builder.Services.AddScoped<IHarnessProfileService, HarnessProfileService>();
+builder.Services.AddScoped<IHarnessProfileService>(sp => new HarnessProfileService(
+    sp.GetRequiredService<IGenericRepository<HarnessProfile>>(),
+    sp.GetRequiredService<IPersistenceRepository<HarnessProfile>>(),
+    sp.GetRequiredService<IGenericRepository<HarnessProfileVersion>>(),
+    sp.GetRequiredService<IPersistenceRepository<HarnessProfileVersion>>(),
+    Rochas.AI.Manager.Infrastructure.Data.AppDb.ConnectionString));
 builder.Services.AddScoped<ITrainingJobService, TrainingJobService>();
 builder.Services.AddScoped<ITrainingEngine, TrainingEngine>();
 builder.Services.AddScoped<IHarnessLinter, HarnessLinter>();

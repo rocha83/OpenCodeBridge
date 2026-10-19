@@ -1,0 +1,14 @@
+@model Rochas.AI.Manager.Domain.Harness.HarnessProfile
+<div class="card">
+  <div class="card-header">@Model.Name <span class="badge bg-secondary">@Model.Status</span></div>
+  <div class="card-body">
+    <p>@Model.Description</p>
+    <h6>Versões</h6>
+    <ul>
+      @foreach (var v in Model.Versions)
+      {
+        <li>v@v.Version — @v.Mode @(v.ApprovedAt.HasValue ? "(aprovada)" : "")</li>
+      }
+    </ul>
+  </div>
+</div>
