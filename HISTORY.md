@@ -1,5 +1,41 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Suíte sempre no role Build + trilha E2E standalone no opencode real (2026-10-19)
+
+**Princípio.** Teste complexo com tools e **thinking on** não faz sentido: o modelo
+gasta raciocínio, ramifica e alucina. A suíte passa a exercitar sempre o role
+**build** (`gemma-4-12b-build`, thinking off, temp 0.3) — par do agent `build` do
+opencode. Thinking on fica para Plan/Orch/MoE (planejamento, sem tools complexas).
+
+- `TestContext.SuiteModel`: `--model` explícito vence; senão aplica o sufixo de
+  `--role` (default `build`) ao modelo servido. `E-science`, `E-mission-tools` e
+  `E-devpipe` usam `SuiteModel`.
+- **`--standalone`**: desvia cada E2E para o **opencode CLI real** (`opencode run`)
+  com o **mesmo enunciado**, em vez de HTTP direto na bridge. Conjunto
+  `E-standalone-{oi,tools,write,devpipe,science,mission-tools}`.
+  `--standalone-agent` (default `build`; `exec` → provider `llama/` = E2B CPU),
+  `--standalone-model` (provider/model) sobrepõe, `--standalone-timeout`.
+- `run-opencode-standalone.sh` (as 6 tarefas direto no CLI) e fase 3 do
+  `run-e2e-pipeline.sh` (build GPU + exec CPU). Pipeline ganhou build único +
+  `--no-build` e `REPO` overridável (produção).
+- **Resultado**: fase 3 `6/6` (GPU) + `1/1` (CPU E2B); missão C#/F#+git+zip PASS.
+
+## Tail de tools: código é a fonte única (2026-10-19)
+
+Achado: `appsettings.json` **sobrescrevia** o `HarnessToolsTail` default do código
+(`Program.cs:353`), gerando divergência — o default tinha git/zip/arquivos-grandes/
+math; o appsettings tinha o guard anti-alucinação + FORMATO DE EMISSAO. Consequência:
+a missão falhava (C# e F# imprimiam `%.6f` literal; F# quebrava em `open System.Math`).
+
+- O default do **código** agora une tudo: guard anti-alucinação (`command -v`,
+  `systemctl` — não existe `service_manager`; tool bloqueada por role não contorna
+  por shell; caminhos absolutos), FORMATO DE EMISSAO (chamada **ESTRUTURADA**;
+  prosa `[Assistant tool call]:` não executa), formatação numérica (C#
+  `ToString("F6", InvariantCulture)`; F# `printfn "%.6f" valor`) + regras
+  F#/C#/math/git/zip.
+- `harnessToolsTail` **removido** dos appsettings (runtime e `remaster-fix/web-ui`).
+- **Resultado**: `E-mission-tools` PASS.
+
 ## Política de tools é UM serviço da bridge: permissão interativa em vez de omissão (2026-10-18)
 
 **Princípio corrigido.** Manipular tools não pode ser radical omissivo. O padrão é
