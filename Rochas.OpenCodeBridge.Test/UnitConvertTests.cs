@@ -83,14 +83,16 @@ internal static class UnitConvertTests
 
     public static async Task ConvertCoercedTextCall()
     {
-        // Linha llama/CPU: texto com fenced call vira function_call quando o
-        // model id contém "cpu". Caminho vLLM (hermes & cia) jamais entra aqui.
-        var st = await TestContext.GetObj(TestContext.Bridge + "/api/status");
-        if (st["legacy_harness"]?.GetValue<bool>() != true)
-            TestContext.Skip("coercao texto->function_call e do caminho legado (legacy_harness off)");
+        // Texto com fenced call vira function_call. A coercao vale com
+        // CoerceNarrated=true (default), independente de legacy_harness.
         var body = new JsonObject
         {
             ["model"] = "openai/qwen-cpu-3b",
+            ["tools"] = new JsonArray(new JsonObject
+            {
+                ["type"] = "function",
+                ["function"] = new JsonObject { ["name"] = "get_status" }
+            }),
             ["completion"] = new JsonObject
             {
                 ["choices"] = new JsonArray(new JsonObject
@@ -115,13 +117,15 @@ internal static class UnitConvertTests
     public static async Task ConvertCoercedAngleCall()
     {
         // Formato cru do 3B na CPU (observado ao vivo): <{"name": ..}}> sem
-        // fences nem tags — tem que coagir igual.
-        var st2 = await TestContext.GetObj(TestContext.Bridge + "/api/status");
-        if (st2["legacy_harness"]?.GetValue<bool>() != true)
-            TestContext.Skip("coercao angle->function_call e do caminho legado (legacy_harness off)");
+        // fences nem tags — tem que coagir igual. CoerceNarrated=true (default).
         var body = new JsonObject
         {
             ["model"] = "llama/qwen25-coder-3b-cpu-build",
+            ["tools"] = new JsonArray(new JsonObject
+            {
+                ["type"] = "function",
+                ["function"] = new JsonObject { ["name"] = "soma" }
+            }),
             ["completion"] = new JsonObject
             {
                 ["choices"] = new JsonArray(new JsonObject
@@ -146,6 +150,11 @@ internal static class UnitConvertTests
         var bare = new JsonObject
         {
             ["model"] = "llama/qwen25-coder-3b-cpu-build",
+            ["tools"] = new JsonArray(new JsonObject
+            {
+                ["type"] = "function",
+                ["function"] = new JsonObject { ["name"] = "soma" }
+            }),
             ["completion"] = new JsonObject
             {
                 ["choices"] = new JsonArray(new JsonObject
@@ -164,5 +173,40 @@ internal static class UnitConvertTests
         var callb = outb.FirstOrDefault(o => o?["type"]?.GetValue<string>() == "function_call")?.AsObject()
             ?? throw new Exception("sem function_call coagida (bare)");
         TestContext.Check(callb?["name"]?.GetValue<string>() == "soma", "nome extraido (bare)");
+    }
+
+    public static async Task ConvertCoercedNarratedCall()
+    {
+        // Formato do opencode/llama.cpp em contexto longo: o modelo copia o
+        // historico e escreve "[Assistant tool call]: nome({...})" no corpo
+        // em vez de emitir chamada estruturada. CoerceNarrated (default) tem
+        // de reconstruir a function_call sem depender de legacy_harness.
+        var body = new JsonObject
+        {
+            ["model"] = "openai/gemma-4-12b",
+            ["tools"] = new JsonArray(new JsonObject
+            {
+                ["type"] = "function",
+                ["function"] = new JsonObject { ["name"] = "write", ["description"] = "escreve" }
+            }),
+            ["completion"] = new JsonObject
+            {
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["message"] = new JsonObject
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = "[Assistant tool call]: write({\"path\": \"/tmp/opencode/narrado.txt\", \"content\": \"ok\"})"
+                    }
+                }),
+                ["usage"] = new JsonObject { ["prompt_tokens"] = 20, ["completion_tokens"] = 15 }
+            }
+        };
+        var r = await TestContext.PostObj(TestContext.Bridge + "/api/convert", body);
+        var output = r["output"]?.AsArray() ?? throw new Exception("sem output");
+        var call = output.FirstOrDefault(o => o?["type"]?.GetValue<string>() == "function_call")?.AsObject()
+            ?? throw new Exception("sem function_call coagida (narrated)");
+        TestContext.Check(call?["name"]?.GetValue<string>() == "write", "nome extraido (narrated)");
+        TestContext.Check((call?["arguments"]?.GetValue<string>() ?? "").Contains("/tmp/opencode/narrado.txt"), "args extraidos (narrated)");
     }
 }
