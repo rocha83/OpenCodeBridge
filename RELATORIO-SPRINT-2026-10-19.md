@@ -40,7 +40,7 @@ limpo o E2B faz ~56 tok/s (é um 2B Q3).
 | 0 | health llama :4100/:4110 + bridge :4124/:4125 + VRAM | `ok` |
 | 1 | unit (skip e2e) | `PASS=26 FAIL=0 SKIP=1` (skip: `U-cpu-max-tokens-clamp`, `cpu_max_tokens=0`) |
 | 2 | science (`E-science-gpu`, `E-science-cpu`) | `PASS` (gpu ~230s, cpu ~100s) |
-| 2 | missão tools (`E-mission-tools`: C# + F# + git + zip) | _a confirmar_ |
+| 2 | missão tools (`E-mission-tools`: C# + F# + git + zip) | `PASS` (380.0s) |
 | 3 | standalone opencode build (GPU) `E-standalone-*` | `6/6 PASS` |
 | 3b | standalone opencode exec (E2B CPU) | `PASS` |
 | E2B | tools no E2B (agent exec) | `PASS` (13.2s) |
@@ -63,7 +63,8 @@ limpo o E2B faz ~56 tok/s (é um 2B Q3).
    código é fonte única.
 2. **`set -e` abortava o pipeline** no primeiro FAIL. Removido.
 3. **F# é o ponto frágil do 12B** em multi-turno (erros de inferência: FS0039/FS0193/
-   FS0001). Enunciado F# tornado prescritivo (loop mutável).
+   FS0001). Resolvido tornando o enunciado F# **prescritivo** (acumulador mutável +
+   `for`, sem `Seq`/`List.fold`): `E-mission-tools` PASS.
 
 ## 7. Como reproduzir
 
