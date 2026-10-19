@@ -32,6 +32,8 @@ T0=$(date +%s)
 # GPU1 (12B): devpipe + scripter-gen (compoe script bash + companion .md)
 ( dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- --only E-devpipe-tools --api-key "$API_KEY" --bridge "$BRIDGE" > "$REPO/test-logs/par-devpipe.log" 2>&1; echo "devpipe exit=$?" > "$REPO/test-logs/par-devpipe.exit" ) &
 P1=$!
+( dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- --only E-orch-segment --api-key "$API_KEY" --bridge "$BRIDGE" > "$REPO/test-logs/par-orch.log" 2>&1; echo "orch exit=$?" > "$REPO/test-logs/par-orch.exit" ) &
+P6=$!
 ( dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- --only E-scripter-gen --api-key "$API_KEY" --bridge "$BRIDGE" > "$REPO/test-logs/par-scripter.log" 2>&1; echo "scripter exit=$?" > "$REPO/test-logs/par-scripter.exit" ) &
 P2=$!
 # GPU2 (E2B): companion-gen (le script + gera companion .md) + science
@@ -42,11 +44,11 @@ P4=$!
 ( dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- --only E-science-cpu --api-key "$API_KEY" --bridge "$BRIDGE" > "$REPO/test-logs/par-science-gpu2.log" 2>&1; echo "science-gpu2 exit=$?" > "$REPO/test-logs/par-science-gpu2.exit" ) &
 P5=$!
 
-echo "5 processos em paralelo: devpipe, scripter-gen, companion-gen, exec-read, science-gpu2"
-wait $P1 $P2 $P3 $P4 $P5
+echo "6 processos em paralelo: devpipe, orch-segment, scripter-gen, companion-gen, exec-read, science-gpu2"
+wait $P1 $P2 $P3 $P4 $P5 $P6
 T1=$(date +%s)
 echo ">>> phase2 paralelo concluido | $(( (T1-T0)/60 ))m $(( (T1-T0)%60 ))s | $(ts)"
-for f in par-devpipe par-scripter par-companion par-exec par-science-gpu2; do
+for f in par-devpipe par-orch par-scripter par-companion par-exec par-science-gpu2; do
   echo "--- $f: $(cat $REPO/test-logs/$f.exit 2>/dev/null) ---"
   grep -E 'PASS |FAIL ' $REPO/test-logs/$f.log 2>/dev/null | tail -2
 done

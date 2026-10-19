@@ -121,6 +121,8 @@ internal static class Program
             TestContext.Run("E-scripter-gen", E2EScripterTests.ScripterGen);
             TestContext.Run("E-companion-gen", E2EScripterTests.CompanionGen);
             TestContext.Run("E-exec-read", E2EScripterTests.ExecValidate);
+            // Orch 12B segmenta enunciado em tarefas atomicas (para Scripters 12B + Exec E2B).
+            TestContext.Run("E-orch-segment", E2EOrchTests.Segment);
         }
 
         return TestContext.Summary();

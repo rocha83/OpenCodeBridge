@@ -2137,3 +2137,23 @@ bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
 - Belts ficam em backlog até correção do stream SSE no web app.
 - Trilhas verdes: bridge pura (devpipe, science, scripter, companion, exec-read)
   + standalone (opencode real) + frontpipe (gen/edit/verify).
+
+## 2026-10-19 — Orquestração por papeis (Orch -> Scripter -> Exec)
+
+- O enunciado de segmentação ("divida em tarefas menores") é do role Orch (12B),
+  que granula o enunciado em tarefas atômicas e delega para Scripters do mesmo
+  tipo (12B, role scripter) que compõem scripts bash + companion .md.
+- Os E2B (role exec) LÊEM o companion .md e EXECUTAM os scripts (fase futura).
+- Os enunciados devem citar explicitamente o nome do modelo/agente responsável
+  por cada etapa (Orch 12B, Scripter 12B, Exec E2B).
+- Não há endpoint de decomposição: a segmentação ocorre via system prompt do Orch.
+- Teste E2E: E-orch-segment (12B Orch segmenta enunciado em N tarefas).
+
+## 2026-10-19 — Orch segmenta enunciado em tarefas atomicas
+
+- E2E E-orch-segment: 12B (role orch) segmenta enunciado complexo em N tarefas
+  (JSON array) para leitura/execucao pelos Scripters (12B) e Exec (E2B).
+- Nao ha endpoint de decomposicao: a segmentacao ocorre via system prompt do Orch.
+- Enunciados citam explicitamente o modelo/agente responsavel por cada etapa.
+- Pipeline paralelo: 6 processos em paralelo (devpipe, orch-segment, scripter-gen,
+  companion-gen, exec-read, science-gpu2).
