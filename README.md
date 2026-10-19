@@ -57,6 +57,52 @@ paralelo.
 Detalhe de contextos, units, VRAM, cenários A–E e como cortar VRAM:
 **`LAB-SETUP.md`**.
 
+### Forçar a GPU2 em CPU (`-ngl 0`) e rodar o devpipe
+
+O teste CPU da GPU2 usa a **mesma unit** `llama-cpu.service`, trocando só o
+offload: **`-ngl 0`** (= `--n-gpu-layers 0`, zero camadas na GPU; `-np` é o
+número de **slots** e **não** é o interruptor de CPU). Toggle pronto, que
+reescreve `-ngl` no unit + template, dá `daemon-reload` e reinicia:
+
+```bash
+llama-gpu2-cpu-toggle.sh        # ou o atalho "Llama GPU2-CPU Toggle"
+# -ngl 99 (GPU full) <-> -ngl 0 (CPU puro); o script repete para voltar
+```
+
+Manual via drop-in (não edita o unit original):
+
+```bash
+sudo systemctl edit llama-cpu.service
+# [Service]
+# ExecStart=
+# ExecStart=/usr/local/bin/llama-server --alias gemma-4-e2b --host 127.0.0.1 --port 4110 \
+#   -m /opt/models/gemma4-e2b/gemma-4-E2B-it-Q3_K_M.gguf \
+#   --mmproj /opt/models/gemma4-e2b/mmproj-gemma-4-E2B-it-Q8_0.gguf \
+#   -c 131072 -np 2 -ngl 0 -fa on -t 4 -tb 4 \
+#   --cache-type-k turbo3 --cache-type-v turbo3 --prio -1 --api-key guest@123
+sudo systemctl daemon-reload && sudo systemctl restart llama-cpu
+# conferir: journalctl -u llama-cpu | grep "n_ctx_slot" (e "offloaded 0/N layers to GPU")
+```
+
+Exemplo — devpipe (o filtro `--only` é "contém", então `E-devpipe` roda os 5):
+
+```bash
+# GPU2 em CPU (-ngl 0), HTTP direto na bridge :4125, role exec
+dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
+  --only E-devpipe --api-key guest@123 --bridge http://127.0.0.1:4125 --role exec
+
+# um caso só (ferramentas de dev: read/write/edit/glob/grep/git/bash)
+dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
+  --only E-devpipe-tools --api-key guest@123 --bridge http://127.0.0.1:4125
+
+# devpipe pelo opencode real (agente exec -> provider llama/ = GPU2)
+dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
+  --standalone --only E-standalone-devpipe --standalone-agent exec \
+  --api-key guest@123 --bridge http://127.0.0.1:4125
+
+llama-gpu2-cpu-toggle.sh        # ao final: devolve a GPU2 para GPU full
+```
+
 ## Harness — argumentos e exemplos
 
 O harness tem **duas caudas independentes** penduradas no system:
@@ -107,27 +153,43 @@ opcional refaz **uma** chamada com o aviso, descartando a janela repetida.
 --anti-repeat 1 --anti-repeat-window 512 --anti-repeat-retry 1
 ```
 
-## Testes com outras famílias (harness legacy + modo Qwen)
+## Testes com outras famílias (legacy + modo Qwen + coerção)
 
-Para testar **Qwen3, Qwen3.5 e DeepSeek Coder V2-Lite** na mesma bridge, os dois
-argumentos abaixo são o caminho de compatibilidade — **manter 0 no Gemma 4**:
+Para testar **Qwen3, Qwen3.5 e DeepSeek Coder V2-Lite** na mesma bridge, o
+caminho de compatibilidade é **harness legacy + modo Qwen + coerção** — e tudo
+isso fica **em 0 no Gemma 4**:
 
 - `--legacy-harness 1` — **reativa o harness legado**: injeta o `SystemGuardrail`
-  no system, habilita a coerção texto→`tool_call`, o pattern-strip, o retry e o
-  clamp de `--cpu-max-tokens`. É o caminho dos modelos que dependem do wrapper.
+  no system, o pattern-strip, o retry e o clamp de `--cpu-max-tokens`. É também o
+  **pré-requisito da coerção de texto** (`CoerceFor` só roda com legacy ligado).
 - `--qwen-standard 1` — **modo Qwen**: sintetiza o ModelPrompt
   (`QwenStandard.ComposeSystem`) e anuncia as tools no padrão Alibaba
   (`ask_user_question` etc.), para a linha Qwen3/Qwen3.5.
-- DeepSeek V2-Lite é executor textual no padrão oficial e **não tem parser
-  nativo** no upstream: combine `--legacy-harness 1 --coerce-text-tools 1`.
+- `--coerce-text-tools 1` — **coerção de texto→`tool_call`**: extrai a chamada
+  escrita no corpo e sintetiza `tool_calls`. É o caminho do **DeepSeek V2-Lite**
+  (executor textual no padrão oficial, **sem parser nativo** no upstream) e dos
+  modelos que não emitem o canal nativo.
+- `--coerce-narrated 1` (default) — resgata a chamada **narrada** que o modelo
+  copia do histórico: `[Assistant tool call]: nome({...})`. Vale nos três (ctx
+  longo); desligue com `--coerce-narrated 0` se o modelo já emitir o canal nativo.
+- `--coerce-text-tools 0 --coerce-narrated 0` — caminho **cru**, sem coerção
+  nenhuma (para medir o parser nativo do upstream sem interferência).
 
 ```bash
-# Qwen3 / Qwen3.5 (parser nativo + padrão Alibaba)
---legacy-harness 1 --qwen-standard 1 --passthrough-responses false
+# Qwen3 / Qwen3.5 (parser nativo + padrão Alibaba + coerção)
+--legacy-harness 1 --qwen-standard 1 --coerce-text-tools 1 --coerce-narrated 1 \
+--passthrough-responses false
 
-# DeepSeek Coder V2-Lite (sem parser nativo: coercao de texto ligada)
---legacy-harness 1 --coerce-text-tools 1 --passthrough-responses false
+# DeepSeek Coder V2-Lite (sem parser nativo: coerção de texto obrigatória)
+--legacy-harness 1 --coerce-text-tools 1 --coerce-narrated 1 \
+--passthrough-responses false
 ```
+
+O que a coerção reconhece (`ExtractTextToolCalls`): fence ` ```json `, tags
+`<tool_call>…</tool_call>`, os wrappers `<tools>`/`<function>` do template e o
+formato narrado `[Assistant tool call]:`. A allowlist são as tools **anunciadas
+no pedido** (catálogo `RealTools`: shell/read/grep/glob/fetch/git/subagent/write/
+edit) — prosa que só *menciona* uma tool não vira chamada.
 
 ## Docs
 

@@ -309,11 +309,53 @@ Se o warning for `fit params` na **GPU2**, corte na GPU2; se for na **GPU1**
 
 ### Cenário E — GPU2 em CPU (teste de execução granular de scripts)
 
-`Llama GPU2-CPU Toggle` sobe a mesma unit `llama-cpu.service` com `-ngl 0`
-(CPU puro). Serve para testar o papel de **execução de scripts granulares**
-(Scripter/Exec) sem disputar VRAM, com os `-t/-tb` em ação. Não é o regime de
-produção; a bridge expõe `--cpu-max-tokens` para conter divagação em decode
+O teste CPU da GPU2 usa a **mesma unit** `llama-cpu.service`, trocando só o
+offload: **`-ngl 0`** (= `--n-gpu-layers 0`). Atenção: `-np` é o número de
+**slots** — **não** é o interruptor de CPU; quem desliga a GPU é o `-ngl 0`.
+Mantêm-se `-t 4 -tb 4` e o KV `turbo3`. Serve para testar o papel de **execução
+de scripts granulares** (Scripter/Exec) sem disputar VRAM; não é o regime de
+produção, e a bridge expõe `--cpu-max-tokens` para conter divagação em decode
 lento (~5 tok/s).
+
+Toggle pronto (reescreve `-ngl` no unit + template, `daemon-reload` + restart):
+
+```bash
+llama-gpu2-cpu-toggle.sh        # ou o atalho "Llama GPU2-CPU Toggle"
+# -ngl 99 (GPU full) <-> -ngl 0 (CPU puro); rodar de novo devolve para GPU
+```
+
+Manual via drop-in (não edita o unit original):
+
+```bash
+sudo systemctl edit llama-cpu.service
+# [Service]
+# ExecStart=
+# ExecStart=/usr/local/bin/llama-server --alias gemma-4-e2b --host 127.0.0.1 --port 4110 \
+#   -m /opt/models/gemma4-e2b/gemma-4-E2B-it-Q3_K_M.gguf \
+#   --mmproj /opt/models/gemma4-e2b/mmproj-gemma-4-E2B-it-Q8_0.gguf \
+#   -c 131072 -np 2 -ngl 0 -fa on -t 4 -tb 4 \
+#   --cache-type-k turbo3 --cache-type-v turbo3 --prio -1 --api-key guest@123
+sudo systemctl daemon-reload && sudo systemctl restart llama-cpu
+journalctl -u llama-cpu --no-pager | grep -E "n_ctx_slot|offloaded" | tail -3
+# esperado: n_ctx_slot = 65536 e "offloaded 0/N layers to GPU"
+```
+
+Exemplo — devpipe (o filtro `--only` é "contém": `E-devpipe` roda os 5 casos):
+
+```bash
+# GPU2 em CPU (-ngl 0), HTTP direto na bridge :4125, role exec
+dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
+  --only E-devpipe --api-key guest@123 --bridge http://127.0.0.1:4125 --role exec
+
+# um caso só (ferramentas de dev: read/write/edit/glob/grep/git/bash)
+dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
+  --only E-devpipe-tools --api-key guest@123 --bridge http://127.0.0.1:4125
+
+# devpipe pelo opencode real (agente exec -> provider llama/ = GPU2)
+dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
+  --standalone --only E-standalone-devpipe --standalone-agent exec \
+  --api-key guest@123 --bridge http://127.0.0.1:4125
+```
 
 ---
 
@@ -357,11 +399,19 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 | `--context-tokens` | `0` | tamanho do ctx do modelo servido (0 = inativo) |
 | `--harness-behavior-tail` | vazio | tail de **comportamento** |
 | `--harness-tools-tail` | default do código | tail de **tools** — não sobrescrever |
-| `--legacy-harness` | `false` | reativa o harness legado (§5 do README) |
+| `--legacy-harness` | `false` | reativa o harness legado (README — "Testes com outras famílias") |
 | `--diagnostic` | `false` | sonda Serilog extra (`/tmp/bridge-sonda.log`) |
 | `--qwen-standard` | `false` | ModelPrompt sintetizado + tools Alibaba (Qwen) |
 | `--workspace` | cwd | raiz de `POST /api/tools/execute` |
 | `--harness` | — | **inerte** (switch mestre removido); não use |
+
+**Coerção (Qwen3 / Qwen3.5 / DeepSeek Coder V2-Lite):** `--coerce-text-tools 1`
+extrai a chamada escrita no corpo (fence ` ```json `, `<tool_call>`, `<tools>`,
+`<function>`) e sintetiza `tool_calls`; `--coerce-narrated 1` (default) resgata a
+forma copiada do histórico `[Assistant tool call]: nome({...})`. A coerção de
+texto só roda com **`--legacy-harness 1`** (gate `CoerceFor`) e a allowlist são
+as tools anunciadas no pedido (`RealTools`). No Gemma 4 mantenha
+`--legacy-harness 0` e `--coerce-text-tools 0`.
 
 Subcomando: `Rochas.OpenCodeBridge.dll gate <repo> "<prompt>" [texto ...] [--review]`.
 
