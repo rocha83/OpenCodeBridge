@@ -22,6 +22,32 @@ Log: `/tmp/opencode/pipeline.log` (tee).
 | 1 | `Rochas.OpenCodeBridge.Test --skip-e2e` | `PASS=23 FAIL=0 SKIP=3` |
 | 2 | `--only E-science` + `--only E-mission-tools` | science PASS; missão C#/F# imprime `2.000000`/`5.000000` |
 | 3 | `curl /v1/responses` (oi, tópico geral) | resposta com conteúdo, sem `Decode error` |
+| 3b | Suíte com `--standalone` (opencode real, mesmos enunciados) | `E-standalone-*` PASS |
+
+## Modo standalone (opencode real)
+
+A suíte desvia cada E2E para o **opencode CLI** rodando o **mesmo enunciado**
+(`opencode run`), em vez de HTTP direto na bridge:
+
+```bash
+# toda a trilha standalone (6 testes, agent build / 12B GPU)
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --standalone --only E-standalone --api-key guest@123 --bridge http://127.0.0.1:4124
+
+# um teste só
+--standalone --only E-standalone-oi
+
+# E2B (CPU) via agent exec — model derivado -> llama/gemma-4-e2b-exec
+--standalone --standalone-agent exec --only E-standalone --bridge http://127.0.0.1:4125
+# override explícito do modelo (provider/model)
+--standalone --standalone-model openai/gemma-4-12b-build
+```
+
+- `--standalone` liga o conjunto `E-standalone-{oi,tools,write,devpipe,science,mission-tools}`.
+- `--standalone-agent` (default `build`) escolhe o agent do opencode; `exec` usa `llama/` (E2B).
+- `--standalone-model` força `provider/model`; sem ele deriva do agent (`openai/` GPU, `llama/` CPU).
+- `--standalone-timeout` (default 300s) limita cada chamada `opencode run`.
+- Enunciados são idênticos aos da trilha HTTP — só muda o caminho (opencode real vs bridge pura).
 
 ## Estado do ambiente (2026-10-18/19)
 

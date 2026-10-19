@@ -1,5 +1,24 @@
 # PENDINGS — OpenCodeBridge
 
+## Suíte E2E: trilha standalone (opencode real) + role build — feito 2026-10-19
+
+- Testes complexos com tools **não** rodam com thinking on (rambling/alucinação).
+  A suíte usa sempre o **role build** (`gemma-4-12b-build`, thinking off):
+  `TestContext.SuiteModel` aplica o sufixo de `--role` (default `build`) ao modelo
+  servido; `--model` explícito vence. Science/mission/devpipe usam `SuiteModel`.
+- Novo modo **`--standalone`**: desvia cada E2E para o **opencode CLI real**
+  (`opencode run`) com o **mesmo enunciado**, em vez de HTTP direto na bridge.
+  - Conjunto `E-standalone-{oi,tools,write,devpipe,science,mission-tools}`.
+  - `--standalone-agent` (default `build`; `exec` -> `llama/` E2B).
+  - `--standalone-model` (provider/model) sobrepõe; senão deriva do agent.
+  - Fase 3 do `run-e2e-pipeline.sh` roda build (GPU) + exec (CPU).
+- Script auxiliar: `run-opencode-standalone.sh` (mesmas 6 tarefas, direto no CLI).
+- `harnessToolsTail` ganhou regras de **F#** e de **formatação numérica**:
+  - F#: `System.Math.Sin/Cos/Sqrt/PI` (nunca `open System.Math`); sem `+. *. /.`;
+    `printfn "%.6f" valor`; `dotnet run --project`.
+  - C#: `value.ToString("F6", InvariantCulture)`; **nunca** `%.6f`.
+- Runbook: `RUNBOOK-E2E.md` (seção "Modo standalone").
+
 ## Permissao interativa de tools (RiskToolsAlerts) — plano para fechar
 
 **Mudanca de principio (2026-10-18):** manipular tools NAO pode mais ser radical

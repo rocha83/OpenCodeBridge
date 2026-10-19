@@ -22,6 +22,10 @@ internal static class Program
             else if (args[i] == "--jwt" && i + 1 < args.Length) TestContext.Jwt = args[++i];
             else if (args[i] == "--role" && i + 1 < args.Length) TestContext.Role = args[++i];
             else if (args[i] == "--model" && i + 1 < args.Length) TestContext.Model = args[++i];
+            else if (args[i] == "--standalone") TestContext.Standalone = true;
+            else if (args[i] == "--standalone-agent" && i + 1 < args.Length) TestContext.StandaloneAgent = args[++i];
+            else if (args[i] == "--standalone-model" && i + 1 < args.Length) TestContext.StandaloneModel = args[++i];
+            else if (args[i] == "--standalone-timeout" && i + 1 < args.Length) TestContext.StandaloneTimeoutSec = int.Parse(args[++i]);
         }
         Console.WriteLine($"[test] bridge={TestContext.Bridge} vllm={TestContext.Vllm} skipE2E={TestContext.SkipE2E}");
         string? cred = TestContext.Jwt ?? TestContext.ApiKey;
@@ -64,6 +68,17 @@ internal static class Program
         TestContext.Run("U-auth-login-denied", UnitAuthTests.LoginDenied);
         TestContext.Run("U-auth-swagger-jwt-doc", UnitAuthTests.SwaggerJwtDoc);
         TestContext.Run("U-auth-status-guard", UnitAuthTests.StatusGuard);
+
+        // ---- e2e standalone (opencode real, mesmos enunciados)
+        if (TestContext.Standalone)
+        {
+            TestContext.Run("E-standalone-oi", E2EStandaloneTests.Oi);
+            TestContext.Run("E-standalone-tools", E2EStandaloneTests.Tools);
+            TestContext.Run("E-standalone-write", E2EStandaloneTests.Write);
+            TestContext.Run("E-standalone-devpipe", E2EStandaloneTests.DevPipe);
+            TestContext.Run("E-standalone-science", E2EStandaloneTests.Science);
+            TestContext.Run("E-standalone-mission-tools", E2EStandaloneTests.MissionTools);
+        }
 
         // ---- e2e (modelo vivo)
         if (!TestContext.SkipE2E)
