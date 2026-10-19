@@ -18,6 +18,11 @@
     `printfn "%.6f" valor`; `dotnet run --project`.
   - C#: `value.ToString("F6", InvariantCulture)`; **nunca** `%.6f`.
 - Runbook: `RUNBOOK-E2E.md` (seção "Modo standalone").
+- Robustez do standalone (sob `sudo`/carga): o harness chama `opencode run --standalone`
+  (servidor **privado** — evita `Timed out waiting for the background service to start`)
+  e o pipeline exporta `XDG_CONFIG_HOME` do usuário invocador (`SUDO_USER`) para o
+  opencode achar o config de modelos/agents (senão: `Model unavailable`).
+- Relatório com métricas: `RELATORIO-SPRINT-2026-10-19.md`.
 
 ## Permissao interativa de tools (RiskToolsAlerts) — plano para fechar
 
