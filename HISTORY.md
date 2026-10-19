@@ -2083,3 +2083,19 @@ bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
   após tropeço do HD USB); sync `/usr/src`→persistente `/media` (disco
   `...61` fora no momento); decisão `--harness 0` nas units prod
   (vivo = `harness:true` legado, nenhuma das 2 receitas consagradas).
+
+## 2026-10-19 — Scripter (12B) compõe script bash + Exec (E2B) valida sintaxe
+
+- Novo E2E: `E-scripter-gen` (12B role scripter) compõe script bash (`tarefa.sh`)
+  + companion `tarefa.md` descrevendo o que o script faz (para o Exec ler antes
+  de executar), validando shebang + `bash -n`. `E-exec-validate` (E2B role exec)
+  lê o companion + script e valida sintaxe (`bash -n`) — execução fica para
+  outra fase (backlog). Execução do script NÃO ocorre nesta fase.
+- Correção `JsonNode` parent: `DeepClone()` no body do chat (evita
+  "The node already has a parent" em loops).
+- Pipeline paralelo (`run-pipeline-paralelo.sh`) atualizado: phase2 roda em
+  paralelo devpipe + scripter-gen (GPU1) e exec-validate + science-gpu2 (GPU2).
+- Contextos: 12B 131072×1 (GPU1), E2B 65536×2 (GPU2), ambos em VRAM.
+- Sonda (diagnostic) ligada; blacklist (dinâmica inversa) ativa.
+- Belts (azul→preta) e frontpipe ficam para fases posteriores.
+- Consumo: GPU ~154 W + CPU ~10 W ≈ 164 W; VRAM 11.4/12 GB.

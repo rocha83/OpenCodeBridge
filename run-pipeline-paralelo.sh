@@ -29,22 +29,22 @@ echo ">>> phase1 exit=$? | $(( ($(date +%s)-T0)/60 ))m | $(ts)"
 
 phase "PHASE 2 - PARALELO: GPU1 (12B) + GPU2 (E2B) trabalhando juntos"
 T0=$(date +%s)
-# GPU1: devpipe + science + mission (12B)
+# GPU1 (12B): devpipe + scripter-gen (compoe script bash + companion .md)
 ( dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- --only E-devpipe-tools --api-key "$API_KEY" --bridge "$BRIDGE" > "$REPO/test-logs/par-devpipe.log" 2>&1; echo "devpipe exit=$?" > "$REPO/test-logs/par-devpipe.exit" ) &
 P1=$!
-( dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- --only E-science-gpu --api-key "$API_KEY" --bridge "$BRIDGE" > "$REPO/test-logs/par-science-gpu.log" 2>&1; echo "science-gpu exit=$?" > "$REPO/test-logs/par-science-gpu.exit" ) &
+( dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- --only E-scripter-gen --api-key "$API_KEY" --bridge "$BRIDGE" > "$REPO/test-logs/par-scripter.log" 2>&1; echo "scripter exit=$?" > "$REPO/test-logs/par-scripter.exit" ) &
 P2=$!
-( dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- --only E-mission-tools --api-key "$API_KEY" --bridge "$BRIDGE" > "$REPO/test-logs/par-mission.log" 2>&1; echo "mission exit=$?" > "$REPO/test-logs/par-mission.exit" ) &
+# GPU2 (E2B): exec-validate (le companion .md + valida bash -n) + science
+( dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- --only E-exec-validate --api-key "$API_KEY" --bridge "$BRIDGE" > "$REPO/test-logs/par-exec.log" 2>&1; echo "exec exit=$?" > "$REPO/test-logs/par-exec.exit" ) &
 P3=$!
-# GPU2: science (E2B)
 ( dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- --only E-science-cpu --api-key "$API_KEY" --bridge "$BRIDGE" > "$REPO/test-logs/par-science-gpu2.log" 2>&1; echo "science-gpu2 exit=$?" > "$REPO/test-logs/par-science-gpu2.exit" ) &
 P4=$!
 
-echo "4 processos em paralelo: devpipe, science-gpu, mission, science-gpu2"
+echo "4 processos em paralelo: devpipe, scripter-gen, exec-validate, science-gpu2"
 wait $P1 $P2 $P3 $P4
 T1=$(date +%s)
 echo ">>> phase2 paralelo concluido | $(( (T1-T0)/60 ))m $(( (T1-T0)%60 ))s | $(ts)"
-for f in par-devpipe par-science-gpu par-mission par-science-gpu2; do
+for f in par-devpipe par-scripter par-exec par-science-gpu2; do
   echo "--- $f: $(cat $REPO/test-logs/$f.exit 2>/dev/null) ---"
   grep -E 'PASS |FAIL ' $REPO/test-logs/$f.log 2>/dev/null | tail -2
 done
