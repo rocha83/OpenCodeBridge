@@ -47,7 +47,11 @@ internal static class E2EBeltsTests
         string execModel = "gemma-4-e2b-exec";
         Log($"[belts:direct] Orch={orchModel} Scripter={scripterModel} Exec={execModel}");
         int pass = 0, fail = 0;
-        foreach (var (key, prompt) in Belts)
+        var keysEnv = Environment.GetEnvironmentVariable("BELTS_KEYS");
+        var beltsToRun = string.IsNullOrWhiteSpace(keysEnv)
+            ? Belts
+            : Belts.Where(b => keysEnv.Split(',').Select(x=>x.Trim()).Contains(b.Key)).ToArray();
+        foreach (var (key, prompt) in beltsToRun)
         {
             string ws = System.IO.Path.Combine("/tmp/opencode/belts", key);
             System.IO.Directory.CreateDirectory(ws);
