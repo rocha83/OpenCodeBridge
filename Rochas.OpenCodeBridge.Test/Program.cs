@@ -123,6 +123,10 @@ internal static class Program
             TestContext.Run("E-exec-read", E2EScripterTests.ExecValidate);
             // Orch 12B segmenta enunciado em tarefas atomicas (para Scripters 12B + Exec E2B).
             TestContext.Run("E-orch-segment", E2EOrchTests.Segment);
+            // Belts (azul→preta) sem navegador: envio direto via bridge pura.
+            TestContext.Run("E-belts-direct", E2EBeltsTests.Direct);
+            // Belts (azul→preta) Trilha BUILD: 12B build implementa diretamente.
+            TestContext.Run("E-belts-build-direct", E2EBeltsBuildTests.Direct);
         }
 
         return TestContext.Summary();

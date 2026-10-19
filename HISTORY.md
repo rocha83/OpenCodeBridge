@@ -2179,3 +2179,15 @@ bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
 - O login via curl retorna 400 Bad Request mesmo com anti-forgery token.
 - O BeltUiTests usa Playwright (Firefox) que não é suportado no ambiente.
 - Os belts ficam em backlog até a correção da infra de autenticação/stream.
+
+## 2026-10-19 — Duas trilhas de belts (Build vs Orch)
+
+- Trilha Build: 12B (role build) implementa diretamente os artefatos do enunciado
+  (sem composicao de scripts sh), usando subagentes Build E2B para implementar.
+  Asserts: resposta com tools/subagent + conteudo relevante.
+- Trilha Orch: 12B (role orch) segmenta em tarefas -> Scripter (12B) compoe
+  scripts sh + companion .md -> Exec (E2B) le e executa -> valida artefatos.
+- Ambas as trilhas rodam os belts (azul->preta). Resultados parciais guardados
+  em /tmp/opencode/belts/<key>_result.json e /tmp/opencode/belts-build/<key>_result.json.
+- A conformidade final dos artefatos resultantes e criterio de aceite do 12B
+  para ambos os modos do circuito (Build ou Orch).
