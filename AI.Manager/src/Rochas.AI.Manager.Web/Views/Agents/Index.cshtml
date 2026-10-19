@@ -2,7 +2,7 @@
 @{ ViewData["Title"] = "Agentes"; }
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
 <div class="table-responsive d-none d-md-block">
-  <table class="table table-striped">
+  <table class="table table-striped data-grid">
     <thead><tr><th>Id</th><th>Nome</th><th>Model</th><th>Mode</th><th>Ativo</th><th>Ações</th></tr></thead>
     <tbody>
     @foreach (var a in Model)
@@ -28,11 +28,11 @@
       @Html.AntiForgeryToken()
       <div class="modal-header"><h5 class="modal-title">Novo Agente</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <input name="name" class="form-control mb-2" placeholder="Nome" required />
-        <input name="model" class="form-control mb-2" placeholder="Model" required />
-        <input name="bridgeUrl" class="form-control mb-2" placeholder="Bridge URL" value="http://127.0.0.1:4124" />
-        <input name="temperature" type="number" step="0.1" class="form-control mb-2" placeholder="Temperatura" value="0.4" />
-        <input name="mode" class="form-control mb-2" placeholder="Mode (Plan/Build)" value="Build" />
+        <input name="name" class="form-control mb-2" placeholder="Nome" required  required/>
+        <input name="model" class="form-control mb-2" placeholder="Model" required  required/>
+        <input name="bridgeUrl" class="form-control mb-2" placeholder="Bridge URL" value="http://127.0.0.1:4124"  required/>
+        <input name="temperature" type="number" step="0.1" class="form-control mb-2" placeholder="Temperatura" value="0.4"  required/>
+        <input name="mode" class="form-control mb-2" placeholder="Mode (Plan/Build)" value="Build"  required/>
       </div>
       <div class="modal-footer"><button type="submit" class="btn btn-primary">Salvar</button></div>
     </form>

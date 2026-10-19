@@ -1,7 +1,7 @@
 @model IEnumerable<Rochas.AI.Manager.Domain.Harness.HarnessRun>
 @{ ViewData["Title"] = "Harness Runs"; }
 <div class="table-responsive d-none d-md-block">
-  <table class="table table-striped"><thead><tr><th>Id</th><th>ProfileVersionId</th><th>ModelBindingId</th><th>ResultCode</th><th>DurationMs</th></tr></thead>
+  <table class="table table-striped data-grid"><thead><tr><th>Id</th><th>ProfileVersionId</th><th>ModelBindingId</th><th>ResultCode</th><th>DurationMs</th></tr></thead>
   <tbody>@foreach(var r in Model){<tr><td>@r.Id</td><td>@r.ProfileVersionId</td><td>@r.ModelBindingId</td><td>@r.ResultCode</td><td>@r.DurationMs</td></tr>}</tbody></table>
 </div>
 <div class="d-md-none">@foreach(var r in Model){<div class="card mb-2"><div class="card-body"><h6>Run #@r.Id</h6><p>Result: @r.ResultCode</p><p>Duration: @r.DurationMs ms</p></div></div>}</div>

@@ -43,6 +43,28 @@
   </div>
 </div>
 <script src="~/lib/mdb/mdb.min.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('table.data-grid').forEach(function(table) {
+    var wrapper = table.parentElement;
+    // search input
+    var search = document.createElement('input');
+    search.type = 'search';
+    search.placeholder = 'Buscar...';
+    search.className = 'form-control form-control-sm mb-2';
+    wrapper.insertBefore(search, table);
+    var rows = Array.from(table.tBodies[0].rows);
+    search.addEventListener('input', function() {
+      var q = search.value.toLowerCase();
+      rows.forEach(function(r) {
+        r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+  });
+});
+</script>
+
 @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

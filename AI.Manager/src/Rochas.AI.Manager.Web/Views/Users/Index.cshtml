@@ -2,7 +2,7 @@
 @{ ViewData["Title"] = "Usuários"; }
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
 <div class="table-responsive d-none d-md-block">
-  <table class="table table-striped">
+  <table class="table table-striped data-grid">
     <thead><tr><th>Id</th><th>Nome</th><th>Email</th><th>Admin</th><th>Ativo</th><th>Ações</th></tr></thead>
     <tbody>
     @foreach (var u in Model)
@@ -28,9 +28,9 @@
       @Html.AntiForgeryToken()
       <div class="modal-header"><h5 class="modal-title">Novo Usuário</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <input name="name" class="form-control mb-2" placeholder="Nome" required />
-        <input name="email" class="form-control mb-2" placeholder="Email" required />
-        <input name="password" type="password" class="form-control mb-2" placeholder="Senha" required />
+        <input name="name" class="form-control mb-2" placeholder="Nome" required  required/>
+        <input name="email" class="form-control mb-2" placeholder="Email" required  required/>
+        <input name="password" type="password" class="form-control mb-2" placeholder="Senha" required  required/>
         <div class="form-check"><input type="checkbox" name="isAdmin" value="true" class="form-check-input" id="ia" /><label class="form-check-label" for="ia">Admin</label></div>
       </div>
       <div class="modal-footer"><button type="submit" class="btn btn-primary">Salvar</button></div>
