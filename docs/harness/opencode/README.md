@@ -16,6 +16,14 @@ simples (`opencode run --standalone --auto -m openai/gemma-4-12b-build --agent b
 3. Extrair do `/tmp/bridge-gpu.log` o evento `traffic` com `mode=translate-stream-req`
    e o maior campo `req` (é o chat com system+tools completo).
 
+## Separação: nativo x custom
+- `NATIVE.md` — o que é do opencode (Code Mode, catálogo de tools, skills, env,
+  metadados do modelo). **Não portar** para a bridge.
+- `CUSTOM.md` — o que é nosso (agente build + AGENTS.md) e a **tabela de hardcodes**
+  a remover (modelo, porta, contexto, temperatura, caminhos).
+- `SUMMARY.md` — resumo proposto: núcleo universal + tails por role, sem hardcodes
+  (~1.600 chars vs 14.010).
+
 ## Composição do harness (14.010 chars)
 | Secao | Linhas | Chars | % |
 |---|---|---|---|
