@@ -2173,3 +2173,9 @@ bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
 - Correcao: WorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net9.0
   + ExecStart com caminho absoluto para o dll.
 - U-tools-execute agora PASS.
+
+## 2026-10-19 — Belts bloqueados por anti-forgery (login 400)
+
+- O login via curl retorna 400 Bad Request mesmo com anti-forgery token.
+- O BeltUiTests usa Playwright (Firefox) que não é suportado no ambiente.
+- Os belts ficam em backlog até a correção da infra de autenticação/stream.
