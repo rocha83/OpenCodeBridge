@@ -23,6 +23,9 @@
   e o pipeline exporta `XDG_CONFIG_HOME` do usuário invocador (`SUDO_USER`) para o
   opencode achar o config de modelos/agents (senão: `Model unavailable`).
 - Relatório com métricas: `RELATORIO-SPRINT-2026-10-19.md`.
+- **Auto-gestão de testes (evolução)**: `DOC-EVOLUCAO-AUTO-TESTE.md` — supervisor (orch 12B)
+  gerencia a pipe full sobre instâncias de si (12B build) e o filho E2B (exec), com
+  segmentação azul→preta e aceite por artefato.
 
 ## Permissao interativa de tools (RiskToolsAlerts) — plano para fechar
 
