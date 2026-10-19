@@ -42,7 +42,11 @@ internal static class E2EBeltsBuildTests
             new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write", ["description"]="escreve arquivo em disco", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
         };
         int pass = 0, fail = 0;
-        foreach (var (key, prompt) in Belts)
+        var keysEnv = Environment.GetEnvironmentVariable("BELTS_KEYS");
+        var beltsToRun = string.IsNullOrWhiteSpace(keysEnv)
+            ? Belts
+            : Belts.Where(b => keysEnv.Split(',').Select(x=>x.Trim()).Contains(b.Key)).ToArray();
+        foreach (var (key, prompt) in beltsToRun)
         {
             string ws = System.IO.Path.Combine("/tmp/opencode/belts-build", key);
             System.IO.Directory.CreateDirectory(ws);
