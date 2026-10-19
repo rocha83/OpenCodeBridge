@@ -57,7 +57,9 @@ internal static class E2EBeltsBuildTests
                     new JsonObject { ["role"]="user", ["content"]=prompt });
                 int filesCreated = 0;
                 int totalChars = 0;
-                for (int turn = 0; turn < 10; turn++)
+                int lastFiles = 0;
+                int stall = 0;
+                for (int turn = 0; turn < 10 && filesCreated < 8; turn++)
                 {
                     var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
                         new JsonObject { ["model"]=model, ["temperature"]=0.5, ["stream"]=false, ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
@@ -82,6 +84,9 @@ internal static class E2EBeltsBuildTests
                         history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c?["id"]?.GetValue<string>()??"", ["content"]=$"criado {path} ({ctt.Length} chars)" });
                     }
                     Log($"  [belt-build:{key}] turno {turn}: {calls.Count} write(s), total arquivos={filesCreated}");
+                    if (filesCreated == lastFiles) stall++; else stall = 0;
+                    lastFiles = filesCreated;
+                    if (stall >= 2) { Log($"  [belt-build:{key}] stall detectado, encerrando"); break; }
                 }
                 // Fase de revisao: 12B le os arquivos criados e revisa.
                 if (filesCreated >= 3)
