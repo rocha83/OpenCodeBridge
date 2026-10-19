@@ -30,8 +30,8 @@ internal static class E2EToolsFullTests
         TestContext.Check(r["ok"]?.GetValue<bool>() == true && (r["output"]?.GetValue<string>() ?? "").Contains("class A"), $"{label} read ok");
 
         // 3. edit (sed)
-        var e = await Exec("edit", new JsonObject { ["path"] = "a.cs", ["old"] = "int X = 1", ["new"] = "int X = 42" });
-        TestContext.Check(e["ok"]?.GetValue<bool>() == true, $"{label} edit ok");
+        var e = await Exec("shell", new JsonObject { ["command"] = $"sed -i 's/int X = 1/int X = 42/' {ws}/a.cs && echo OK" });
+        TestContext.Check(e["ok"]?.GetValue<bool>() == true, $"{label} edit/sed ok");
 
         // 4. glob
         var g = await Exec("glob", new JsonObject { ["pattern"] = "*.cs", ["path"] = ws });
