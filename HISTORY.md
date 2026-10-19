@@ -2107,3 +2107,14 @@ bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
 - Exec (role exec, backlog) LÊ o companion .md e EXECUTA os scripts (fase futura).
 - Testes: E-scripter-gen (12B), E-companion-gen (E2B), E-exec-read (valida sintaxe + le companion).
 - Pipeline paralelo atualizado: 5 processos em paralelo (devpipe, scripter-gen, companion-gen, exec-read, science-gpu2).
+
+## 2026-10-19 — Belts bloqueados por endpoint Chat/Decompose ausente
+
+- Os belts (azul→preta) requerem o endpoint POST /Chat/Decompose, que não existe
+  no ChatController atual. Sem esse endpoint, DecomposeBeltAsync falha com 400/404.
+- Não foi criado o endpoint apenas para forçar verde: o objetivo é testar a
+  complexidade real suportada pelos modelos. Os belts ficam em backlog até a
+  implementação do endpoint de decomposição.
+- Trilhas verdes: bridge pura (devpipe, science-gpu, scripter-gen, companion-gen,
+  exec-read) + standalone (oi, tools, write, devpipe, science, mission).
+- Frontpipe (gen/edit/verify) pendente de validação.
