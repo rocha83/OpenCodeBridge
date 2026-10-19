@@ -59,6 +59,31 @@ como `papel` em vez de `risco`, e impedia o Plan de ler repositório.
 Verificação: 0 avisos / 0 erros nos 2 projetos · bridge `PASS=23 FAIL=0 SKIP=3` ·
 Web units 0 fails. Plano de fechamento em `PENDINGS.md`.
 
+## Coerção de tool narrada volta a ter teste: o SKIP dos 3 "legados" estava errado (2026-10-18)
+
+**Correção.** Os 3 testes de coerção pulavam com
+`if (status["legacy_harness"] != true) Skip(...)`, tratando a coerção como
+caminho legado. Só que `CoerceNarrated` é **default `true`** e o gate do código é
+`(LegacyHarness || CoerceNarrated)` — a coerção roda com o legado desligado. O
+skip mascarava exatamente o caminho que o Gemma4 usa no opencode.
+
+- `U-convert-coerced-text-call` e `U-convert-coerced-angle-call` **deixaram de
+  pular**: os corpos passaram a enviar `tools` (sem isso `hadTools=false` e a
+  coerção nem é exercitada).
+- Novo `U-convert-coerced-narrated-call` cobre o formato real
+  `[Assistant tool call]: nome({...})` (o modelo copia o histórico em contexto
+  longo em vez de emitir `tool_calls` estruturado).
+- Único SKIP restante: `U-cpu-max-tokens-clamp`, legítimo com `cpu_max_tokens=0`
+  (o caminho legado de clamp está desligado por design).
+
+Verificação: `0 warnings / 0 errors`; bridge viva `PASS=26 FAIL=0 SKIP=1`.
+
+## Pipeline E2E sequencial por fase (`run-e2e-pipeline.sh`)
+
+`run-e2e-pipeline.sh --phase 0|1|2|3|all` + `RUNBOOK-E2E.md`:
+fase 0 health/VRAM; fase 1 unit; fase 2 E2E science/mission; fase 3 standalone
+bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
+
 ## Build sem warnings e o switch mestre `--harness` sai da linha de comando (2026-10-18)
 - **Os 3 testes SKIP sao os mesmos de antes, por decisao, nao por falha:**
   `U-cpu-max-tokens-clamp`, `U-convert-coerced-text-call` e
