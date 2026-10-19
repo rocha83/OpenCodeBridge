@@ -63,5 +63,13 @@ dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
 
 - **Dev**: repo `/media/mint/3686C649614854E61/Projetos/Git/OpenCodeBridge`.
 - **Produção (chroot/live)**: `/usr/src/opencodebridge` — **apenas** `git fetch + merge + build + restart`. Nunca editar código lá.
+- Suíte em produção: **pare as bridges antes do build** (PDB lock) e rode a fase com
+  `--no-build`, com `REPO` apontando para produção:
+  ```bash
+  sudo dotnet build Rochas.OpenCodeBridge.Test/Rochas.OpenCodeBridge.Test.csproj -c Release   # bridges paradas
+  sudo systemctl start bridge-gpu bridge-cpu bridge-web
+  sudo REPO=/usr/src/opencodebridge bash run-e2e-pipeline.sh --phase all --no-build
+  ```
+- O `harnessToolsTail` é **fonte única no código** (`Program.cs`); não definir nos appsettings.
 - Subir sempre **12B antes do E2B** (senão o auto-fit do E2B falha com `-ngl 99`).
 - Remaster: `units/`, `opencode.json`, `agents/`, `web-ui/` em `/media/mint/Linux/remaster-fix/`.

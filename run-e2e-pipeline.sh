@@ -5,8 +5,10 @@ set -euo pipefail
 
 PHASE="${1:-all}"
 if [[ "$PHASE" == "--phase" ]]; then PHASE="${2:-all}"; fi
+NOBUILD=0
+for a in "$@"; do [[ "$a" == "--no-build" ]] && NOBUILD=1; done
 
-REPO=/media/mint/3686C649614854E61/Projetos/Git/OpenCodeBridge
+REPO="${REPO:-/media/mint/3686C649614854E61/Projetos/Git/OpenCodeBridge}"
 LOG=/tmp/opencode/pipeline.log
 mkdir -p /tmp/opencode
 exec > >(tee -a "$LOG") 2>&1
@@ -14,7 +16,9 @@ exec > >(tee -a "$LOG") 2>&1
 echo "=== Pipeline E2E - $(date) - phase=$PHASE ==="
 
 # Build unico (Release) antes das fases; testes rodam com --no-build.
+# Em producao, pare as bridges antes (PDB lock): use --no-build apos build manual.
 build_once() {
+  if [[ "$NOBUILD" == "1" ]]; then echo "--- Build unico: PULADO (--no-build) ---"; return; fi
   echo "--- Build unico (Release) ---"
   cd "$REPO"
   dotnet build Rochas.OpenCodeBridge.Test/Rochas.OpenCodeBridge.Test.csproj -c Release | tail -4
