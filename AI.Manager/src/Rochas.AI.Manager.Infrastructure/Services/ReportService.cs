@@ -124,7 +124,7 @@ public sealed class ReportService : IReportService
             var dt = new DataTable(q.Entity);
             if (result.Items.Count > 0)
             {
-                foreach (var k in result.Items[0].Keys) dt.Columns.Add(k);
+                foreach (var columnKey in result.Items[0].Keys) dt.Columns.Add(columnKey);
                 foreach (var row in result.Items)
                 {
                     var dr = dt.NewRow();
@@ -144,12 +144,12 @@ public sealed class ReportService : IReportService
         sb.Append("<table border='1' cellpadding='4' cellspacing='0'><tr>");
         if (result.Items.Count > 0)
         {
-            foreach (var k in result.Items[0].Keys) sb.Append($"<th>{k}</th>");
+            foreach (var columnKey in result.Items[0].Keys) sb.Append($"<th>{columnKey}</th>");
             sb.Append("</tr>");
             foreach (var row in result.Items)
             {
                 sb.Append("<tr>");
-                foreach (var v in row.Values) sb.Append($"<td>{v}</td>");
+                foreach (var cellValue in row.Values) sb.Append($"<td>{cellValue}</td>");
                 sb.Append("</tr>");
             }
         }

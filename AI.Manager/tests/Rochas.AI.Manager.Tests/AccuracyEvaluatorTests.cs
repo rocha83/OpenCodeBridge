@@ -10,38 +10,38 @@ public class AccuracyEvaluatorTests
     [Fact]
     public void BothEmpty_ReturnsHigh()
     {
-        var r = _sut.Evaluate("", "");
-        Assert.Equal(1.0, r.Score);
-        Assert.Equal(AccuracyBand.High, r.Band);
+        var result = _sut.Evaluate("", "");
+        Assert.Equal(1.0, result.Score);
+        Assert.Equal(AccuracyBand.High, result.Band);
     }
 
     [Fact]
     public void OneEmpty_ReturnsLow()
     {
-        var r = _sut.Evaluate("foo bar", "");
-        Assert.Equal(0.0, r.Score);
-        Assert.Equal(AccuracyBand.Low, r.Band);
+        var result = _sut.Evaluate("foo bar", "");
+        Assert.Equal(0.0, result.Score);
+        Assert.Equal(AccuracyBand.Low, result.Band);
     }
 
     [Fact]
     public void Identical_ReturnsHigh()
     {
-        var r = _sut.Evaluate("hello world test", "hello world test");
-        Assert.Equal(1.0, r.Score);
-        Assert.Equal(AccuracyBand.High, r.Band);
+        var result = _sut.Evaluate("hello world test", "hello world test");
+        Assert.Equal(1.0, result.Score);
+        Assert.Equal(AccuracyBand.High, result.Band);
     }
 
     [Fact]
     public void PartialOverlap_ReturnsMediumOrLow()
     {
-        var r = _sut.Evaluate("a b c d", "a b x y");
-        Assert.True(r.Score > 0 && r.Score < 1);
+        var result = _sut.Evaluate("a b c d", "a b x y");
+        Assert.True(result.Score > 0 && result.Score < 1);
     }
 
     [Fact]
     public void CaseInsensitive()
     {
-        var r = _sut.Evaluate("Hello World", "hello world");
-        Assert.Equal(1.0, r.Score);
+        var result = _sut.Evaluate("Hello World", "hello world");
+        Assert.Equal(1.0, result.Score);
     }
 }

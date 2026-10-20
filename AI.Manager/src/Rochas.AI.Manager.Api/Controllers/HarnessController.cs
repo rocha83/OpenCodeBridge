@@ -22,10 +22,10 @@ public sealed class HarnessController : ControllerBase
         if (ver is null) return NotFound();
         var atts = await _att.ListByVersionAsync(ver.Id, ct);
         var sb = new System.Text.StringBuilder();
-        foreach (var a in atts.OrderBy(a => a.Kind))
+        foreach (var attachment in atts.OrderBy(attachment => attachment.Kind))
         {
-            sb.AppendLine($"===== {a.Kind} ({a.Role}) =====");
-            sb.AppendLine(a.Content);
+            sb.AppendLine($"===== {attachment.Kind} ({attachment.Role}) =====");
+            sb.AppendLine(attachment.Content);
         }
         return Ok(new { profileId = id, versionId = ver.Id, version = ver.Version, content = sb.ToString(), charCount = sb.Length });
     }

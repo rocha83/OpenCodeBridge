@@ -12,28 +12,28 @@ namespace Rochas.AI.Manager.TrainingEngine;
 /// </summary>
 public sealed class TorchSharpTrainingBackend : ITrainingBackend
 {
-    private torch.nn.Module? _model;
-    private torch.optim.Optimizer? _optimizer;
-    private torch.nn.Module? _loss;
+    private torch.nn.Module? model;
+    private torch.optim.Optimizer? optimizer;
+    private torch.nn.Module? lossFunction;
 
-    public Task InitializeAsync(int inputSize, int hiddenSize, int outputSize, double learningRate, CancellationToken ct = default)
+    public Task InitializeAsync(int inputSize, int hiddenSize, int outputSize, double learningRate, CancellationToken cancellationToken = default)
     {
-        _model = torch.nn.Sequential(
+        model = torch.nn.Sequential(
             ("fc1", torch.nn.Linear(inputSize, hiddenSize)),
             ("relu", torch.nn.ReLU()),
             ("fc2", torch.nn.Linear(hiddenSize, outputSize)));
-        _optimizer = torch.optim.Adam(_model.parameters(), lr: learningRate);
-        _loss = torch.nn.MSELoss();
+        optimizer = torch.optim.Adam(model.parameters(), lr: learningRate);
+        lossFunction = torch.nn.MSELoss();
         return Task.CompletedTask;
     }
 
-    public Task<(double Loss, double Accuracy)> TrainEpochAsync(float[] inputs, float[] targets, int batchSize, CancellationToken ct = default)
+    public Task<(double Loss, double Accuracy)> TrainEpochAsync(float[] inputs, float[] targets, int batchSize, CancellationToken cancellationToken = default)
     {
-        if (_model is null || _optimizer is null || _loss is null) throw new InvalidOperationException("Backend not initialized.");
+        if (model is null || optimizer is null || lossFunction is null) throw new InvalidOperationException("Backend not initialized.");
 
-        _model.train();
-        int n = inputs.Length / (batchSize > 0 ? batchSize : 1);
-        if (n == 0) n = 1;
+        model.train();
+        int batchCount = inputs.Length / (batchSize > 0 ? batchSize : 1);
+        if (batchCount == 0) batchCount = 1;
         int features = inputs.Length / (inputs.Length / Math.Max(1, batchSize));
         if (features == 0) features = 1;
 
@@ -41,60 +41,59 @@ public sealed class TorchSharpTrainingBackend : ITrainingBackend
         int correct = 0;
         int total = 0;
 
-        for (int b = 0; b < n; b++)
+        for (int batchIndex = 0; batchIndex < batchCount; batchIndex++)
         {
-            ct.ThrowIfCancellationRequested();
-            int start = b * batchSize;
+            cancellationToken.ThrowIfCancellationRequested();
+            int start = batchIndex * batchSize;
             int end = Math.Min(start + batchSize, inputs.Length);
-            int bs = end - start;
-            if (bs <= 0) break;
+            int actualBatchSize = end - start;
+            if (actualBatchSize <= 0) break;
 
-            using var x = torch.tensor(inputs[start..end]).reshape(bs, -1);
-            using var y = torch.tensor(targets[start..end]).reshape(bs, -1);
+            using var inputTensor = torch.tensor(inputs[start..end]).reshape(actualBatchSize, -1);
+            using var targetTensor = torch.tensor(targets[start..end]).reshape(actualBatchSize, -1);
 
-            _optimizer.zero_grad();
-            using var pred = ((dynamic)_model!).forward(x);
-            using var l = ((dynamic)_loss!).forward(pred, y);
-            l.backward();
-            _optimizer.step();
+            optimizer.zero_grad();
+            using var prediction = ((dynamic)model!).forward(inputTensor);
+            using var lossTensor = ((dynamic)lossFunction!).forward(prediction, targetTensor);
+            lossTensor.backward();
+            optimizer.step();
 
-            totalLoss += l.item<float>();
-            // accuracy: pred mais proximo do target (argmax para classificacao binaria simples)
-            for (int i = 0; i < bs; i++)
+            totalLoss += lossTensor.item<float>();
+            for (int index = 0; index < actualBatchSize; index++)
             {
-                float p = pred[i].item<float>();
-                float t = y[i].item<float>();
-                if ((p >= 0.5f) == (t >= 0.5f)) correct++;
+                float predicted = prediction[index].item<float>();
+                float target = targetTensor[index].item<float>();
+                if ((predicted >= 0.5f) == (target >= 0.5f)) correct++;
                 total++;
             }
         }
 
-        double avgLoss = totalLoss / Math.Max(1, n);
-        double acc = total > 0 ? (double)correct / total : 0.0;
-        return Task.FromResult((Math.Round(avgLoss, 4), Math.Round(acc, 4)));
+        double averageLoss = totalLoss / Math.Max(1, batchCount);
+        double accuracy = total > 0 ? (double)correct / total : 0.0;
+        return Task.FromResult((Math.Round(averageLoss, 4), Math.Round(accuracy, 4)));
     }
 
-    public Task<double> EvaluateAsync(float[] inputs, float[] targets, CancellationToken ct = default)
+    public Task<double> EvaluateAsync(float[] inputs, float[] targets, CancellationToken cancellationToken = default)
     {
-        if (_model is null) throw new InvalidOperationException("Backend not initialized.");
-        _model.eval();
-        using var x = torch.tensor(inputs).reshape(-1, inputs.Length / Math.Max(1, targets.Length));
-        using var y = torch.tensor(targets).reshape(-1, 1);
-        using var pred = ((dynamic)_model!).forward(x);
+        if (model is null) throw new InvalidOperationException("Backend not initialized.");
+        model.eval();
+        using var inputTensor = torch.tensor(inputs).reshape(-1, inputs.Length / Math.Max(1, targets.Length));
+        using var targetTensor = torch.tensor(targets).reshape(-1, 1);
+        using var prediction = ((dynamic)model!).forward(inputTensor);
         int correct = 0, total = 0;
-        for (int i = 0; i < pred.shape[0]; i++)
+        for (int index = 0; index < prediction.shape[0]; index++)
         {
-            if ((pred[i].item<float>() >= 0.5f) == (y[i].item<float>() >= 0.5f)) correct++;
+            if ((prediction[index].item<float>() >= 0.5f) == (targetTensor[index].item<float>() >= 0.5f)) correct++;
             total++;
         }
         return Task.FromResult(total > 0 ? (double)correct / total : 0.0);
     }
 
-    public Task<byte[]> SaveCheckpointAsync(CancellationToken ct = default)
+    public Task<byte[]> SaveCheckpointAsync(CancellationToken cancellationToken = default)
     {
-        if (_model is null) throw new InvalidOperationException("Backend not initialized.");
-        using var ms = new System.IO.MemoryStream();
-        _model.save(ms);
-        return Task.FromResult(ms.ToArray());
+        if (model is null) throw new InvalidOperationException("Backend not initialized.");
+        using var memoryStream = new System.IO.MemoryStream();
+        model.save(memoryStream);
+        return Task.FromResult(memoryStream.ToArray());
     }
 }

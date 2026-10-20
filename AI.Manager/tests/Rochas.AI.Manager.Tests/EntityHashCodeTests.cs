@@ -24,7 +24,7 @@ public class EntityHashCodeTests
     [Fact]
     public void Compute_Empty()
     {
-        var h = EntityHashCode.Compute("");
-        Assert.True(h >= 0);
+        var hash = EntityHashCode.Compute("");
+        Assert.True(hash >= 0);
     }
 }

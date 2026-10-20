@@ -9,8 +9,8 @@
                 <div class="card-header">Harness Profiles (não aprovados)</div>
                 <div class="card-body">
                     <ul class="list-group">
-                        @foreach (var p in (IEnumerable<Rochas.AI.Manager.Domain.Harness.HarnessProfile>)ViewBag.HarnessProfiles)
-                        { <li class="list-group-item">@p.Name — @p.Status</li> }
+                        @foreach (var profile in (IEnumerable<Rochas.AI.Manager.Domain.Harness.HarnessProfile>)ViewBag.HarnessProfiles)
+                        { <li class="list-group-item">@profile.Name — @profile.Status</li> }
                     </ul>
                 </div>
             </div>
@@ -18,8 +18,8 @@
                 <div class="card-header">Model Artifacts (Draft)</div>
                 <div class="card-body">
                     <ul class="list-group">
-                        @foreach (var m in (IEnumerable<Rochas.AI.Manager.Domain.Models.ModelArtifact>)ViewBag.ModelArtifacts)
-                        { <li class="list-group-item">@m.Name — @m.Status</li> }
+                        @foreach (var model in (IEnumerable<Rochas.AI.Manager.Domain.Models.ModelArtifact>)ViewBag.ModelArtifacts)
+                        { <li class="list-group-item">@model.Name — @model.Status</li> }
                     </ul>
                 </div>
             </div>
@@ -27,8 +27,8 @@
                 <div class="card-header">Instruction Profiles (Draft)</div>
                 <div class="card-body">
                     <ul class="list-group">
-                        @foreach (var i in (IEnumerable<Rochas.AI.Manager.Domain.Profiles.InstructionProfile>)ViewBag.InstructionProfiles)
-                        { <li class="list-group-item">@i.Name — @i.Status</li> }
+                        @foreach (var instruction in (IEnumerable<Rochas.AI.Manager.Domain.Profiles.InstructionProfile>)ViewBag.InstructionProfiles)
+                        { <li class="list-group-item">@instruction.Name — @instruction.Status</li> }
                     </ul>
                 </div>
             </div>
@@ -38,8 +38,8 @@
                 <div class="card-header">Experiments (pendentes)</div>
                 <div class="card-body">
                     <ul class="list-group">
-                        @foreach (var e in (IEnumerable<Rochas.AI.Manager.Domain.Experiments.Experiment>)ViewBag.Experiments)
-                        { <li class="list-group-item">@e.Name — @e.Status</li> }
+                        @foreach (var experiment in (IEnumerable<Rochas.AI.Manager.Domain.Experiments.Experiment>)ViewBag.Experiments)
+                        { <li class="list-group-item">@experiment.Name — @experiment.Status</li> }
                     </ul>
                 </div>
             </div>
@@ -47,8 +47,8 @@
                 <div class="card-header">Training Workflow Cards (Novo)</div>
                 <div class="card-body">
                     <ul class="list-group">
-                        @foreach (var c in (IEnumerable<Rochas.AI.Manager.Domain.Entities.TrainingWorkflowCard>)ViewBag.TrainingCards)
-                        { <li class="list-group-item">@c.Title — StatusId=@c.StatusId</li> }
+                        @foreach (var card in (IEnumerable<Rochas.AI.Manager.Domain.Entities.TrainingWorkflowCard>)ViewBag.TrainingCards)
+                        { <li class="list-group-item">@card.Title — StatusId=@card.StatusId</li> }
                     </ul>
                 </div>
             </div>

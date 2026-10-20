@@ -32,7 +32,7 @@ public static class WorkflowSeeder
 
         var existingStatuses = await statuses.QueryRaw("SELECT * FROM entity_statuses", new Dictionary<string, object>());
         var codeToId = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var s in existingStatuses) codeToId[s.Code] = s.Id;
+        foreach (var status in existingStatuses) codeToId[status.Code] = status.Id;
 
         foreach (var (code, name) in statusDefs)
         {
@@ -87,7 +87,7 @@ public static class WorkflowSeeder
         {
             uint hash = EntityHashCode.Compute(entityType.FullName ?? entityType.Name);
             var existing = await steps.QueryRaw("SELECT * FROM workflow_steps", new Dictionary<string, object>());
-            var existingForEntity = existing.Where(s => s.EntityHashCode == hash).ToList();
+            var existingForEntity = existing.Where(step => step.EntityHashCode == hash).ToList();
             if (existingForEntity.Any()) continue;
 
             foreach (var (name, order, status, next) in stepsDef)
