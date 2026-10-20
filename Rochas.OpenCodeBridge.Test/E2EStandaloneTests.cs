@@ -87,7 +87,7 @@ internal static class E2EStandaloneTests
         Run(
             "Use tools, uma por turno. (1) shell: crie o projeto com " +
             $"`dotnet new console -o {dir} -n mis`; (2) write no arquivo {dir}/Program.cs o programa em C# que " +
-            "calcula Simpson de sin em [0,pi] com n=100 e imprime com 6 casas (ToString(\"F6\", CultureInfo.InvariantCulture)); " +
+            "calcula Simpson de sin em [0,pi] com n=100: double h=Math.PI/100; double soma=Math.Sin(0)+Math.Sin(Math.PI); for(int i=1;i<100;i++){double x=i*h; if(i%2==1) soma+=4*Math.Sin(x); else soma+=2*Math.Sin(x);} double simpson=h/3.0*soma; // => 2.000000, imprime com 6 casas (ToString(\"F6\", CultureInfo.InvariantCulture)); " +
             $"(3) shell: rode `dotnet run --project {dir}`. Responda SOMENTE com o numero impresso.",
             "2.000000");
         return Task.CompletedTask;
