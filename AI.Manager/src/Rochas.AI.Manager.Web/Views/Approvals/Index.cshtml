@@ -1,0 +1,57 @@
+@{
+    ViewData["Title"] = "Aprovações Pendentes";
+}
+<div class="container-fluid mt-3">
+    <h3>Aprovações Pendentes (Admin)</h3>
+    <div class="row mt-3">
+        <div class="col-md-6">
+            <div class="card mb-3">
+                <div class="card-header">Harness Profiles (não aprovados)</div>
+                <div class="card-body">
+                    <ul class="list-group">
+                        @foreach (var p in (IEnumerable<Rochas.AI.Manager.Domain.Harness.HarnessProfile>)ViewBag.HarnessProfiles)
+                        { <li class="list-group-item">@p.Name — @p.Status</li> }
+                    </ul>
+                </div>
+            </div>
+            <div class="card mb-3">
+                <div class="card-header">Model Artifacts (Draft)</div>
+                <div class="card-body">
+                    <ul class="list-group">
+                        @foreach (var m in (IEnumerable<Rochas.AI.Manager.Domain.Models.ModelArtifact>)ViewBag.ModelArtifacts)
+                        { <li class="list-group-item">@m.Name — @m.Status</li> }
+                    </ul>
+                </div>
+            </div>
+            <div class="card mb-3">
+                <div class="card-header">Instruction Profiles (Draft)</div>
+                <div class="card-body">
+                    <ul class="list-group">
+                        @foreach (var i in (IEnumerable<Rochas.AI.Manager.Domain.Profiles.InstructionProfile>)ViewBag.InstructionProfiles)
+                        { <li class="list-group-item">@i.Name — @i.Status</li> }
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card mb-3">
+                <div class="card-header">Experiments (pendentes)</div>
+                <div class="card-body">
+                    <ul class="list-group">
+                        @foreach (var e in (IEnumerable<Rochas.AI.Manager.Domain.Experiments.Experiment>)ViewBag.Experiments)
+                        { <li class="list-group-item">@e.Name — @e.Status</li> }
+                    </ul>
+                </div>
+            </div>
+            <div class="card mb-3">
+                <div class="card-header">Training Workflow Cards (Novo)</div>
+                <div class="card-body">
+                    <ul class="list-group">
+                        @foreach (var c in (IEnumerable<Rochas.AI.Manager.Domain.Entities.TrainingWorkflowCard>)ViewBag.TrainingCards)
+                        { <li class="list-group-item">@c.Title — StatusId=@c.StatusId</li> }
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

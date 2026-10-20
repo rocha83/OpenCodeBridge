@@ -29,6 +29,7 @@ public sealed class AccountController(IGenericRepository<User> users, IPasswordH
             new(ClaimTypes.Email, user.Email),
             new("IsAdmin", user.IsAdmin.ToString().ToLower())
         };
+        if (user.IsAdmin) claims.Add(new Claim(ClaimTypes.Role, "Admin"));
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
         return RedirectToAction("Index", "Harness");
