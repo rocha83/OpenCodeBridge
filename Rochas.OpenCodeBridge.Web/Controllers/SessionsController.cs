@@ -17,33 +17,33 @@ public sealed class SessionsController(
 {
     private bool IsAdmin => (User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User.FindFirst("IsAdmin")?.Value ?? "false").ToLower() == "true";
 
-    public async Task<IActionResult> Index(string? criterio = null, int userId = 0, string? de = null, string? ate = null, string[]? role = null)
+    public async Task<IActionResult> Index(string? criteria = null, int userId = 0, string? dateFrom = null, string? dateTo = null, string[]? role = null)
     {
         var allUsers = (await users.Query(new User())).OrderBy(u => u.Name).ToList();
         var allAgents = await agents.Query(new Agent());
         ViewBag.Users = allUsers;
         ViewBag.AgentNames = allAgents.Where(a => a.Id.HasValue).ToDictionary(a => a.Id!.Value, a => a.Name ?? "");
         ViewBag.UserNames = allUsers.Where(u => u.Id.HasValue).ToDictionary(u => u.Id!.Value, u => u.Name ?? "");
-        ViewBag.Criterio = criterio ?? "";
+        ViewBag.Criteria = criteria ?? "";
         ViewBag.SelUserId = userId;
-        ViewBag.De = de ?? "";
-        ViewBag.Ate = ate ?? "";
+        ViewBag.DateFrom = dateFrom ?? "";
+        ViewBag.DateTo = dateTo ?? "";
         ViewBag.SelRoles = role ?? [];
         ViewBag.Roles = new[] { "user", "assistant", "subagent" };
 
         // ORM: usuário exato + intervalo de criação (lados vazios = sem filtro).
         var f = new Session { UserId = userId };
-        if (DateTime.TryParse(de, out DateTime d)) f.CreatedAt = d.Date;
-        if (DateTime.TryParse(ate, out DateTime a)) f.CreatedAte = a.Date.AddDays(1).AddTicks(-1);
+        if (DateTime.TryParse(dateFrom, out DateTime d)) f.CreatedAt = d.Date;
+        if (DateTime.TryParse(dateTo, out DateTime a)) f.CreatedTo = a.Date.AddDays(1).AddTicks(-1);
         var list = (await sessions.Query(f)).ToList();
         ViewBag.Total = list.Count;
 
         // Critério/papel: Search no conteúdo das mensagens ([Filterable]) e interseção.
-        if (!string.IsNullOrWhiteSpace(criterio) || (role?.Length ?? 0) > 0)
+        if (!string.IsNullOrWhiteSpace(criteria) || (role?.Length ?? 0) > 0)
         {
-            ICollection<SessionMessage> msgs = string.IsNullOrWhiteSpace(criterio)
+            ICollection<SessionMessage> msgs = string.IsNullOrWhiteSpace(criteria)
                 ? await messages.Query(new SessionMessage())
-                : await messages.Search(criterio.Trim());
+                : await messages.Search(criteria.Trim());
             if ((role?.Length ?? 0) > 0)
                 msgs = msgs.Where(m => role!.Contains(m.Role ?? "", StringComparer.OrdinalIgnoreCase)).ToList();
             var ids = new HashSet<int>(msgs.Where(m => m.SessionId.HasValue).Select(m => m.SessionId!.Value));

@@ -9,13 +9,13 @@ namespace Rochas.OpenCodeBridge.Web.Controllers;
 [Authorize]
 public sealed class AgentsController(IGenericRepository<Agent> agents, IPersistenceRepository<Agent> agentsWrite) : Controller
 {
-    public async Task<IActionResult> Index(string? criterio = null, string[]? model = null, string[]? mode = null, string? thinking = null, string? active = null)
+    public async Task<IActionResult> Index(string? criteria = null, string[]? model = null, string[]? mode = null, string? thinking = null, string? active = null)
     {
         ViewBag.NewAgent = DefaultAgent();
         var all = await agents.Query(new Agent());
         ViewBag.Models = all.Select(a => a.Model ?? "").Where(s => s != "").Distinct().OrderByDescending(s => s).ToList();
         ViewBag.Modes = all.Select(a => string.IsNullOrEmpty(a.Mode) ? "Build" : a.Mode).Distinct().OrderBy(s => s).ToList();
-        ViewBag.Criterio = criterio ?? "";
+        ViewBag.Criteria = criteria ?? "";
         ViewBag.SelModels = model ?? [];
         ViewBag.SelModes = mode ?? [];
         ViewBag.ThinkingOn = thinking == "events";
@@ -29,9 +29,9 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
         if ((model?.Length ?? 0) == 1) f.Model = model![0];
         if ((mode?.Length ?? 0) == 1) f.Mode = mode![0];
         if (thinking == "events") f.Thinking = "events";
-        IEnumerable<Agent> list = string.IsNullOrWhiteSpace(criterio)
+        IEnumerable<Agent> list = string.IsNullOrWhiteSpace(criteria)
             ? await agents.Query(f)
-            : await agents.Search(criterio.Trim());
+            : await agents.Search(criteria.Trim());
         // Multi-valor e tri-state de ativo fora da entidade: interseção em memória.
         if (active == "1") list = list.Where(a => a.Active);
         if ((model?.Length ?? 0) > 1) list = list.Where(a => model!.Contains(a.Model ?? ""));
@@ -39,8 +39,9 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
         return View(list.OrderByDescending(a => a.Model).ThenBy(a => a.Name).ToList());
     }
 
+    // Preset do form "Novo agente": Build 12B na GPU :4124 (temp 0.3, thinking off).
     private static Agent DefaultAgent() =>
-        new() { Active = true, Model = "qwen3.5-9b", BridgeUrl = "http://127.0.0.1:4124", Temperature = 0.4, Thinking = "events", Tools = "shell,read,write,edit,grep,glob,fetch,git" };
+        new() { Active = true, Model = "gemma-4-12b", BridgeUrl = "http://127.0.0.1:4124", Temperature = 0.3, Thinking = "off", Tools = "shell,read,write,edit,grep,glob,fetch,git" };
 
     // Presets do form -> tools reais (leitura=read+grep, escrita=write+edit).
     private static string ExpandTools(string[]? selected, string? mode)

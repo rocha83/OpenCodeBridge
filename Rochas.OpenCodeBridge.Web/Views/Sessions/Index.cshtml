@@ -8,7 +8,7 @@
     <form method="get" action="/Sessions" class="row g-2 align-items-end">
       <div class="col-md-3">
         <label class="form-label small text-muted mb-1" for="q">Critério (conteúdo das mensagens)</label>
-        <input id="q" name="criterio" class="form-control form-control-sm" value="@ViewBag.Criterio" placeholder="ex.: reembolso, poema..." />
+        <input id="q" name="criteria" class="form-control form-control-sm" value="@ViewBag.Criteria" placeholder="ex.: reembolso, poema..." />
       </div>
       <div class="col-md-2">
         <label class="form-label small text-muted mb-1" for="f-user">Usuário</label>
@@ -22,11 +22,11 @@
       </div>
       <div class="col-md-2">
         <label class="form-label small text-muted mb-1" for="f-de">De</label>
-        <input id="f-de" type="date" name="de" class="form-control form-control-sm" value="@ViewBag.De" />
+        <input id="f-date-from" type="date" name="dateFrom" class="form-control form-control-sm" value="@ViewBag.DateFrom" />
       </div>
       <div class="col-md-2">
         <label class="form-label small text-muted mb-1" for="f-ate">Até</label>
-        <input id="f-ate" type="date" name="ate" class="form-control form-control-sm" value="@ViewBag.Ate" />
+        <input id="f-date-to" type="date" name="dateTo" class="form-control form-control-sm" value="@ViewBag.DateTo" />
       </div>
       <div class="col-md-2">
         <div class="small text-muted mb-1">Papel</div>
@@ -55,7 +55,7 @@
       <div class="d-flex justify-content-between align-items-start gap-2">
         <div>
           <a class="fw-bold text-decoration-none" href="/Sessions/Details/@s.Id">@s.Title</a>
-          <span class="badge bg-info ms-2">@(agentNames.TryGetValue(s.AgentId, out var an) ? an : "#" + s.AgentId)</span>
+          <span class="badge bg-info ms-2">@(s.AgentId is int aid && agentNames.TryGetValue(aid, out var an) ? an : "#" + s.AgentId)</span>
           <div class="small text-muted mt-1">@(userNames.TryGetValue(s.UserId, out var un) ? un : "#" + s.UserId) · criada @s.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm") · atualizada @s.UpdatedAt.ToLocalTime().ToString("dd/MM HH:mm")</div>
         </div>
         <div class="btn-group btn-group-sm flex-shrink-0">

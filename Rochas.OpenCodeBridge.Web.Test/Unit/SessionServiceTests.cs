@@ -219,13 +219,13 @@ internal static class SessionServiceTests
         {
             UserId = userId,
             CreatedAt = DateTime.UtcNow.AddDays(-1),
-            CreatedAte = DateTime.UtcNow.AddDays(1),
+            CreatedTo = DateTime.UtcNow.AddDays(1),
         });
         Check(mine.Any(x => x.Id == id), "Session range encontra");
         var fora = await sessionsRepo.Query(new Session
         {
             CreatedAt = DateTime.UtcNow.AddDays(-30),
-            CreatedAte = DateTime.UtcNow.AddDays(-20),
+            CreatedTo = DateTime.UtcNow.AddDays(-20),
         });
         Check(!fora.Any(x => x.Id == id), "Session range exclui");
         var semFiltro = await sessionsRepo.Query(new Session());

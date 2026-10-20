@@ -13,16 +13,16 @@ public sealed class UsersController(IGenericRepository<User> users, IPersistence
     // Usuários: só admin (lista e mutações). Não-admin nem vê o link.
     private bool IsAdmin => (User.FindFirst("IsAdmin")?.Value ?? "false").ToLower() == "true";
 
-    public async Task<IActionResult> Index(string? criterio = null)
+    public async Task<IActionResult> Index(string? criteria = null)
     {
         if (!IsAdmin) return Forbid();
-        ViewBag.Criterio = criterio ?? "";
+        ViewBag.Criteria = criteria ?? "";
         // Filtro em memoria (OR nome/email; Search faria AND entre colunas).
         var all = await users.Query(new User());
         IEnumerable<User> list = all;
-        if (!string.IsNullOrWhiteSpace(criterio))
+        if (!string.IsNullOrWhiteSpace(criteria))
         {
-            string q = criterio.Trim();
+            string q = criteria.Trim();
             list = all.Where(u => (u.Name ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
                 || (u.Email ?? "").Contains(q, StringComparison.OrdinalIgnoreCase));
         }

@@ -535,6 +535,32 @@ bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
   4. **Contexto acumulado**: sessão chegou a 36k tokens de prompt sem poda;
      `appsettings`/`opencode.json` seguem com os tetos antigos
      (`gemma4-12b-qa` 163840/32768) e precisam acompanhar as units.
+## Remaster 2026-10-20 — Gemma 4 128k, Bridge/Web e loop agêntico
+- **Modelos/serviços:** 12B em `-c 131072 -np 1`; E2B em `-c 131072 -np 2`
+  (2×65536). Bridge `--max-tokens 8192`. Perfis: Plan/Orch `0.6`,
+  Build/Scripter/Exec `0.3`, MoE `0.8` (bridge, `opencode.json` e seeder).
+- **Web:** `ContextWindow` com CPU `65536`/saída `8192`/entrada `57344` e GPU
+  `122880`; detecção de `:4125`/`e2b`. `AgentSeeder` e preset
+  `AgentsController.DefaultAgent` em `gemma-4-12b` (`:4124`, temp `0.3`,
+  thinking `off`).
+- **Nomenclatura en-US:** `FluxoController`→`FlowController` (rota `/Flow`;
+  `/Fluxo` 404), views/`FlowTests` renomeadas; `criterio`→`criteria`,
+  `de`/`ate`→`dateFrom`/`dateTo`, `ViewBag.De/Ate`→`DateFrom/DateTo`,
+  `Session.CreatedAte`→`CreatedTo`. Comentários seguem pt-BR.
+- **Loop agêntico:** no caminho chat, o turno agora envia
+  `assistant.tool_calls` + mensagens `tool` com `tool_call_id` e o output
+  truncado (`CutForContext`). Antes só o texto do subagente voltava ao
+  contexto; o modelo repetia chamadas às cegas. Caminho Responses já usava
+  `function_call_output`.
+- **Build/testes:** `Rochas.OpenCodeBridge.Web` e `.Web.Test` Release com
+  **0 warnings / 0 erros**; `--units-only` PASS. Smoke descartável em `:4131`:
+  login, `/Flow` 200, `/Sessions` 200, `/Agents` 200, `/Fluxo` 404.
+- **Desktop/remaster:** launchers `Llama GPU 12B` e `Llama GPU2-CPU E2B`
+  (128k; CPU 2 slots), `start-opencodeweb.sh` com zenity porta/senha,
+  `dbeaver.desktop` restaurado; ícones `.desktop` confiáveis (`metadata::trusted`);
+  `cloudflared 2026.10.1` instalado + tutorial de acesso externo (nginx/pgsql/
+  gitea/Web/Bridge, quick/named tunnel e Access); clone do OpenCodeBridge em
+  `/usr/src/rochas-dotnet-toolkit/OpenCodeBridge`.
 
 ## Bridge — Gemma 4 (12B denso + E2B): tubo puro e bateria E2E (2026-10-18, **parcial**)
 - **Escopo:** validar a bridge como frente única para a família **Gemma 4** (12B denso

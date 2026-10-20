@@ -226,6 +226,7 @@ internal static class ChatIntegrationTests
                 {
                     var chunk = JsonNode.Parse(data);
                     var delta = chunk?["choices"]?[0]?["delta"];
+
                     if (delta?["content"] != null) gotContent = true;
                 }
                 catch { }

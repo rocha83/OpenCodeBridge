@@ -8,26 +8,26 @@ using Rochas.OpenCodeBridge.Web.Services;
 
 namespace Rochas.OpenCodeBridge.Web.Controllers;
 
-// Fluxo: controles de repeticao + calda de system prompt (so admin).
+// Flow: controles de repeticao + calda de system prompt (so admin).
 // Espelha o aspecto do CRUD de agentes. Comentarios pt-BR.
 [Authorize]
-public sealed class FluxoController(
+public sealed class FlowController(
     IGenericRepository<PromptControl> controls,
     IPersistenceRepository<PromptControl> controlsWrite,
     PromptControlService controlCache) : Controller
 {
     private bool IsAdmin => (User.FindFirst("IsAdmin")?.Value ?? "false").ToLower() == "true";
 
-    public async Task<IActionResult> Index(string? criterio = null)
+    public async Task<IActionResult> Index(string? criteria = null)
     {
         if (!IsAdmin) return Forbid();
-        ViewBag.Criterio = criterio ?? "";
+        ViewBag.Criteria = criteria ?? "";
         // Filtro em memoria (Search faz AND entre colunas; aqui vale OR chave/rotulo).
         var all = await controls.Query(new PromptControl());
         IEnumerable<PromptControl> list = all;
-        if (!string.IsNullOrWhiteSpace(criterio))
+        if (!string.IsNullOrWhiteSpace(criteria))
         {
-            string q = criterio.Trim();
+            string q = criteria.Trim();
             list = all.Where(c => (c.Key ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
                 || (c.Label ?? "").Contains(q, StringComparison.OrdinalIgnoreCase));
         }
@@ -48,11 +48,11 @@ public sealed class FluxoController(
         current.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         await controlsWrite.Update(current, new PromptControl { Key = key });
         controlCache.Invalidate();
-        TempData["FluxoMsg"] = key.StartsWith("anti_repeat", StringComparison.OrdinalIgnoreCase)
+        TempData["FlowMsg"] = key.StartsWith("anti_repeat", StringComparison.OrdinalIgnoreCase)
             ? $"Salvo ({key}). Vai ao appsettings da bridge e exige reiniciá-la."
             : $"Salvo ({key}).";
         if (key.StartsWith("anti_repeat", StringComparison.OrdinalIgnoreCase))
-            TempData["FluxoMsg"] += " " + SyncBridgeSettings();
+            TempData["FlowMsg"] += " " + SyncBridgeSettings();
         return RedirectToAction("Index");
     }
 
@@ -61,7 +61,7 @@ public sealed class FluxoController(
     public IActionResult RestartBridge()
     {
         if (!IsAdmin) return Forbid();
-        TempData["FluxoMsg"] = RestartBridge4124();
+        TempData["FlowMsg"] = RestartBridge4124();
         return RedirectToAction("Index");
     }
 

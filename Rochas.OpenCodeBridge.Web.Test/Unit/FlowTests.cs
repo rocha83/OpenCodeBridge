@@ -12,7 +12,7 @@ using Rochas.OpenCodeBridge.Web.Services;
 
 namespace Rochas.OpenCodeBridge.Web.Test.Unit;
 
-internal static class FluxoTests
+internal static class FlowTests
 {
     private static int Failures;
     private static int Total;

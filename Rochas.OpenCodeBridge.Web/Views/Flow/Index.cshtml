@@ -2,23 +2,23 @@
 @{ Layout = "_Layout"; ViewData["Title"] = "Fluxo"; }
 <div class="card mb-3">
   <div class="card-body">
-    <form method="get" action="/Fluxo" class="row g-2 align-items-end">
+    <form method="get" action="/Flow" class="row g-2 align-items-end">
       <div class="col-md-8">
         <label class="form-label small text-muted mb-1" for="q">Critério (chave ou rótulo)</label>
-        <input id="q" name="criterio" class="form-control form-control-sm" value="@ViewBag.Criterio" placeholder="ex.: calda, anti_repeat..." />
+        <input id="q" name="criteria" class="form-control form-control-sm" value="@ViewBag.Criteria" placeholder="ex.: calda, anti_repeat..." />
       </div>
       <div class="col-md-4">
         <div class="row g-2">
           <div class="col-12 d-flex gap-2 mt-4">
             <button type="submit" class="btn btn-sm btn-info">Buscar</button>
-            <a href="/Fluxo" class="btn btn-sm btn-outline-secondary">Limpar</a>
+            <a href="/Flow" class="btn btn-sm btn-outline-secondary">Limpar</a>
           </div>
         </div>
       </div>
     </form>
   </div>
 </div>
-@if (TempData["FluxoMsg"] is string msg) {
+@if (TempData["FlowMsg"] is string msg) {
 <div class="alert alert-info py-2 small">@msg</div>
 }
 <div class="card">
@@ -26,7 +26,7 @@
     <p class="fw-bold mb-0">Fluxo — repetição e calda</p>
     <div class="d-flex align-items-center gap-2">
       <span class="small text-muted me-2">@Model.Count() de @ViewBag.Total controles</span>
-      <form method="post" action="/Fluxo/RestartBridge" class="d-inline" onsubmit="return confirm('Reiniciar a bridge :4124? O chat cai por alguns segundos.')">@Html.AntiForgeryToken()<button class="btn btn-sm btn-outline-warning">Reiniciar bridge</button></form>
+      <form method="post" action="/Flow/RestartBridge" class="d-inline" onsubmit="return confirm('Reiniciar a bridge :4124? O chat cai por alguns segundos.')">@Html.AntiForgeryToken()<button class="btn btn-sm btn-outline-warning">Reiniciar bridge</button></form>
     </div>
   </div>
   <div class="card-body py-2"><p class="small text-muted mb-0">@ViewBag.Bridge</p></div>
@@ -41,7 +41,7 @@
           <div class="small text-muted">atualizado: @c.UpdatedAt</div>
         </div>
         <div class="btn-group btn-group-sm flex-shrink-0">
-          <button class="btn btn-outline-secondary" data-mdb-toggle="modal" data-mdb-target="#fluxoModal-@c.Key.Replace("_", "-")">Editar</button>
+          <button class="btn btn-outline-secondary" data-mdb-toggle="modal" data-mdb-target="#flowModal-@c.Key.Replace("_", "-")">Editar</button>
         </div>
       </div>
     </div>
@@ -49,14 +49,14 @@
   </div>
 </div>
 @foreach (var c in Model) {
-<div class="modal fade" id="fluxoModal-@c.Key.Replace("_", "-")" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="flowModal-@c.Key.Replace("_", "-")" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-fullscreen-md-down">
     <div class="modal-content">
       <div class="modal-header">
         <h6 class="modal-title mb-0">@c.Label <span class="small text-muted">(@c.Key)</span></h6>
         <button type="button" class="btn-close" data-mdb-dismiss="modal" aria-label="Fechar"></button>
       </div>
-      <form method="post" action="/Fluxo/Save">
+      <form method="post" action="/Flow/Save">
         @Html.AntiForgeryToken()
         <input type="hidden" name="key" value="@c.Key" />
         <div class="modal-body crud-form">

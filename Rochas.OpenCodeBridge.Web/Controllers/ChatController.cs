@@ -1348,12 +1348,33 @@ public sealed class ChatController(
                 break;
             }
 
-            // Ao contexto volta SÓ texto (user/assistant/subagente): outputs de
-            // tools NÃO entram no loop (persistidos em tool_calls + histórico).
-            // Sem tool_calls no contexto (sem elas, a API exige as respostas).
+            // Ao contexto volta texto + tool_calls + outputs truncados: o modelo
+            // vê o resultado real da tool e não repete a mesma chamada às cegas.
+            // O par assistant(tool_calls)/tool(tool_call_id) é exigido pela API.
             string turnContent = StripThinkTags(assistantContent.ToString(), assistantThinking);
-            if (!string.IsNullOrWhiteSpace(turnContent))
-                messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = turnContent });
+            if (!string.IsNullOrWhiteSpace(turnContent) || toolCalls.Count > 0)
+            {
+                var assistantTurn = new JsonObject
+                {
+                    ["role"] = "assistant",
+                    ["content"] = string.IsNullOrWhiteSpace(turnContent) ? null : turnContent,
+                };
+                if (toolCalls.Count > 0)
+                {
+                    var calls = new JsonArray();
+                    foreach (var tc in toolCalls)
+                    {
+                        calls.Add(new JsonObject
+                        {
+                            ["id"] = tc.Id,
+                            ["type"] = "function",
+                            ["function"] = new JsonObject { ["name"] = tc.Name, ["arguments"] = tc.Args },
+                        });
+                    }
+                    assistantTurn["tool_calls"] = calls;
+                }
+                messages.Add(assistantTurn);
+            }
 
             // Persiste o texto do turno ao fechar (o que a bolha já exibiu),
             // sem esperar o fim do loop com as tools. Turno só-com-espaço e sem
@@ -1386,6 +1407,9 @@ public sealed class ChatController(
                 {
                     if (session?.Id is int sidEmpty)
                         await sessionService.LogToolAsync(sidEmpty, agent.Name, "subagent", args, false, "recusado: prompt vazio", 0);
+                    // Fecha o tool_call_id mesmo na recusa: a API exige a resposta.
+                    messages.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = id,
+                        ["content"] = "[subagent] recusado: prompt vazio. Reenvie a fase com objetivo, arquivos e o que fazer." });
                     messages.Add(new JsonObject { ["role"] = "user",
                         ["content"] = "[subagent] recusado: prompt vazio. Reenvie a fase com objetivo, arquivos e o que fazer." });
                     continue;
@@ -1411,7 +1435,9 @@ public sealed class ChatController(
                         if (session?.Id is int sidRej)
                             await sessionService.LogToolAsync(sidRej, agent.Name, "subagent", args, false, rej, 0, null, turnMsgId > 0 ? turnMsgId : null);
                         await WriteProgressAsync(outputStream, "tool_done", name, false, ct, rej, 0, "", args);
-                        // Corretivo volta ao contexto como user (fala com o modelo).
+                        // Corretivo volta ao contexto como user; o tool_call_id
+                        // também recebe resposta para não invalidar o próximo turno.
+                        messages.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = id, ["content"] = rej });
                         messages.Add(new JsonObject { ["role"] = "user", ["content"] = rej });
                         continue;
                     }
@@ -1442,14 +1468,14 @@ public sealed class ChatController(
                 var gateDeny = await ConfirmGateAsync(outputStream, name, args,
                     Services.ConfirmGate.LastUserText(messages), session?.Id, session?.AutoApprove == true, ct,
                     http, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent);
-                var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
+                var result = gateDeny ?? toolExecutor.Execute(name, args ?? "", 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
                 toolExecutor.LogInnerAsync = null;
                 sw.Stop();
                 if (session?.Id is int sidLog)
                 {
-                    int outerId = await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
+                    int outerId = await sessionService.LogToolAsync(sidLog, agent.Name, name, args ?? "",
                         result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds,
                         null, turnMsgId > 0 ? turnMsgId : null);
                     if (turnMsgId <= 0) lock (unlinkedToolIds) unlinkedToolIds.Add(outerId);
@@ -1488,8 +1514,15 @@ public sealed class ChatController(
                 string output = result.Output ?? "";
                 string error = result.Error ?? "";
                 string contentFull = result.Success ? output : $"Error: {error}";
-                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds, "", args);
-                // Outputs NÃO voltam ao contexto; só o texto do subagente (como assistant).
+                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds, "", args ?? "");
+                // Devolve o output truncado no par tool_call_id: o modelo enxerga
+                // o resultado real (antes só via o texto do subagente).
+                messages.Add(new JsonObject
+                {
+                    ["role"] = "tool",
+                    ["tool_call_id"] = id,
+                    ["content"] = CutForContext(contentFull),
+                });
                 if (subText is not null)
                 {
                     // Resumo curto p/ contexto: o texto integral (com as linhas
@@ -1916,7 +1949,7 @@ public sealed class ChatController(
                 if (name == "subagent" && string.IsNullOrWhiteSpace(SubPrompt(args)))
                 {
                     if (session?.Id is int sidEmpty)
-                        await sessionService.LogToolAsync(sidEmpty, agent.Name, "subagent", args, false, "recusado: prompt vazio", 0);
+                        await sessionService.LogToolAsync(sidEmpty, agent.Name, "subagent", args ?? "", false, "recusado: prompt vazio", 0);
                     input.Add(new JsonObject
                     {
                         ["type"] = "message", ["role"] = "user",
@@ -1925,7 +1958,7 @@ public sealed class ChatController(
                     });
                     continue;
                 }
-                await WriteProgressAsync(outputStream, "tool_start", name, null, ct, "", 0, "", args);
+                await WriteProgressAsync(outputStream, "tool_start", name, null, ct, "", 0, "", args ?? "");
                 // Card imediato no "digitando": o sub real adota ao no primeiro chunk.
                 if (name == "subagent") await WriteProgressAsync(outputStream, "sub_start", name, null, ct);
                 // Gate de escopo: subagent recebe UMA fase (máx 2 recusas).
@@ -1933,15 +1966,15 @@ public sealed class ChatController(
                 if (harness && name == "subagent" && subScopeRejects < 2)
                 {
                     string subPrompt = "";
-                    try { subPrompt = JsonNode.Parse(args)?.AsObject()?["prompt"]?.GetValue<string>() ?? ""; }
+                    try { subPrompt = JsonNode.Parse(args ?? "")?.AsObject()?["prompt"]?.GetValue<string>() ?? ""; }
                     catch { /* args ilegível: deixa passar */ }
                     if (SubagentScopeGate.IsFullTaskPass(originalTask, subPrompt))
                     {
                         subScopeRejects++;
                         string rej = SubagentScopeGate.RejectMessage(subScopeRejects);
                         if (session?.Id is int sidRej)
-                            await sessionService.LogToolAsync(sidRej, agent.Name, "subagent", args, false, rej, 0);
-                        await WriteProgressAsync(outputStream, "tool_done", name, false, ct, rej, 0, "", args);
+                            await sessionService.LogToolAsync(sidRej, agent.Name, "subagent", args ?? "", false, rej, 0);
+                        await WriteProgressAsync(outputStream, "tool_done", name, false, ct, rej, 0, "", args ?? "");
                         input.Add(new JsonObject
                         {
                             ["type"] = "message", ["role"] = "user",
@@ -1969,10 +2002,10 @@ public sealed class ChatController(
                     }
                     : null;
                 // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
-                var gateDeny = await ConfirmGateAsync(outputStream, name, args,
+                var gateDeny = await ConfirmGateAsync(outputStream, name, args ?? "",
                     Services.ConfirmGate.LastUserInputText(input), session?.Id, session?.AutoApprove == true, ct,
                     http, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent);
-                var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
+                var result = gateDeny ?? toolExecutor.Execute(name, args ?? "", 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 anyToolRan = true;
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
@@ -1980,7 +2013,7 @@ public sealed class ChatController(
                 sw.Stop();
                 if (session?.Id is int sidLog)
                 {
-                    int outerId = await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
+                    int outerId = await sessionService.LogToolAsync(sidLog, agent.Name, name, args ?? "",
                         result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds);
                     lock (unlinkedToolIds) unlinkedToolIds.Add(outerId);
                 }
@@ -2015,11 +2048,11 @@ public sealed class ChatController(
                     catch { /* histórico best-effort */ }
                 }
                 string contentFull = result.Success ? (result.Output ?? "") : $"Error: {result.Error}";
-                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds, "", args);
+                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds, "", args ?? "");
                 input.Add(new JsonObject
                 {
                     ["type"] = "function_call", ["id"] = id, ["call_id"] = id,
-                    ["name"] = name, ["arguments"] = args,
+                    ["name"] = name, ["arguments"] = args ?? "",
                 });
                 input.Add(new JsonObject
                 {
@@ -2126,7 +2159,7 @@ public sealed class ChatController(
     // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.
 
     // Prompt do subagente nos args (vazio = call fantasma, sem label).
-    private static string SubPrompt(string argsJson)
+    private static string SubPrompt(string? argsJson)
     {
         try { return JsonNode.Parse(argsJson ?? "")?.AsObject()?["prompt"]?.GetValue<string>() ?? ""; }
         catch { return ""; }

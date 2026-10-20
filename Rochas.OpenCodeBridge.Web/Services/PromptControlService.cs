@@ -4,7 +4,7 @@ using Rochas.OpenCodeBridge.Web.Models;
 namespace Rochas.OpenCodeBridge.Web.Services;
 
 // Leitura dos prompt_controls com cache curto (calda aplicada em todo request).
-// Escrita: FluxoController (admin). Comentarios pt-BR.
+// Escrita: FlowController (admin). Comentarios pt-BR.
 public sealed class PromptControlService(IGenericRepository<PromptControl> repo)
 {
     private Dictionary<string, string> _cache = new(StringComparer.OrdinalIgnoreCase);
