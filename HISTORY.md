@@ -107,6 +107,7 @@ stream_per_delta=false: output_text.delta=1  | texto identico
 ```
 
 Tráfego real pós-fix: traduzido 468 deltas × nativo 446 — mesma granularidade.
+`E-standalone-mission-tools` PASS (22.7s) com o stream por delta ligado.
 
 **Sonda do anti-repeat.** Antes só a cauda era logada; agora `dup_at` (posição da
 ocorrência anterior da janela) e `dup_ctx` (80 chars a partir dela) mostram
