@@ -149,7 +149,13 @@ builder.Services.AddScoped<ITrainingWorkflowService>(sp => new TrainingWorkflowS
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 
-var jwtKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes("ai-manager-jwt-secret-change-me"));
+var jwtSecret = builder.Configuration["Jwt:Secret"];
+if (string.IsNullOrWhiteSpace(jwtSecret))
+{
+    if (builder.Environment.IsDevelopment()) jwtSecret = "ai-manager-jwt-secret-change-me";
+    else throw new InvalidOperationException("Jwt:Secret deve ser configurado fora de Development.");
+}
+var jwtKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(jwtSecret));
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(o => { o.LoginPath = "/Account/Login"; o.Cookie.Name = "ai.manager"; })
     .AddJwtBearer(o =>

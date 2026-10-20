@@ -27,7 +27,13 @@ builder.Host.UseSerilog();
 
 
 builder.Services.AddControllers();
-var jwtKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes("ai-manager-jwt-secret-change-me"));
+var jwtSecret = builder.Configuration["Jwt:Secret"];
+if (string.IsNullOrWhiteSpace(jwtSecret))
+{
+    if (builder.Environment.IsDevelopment()) jwtSecret = "ai-manager-jwt-secret-change-me";
+    else throw new InvalidOperationException("Jwt:Secret deve ser configurado fora de Development.");
+}
+var jwtKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(jwtSecret));
 builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {
