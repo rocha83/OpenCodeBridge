@@ -2321,16 +2321,17 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             if (!thinkOpen && thinking == "events")
             {
                 reasoningId = "rs_" + NewId();
+                // Formato NATIVO do llama.cpp (reasoning_text + content), nao o
+                // par summary_text/part: com summary o opencode renderiza o
+                // raciocinio como um snippet de resumo, diferente dos demais.
                 Emit("response.output_item.added", new JsonObject
                 {
                     ["type"] = "response.output_item.added", ["output_index"] = 0,
-                    ["item"] = new JsonObject { ["id"] = reasoningId, ["type"] = "reasoning", ["summary"] = new JsonArray() }
-                });
-                Emit("response.reasoning_summary_part.added", new JsonObject
-                {
-                    ["type"] = "response.reasoning_summary_part.added", ["item_id"] = reasoningId,
-                    ["output_index"] = 0, ["content_index"] = 0, ["summary_index"] = 0,
-                    ["part"] = new JsonObject { ["type"] = "summary_text", ["text"] = "" }
+                    ["item"] = new JsonObject
+                    {
+                        ["id"] = reasoningId, ["summary"] = new JsonArray(), ["type"] = "reasoning",
+                        ["content"] = new JsonArray(), ["encrypted_content"] = "", ["status"] = "in_progress"
+                    }
                 });
                 thinkOpen = true;
             }
@@ -2345,10 +2346,9 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                 repeatTrip = true;
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "thinking", ["window"] = AntiRepeatWindow, ["thinking_chars"] = thinkingText.Length });
             }
-            Emit("response.reasoning_summary_text.delta", new JsonObject
+            Emit("response.reasoning_text.delta", new JsonObject
             {
-                ["type"] = "response.reasoning_summary_text.delta", ["item_id"] = reasoningId,
-                ["output_index"] = 0, ["content_index"] = 0, ["summary_index"] = 0, ["delta"] = text
+                ["type"] = "response.reasoning_text.delta", ["delta"] = text, ["item_id"] = reasoningId
             });
         }
 
@@ -2553,25 +2553,15 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         if (thinkOpen)
         {
             string thinkingFinal = StripControlTags(thinkingText.ToString(), "done");
-            Emit("response.reasoning_summary_text.done", new JsonObject
-            {
-                ["type"] = "response.reasoning_summary_text.done", ["item_id"] = reasoningId,
-                ["output_index"] = 0, ["content_index"] = 0, ["summary_index"] = 0, ["text"] = thinkingFinal
-            });
-            // Sem o part.done o opencode nao consolida os deltas (text fica "").
-            Emit("response.reasoning_summary_part.done", new JsonObject
-            {
-                ["type"] = "response.reasoning_summary_part.done", ["item_id"] = reasoningId,
-                ["output_index"] = 0, ["content_index"] = 0, ["summary_index"] = 0,
-                ["part"] = new JsonObject { ["type"] = "summary_text", ["text"] = thinkingFinal }
-            });
+            // Nativo: sem summary_text.done/part.done; o texto vai no content do item.
             Emit("response.output_item.done", new JsonObject
             {
                 ["type"] = "response.output_item.done", ["output_index"] = 0,
                 ["item"] = new JsonObject
                 {
-                    ["id"] = reasoningId, ["type"] = "reasoning",
-                    ["summary"] = new JsonArray(new JsonObject { ["type"] = "summary_text", ["text"] = thinkingText.ToString() })
+                    ["id"] = reasoningId, ["summary"] = new JsonArray(), ["type"] = "reasoning",
+                    ["content"] = new JsonArray(new JsonObject { ["text"] = thinkingFinal }),
+                    ["encrypted_content"] = "", ["status"] = "completed"
                 }
             });
         }
@@ -3221,8 +3211,9 @@ if (type == "message")
         {
             output.Add(new JsonObject
             {
-                ["id"] = "rs_" + NewId(), ["type"] = "reasoning",
-                ["summary"] = new JsonArray(new JsonObject { ["type"] = "summary_text", ["text"] = thinking })
+                ["id"] = "rs_" + NewId(), ["summary"] = new JsonArray(), ["type"] = "reasoning",
+                ["content"] = new JsonArray(new JsonObject { ["text"] = thinking }),
+                ["encrypted_content"] = "", ["status"] = "completed"
             });
         }
 
@@ -3367,44 +3358,38 @@ if (type == "message")
 
             if (type == "reasoning" && thinkMode == "events")
             {
-                // Raciocinio: item aberto -> delta do resumo -> item fechado
-                string thinkingText = item["summary"]?[0]?["text"]?.GetValue<string>() ?? "";
+                // Raciocinio no formato NATIVO do llama.cpp: content[].text +
+                // reasoning_text.delta. O par summary_text/part fazia o opencode
+                // renderizar o pensamento como snippet de resumo.
+                string thinkingText = item["summary"]?[0]?["text"]?.GetValue<string>()
+                                      ?? item["content"]?[0]?["text"]?.GetValue<string>() ?? "";
                 string reasoningId = item["id"]?.GetValue<string>() ?? ("rs_" + NewId());
-                var reasoningOpen = new JsonObject { ["id"] = reasoningId, ["type"] = "reasoning", ["summary"] = new JsonArray() };
+                var reasoningOpen = new JsonObject
+                {
+                    ["id"] = reasoningId, ["summary"] = new JsonArray(), ["type"] = "reasoning",
+                    ["content"] = new JsonArray(), ["encrypted_content"] = "", ["status"] = "in_progress"
+                };
                 WriteEvent(sse, "response.output_item.added", new JsonObject
                 {
                     ["type"] = "response.output_item.added", ["output_index"] = outputIndex,
                     ["sequence_number"] = sequence++, ["item"] = reasoningOpen
                 });
-                WriteEvent(sse, "response.reasoning_summary_part.added", new JsonObject
+                if (thinkingText.Length > 0)
+                    WriteEvent(sse, "response.reasoning_text.delta", new JsonObject
+                    {
+                        ["type"] = "response.reasoning_text.delta", ["delta"] = thinkingText,
+                        ["item_id"] = reasoningId, ["sequence_number"] = sequence++
+                    });
+                var reasoningDone = new JsonObject
                 {
-                    ["type"] = "response.reasoning_summary_part.added", ["item_id"] = reasoningId,
-                    ["output_index"] = outputIndex, ["content_index"] = 0, ["summary_index"] = 0, ["sequence_number"] = sequence++,
-                    ["part"] = new JsonObject { ["type"] = "summary_text", ["text"] = "" }
-                });
-                WriteEvent(sse, "response.reasoning_summary_text.delta", new JsonObject
-                {
-                    ["type"] = "response.reasoning_summary_text.delta", ["item_id"] = reasoningId,
-                    ["output_index"] = outputIndex, ["content_index"] = 0, ["summary_index"] = 0, ["delta"] = thinkingText,
-                    ["sequence_number"] = sequence++
-                });
-                WriteEvent(sse, "response.reasoning_summary_text.done", new JsonObject
-                {
-                    ["type"] = "response.reasoning_summary_text.done", ["item_id"] = reasoningId,
-                    ["output_index"] = outputIndex, ["content_index"] = 0, ["summary_index"] = 0, ["text"] = thinkingText,
-                    ["sequence_number"] = sequence++
-                });
-                // Sem o part.done o opencode nao consolida os deltas (text fica "").
-                WriteEvent(sse, "response.reasoning_summary_part.done", new JsonObject
-                {
-                    ["type"] = "response.reasoning_summary_part.done", ["item_id"] = reasoningId,
-                    ["output_index"] = outputIndex, ["content_index"] = 0, ["summary_index"] = 0, ["sequence_number"] = sequence++,
-                    ["part"] = new JsonObject { ["type"] = "summary_text", ["text"] = thinkingText }
-                });
+                    ["id"] = reasoningId, ["summary"] = new JsonArray(), ["type"] = "reasoning",
+                    ["content"] = new JsonArray(new JsonObject { ["text"] = thinkingText }),
+                    ["encrypted_content"] = "", ["status"] = "completed"
+                };
                 WriteEvent(sse, "response.output_item.done", new JsonObject
                 {
                     ["type"] = "response.output_item.done", ["output_index"] = outputIndex,
-                    ["sequence_number"] = sequence++, ["item"] = item
+                    ["sequence_number"] = sequence++, ["item"] = reasoningDone
                 });
                 outputIndex++;
                 continue;

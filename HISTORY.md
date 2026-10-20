@@ -54,6 +54,32 @@ Stream real pós-fix: 262 KB / 1.084 deltas, zero tags, zero perda. O
 `llama-server` não guarda texto gerado (só `n_tokens`/`tg`), então a prova vem da
 ponte.
 
+**Reasoning com a estrutura nativa do llama.** A tradução emitia o par
+OpenAI `reasoning_summary_part.added` + `reasoning_summary_text.delta`; o
+llama.cpp nativo emite `response.reasoning_text.delta` e carrega o texto em
+`item.content[].text` (item aberto com `content: []`, `encrypted_content: ""`,
+`status: in_progress`; fechado com `status: completed`). Com `summary` o opencode
+renderizava o pensamento como **snippet de resumo**, diferente dos demais
+modelos. Três pontos alinhados ao nativo:
+
+- stream (`EmitThinking`/fecho): item nativo + `reasoning_text.delta`, sem
+  `summary_*`;
+- não-stream (`ChatToResponses`): item `reasoning` com `content:[{text}]` em vez
+  de `summary:[{summary_text}]`;
+- `BuildSse`: sintetiza a mesma sequência (added → reasoning_text.delta → done).
+
+Prova (mesmo pedido, `stream:true`, comparando passthrough nativo × traduzido):
+
+```
+NATIVO    : output_item.added, reasoning_text.delta (1733), content_part.added,
+            output_text.delta (446), output_item.done, completed
+TRADUZIDO : output_item.added, reasoning_text.delta (925), content_part.added,
+            output_text.delta (5), output_item.done, completed
+```
+
+Mesmo conjunto de eventos, sem `summary_*`. Não-stream: item com
+`content[0].text` (3531 chars) e `summary: []`.
+
 **Sonda do anti-repeat.** Antes só a cauda era logada; agora `dup_at` (posição da
 ocorrência anterior da janela) e `dup_ctx` (80 chars a partir dela) mostram
 **onde** repetiu. Repetição real no thinking do 12B: 13:55:16, `thinking_chars=4271`,
