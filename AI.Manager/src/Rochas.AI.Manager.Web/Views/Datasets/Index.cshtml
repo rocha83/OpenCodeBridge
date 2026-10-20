@@ -1,15 +1,27 @@
 @model IEnumerable<Rochas.AI.Manager.Domain.Datasets.Dataset>
 @{ ViewData["Title"] = "Datasets"; }
+<div class="mb-3">
+  <h6>Templates nativos (formato de chat do Gemma)</h6>
+  <a class="btn btn-sm btn-outline-info" href="/Datasets/DownloadTemplate?mode=sft">Download SFT</a>
+  <a class="btn btn-sm btn-outline-info" href="/Datasets/DownloadTemplate?mode=dpo">Download DPO</a>
+  <a class="btn btn-sm btn-outline-info" href="/Datasets/DownloadTemplate?mode=rm">Download RM</a>
+  <small class="text-muted ms-2">Use como ponto de partida; valide com /api/datasets/{id}/validate-format.</small>
+</div>
 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createModal">Novo</button>
 <div class="table-responsive d-none d-md-block">
-  <table class="table table-striped data-grid"><thead><tr><th>Nome</th><th>Formato</th><th>Validado</th></tr></thead>
-  <tbody>@foreach(var d in Model){<tr><td>@d.Name</td><td>@d.Format</td><td>@d.IsValidated</td></tr>}</tbody></table>
+  <table class="table table-striped data-grid"><thead><tr><th>Nome</th><th>Formato</th><th>Validado</th><th>Arquivo</th></tr></thead>
+  <tbody>@foreach(var d in Model){<tr><td>@d.Name</td><td>@d.Format</td><td>@d.IsValidated</td><td>@(d.FilePath ?? "-")</td></tr>}</tbody></table>
 </div>
-<div class="d-md-none">@foreach(var d in Model){<div class="card mb-2"><div class="card-body"><h6>@d.Name</h6><p>Formato: @d.Format</p><p>Validado: @d.IsValidated</p></div></div>}</div>
+<div class="d-md-none">@foreach(var d in Model){<div class="card mb-2"><div class="card-body"><h6>@d.Name</h6><p>Formato: @d.Format</p><p>Validado: @d.IsValidated</p><p>Arquivo: @(d.FilePath ?? "-")</p></div></div>}</div>
 <div class="modal fade" id="createModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
-  <form method="post" action="/Datasets/Create">@Html.AntiForgeryToken()
+  <form method="post" action="/Datasets/Create" enctype="multipart/form-data">@Html.AntiForgeryToken()
     <div class="modal-header"><h5 class="modal-title">Novo Dataset</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-    <div class="modal-body"><input name="name" class="form-control mb-2" placeholder="Nome" required  required/><input name="format" class="form-control mb-2" placeholder="Formato" value="jsonl"  required/></div>
+    <div class="modal-body">
+      <input name="name" class="form-control mb-2" placeholder="Nome" required />
+      <input name="format" class="form-control mb-2" placeholder="Formato" value="jsonl" required />
+      <input type="file" name="file" class="form-control mb-2" />
+      <small class="text-muted">Opcional: envie um arquivo customizado (jsonl/csv). Se vazio, apenas registra o dataset.</small>
+    </div>
     <div class="modal-footer"><button type="submit" class="btn btn-primary">Salvar</button></div>
   </form>
 </div></div></div>
