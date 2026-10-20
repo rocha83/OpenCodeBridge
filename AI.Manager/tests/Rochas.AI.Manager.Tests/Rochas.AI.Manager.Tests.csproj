@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Rochas.AI.Manager.Domain\Rochas.AI.Manager.Domain.csproj" />
     <ProjectReference Include="..\..\src\Rochas.AI.Manager.Application\Rochas.AI.Manager.Application.csproj" />
+    <ProjectReference Include="..\..\src\Rochas.AI.Manager.Infrastructure\Rochas.AI.Manager.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
