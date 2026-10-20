@@ -57,7 +57,7 @@ internal static class E2EBeltsBuildTests
             try
             {
                 var history = new JsonArray(
-                    new JsonObject { ["role"]="system", ["content"]="Voce e um arquiteto desenvolvedor senior (role build). OBRIGATORIO: use write ou sed quando a intenção for escrever em arquivos. Crie pelo menos 3 arquivos .cs/.sql/.tsx. Ao terminar responda apenas BUILD-OK com resumo dos arquivos criados. Dialogo em pt-br." },
+                    new JsonObject { ["role"]="system", ["content"]="Voce e um arquiteto desenvolvedor senior (role build). HARNESS NATIVO: ferramentas write/read/grep/glob/shell disponiveis. OBRIGATORIO: use a tool write com argumentos JSON validos (path string, content string) para criar arquivos. Crie pelo menos 3 arquivos .cs/.sql/.tsx com conteudo substancial. CAMINHOS RELATIVOS (sem barra inicial, ex.: reembolsos_db.sql). Nao use paths absolutos. ARGUMENTOS JSON DA TOOL WRITE DEVEM SER VALIDOS E COMPLETOS (escape \\n). Nao inclua texto fora do JSON da tool call. Ao terminar responda apenas BUILD-OK com resumo dos arquivos criados. Dialogo em pt-br." },
                     new JsonObject { ["role"]="user", ["content"]=prompt });
                 int filesCreated = 0;
                 int totalChars = 0;
