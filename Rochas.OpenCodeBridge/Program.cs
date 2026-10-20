@@ -2309,14 +2309,14 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         bool thinkOpen = false, msgOpen = false, inThink = false;
         bool repeatTrip = false;   // AntiRepeat: thinking repetido detectado, aborta e conteve (1 retry)
         string carry = "";   // texto ainda nao classificado (tag pode partir no meio do chunk)
+        string reasonBuf = "";   // hold-back do reasoning: tag de controle pode partir entre chunks
         var toolAccum = new SortedDictionary<int, (string Id, string Name, StringBuilder Args)>();
         int inputTokens = 0, outputTokens = 0;
 
-        // Abre o item reasoning no primeiro delta de thinking.
-        void FlushThinking(string text)
+        // Emite texto de reasoning ja limpo (abre o item no primeiro delta).
+        void EmitThinking(string text)
         {
             if (string.IsNullOrEmpty(text)) return;
-            text = StripControlTags(text, "stream");
             if (!thinkOpen && thinking == "events")
             {
                 reasoningId = "rs_" + NewId();
@@ -2349,6 +2349,29 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                 ["type"] = "response.reasoning_summary_text.delta", ["item_id"] = reasoningId,
                 ["output_index"] = 0, ["content_index"] = 0, ["summary_index"] = 0, ["delta"] = text
             });
+        }
+
+        // Recebe reasoning_content. Segura 12 chars (maior tag de controle) para
+        // nao vazar tag partida entre chunks: o texto retido sai no chunk
+        // seguinte, entao NAO ha truncamento — so atraso de uma tag de tamanho.
+        void FlushThinking(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            if (thinking != "events") { EmitThinking(StripControlTags(text, "stream")); return; }
+            reasonBuf = StripControlTags(reasonBuf + text, "stream");   // tags completas saem aqui
+            int hold = PartialTagLen(reasonBuf);                        // so o prefixo ambiguo fica
+            string emit = hold > 0 ? reasonBuf[..^hold] : reasonBuf;
+            reasonBuf = hold > 0 ? reasonBuf[^hold..] : "";
+            EmitThinking(emit);
+        }
+
+        // Descarrega o hold-back no fim do stream (sanitizado).
+        void FlushReasonRest()
+        {
+            if (reasonBuf.Length == 0) return;
+            string rest = StripControlTags(reasonBuf, "stream-tail");
+            reasonBuf = "";
+            EmitThinking(rest);
         }
 
         // Abre o item message no primeiro delta de texto.
@@ -2515,13 +2538,15 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             thinkingText.Clear();
             contentText.Clear();
             carry = "";
+            reasonBuf = "";
             inThink = false;
             chat["messages"]!.AsArray().Add(new JsonObject { ["role"] = "user", ["content"] = AntiRepeatNotice });
             Log(new JsonObject { ["event"] = "anti-repeat-retry" });
         }
 
-        // ---- Fecho: descarrega o resto, fecha itens, emite tool calls
+        // ---- Fecho: descarrega o resto (hold-back do reasoning inclusive), fecha itens, emite tool calls
         if (inThink) FlushThinking(carry); else FlushMessage(carry);
+        FlushReasonRest();
 
         int msgIndex = thinkOpen ? 1 : 0;
         if (thinkOpen)
@@ -3260,6 +3285,21 @@ if (type == "message")
     // de pensamento. Removidas com sonda (evento reasoning-tag).
     static readonly string[] ControlTags =
         { "<|channel>", "<channel|>", "<|channel|>", "<thought>", "</thought>", "<thinking>", "</thinking>" };
+
+    /// <summary>Tamanho do maior sufixo de <paramref name="s"/> que e prefixo de uma tag de controle.</summary>
+    /// <remarks>Serve para segurar so o pedaco ambiguo entre chunks; sem isso o
+    /// raciocinio inteiro atrasaria N chars e o hold-back sairia fora de ordem.</remarks>
+    static int PartialTagLen(string s)
+    {
+        int best = 0;
+        foreach (var tag in ControlTags)
+        {
+            int max = Math.Min(tag.Length - 1, s.Length);
+            for (int k = max; k > best; k--)
+                if (s.EndsWith(tag[..k], StringComparison.OrdinalIgnoreCase)) { best = k; break; }
+        }
+        return best;
+    }
 
     /// <summary>Remove tags de controle do texto de reasoning, registrando o achado.</summary>
     static string StripControlTags(string s, string where)
