@@ -2073,7 +2073,21 @@ var shape = new StringBuilder();
         bool trip = AntiRepeat && ThinkingRepeats(accumulated, AntiRepeatWindow);
         // Sonda: loga no maximo 1x a cada 2k chars p/ nao afogar o sink em stream.
         int chars = accumulated?.Length ?? 0;
-        if (trip || chars < 512 || (chars % 2048) < 256)
+        if (trip)
+        {
+            int dupAt = -1; string dupCtx = "";
+            var norm = NormRepeat(accumulated ?? "");
+            int w = Math.Min(AntiRepeatWindow, norm.Length);
+            if (w > 0 && norm.Length >= 2 * w)
+            {
+                var win = norm[^w..];
+                dupAt = norm[..^w].IndexOf(win, StringComparison.Ordinal);
+                if (dupAt >= 0)
+                    dupCtx = Truncate(norm.Substring(dupAt, Math.Min(80, norm.Length - dupAt)), 80);
+            }
+            Sonda(where, chars, trip, Truncate(norm, 80), dupAt, dupCtx);
+        }
+        else if (chars < 512 || (chars % 2048) < 256)
             Sonda(where, chars, trip, Truncate(NormRepeat(accumulated ?? ""), 80));
         return trip;
     }
@@ -2302,6 +2316,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         void FlushThinking(string text)
         {
             if (string.IsNullOrEmpty(text)) return;
+            text = StripControlTags(text, "stream");
             if (!thinkOpen && thinking == "events")
             {
                 reasoningId = "rs_" + NewId();
@@ -2511,17 +2526,18 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         int msgIndex = thinkOpen ? 1 : 0;
         if (thinkOpen)
         {
+            string thinkingFinal = StripControlTags(thinkingText.ToString(), "done");
             Emit("response.reasoning_summary_text.done", new JsonObject
             {
                 ["type"] = "response.reasoning_summary_text.done", ["item_id"] = reasoningId,
-                ["output_index"] = 0, ["content_index"] = 0, ["summary_index"] = 0, ["text"] = thinkingText.ToString()
+                ["output_index"] = 0, ["content_index"] = 0, ["summary_index"] = 0, ["text"] = thinkingFinal
             });
             // Sem o part.done o opencode nao consolida os deltas (text fica "").
             Emit("response.reasoning_summary_part.done", new JsonObject
             {
                 ["type"] = "response.reasoning_summary_part.done", ["item_id"] = reasoningId,
                 ["output_index"] = 0, ["content_index"] = 0, ["summary_index"] = 0,
-                ["part"] = new JsonObject { ["type"] = "summary_text", ["text"] = thinkingText.ToString() }
+                ["part"] = new JsonObject { ["type"] = "summary_text", ["text"] = thinkingFinal }
             });
             Emit("response.output_item.done", new JsonObject
             {
@@ -3238,6 +3254,26 @@ if (type == "message")
     // Separa o bloco de thinking (<think>...</think>, modo hibrido do Qwen3)
     // do texto final. Sem tag de fechamento (corte por max_tokens), tudo apos
     // a abertura e considerado thinking.
+    // Tags de controle de canal/thinking que alguns templates deixam vazar no
+    // texto (Gemma 4: <|channel>thought ... <channel|>; Qwen: </thought>).
+    // Nao sao conteudo: se chegam ao reasoning, a UI mostra a tag crua no bloco
+    // de pensamento. Removidas com sonda (evento reasoning-tag).
+    static readonly string[] ControlTags =
+        { "<|channel>", "<channel|>", "<|channel|>", "<thought>", "</thought>", "<thinking>", "</thinking>" };
+
+    /// <summary>Remove tags de controle do texto de reasoning, registrando o achado.</summary>
+    static string StripControlTags(string s, string where)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        foreach (var tag in ControlTags)
+        {
+            if (s.IndexOf(tag, StringComparison.OrdinalIgnoreCase) < 0) continue;
+            s = s.Replace(tag, "", StringComparison.OrdinalIgnoreCase);
+            if (Diagnostic) Log(new JsonObject { ["event"] = "reasoning-tag", ["where"] = where, ["tag"] = tag });
+        }
+        return s;
+    }
+
     /// <summary>Separa o bloco &lt;think&gt; do texto final.</summary>
     /// <param name="text">Conteudo bruto.</param>
     /// <returns>Tupla (thinking, limpo).</returns>
@@ -3250,7 +3286,7 @@ if (type == "message")
         if (closeIdx < 0) return (text[(openIdx + 7)..].Trim(), text[..openIdx].Trim());
 
         string before = text[..openIdx];
-        string thought = text[(openIdx + 7)..closeIdx];
+        string thought = StripControlTags(text[(openIdx + 7)..closeIdx], "split");
         string after = text[(closeIdx + 8)..];
         return (thought.Trim(), (before + after).Trim());
     }
@@ -3452,17 +3488,20 @@ if (type == "message")
     /// <param name="chars">Acumulado ate aqui.</param>
     /// <param name="trip">Detector disparou?</param>
     /// <param name="tail">Amostra da cauda (80 chars).</param>
-    static void Sonda(string where, int chars, bool trip, string tail)
+    static void Sonda(string where, int chars, bool trip, string tail, int dupAt = -1, string dupCtx = "")
     {
         if (!Diagnostic) return;
         try
         {
+            // dup_at = posicao (no texto normalizado) da ocorrencia anterior da
+            // mesma janela; dup_ctx = 80 chars a partir dela. Sem isso o log so
+            // mostra a cauda e nao prova ONDE o modelo se repetiu.
             if (trip)
-                Serilog.Log.Warning("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} tail={Tail}",
-                    where, chars, AntiRepeatWindow, trip, tail);
+                Serilog.Log.Warning("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} dup_at={DupAt} dup_ctx={DupCtx} tail={Tail}",
+                    where, chars, AntiRepeatWindow, trip, dupAt, dupCtx, tail);
             else
-                Serilog.Log.Debug("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} tail={Tail}",
-                    where, chars, AntiRepeatWindow, trip, tail);
+                Serilog.Log.Debug("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} dup_at={DupAt} tail={Tail}",
+                    where, chars, AntiRepeatWindow, trip, dupAt, tail);
         }
         catch { /* sonda nunca derruba o pedido */ }
     }
