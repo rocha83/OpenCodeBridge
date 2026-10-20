@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Rochas.AI.Manager.Domain.Interfaces;
 using Rochas.AI.Manager.Domain.Profiles;
@@ -5,6 +6,7 @@ using Rochas.AI.Manager.Domain.Profiles;
 namespace Rochas.AI.Manager.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/trainingpatterns")]
 public sealed class TrainingPatternsController : ControllerBase
 {

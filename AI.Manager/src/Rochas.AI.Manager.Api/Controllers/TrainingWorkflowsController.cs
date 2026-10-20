@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Rochas.AI.Manager.Domain.Interfaces;
 
 namespace Rochas.AI.Manager.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public sealed class TrainingWorkflowsController(ITrainingWorkflowService service) : ControllerBase
 {

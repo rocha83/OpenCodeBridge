@@ -1,8 +1,10 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Rochas.AI.Manager.Domain.Interfaces;
 
 namespace Rochas.AI.Manager.Web.Controllers;
 
+[Authorize]
 public sealed class ReportsController : Controller
 {
     private readonly IReportService _svc;

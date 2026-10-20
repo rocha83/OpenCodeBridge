@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Rochas.AI.Manager.Domain.Interfaces;
 using Rochas.AI.Manager.Domain.Entities;
 
 namespace Rochas.AI.Manager.Web.Controllers;
 
+[Authorize]
 public sealed class TrainingWorkflowController(ITrainingWorkflowService service) : Controller
 {
     public async Task<IActionResult> Index(CancellationToken ct)

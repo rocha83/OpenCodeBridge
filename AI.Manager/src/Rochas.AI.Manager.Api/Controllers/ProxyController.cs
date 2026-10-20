@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -9,6 +10,7 @@ using Rochas.Data.Specification.Interfaces;
 namespace Rochas.AI.Manager.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("v1")]
 public sealed class ProxyController : ControllerBase
 {

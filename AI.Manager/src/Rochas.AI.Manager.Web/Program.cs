@@ -148,8 +148,19 @@ builder.Services.AddScoped<ITrainingWorkflowService>(sp => new TrainingWorkflowS
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 
+var jwtKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes("ai-manager-jwt-secret-change-me"));
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(o => { o.LoginPath = "/Account/Login"; o.Cookie.Name = "ai.manager"; });
+    .AddCookie(o => { o.LoginPath = "/Account/Login"; o.Cookie.Name = "ai.manager"; })
+    .AddJwtBearer(o =>
+    {
+        o.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            IssuerSigningKey = jwtKey
+        };
+    });
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
@@ -162,6 +173,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapControllerRoute(

@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Rochas.AI.Manager.Domain.Interfaces;
 using Rochas.AI.Manager.Domain.Harness;
 
 namespace Rochas.AI.Manager.Web.Controllers;
 
+[Authorize]
 public sealed class HarnessController(IHarnessProfileService service, IHarnessLinter linter) : Controller
 {
     public async Task<IActionResult> Index(CancellationToken ct)
@@ -44,6 +46,7 @@ public sealed class HarnessController(IHarnessProfileService service, IHarnessLi
     }
 
     [HttpPost("Lint")]
+    [ValidateAntiForgeryToken]
     public IActionResult Lint([FromBody] LintRequest req)
     {
         var findings = linter.FindHardcodes(req.Content ?? string.Empty);

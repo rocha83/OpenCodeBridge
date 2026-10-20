@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Rochas.AI.Manager.Domain.Interfaces;
 using Rochas.AI.Manager.Domain.Datasets;
@@ -5,6 +6,7 @@ using Rochas.AI.Manager.Domain.Datasets;
 namespace Rochas.AI.Manager.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/datasets")]
 public sealed class DatasetsController : ControllerBase
 {
