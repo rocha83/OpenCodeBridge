@@ -2,18 +2,23 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Rochas.AI.Manager.Domain.Interfaces;
 using Rochas.AI.Manager.Domain.Training;
+using Rochas.Telemetry;
 
 namespace Rochas.AI.Manager.Api.Workers;
 
 public sealed class TrainingJobWorker(
     IServiceProvider sp,
-    ILogger<TrainingJobWorker> logger) : BackgroundService
+    ILogger<TrainingJobWorker> logger,
+    Microsoft.Extensions.Configuration.IConfiguration config) : BackgroundService
 {
+    private readonly ServiceObserver _observer = new("AI.Manager.Training", logger);
+    private readonly bool _diagnostic = (config["Diagnostic"] ?? Environment.GetEnvironmentVariable("DIAGNOSTIC")) is "1" or "true" or "True";
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("TrainingJobWorker started");
+        if (_diagnostic) { _observer.StartObserver(60, 1); logger.LogInformation("Diagnostic mode enabled"); }
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -31,7 +36,7 @@ public sealed class TrainingJobWorker(
                     try
                     {
                         await jobService.StartAsync(queued.Id, stoppingToken);
-                        await engine.RunAsync(queued.Id, null, stoppingToken);
+                        await _observer.ExecuteTimed($"training-job-{queued.Id}", () => engine.RunAsync(queued.Id, null, stoppingToken));
                         await jobService.CompleteAsync(queued.Id, stoppingToken);
                         logger.LogInformation("Training job {JobId} completed", queued.Id);
                     }
