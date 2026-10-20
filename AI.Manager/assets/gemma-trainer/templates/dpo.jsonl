@@ -1,2 +1,0 @@
-{"prompt":"Explique QLoRA.","chosen":"QLoRA e fine-tuning em 4-bit com adaptadores LoRA, eficiente em VRAM.","rejected":"QLoRA e um metodo qualquer."}
-{"prompt":"O que e GGUF?","chosen":"GGUF e o formato de inferencia do llama.cpp, usado para servir modelos localmente.","rejected":"GGUF e um arquivo."}

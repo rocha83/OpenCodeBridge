@@ -250,10 +250,7 @@ no cache NuGet (cache vazio), sem `dotnet tool` global e sem .nupkg no disco;
 instalar depende de rede. Alternativas se a rede voltar: `coverlet.msbuild` nos
 2 projetos de teste, ou `dotnet-coverage` como tool global.
 
-## AI.Manager — riscos e pendências de arquitetura/relatórios (2026-10-20)
 
-Origem: auditoria do código em `AI.Manager` (seção 32 do documento v1) e catálogo `REPORT-PENDINGS.md`.
-Documentos: `AI.Manager/docs/ai-manager/Rochas.AI.Manager-Arquitetura v1.md`, `... v2.md`, `REPORT-PENDINGS.md`.
 
 ### Riscos abertos (ordem de severidade)
 
