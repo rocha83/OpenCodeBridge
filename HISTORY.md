@@ -80,6 +80,10 @@ TRADUZIDO : output_item.added, reasoning_text.delta (925), content_part.added,
 Mesmo conjunto de eventos, sem `summary_*`. Não-stream: item com
 `content[0].text` (3531 chars) e `summary: []`.
 
+Regressão coberta: `U-translate-tools`, `U-convert-thinking-tools`,
+`U-translate-multi-namespace` PASS e `E-standalone-mission-tools` PASS (38.4s)
+com o binário novo.
+
 **Sonda do anti-repeat.** Antes só a cauda era logada; agora `dup_at` (posição da
 ocorrência anterior da janela) e `dup_ctx` (80 chars a partir dela) mostram
 **onde** repetiu. Repetição real no thinking do 12B: 13:55:16, `thinking_chars=4271`,
