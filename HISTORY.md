@@ -535,6 +535,7 @@ bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
   4. **Contexto acumulado**: sessão chegou a 36k tokens de prompt sem poda;
      `appsettings`/`opencode.json` seguem com os tetos antigos
      (`gemma4-12b-qa` 163840/32768) e precisam acompanhar as units.
+
 ## Remaster 2026-10-20 — Gemma 4 128k, Bridge/Web e loop agêntico
 - **Modelos/serviços:** 12B em `-c 131072 -np 1`; E2B em `-c 131072 -np 2`
   (2×65536). Bridge `--max-tokens 8192`. Perfis: Plan/Orch `0.6`,
