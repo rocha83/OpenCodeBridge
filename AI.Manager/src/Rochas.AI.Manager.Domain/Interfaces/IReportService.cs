@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Rochas.AI.Manager.Domain.Reporting;
 
 namespace Rochas.AI.Manager.Domain.Interfaces;
 
@@ -36,4 +37,5 @@ public interface IReportService
 {
     Task<ReportResult> QueryAsync(ReportQuery query, CancellationToken ct = default);
     Task<byte[]> ExportAsync(ReportQuery query, string format, CancellationToken ct = default);
+    IReadOnlyList<ReportDefinition> GetCatalog();
 }

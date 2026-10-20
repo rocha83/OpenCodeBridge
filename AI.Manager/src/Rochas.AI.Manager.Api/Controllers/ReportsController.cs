@@ -17,6 +17,25 @@ public sealed class ReportsController : ControllerBase
     private readonly IReportService _svc;
     public ReportsController(IReportService svc) { _svc = svc; }
 
+    [HttpGet("catalog")]
+    public IActionResult Catalog() => Ok(_svc.GetCatalog());
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(string id, [FromQuery] ReportQuery q, CancellationToken ct)
+    {
+        q ??= new ReportQuery();
+        q.Entity = id;
+        try
+        {
+            var result = await _svc.QueryAsync(q, ct);
+            return Ok(result);
+        }
+        catch (ReportQueryException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
     [HttpGet("preview")]
     public async Task<IActionResult> Preview([FromQuery] ReportQuery q, CancellationToken ct)
     {
