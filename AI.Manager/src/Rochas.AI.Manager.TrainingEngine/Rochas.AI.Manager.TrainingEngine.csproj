@@ -9,4 +9,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Rochas.AI.Manager.Application\Rochas.AI.Manager.Application.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TorchSharp" Version="0.107.0" />
+  </ItemGroup>
 </Project>

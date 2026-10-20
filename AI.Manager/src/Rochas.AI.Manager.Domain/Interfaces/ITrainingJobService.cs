@@ -8,6 +8,7 @@ public interface ITrainingJobService
     Task CancelAsync(int id, CancellationToken ct = default);
     Task StartAsync(int id, CancellationToken ct = default);
     Task ReportProgressAsync(int id, double? lastLoss, double? vramUsedMb, CancellationToken ct = default);
+    Task ReportMetricsAsync(int id, int epochsCompleted, double? bestAccuracy, double throughputTokensPerSec, CancellationToken ct = default);
     Task CompleteAsync(int id, CancellationToken ct = default);
     Task FailAsync(int id, string errorMessage, CancellationToken ct = default);
 }

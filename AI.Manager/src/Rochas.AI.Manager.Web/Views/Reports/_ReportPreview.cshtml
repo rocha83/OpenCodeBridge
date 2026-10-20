@@ -1,0 +1,17 @@
+@model Rochas.AI.Manager.Domain.Interfaces.ReportResult
+<table class="table table-sm table-striped">
+    <thead>
+        <tr>
+            @if (Model.Items.Count > 0) { foreach (var k in Model.Items[0].Keys) { <th>@k</th> } }
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var row in Model.Items)
+        {
+            <tr>
+                @foreach (var v in row.Values) { <td>@v</td> }
+            </tr>
+        }
+    </tbody>
+</table>
+<p class="text-muted small">Total: @Model.Total | Página @Model.Page de @((Model.Total + Model.PageSize - 1) / Model.PageSize)</p>

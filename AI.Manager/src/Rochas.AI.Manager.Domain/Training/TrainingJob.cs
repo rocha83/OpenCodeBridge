@@ -30,4 +30,10 @@ public sealed class TrainingJob : BaseEntity
     public double? LastLoss { get; set; }
     [Column("vram_used_mb")]
     public double? VramUsedMb { get; set; }
+    [Column("epochs_completed")]
+    public int EpochsCompleted { get; set; }
+    [Column("best_accuracy")]
+    public double? BestAccuracy { get; set; }
+    [Column("throughput_tokens_per_sec")]
+    public double ThroughputTokensPerSec { get; set; }
 }

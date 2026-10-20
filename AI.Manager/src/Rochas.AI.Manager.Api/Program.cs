@@ -122,7 +122,9 @@ builder.Services.AddScoped<IHarnessProfileService>(sp => new HarnessProfileServi
     sp.GetRequiredService<IPersistenceRepository<HarnessProfileVersion>>(),
     Rochas.AI.Manager.Infrastructure.Data.AppDb.ConnectionString));
 builder.Services.AddScoped<ITrainingJobService, TrainingJobService>();
+builder.Services.AddScoped<ITrainingBackend, TorchSharpTrainingBackend>();
 builder.Services.AddScoped<ITrainingEngine, TrainingEngine>();
+builder.Services.AddScoped<IReportService, Rochas.AI.Manager.Infrastructure.Services.ReportService>();
 builder.Services.AddScoped<IHarnessLinter, HarnessLinter>();
 builder.Services.AddScoped<IAccuracyEvaluator, AccuracyEvaluator>();
 builder.Services.AddScoped<IModelArtifactService, ModelArtifactService>();

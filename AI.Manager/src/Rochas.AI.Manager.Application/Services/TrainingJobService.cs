@@ -58,6 +58,17 @@ public sealed class TrainingJobService(
         await _write.Update(job, new TrainingJob { Id = id });
     }
 
+    public async Task ReportMetricsAsync(int id, int epochsCompleted, double? bestAccuracy, double throughputTokensPerSec, CancellationToken ct = default)
+    {
+        var job = (await _repo.QueryRaw("SELECT * FROM training_jobs WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Training job {id} not found.");
+        var old = new TrainingJob();
+        foreach (var prop in typeof(TrainingJob).GetProperties()) prop.SetValue(old, prop.GetValue(job));
+        job.EpochsCompleted = epochsCompleted;
+        if (bestAccuracy.HasValue) job.BestAccuracy = bestAccuracy.Value;
+        job.ThroughputTokensPerSec = throughputTokensPerSec;
+        await _write.Update(job, old);
+    }
+
     public async Task CompleteAsync(int id, CancellationToken ct = default)
     {
         var job = (await _repo.QueryRaw("SELECT * FROM training_jobs WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Training job {id} not found.");
