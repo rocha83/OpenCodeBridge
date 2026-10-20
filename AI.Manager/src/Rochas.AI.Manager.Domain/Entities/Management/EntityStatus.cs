@@ -7,7 +7,7 @@ namespace Rochas.AI.Manager.Domain.Entities.Management;
 public sealed class EntityStatus : BaseEntity
 {
     [Column("code")]
-    public string Code { get; set; } = string.Empty;
+    public new string Code { get; set; } = string.Empty;
     [Column("description")]
     public string? Description { get; set; }
 }

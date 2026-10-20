@@ -60,8 +60,6 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // Repositorios Dapper (SQLite)
-void Reg<T>(WebApplicationBuilder b) where T : class { }
-// helper not used; register manually below
 
 builder.Services.AddScoped<IGenericRepository<ModelArtifact>>(sp => sp.GetRequiredService<GenericRepository<ModelArtifact>>());
 builder.Services.AddScoped<IPersistenceRepository<ModelArtifact>>(sp => sp.GetRequiredService<GenericRepository<ModelArtifact>>());

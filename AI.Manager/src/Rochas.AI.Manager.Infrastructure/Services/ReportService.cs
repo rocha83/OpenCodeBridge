@@ -15,7 +15,6 @@ using Rochas.AI.Manager.Infrastructure.Data;
 using Rochas.ExcelToJson;
 using Rochas.PDFGenerator;
 using Rochas.PDFGenerator.Helpers;
-using System.Data;
 
 namespace Rochas.AI.Manager.Infrastructure.Services;
 
