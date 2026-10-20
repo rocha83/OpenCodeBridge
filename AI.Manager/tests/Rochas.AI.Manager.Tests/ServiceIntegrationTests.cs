@@ -12,6 +12,7 @@ using Xunit;
 
 namespace Rochas.AI.Manager.Tests;
 
+[Collection("Sequential")]
 public class ServiceIntegrationTests
 {
     private static string NewDb() => System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"svc_{Guid.NewGuid()}.db");

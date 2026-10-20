@@ -9,6 +9,7 @@ using Xunit;
 
 namespace Rochas.AI.Manager.Tests;
 
+[Collection("Sequential")]
 public class TrainingWorkflowServiceTests
 {
     private static void InitDb(string db)

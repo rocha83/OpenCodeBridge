@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Rochas.AI.Manager.Tests;
 
+[Collection("Sequential")]
 public class ExtraServiceTests
 {
     private static string NewDb() => System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ex_{Guid.NewGuid()}.db");
@@ -180,6 +181,7 @@ public class ExtraServiceTests
         System.IO.File.Delete(db);
     }
 }
+[Collection("Sequential")]
 public class ExtraServiceTests2
 {
     private static string NewDb() => System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ex2_{Guid.NewGuid()}.db");

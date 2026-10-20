@@ -6,6 +6,7 @@ using Xunit;
 
 namespace Rochas.AI.Manager.Tests;
 
+[Collection("Sequential")]
 public class ReportServiceIntegrationTests
 {
     [Fact]
