@@ -193,6 +193,20 @@ using (var scope = app.Services.CreateScope())
     var steps = scope.ServiceProvider.GetRequiredService<IGenericRepository<WorkflowStep>>();
     await WorkflowSeeder.SeedAsync(statuses, steps);
 }
+using (var scope = app.Services.CreateScope())
+{
+    var models = scope.ServiceProvider.GetRequiredService<IGenericRepository<ModelArtifact>>();
+    var agents = scope.ServiceProvider.GetRequiredService<IGenericRepository<Agent>>();
+    var bindings = scope.ServiceProvider.GetRequiredService<IGenericRepository<ModelBinding>>();
+    var profiles = scope.ServiceProvider.GetRequiredService<IGenericRepository<HarnessProfile>>();
+    var versions = scope.ServiceProvider.GetRequiredService<IGenericRepository<HarnessProfileVersion>>();
+    var attachments = scope.ServiceProvider.GetRequiredService<IGenericRepository<HarnessAttachment>>();
+    var policies = scope.ServiceProvider.GetRequiredService<IGenericRepository<ToolPolicy>>();
+    var instructions = scope.ServiceProvider.GetRequiredService<IGenericRepository<InstructionProfile>>();
+    var patterns = scope.ServiceProvider.GetRequiredService<IGenericRepository<TrainingPattern>>();
+    var experiments = scope.ServiceProvider.GetRequiredService<IGenericRepository<Experiment>>();
+    await BridgeFeatureSeeder.SeedAsync(models, agents, bindings, profiles, versions, attachments, policies, instructions, patterns, experiments);
+}
 app.MapGet("/health", () =>
 {
     var diag = Environment.GetEnvironmentVariable("DIAGNOSTICS_ENABLED") is "1" or "true" or "True";
