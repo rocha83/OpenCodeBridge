@@ -82,7 +82,7 @@ internal static partial class Program
     static bool QwenStd = false;
     // Formula (harness=true): composta pela bridge p/ cliente web (model sem
     // sufixo). Opencode (sufixo -build/-plan/-orch) passa limpo.
-    static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit; versione com init/add/commit (commit sempre com mensagem informada). Git e zip sao comandos independentes (a ordem so importa se o enunciado pedir); se o enunciado pedir versionar E empacotar, versione primeiro e empacote depois - assim o pacote nao entra no commit. Zip: empacote com output (o arquivo .zip) e inputs (caminhos relativos ao workspace, separados por espaco), excluindo bin/obj. Tarefa de N passos: so responda texto depois de concluir TODOS - se voce anunciou um passo e ainda falta, emita a tool call em vez de texto. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada. Se um build/teste falhar, leia a mensagem de erro e ajuste o trecho exato antes de rodar de novo. Projetos: crie com `dotnet new` UMA vez e escreva o fonte na pasta do projeto com a tool write (nunca recrie o projeto nem use echo/heredoc). Arquivos grandes (>32kb): leia em blocos (offset+limit, ou head/tail/`sed -n 'N,Mp'`), nunca o arquivo inteiro de uma vez. Matematica sempre qualificada: C# use Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# use System.Math.Sin (ou `open System` e depois Math.Sin) — nunca `sin`/`cos`/`sqrt`/`pi` minusculos nem `open System.Math` (invalido em F#). F# NAO tem operadores OCaml (`+.`/`-.`/`*.`/`/.`) - isso quebra o build: use `+ - * /` normais (valem para float) e `%` so com int. F#: nao indexe lista com indice float (`x.[i]`); use `[0..n]` int ou `List.map (fun xi -> Math.Sin xi) xs` direto. F#: formate com `printfn \"%f\"`/`\"%.6f\"` (sintaxe `%`), NUNCA `{0:F6}` (isso e C#, quebra o F#). F#: rode com `dotnet run --project <dir>` (nunca o dll direto); use let/printfn/List.map, pipe |>, match com fallback. ANTI-ALUCINACAO: NUNCA invente comando ou ferramenta - antes de usar, confirme que existe (ex.: command -v <cmd>); servicos sao gerenciados por systemctl (nao existe service_manager nesta maquina). Se uma tool esta bloqueada para o seu role (ex.: write para Plan/MoE/Orch), nao tente contornar por shell: explique que a acao cabe a outro role. Prefira caminhos absolutos em write/read; nome com espaco quebra o glob. shell: confirme o caminho com ls antes de mv/rm. FORMATO DE EMISSAO (obrigatorio): para agir, emita a CHAMADA DE TOOL ESTRUTURADA (canal nativo de tool, com nome e argumentos JSON) - esse e o unico formato que executa; a chamada escrita no corpo como [Assistant tool call]: nome({...}), ou apenas anunciada como 'Vou usar a tool X', vira prosa, nada executa e o turno trava. FORMATACAO NUMERICA: em C# use ToString com o formato F6 e System.Globalization.CultureInfo.InvariantCulture - nunca o printf %.6f; em F# use printfn com %.6f passando o valor como argumento, pois %.6f sem argumento imprime o literal. F# NUMERICO: some com `[0..n] |> Seq.sumBy (fun i -> ...)` - a sequencia vai na MESMA expressao como argumento; nunca deixe a sequencia sozinha depois de Seq.map/Seq.choose (gera FS0193 'function value is missing arguments'). Use List.average xs e potencia com `**`; desvio = sqrt (List.average (List.map (fun v -> (v-media)**2.0) xs)). CAMINHOS RELATIVOS (sem barra inicial) em write/read; ARGUMENTOS JSON DAS TOOLS DEVEM SER VALIDOS E COMPLETOS (escape \\n em strings). DICA NUMERICA (Simpson): em [0,pi] com n subintervalos, alterne pesos 4 (indices impares) e 2 (pares) e multiplique por h/3; resultado esperado ~2.0 para n=100. Use Math.Sin/System.Math.Sin qualificado."
+    static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit; versione com init/add/commit (commit sempre com mensagem informada). Git e zip sao comandos independentes (a ordem so importa se o enunciado pedir); se o enunciado pedir versionar E empacotar, versione primeiro e empacote depois - assim o pacote nao entra no commit. Zip: empacote com output (o arquivo .zip) e inputs (caminhos relativos ao workspace, separados por espaco), excluindo bin/obj. Tarefa de N passos: so responda texto depois de concluir TODOS - se voce anunciou um passo e ainda falta, emita a tool call em vez de texto. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada. Se um build/teste falhar, leia a mensagem de erro e ajuste o trecho exato antes de rodar de novo. Projetos: crie com `dotnet new` UMA vez e escreva o fonte na pasta do projeto com a tool write (nunca recrie o projeto nem use echo/heredoc). Arquivos grandes (>32kb): leia em blocos (offset+limit, ou head/tail/`sed -n 'N,Mp'`), nunca o arquivo inteiro de uma vez. Matematica sempre qualificada: C# use Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# use System.Math.Sin (ou `open System` e depois Math.Sin) — nunca `sin`/`cos`/`sqrt`/`pi` minusculos nem `open System.Math` (invalido em F#). F# NAO tem operadores OCaml (`+.`/`-.`/`*.`/`/.`) - isso quebra o build: use `+ - * /` normais (valem para float) e `%` so com int. F#: nao indexe lista com indice float (`x.[i]`); use `[0..n]` int ou `List.map (fun xi -> Math.Sin xi) xs` direto. F#: formate com `printfn \"%f\"`/`\"%.6f\"` (sintaxe `%`), NUNCA `{0:F6}` (isso e C#, quebra o F#). F#: rode com `dotnet run --project <dir>` (nunca o dll direto); use let/printfn/List.map, pipe |>, match com fallback. ANTI-ALUCINACAO: NUNCA invente comando ou ferramenta - antes de usar, confirme que existe (ex.: command -v <cmd>); servicos sao gerenciados por systemctl (nao existe service_manager nesta maquina). Se uma tool esta bloqueada para o seu role (ex.: write para Plan/MoE/Orch), nao tente contornar por shell: explique que a acao cabe a outro role. Prefira caminhos absolutos em write/read; nome com espaco quebra o glob. shell: confirme o caminho com ls antes de mv/rm. FORMATO DE EMISSAO (obrigatorio): para agir, emita a CHAMADA DE TOOL ESTRUTURADA (canal nativo de tool, com nome e argumentos JSON) - esse e o unico formato que executa; a chamada escrita no corpo como [Assistant tool call]: nome({...}), ou apenas anunciada como 'Vou usar a tool X', vira prosa, nada executa e o turno trava. FORMATACAO NUMERICA: em C# use ToString com o formato F6 e System.Globalization.CultureInfo.InvariantCulture - nunca o printf %.6f; em F# use printfn com %.6f passando o valor como argumento, pois %.6f sem argumento imprime o literal. F# NUMERICO: some com `[0..n] |> Seq.sumBy (fun i -> ...)` - a sequencia vai na MESMA expressao como argumento; nunca deixe a sequencia sozinha depois de Seq.map/Seq.choose (gera FS0193 'function value is missing arguments'). Use List.average xs e potencia com `**`; desvio = sqrt (List.average (List.map (fun v -> (v-media)**2.0) xs)). CAMINHOS RELATIVOS (sem barra inicial) em write/read; ARGUMENTOS JSON DAS TOOLS DEVEM SER VALIDOS E COMPLETOS (escape \\n em strings). DICA NUMERICA (Simpson): em [0,pi] com n subintervalos, alterne pesos 4 (indices impares) e 2 (pares) e multiplique por h/3; resultado esperado ~2.0 para n=100. Use Math.Sin/System.Math.Sin qualificado.";
     // Retry de contencao do anti-repeat: 1 segunda chamada ao modelo com o aviso,
     // descartando a janela repetida. Governado por --anti-repeat-retry, nao pelo
     // LegacyHarness (ver o bloco do retry).
@@ -1536,6 +1536,32 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             });
         // Converte as tools Responses (formato "chato") -> formato chat
         var tools = ToolsToChat(req["tools"]);
+        // Sonda: tool anunciada que nao chegou ao chat (perda silenciosa).
+        if (Diagnostic && req["tools"] is JsonArray askedArr)
+        {
+            var asked = new List<string>();
+            foreach (var e in askedArr)
+                if (e is JsonObject eo && eo["type"]?.GetValue<string>() != "namespace")
+                    if (eo["function"]?["name"]?.GetValue<string>() is string fn) asked.Add(fn);
+                    else if (eo["name"]?.GetValue<string>() is string en) asked.Add(en);
+            var got = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var g in ToolNames(tools))
+                if (g?.GetValue<string>() is string gn) got.Add(gn);
+            var lostNames = new JsonArray();
+            foreach (var a in asked) if (!got.Contains(a)) lostNames.Add(a);
+            if (lostNames.Count > 0)
+            {
+                var askedNames = new JsonArray();
+                foreach (var a in asked) askedNames.Add(a);
+                Log(new JsonObject
+                {
+                    ["event"] = "tools-lost",
+                    ["asked"] = askedNames,
+                    ["got"] = ToolNames(tools),
+                    ["lost"] = lostNames
+                });
+            }
+        }
         // Allowlist das tools pedidas: a coercao de tool call narrada depende dela
         // (sem lista, so passaria o catalogo RealTools, que nao cobre write/edit/glob).
         ChatToResponsesAnnounced = AnnouncedTools(req["tools"] as JsonArray);
@@ -1902,7 +1928,7 @@ var shape = new StringBuilder();
     /// comportamento do 9B (geracao livre, description continua guiando).</remarks>
     /// <param name="node">Tools ou sub-schema (mutado no lugar).</param>
     /// <returns>Quantas chaves removidas.</returns>
-    static int StripUnanchoredPatterns(JsonNode? node)
+    static int StripUnanchoredPatterns(JsonNode? node, string path = "$", List<string>? hits = null)
     {
         int dropped = 0;
         if (node is JsonObject obj)
@@ -1911,15 +1937,16 @@ var shape = new StringBuilder();
                 && !string.IsNullOrEmpty(pat) && !(pat.StartsWith('^') && pat.EndsWith('$')))
             {
                 obj.Remove("pattern");
+                hits?.Add(path + ".pattern");
                 dropped++;
             }
             foreach (var kv in obj)
-                dropped += StripUnanchoredPatterns(kv.Value);
+                dropped += StripUnanchoredPatterns(kv.Value, path + "." + kv.Key, hits);
         }
         else if (node is JsonArray arr)
         {
-            foreach (var item in arr)
-                dropped += StripUnanchoredPatterns(item);
+            for (int i = 0; i < arr.Count; i++)
+                dropped += StripUnanchoredPatterns(arr[i], $"{path}[{i}]", hits);
         }
         return dropped;
     }
@@ -1931,9 +1958,14 @@ var shape = new StringBuilder();
     /// <param name="mode">Rótulo p/ o log (responses/chat).</param>
     static void ApplyPatternException(JsonNode? tools, string mode)
     {
-        int dropped = StripUnanchoredPatterns(tools);
+        var hits = new List<string>();
+        int dropped = StripUnanchoredPatterns(tools, "$", hits);
         if (dropped > 0)
-            Log(new JsonObject { ["event"] = "pattern-strip", ["mode"] = mode, ["dropped"] = dropped, ["tools"] = ToolNames(tools as JsonArray) });
+        {
+            var where = new JsonArray();
+            foreach (var h in hits) where.Add(h);
+            Log(new JsonObject { ["event"] = "pattern-strip", ["mode"] = mode, ["dropped"] = dropped, ["hits"] = where, ["tools"] = ToolNames(tools as JsonArray) });
+        }
     }
 
     /// <summary>AntiRepeat: a cauda (janela) do thinking ja apareceu antes no proprio stream?</summary>
@@ -2919,9 +2951,14 @@ if (type == "message")
     {
         if (tools is not JsonArray list || list.Count == 0) return null;
         var converted = new JsonArray();
+        // Sonda (--diagnostic 1): conta entrada/saida e nomeia o que caiu. A
+        // conversao tem 3 ramos com `continue` e nenhum log; sem isto uma tool
+        // malformada desaparece em silencio e o modelo so responde prosa.
+        var dropped = new JsonArray();
+        var defaulted = new JsonArray();
         foreach (var toolNode in list)
         {
-            if (toolNode is not JsonObject entry) continue;
+            if (toolNode is not JsonObject entry) { dropped.Add("nao-objeto"); continue; }
             string type = entry["type"]?.GetValue<string>() ?? "";
 
             if (type == "function" && entry["function"] is JsonObject)
@@ -2929,6 +2966,8 @@ if (type == "message")
 
             if (type == "function" && entry["name"] is not null)
             {
+                var schemaSrc = entry["parameters"] ?? entry["inputSchema"];
+                if (schemaSrc is null) defaulted.Add(entry["name"]?.GetValue<string>() ?? "?");
                 converted.Add(new JsonObject
                 {
                     ["type"] = "function",
@@ -2936,7 +2975,7 @@ if (type == "message")
                     {
                         ["name"] = entry["name"]?.GetValue<string>(),
                         ["description"] = entry["description"]?.GetValue<string>() ?? "",
-                        ["parameters"] = CloneOrDefault(entry["parameters"] ?? entry["inputSchema"])
+                        ["parameters"] = CloneOrDefault(schemaSrc)
                     }
                 });
                 continue;
@@ -2944,9 +2983,13 @@ if (type == "message")
 
             if (type == "namespace" && entry["tools"] is JsonArray nested)
             {
+                int before = converted.Count;
                 foreach (var nestedNode in nested)
                 {
-                    if (nestedNode is not JsonObject nestedTool || nestedTool["name"] is null) continue;
+                    if (nestedNode is not JsonObject nestedTool || nestedTool["name"] is null)
+                    { dropped.Add("namespace-sem-nome"); continue; }
+                    var schemaSrc = nestedTool["parameters"] ?? nestedTool["inputSchema"];
+                    if (schemaSrc is null) defaulted.Add(nestedTool["name"]?.GetValue<string>() ?? "?");
                     converted.Add(new JsonObject
                     {
                         ["type"] = "function",
@@ -2954,11 +2997,32 @@ if (type == "message")
                         {
                             ["name"] = nestedTool["name"]?.GetValue<string>(),
                             ["description"] = nestedTool["description"]?.GetValue<string>() ?? "",
-                            ["parameters"] = CloneOrDefault(nestedTool["parameters"] ?? nestedTool["inputSchema"])
+                            ["parameters"] = CloneOrDefault(schemaSrc)
                         }
                     });
                 }
+                if (converted.Count - before != nested.Count) dropped.Add("namespace-parcial");
+                continue;
             }
+
+            // Nao casa nenhum ramo: some do payload. Motivo+nome vao p/ a sonda.
+            dropped.Add($"{(type.Length == 0 ? "sem-type" : type)}:{entry["name"]?.GetValue<string>() ?? "?"}");
+        }
+        if (Diagnostic)
+        {
+            var names = new JsonArray();
+            foreach (var t in converted)
+                if (t?["function"]?["name"]?.GetValue<string>() is string name) names.Add(name);
+            Log(new JsonObject
+            {
+                ["event"] = "tools-to-chat",
+                ["in"] = list.Count,
+                ["out"] = converted.Count,
+                ["names"] = names,
+                ["dropped"] = dropped,
+                ["default_schema"] = defaulted,
+                ["result_null"] = converted.Count == 0
+            });
         }
         return converted.Count > 0 ? converted : null;
     }
