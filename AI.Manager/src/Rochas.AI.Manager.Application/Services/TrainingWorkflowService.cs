@@ -61,6 +61,17 @@ public sealed class TrainingWorkflowService(
     public async Task MoveAsync(int id, int statusId, CancellationToken ct = default)
     {
         if (statusId <= 0) return;
+        // registra transicao antes de estampar novo status
+        if (_transitions is not null)
+        {
+            try
+            {
+                var card = (await _repo.QueryRaw("SELECT * FROM training_workflow_cards WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
+                int fromStatus = card?.StatusId ?? 0;
+                await _transitions.Add(new WorkFlowTransition(Rochas.AI.Manager.Domain.Helpers.EntityHashCode.Compute(typeof(TrainingWorkflowCard).FullName ?? "TrainingWorkflowCard"), id, fromStatus, statusId, "Move", 0, null));
+            }
+            catch { }
+        }
         using var c = new SqliteConnection(_conn);
         await c.OpenAsync(ct);
         using var cmd = c.CreateCommand();
