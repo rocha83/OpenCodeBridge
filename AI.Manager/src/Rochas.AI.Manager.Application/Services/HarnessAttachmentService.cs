@@ -27,7 +27,7 @@ public sealed class HarnessAttachmentService(
 
     public async Task<IReadOnlyList<HarnessAttachment>> ListByVersionAsync(int versionId, CancellationToken ct = default)
     {
-        var list = await _repo.QueryRaw("SELECT * FROM harness_attachments WHERE version_id = @version_id", new Dictionary<string, object> { ["@version_id"] = versionId });
+        var list = await _repo.Query(new HarnessAttachment { VersionId = versionId });
         return list.OrderBy(a => a.Id).ToList();
     }
 

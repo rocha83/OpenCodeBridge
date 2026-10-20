@@ -8,7 +8,7 @@ public sealed class ChatController(IGenericRepository<Agent> agentRepository) : 
 {
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
-        var agents = await agentRepository.QueryRaw("SELECT * FROM agents", new Dictionary<string, object>());
+        var agents = await agentRepository.Query(new Agent());
         ViewBag.Agents = agents;
         return View();
     }

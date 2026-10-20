@@ -23,7 +23,7 @@ public static class BridgeFeatureSeeder
         IGenericRepository<Experiment> experimentRepository)
     {
         // ModelArtifact
-        var existingModels = await modelRepository.QueryRaw("SELECT * FROM model_artifacts", new Dictionary<string, object>());
+        var existingModels = await modelRepository.Query(new ModelArtifact());
         if (!existingModels.Any(model => model.Name == "Gemma4 12B Q4_K_M"))
         {
             await modelRepository.Add(new ModelArtifact { Name = "Gemma4 12B Q4_K_M", Family = "Gemma4", Variant = "12b", Format = "gguf", IsTrainable = true, Status = "Approved" });
@@ -33,8 +33,17 @@ public static class BridgeFeatureSeeder
             await modelRepository.Add(new ModelArtifact { Name = "Gemma4 E2B Q3_K_M", Family = "Gemma4", Variant = "e2b", Format = "gguf", IsTrainable = false, Status = "Approved" });
         }
 
+        if (!existingModels.Any(model => model.Name == "Gemma4 12B Adapted (GGUF)"))
+        {
+            await modelRepository.Add(new ModelArtifact { Name = "Gemma4 12B Adapted (GGUF)", Family = "Gemma4", Variant = "12b", Format = "gguf", IsTrainable = false, Status = "Draft" });
+        }
+        if (!existingModels.Any(model => model.Name == "Gemma4 E2B Adapted (LiteRT)"))
+        {
+            await modelRepository.Add(new ModelArtifact { Name = "Gemma4 E2B Adapted (LiteRT)", Family = "Gemma4", Variant = "e2b", Format = "litertlm", IsTrainable = false, Status = "Draft" });
+        }
+
         // ModelBinding
-        var existingBindings = await bindingRepository.QueryRaw("SELECT * FROM model_bindings", new Dictionary<string, object>());
+        var existingBindings = await bindingRepository.Query(new ModelBinding());
         if (!existingBindings.Any(binding => binding.ModelId == "gemma-4-12b"))
         {
             await bindingRepository.Add(new ModelBinding { Name = "Gemma4 12B (bridge GPU)", Provider = "openai", ModelId = "gemma-4-12b", MaxTokens = 32768, ContextWindow = 163840, Thinking = "on", Temperature = 0.5 });
@@ -45,7 +54,7 @@ public static class BridgeFeatureSeeder
         }
 
         // Agent (6 roles)
-        var existingAgents = await agentRepository.QueryRaw("SELECT * FROM agents", new Dictionary<string, object>());
+        var existingAgents = await agentRepository.Query(new Agent());
         var agentDefinitions = new (string Name, string Model, string BridgeUrl, double Temperature, string Thinking, string Mode, string Tools)[]
         {
             ("plan", "openai/gemma-4-12b", "http://localhost:4124", 0.5, "on", "Plan", "read,grep,glob,question"),
@@ -62,7 +71,7 @@ public static class BridgeFeatureSeeder
         }
 
         // HarnessProfile
-        var existingProfiles = await profileRepository.QueryRaw("SELECT * FROM harness_profiles", new Dictionary<string, object>());
+        var existingProfiles = await profileRepository.Query(new HarnessProfile());
         int profileId;
         if (existingProfiles.Any(profile => profile.Name == "OpenCodeBridge Agents"))
         {
@@ -73,11 +82,11 @@ public static class BridgeFeatureSeeder
             var profile = new HarnessProfile { Name = "OpenCodeBridge Agents", Description = "Harness principal dos 6 agentes (Plan/Build/Orch/MoE/Scripter/Exec)", Status = "Approved" };
             await profileRepository.Add(profile);
             profileId = profile.Id;
-            existingProfiles = await profileRepository.QueryRaw("SELECT * FROM harness_profiles", new Dictionary<string, object>());
+            existingProfiles = await profileRepository.Query(new HarnessProfile());
         }
 
         // Version
-        var existingVersions = await versionRepository.QueryRaw("SELECT * FROM harness_profile_versions", new Dictionary<string, object>());
+        var existingVersions = await versionRepository.Query(new HarnessProfileVersion());
         int versionId;
         if (existingVersions.Any(version => version.ProfileId == profileId && version.Version == 1))
         {
@@ -91,7 +100,7 @@ public static class BridgeFeatureSeeder
         }
 
         // Attachment (system prompt core completo)
-        var existingAttachments = await attachmentRepository.QueryRaw("SELECT * FROM harness_attachments", new Dictionary<string, object>());
+        var existingAttachments = await attachmentRepository.Query(new HarnessAttachment());
         if (!existingAttachments.Any(attachment => attachment.VersionId == versionId && attachment.Kind == "Core"))
         {
             var assembly = typeof(BridgeFeatureSeeder).Assembly;
@@ -118,7 +127,7 @@ public static class BridgeFeatureSeeder
         }
 
         // ToolPolicy por role
-        var existingPolicies = await policyRepository.QueryRaw("SELECT * FROM tool_policies", new Dictionary<string, object>());
+        var existingPolicies = await policyRepository.Query(new ToolPolicy());
         var policyDefinitions = new (string Role, string Allow, string Deny, bool RequireCall, int MaxTurns, int StallLimit)[]
         {
             ("build", "read,write,edit,glob,grep,shell,execute,task", "websearch", false, 20, 3),
@@ -135,14 +144,14 @@ public static class BridgeFeatureSeeder
         }
 
         // InstructionProfile
-        var existingInstructions = await instructionRepository.QueryRaw("SELECT * FROM instruction_profiles", new Dictionary<string, object>());
+        var existingInstructions = await instructionRepository.Query(new InstructionProfile());
         if (!existingInstructions.Any(instruction => instruction.Name == "AGENTS.md global"))
         {
             await instructionRepository.Add(new InstructionProfile { Name = "AGENTS.md global", Description = "Instrucoes globais do agente (AGENTS.md)", Version = "1.0", Status = "Approved" });
         }
 
         // Experiment
-        var existingExperiments = await experimentRepository.QueryRaw("SELECT * FROM experiments", new Dictionary<string, object>());
+        var existingExperiments = await experimentRepository.Query(new Experiment());
         if (!existingExperiments.Any(experiment => experiment.Name == "OpenCodeBridge baseline"))
         {
             await experimentRepository.Add(new Experiment { Name = "OpenCodeBridge baseline", Hypothesis = "Motor TorchSharp + harness local", Status = "Planned" });

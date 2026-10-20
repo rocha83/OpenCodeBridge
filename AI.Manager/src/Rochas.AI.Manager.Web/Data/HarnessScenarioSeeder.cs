@@ -21,7 +21,7 @@ public static class HarnessScenarioSeeder
             ("build-puro", "Build puro (sem orquestracao/scripts)", "Build puro: implemente diretamente os artefatos; conclua com build/teste verdes e evidencia. Sem segmentacao, sem scripts, sem orquestracao."),
         };
 
-        var existingProfiles = await profileRepository.QueryRaw("SELECT * FROM harness_profiles", new Dictionary<string, object>());
+        var existingProfiles = await profileRepository.Query(new HarnessProfile());
 
         foreach (var (scenarioName, description, systemTail) in scenarios)
         {
@@ -35,10 +35,10 @@ public static class HarnessScenarioSeeder
                 var profile = new HarnessProfile { Name = $"Scenario: {scenarioName}", Description = description, Status = "Approved" };
                 await profileRepository.Add(profile);
                 profileId = profile.Id;
-                existingProfiles = await profileRepository.QueryRaw("SELECT * FROM harness_profiles", new Dictionary<string, object>());
+                existingProfiles = await profileRepository.Query(new HarnessProfile());
             }
 
-            var versions = await versionRepository.QueryRaw("SELECT * FROM harness_profile_versions", new Dictionary<string, object>());
+            var versions = await versionRepository.Query(new HarnessProfileVersion());
             if (!versions.Any(version => version.ProfileId == profileId))
             {
                 var version = new HarnessProfileVersion { ProfileId = profileId, Version = 1, Mode = "ClientNative", ApprovedBy = "seeder", ApprovedAt = DateTime.UtcNow };

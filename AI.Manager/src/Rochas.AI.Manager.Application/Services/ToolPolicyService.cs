@@ -26,23 +26,24 @@ public sealed class ToolPolicyService(
         return p.Id;
     }
 
-    public async Task<ToolPolicy?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM tool_policies WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
+    public async Task<ToolPolicy?> GetAsync(int id, CancellationToken ct = default) { var list = await _repo.Query(new ToolPolicy { Id = id }); return list.FirstOrDefault(); }
 
     public async Task<IReadOnlyList<ToolPolicy>> ListAsync(CancellationToken ct = default)
     {
-        var list = await _repo.QueryRaw("SELECT * FROM tool_policies", new Dictionary<string, object>());
+        var list = await _repo.Query(new ToolPolicy());
         return list.OrderBy(p => p.Role).ToList();
     }
 
     public async Task UpdateAsync(int id, string allow, string deny, bool requireCall, int maxTurns, int stallLimit, CancellationToken ct = default)
     {
-        var p = (await _repo.QueryRaw("SELECT * FROM tool_policies WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"ToolPolicy {id} not found.");
+        var p = await GetAsync(id, ct) ?? throw new KeyNotFoundException($"ToolPolicy {id} not found.");
+        var old = new ToolPolicy(); foreach (var prop in typeof(ToolPolicy).GetProperties()) prop.SetValue(old, prop.GetValue(p));
         p.Allow = allow ?? string.Empty;
         p.Deny = deny ?? string.Empty;
         p.RequireCall = requireCall;
         p.MaxTurns = maxTurns <= 0 ? p.MaxTurns : maxTurns;
         p.StallLimit = stallLimit <= 0 ? p.StallLimit : stallLimit;
-        await _write.Update(p, new ToolPolicy { Id = id });
+        await _write.Update(p, old);
     }
 
     public async Task DeleteAsync(int id, CancellationToken ct = default)

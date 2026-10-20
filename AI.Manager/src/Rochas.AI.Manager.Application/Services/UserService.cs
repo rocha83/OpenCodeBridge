@@ -20,24 +20,25 @@ public sealed class UserService(
 
     public async Task<User?> GetAsync(int id, CancellationToken ct = default)
     {
-        var list = await _repo.QueryRaw("SELECT * FROM users WHERE id=@id", new Dictionary<string, object> { ["@id"] = id });
+        var list = await _repo.Query(new User { Id = id });
         return list.FirstOrDefault();
     }
 
     public async Task<IReadOnlyList<User>> ListAsync(CancellationToken ct = default)
     {
-        var list = await _repo.QueryRaw("SELECT * FROM users", new Dictionary<string, object>());
+        var list = await _repo.Query(new User());
         return list.OrderBy(u => u.Name).ToList();
     }
 
     public async Task UpdateAsync(int id, string name, string email, bool isAdmin, bool active, CancellationToken ct = default)
     {
         var u = await GetAsync(id, ct) ?? throw new KeyNotFoundException($"User {id} not found.");
+        var old = new User(); foreach (var prop in typeof(User).GetProperties()) prop.SetValue(old, prop.GetValue(u));
         u.Name = name;
         u.Email = email;
         u.IsAdmin = isAdmin;
         u.IsActive = active;
-        await _write.Update(u, new User { Id = id, CreatedAt = default });
+        await _write.Update(u, old);
     }
 
     public async Task DeleteAsync(int id, CancellationToken ct = default)

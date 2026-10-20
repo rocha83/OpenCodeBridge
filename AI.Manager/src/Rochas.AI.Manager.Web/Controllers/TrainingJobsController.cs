@@ -15,9 +15,9 @@ public sealed class TrainingJobsController(ITrainingJobService svc) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create([FromForm] int? modelArtifactId, [FromForm] int? datasetId, [FromForm] bool advancedMode, CancellationToken ct)
+    public async Task<IActionResult> Create([FromForm] int? modelArtifactId, [FromForm] int? datasetId, [FromForm] bool advancedMode, [FromForm] string? trainingMethod, CancellationToken ct)
     {
-        await svc.CreateAsync(modelArtifactId, datasetId, advancedMode, null, ct);
+        await svc.CreateAsync(modelArtifactId, datasetId, advancedMode, trainingMethod ?? "SFT", null, ct);
         return RedirectToAction("Index");
     }
 

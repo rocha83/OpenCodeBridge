@@ -15,9 +15,6 @@ public class TrainingWorkflowServiceTests
     private static void InitDb(string db)
     {
         AppDb.Init(db);
-        // seed statuses + steps via repos
-        using var scope = new Microsoft.Data.Sqlite.SqliteConnection(AppDb.ConnectionString);
-        scope.Open();
     }
 
     [Fact]
@@ -28,7 +25,7 @@ public class TrainingWorkflowServiceTests
         var repo = new GenericRepository<TrainingWorkflowCard>(DatabaseEngine.SQLite, AppDb.ConnectionString);
         var write = new GenericRepository<TrainingWorkflowCard>(DatabaseEngine.SQLite, AppDb.ConnectionString);
         var eval = new AccuracyEvaluator();
-        var svc = new TrainingWorkflowService(repo, write, eval, AppDb.ConnectionString);
+        var svc = new TrainingWorkflowService(repo, write, eval);
         var id = await svc.CreateAsync("card1", null, 1, 0.9);
         var list = await svc.ListAsync();
         Assert.Single(list);
@@ -43,7 +40,7 @@ public class TrainingWorkflowServiceTests
         var repo = new Rochas.DapperRepository.GenericRepository<TrainingWorkflowCard>(Rochas.Data.Specification.Enums.DatabaseEngine.SQLite, AppDb.ConnectionString);
         var write = new Rochas.DapperRepository.GenericRepository<TrainingWorkflowCard>(Rochas.Data.Specification.Enums.DatabaseEngine.SQLite, AppDb.ConnectionString);
         var eval = new AccuracyEvaluator();
-        var svc = new TrainingWorkflowService(repo, write, eval, AppDb.ConnectionString);
+        var svc = new TrainingWorkflowService(repo, write, eval);
         var id = await svc.CreateAsync("card3", null, 1, 0.9);
         // Move to ACEITE (statusId 12) - may require valid transition; just call and not throw
         try { await svc.MoveAsync(id, 12); } catch { }
@@ -60,7 +57,7 @@ public class TrainingWorkflowServiceTests
         var repo = new GenericRepository<TrainingWorkflowCard>(DatabaseEngine.SQLite, AppDb.ConnectionString);
         var write = new GenericRepository<TrainingWorkflowCard>(DatabaseEngine.SQLite, AppDb.ConnectionString);
         var eval = new AccuracyEvaluator();
-        var svc = new TrainingWorkflowService(repo, write, eval, AppDb.ConnectionString);
+        var svc = new TrainingWorkflowService(repo, write, eval);
         var id = await svc.CreateAsync("card2", null, 2, 0.8);
         var g = await svc.GetAsync(id);
         Assert.NotNull(g);
@@ -77,7 +74,7 @@ public class TrainingWorkflowServiceExtraTests
         var repo = new Rochas.DapperRepository.GenericRepository<TrainingWorkflowCard>(Rochas.Data.Specification.Enums.DatabaseEngine.SQLite, AppDb.ConnectionString);
         var write = new Rochas.DapperRepository.GenericRepository<TrainingWorkflowCard>(Rochas.Data.Specification.Enums.DatabaseEngine.SQLite, AppDb.ConnectionString);
         var eval = new AccuracyEvaluator();
-        var svc = new TrainingWorkflowService(repo, write, eval, AppDb.ConnectionString);
+        var svc = new TrainingWorkflowService(repo, write, eval);
         var id = await svc.CreateAsync("card", null, 1, 0.9);
         var r = await svc.EvaluateAsync(id, "expected text", "actual text");
         Assert.NotNull(r);
@@ -92,7 +89,7 @@ public class TrainingWorkflowServiceExtraTests
         var repo = new Rochas.DapperRepository.GenericRepository<TrainingWorkflowCard>(Rochas.Data.Specification.Enums.DatabaseEngine.SQLite, AppDb.ConnectionString);
         var write = new Rochas.DapperRepository.GenericRepository<TrainingWorkflowCard>(Rochas.Data.Specification.Enums.DatabaseEngine.SQLite, AppDb.ConnectionString);
         var eval = new AccuracyEvaluator();
-        var svc = new TrainingWorkflowService(repo, write, eval, AppDb.ConnectionString);
+        var svc = new TrainingWorkflowService(repo, write, eval);
         var id = await svc.CreateAsync("card", null, 1, 0.9);
         await svc.UpdateAccuracyAsync(id, 0.95);
         var g = await svc.GetAsync(id);

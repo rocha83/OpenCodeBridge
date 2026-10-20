@@ -18,6 +18,8 @@ public sealed class TrainingJob : BaseEntity
     public string? ProfileName { get; set; }
     [Column("advanced_mode")]
     public bool AdvancedMode { get; set; }
+    [Column("training_method")]
+    public string TrainingMethod { get; set; } = "SFT";
     [Column("configuration_json")]
     public string? ConfigurationJson { get; set; }
     [Column("started_at")]

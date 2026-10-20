@@ -31,7 +31,7 @@ public static class AppDb
             CREATE TABLE IF NOT EXISTS instruction_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, code TEXT, is_active INTEGER NOT NULL DEFAULT 1, name TEXT NOT NULL, description TEXT, instructions_json TEXT, version TEXT, status TEXT NOT NULL DEFAULT 'Draft', created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS training_patterns (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, code TEXT, is_active INTEGER NOT NULL DEFAULT 1, name TEXT NOT NULL, profile_id INTEGER, model_artifact_id INTEGER, pattern_json TEXT, created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS experiments (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, code TEXT, is_active INTEGER NOT NULL DEFAULT 1, name TEXT NOT NULL, hypothesis TEXT, base_artifact_id INTEGER, tuned_artifact_id INTEGER, metrics_json TEXT, status TEXT NOT NULL DEFAULT 'Planned', created_at TEXT NOT NULL, rejection_reason TEXT);
-            CREATE TABLE IF NOT EXISTS training_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, code TEXT, name TEXT NOT NULL DEFAULT '', is_active INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'Queued', model_artifact_id INTEGER, dataset_id INTEGER, experiment_id INTEGER, profile_name TEXT, advanced_mode INTEGER NOT NULL DEFAULT 0, configuration_json TEXT, created_at TEXT NOT NULL, started_at TEXT, completed_at TEXT, error_message TEXT, last_loss REAL, vram_used_mb REAL, epochs_completed INTEGER NOT NULL DEFAULT 0, best_accuracy REAL, throughput_tokens_per_sec REAL NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS training_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, code TEXT, name TEXT NOT NULL DEFAULT '', is_active INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'Queued', model_artifact_id INTEGER, dataset_id INTEGER, experiment_id INTEGER, profile_name TEXT, advanced_mode INTEGER NOT NULL DEFAULT 0, training_method TEXT NOT NULL DEFAULT 'SFT', configuration_json TEXT, created_at TEXT NOT NULL, started_at TEXT, completed_at TEXT, error_message TEXT, last_loss REAL, vram_used_mb REAL, epochs_completed INTEGER NOT NULL DEFAULT 0, best_accuracy REAL, throughput_tokens_per_sec REAL NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS harness_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, code TEXT, is_active INTEGER NOT NULL DEFAULT 1, name TEXT NOT NULL, description TEXT, status TEXT NOT NULL DEFAULT 'Draft', created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS harness_profile_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, code TEXT, name TEXT NOT NULL DEFAULT '', is_active INTEGER NOT NULL DEFAULT 1, profile_id INTEGER NOT NULL, version INTEGER NOT NULL, mode TEXT NOT NULL DEFAULT 'ClientNative', checksum TEXT, approved_by TEXT, approved_at TEXT, created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS harness_attachments (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, code TEXT, name TEXT NOT NULL DEFAULT '', is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, version_id INTEGER NOT NULL, kind TEXT NOT NULL DEFAULT 'Core', role TEXT NOT NULL DEFAULT 'general', content TEXT NOT NULL DEFAULT '', char_count INTEGER NOT NULL DEFAULT 0);
@@ -45,5 +45,13 @@ public static class AppDb
             CREATE TABLE IF NOT EXISTS workflow_transitions (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, code TEXT, name TEXT NOT NULL DEFAULT '', is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, entity_hash_code INTEGER NOT NULL DEFAULT 0, entity_id INTEGER NOT NULL, entity_status_from INTEGER NOT NULL DEFAULT 0, entity_status_to INTEGER NOT NULL DEFAULT 0, action TEXT NOT NULL DEFAULT 'Submit', approver_id INTEGER NOT NULL DEFAULT 0, note TEXT);
             """;
         cmd.ExecuteNonQuery();
+        // Migracao: garantir coluna training_method em DBs antigos
+        try
+        {
+            using var alter = conn.CreateCommand();
+            alter.CommandText = "ALTER TABLE training_jobs ADD COLUMN training_method TEXT NOT NULL DEFAULT 'SFT';";
+            alter.ExecuteNonQuery();
+        }
+        catch { /* coluna ja existe */ }
     }
 }

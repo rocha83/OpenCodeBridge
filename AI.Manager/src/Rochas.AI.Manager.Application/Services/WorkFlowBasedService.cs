@@ -24,7 +24,7 @@ public class WorkFlowBasedService<T> : IWorkFlowBasedService<T> where T : class
 
     public async Task<List<WorkflowStep>> GetEntityStepsAsync(uint entityHashCode)
     {
-        var all = await _stepRepo.QueryRaw("SELECT * FROM workflow_steps", new Dictionary<string, object>());
+        var all = await _stepRepo.Query(new WorkflowStep());
         return all.Where(s => s.EntityHashCode == entityHashCode && s.IsActive).OrderBy(s => s.SortOrder).ToList();
     }
 
@@ -58,7 +58,7 @@ public class WorkFlowBasedService<T> : IWorkFlowBasedService<T> where T : class
 
     public async Task<List<WorkFlowTransition>> GetTransitionsAsync(uint entityHashCode, int entityId)
     {
-        var all = await _transitionRepo.QueryRaw("SELECT * FROM workflow_transitions", new Dictionary<string, object>());
+        var all = await _transitionRepo.Query(new WorkFlowTransition());
         return all.Where(t => t.EntityHashCode == entityHashCode && t.EntityId == entityId).OrderByDescending(t => t.CreatedAt).ToList();
     }
 }

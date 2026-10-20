@@ -34,7 +34,24 @@
       <div class="modal-body">
         <input name="modelArtifactId" class="form-control mb-2" placeholder="ModelArtifactId"  required/>
         <input name="datasetId" class="form-control mb-2" placeholder="DatasetId"  required/>
-        <div class="form-check"><input type="checkbox" name="advancedMode" value="true" class="form-check-input" id="am" /><label class="form-check-label" for="am">Modo avançado</label></div>
+        <select name="trainingMethod" class="form-select mb-2">
+          <option value="SFT">SFT</option>
+          <option value="DPO">DPO</option>
+          <option value="RM">Reward Modeling</option>
+        </select>
+        <div class="form-check"><input type="checkbox" name="advancedMode" value="true" class="form-check-input" id="am" /><label class="form-check-label" for="am">Modo avançado (QLoRA/Unsloth/GGUF)</label></div>
+        <div id="advBlock" style="display:none;" class="mt-2">
+          <input name="r" class="form-control mb-1" placeholder="LoRA r (16/32)" />
+          <input name="alpha" class="form-control mb-1" placeholder="lora_alpha (2*r)" />
+          <input name="dropout" class="form-control mb-1" placeholder="dropout (0.05/0.1)" />
+          <input name="lr" class="form-control mb-1" placeholder="learning rate (2e-4)" />
+          <input name="maxLength" class="form-control mb-1" placeholder="max_length (2048-8192)" />
+        </div>
+        <script>
+          document.getElementById('am')?.addEventListener('change', function(){
+            document.getElementById('advBlock').style.display = this.checked ? 'block' : 'none';
+          });
+        </script>
       </div>
       <div class="modal-footer"><button type="submit" class="btn btn-primary">Salvar</button></div>
     </form>

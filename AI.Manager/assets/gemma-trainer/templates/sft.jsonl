@@ -1,0 +1,2 @@
+{"messages":[{"role":"system","content":"Voce e um assistente especialista."},{"role":"user","content":"Explique QLoRA."},{"role":"model","content":"QLoRA e fine-tuning em 4-bit com adaptadores LoRA."}]}
+{"messages":[{"role":"user","content":"O que e GGUF?"},{"role":"model","content":"GGUF e o formato de inferencia do llama.cpp."}]}

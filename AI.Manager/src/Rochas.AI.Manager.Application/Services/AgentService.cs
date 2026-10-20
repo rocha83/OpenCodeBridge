@@ -20,19 +20,20 @@ public sealed class AgentService(
 
     public async Task<Agent?> GetAsync(int id, CancellationToken ct = default)
     {
-        var list = await _repo.QueryRaw("SELECT * FROM agents WHERE id=@id", new Dictionary<string, object> { ["@id"] = id });
+        var list = await _repo.Query(new Agent { Id = id });
         return list.FirstOrDefault();
     }
 
     public async Task<IReadOnlyList<Agent>> ListAsync(CancellationToken ct = default)
     {
-        var list = await _repo.QueryRaw("SELECT * FROM agents", new Dictionary<string, object>());
+        var list = await _repo.Query(new Agent());
         return list.OrderBy(a => a.Name).ToList();
     }
 
     public async Task UpdateAsync(int id, string name, string model, string bridgeUrl, double temperature, string thinking, string mode, string tools, string systemPrompt, bool active, CancellationToken ct = default)
     {
         var a = await GetAsync(id, ct) ?? throw new KeyNotFoundException($"Agent {id} not found.");
+        var old = new Agent(); foreach (var p in typeof(Agent).GetProperties()) p.SetValue(old, p.GetValue(a));
         a.Name = name;
         a.Model = model;
         a.BridgeUrl = bridgeUrl;
@@ -42,11 +43,11 @@ public sealed class AgentService(
         a.Tools = tools;
         a.SystemPrompt = systemPrompt;
         a.IsActive = active;
-        await _write.Update(a, new Agent { Id = id, CreatedAt = default });
+        await _write.Update(a, old);
     }
 
     public async Task DeleteAsync(int id, CancellationToken ct = default)
     {
-        await _write.Remove(new Agent { Id = id, CreatedAt = default });
+        await _write.Remove(new Agent { Id = id });
     }
 }

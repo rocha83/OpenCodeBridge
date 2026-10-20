@@ -20,11 +20,16 @@ public sealed class ApprovalsController(
 {
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
-        var harnessProfiles = await profileRepository.QueryRaw("SELECT * FROM harness_profiles WHERE status != 'Approved'", new Dictionary<string, object>());
-        var experiments = await experimentRepository.QueryRaw("SELECT * FROM experiments WHERE status IN ('Planned','Running','Completed')", new Dictionary<string, object>());
-        var modelArtifacts = await modelRepository.QueryRaw("SELECT * FROM model_artifacts WHERE status = 'Draft'", new Dictionary<string, object>());
-        var instructionProfiles = await instructionRepository.QueryRaw("SELECT * FROM instruction_profiles WHERE status = 'Draft'", new Dictionary<string, object>());
-        var trainingCards = await cardRepository.QueryRaw("SELECT * FROM training_workflow_cards WHERE status_id = 11", new Dictionary<string, object>());
+        var allProfiles = await profileRepository.Query(new HarnessProfile());
+        var harnessProfiles = allProfiles.Where(x => x.Status != "Approved").ToList();
+        var allExperiments = await experimentRepository.Query(new Experiment());
+        var experiments = allExperiments.Where(x => x.Status == "Planned" || x.Status == "Running" || x.Status == "Completed").ToList();
+        var allModels = await modelRepository.Query(new ModelArtifact());
+        var modelArtifacts = allModels.Where(x => x.Status == "Draft").ToList();
+        var allInstr = await instructionRepository.Query(new InstructionProfile());
+        var instructionProfiles = allInstr.Where(x => x.Status == "Draft").ToList();
+        var allCards = await cardRepository.Query(new TrainingWorkflowCard());
+        var trainingCards = allCards.Where(x => x.StatusId == 11).ToList();
 
         ViewBag.HarnessProfiles = harnessProfiles;
         ViewBag.Experiments = experiments;

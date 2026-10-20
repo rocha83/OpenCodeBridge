@@ -1,6 +1,8 @@
 using Rochas.Data.Specification.Interfaces;
 using Rochas.AI.Manager.Domain.Interfaces;
 using Rochas.AI.Manager.Domain.Datasets;
+using System.IO;
+using System.Text.Json;
 
 namespace Rochas.AI.Manager.Application.Services;
 
@@ -30,18 +32,46 @@ public sealed class DatasetService(
         return d.Id;
     }
 
-    public async Task<Dataset?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM datasets WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
+    public async Task<Dataset?> GetAsync(int id, CancellationToken ct = default)
+    {
+        var list = await _repo.Query(new Dataset { Id = id });
+        return list.FirstOrDefault();
+    }
 
     public async Task<IReadOnlyList<Dataset>> ListAsync(CancellationToken ct = default)
     {
-        var list = await _repo.QueryRaw("SELECT * FROM datasets", new Dictionary<string, object>());
+        var list = await _repo.Query(new Dataset());
         return list.OrderBy(d => d.CreatedAt).ToList();
     }
 
     public async Task ValidateAsync(int id, bool isValid, CancellationToken ct = default)
     {
-        var d = (await _repo.QueryRaw("SELECT * FROM datasets WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Dataset {id} not found.");
+        var d = await GetAsync(id, ct) ?? throw new KeyNotFoundException($"Dataset {id} not found.");
+        var old = new Dataset(); foreach (var p in typeof(Dataset).GetProperties()) p.SetValue(old, p.GetValue(d));
         d.IsValidated = isValid;
-        await _write.Update(d, new Dataset { Id = id });
+        await _write.Update(d, old);
+    }
+
+    public async Task<bool> ValidateFormatAsync(int id, string mode, CancellationToken ct = default)
+    {
+        var d = await GetAsync(id, ct) ?? throw new KeyNotFoundException($"Dataset {id} not found.");
+        if (string.IsNullOrWhiteSpace(d.FilePath) || !File.Exists(d.FilePath)) return false;
+        mode = (mode ?? "sft").ToLowerInvariant();
+        foreach (var raw in await File.ReadAllLinesAsync(d.FilePath, ct))
+        {
+            var line = raw.Trim();
+            if (string.IsNullOrEmpty(line)) continue;
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            if (mode == "sft")
+            {
+                if (!root.TryGetProperty("messages", out var msgs) || msgs.ValueKind != JsonValueKind.Array) return false;
+            }
+            else
+            {
+                if (!root.TryGetProperty("prompt", out _) || !root.TryGetProperty("chosen", out _) || !root.TryGetProperty("rejected", out _)) return false;
+            }
+        }
+        return true;
     }
 }

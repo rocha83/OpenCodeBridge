@@ -19,13 +19,13 @@
       <td>@card.Title</td>
       <td>
         @{
-            var badge = c.StatusId == 12 ? "bg-success" : (c.StatusId == 13 ? "bg-danger" : "bg-warning text-dark");
-            var label = c.StatusId == 12 ? "Aprovado" : (c.StatusId == 13 ? "Refutado" : "Pendente");
+            var badge = card.StatusId == 12 ? "bg-success" : (card.StatusId == 13 ? "bg-danger" : "bg-warning text-dark");
+            var label = card.StatusId == 12 ? "Aprovado" : (card.StatusId == 13 ? "Refutado" : "Pendente");
         }
         <span class="badge @badge" title="@card.RejectionReason">@label</span>
         @if (!string.IsNullOrEmpty(card.RejectionReason)) { <small class="text-danger ms-1" title="@card.RejectionReason">ⓘ</small> }
       </td>
-      <td>@(c.Accuracy?.ToString("P2") ?? "-")</td>
+      <td>@(card.Accuracy?.ToString("P2") ?? "-")</td>
       <td>@card.TargetAccuracy.ToString("P2")</td>
       <td>
         <button class="btn btn-sm btn-secondary" onclick="move(@card.Id)">Mover</button>

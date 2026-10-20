@@ -193,7 +193,7 @@ public class ExtraServiceTests2
         var db = NewDb(); Init(db);
         var profiles = new GenericRepository<Rochas.AI.Manager.Domain.Harness.HarnessProfile>(DatabaseEngine.SQLite, AppDb.ConnectionString);
         var versions = new GenericRepository<Rochas.AI.Manager.Domain.Harness.HarnessProfileVersion>(DatabaseEngine.SQLite, AppDb.ConnectionString);
-        var svc = new HarnessProfileService(profiles, profiles, versions, versions, AppDb.ConnectionString);
+        var svc = new HarnessProfileService(profiles, profiles, versions, versions);
         var id = await svc.CreateAsync("hp1", "desc");
         var list = await svc.ListAsync();
         Assert.Single(list);
@@ -225,7 +225,7 @@ public class ExtraServiceTests2
         var repo = new GenericRepository<Rochas.AI.Manager.Domain.Entities.TrainingWorkflowCard>(DatabaseEngine.SQLite, AppDb.ConnectionString);
         var write = new GenericRepository<Rochas.AI.Manager.Domain.Entities.TrainingWorkflowCard>(DatabaseEngine.SQLite, AppDb.ConnectionString);
         var eval = new AccuracyEvaluator();
-        var svc = new TrainingWorkflowService(repo, write, eval, AppDb.ConnectionString);
+        var svc = new TrainingWorkflowService(repo, write, eval);
         var id = await svc.CreateAsync("card", null, 1, 0.9);
         await svc.UpdateAccuracyAsync(id, 0.95);
         var r = await svc.EvaluateAsync(id, "expected text", "actual text");

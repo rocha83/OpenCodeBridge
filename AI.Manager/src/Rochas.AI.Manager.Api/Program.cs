@@ -133,11 +133,13 @@ builder.Services.AddScoped<IHarnessProfileService>(sp => new HarnessProfileServi
     sp.GetRequiredService<IGenericRepository<HarnessProfile>>(),
     sp.GetRequiredService<IPersistenceRepository<HarnessProfile>>(),
     sp.GetRequiredService<IGenericRepository<HarnessProfileVersion>>(),
-    sp.GetRequiredService<IPersistenceRepository<HarnessProfileVersion>>(),
-    Rochas.AI.Manager.Infrastructure.Data.AppDb.ConnectionString));
-builder.Services.AddScoped<ITrainingJobService, TrainingJobService>();
+    sp.GetRequiredService<IPersistenceRepository<HarnessProfileVersion>>()));
+builder.Services.AddScoped<ITrainingJobService>(sp => new TrainingJobService(sp.GetRequiredService<IGenericRepository<Rochas.AI.Manager.Domain.Training.TrainingJob>>(), sp.GetRequiredService<IPersistenceRepository<Rochas.AI.Manager.Domain.Training.TrainingJob>>()));
 builder.Services.AddScoped<ITrainingBackend, TorchSharpTrainingBackend>();
+builder.Services.AddSingleton<Rochas.AI.Manager.Application.Tools.BridgeToolExecutor>(sp => new Rochas.AI.Manager.Application.Tools.BridgeToolExecutor(Directory.GetCurrentDirectory()));
 builder.Services.AddScoped<ITrainingEngine, TrainingEngine>();
+builder.Services.AddScoped<Rochas.AI.Manager.Domain.Interfaces.ITrainingRunner, Rochas.AI.Manager.TrainingEngine.TrainingRunner>();
+
 builder.Services.AddScoped<IReportService, Rochas.AI.Manager.Infrastructure.Services.ReportService>();
 builder.Services.AddScoped<IHarnessLinter, HarnessLinter>();
 builder.Services.AddScoped<IAccuracyEvaluator, AccuracyEvaluator>();
@@ -155,8 +157,7 @@ builder.Services.AddScoped<IBridgeCaptureService, BridgeCaptureService>();
 builder.Services.AddScoped<ITrainingWorkflowService>(sp => new TrainingWorkflowService(
     sp.GetRequiredService<IGenericRepository<TrainingWorkflowCard>>(),
     sp.GetRequiredService<IPersistenceRepository<TrainingWorkflowCard>>(),
-    sp.GetRequiredService<IAccuracyEvaluator>(),
-    AppDb.ConnectionString));
+    sp.GetRequiredService<IAccuracyEvaluator>()));
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 

@@ -16,7 +16,7 @@ public sealed class AccountController(IGenericRepository<User> users, IPasswordH
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Login(string email, string password, CancellationToken ct)
     {
-        var list = await users.QueryRaw("SELECT * FROM users WHERE email=@e", new Dictionary<string, object> { ["@e"] = email });
+        var list = await users.Query(new User { Email = email });
         var user = list.FirstOrDefault();
         if (user is null || !passwords.Verify(password, user.PasswordHash))
         {

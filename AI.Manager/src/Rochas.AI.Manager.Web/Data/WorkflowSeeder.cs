@@ -30,7 +30,7 @@ public static class WorkflowSeeder
             ("REPROVADO", "Reprovado"),
         };
 
-        var existingStatuses = await statuses.QueryRaw("SELECT * FROM entity_statuses", new Dictionary<string, object>());
+        var existingStatuses = await statuses.Query(new EntityStatus());
         var codeToId = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var status in existingStatuses) codeToId[status.Code] = status.Id;
 
@@ -86,7 +86,7 @@ public static class WorkflowSeeder
         foreach (var (entityType, stepsDef) in stepDefs)
         {
             uint hash = EntityHashCode.Compute(entityType.FullName ?? entityType.Name);
-            var existing = await steps.QueryRaw("SELECT * FROM workflow_steps", new Dictionary<string, object>());
+            var existing = await steps.Query(new WorkflowStep());
             var existingForEntity = existing.Where(step => step.EntityHashCode == hash).ToList();
             if (existingForEntity.Any()) continue;
 

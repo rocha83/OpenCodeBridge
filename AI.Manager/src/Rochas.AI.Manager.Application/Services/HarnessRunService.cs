@@ -29,17 +29,17 @@ public sealed class HarnessRunService(
         return r.Id;
     }
 
-    public async Task<HarnessRun?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM harness_runs WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
+    public async Task<HarnessRun?> GetAsync(int id, CancellationToken ct = default) { var list = await _repo.Query(new HarnessRun { Id = id }); return list.FirstOrDefault(); }
 
     public async Task<IReadOnlyList<HarnessRun>> ListAsync(CancellationToken ct = default)
     {
-        var list = await _repo.QueryRaw("SELECT * FROM harness_runs", new Dictionary<string, object>());
+        var list = await _repo.Query(new HarnessRun());
         return list.OrderByDescending(r => r.CreatedAt).ToList();
     }
 
     public async Task<IReadOnlyList<HarnessRun>> ListByProfileVersionAsync(int profileVersionId, CancellationToken ct = default)
     {
-        var list = await _repo.QueryRaw("SELECT * FROM harness_runs WHERE profile_version_id = @profile_version_id", new Dictionary<string, object> { ["@profile_version_id"] = profileVersionId });
+        var list = await _repo.Query(new HarnessRun { ProfileVersionId = profileVersionId });
         return list.OrderByDescending(r => r.CreatedAt).ToList();
     }
 }

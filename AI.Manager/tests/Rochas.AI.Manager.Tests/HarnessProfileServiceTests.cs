@@ -3,6 +3,7 @@ using Rochas.AI.Manager.Application.Services;
 using Rochas.DapperRepository;
 using Rochas.Data.Specification.Annotations;
 using Rochas.Data.Specification.Enums;
+using Rochas.AI.Manager.Infrastructure.Data;
 
 namespace Rochas.AI.Manager.Tests;
 
@@ -10,18 +11,11 @@ public class HarnessProfileServiceTests
 {
     private static HarnessProfileService CreateService(string dbPath)
     {
-        using var c = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}");
-        c.Open();
-        using var cmd = c.CreateCommand();
-        cmd.CommandText = """
-            CREATE TABLE IF NOT EXISTS harness_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, code TEXT, name TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1, description TEXT, status TEXT NOT NULL DEFAULT 'Draft', created_at TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS harness_profile_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, code TEXT, name TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1, profile_id INTEGER NOT NULL, version INTEGER NOT NULL, mode TEXT NOT NULL DEFAULT 'ClientNative', checksum TEXT, approved_by TEXT, approved_at TEXT, created_at TEXT NOT NULL);
-            """;
-        cmd.ExecuteNonQuery();
-        var conn = $"Data Source={dbPath};Cache=Shared";
+        AppDb.Init(dbPath);
+        var conn = AppDb.ConnectionString;
         var profiles = new GenericRepository<Rochas.AI.Manager.Domain.Harness.HarnessProfile>(DatabaseEngine.SQLite, conn);
         var versions = new GenericRepository<Rochas.AI.Manager.Domain.Harness.HarnessProfileVersion>(DatabaseEngine.SQLite, conn);
-        return new HarnessProfileService(profiles, profiles, versions, versions, $"Data Source={dbPath}");
+        return new HarnessProfileService(profiles, profiles, versions, versions);
     }
 
     [Fact]

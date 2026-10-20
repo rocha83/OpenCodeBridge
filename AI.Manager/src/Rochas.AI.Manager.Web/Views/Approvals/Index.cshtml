@@ -18,8 +18,8 @@
                 <div class="card-header">Model Artifacts (Draft)</div>
                 <div class="card-body">
                     <ul class="list-group">
-                        @foreach (var model in (IEnumerable<Rochas.AI.Manager.Domain.Models.ModelArtifact>)ViewBag.ModelArtifacts)
-                        { <li class="list-group-item">@model.Name — @model.Status</li> }
+                        @foreach (var ma in (IEnumerable<Rochas.AI.Manager.Domain.Models.ModelArtifact>)ViewBag.ModelArtifacts)
+                        { <li class="list-group-item">@ma.Name — @ma.Status</li> }
                     </ul>
                 </div>
             </div>

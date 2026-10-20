@@ -8,4 +8,5 @@ public interface IDatasetService
     Task<Dataset?> GetAsync(int id, CancellationToken ct = default);
     Task<IReadOnlyList<Dataset>> ListAsync(CancellationToken ct = default);
     Task ValidateAsync(int id, bool isValid, CancellationToken ct = default);
+    Task<bool> ValidateFormatAsync(int id, string mode, CancellationToken ct = default);
 }

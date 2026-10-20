@@ -20,6 +20,14 @@ public static class ScenarioTemplateSeeder
         ("belt-preta", "Belt preta: missao completa com tools", "{\"prompt\":\"Missao com tools: use read/write/edit/shell/execute para cumprir o objetivo.\"}", 0.9),
         ("scientific", "Cientifico: hipotese -> experimento -> metricas", "{\"prompt\":\"Formule hipotese, execute experimento, registre metricas e conclusao.\"}", 0.9),
         ("mission-tools", "Missao tools: tool calling obrigatorio", "{\"prompt\":\"Use ferramentas (read/write/edit/shell/execute) para cumprir o objetivo. Sem tool call = falha.\"}", 0.9),
+        ("sft", "SFT QLoRA: fine-tuning supervisionado (Unsloth)", "{\"method\":\"SFT\",\"prompt\":\"Prepare dataset chat e rode QLoRA SFT com Unsloth. Exporte GGUF.\"}", 0.85),
+        ("dpo", "DPO QLoRA: alinhamento por preferencia (Unsloth)", "{\"method\":\"DPO\",\"prompt\":\"Prepare pares chosen/rejected e rode DPO apos SFT. Exporte GGUF.\"}", 0.85),
+        ("rm", "Reward Modeling QLoRA (Unsloth)", "{\"method\":\"RM\",\"prompt\":\"Treine reward head sobre pares preferenciais. Exporte GGUF.\"}", 0.85),
+        ("devpipe-tools", "DevPipe tools: read/write/edit/glob/grep/git/bash", "{\"prompt\":\"Ferramentas de dev: read/write/edit/glob/grep/git/bash. Valide sintaxe antes de declarar pronto.\"}", 0.85),
+        ("orch-segment", "Orch segmenta enunciado em tarefas atomicas", "{\"prompt\":\"Segmenta enunciado complexo em N tarefas (JSON array) para Scripters (12B) e Exec (E2B).\"}", 0.8),
+        ("standalone-devpipe", "DevPipe pelo opencode real (agente exec)", "{\"prompt\":\"DevPipe pelo opencode real: agente exec -> provider llama. Ferramentas de dev.\"}", 0.85),
+        ("science-gpu2", "Cientifico na GPU2 (E2B)", "{\"prompt\":\"Hipotese -> experimento -> metricas na GPU2 (E2B).\"}", 0.85),
+        ("e2e-belt-azul", "E2E belt azul (build puro)", "{\"prompt\":\"Build puro azul: implemente diretamente, conclua com build/teste verdes.\"}", 0.8),
     };
 
     public static async Task SeedAsync(
@@ -29,10 +37,10 @@ public static class ScenarioTemplateSeeder
         IGenericRepository<HarnessProfile> profileRepository,
         IGenericRepository<ModelArtifact> modelRepository)
     {
-        var existingInstructions = await instructionRepository.QueryRaw("SELECT * FROM instruction_profiles", new Dictionary<string, object>());
-        var existingPatterns = await patternRepository.QueryRaw("SELECT * FROM training_patterns", new Dictionary<string, object>());
-        var existingExperiments = await experimentRepository.QueryRaw("SELECT * FROM experiments", new Dictionary<string, object>());
-        var existingModels = await modelRepository.QueryRaw("SELECT * FROM model_artifacts", new Dictionary<string, object>());
+        var existingInstructions = await instructionRepository.Query(new InstructionProfile());
+        var existingPatterns = await patternRepository.Query(new TrainingPattern());
+        var existingExperiments = await experimentRepository.Query(new Experiment());
+        var existingModels = await modelRepository.Query(new ModelArtifact());
 
         int modelId = existingModels.Any() ? existingModels.First().Id : 0;
 
@@ -42,7 +50,7 @@ public static class ScenarioTemplateSeeder
             if (!existingInstructions.Any(instruction => instruction.Name == $"Scenario: {scenarioName}"))
             {
                 await instructionRepository.Add(new InstructionProfile { Name = $"Scenario: {scenarioName}", Description = hypothesis, Version = "1.0", Status = "Approved", InstructionsJson = patternJson });
-                existingInstructions = await instructionRepository.QueryRaw("SELECT * FROM instruction_profiles", new Dictionary<string, object>());
+                existingInstructions = await instructionRepository.Query(new InstructionProfile());
             }
             var instruction = existingInstructions.First(instruction => instruction.Name == $"Scenario: {scenarioName}");
 
@@ -50,7 +58,7 @@ public static class ScenarioTemplateSeeder
             if (!existingExperiments.Any(experiment => experiment.Name == $"Scenario: {scenarioName}"))
             {
                 await experimentRepository.Add(new Experiment { Name = $"Scenario: {scenarioName}", Hypothesis = hypothesis, Status = "Planned" });
-                existingExperiments = await experimentRepository.QueryRaw("SELECT * FROM experiments", new Dictionary<string, object>());
+                existingExperiments = await experimentRepository.Query(new Experiment());
             }
 
             // TrainingPattern

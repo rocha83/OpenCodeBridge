@@ -25,26 +25,28 @@ public sealed class InstructionProfileService(
         return p.Id;
     }
 
-    public async Task<InstructionProfile?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM instruction_profiles WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
+    public async Task<InstructionProfile?> GetAsync(int id, CancellationToken ct = default) { var list = await _repo.Query(new InstructionProfile { Id = id }); return list.FirstOrDefault(); }
 
     public async Task<IReadOnlyList<InstructionProfile>> ListAsync(CancellationToken ct = default)
     {
-        var list = await _repo.QueryRaw("SELECT * FROM instruction_profiles", new Dictionary<string, object>());
+        var list = await _repo.Query(new InstructionProfile());
         return list.OrderBy(p => p.CreatedAt).ToList();
     }
 
     public async Task ApproveAsync(int id, CancellationToken ct = default)
     {
-        var p = (await _repo.QueryRaw("SELECT * FROM instruction_profiles WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Instruction profile {id} not found.");
+        var p = await GetAsync(id, ct) ?? throw new KeyNotFoundException($"Instruction profile {id} not found.");
         if (p.Status != "Draft") throw new InvalidOperationException("Only Draft profiles can be approved.");
+        var old = new InstructionProfile(); foreach (var prop in typeof(InstructionProfile).GetProperties()) prop.SetValue(old, prop.GetValue(p));
         p.Status = "Approved";
-        await _write.Update(p, new InstructionProfile { Id = id });
+        await _write.Update(p, old);
     }
 
     public async Task DeprecateAsync(int id, CancellationToken ct = default)
     {
-        var p = (await _repo.QueryRaw("SELECT * FROM instruction_profiles WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Instruction profile {id} not found.");
+        var p = await GetAsync(id, ct) ?? throw new KeyNotFoundException($"Instruction profile {id} not found.");
+        var old = new InstructionProfile(); foreach (var prop in typeof(InstructionProfile).GetProperties()) prop.SetValue(old, prop.GetValue(p));
         p.Status = "Deprecated";
-        await _write.Update(p, new InstructionProfile { Id = id });
+        await _write.Update(p, old);
     }
 }

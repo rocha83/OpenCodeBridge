@@ -24,11 +24,11 @@ public sealed class BridgeCaptureService(
         return c.Id;
     }
 
-    public async Task<BridgeCapture?> GetAsync(int id, CancellationToken ct = default) => (await _repo.QueryRaw("SELECT * FROM bridge_captures WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault();
+    public async Task<BridgeCapture?> GetAsync(int id, CancellationToken ct = default) { var list = await _repo.Query(new BridgeCapture { Id = id }); return list.FirstOrDefault(); }
 
     public async Task<IReadOnlyList<BridgeCapture>> ListAsync(CancellationToken ct = default)
     {
-        var list = await _repo.QueryRaw("SELECT * FROM bridge_captures", new Dictionary<string, object>());
+        var list = await _repo.Query(new BridgeCapture());
         return list.OrderByDescending(c => c.CreatedAt).ToList();
     }
 }
