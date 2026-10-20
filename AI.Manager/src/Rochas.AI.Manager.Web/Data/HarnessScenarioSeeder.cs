@@ -6,7 +6,10 @@ namespace Rochas.AI.Manager.Web.Data;
 
 public static class HarnessScenarioSeeder
 {
-    public static async Task SeedAsync(IGenericRepository<HarnessProfile> profiles, IGenericRepository<HarnessProfileVersion> versions, IGenericRepository<HarnessAttachment> attachments)
+    public static async Task SeedAsync(
+        IGenericRepository<HarnessProfile> profileRepository,
+        IGenericRepository<HarnessProfileVersion> versionRepository,
+        IGenericRepository<HarnessAttachment> attachmentRepository)
     {
         var scenarios = new (string Name, string Description, string SystemTail)[]
         {
@@ -14,31 +17,33 @@ public static class HarnessScenarioSeeder
             ("belt", "Testes belts (sequencia de tarefas incrementais)", "Modo belt: execute tarefas em sequencia, cada uma com ACEITE. Reporte progresso."),
             ("scientific", "Testes cientificos (hipotese -> experimento -> metricas)", "Modo cientifico: formule hipotese, execute experimento, registre metricas e conclusao."),
             ("mission-tools", "Missao tools (tool calling obrigatorio)", "Missao tools: use ferramentas (read/write/edit/shell/execute) para cumprir o objetivo. Sem tool call = falha."),
-            ("build-puro", "Build puro (sem orquestracao/scripts)", "Build puro: implemente diretamente os artefatos; conclua com build/teste verdes e evidencia. Sem segmentacao, sem scripts, sem orquestracao."),
             ("general", "Topicos gerais (qualquer pedido)", "Topicos gerais: responda com profundidade sob demanda, sem enrolacao."),
+            ("build-puro", "Build puro (sem orquestracao/scripts)", "Build puro: implemente diretamente os artefatos; conclua com build/teste verdes e evidencia. Sem segmentacao, sem scripts, sem orquestracao."),
         };
-        var existing = await profiles.QueryRaw("SELECT * FROM harness_profiles", new Dictionary<string, object>());
-        foreach (var (name, desc, tail) in scenarios)
+
+        var existingProfiles = await profileRepository.QueryRaw("SELECT * FROM harness_profiles", new Dictionary<string, object>());
+
+        foreach (var (scenarioName, description, systemTail) in scenarios)
         {
-            int pid;
-            if (existing.Any(p => p.Name == $"Scenario: {name}"))
+            int profileId;
+            if (existingProfiles.Any(profile => profile.Name == $"Scenario: {scenarioName}"))
             {
-                pid = existing.First(p => p.Name == $"Scenario: {name}").Id;
+                profileId = existingProfiles.First(profile => profile.Name == $"Scenario: {scenarioName}").Id;
             }
             else
             {
-                var p = new HarnessProfile { Name = $"Scenario: {name}", Description = desc, Status = "Approved" };
-                await profiles.Add(p);
-                pid = p.Id;
-                existing = await profiles.QueryRaw("SELECT * FROM harness_profiles", new Dictionary<string, object>());
+                var profile = new HarnessProfile { Name = $"Scenario: {scenarioName}", Description = description, Status = "Approved" };
+                await profileRepository.Add(profile);
+                profileId = profile.Id;
+                existingProfiles = await profileRepository.QueryRaw("SELECT * FROM harness_profiles", new Dictionary<string, object>());
             }
-            var vers = await versions.QueryRaw("SELECT * FROM harness_profile_versions", new Dictionary<string, object>());
-            if (!vers.Any(v => v.ProfileId == pid))
+
+            var versions = await versionRepository.QueryRaw("SELECT * FROM harness_profile_versions", new Dictionary<string, object>());
+            if (!versions.Any(version => version.ProfileId == profileId))
             {
-                var v = new HarnessProfileVersion { ProfileId = pid, Version = 1, Mode = "ClientNative", ApprovedBy = "seeder", ApprovedAt = DateTime.UtcNow };
-                await versions.Add(v);
-                var content = tail;
-                await attachments.Add(new HarnessAttachment { VersionId = v.Id, Kind = "Core", Role = "general", Content = content, CharCount = content.Length });
+                var version = new HarnessProfileVersion { ProfileId = profileId, Version = 1, Mode = "ClientNative", ApprovedBy = "seeder", ApprovedAt = DateTime.UtcNow };
+                await versionRepository.Add(version);
+                await attachmentRepository.Add(new HarnessAttachment { VersionId = version.Id, Kind = "Core", Role = "general", Content = systemTail, CharCount = systemTail.Length });
             }
         }
     }

@@ -13,24 +13,24 @@
 <table class="table table-sm">
   <thead><tr><th>Título</th><th>Status</th><th>Acurácia</th><th>Alvo</th><th>Ações</th></tr></thead>
   <tbody>
-  @foreach (var c in Model)
+  @foreach (var card in Model)
   {
     <tr>
-      <td>@c.Title</td>
+      <td>@card.Title</td>
       <td>
         @{
             var badge = c.StatusId == 12 ? "bg-success" : (c.StatusId == 13 ? "bg-danger" : "bg-warning text-dark");
             var label = c.StatusId == 12 ? "Aprovado" : (c.StatusId == 13 ? "Refutado" : "Pendente");
         }
-        <span class="badge @badge" title="@c.RejectionReason">@label</span>
-        @if (!string.IsNullOrEmpty(c.RejectionReason)) { <small class="text-danger ms-1" title="@c.RejectionReason">ⓘ</small> }
+        <span class="badge @badge" title="@card.RejectionReason">@label</span>
+        @if (!string.IsNullOrEmpty(card.RejectionReason)) { <small class="text-danger ms-1" title="@card.RejectionReason">ⓘ</small> }
       </td>
       <td>@(c.Accuracy?.ToString("P2") ?? "-")</td>
-      <td>@c.TargetAccuracy.ToString("P2")</td>
+      <td>@card.TargetAccuracy.ToString("P2")</td>
       <td>
-        <button class="btn btn-sm btn-secondary" onclick="move(@c.Id)">Mover</button>
-        <button class="btn btn-sm btn-danger" onclick="reject(@c.Id)">Refutar</button>
-        <button class="btn btn-sm btn-info" onclick="acc(@c.Id)">Acurácia</button>
+        <button class="btn btn-sm btn-secondary" onclick="move(@card.Id)">Mover</button>
+        <button class="btn btn-sm btn-danger" onclick="reject(@card.Id)">Refutar</button>
+        <button class="btn btn-sm btn-info" onclick="acc(@card.Id)">Acurácia</button>
       </td>
     </tr>
   }

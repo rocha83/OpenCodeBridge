@@ -76,7 +76,7 @@ public class ReasoningSanitizerTests
     [Fact]
     public void InvalidJson_ReturnsOriginal()
     {
-        var s = "not json";
-        Assert.Equal(s, ReasoningSanitizer.Sanitize(s));
+        var text = "not json";
+        Assert.Equal(text, ReasoningSanitizer.Sanitize(text));
     }
 }

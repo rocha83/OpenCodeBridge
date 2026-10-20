@@ -12,24 +12,25 @@ namespace Rochas.AI.Manager.Web.Controllers;
 
 [Authorize(Roles = "Admin")]
 public sealed class ApprovalsController(
-    IGenericRepository<HarnessProfile> profiles,
-    IGenericRepository<Experiment> experiments,
-    IGenericRepository<ModelArtifact> models,
-    IGenericRepository<InstructionProfile> instructions,
-    IGenericRepository<TrainingWorkflowCard> cards) : Controller
+    IGenericRepository<HarnessProfile> profileRepository,
+    IGenericRepository<Experiment> experimentRepository,
+    IGenericRepository<ModelArtifact> modelRepository,
+    IGenericRepository<InstructionProfile> instructionRepository,
+    IGenericRepository<TrainingWorkflowCard> cardRepository) : Controller
 {
-    public async Task<IActionResult> Index(CancellationToken ct)
+    public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
-        var hp = await profiles.QueryRaw("SELECT * FROM harness_profiles WHERE status != 'Approved'", new Dictionary<string, object>());
-        var exp = await experiments.QueryRaw("SELECT * FROM experiments WHERE status IN ('Planned','Running','Completed')", new Dictionary<string, object>());
-        var ma = await models.QueryRaw("SELECT * FROM model_artifacts WHERE status = 'Draft'", new Dictionary<string, object>());
-        var ip = await instructions.QueryRaw("SELECT * FROM instruction_profiles WHERE status = 'Draft'", new Dictionary<string, object>());
-        var tw = await cards.QueryRaw("SELECT * FROM training_workflow_cards WHERE status_id = 11", new Dictionary<string, object>()); // NOVO
-        ViewBag.HarnessProfiles = hp;
-        ViewBag.Experiments = exp;
-        ViewBag.ModelArtifacts = ma;
-        ViewBag.InstructionProfiles = ip;
-        ViewBag.TrainingCards = tw;
+        var harnessProfiles = await profileRepository.QueryRaw("SELECT * FROM harness_profiles WHERE status != 'Approved'", new Dictionary<string, object>());
+        var experiments = await experimentRepository.QueryRaw("SELECT * FROM experiments WHERE status IN ('Planned','Running','Completed')", new Dictionary<string, object>());
+        var modelArtifacts = await modelRepository.QueryRaw("SELECT * FROM model_artifacts WHERE status = 'Draft'", new Dictionary<string, object>());
+        var instructionProfiles = await instructionRepository.QueryRaw("SELECT * FROM instruction_profiles WHERE status = 'Draft'", new Dictionary<string, object>());
+        var trainingCards = await cardRepository.QueryRaw("SELECT * FROM training_workflow_cards WHERE status_id = 11", new Dictionary<string, object>());
+
+        ViewBag.HarnessProfiles = harnessProfiles;
+        ViewBag.Experiments = experiments;
+        ViewBag.ModelArtifacts = modelArtifacts;
+        ViewBag.InstructionProfiles = instructionProfiles;
+        ViewBag.TrainingCards = trainingCards;
         return View();
     }
 }

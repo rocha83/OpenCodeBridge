@@ -23,41 +23,40 @@ public static class ScenarioTemplateSeeder
     };
 
     public static async Task SeedAsync(
-        IGenericRepository<InstructionProfile> instructions,
-        IGenericRepository<TrainingPattern> patterns,
-        IGenericRepository<Experiment> experiments,
-        IGenericRepository<HarnessProfile> profiles,
-        IGenericRepository<ModelArtifact> models)
+        IGenericRepository<InstructionProfile> instructionRepository,
+        IGenericRepository<TrainingPattern> patternRepository,
+        IGenericRepository<Experiment> experimentRepository,
+        IGenericRepository<HarnessProfile> profileRepository,
+        IGenericRepository<ModelArtifact> modelRepository)
     {
-        var existingInstr = await instructions.QueryRaw("SELECT * FROM instruction_profiles", new Dictionary<string, object>());
-        var existingPat = await patterns.QueryRaw("SELECT * FROM training_patterns", new Dictionary<string, object>());
-        var existingExp = await experiments.QueryRaw("SELECT * FROM experiments", new Dictionary<string, object>());
-        var existingProf = await profiles.QueryRaw("SELECT * FROM harness_profiles", new Dictionary<string, object>());
-        var existingModels = await models.QueryRaw("SELECT * FROM model_artifacts", new Dictionary<string, object>());
+        var existingInstructions = await instructionRepository.QueryRaw("SELECT * FROM instruction_profiles", new Dictionary<string, object>());
+        var existingPatterns = await patternRepository.QueryRaw("SELECT * FROM training_patterns", new Dictionary<string, object>());
+        var existingExperiments = await experimentRepository.QueryRaw("SELECT * FROM experiments", new Dictionary<string, object>());
+        var existingModels = await modelRepository.QueryRaw("SELECT * FROM model_artifacts", new Dictionary<string, object>());
 
         int modelId = existingModels.Any() ? existingModels.First().Id : 0;
 
-        foreach (var (name, hypothesis, patternJson, target) in Scenarios)
+        foreach (var (scenarioName, hypothesis, patternJson, targetAccuracy) in Scenarios)
         {
             // InstructionProfile
-            if (!existingInstr.Any(i => i.Name == $"Scenario: {name}"))
+            if (!existingInstructions.Any(instruction => instruction.Name == $"Scenario: {scenarioName}"))
             {
-                await instructions.Add(new InstructionProfile { Name = $"Scenario: {name}", Description = hypothesis, Version = "1.0", Status = "Approved", InstructionsJson = patternJson });
-                existingInstr = await instructions.QueryRaw("SELECT * FROM instruction_profiles", new Dictionary<string, object>());
+                await instructionRepository.Add(new InstructionProfile { Name = $"Scenario: {scenarioName}", Description = hypothesis, Version = "1.0", Status = "Approved", InstructionsJson = patternJson });
+                existingInstructions = await instructionRepository.QueryRaw("SELECT * FROM instruction_profiles", new Dictionary<string, object>());
             }
-            var instr = existingInstr.First(i => i.Name == $"Scenario: {name}");
+            var instruction = existingInstructions.First(instruction => instruction.Name == $"Scenario: {scenarioName}");
 
             // Experiment
-            if (!existingExp.Any(e => e.Name == $"Scenario: {name}"))
+            if (!existingExperiments.Any(experiment => experiment.Name == $"Scenario: {scenarioName}"))
             {
-                await experiments.Add(new Experiment { Name = $"Scenario: {name}", Hypothesis = hypothesis, Status = "Planned" });
-                existingExp = await experiments.QueryRaw("SELECT * FROM experiments", new Dictionary<string, object>());
+                await experimentRepository.Add(new Experiment { Name = $"Scenario: {scenarioName}", Hypothesis = hypothesis, Status = "Planned" });
+                existingExperiments = await experimentRepository.QueryRaw("SELECT * FROM experiments", new Dictionary<string, object>());
             }
 
             // TrainingPattern
-            if (!existingPat.Any(p => p.PatternJson == patternJson))
+            if (!existingPatterns.Any(pattern => pattern.PatternJson == patternJson))
             {
-                await patterns.Add(new TrainingPattern { Name = $"Scenario: {name}", ProfileId = instr.Id, ModelArtifactId = modelId > 0 ? modelId : null, PatternJson = patternJson });
+                await patternRepository.Add(new TrainingPattern { Name = $"Scenario: {scenarioName}", ProfileId = instruction.Id, ModelArtifactId = modelId > 0 ? modelId : null, PatternJson = patternJson });
             }
         }
     }
