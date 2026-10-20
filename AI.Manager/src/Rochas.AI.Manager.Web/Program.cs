@@ -189,6 +189,13 @@ using (var scope = app.Services.CreateScope())
 }
 using (var scope = app.Services.CreateScope())
 {
+    var profiles = scope.ServiceProvider.GetRequiredService<IGenericRepository<HarnessProfile>>();
+    var versions = scope.ServiceProvider.GetRequiredService<IGenericRepository<HarnessProfileVersion>>();
+    var attachments = scope.ServiceProvider.GetRequiredService<IGenericRepository<HarnessAttachment>>();
+    await HarnessScenarioSeeder.SeedAsync(profiles, versions, attachments);
+}
+using (var scope = app.Services.CreateScope())
+{
     var statuses = scope.ServiceProvider.GetRequiredService<IGenericRepository<EntityStatus>>();
     var steps = scope.ServiceProvider.GetRequiredService<IGenericRepository<WorkflowStep>>();
     await WorkflowSeeder.SeedAsync(statuses, steps);
