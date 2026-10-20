@@ -124,7 +124,7 @@ builder.Services.AddScoped<IHarnessProfileService>(sp => new HarnessProfileServi
     sp.GetRequiredService<IPersistenceRepository<HarnessProfileVersion>>()));
 builder.Services.AddScoped<ITrainingJobService>(sp => new TrainingJobService(sp.GetRequiredService<IGenericRepository<Rochas.AI.Manager.Domain.Training.TrainingJob>>(), sp.GetRequiredService<IPersistenceRepository<Rochas.AI.Manager.Domain.Training.TrainingJob>>()));
 builder.Services.AddScoped<ITrainingBackend, TorchSharpTrainingBackend>();
-builder.Services.AddSingleton<Rochas.AI.Manager.Application.Tools.BridgeToolExecutor>(sp => new Rochas.AI.Manager.Application.Tools.BridgeToolExecutor(Directory.GetCurrentDirectory()));
+
 builder.Services.AddScoped<ITrainingEngine, TrainingEngine>();
 builder.Services.AddScoped<Rochas.AI.Manager.Domain.Interfaces.ITrainingRunner, Rochas.AI.Manager.TrainingEngine.TrainingRunner>();
 
