@@ -10,14 +10,14 @@ namespace Rochas.AI.Manager.Api.Controllers;
 
 [ApiController]
 [Route("v1")]
-public sealed class ProxyBridgeController : ControllerBase
+public sealed class BindingBridgeController : ControllerBase
 {
     private readonly IHttpClientFactory httpClientFactory;
     private readonly IModelBindingService modelBindingService;
     private readonly IAgentService agentService;
     private readonly IGenericRepository<Rochas.AI.Manager.Domain.Harness.HarnessRun> harnessRunRepository;
 
-    public ProxyBridgeController(
+    public BindingBridgeController(
         IHttpClientFactory httpClientFactory,
         IModelBindingService modelBindingService,
         IAgentService agentService,
