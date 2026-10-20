@@ -90,7 +90,12 @@ internal static partial class Program
     // Enunciado de inducAO a COMPORTAMENTO (nao e uso de tools): disciplina de execucao,
     // como parar e entregar, como reagir a erro, tom de resposta. Vive separado da
     // ToolsTail de proposito: COMO USAR A TOOL e uma coisa, COMO SE COMPORTAR e outra.
-    static string HarnessBehaviorTail = "";
+    // Default: enquadramento de WORKSPACE. O usuario costuma apontar um path
+    // de fora do namespace no enunciado inicial; sem esta regra o modelo olha
+    // so o diretorio literal e conclui "nao existe", ignorando vizinhos e
+    // subpastas. Override por appsettings (harnessBehaviorTail) ou CLI.
+    static string HarnessBehaviorTail =
+        "COMPORTAMENTO (workspace): quando o usuario informar pastas de atuacao fora do workspace, procure pastas ou arquivos citados tambem um nivel abaixo (pastas vizinhas) e na arvore de subpastas, tanto do workspace quanto dos paths citados.";
     // Ha alguma cauda de inducAO configurada? E o que o /api/harness reporta:
     // nao existe mais switch mestre, o que vale e ter cauda ou nao.
     static bool TailsAtivas() => HarnessBehaviorTail.Length > 0 || HarnessToolsTail.Length > 0;
