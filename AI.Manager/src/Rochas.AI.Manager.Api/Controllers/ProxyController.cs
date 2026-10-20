@@ -14,8 +14,9 @@ public sealed class ProxyController : ControllerBase
 {
     private readonly IHttpClientFactory _http;
     private readonly IModelBindingService _bindings;
+    private readonly IAgentService _agents;
     private readonly IGenericRepository<Rochas.AI.Manager.Domain.Harness.HarnessRun> _runs;
-    public ProxyController(IHttpClientFactory http, IModelBindingService bindings, IGenericRepository<Rochas.AI.Manager.Domain.Harness.HarnessRun> runs) { _http = http; _bindings = bindings; _runs = runs; }
+    public ProxyController(IHttpClientFactory http, IModelBindingService bindings, IAgentService agents, IGenericRepository<Rochas.AI.Manager.Domain.Harness.HarnessRun> runs) { _http = http; _bindings = bindings; _agents = agents; _runs = runs; }
 
     [HttpPost("chat/completions")]
     public async Task<IActionResult> ChatCompletions([FromBody] JsonElement body, CancellationToken ct)
@@ -27,6 +28,30 @@ public sealed class ProxyController : ControllerBase
         var list = await _bindings.ListAsync(ct);
         var binding = list.FirstOrDefault();
         if (binding is null) return Problem("No model binding configured.");
+
+        // Resolve profile por role (body.model pode ser nome de agente)
+        string? modelName = null;
+        if (body.TryGetProperty("model", out var mp) && mp.ValueKind == JsonValueKind.String) modelName = mp.GetString();
+        Rochas.AI.Manager.Domain.Entities.Agent? agent = null;
+        if (!string.IsNullOrWhiteSpace(modelName))
+        {
+            var agents = await _agents.ListAsync(ct);
+            agent = agents.FirstOrDefault(a => a.Name.Equals(modelName, StringComparison.OrdinalIgnoreCase) || a.Model.Equals(modelName, StringComparison.OrdinalIgnoreCase));
+        }
+        // inject temperature/thinking into body if agent found
+        if (agent is not null)
+        {
+            try
+            {
+                var node = JsonNode.Parse(body.GetRawText())?.AsObject();
+                if (node is not null)
+                {
+                    node["temperature"] = agent.Temperature;
+                    body = JsonDocument.Parse(node.ToJsonString()).RootElement;
+                }
+            }
+            catch { }
+        }
 
         // Context guard (0.95 threshold)
         int estTokens = body.GetRawText().Length / 4;

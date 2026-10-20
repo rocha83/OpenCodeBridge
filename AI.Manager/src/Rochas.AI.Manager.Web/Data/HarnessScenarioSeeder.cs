@@ -14,6 +14,7 @@ public static class HarnessScenarioSeeder
             ("belt", "Testes belts (sequencia de tarefas incrementais)", "Modo belt: execute tarefas em sequencia, cada uma com ACEITE. Reporte progresso."),
             ("scientific", "Testes cientificos (hipotese -> experimento -> metricas)", "Modo cientifico: formule hipotese, execute experimento, registre metricas e conclusao."),
             ("mission-tools", "Missao tools (tool calling obrigatorio)", "Missao tools: use ferramentas (read/write/edit/shell/execute) para cumprir o objetivo. Sem tool call = falha."),
+            ("build-puro", "Build puro (sem orquestracao/scripts)", "Build puro: implemente diretamente os artefatos; conclua com build/teste verdes e evidencia. Sem segmentacao, sem scripts, sem orquestracao."),
             ("general", "Topicos gerais (qualquer pedido)", "Topicos gerais: responda com profundidade sob demanda, sem enrolacao."),
         };
         var existing = await profiles.QueryRaw("SELECT * FROM harness_profiles", new Dictionary<string, object>());
