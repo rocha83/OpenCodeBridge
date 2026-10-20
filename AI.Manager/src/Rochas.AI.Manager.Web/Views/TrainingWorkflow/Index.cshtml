@@ -17,11 +17,19 @@
   {
     <tr>
       <td>@c.Title</td>
-      <td>@c.StatusId</td>
+      <td>
+        @{
+            var badge = c.StatusId == 12 ? "bg-success" : (c.StatusId == 13 ? "bg-danger" : "bg-warning text-dark");
+            var label = c.StatusId == 12 ? "Aprovado" : (c.StatusId == 13 ? "Refutado" : "Pendente");
+        }
+        <span class="badge @badge" title="@c.RejectionReason">@label</span>
+        @if (!string.IsNullOrEmpty(c.RejectionReason)) { <small class="text-danger ms-1" title="@c.RejectionReason">ⓘ</small> }
+      </td>
       <td>@(c.Accuracy?.ToString("P2") ?? "-")</td>
       <td>@c.TargetAccuracy.ToString("P2")</td>
       <td>
         <button class="btn btn-sm btn-secondary" onclick="move(@c.Id)">Mover</button>
+        <button class="btn btn-sm btn-danger" onclick="reject(@c.Id)">Refutar</button>
         <button class="btn btn-sm btn-info" onclick="acc(@c.Id)">Acurácia</button>
       </td>
     </tr>
@@ -32,6 +40,7 @@
 <script>
 async function move(id){ const s=prompt('Novo status (1..):','2'); if(!s) return; const fd=new FormData(); fd.append('id',id); fd.append('statusId',s); const t=document.querySelector('input[name=__RequestVerificationToken]')?.value; await fetch('/TrainingWorkflow/Move',{method:'POST',body:fd,headers:t?{'RequestVerificationToken':t}:{}}); location.reload(); }
 async function acc(id){ const a=prompt('Acurácia (0..1):'); if(a===null) return; const fd=new FormData(); fd.append('id',id); fd.append('accuracy',a); const t=document.querySelector('input[name=__RequestVerificationToken]')?.value; await fetch('/TrainingWorkflow/Accuracy',{method:'POST',body:fd,headers:t?{'RequestVerificationToken':t}:{}}); location.reload(); }
+async function reject(id){ const r=prompt('Motivo da refutação (obrigatório):'); if(!r) return; const fd=new FormData(); fd.append('id',id); fd.append('reason',r); const t=document.querySelector('input[name=__RequestVerificationToken]')?.value; await fetch('/TrainingWorkflow/Reject',{method:'POST',body:fd,headers:t?{'RequestVerificationToken':t}:{}}); location.reload(); }
 document.getElementById('createForm').addEventListener('submit', async e=>{ e.preventDefault(); const fd=new FormData(e.target); const t=document.querySelector('input[name=__RequestVerificationToken]')?.value; const r=await fetch('/TrainingWorkflow/Create',{method:'POST',body:fd,headers:t?{'RequestVerificationToken':t}:{}}); if(r.ok) location.reload(); });
 </script>
 }

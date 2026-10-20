@@ -20,4 +20,6 @@ public sealed class TrainingWorkflowCard : WorkFlowBasedEntity
 
     [Column("target_accuracy")]
     public double TargetAccuracy { get; set; } = 0.9;
+    [Column("rejection_reason")]
+    public string? RejectionReason { get; set; }
 }

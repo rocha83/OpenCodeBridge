@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Rochas.Data.Specification.Interfaces;
 using Rochas.AI.Manager.Domain.Entities;
+using Rochas.AI.Manager.Domain.Entities.Management;
 using Rochas.AI.Manager.Domain.Interfaces;
 
 namespace Rochas.AI.Manager.Application.Services;
@@ -13,12 +14,14 @@ public sealed class TrainingWorkflowService(
     IGenericRepository<TrainingWorkflowCard> repo,
     IPersistenceRepository<TrainingWorkflowCard> write,
     IAccuracyEvaluator evaluator,
-    string connectionString) : ITrainingWorkflowService
+    string connectionString,
+    IGenericRepository<WorkFlowTransition>? transitions = null) : ITrainingWorkflowService
 {
     private readonly IGenericRepository<TrainingWorkflowCard> _repo = repo;
     private readonly IPersistenceRepository<TrainingWorkflowCard> _write = write;
     private readonly IAccuracyEvaluator _evaluator = evaluator;
     private readonly string _conn = connectionString;
+    private readonly IGenericRepository<WorkFlowTransition>? _transitions = transitions;
 
     public async Task<int> CreateAsync(string title, string? description, int? experimentId, double targetAccuracy, CancellationToken ct = default)
     {
@@ -93,5 +96,22 @@ public sealed class TrainingWorkflowService(
         int rows = await cmd.ExecuteNonQueryAsync(ct);
         if (rows == 0) throw new InvalidOperationException($"Update affected 0 rows for card {id}.");
         return result;
+    }
+    public async Task RejectAsync(int id, string reason, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("Motivo da refutacao e obrigatorio.", nameof(reason));
+        var card = (await _repo.QueryRaw("SELECT * FROM training_workflow_cards WHERE id=@id", new Dictionary<string, object> { ["@id"] = id })).FirstOrDefault() ?? throw new KeyNotFoundException($"Card {id} not found.");
+        int fromStatus = card.StatusId;
+        card.StatusId = 13;
+        card.RejectionReason = reason.Trim();
+        await _write.Update(card, new TrainingWorkflowCard { Id = id });
+        if (_transitions is not null)
+        {
+            try
+            {
+                await _transitions.Add(new WorkFlowTransition(Rochas.AI.Manager.Domain.Helpers.EntityHashCode.Compute(typeof(TrainingWorkflowCard).FullName ?? "TrainingWorkflowCard"), id, fromStatus, 13, "Reject", 0, reason.Trim()));
+            }
+            catch { }
+        }
     }
 }

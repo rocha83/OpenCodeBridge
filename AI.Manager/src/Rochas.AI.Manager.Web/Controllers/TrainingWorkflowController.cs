@@ -38,6 +38,14 @@ public sealed class TrainingWorkflowController(ITrainingWorkflowService service)
         return NoContent();
     }
 
+    [HttpPost("Reject")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Reject([FromForm] int id, [FromForm] string reason, CancellationToken ct)
+    {
+        await service.RejectAsync(id, reason, ct);
+        return NoContent();
+    }
+
     [HttpPost("Evaluate")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Evaluate([FromForm] int id, [FromForm] string expected, [FromForm] string actual, CancellationToken ct)

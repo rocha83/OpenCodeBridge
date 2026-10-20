@@ -16,4 +16,6 @@ public sealed class Experiment : BaseEntity
     public string? MetricsJson { get; set; }
     [Column("status")]
     public string Status { get; set; } = "Planned";
+    [Column("rejection_reason")]
+    public string? RejectionReason { get; set; }
 }
