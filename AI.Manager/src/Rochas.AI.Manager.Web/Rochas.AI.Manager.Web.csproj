@@ -11,13 +11,10 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
     <PackageReference Include="Rochas.ExcelToJsonParser" Version="1.6.4" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.3.1" />
+  <ProjectReference Include="..\Rochas.AI.Manager.Core\Rochas.AI.Manager.Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Rochas.AI.Manager.Application\Rochas.AI.Manager.Application.csproj" />
-    <ProjectReference Include="..\Rochas.AI.Manager.Infrastructure\Rochas.AI.Manager.Infrastructure.csproj" />
-    <ProjectReference Include="..\Rochas.AI.Manager.TrainingEngine\Rochas.AI.Manager.TrainingEngine.csproj" />
-  </ItemGroup>
+  <ItemGroup>  </ItemGroup>
 
 <ItemGroup><PackageReference Include="Rochas.Telemetry" Version="1.1.1" /></ItemGroup><ItemGroup><PackageReference Include="Serilog" Version="4.4.0" /><PackageReference Include="Serilog.AspNetCore" Version="10.0.0" /><PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" /></ItemGroup>  <ItemGroup>
     <EmbeddedResource Include="Data\harness-system.md" />
