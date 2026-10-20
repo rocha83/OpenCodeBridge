@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Rochas.AI.Manager.Core</RootNamespace>
+    <AssemblyName>Rochas.AI.Manager.Core</AssemblyName>
+
+    <!-- NuGet packaging -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Rochas.AI.Manager.Core</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Rochas</Authors>
+    <Company>Rochas</Company>
+    <Description>Core SDK of the Rochas.AI.Manager platform: domain, application, infrastructure and training engine. Decoupled from any frontend.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/rocha83/AIManager</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Rochas.AI.Manager.Domain\Rochas.AI.Manager.Domain.csproj" />
+    <ProjectReference Include="..\Rochas.AI.Manager.Application\Rochas.AI.Manager.Application.csproj" />
+    <ProjectReference Include="..\Rochas.AI.Manager.Infrastructure\Rochas.AI.Manager.Infrastructure.csproj" />
+    <ProjectReference Include="..\Rochas.AI.Manager.TrainingEngine\Rochas.AI.Manager.TrainingEngine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>
