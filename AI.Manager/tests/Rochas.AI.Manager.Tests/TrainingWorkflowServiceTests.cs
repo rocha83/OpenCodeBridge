@@ -67,3 +67,36 @@ public class TrainingWorkflowServiceTests
         System.IO.File.Delete(db);
     }
 }
+public class TrainingWorkflowServiceExtraTests
+{
+    [Fact]
+    public async Task Evaluate_Works()
+    {
+        var db = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"twe_{Guid.NewGuid()}.db");
+        AppDb.Init(db);
+        var repo = new Rochas.DapperRepository.GenericRepository<TrainingWorkflowCard>(Rochas.Data.Specification.Enums.DatabaseEngine.SQLite, AppDb.ConnectionString);
+        var write = new Rochas.DapperRepository.GenericRepository<TrainingWorkflowCard>(Rochas.Data.Specification.Enums.DatabaseEngine.SQLite, AppDb.ConnectionString);
+        var eval = new AccuracyEvaluator();
+        var svc = new TrainingWorkflowService(repo, write, eval, AppDb.ConnectionString);
+        var id = await svc.CreateAsync("card", null, 1, 0.9);
+        var r = await svc.EvaluateAsync(id, "expected text", "actual text");
+        Assert.NotNull(r);
+        System.IO.File.Delete(db);
+    }
+
+    [Fact]
+    public async Task UpdateAccuracy_Works()
+    {
+        var db = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"twu_{Guid.NewGuid()}.db");
+        AppDb.Init(db);
+        var repo = new Rochas.DapperRepository.GenericRepository<TrainingWorkflowCard>(Rochas.Data.Specification.Enums.DatabaseEngine.SQLite, AppDb.ConnectionString);
+        var write = new Rochas.DapperRepository.GenericRepository<TrainingWorkflowCard>(Rochas.Data.Specification.Enums.DatabaseEngine.SQLite, AppDb.ConnectionString);
+        var eval = new AccuracyEvaluator();
+        var svc = new TrainingWorkflowService(repo, write, eval, AppDb.ConnectionString);
+        var id = await svc.CreateAsync("card", null, 1, 0.9);
+        await svc.UpdateAccuracyAsync(id, 0.95);
+        var g = await svc.GetAsync(id);
+        Assert.NotNull(g);
+        System.IO.File.Delete(db);
+    }
+}
