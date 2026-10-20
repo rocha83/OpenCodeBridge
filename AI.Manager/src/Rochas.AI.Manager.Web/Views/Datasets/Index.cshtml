@@ -18,6 +18,12 @@
     <div class="modal-header"><h5 class="modal-title">Novo Dataset</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
     <div class="modal-body">
       <input name="name" class="form-control mb-2" placeholder="Nome" required />
+      <select name="template" class="form-select mb-2">
+        <option value="">(sem template - upload customizado)</option>
+        <option value="sft">Template nativo SFT (chat Gemma)</option>
+        <option value="dpo">Template nativo DPO (prompt/chosen/rejected)</option>
+        <option value="rm">Template nativo RM (reward modeling)</option>
+      </select>
       <input name="format" class="form-control mb-2" placeholder="Formato" value="jsonl" required />
       <input type="file" name="file" class="form-control mb-2" />
       <small class="text-muted">Opcional: envie um arquivo customizado (jsonl/csv). Se vazio, apenas registra o dataset.</small>

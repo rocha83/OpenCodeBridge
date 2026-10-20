@@ -26,4 +26,11 @@
   <ItemGroup>
     <EmbeddedResource Include="Data\harness-nucleo.md" />
   </ItemGroup>
+    <ItemGroup>
+    </ItemGroup>
+  <ItemGroup>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\assets\gemma-trainer\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="assets\gemma-trainer" />
+  </ItemGroup>
 </Project>
