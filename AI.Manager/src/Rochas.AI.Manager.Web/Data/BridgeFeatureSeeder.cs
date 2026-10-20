@@ -89,12 +89,26 @@ public static class BridgeFeatureSeeder
             versionId = ver.Id;
         }
 
-        // Attachment (system prompt core)
+        // Attachment (system prompt core completo - harness opencode)
         var existingAtt = await attachments.QueryRaw("SELECT * FROM harness_attachments", new Dictionary<string, object>());
-        if (!existingAtt.Any(a => a.VersionId == versionId))
+        if (!existingAtt.Any(a => a.VersionId == versionId && a.Kind == "Core"))
         {
-            var content = "Voce e um arquiteto desenvolvedor de software generalista. Roteie sozinho. Responda no idioma do usuario. Tool calls completas.";
-            await attachments.Add(new HarnessAttachment { VersionId = versionId, Kind = "Core", Role = "general", Content = content, CharCount = content.Length });
+            var asm = typeof(BridgeFeatureSeeder).Assembly;
+            string ReadRes(string name)
+            {
+                using var st = asm.GetManifestResourceStream(name);
+                if (st is null) return string.Empty;
+                using var r = new System.IO.StreamReader(st);
+                return r.ReadToEnd();
+            }
+            var system = ReadRes("Rochas.AI.Manager.Web.Data.harness-system.md");
+            if (string.IsNullOrWhiteSpace(system)) system = "Voce e um arquiteto desenvolvedor de software generalista.";
+            await attachments.Add(new HarnessAttachment { VersionId = versionId, Kind = "Core", Role = "general", Content = system, CharCount = system.Length });
+            var tools = ReadRes("Rochas.AI.Manager.Web.Data.harness-tools.json");
+            if (!string.IsNullOrWhiteSpace(tools))
+            {
+                await attachments.Add(new HarnessAttachment { VersionId = versionId, Kind = "Tools", Role = "general", Content = tools, CharCount = tools.Length });
+            }
         }
 
         // ToolPolicy por role
