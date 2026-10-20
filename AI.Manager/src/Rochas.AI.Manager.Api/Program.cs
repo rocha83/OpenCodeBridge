@@ -27,6 +27,7 @@ builder.Host.UseSerilog();
 
 
 builder.Services.AddControllers();
+builder.Services.AddHostedService<Rochas.AI.Manager.Api.Workers.TrainingJobWorker>();
 builder.Services.AddSingleton<Rochas.AI.Manager.Application.Services.PermissionService>();
 var jwtSecret = builder.Configuration["Jwt:Secret"];
 if (string.IsNullOrWhiteSpace(jwtSecret))

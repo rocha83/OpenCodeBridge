@@ -10,8 +10,7 @@ namespace Rochas.AI.Manager.Api.Controllers;
 public sealed class TrainingJobsController : ControllerBase
 {
     private readonly ITrainingJobService _svc = null!;
-    private readonly ITrainingEngine _engine = null!;
-    public TrainingJobsController(ITrainingJobService svc, ITrainingEngine engine) { _svc = svc; _engine = engine; }
+    public TrainingJobsController(ITrainingJobService svc) { _svc = svc; }
     [HttpGet] public async Task<IActionResult> List(CancellationToken ct) => Ok(await _svc.ListAsync(ct));
     [HttpGet("{id:int}")] public async Task<IActionResult> Get(int id, CancellationToken ct) { var job = await _svc.GetAsync(id, ct); return job is null ? NotFound() : Ok(job); }
     [HttpPost] public async Task<IActionResult> Create([FromBody] TrainingJobsCreateRequest req, CancellationToken ct) { var id = await _svc.CreateAsync(req.ModelArtifactId, req.DatasetId, req.AdvancedMode, req.TrainingMethod ?? "SFT", req.ConfigurationJson, ct); return Accepted(new { id }); }
@@ -20,7 +19,7 @@ public sealed class TrainingJobsController : ControllerBase
     [HttpPost("{id:int}/progress")] public async Task<IActionResult> Progress(int id, [FromBody] TrainingJobsProgressRequest req, CancellationToken ct) { await _svc.ReportProgressAsync(id, req.LastLoss, req.VramUsedMb, ct); return NoContent(); }
     [HttpPost("{id:int}/complete")] public async Task<IActionResult> Complete(int id, CancellationToken ct) { await _svc.CompleteAsync(id, ct); return NoContent(); }
     [HttpPost("{id:int}/fail")] public async Task<IActionResult> Fail(int id, [FromBody] TrainingJobsFailRequest req, CancellationToken ct) { await _svc.FailAsync(id, req.ErrorMessage, ct); return NoContent(); }
-    [HttpPost("{id:int}/run")] public async Task<IActionResult> Run(int id, CancellationToken ct) { await _engine.RunAsync(id, null, ct); return NoContent(); }
+    [HttpPost("{id:int}/run")] public IActionResult Run(int id) { return Accepted(new { id, status = "queued" }); }
 }
 public sealed record TrainingJobsCreateRequest(int? ModelArtifactId, int? DatasetId, bool AdvancedMode, string? TrainingMethod, string? ConfigurationJson);
 public sealed record TrainingJobsProgressRequest(double? LastLoss, double? VramUsedMb);
