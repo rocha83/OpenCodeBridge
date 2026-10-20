@@ -22,4 +22,7 @@
     <EmbeddedResource Include="Data\harness-system.md" />
     <EmbeddedResource Include="Data\harness-tools.json" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Data\harness-nucleo.md" />
+  </ItemGroup>
 </Project>

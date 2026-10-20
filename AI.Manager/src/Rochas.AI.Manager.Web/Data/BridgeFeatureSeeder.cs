@@ -109,6 +109,11 @@ public static class BridgeFeatureSeeder
             {
                 await attachments.Add(new HarnessAttachment { VersionId = versionId, Kind = "Tools", Role = "general", Content = tools, CharCount = tools.Length });
             }
+            var nucleo = ReadRes("Rochas.AI.Manager.Web.Data.harness-nucleo.md");
+            if (!string.IsNullOrWhiteSpace(nucleo))
+            {
+                await attachments.Add(new HarnessAttachment { VersionId = versionId, Kind = "Nucleo", Role = "general", Content = nucleo, CharCount = nucleo.Length });
+            }
         }
 
         // ToolPolicy por role
