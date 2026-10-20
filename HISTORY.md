@@ -1,5 +1,69 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Sonda de tools, nome real do subagente, behavior de workspace e tags no reasoning (2026-10-20)
+
+**Sonda em `ToolsToChat`.** A conversão Responses→chat tem três ramos com
+`continue` e nenhum log: uma tool malformada simplesmente desaparecia do payload.
+Três eventos novos, só com `--diagnostic 1`:
+
+| evento | campos |
+|---|---|
+| `tools-to-chat` | `in`, `out`, `names`, `dropped` (`type:nome`), `default_schema`, `result_null` |
+| `tools-lost` | `asked`, `got`, `lost` (compara anunciadas × convertidas; ignora o container `namespace`) |
+| `pattern-strip` | `dropped`, `hits` (caminho exato do `pattern` removido), `tools` |
+
+Medições: payload sintético 5→4 (`custom:weird_tool` descartada, `sem_schema`
+marcada em `default_schema`); tráfego real plan 6→6 e build 12→12 — **nenhuma
+perda**. Única mutação real de schema: `pattern-strip
+hits=["$[7].function.parameters.properties.sessionID.pattern"]`, ou seja, o
+`pattern: "^(ses)"` do parâmetro `sessionID` do `subagent` (llama.cpp rejeita
+regex sem âncora).
+
+**`task` não existe no array.** O opencode 2.x anuncia a delegação como
+`subagent` (mesma descrição/params do antigo `task`). Instrução que mande chamar
+`task` produz chamada inexistente: o `RealTools` não reconhece e o cliente nega.
+`AGENTS.md` e `LAB-SETUP.md` corrigidos.
+
+**Behavior tail default.** `HarnessBehaviorTail` deixou de ser vazio (override
+continua por `appsettings`/`--harness-behavior-tail`):
+
+1. workspace — path do usuário fora do namespace: procurar um nível abaixo
+   (pastas vizinhas) e na árvore, do workspace **e** dos paths citados;
+2. formato — conversa em Unicode (setas, ≤, π), LaTeX (`$...$`) só em bloco de
+   código/fórmula. Motivo: o 12B escreve `$\rightarrow$`, a bridge repassa
+   verbatim e a TUI do opencode não renderiza math — a tag fica crua. Reescrever
+   `$...$` no parse quebraria `$VAR` em shell e blocos de código.
+
+**Tags de controle no reasoning.** `FlushThinking` emitia `reasoning_content`
+cru; vazamentos de `<|channel>`, `<channel|>`, `</thought>`, `</thinking>`
+apareciam dentro do bloco de pensamento. `StripControlTags` atua em 4 pontos
+(delta do stream, `summary_text.done`, `part.done` — o que o opencode consolida —
+e `SplitThinking`), com evento `reasoning-tag` para provar recorrência.
+
+Hold-back **só do prefixo ambíguo** (`PartialTagLen`): segurar 12 chars fixos
+atrasava o reasoning inteiro e o restante saía fora de ordem, depois do content.
+Prova com upstream falso, tag partida entre chunks (`</thou` + `ght>`):
+
+```
+deltas: A×50 (intacto) | B×50 (intacto) | "fim"
+tags: []
+log:   {"event":"reasoning-tag","where":"stream","tag":"</thought>"}
+```
+
+Stream real pós-fix: 262 KB / 1.084 deltas, zero tags, zero perda. O
+`llama-server` não guarda texto gerado (só `n_tokens`/`tg`), então a prova vem da
+ponte.
+
+**Sonda do anti-repeat.** Antes só a cauda era logada; agora `dup_at` (posição da
+ocorrência anterior da janela) e `dup_ctx` (80 chars a partir dela) mostram
+**onde** repetiu. Repetição real no thinking do 12B: 13:55:16, `thinking_chars=4271`,
+janela 512, seguida de `anti-repeat-retry`.
+
+**Fix de build.** O commit da dica de Simpson entrou em `HarnessToolsTail` sem o
+`;` da declaração — o projeto não compilava desde então, e o `PASS` registrado
+havia rodado com `--no-build` (binário anterior). Corrigido; teste re-executado
+com binário novo: `PASS E-standalone-mission-tools (21.3s)`.
+
 ## Suíte sempre no role Build + trilha E2E standalone no opencode real (2026-10-19)
 
 **Princípio.** Teste complexo com tools e **thinking on** não faz sentido: o modelo

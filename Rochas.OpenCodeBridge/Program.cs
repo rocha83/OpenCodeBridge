@@ -95,7 +95,8 @@ internal static partial class Program
     // so o diretorio literal e conclui "nao existe", ignorando vizinhos e
     // subpastas. Override por appsettings (harnessBehaviorTail) ou CLI.
     static string HarnessBehaviorTail =
-        "COMPORTAMENTO (workspace): quando o usuario informar pastas de atuacao fora do workspace, procure pastas ou arquivos citados tambem um nivel abaixo (pastas vizinhas) e na arvore de subpastas, tanto do workspace quanto dos paths citados.";
+        "COMPORTAMENTO (workspace): quando o usuario informar pastas de atuacao fora do workspace, procure pastas ou arquivos citados tambem um nivel abaixo (pastas vizinhas) e na arvore de subpastas, tanto do workspace quanto dos paths citados. " +
+        "COMPORTAMENTO (formato): em conversa escreva com Unicode (setas, menor-igual, pi, somatorio) em vez de LaTeX; use $...$ somente dentro de bloco de codigo ou de formula matematica, onde o cliente renderiza.";
     // Ha alguma cauda de inducAO configurada? E o que o /api/harness reporta:
     // nao existe mais switch mestre, o que vale e ter cauda ou nao.
     static bool TailsAtivas() => HarnessBehaviorTail.Length > 0 || HarnessToolsTail.Length > 0;
