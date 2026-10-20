@@ -84,6 +84,30 @@ Regressão coberta: `U-translate-tools`, `U-convert-thinking-tools`,
 `U-translate-multi-namespace` PASS e `E-standalone-mission-tools` PASS (38.4s)
 com o binário novo.
 
+**Efeito "digitando" no content: switch `streamPerDelta`.** O reasoning já saía
+por delta (hold-back só do prefixo ambíguo), mas o content agregava até 256 chars
+antes de emitir (`RouteContent`), o que no opencode vira blocos — não digitando.
+Medição do mesmo pedido: nativo 446 `output_text.delta` × traduzido **5**.
+
+Opção liga/desliga (default **ligado**):
+
+| onde | chave/flag |
+|---|---|
+| appsettings | `"streamPerDelta": true/false` |
+| CLI | `--stream-per-delta true/false` |
+| `/api/status` | `stream_per_delta` |
+
+Ligado: emite cada chunk, segurando só o sufixo que pode ser prefixo de
+` thinking` / `</think>` (`PartialTagPrefixLen`). Desligado: mantém a agregação de
+256 chars. Prova com upstream falso (10 chunks de content):
+
+```
+stream_per_delta=true : output_text.delta=11 | texto identico
+stream_per_delta=false: output_text.delta=1  | texto identico
+```
+
+Tráfego real pós-fix: traduzido 468 deltas × nativo 446 — mesma granularidade.
+
 **Sonda do anti-repeat.** Antes só a cauda era logada; agora `dup_at` (posição da
 ocorrência anterior da janela) e `dup_ctx` (80 chars a partir dela) mostram
 **onde** repetiu. Repetição real no thinking do 12B: 13:55:16, `thinking_chars=4271`,

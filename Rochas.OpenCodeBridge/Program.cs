@@ -87,6 +87,10 @@ internal static partial class Program
     // descartando a janela repetida. Governado por --anti-repeat-retry, nao pelo
     // LegacyHarness (ver o bloco do retry).
     static bool AntiRepeatRetry = true;
+    // Emissao por delta (efeito "digitando") no content: repassa cada chunk do
+    // upstream segurando so o prefixo ambiguo de tag; false = agrega ate 256
+    // chars. Liga/desliga por appsettings (streamPerDelta) ou CLI.
+    static bool StreamPerDelta = true;
     // Enunciado de inducAO a COMPORTAMENTO (nao e uso de tools): disciplina de execucao,
     // como parar e entregar, como reagir a erro, tom de resposta. Vive separado da
     // ToolsTail de proposito: COMO USAR A TOOL e uma coisa, COMO SE COMPORTAR e outra.
@@ -359,6 +363,7 @@ internal static partial class Program
             if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham && ham.Length > 0) HarnessToolsTail = ham;
             if (cfg["harnessBehaviorTail"]?.GetValue<string>() is string bt) HarnessBehaviorTail = bt;
             if (cfg["antiRepeatRetry"]?.GetValue<bool>() is bool arr) AntiRepeatRetry = arr;
+            if (cfg["streamPerDelta"]?.GetValue<bool>() is bool spd) StreamPerDelta = spd;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
             if (cfg["coerceNarrated"]?.GetValue<bool>() is bool cn) CoerceNarrated = cn;
             if (cfg["riskAsk"]?.GetValue<bool>() is bool ra) RiskAsk = ra;
@@ -726,6 +731,7 @@ internal static partial class Program
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--coerce-narrated": CoerceNarrated = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-retry": AntiRepeatRetry = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--stream-per-delta": StreamPerDelta = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--harness-behavior-tail": HarnessBehaviorTail = cliArgs[i + 1]; break;
                 case "--harness-tools-tail": HarnessToolsTail = cliArgs[i + 1]; break;
                 case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
@@ -1055,7 +1061,7 @@ WriteJson(ctx, 200, new JsonObject
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
         ["passthrough_responses"] = PassthroughResponses,
         ["cpu_max_tokens"] = CpuMaxTokens,
-        ["harness"] = TailsAtivas(), ["legacy_harness"] = LegacyHarness,
+        ["harness"] = TailsAtivas(), ["legacy_harness"] = LegacyHarness, ["stream_per_delta"] = StreamPerDelta,
         ["uptime_seconds"] = (long)(DateTime.UtcNow - StartedAt).TotalSeconds,
         ["total_requests"] = TotalRequests, ["failed_requests"] = FailedRequests
     };
@@ -2431,7 +2437,15 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                         inThink = true;
                         continue;
                     }
-                    if (carry.Length > 256) { FlushMessage(carry[..^16]); carry = carry[^16..]; }
+                    if (StreamPerDelta)
+                    {
+                        // "Digitando": emite ja, segurando so o que pode ser
+                        // inicio de tag partida entre chunks.
+                        int hold = PartialTagPrefixLen(carry, " thinking");
+                        int upto = carry.Length - hold;
+                        if (upto > 0) { FlushMessage(carry[..upto]); carry = carry[upto..]; }
+                    }
+                    else if (carry.Length > 256) { FlushMessage(carry[..^16]); carry = carry[^16..]; }
                     break;
                 }
                 else
@@ -2444,7 +2458,13 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                         inThink = false;
                         continue;
                     }
-                    if (carry.Length > 256) { FlushThinking(carry[..^16]); carry = carry[^16..]; }
+                    if (StreamPerDelta)
+                    {
+                        int hold = PartialTagPrefixLen(carry, "</think>");
+                        int upto = carry.Length - hold;
+                        if (upto > 0) { FlushThinking(carry[..upto]); carry = carry[upto..]; }
+                    }
+                    else if (carry.Length > 256) { FlushThinking(carry[..^16]); carry = carry[^16..]; }
                     break;
                 }
             }
@@ -3277,6 +3297,16 @@ if (type == "message")
     // de pensamento. Removidas com sonda (evento reasoning-tag).
     static readonly string[] ControlTags =
         { "<|channel>", "<channel|>", "<|channel|>", "<thought>", "</thought>", "<thinking>", "</thinking>" };
+
+    /// <summary>Tamanho do maior sufixo de <paramref name="s"/> que e prefixo de <paramref name="tag"/>.</summary>
+    static int PartialTagPrefixLen(string s, string tag)
+    {
+        int best = 0;
+        int max = Math.Min(tag.Length - 1, s.Length);
+        for (int k = max; k > best; k--)
+            if (s.EndsWith(tag[..k], StringComparison.OrdinalIgnoreCase)) { best = k; break; }
+        return best;
+    }
 
     /// <summary>Tamanho do maior sufixo de <paramref name="s"/> que e prefixo de uma tag de controle.</summary>
     /// <remarks>Serve para segurar so o pedaco ambiguo entre chunks; sem isso o
