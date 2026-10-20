@@ -1,0 +1,1499 @@
+﻿@{ Layout = "_Layout"; ViewData["Title"] = "Chat"; }
+@{
+    var agents = (IEnumerable<Rochas.AI.Manager.Domain.Entities.Agent>)ViewBag.Agents;
+}
+<section>
+  <div class="container py-5">
+
+    <div class="row">
+
+      <div class="col-md-6 col-lg-4 col-xl-3 mb-4 mb-md-0">
+
+        <div class="mb-3">
+          <h5 class="font-weight-bold text-lg-start mb-2">Sessões</h5>
+          <div class="btn-group btn-group-sm" role="group">
+            <button type="button" class="btn btn-info" id="newSession" data-mdb-button-init data-mdb-ripple-init>Nova</button>
+            <button type="button" class="btn btn-warning" id="compactBtn" data-mdb-button-init data-mdb-ripple-init>Compactar</button>
+            <button type="button" class="btn btn-danger text-black" id="clearSessions" data-mdb-button-init data-mdb-ripple-init>Limpar</button>
+          </div>
+          <span id="ctxWrap" class="ms-2 d-inline-block align-middle" title="Tamanho do contexto 0k">
+            <svg id="ctxDonut" width="36" height="36" viewBox="0 0 36 36">
+              <circle cx="18" cy="18" r="14" fill="none" stroke="#2a323d" stroke-width="5" />
+              <circle id="ctxArc" cx="18" cy="18" r="14" fill="none" stroke="#14a44d" stroke-width="5"
+                stroke-linecap="round" stroke-dasharray="0 88" transform="rotate(-90 18 18)" />
+              <text id="ctxK" x="18" y="21.5" text-anchor="middle" font-size="9" fill="#e0e0e0">0k</text>
+            </svg>
+          </span>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <ul class="list-unstyled mb-0" id="sessionList"><li class="small text-muted">Carregando sessões...</li></ul>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="col-md-6 col-lg-8 col-xl-6">
+
+        <div class="mb-4">
+          <select id="agentId" class="form-select form-select-sm" title="Orquestrador">
+            @foreach (var a in agents)
+            {
+              <option value="@a.Id" data-mode="@(string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode)" data-tools="@(a.Tools ?? "")">@a.Name — @a.Model</option>
+            }
+          </select>
+          <select id="executorId" class="form-select form-select-sm mt-2" title="Executor (opcional)">
+            <option value="">Executor: nenhum (chat simples)</option>
+            @foreach (var a in agents)
+            {
+              <option value="@a.Id" data-mode="@(string.IsNullOrEmpty(a.Mode) ? "build" : a.Mode)" data-tools="@(a.Tools ?? "")">@a.Name — @a.Model</option>
+            }
+          </select>
+          <div class="small text-muted mt-2"><span id="engineDot" class="dot"></span> <span id="engineTxt">Aguardando...</span></div>
+        </div>
+
+        <ul class="list-unstyled" id="conv" aria-live="polite" aria-atomic="false"></ul>
+
+        <ul class="list-unstyled">
+          <li class="mb-3">
+            <label class="form-label fw-bold text-white" for="prompt">Pergunta ou Instrução</label>
+            <div data-mdb-input-init class="form-outline mb-3">
+              <textarea class="form-control bg-body-tertiary rounded-3" id="prompt" rows="4"></textarea>
+            </div>
+            <div class="form-check mb-3">
+              <input class="form-check-input" type="checkbox" id="autoApprove">
+              <label class="form-check-label small text-white-50" for="autoApprove">Aprovar uso de ferramentas automaticamente</label>
+            </div>
+          </li>
+          <button type="button" data-mdb-button-init data-mdb-ripple-init class="btn btn-info float-end" id="send">ENVIAR</button>
+        </ul>
+
+      </div>
+
+      <div class="col-md-12 col-lg-12 col-xl-3">
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="font-weight-bold text-lg-start mb-0">Mudanças</h5>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-body">
+            <ul class="list-unstyled mb-0" id="changedList">
+              <li class="small text-muted">Nenhum arquivo ainda.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="font-weight-bold text-lg-start mb-0">Scripts para o Executor</h5>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <ul class="list-unstyled mb-0 scripts-list" id="scriptList">
+              <li class="small text-muted">Nenhum script ainda.</li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+</section>
+<!-- Modal Arquivo (CodeMirror + diff lado a lado) -->
+<div class="modal fade" id="fileModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-fullscreen-md-down">
+    <div class="modal-content">
+      <div class="modal-header flex-wrap gap-2">
+        <h6 class="modal-title mb-0 text-truncate" id="fileModalTitle" style="max-width:40%">Arquivo</h6>
+        <span id="fileModalKind" class="badge bg-info ms-2"></span>
+        <span id="cmModeLbl" class="small text-muted ms-2"></span>
+        <select id="cmTheme" class="form-select form-select-sm ms-2" style="width:auto" title="Tema do editor">
+          <option value="default">Claro</option>
+          <option value="material-darker">Material</option>
+          <option value="monokai">Monokai</option>
+          <option value="dracula">Dracula</option>
+          <option value="eclipse">Eclipse</option>
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-info ms-2" id="fileDiffBtn">Diff</button>
+        <button type="button" class="btn btn-sm btn-success ms-2" id="fileSaveBtn">Salvar</button>
+        <button type="button" class="btn-close" data-mdb-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body" id="fileModalBody">
+        <div id="cmHost" style="border:1px solid #2a323d"></div>
+        <div id="diffHost" class="mt-2"></div>
+        <div id="fileMsg" class="small mt-2 text-muted"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- MDB Toast container for errors -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1080;" id="toastContainer"></div>
+@section Scripts {
+<link href="~/lib/codemirror/codemirror.css" rel="stylesheet" />
+<link href="~/lib/codemirror/theme/material-darker.css" rel="stylesheet" />
+<link href="~/lib/codemirror/theme/monokai.css" rel="stylesheet" />
+<link href="~/lib/codemirror/theme/dracula.css" rel="stylesheet" />
+<link href="~/lib/codemirror/theme/eclipse.css" rel="stylesheet" />
+<link href="~/lib/diff2html/diff2html.min.css" rel="stylesheet" />
+<link href="~/lib/diff2html/highlight-dark.min.css" rel="stylesheet" />
+<style>
+/* Modal Arquivo contido na tela: corpo flex (editor 60 / diff 30), scrolls internos. */
+#fileModal .modal-dialog { max-height: 94vh; margin-top: 3vh; margin-bottom: 3vh; }
+#fileModal .modal-content { max-height: 94vh; display: flex; flex-direction: column; }
+#fileModal .modal-body { height: 78vh; display: flex; flex-direction: column; gap: .5rem; min-height: 0; overflow: hidden; flex: 1 1 auto; padding: 1rem 1rem .3rem; }
+#fileModal #fileMsg { margin-top: .25rem; margin-bottom: 0; }
+#cmHost { flex: 1 1 auto; min-height: 12rem; overflow: hidden; }
+.CodeMirror { height: 100%; font-size: 13px; }
+#fileModalBody.with-diff #cmHost { flex: 0 1 60%; }
+#diffHost { display: none; flex: 0 1 40%; min-height: 0; overflow: auto; }
+#fileModalBody.with-diff #diffHost { display: block; }
+#diffHost .d2h-wrapper { text-align: left; }
+#diffHost .d2h-file-header { display: none; }
+/* Código no tema claro: paleta GitHub light (o highlight-dark.min.css é só p/ dark). */
+[data-bs-theme="light"] #diffHost .hljs { background: #fff; color: #24292e; }
+[data-bs-theme="light"] #diffHost .hljs-keyword, [data-bs-theme="light"] #diffHost .hljs-doctag { color: #d73a49; }
+[data-bs-theme="light"] #diffHost .hljs-string, [data-bs-theme="light"] #diffHost .hljs-regexp { color: #032f62; }
+[data-bs-theme="light"] #diffHost .hljs-comment, [data-bs-theme="light"] #diffHost .hljs-quote { color: #6a737d; }
+[data-bs-theme="light"] #diffHost .hljs-number, [data-bs-theme="light"] #diffHost .hljs-literal { color: #005cc5; }
+[data-bs-theme="light"] #diffHost .hljs-title, [data-bs-theme="light"] #diffHost .hljs-section, [data-bs-theme="light"] #diffHost .hljs-function { color: #6f42c1; }
+</style>
+<script src="~/lib/codemirror/codemirror.js"></script>
+<script src="~/lib/codemirror/mode/meta.js"></script>
+<script src="~/lib/codemirror/mode/javascript.js"></script>
+<script src="~/lib/codemirror/mode/xml.js"></script>
+<script src="~/lib/codemirror/mode/css.js"></script>
+<script src="~/lib/codemirror/mode/htmlmixed.js"></script>
+<script src="~/lib/codemirror/mode/clike.js"></script>
+<script src="~/lib/codemirror/mode/python.js"></script>
+<script src="~/lib/codemirror/mode/shell.js"></script>
+<script src="~/lib/codemirror/mode/markdown.js"></script>
+<script src="~/lib/codemirror/mode/yaml.js"></script>
+<script src="~/lib/codemirror/mode/sql.js"></script>
+<script src="~/lib/diff2html/highlight.min.js"></script>
+<script src="~/lib/diff2html/diff2html.min.js"></script>
+<script>
+const conv = document.getElementById('conv');
+// Antiforgery p/ mutações: token injetado pelo layout.
+function afToken() { try { const el = document.querySelector('input[name=__RequestVerificationToken]'); return el ? el.value : ''; } catch { return ''; } }
+function afHeaders(extra) { const h = { 'Content-Type': 'application/json', 'RequestVerificationToken': afToken() }; if (extra) for (const k in extra) h[k] = extra[k]; return h; }
+const sessionList = document.getElementById('sessionList');
+const agentSel = document.getElementById('agentId');
+const execSel = document.getElementById('executorId');
+const engineDot = document.getElementById('engineDot');
+const engineTxt = document.getElementById('engineTxt');
+const toastContainer = document.getElementById('toastContainer');
+let currentSessionId = null;
+let currentAgentId = null;
+let currentExecutorId = null;
+let uiConfig = { directApprove: false, telemetry: false };
+// Tracer injetável: observa os comportamentos autônomos (poll, init, select, stream)
+// e envia o lote p/ a tabela Serilog quando a telemetria está ligada (Diagnostics).
+const Tracer = (() => {
+  let enabled = false, queue = [], timer = null, sid = 0;
+  async function flush() {
+    if (!enabled || !queue.length) return;
+    const batch = queue.splice(0, 50);
+    try {
+      await fetch('/Chat/ClientLog', { method: 'POST', headers: afHeaders(),
+        body: JSON.stringify({ sessionId: sid || null, events: batch }) });
+    } catch { /* telemetria nunca quebra a UI */ }
+  }
+  function tick(source, level, msg, data) {
+    let d;
+    try { d = data === undefined ? undefined : String(JSON.stringify(data)).slice(0, 300); } catch { d = undefined; }
+    if (enabled) {
+      queue.push({ t: new Date().toISOString(), source, level, msg: String(msg || '').slice(0, 500), data: d });
+      if (level === 'error' || queue.length >= 20) flush();
+    }
+    try { (console[level] || console.log).call(console, '[ui]', source, msg); } catch {}
+  }
+  return {
+    init(opts) {
+      enabled = !!(opts && opts.telemetry);
+      if (enabled && !timer) timer = setInterval(flush, 8000);
+    },
+    session(id) { sid = id || 0; },
+    debug(s, m, d) { if (enabled) tick(s, 'debug', m, d); },
+    info(s, m, d) { tick(s, 'info', m, d); },
+    warn(s, m, d) { tick(s, 'warn', m, d); },
+    error(s, m, d) { tick(s, 'error', m, d); },
+    flush
+  };
+})();
+fetch('/Chat/Config').then(r => r.json()).then(j => { uiConfig.directApprove = !!j.directApprove; uiConfig.telemetry = !!j.telemetry; Tracer.init(uiConfig); }).catch(() => {});
+const execIdOrNull = () => execSel.value ? +execSel.value : null;
+
+// Stream ativo por sessão: trocar de sessão aborta o anterior (bolhas independentes).
+function abortActiveStream() {
+  try { window._streamAbort?.abort(); } catch {}
+  if (window._streamSession) {
+    fetch('/Chat/Stop', { method: 'POST', headers: afHeaders(),
+      body: JSON.stringify({ sessionId: window._streamSession }) }).catch(() => {});
+  }
+  window._streamAbort = null; window._streamSession = null;
+  window._ensureAgentBubbleForTools = null;
+  document.getElementById('cancelBtn')?.remove();
+  document.getElementById('processing-indicator')?.remove();
+}
+
+const avatarUser = '<span class="rounded-circle d-flex align-self-start ms-3 shadow-1-strong bg-secondary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-user fa-2x text-white"></i></span>';
+const avatarAgent = '<span class="rounded-circle d-flex align-self-start me-3 shadow-1-strong bg-primary justify-content-center align-items-center" style="width:60px;height:60px"><i class="fas fa-robot fa-2x text-white"></i></span>';
+
+function esc(s) { return (s || '').replace(/<\/?(details|summary)(\s[^>]*)?>/gi, '').replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+// % do thinking sobre o teto 8k (estimativa chars/4); ao vivo trava em 99, conclusão = 100.
+function thinkAvg() {
+  try { return parseFloat(localStorage.getItem('thinkAvg') || '6000') || 6000; }
+  catch { return 6000; }
+}
+function thinkNote(total) {
+  try {
+    const prev = thinkAvg();
+    localStorage.setItem('thinkAvg', String(Math.round(prev * 0.8 + total * 0.2)));
+  } catch {}
+}
+// % calibrado pela média móvel do tamanho das respostas (thinking+conteúdo):
+// resposta típica chega ~90%, salto final pequeno; 100% exato só no DONE.
+function thinkPct(chars) { const k = Math.max(150, thinkAvg() / 19); return Math.min(99, Math.floor(100 * chars / (chars + k))); }
+
+function showToast(message, type = 'danger') {
+  const id = 'toast-' + Date.now();
+  const bg = type === 'danger' ? 'bg-danger' : (type === 'success' ? 'bg-success' : 'bg-info');
+  const icon = type === 'danger' ? 'fa-circle-exclamation' : (type === 'success' ? 'fa-circle-check' : 'fa-circle-info');
+  const toastHtml = `
+    <div id="${id}" class="toast ${bg} text-white" role="alert" aria-live="assertive" aria-atomic="true" data-mdb-delay="5000">
+      <div class="toast-header ${bg} text-white border-0">
+        <i class="fas ${icon} me-2"></i>
+        <strong class="me-auto">Bridge Web</strong>
+        <button type="button" class="btn-close btn-close-white" data-mdb-dismiss="toast" aria-label="Close"></button>
+      </div>
+      <div class="toast-body">${esc(message)}</div>
+    </div>`;
+  toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+  const toastEl = document.getElementById(id);
+  if (toastEl) {
+    const toast = new mdb.Toast(toastEl);
+    toast.show();
+    toastEl.addEventListener('hidden.mdb.toast', () => toastEl.remove());
+  }
+}
+
+function isScrolledToBottom() {
+  return conv.scrollTop + conv.clientHeight >= conv.scrollHeight - 50;
+}
+
+// Enunciado passado ao subagente (args {"prompt": "..."}); cai p/ head crua.
+function subPromptOf(args) {
+  try {
+    const p = JSON.parse(args || '').prompt;
+    if (p && p.trim()) return p.trim().replace(/\s+/g, ' ');
+  } catch {}
+  return (args || '').replace(/\s+/g, ' ').trim();
+}
+// Rótulo do arg por tool (comando/caminho/padrão em vez de JSON cru).
+function labelHead(name, args) {
+  try {
+    const o = JSON.parse(args || '');
+    const pick = { shell: 'command', read: 'path', write: 'path', edit: 'path',
+      grep: 'pattern', glob: 'pattern', fetch: 'url', git: 'command' }[name];
+    if (pick && o[pick]) return String(o[pick]).replace(/\s+/g, ' ').trim().slice(0, 120);
+  } catch {}
+  const a = (args || '').replace(/\s+/g, ' ').trim();
+  return a.length > 80 ? a.slice(0, 80) + '…' : a;
+}
+// Grupo "Ferramentas" por bolha: dropdown abaixo do Raciocínio com uma
+// sub-label (details) por tool executada. Individual por bolha (agente e sub).
+function ensureToolsGroup(bodyEl) {
+  let g = bodyEl.querySelector(':scope > details.tools-group');
+  if (g) return g;
+  g = document.createElement('details');
+  g.className = 'mb-2 tools-group';
+  // Aberto por padrão: o estado das tools ("executado com sucesso"/"falhou")
+  // fica visível sem clique duplo e entra no texto da conversa (gate das faixas).
+  g.setAttribute('open', '');
+  g.innerHTML = `<summary class="small text-muted">Ferramentas</summary><div class="tlist"></div>`;
+  const think = bodyEl.querySelector(':scope > details:not(.tools-group)');
+  if (think) think.after(g);
+  else {
+    const pre = bodyEl.querySelector(':scope > pre');
+    if (pre) pre.before(g); else bodyEl.prepend(g);
+  }
+  return g;
+}
+function bumpToolsCount(g) {
+  const n = g.querySelectorAll(':scope > .tlist > details.tool-item').length;
+  g.querySelector('summary').textContent = `Ferramentas (${n})`;
+}
+// Raciocínio sempre acima do grupo: insere o details do thinking antes dele.
+function insertThinkFirst(det, refEl) {
+  const body = refEl ? refEl.parentNode : null;
+  if (!body) return;
+  const g = body.querySelector(':scope > details.tools-group');
+  if (g) body.insertBefore(det, g);
+  else if (refEl && refEl.isConnected) body.insertBefore(det, refEl);
+  else body.prepend(det);
+}
+// Dono do label: card do sub (sub) ou bolha do agente. Sem bolha ainda
+// (tool antes de qualquer texto): abre a bolha p/ ancorar o grupo.
+function toolsOwnerBody(sub) {
+  if (sub) return ensureSubCard(sub).li.querySelector('.card-body');
+  let bub = window._agentBubble;
+  if (!bub || !bub.isConnected) {
+    try { if (window._ensureAgentBubbleForTools) window._ensureAgentBubbleForTools(); } catch {}
+    bub = window._agentBubble;
+  }
+  return (bub && bub.isConnected) ? bub.querySelector('.card-body') : null;
+}
+// Linha de status de tool dentro do grupo da bolha dona.
+// sub: id do subagente dono (labels próprios, ancorados no card dele).
+// Delegação externa (subagent sem id: o card ainda não existe) ancora no
+// grupo do agente: sucesso não despeja o resultado (o card já mostra);
+// falha sem card mostra o motivo (timeout/recusa ficavam invisíveis).
+function toolConfirm(name, result, args, approveId, label) {
+  // Card âmbar com Sim/Nao: o clique aprova sem mensagem na bolha.
+  // Rótulo amigável da categoria ("Escrever em arquivos"); nome técnico
+  // fica pequeno no detalhe (o usuário decide pelo rótulo).
+  const body = toolsOwnerBody(null);
+  if (!body) return;
+  const g = ensureToolsGroup(body);
+  const list = g.querySelector(':scope > .tlist');
+  if (!list) return;
+  const d = document.createElement('details');
+  d.className = 'mb-1 tool-item';
+  d.dataset.tool = name;
+  d.setAttribute('open', '');
+  const a = (args || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  const lbl = (label || '').trim() || name;
+  d.innerHTML = `<summary class="small text-warning">🔒 O agente está tentando <b>${esc(lbl)}</b>, você permite?</summary>`
+    + `<div class="small text-muted">${esc(name)}${a ? ' ' + esc(a) : ''}</div>`
+    + `<div class="mt-1 d-flex gap-2"><button class="btn btn-sm btn-success" data-ap="1">Sim</button>`
+    + `<button class="btn btn-sm btn-danger text-black" data-ap="0">Não</button>`
+    + `<span class="small text-muted">ou digite <b>pode fazer</b> no chat</span></div>`;
+  const done = (txt) => {
+    d.querySelectorAll('button').forEach(b => b.disabled = true);
+    const s = document.createElement('div');
+    s.className = 'small text-muted';
+    s.textContent = txt;
+    d.appendChild(s);
+  };
+  d.querySelectorAll('button').forEach(b => b.addEventListener('click', async () => {
+    const approved = b.dataset.ap === '1';
+    try {
+      await fetch('/Chat/Approve', { method: 'POST', headers: afHeaders(),
+        body: JSON.stringify({ sessionId: currentSessionId, approveId: approveId, approved: approved }) });
+    } catch { /* timeout do loop decide */ }
+    done(approved ? 'Aprovado — executando…' : 'Negado pelo usuário.');
+  }));
+  list.appendChild(d);
+  bumpToolsCount(g);
+}
+function toolStatus(name, running, ok, result, ms, args, sub) {
+  // Chamada de subagente ≠ execução: só placeholder/card (sem grupo).
+  if (name === 'subagent' && !sub) {
+    if (running) subPlaceholder(subPromptOf(args));
+    else settlePlaceholder(name, ok, result);
+    return;
+  }
+  const body = toolsOwnerBody(sub);
+  if (!body) return;
+  const g = ensureToolsGroup(body);
+  const list = g.querySelector(':scope > .tlist');
+  if (running) {
+    const d = document.createElement('details');
+    d.className = 'mb-1 tool-item';
+    d.dataset.tool = name;
+    d.dataset.busy = '1';
+    d.setAttribute('open', '');
+    const a = (args || '').replace(/\s+/g, ' ').trim();
+    const head = labelHead(name, args);
+    // Sem duplicar: start repetido do mesmo args reutiliza o item ocupado.
+    let dup = null;
+    list.querySelectorAll('details.tool-item').forEach(el => {
+      if (!dup && el.dataset.tool === name && el.dataset.busy === '1' && (el.dataset.args || '') === head) dup = el;
+    });
+    if (dup) { bumpToolsCount(g); return; }
+    // Tool real: label com comando/caminho + item no grupo.
+    d.innerHTML = `<summary class="small text-muted">Executando ${esc(name)}${head ? ' ' + esc(head) : ''}…</summary>`;
+    d.dataset.args = head;
+    list.appendChild(d);
+    bumpToolsCount(g);
+  } else {
+    let d = null;
+    const ahead = args ? labelHead(name, args) : '';
+    list.querySelectorAll('details.tool-item').forEach(el => {
+      if (!d && el.dataset.tool === name && el.dataset.busy === '1'
+        && (!ahead || (el.dataset.args || '') === ahead)) d = el;
+    });
+    if (!d) list.querySelectorAll('details.tool-item').forEach(el => {
+      if (!d && el.dataset.tool === name) d = el;
+    });
+    if (!d) {
+      d = document.createElement('details');
+      d.className = 'mb-1 tool-item';
+      d.dataset.tool = name;
+      list.appendChild(d);
+    }
+    const state = ok === false ? 'falhou' : 'executado com sucesso';
+    const p = result ? `<p class="small text-muted">${esc(result)}</p>` : '';
+    const ah = d.dataset.args ? ` <span class="text-muted">${esc(d.dataset.args)}</span>` : '';
+    d.dataset.busy = '';
+    d.innerHTML = `<summary class="small text-muted">${esc(name)} ${state}.${ah}</summary>${p}`;
+    d.removeAttribute('open');
+    bumpToolsCount(g);
+  }
+  if (isScrolledToBottom()) scrollToBottom();
+}
+
+function scrollToBottom() {
+  conv.scrollTo({ top: conv.scrollHeight, behavior: 'smooth' });
+}
+
+// Card ao vivo do subagente: abre no primeiro thinking/chunk/tool dele,
+// com % e digitação como o principal (execução dos subs é serial).
+function ensureSubCard(sub) {
+  window._subCards = window._subCards || {};
+  // Placeholder do "digitando" adotado pelo sub real (sem duplicar).
+  if (sub && window._pendingSubCard && window._pendingSubCard.li.isConnected && window._pendingSubCard.pending) {
+    const h = window._pendingSubCard;
+    h.pending = false; window._pendingSubCard = null;
+    h.li.dataset.sub = sub;
+    window._subCards[sub] = h;
+    window._currentSubCard = h;
+    return h;
+  }
+  if (sub && window._subCards[sub] && window._subCards[sub].li.isConnected) {
+    window._currentSubCard = window._subCards[sub];
+    return window._subCards[sub];
+  }
+  const cur = window._currentSubCard;
+  if (!sub && cur && cur.li.isConnected) return cur;
+  const card = document.createElement('li');
+  card.className = 'd-flex justify-content-between mb-4 subagent-card';
+  if (sub) card.dataset.sub = sub;
+  card.innerHTML = `
+      ${avatarAgent}
+      <div class="card w-100">
+        <div class="card-header d-flex justify-content-between p-3">
+          <p class="fw-bold mb-0">Sub Agente</p>
+        </div>
+        <div class="card-body">
+          <pre class="mb-0 subans rawbox"></pre>
+          <div class="msg-ts">${fmtTs(new Date().toISOString())}</div>
+        </div>
+      </div>`;
+  // Pilha LIFO acima da bolha: o mais recente entra no topo (antes do anterior).
+  const prev = window._lastSubCard;
+  if (prev && prev.isConnected) prev.before(card);
+  else {
+    const bub = window._agentBubble;
+    if (bub && bub.isConnected) conv.insertBefore(card, bub);
+    else conv.appendChild(card);
+  }
+  window._lastSubCard = card;
+  (window._liveSubs = window._liveSubs || []).push(card);
+  const h = { li: card, pre: card.querySelector('.subans'), det: null, psum: null, pp: null, think: '', full: '' };
+  window._currentSubCard = h;
+  if (sub) window._subCards[sub] = h;
+  return h;
+}
+
+// Placeholder imediato no "digitando" (delegação anunciada, sub ainda em
+// prefill): o primeiro subChunk do sub real adota este card.
+function subPlaceholder(prompt) {
+  if (window._pendingSubCard && window._pendingSubCard.li.isConnected) return;
+  const h = ensureSubCard(null);
+  h.pending = true;
+  window._pendingSubCard = h;
+  h.pre.textContent = '';
+  h.pre.classList.add('typing');
+  // Enunciado da delegação em dropdown próprio (chamada ≠ execução).
+  if (prompt) {
+    const det = document.createElement('details');
+    det.className = 'mb-2 subprompt';
+    det.setAttribute('open', '');
+    det.innerHTML = `<summary class="small text-muted">Enunciado</summary><p class="small text-muted"></p>`;
+    det.querySelector('p').textContent = prompt;
+    h.pre.parentNode.insertBefore(det, h.pre);
+    h.promptDet = det;
+  }
+  if (isScrolledToBottom()) scrollToBottom();
+}
+// Finaliza placeholder nunca adotado (sub falhou antes do primeiro chunk).
+function settlePlaceholder(name, ok, result) {
+  const h = window._pendingSubCard;
+  if (!h || !h.li.isConnected || !h.pending) return;
+  h.pending = false; window._pendingSubCard = null;
+  h.pre.classList.remove('typing');
+  h.pre.textContent = ok === false ? ('Falhou: ' + (result || name)) : (result || '');
+  h.painted = true;
+  if (window._currentSubCard === h) window._currentSubCard = null;
+}
+
+// Chunk ao vivo do subagente (thinking/content): paridade com o principal.
+function subChunk(sub, kind, text) {
+  if (!sub) return;
+  const h = ensureSubCard(sub);
+  if (h.painted) return; // done já pintou: chunk tardio não reabre nem duplica.
+  if (kind === 'thinking') {
+    h.think += text;
+    if (!h.det) {
+      h.det = document.createElement('details');
+      h.det.className = 'mb-2';
+      h.det.innerHTML = `<summary class="small text-muted">Raciocínio 0%</summary>`;
+      h.psum = h.det.querySelector('summary');
+      h.pp = document.createElement('p');
+      h.pp.className = 'small text-muted typing';
+      h.det.appendChild(h.pp);
+      insertThinkFirst(h.det, h.pre);
+    }
+    h.pp.textContent = h.think;
+    if (h.psum) h.psum.textContent = `Raciocínio ${thinkPct(h.think.length + h.full.length)}% · ${fmtK(h.think.length + h.full.length)}`;
+    h.pp.scrollTop = h.pp.scrollHeight;
+  } else {
+    h.full += text;
+    h.pre.classList.remove('typing');
+    // Sem salto inicial (paridade com a bolha do agente): enquanto só há
+    // espaço, apara a frente; texto real nunca é tocado.
+    if (!h.full.trim()) h.full = '';
+    else h.full = h.full.replace(/^\s+/, '');
+    h.pre.textContent = h.full;
+    h.pre.scrollTop = h.pre.scrollHeight;
+    // Conteúdo começou (o % segue subindo; sem fechar à força — o usuário
+    // pode abrir o Raciocínio durante o stream).
+    if (h.psum) h.psum.textContent = `Raciocínio ${thinkPct(h.think.length + h.full.length)}% · ${fmtK(h.think.length + h.full.length)}`;
+  }
+  if (isScrolledToBottom()) scrollToBottom();
+}
+
+async function loadSessions() {
+  const r = await fetch('/Chat/Sessions');
+  if (!r.ok) { location.href = '/Account/Login'; return []; }
+  const list = await r.json();
+  sessionList.innerHTML = '';
+  list.forEach(s => {
+    const li = document.createElement('li');
+    li.className = 'p-2 border-bottom' + (s.id === currentSessionId ? ' bg-body-tertiary' : '');
+    const updated = new Date(s.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    li.innerHTML = `<a href="#!" class="d-flex justify-content-between text-decoration-none">
+      <div class="d-flex flex-row">
+        <span class="rounded-circle d-flex align-self-center me-2 shadow-1-strong bg-info justify-content-center align-items-center" style="width:38px;height:38px"><i class="fas fa-comments text-white"></i></span>
+        <div class="pt-1">
+          <p class="small fw-bold mb-0 text-truncate" style="max-width:200px">${esc(s.title)}</p>
+          <p class="small text-muted mb-0">${updated}</p>
+        </div>
+      </div>
+      <span class="align-self-center text-danger del-session" title="Excluir" style="cursor:pointer"><i class="fas fa-trash-alt"></i></span>
+    </a>`;
+    li.querySelector('a').onclick = (e) => { e.preventDefault(); selectSession(s.id, s.agentId, s.executorAgentId); };
+    li.querySelector('.del-session').onclick = async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      await fetch(`/Chat/Sessions/${s.id}`, { method: 'DELETE', headers: afHeaders() });
+      if (currentSessionId === s.id) { currentSessionId = null; conv.innerHTML = ''; try { localStorage.removeItem('bridgeSessionId'); } catch {} }
+      await loadSessions();
+    };
+    sessionList.appendChild(li);
+  });
+}
+
+async function selectSession(id, agentId, executorAgentId) {
+  try {
+  if (window._streamSession && window._streamSession !== id) abortActiveStream();
+  try { document.getElementById('prompt').value = ''; } catch {} // caixa é efêmera: nunca atravessa sessões
+  currentSessionId = id;
+  Tracer.session(id);
+  try { localStorage.setItem('bridgeSessionId', String(id)); } catch {}
+  currentAgentId = agentId;
+  agentSel.value = agentId;
+  currentExecutorId = executorAgentId ?? null;
+  applyExecutorAvailability();
+  execSel.value = currentExecutorId ?? '';
+  await loadMessages(id);
+  await loadSessions();
+  await syncAutoApprove(id);
+  checkEngine();
+  updateCtxDonut();
+  loadScripts(id);
+  loadChangedFiles(id);
+  Tracer.info('ui:select', 'sessao ' + id);
+  } catch (e) { Tracer.error('ui:select', (e && e.message) || e); showToast('Falha ao trocar de sessão.', 'danger'); }
+}
+
+// Donut do tamanho do contexto da sessão ativa (tokens chars/4 vs orçamento).
+function fmtK(t) { return t >= 1000 ? (Math.round(t / 100) / 10) + 'k' : String(t); }
+async function updateCtxDonut() {
+  const arc = document.getElementById('ctxArc'), lab = document.getElementById('ctxK'),
+    wrap = document.getElementById('ctxWrap');
+  if (!arc || !lab || !wrap) return;
+  if (!currentSessionId) {
+    arc.setAttribute('stroke-dasharray', '0 88'); arc.setAttribute('stroke', '#14a44d');
+    lab.textContent = '0k'; wrap.title = 'Tamanho do contexto 0k'; return;
+  }
+  try {
+    const r = await fetch(`/Chat/Sessions/${currentSessionId}/Context`);
+    if (!r.ok) return;
+    const j = await r.json();
+    const est = +j.tokens || 0, b = +j.budget || 1;
+    const t = +j.real > 0 ? (+j.real + (+j.newer || 0)) : est;
+    const mode = +j.real > 0 ? 'medido' + ((+j.newer || 0) > 0 ? '+delta' : '') : 'estimado';
+    const frac = Math.min(1, t / b), C = 88;
+    arc.setAttribute('stroke-dasharray', `${(frac * C).toFixed(1)} ${C}`);
+    arc.setAttribute('stroke', frac >= 0.9 ? '#dc4c64' : frac >= 0.7 ? '#e4a11b' : '#14a44d');
+    lab.textContent = fmtK(t);
+    wrap.title = 'Tamanho do contexto ' + fmtK(t) + ` (${mode})`;
+  } catch (e) { Tracer.warn('ui:donut', (e && e.message) || e); }
+}
+
+async function loadMessages(sessionId) {
+  const r = await fetch(`/Chat/Sessions/${sessionId}/Messages`);
+  const msgs = await r.json();
+  const wasAtBottom = isScrolledToBottom();
+  conv.innerHTML = '';
+  // Toda msg renderiza: falha isolada vira bolha bruta, nunca aborta a conversa.
+  // Junção: assistant só-thinking (turno de delegação) não abre bolha própria;
+  // o thinking incorpora na próxima bolha do agente com texto.
+  // Histórico com subagentes e content vazio: preenche com a frase de fecho.
+  const hasSub = (msgs || []).some(m => m?.role === 'subagent');
+  // Tools por bolha (message_id; subagent externo tem card próprio e sai).
+  let toolsByMsg = {};
+  try {
+    const rt = await fetch(`/Chat/Sessions/${sessionId}/ToolCalls?limit=500`);
+    if (rt.ok) {
+      const calls = await rt.json();
+      (calls || []).forEach(c => {
+        const mid = c?.messageId;
+        if (!mid) return;
+        (toolsByMsg[mid] = toolsByMsg[mid] || []).push(c);
+      });
+    }
+  } catch { /* histórico sem tools: segue só texto */ }
+  let pendingThink = '';
+  (msgs || []).forEach(m => {
+    try {
+      const role = m?.role ?? 'assistant';
+      const think = m?.thinking ?? '';
+      let body = m?.content ?? '';
+      if (role === 'assistant' && !(body || '').trim() && hasSub)
+        body = 'As tarefas delegadas aos subagentes foram concluídas.';
+      if (role === 'assistant' && !(body || '').trim() && (think || '').trim()) {
+        pendingThink += (pendingThink ? '\n\n' : '') + think.trim();
+        return;
+      }
+      if (role === 'assistant' && pendingThink.trim()) {
+        const merged = pendingThink + ((think || '').trim() ? '\n\n' + think.trim() : '');
+        pendingThink = '';
+        conv.appendChild(msgItem(role, merged, body, m?.createdAt, toolsByMsg[m?.id], m?.elapsedMs, m?.tps, m?.status));
+        return;
+      }
+      conv.appendChild(msgItem(role, think, body, m?.createdAt, toolsByMsg[m?.id], m?.elapsedMs, m?.tps, m?.status));
+    } catch (err) {
+      const li = document.createElement('li');
+      li.className = 'd-flex justify-content-between mb-4';
+      li.innerHTML = `${avatarAgent}<div class="card w-100"><div class="card-header d-flex justify-content-between p-3"><p class="fw-bold mb-0">Agente</p></div><div class="card-body"><pre class="mb-0 ans rawbox">${esc(String(m?.content ?? ''))}</pre></div></div>`;
+      conv.appendChild(li);
+    }
+  });
+  // Sobra sem bolha posterior: anexa ao último Agente em vez de bolha vazia.
+  if (pendingThink.trim()) {
+    const cards = [...conv.querySelectorAll('.card')].filter(c =>
+      c.querySelector('.card-header p')?.textContent === 'Agente');
+    const last = cards.pop();
+    if (last) {
+      const det = document.createElement('details');
+      det.className = 'mb-2';
+      det.innerHTML = `<summary class="small text-muted">Raciocínio 100%</summary>`;
+      const p = document.createElement('p');
+      p.className = 'small text-muted';
+      p.textContent = pendingThink.trim();
+      det.appendChild(p);
+      last.querySelector('.card-body')?.prepend(det);
+    } else {
+      conv.appendChild(msgItem('assistant', pendingThink, '', undefined, undefined, undefined, undefined, ''));
+    }
+  }
+  if (wasAtBottom) scrollToBottom();
+  await loadTasks(sessionId);
+}
+
+// Painel lateral: scripts .sh gerados na sessão (do histórico tool_calls).
+async function loadScripts(sessionId) {
+  const list = document.getElementById('scriptList');
+  if (!list) return;
+  try {
+    const r = await fetch(`/Chat/Sessions/${sessionId}/Scripts`);
+    if (sessionId !== currentSessionId) return; // resposta de sessão trocada: descarta
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j.scripts || !j.scripts.length) {
+      list.innerHTML = '<li class="small text-muted">Nenhum script ainda.</li>';
+    } else {
+      list.innerHTML = '';
+      j.scripts.forEach(s => {
+        const li = document.createElement('li');
+        li.className = 'mb-1';
+        const p = (s && s.path) || s;
+        const eta = (s && s.etaMin) ? ` <span class="small text-muted">· ~${esc(String(s.etaMin))} min</span>` : '';
+        li.innerHTML = `<span class="badge bg-dark">${esc(p)}</span>${eta}`;
+        list.appendChild(li);
+      });
+    }
+    const zip = document.getElementById('scriptZip');
+    if (j.zip && j.zip.name) {
+      if (!zip) {
+        const a = document.createElement('a');
+        a.id = 'scriptZip';
+        a.className = 'small';
+        list.parentNode.appendChild(a);
+      }
+      const a2 = document.getElementById('scriptZip');
+      a2.href = `/Chat/Sessions/${sessionId}/ScriptsZip`;
+      a2.textContent = `Baixar scripts (.zip, ${j.zip.size || ''})`;
+    } else if (zip) zip.remove();
+  } catch (e) { Tracer.warn('ui:scripts', (e && e.message) || e); }
+}
+
+// Painel lateral: arquivos alterados na sessão (write/edit ok).
+async function loadChangedFiles(sessionId) {
+  const list = document.getElementById('changedList');
+  if (!list) return;
+  try {
+    const r = await fetch(`/Chat/Sessions/${sessionId}/ChangedFiles`);
+    if (sessionId !== currentSessionId) return; // resposta de sessão trocada: descarta
+    if (!r.ok) return;
+    const arr = await r.json();
+    if (!arr || !arr.length) {
+      list.innerHTML = '<li class="small text-muted">Nenhum arquivo ainda.</li>';
+      return;
+    }
+    list.innerHTML = '';
+    arr.forEach(f => {
+      const li = document.createElement('li');
+      li.className = 'mb-1';
+      const badge = f.kind === 'novo' ? 'bg-success' : 'bg-warning text-dark';
+      const short = esc(f.path.length > 34 ? '…' + f.path.slice(-33) : f.path);
+      li.innerHTML = `<a href="#!" class="d-flex justify-content-between align-items-center text-decoration-none" title="${esc(f.path)}">
+        <span class="small text-truncate text-info" style="max-width:200px">${short}</span>
+        <span class="badge ${badge} ms-1">${esc(f.kind || '')}</span></a>`;
+      li.querySelector('a').onclick = (e) => { e.preventDefault(); openFileModal(sessionId, f.path, f.kind); };
+      list.appendChild(li);
+    });
+  } catch (e) { Tracer.warn('ui:changed', (e && e.message) || e); }
+}
+
+// Modal de arquivo: CodeMirror (temas + modos por extensão) + diff lado a lado.
+let cm = null, cmPath = '', cmSession = 0, cmShowingDiff = false;
+function cmThemeGet() { try { return localStorage.getItem('bridgeCmTheme') || 'material-darker'; } catch { return 'material-darker'; } }
+function ensureCM() {
+  if (cm) return cm;
+  cm = CodeMirror(document.getElementById('cmHost'), { lineNumbers: true, theme: cmThemeGet(), indentUnit: 2, tabSize: 2 });
+  const sel = document.getElementById('cmTheme');
+  if (sel) {
+    sel.value = cmThemeGet();
+    sel.onchange = () => { try { localStorage.setItem('bridgeCmTheme', sel.value); } catch {} cm.setOption('theme', sel.value); };
+  }
+  return cm;
+}
+function cmModeFor(path) {
+  try {
+    const name = (path || '').split('/').pop();
+    const info = CodeMirror.findModeByFileName(name);
+    if (info && (info.mime || info.mode)) return info.mime || info.mode;
+  } catch {}
+  return null;
+}
+function fileMsg(t, cls) {
+  const el = document.getElementById('fileMsg');
+  el.textContent = t || '';
+  el.className = 'small mt-2 ' + (cls || 'text-muted');
+}
+async function openFileModal(sessionId, path, kind) {
+  cmSession = sessionId; cmPath = path; cmShowingDiff = false;
+  document.getElementById('diffHost').style.display = 'none';
+  document.getElementById('fileModalBody').classList.remove('with-diff');
+  fileMsg('');
+  document.getElementById('fileModalTitle').textContent = path;
+  const kb = document.getElementById('fileModalKind');
+  kb.textContent = kind || '';
+  kb.className = 'badge ms-2 ' + (kind === 'novo' ? 'bg-success' : 'bg-warning text-dark');
+  document.getElementById('fileDiffBtn').textContent = 'Diff';
+  ensureCM();
+  try {
+    const r = await fetch(`/Chat/Sessions/${sessionId}/File?path=${encodeURIComponent(path)}`);
+    if (!r.ok) { fileMsg('Falha ao carregar (' + r.status + ')', 'text-danger'); return; }
+    const j = await r.json();
+    cm.setValue(j.content || '');
+    const mode = cmModeFor(path);
+    cm.setOption('mode', mode);
+    document.getElementById('cmModeLbl').textContent = mode || 'texto';
+    cm.refresh();
+  } catch { fileMsg('Falha ao carregar', 'text-danger'); return; }
+  const el = document.getElementById('fileModal');
+  if (window.mdb && mdb.Modal) mdb.Modal.getOrCreateInstance(el).show();
+  else { el.style.display = 'block'; el.classList.add('show'); }
+}
+document.getElementById('fileSaveBtn').onclick = async () => {
+  if (!cm || !cmSession || !cmPath) return;
+  fileMsg('Salvando...');
+  try {
+    const r = await fetch(`/Chat/Sessions/${cmSession}/File`, {
+      method: 'POST', headers: afHeaders(),
+      body: JSON.stringify({ path: cmPath, content: cm.getValue() })
+    });
+    if (!r.ok) { fileMsg('Falha ao salvar (' + r.status + ')', 'text-danger'); return; }
+    fileMsg('Salvo.', 'text-success');
+    await loadChangedFiles(cmSession);
+  } catch { fileMsg('Falha ao salvar', 'text-danger'); }
+};
+document.getElementById('fileDiffBtn').onclick = async () => {
+  const host = document.getElementById('diffHost');
+  if (cmShowingDiff) { host.style.display = 'none'; document.getElementById('fileModalBody').classList.remove('with-diff'); cmShowingDiff = false; document.getElementById('fileDiffBtn').textContent = 'Diff'; try { cm.refresh(); } catch {} return; }
+  await loadDiff();
+};
+async function loadDiff() {
+  const host = document.getElementById('diffHost');
+  const scheme = (document.documentElement.getAttribute('data-bs-theme') || 'dark') === 'dark' ? 'dark' : 'light';
+  fileMsg('Carregando diff...');
+  try {
+    const r = await fetch(`/Chat/Sessions/${cmSession}/FileDiff?path=${encodeURIComponent(cmPath)}`);
+    const j = await r.json();
+    if (!j.diff) { fileMsg(j.message || 'Sem diff', 'text-warning'); return; }
+    host.innerHTML = Diff2Html.html(j.diff, { outputFormat: 'side-by-side', drawFileList: false, matching: 'lines', colorScheme: scheme });
+    try { if (window.hljs) hljs.highlightAll(); } catch {}
+    host.style.display = 'block';
+    document.getElementById('fileModalBody').classList.add('with-diff');
+    try { cm.refresh(); } catch {}
+    cmShowingDiff = true;
+    document.getElementById('fileDiffBtn').textContent = 'Código';
+    fileMsg('');
+  } catch { fileMsg('Falha no diff', 'text-danger'); }
+}
+// Diff acompanha o tema do site (fundo claro/escuro; verdes do diff intactos).
+document.getElementById('themeToggle')?.addEventListener('click', () => { if (cmShowingDiff) loadDiff(); });
+
+// Painel lateral: decomposição + status das mini-tarefas dos executores
+async function loadTasks(sessionId) {
+  const list = document.getElementById('taskList');
+  if (!list) return; // painel de tarefas removido (só scripts).
+  try {
+    const r = await fetch(`/Chat/Sessions/${sessionId}/Tasks`);
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j.tasks || !j.tasks.length) {
+      list.innerHTML = '<li class="small text-muted">Sem decomposição nesta sessão.</li>';
+      return;
+    }
+    list.innerHTML = '';
+    let totalEta = 0;
+    j.tasks.forEach(t => {
+      const li = document.createElement('li');
+      li.className = 'mb-2';
+      const badge = t.status === 'done'
+        ? '<span class="badge bg-success">concluída</span>'
+        : t.status === 'running'
+          ? '<span class="badge bg-info"><span class="spinner-border spinner-border-sm me-1"></span>executando</span>'
+          : '<span class="badge bg-secondary">pendente</span>';
+      const eta = t.etaMin > 0 ? ` <span class="text-muted">~${t.etaMin} min</span>` : '';
+      if (t.etaMin > 0) totalEta += t.etaMin;
+      const summary = t.promptSummary ? `<div class="small text-muted mt-1">${esc(t.promptSummary)}</div>` : '';
+      const tools = (t.toolCalls && t.toolCalls.length)
+        ? `<div class="mt-1">${t.toolCalls.map(c => `<span class="badge bg-dark me-1">${esc(c)}</span>`).join('')}</div>`
+        : '';
+      li.innerHTML = `<div class="small fw-bold">${t.index}. ${esc(t.title)}${eta}</div>${summary}${tools}<div class="mt-1">${badge}</div>`;
+      list.appendChild(li);
+    });
+    if (totalEta > 0) {
+      const li = document.createElement('li');
+      li.className = 'mt-1 mb-2';
+      li.innerHTML = `<span class="small text-muted">Total estimado: ~${Math.round(totalEta * 10) / 10} min</span>`;
+      list.appendChild(li);
+    }
+    if (j.synthesized) {
+      const li = document.createElement('li');
+      li.className = 'mt-2';
+      li.innerHTML = '<span class="badge bg-primary">síntese pronta</span>';
+      list.appendChild(li);
+    }
+  } catch (e) { Tracer.warn('ui:tasks', (e && e.message) || e); }
+}
+
+// Atualiza o painel a cada 5s enquanto há sessão ativa
+// Tick: SOMENTE parciais do painel direito (tarefas, scripts, Mudanças). Nada de
+// conversa/lista aqui; donut atualiza no select/envio. Falha isolada por painel.
+setInterval(() => {
+  if (!currentSessionId) return;
+  try {
+    Promise.resolve(loadTasks(currentSessionId)).catch(e => Tracer.warn('poll:tasks', (e && e.message) || e));
+    Promise.resolve(loadScripts(currentSessionId)).catch(e => Tracer.warn('poll:scripts', (e && e.message) || e));
+    Promise.resolve(loadChangedFiles(currentSessionId)).catch(e => Tracer.warn('poll:changed', (e && e.message) || e));
+  } catch (e) { Tracer.error('poll:tick', (e && e.message) || e); }
+}, 5000);
+
+async function createSession() {
+  try {
+  abortActiveStream();
+  const r = await fetch('/Chat/Sessions', {
+    method: 'POST',
+    headers: afHeaders(),
+    body: JSON.stringify({ agentId: +agentSel.value, executorAgentId: execIdOrNull(), title: 'Nova sessão' })
+  });
+  const s = await r.json();
+  currentSessionId = s.id;
+  Tracer.session(s.id);
+  try { localStorage.setItem('bridgeSessionId', String(s.id)); } catch {}
+  try { document.getElementById('prompt').value = ''; } catch {}
+  try { const aa = document.getElementById('autoApprove'); if (aa) aa.checked = false; } catch {}
+  currentAgentId = s.agentId;
+  agentSel.value = s.agentId;
+  currentExecutorId = s.executorAgentId ?? null;
+  applyExecutorAvailability();
+  execSel.value = currentExecutorId ?? '';
+  await loadSessions();
+  conv.innerHTML = '';
+  document.getElementById('scriptList').innerHTML = '<li class="small text-muted">Nenhum script ainda.</li>';
+  document.getElementById('scriptZip')?.remove();
+  updateCtxDonut();
+  checkEngine();
+  Tracer.info('ui:create', 'sessao ' + s.id);
+  } catch (e) { Tracer.error('ui:create', (e && e.message) || e); showToast('Falha ao criar sessão.', 'danger'); }
+}
+
+async function deleteAllSessions() {
+  if (!confirm('Excluir todas as sessões?')) return;
+  const r = await fetch('/Chat/Sessions');
+  const list = await r.json();
+  for (const s of list) {
+    await fetch(`/Chat/Sessions/${s.id}`, { method: 'DELETE', headers: afHeaders() });
+  }
+  currentSessionId = null;
+  currentAgentId = null;
+  currentExecutorId = null;
+  try { localStorage.removeItem('bridgeSessionId'); } catch {}
+  await loadSessions();
+  conv.innerHTML = '';
+}
+
+function fmtTs(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  } catch { return ''; }
+}
+// Rodapé da bolha: "13/10 10:44 - 143s - 15 t/s" (duração e t/s só quando medidos).
+function fmtFoot(ts, ms, tps) {
+  const base = fmtTs(ts);
+  const parts = [base];
+  if (+ms > 0) parts.push(`${Math.round(+ms / 1000)}s`);
+  if (+tps > 0) parts.push(`${(+tps % 1 === 0) ? +tps : (+tps).toFixed(1)} t/s`);
+  return parts.filter(Boolean).join(' - ');
+}
+function toolsGroupHtml(tools) {
+  if (!tools || !tools.length) return '';
+  const items = tools.map(c => {
+    // Chamada de subagente não entra no grupo (tem card próprio).
+    if (c?.name === 'subagent' && !c?.sub) return '';
+    const state = c?.ok === false ? 'falhou' : 'executado com sucesso';
+    const out = c?.output ? `<p class="small text-muted">${esc(c.output)}</p>` : '';
+    const a = labelHead(c?.name, c?.args);
+    const ah = a ? ` <span class="text-muted">${esc(a)}</span>` : '';
+    return `<details class="mb-1 tool-item"><summary class="small text-muted">${esc(c?.name ?? 'tool')} ${state}.${ah}</summary>${out}</details>`;
+  }).join('');
+  return `<details class="mb-2 tools-group" open><summary class="small text-muted">Ferramentas (${tools.length})</summary><div class="tlist">${items}</div></details>`;
+}
+function msgItem(role, think, body, ts, tools, ms, tps, status) {
+  const li = document.createElement('li');
+  li.className = 'd-flex justify-content-between mb-4';
+  const foot = ts ? `<div class="d-flex justify-content-between align-items-center"><span class="msg-st small text-muted">${esc(status || '')}</span><div class="msg-ts">${esc(fmtFoot(ts, ms, tps))}</div></div>` : '';
+  if (role === 'user') {
+    li.innerHTML = `
+      <div class="card w-100">
+        <div class="card-header d-flex justify-content-between p-3">
+          <p class="fw-bold mb-0">Você</p>
+        </div>
+        <div class="card-body"><p class="mb-0 text-wrap">${esc(body)}</p>${foot}</div>
+      </div>
+      ${avatarUser}`;
+  } else if (role === 'subagent') {
+    li.innerHTML = `
+      ${avatarAgent}
+      <div class="card w-100">
+        <div class="card-header d-flex justify-content-between p-3">
+          <p class="fw-bold mb-0">Sub Agente</p>
+        </div>
+        <div class="card-body">
+          ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio 100%</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
+          ${toolsGroupHtml(tools)}
+          ${(body || '').trim() ? `<pre class="mb-0 subans rawbox">${esc(body)}</pre>` : ''}
+          ${foot}
+        </div>
+      </div>`;
+  } else {
+    li.innerHTML = `
+      ${avatarAgent}
+      <div class="card w-100">
+        <div class="card-header d-flex justify-content-between p-3">
+          <p class="fw-bold mb-0">Agente</p>
+        </div>
+        <div class="card-body">
+          ${think ? `<details class="mb-2"><summary class="small text-muted">Raciocínio 100%</summary><p class="small text-muted">${esc(think)}</p></details>` : ''}
+          ${toolsGroupHtml(tools)}
+          ${(body || '').trim() ? `<pre class="mb-0 ans rawbox">${esc(body)}</pre>` : ''}
+          ${foot}
+        </div>
+      </div>`;
+  }
+  return li;
+}
+
+agentSel.onchange = () => { currentAgentId = +agentSel.value; filterExecutors(); checkEngine(); runCalibration(); };
+
+// Calibragem invisível ao selecionar o modelo: luz amarela "Calibrando..."
+// enquanto o servidor sossega o delírio; nada pinta bolha nem grava sessão.
+let calibSeq = 0;
+async function runCalibration() {
+  const my = ++calibSeq;
+  const id = +agentSel.value || 0;
+  if (!id) return;
+  engineDot.className = 'dot calib blink'; engineTxt.textContent = 'Calibrando...';
+  try {
+    const r = await fetch('/Chat/Calibrate', { method: 'POST', headers: afHeaders(), body: JSON.stringify({ agentId: id }) });
+    if (my !== calibSeq) return;
+    if (!r.ok) throw new Error('http ' + r.status);
+    const j = await r.json();
+    engineDot.className = 'dot';
+    engineTxt.textContent = ('Pronto! ' + (j.decode || '')).trim();
+  } catch { if (my === calibSeq) { engineDot.className = 'dot'; engineTxt.textContent = 'Pronto!'; } }
+}
+
+// Executor lista todos, sem amarra de modo (plan+build é topologia válida).
+function orchMode() {
+  const opt = agentSel.selectedOptions[0];
+  return opt ? (opt.dataset.mode || 'build') : 'build';
+}
+function filterExecutors() {
+  const orch = +agentSel.value || 0;
+  [...execSel.options].forEach(o => { o.hidden = o.value ? (+o.value === orch) : false; });
+  // Orquestrador nunca é seu próprio executor (o servidor recusa com 400).
+  if (execSel.value && +execSel.value === orch) { execSel.value = ''; currentExecutorId = null; }
+  execSel.disabled = ![...execSel.options].some(o => o.value);
+}
+
+// Orquestrador sem permissão de subagent: combo de executor vem sem seleção e inativa.
+function orchestratorCanDelegate() {
+  try {
+    const o = agentSel.selectedOptions && agentSel.selectedOptions[0];
+    const csv = (o && o.dataset.tools) || '';
+    return csv.split(',').map(s => s.trim().toLowerCase()).includes('subagent');
+  } catch { return false; }
+}
+async function applyExecutorAvailability() {
+  filterExecutors();
+  if (orchestratorCanDelegate()) return;
+  const had = currentExecutorId != null;
+  execSel.value = '';
+  execSel.disabled = true;
+  currentExecutorId = null;
+  if (currentSessionId && had) {
+    try {
+      await fetch(`/Chat/Sessions/${currentSessionId}/Executor`, {
+        method: 'PUT', headers: afHeaders(),
+        body: JSON.stringify({ executorAgentId: null })
+      });
+    } catch {}
+  }
+}
+
+execSel.onchange = async () => {
+  currentExecutorId = execIdOrNull();
+  if (!currentSessionId) return;
+  const r = await fetch(`/Chat/Sessions/${currentSessionId}/Executor`, {
+    method: 'PUT',
+    headers: afHeaders(),
+    body: JSON.stringify({ executorAgentId: currentExecutorId })
+  });
+  if (!r.ok) {
+    // Erro real do servidor (ex.: "Executor deve diferir do orquestrador"),
+    // sem máscara genérica; BadRequest(string) pode vir entre aspas JSON.
+    let msg = 'Executor inválido para esta sessão.';
+    try {
+      let t = (await r.text()).trim().replace(/^"|"$/g, '');
+      if (t) msg = t.length > 160 ? t.slice(0, 160) + '…' : t;
+    } catch {}
+    showToast(msg, 'warning');
+  }
+  await loadSessions();
+};
+
+// Checkbox "aprovar tools sozinho": flag da sessão (default off; nova sessão desmarca).
+async function syncAutoApprove(id) {
+  const el = document.getElementById('autoApprove');
+  if (!el) return;
+  try {
+    const r = await fetch(`/Chat/Sessions/${id}`);
+    if (!r.ok) { el.checked = false; return; }
+    const s = await r.json();
+    el.checked = !!s.autoApprove;
+  } catch { el.checked = false; }
+}
+
+document.getElementById('autoApprove')?.addEventListener('change', async (e) => {
+  const el = e.target;
+  if (!currentSessionId) return;
+  try {
+    const r = await fetch(`/Chat/Sessions/${currentSessionId}/AutoApprove`, {
+      method: 'POST', headers: afHeaders(),
+      body: JSON.stringify({ auto: el.checked })
+    });
+    if (!r.ok) throw new Error('http ' + r.status);
+  } catch {
+    el.checked = !el.checked;
+    showToast('Falha ao salvar aprovação automática.', 'warning');
+  }
+});
+
+async function checkEngine() {
+  try {
+    const r = await fetch(`/Chat/Ping?agentId=${agentSel.value}`);
+    const j = await r.json();
+    engineDot.className = 'dot' + (j.ok ? '' : ' err');
+    // Sem interação ainda (conversa vazia): "Pronto!"; com histórico: "Concluído!".
+    engineTxt.textContent = !j.ok ? 'Desconectado'
+      : (document.getElementById('conv').children.length ? 'Concluído!' : 'Pronto!');
+  } catch { engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado'; Tracer.warn('ui:engine', 'ping falhou'); }
+}
+
+document.getElementById('newSession').onclick = createSession;
+
+const promptEl = document.getElementById('prompt');
+promptEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    document.getElementById('send').click();
+  }
+});
+
+promptEl.addEventListener('blur', () => {
+  // Opcional: re-focar após envio (feito no send.onclick)
+});
+
+document.getElementById('send').onclick = async () => {
+  const ta = document.getElementById('prompt');
+  if (!ta.value.trim()) return;
+  if (!currentSessionId) {
+    // Se não há sessão, tenta criar uma
+    await createSession();
+    if (!currentSessionId) {
+      showToast('Nenhuma sessão disponível. Recarregue a página.', 'warning');
+      return;
+    }
+  }
+  const text = ta.value; ta.value = '';
+
+  ta.disabled = true;
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = 'Enviado';
+
+  // Botão Parar (cancela o processamento); remove resto de envio anterior.
+  document.getElementById('cancelBtn')?.remove();
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn btn-sm btn-danger text-black ms-2';
+  cancelBtn.id = 'cancelBtn';
+  cancelBtn.innerHTML = 'CANCELAR';
+  cancelBtn.style.display = 'none';
+  sendBtn.parentNode.insertBefore(cancelBtn, sendBtn.nextSibling);
+  
+  // AbortController for cancellation
+  const abortController = new AbortController();
+  const sendSessionId = currentSessionId;
+  window._streamSession = sendSessionId; window._streamAbort = abortController;
+  let stoppedByUser = false;
+  cancelBtn.style.display = 'inline-block';
+  cancelBtn.onclick = () => {
+    stoppedByUser = true;
+    // Para o servidor via API + corta o fetch local.
+    fetch('/Chat/Stop', { method: 'POST', headers: afHeaders(),
+      body: JSON.stringify({ sessionId: sendSessionId }) }).catch(() => {});
+    try { abortController.abort(); } catch {}
+    window._streamAbort = null; window._streamSession = null;
+  window._ensureAgentBubbleForTools = null;
+    cancelBtn.style.display = 'none';
+    document.getElementById('processing-indicator')?.remove();
+    if (anP) anP.classList.remove('typing');
+    engineDot.className = 'dot err'; engineTxt.textContent = 'Interrompido';
+    ta.disabled = false;
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = 'ENVIAR';
+    ta.focus();
+  };
+  
+  ta.focus();
+
+  // Adiciona mensagem do usuário na UI imediatamente
+  conv.appendChild(msgItem('user', '', esc(text), new Date().toISOString(), undefined, undefined, undefined, 'Enviada'));
+
+  // Indicador "Processando" como linha da conversa (com margem), ativo até finalizar
+  const indicator = document.createElement('li');
+  indicator.id = 'processing-indicator';
+  indicator.className = 'd-flex justify-content-end mt-2 mb-3';
+  indicator.innerHTML = '<span class="small text-muted"><i class="fas fa-spinner fa-spin me-1"></i>Processando...</span>';
+  conv.appendChild(indicator);
+  if (isScrolledToBottom()) scrollToBottom();
+
+  // Prepara bolha do agente (abre no thinking ou no texto real; nunca vazia parada)
+  let agentLi = null;
+  window._agentBubble = null;
+  window._lastSubCard = null;
+  window._liveSubs = [];
+  let anP = null;
+  let think = '';
+  let thinkDet = null;
+  let thinkP = null;
+  let thinkSum = null;
+  let thinkLive = false;
+  let full = '';
+  let agentBubbleCreated = false;
+
+  // Abre a bolha (uma vez) e ancora os sub cards do envio abaixo dela.
+  function ensureAgentBubble() {
+    if (agentBubbleCreated) return;
+    agentLi = document.createElement('li');
+    agentLi.className = 'd-flex justify-content-between mb-4';
+    agentLi.innerHTML = `
+      ${avatarAgent}
+      <div class="card w-100">
+        <div class="card-header d-flex justify-content-between p-3">
+          <p class="fw-bold mb-0">Agente</p>
+        </div>
+        <div class="card-body">
+          <pre class="mb-0 ans rawbox"></pre>
+          <div class="msg-ts">${fmtTs(new Date().toISOString())}</div>
+        </div>
+      </div>`;
+    conv.appendChild(agentLi);
+    anP = agentLi.querySelector('.ans');
+    agentBubbleCreated = true;
+    window._agentBubble = agentLi;
+    // Ancoragem do grupo Ferramentas quando a tool chega antes do texto.
+    window._ensureAgentBubbleForTools = ensureAgentBubble;
+    // Pilha do envio: subs acima da bolha, mais recente no topo.
+    let anchor = agentLi;
+    (window._liveSubs || []).forEach(c => { if (c.isConnected) { anchor.before(c); anchor = c; } });
+  }
+
+  // Pintura direta por chunk (o SSE já é progressivo; sem efeito datilográfico).
+
+  engineDot.className = 'dot blink'; engineTxt.textContent = 'Pensando...';
+
+  try {
+    const res = await fetch('/Chat/Stream', {
+      method: 'POST',
+      headers: afHeaders(),
+      body: JSON.stringify({ sessionId: currentSessionId, agentId: currentAgentId, messages: [{ role: 'user', content: text }] }), signal: abortController.signal
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    // Parar segue visível durante todo o stream; ENVIAR só volta no fim.
+    // (nada de reabilitar aqui: o stream longo precisa do Parar até o done)
+
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (currentSessionId !== sendSessionId) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split('\n\n'); buf = parts.pop();
+      for (const p of parts) {
+        const line = p.split('\n').find(l => l.startsWith('data:'));
+        if (!line || line.includes('[DONE]')) continue;
+        try {
+          const evt = JSON.parse(line.slice(5));
+          if (evt.error) {
+            // Falha do servidor no meio do loop: mostra na bolha e segue até o DONE.
+            full += '\nErro: ' + evt.error;
+            if (!agentBubbleCreated && full.trim()) ensureAgentBubble();
+            if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); }
+            if (anP) { anP.textContent = full; anP.classList.add('typing'); anP.scrollTop = anP.scrollHeight; }
+            continue;
+          }
+          if (evt.progress) {
+            // Progresso de tool vindo do servidor (do sub: card próprio).
+            if (evt.progress === 'tool_start') {
+              if (evt.name === 'subagent' && !evt.sub) { window._currentSubCard = null; }
+              else if (!evt.sub) window._currentSubCard = null;
+              toolStatus(evt.name, true, null, '', 0, evt.args || '', evt.sub || null);
+            }
+            else if (evt.progress === 'tool_done') toolStatus(evt.name, false, evt.ok, evt.result || '', evt.ms || 0, '', evt.sub || null);
+            else if (evt.progress === 'tool_confirm') toolConfirm(evt.name, evt.result || '', evt.args || '', evt.approveId || 0, evt.label || '');
+            else if (evt.progress === 'sub_chunk') subChunk(evt.sub, evt.kind, evt.text || '');
+            else if (evt.progress === 'sub_start') subPlaceholder(subPromptOf(evt.args));
+            continue;
+          }
+          const d = evt.choices[0].delta;
+          if (d.reasoning_content) {
+            // Thinking acumula no MESMO accordion da bolha (fechado, com %; abrir mostra digitando).
+            think += d.reasoning_content;
+            ensureAgentBubble();
+            if (!thinkDet) {
+              thinkDet = document.createElement('details');
+              thinkDet.className = 'mb-2';
+              thinkDet.innerHTML = `<summary class="small text-muted">Raciocínio 0%</summary>`;
+              thinkSum = thinkDet.querySelector('summary');
+              thinkP = document.createElement('p');
+              thinkP.className = 'small text-muted typing';
+              thinkDet.appendChild(thinkP);
+              insertThinkFirst(thinkDet, anP);
+              thinkLive = true;
+            }
+            if (thinkP) thinkP.classList.add('typing');
+            thinkP.textContent = think;
+            if (thinkSum) thinkSum.textContent = `Raciocínio ${thinkPct(think.length + full.length)}% · ${fmtK(think.length + full.length)}`;
+            thinkP.scrollTop = thinkP.scrollHeight;
+            engineTxt.textContent = 'Pensando...';
+          }
+          else if (d.content) {
+            full += d.content;
+            // <think> vazado no content: move p/ thinking (some da bolha).
+            full = full.replace(/<think>([\s\S]*?)<\/think>/g, (m, t) => { think += t; return ''; });
+            { const oi = full.indexOf('<think>'); if (oi >= 0) { think += full.slice(oi + 7); full = full.slice(0, oi); } }
+            full = full.split('</think>').join('');
+            if (thinkP) thinkP.textContent = think;
+            // Sem salto inicial em nenhum caminho (bolha aberta pelo thinking ou pelo texto):
+            // enquanto só há espaço, apara a frente; texto real nunca é tocado.
+            if (!full.trim()) full = '';
+            else full = full.replace(/^\s+/, '');
+            // Bolha só quando há texto real (deltas iniciais de espaço não abrem quadro vazio).
+            if (!agentBubbleCreated && full.trim()) ensureAgentBubble();
+            // Thinking encerrou: o % segue subindo com o conteúdo (chars
+            // acumulados) até 100% no DONE — nunca congela. O accordion NÃO é
+            // fechado à força (o usuário pode abrir durante o stream).
+            if (thinkP) thinkP.classList.remove('typing');
+            if (thinkSum) thinkSum.textContent = `Raciocínio ${thinkPct(think.length + full.length)}% · ${fmtK(think.length + full.length)}`;
+            if (anP) { anP.textContent = full; anP.classList.add('typing'); anP.scrollTop = anP.scrollHeight; }
+          }
+        } catch (e) { /* chunk parcial: ignora */ }
+      }
+      if (isScrolledToBottom()) scrollToBottom();
+    }
+  } catch (e) {
+    if (!stoppedByUser && e?.name !== 'AbortError') Tracer.error('ui:stream', (e && e.message) || e);
+    if (stoppedByUser || e?.name === 'AbortError') {
+      // Parada pelo usuário: sem bolha de erro nem toast.
+      engineTxt.textContent = 'Interrompido';
+      ta.disabled = false;
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = 'ENVIAR';
+      if (anP) anP.classList.remove('typing');
+      document.getElementById('processing-indicator')?.remove();
+      document.getElementById('cancelBtn')?.remove();
+      return;
+    }
+    if (!agentBubbleCreated) {
+      // Cria bolha de erro se nem começou
+      agentLi = document.createElement('li');
+      agentLi.className = 'd-flex justify-content-between mb-4';
+      agentLi.innerHTML = `${avatarAgent}<div class="card w-100"><div class="card-body"><p class="mb-0 ans text-danger">Erro: ${esc(e.message)}</p></div></div>`;
+      conv.appendChild(agentLi);
+    } else {
+      anP.textContent = 'Erro: ' + e.message;
+    }
+    engineDot.className = 'dot err'; engineTxt.textContent = 'Desconectado';
+    ta.disabled = false;
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = 'ENVIAR';
+    if (anP) anP.classList.remove('typing');
+    document.getElementById('processing-indicator')?.remove();
+    document.getElementById('cancelBtn')?.remove();
+    showToast('Erro ao conectar na engine. Verifique se a bridge está online.', 'danger');
+  }
+  window._streamAbort = null; window._streamSession = null;
+  window._ensureAgentBubbleForTools = null;
+  // Trocou de sessão no meio do stream: não finaliza bolha na conversa errada.
+  const stillHere = (currentSessionId === sendSessionId);
+  if (agentBubbleCreated && stillHere) {
+    // Flush final + thinking fechado em 100% + remove "Processando"
+    if (anP) { anP.textContent = full; anP.classList.remove('typing'); }
+    if (thinkDet) { thinkDet.removeAttribute('open'); if (thinkP) thinkP.classList.remove('typing'); if (thinkSum) thinkSum.textContent = 'Raciocínio 100%'; }
+    else if (thinkLive && anP) {
+      // Thinking já exibido ao vivo (accordion aberto e fechado): garante fechado.
+      anP.parentNode.querySelectorAll('details').forEach(d => d.removeAttribute('open'));
+    }
+    if (!thinkLive && think.trim() && anP) {
+      const det = document.createElement('details');
+      det.className = 'mb-2';
+      const sum = document.createElement('summary');
+      sum.className = 'small text-muted';
+      sum.textContent = 'Raciocínio 100%';
+      const p = document.createElement('p');
+      p.className = 'small text-muted';
+      p.textContent = think;
+      det.appendChild(sum);
+      det.appendChild(p);
+      insertThinkFirst(det, anP);
+    }
+    document.getElementById('processing-indicator')?.remove();
+    engineDot.className = 'dot'; engineTxt.textContent = 'Concluído!';
+    thinkNote(think.length + full.length);
+  } else if (stillHere) {
+    document.getElementById('processing-indicator')?.remove();
+  }
+  ta.disabled = false;
+  sendBtn.disabled = false;
+  sendBtn.innerHTML = 'ENVIAR';
+  document.getElementById('cancelBtn')?.remove();
+  ta.focus();
+  // Recarrega do servidor: a bolha ao vivo ganha o rodapé com duração e t/s persistidos.
+  if (stillHere) { try { await loadMessages(sendSessionId); await updateCtxDonut(); } catch (e) { Tracer.warn('ui:reload', (e && e.message) || e); } }
+  if (stillHere && isScrolledToBottom()) scrollToBottom();
+};
+
+// Inicialização - garante sessão ativa antes de permitir envio
+let initPromise = (async () => {
+  try {
+  Tracer.info('ui:init', 'iniciando');
+  await loadSessions();
+  checkEngine();
+  runCalibration();
+  if (!currentSessionId) {
+    const r = await fetch('/Chat/Sessions');
+    const list = await r.json();
+    let saved = null;
+    try { saved = parseInt(localStorage.getItem('bridgeSessionId') || '', 10) || null; } catch {}
+    const hit = saved ? list.find(s => s.id === saved) : null;
+    if (hit) {
+      await selectSession(hit.id, hit.agentId, hit.executorAgentId);
+    } else if (list.length > 0) {
+      await selectSession(list[0].id, list[0].agentId, list[0].executorAgentId);
+    } else {
+      try { localStorage.removeItem('bridgeSessionId'); } catch {}
+      await createSession();
+    }
+  }
+  Tracer.info('ui:init', 'ok');
+  } catch (e) { Tracer.error('ui:init', (e && e.message) || e); showToast('Falha ao iniciar o chat.', 'danger'); }
+})();
+
+// Desabilita send até inicialização completa (mesmo com falha: libera p/ tentar).
+const sendBtn = document.getElementById('send');
+sendBtn.disabled = true;
+initPromise.then(() => { sendBtn.disabled = false; }, () => { sendBtn.disabled = false; });
+
+document.getElementById('newSession').onclick = createSession;
+document.getElementById('clearSessions').onclick = deleteAllSessions;
+document.getElementById('compactBtn').onclick = async () => {
+  if (!currentSessionId) { showToast('Sem sessão ativa.', 'warning'); return; }
+  try {
+    const r = await fetch(`/Chat/Sessions/${currentSessionId}/Compact`, { method: 'POST', headers: afHeaders() });
+    const j = await r.json();
+    showToast(j.compacted ? `Compactado: ${j.removed} msgs resumidas.` : 'Nada a compactar.', j.compacted ? 'success' : 'info');
+    await loadMessages(currentSessionId);
+    updateCtxDonut();
+  } catch { showToast('Falha ao compactar.', 'danger'); }
+};
+</script>
+}
