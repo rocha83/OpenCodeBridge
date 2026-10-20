@@ -41,6 +41,16 @@
                             <input type="date" name="DateTo" class="form-control form-control-sm" />
                         </div>
                         <div class="mb-2">
+                            <label class="form-label">Eixo temporal</label>
+                            <select name="DateAxis" class="form-select form-select-sm">
+                                <option value="created_at">Criação</option>
+                                <option value="started_at">Início</option>
+                                <option value="completed_at">Conclusão</option>
+                                <option value="updated_at">Atualização</option>
+                            </select>
+                            <div class="form-text">Eixos válidos dependem da entidade; inválido retorna 400.</div>
+                        </div>
+                        <div class="mb-2">
                             <label class="form-label">Banda de Acurácia</label>
                             <select name="AccuracyBand" class="form-select form-select-sm">
                                 <option value="">Todas</option>

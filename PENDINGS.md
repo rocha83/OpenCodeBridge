@@ -249,3 +249,52 @@ cobertura disponivel offline** — `coverlet`/`Microsoft.CodeCoverage` nao exist
 no cache NuGet (cache vazio), sem `dotnet tool` global e sem .nupkg no disco;
 instalar depende de rede. Alternativas se a rede voltar: `coverlet.msbuild` nos
 2 projetos de teste, ou `dotnet-coverage` como tool global.
+
+## AI.Manager — riscos e pendências de arquitetura/relatórios (2026-10-20)
+
+Origem: auditoria do código em `AI.Manager` (seção 32 do documento v1) e catálogo `REPORT-PENDINGS.md`.
+Documentos: `AI.Manager/docs/ai-manager/Rochas.AI.Manager-Arquitetura v1.md`, `... v2.md`, `REPORT-PENDINGS.md`.
+
+### Riscos abertos (ordem de severidade)
+
+| # | Risco | Evidência | Ação |
+|---|---|---|---|
+| D-01 | Treino executa dentro da requisição HTTP | `TrainingJobsController.Run` → `TrainingEngine.RunAsync` | fila + worker (`BackgroundService`), claim atômico, cancelamento cooperativo |
+| D-02 | "Sem Python" violado no modo avançado | `TrainingEngine.cs` (`QLORA_SCRIPT`, default `sft_train.py`) | decidir: adaptador externo opcional ou remoção |
+| D-03 | `TorchSharp` referenciado e não usado; backend é MLP `double[]` | `TrainingEngine.csproj`, `TorchSharpTrainingBackend` | renomear para o que é; provar TorchSharp (GPU, autograd, Adam) antes de prometer treino |
+| D-04 | Filtros de relatório eram ignorados | `ReportService.QueryAsync` | **feito nesta rodada**: De/Até, banda/faixa de acurácia, família de modelo, status por código, 400 para filtro inválido |
+| D-05 | JWT com chave fixa no código | `Api/Program.cs`, `Web/Program.cs` | mover para configuração/secret store |
+| D-06 | Credenciais seed `admin/admin` e `teste@e2e.local/Teste@123` | `Web/Program.cs` | apenas Development; troca forçada |
+| D-07 | Proxy aceita qualquer Bearer e envia `guest@123` ao upstream | `ProxyController.cs` | validar token; credencial configurável |
+| D-08 | Binding escolhido é sempre o primeiro | `ProxyController.cs` | resolver por `model`/role |
+| D-09 | `HarnessRun` gravado com `ProfileVersionId=0`/`EvidenceId=0` | `ProxyController.cs` | vincular perfil/versão/captura |
+| D-10 | Chat UI órfã (7 rotas inexistentes) | `Views/Chat/Index.cshtml` × `ChatController` | portar endpoints ou remover a view |
+| D-11 | `IRepository`/`IUnitOfWork` mortos | `Domain/Common` sem DI | implementar ou remover |
+| D-12 | `Application` referencia SQLite/Dapper | `Application.csproj` | mover dependência para Infrastructure |
+| D-13 | Relatórios carregam a tabela inteira e paginam em memória | `ReportService` | paginação/contagem em SQL (Fase 2) |
+| D-14 | Sem FKs físicas nem teste de integridade referencial | `AppDb.Init` | relatório R29 + validação de escrita |
+
+### Pendências de relatório (RP)
+
+| # | Pendência | Situação |
+|---|---|---|
+| RP-01 | `DateFrom`/`DateTo` ignorados | resolvido (inclusivo por dia, UTC) |
+| RP-02 | `AccuracyBand/Min/Max`, `ModelFamily`, `Mode`, `UserId` ignorados | resolvido para entidades que possuem a coluna/vinculo; demais retornam 400 |
+| RP-03 | `AgentId` sem FK | 400 explícito até existir vínculo |
+| RP-04 | `evidence_id` sem FK | pendente (validação + R29) |
+| RP-05 | `approved_by` textual em versões de harness | pendente |
+| RP-06 | Datas TEXT sem normalização | resolvido na comparação por dia |
+| RP-07 | PDF rotulado como HTML | resolvido (`application/pdf`) |
+| RP-08 | Página `/Reports` fora do menu | resolvido (menu + `/Approvals`) |
+| RP-09 | Paginação em memória | pendente |
+| RP-10 | Duas fontes de acurácia | pendente (regra por definição) |
+| RP-11 | `Status` textual × `status_id` | resolvido para cards (`entity_statuses.code` ou id numérico) |
+| RP-12 | Sem catálogo de definições | pendente (R1–R30) |
+
+### Decisões abertas
+
+1. `AgentId`: criar `agent_id` em runs/capturas ou remover do contrato.
+2. Acurácia canônica: card ou melhor job do experimento.
+3. Período default: sem filtro retorna tudo ou janela de 90 dias com aviso.
+4. Export assíncrono a partir de quantas linhas.
+5. `approved_by`: normalizar para `users.id` ou manter login.

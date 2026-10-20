@@ -15,3 +15,8 @@ Isso centraliza contratos e especificações no domínio, evitando dependências
 ## Compartilhamento
 Web e Api compartilham Domain + Application + Infrastructure + TrainingEngine.
 Nenhuma regra de negócio duplicada; apenas apresentação distinta.
+
+## Documentos de arquitetura e pendências
+- `Rochas.AI.Manager-Arquitetura v1.md` — guideline v1.2 + seção 32 (as-built).
+- `Rochas.AI.Manager-Arquitetura v2.md` — arquitetura vigente (baseline, ADRs, roadmap).
+- `REPORT-PENDINGS.md` — catálogo de relatórios R1–R30, facetas e recortes De/Até.

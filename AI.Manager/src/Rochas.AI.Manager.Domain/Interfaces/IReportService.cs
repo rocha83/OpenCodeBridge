@@ -11,6 +11,8 @@ public sealed class ReportQuery
     public string? Status { get; set; }
     public DateTime? DateFrom { get; set; }
     public DateTime? DateTo { get; set; }
+    /// <summary>Coluna de data usada no recorte De/Ate. Default: created_at.</summary>
+    public string? DateAxis { get; set; }
     public string? AccuracyBand { get; set; }
     public double? AccuracyMin { get; set; }
     public double? AccuracyMax { get; set; }

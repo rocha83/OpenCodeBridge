@@ -9,27 +9,52 @@ namespace Rochas.AI.Manager.Api.Controllers;
 [Route("api/reports")]
 public sealed class ReportsController : ControllerBase
 {
+    private static readonly HashSet<string> AllowedFormats = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "csv", "excel", "xlsx", "pdf", "html"
+    };
+
     private readonly IReportService _svc;
     public ReportsController(IReportService svc) { _svc = svc; }
 
     [HttpGet("preview")]
     public async Task<IActionResult> Preview([FromQuery] ReportQuery q, CancellationToken ct)
     {
-        var r = await _svc.QueryAsync(q, ct);
-        return Ok(r);
+        try
+        {
+            var result = await _svc.QueryAsync(q, ct);
+            return Ok(result);
+        }
+        catch (ReportQueryException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     [HttpGet("export")]
     public async Task<IActionResult> Export([FromQuery] ReportQuery q, [FromQuery] string format = "csv", CancellationToken ct = default)
     {
-        var bytes = await _svc.ExportAsync(q, format, ct);
-        var (mime, ext) = format.ToLowerInvariant() switch
+        if (!AllowedFormats.Contains(format))
+            return BadRequest(new { error = $"Formato invalido: '{format}'. Use: csv, excel, xlsx, pdf, html." });
+
+        try
         {
-            "excel" or "xlsx" => ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
-            "csv" => ("text/csv", "csv"),
-            "pdf" => ("text/html", "html"),
-            _ => ("application/octet-stream", "bin")
-        };
-        return File(bytes, mime, $"{q.Entity}.{ext}");
+            var bytes = await _svc.ExportAsync(q, format, ct);
+            var (mime, ext) = MimeFor(format);
+            return File(bytes, mime, $"{q.Entity}.{ext}");
+        }
+        catch (ReportQueryException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
+
+    private static (string Mime, string Extension) MimeFor(string format) => format.ToLowerInvariant() switch
+    {
+        "excel" or "xlsx" => ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
+        "csv" => ("text/csv", "csv"),
+        "pdf" => ("application/pdf", "pdf"),
+        "html" => ("text/html", "html"),
+        _ => ("application/octet-stream", "bin")
+    };
 }
