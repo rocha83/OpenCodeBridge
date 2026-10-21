@@ -75,6 +75,12 @@ internal static partial class Program
     // Diferente de CoerceFor (que cobre modelo sem parser nenhum): aqui ja houve intencao
     // de tool call, so que no formato errado. Independe do LegacyHarness.
     static bool CoerceNarrated = true;
+    // Tubo puro p/ cliente com harness proprio: opencode chama o modelo COM
+    // sufixo de perfil (-plan/-build/-orch/-moe) e gerencia as tools sozinho —
+    // nesse caminho a bridge nao coagia, nao segura marcador e nao limpa
+    // historico (passa reto). A gestao da bridge fica no cliente direto (Web UI,
+    // modelo sem sufixo). --bridge-managed true forca gestao em todos.
+    static bool BridgeManagedAll;
     // Legado (nunca liga em producao): antigas insercoes da bridge
     // (guardrail/coerce/strip/retry). --legacy-harness 1 reanima.
     static bool LegacyHarness = false;
@@ -331,6 +337,11 @@ internal static partial class Program
         return false;
     }
 
+    /// <summary>A bridge gerencia tools neste pedido? Cliente com perfil (opencode)
+    /// traz o proprio harness: passa reto. Direto/Web (sem sufixo) e gerido.</summary>
+    static bool ManagedFor(string? modelId) =>
+        BridgeManagedAll || !TryProfile(modelId ?? "", out _, out _);
+
     /// <summary>Arquivo opcional ao lado do DLL (CLI vence o arquivo).</summary>
     static void LoadAppSettings()
     {
@@ -366,6 +377,7 @@ internal static partial class Program
             if (cfg["streamPerDelta"]?.GetValue<bool>() is bool spd) StreamPerDelta = spd;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
             if (cfg["coerceNarrated"]?.GetValue<bool>() is bool cn) CoerceNarrated = cn;
+            if (cfg["bridgeManaged"]?.GetValue<bool>() is bool bm) BridgeManagedAll = bm;
             if (cfg["riskAsk"]?.GetValue<bool>() is bool ra) RiskAsk = ra;
             if (cfg["riskAskMinutes"]?.GetValue<int>() is int ram && ram > 0) RiskAskMinutes = ram;
             if (cfg["riskToolsAlerts"]?.AsObject() is JsonObject rta)
@@ -617,8 +629,7 @@ internal static partial class Program
             {
                 // TryBalanced devolve o que esta entre as chaves do nome: sao os ARGUMENTOS,
                 // nao um envelope {"name","arguments"}. O nome vem do grupo do regex.
-                var argObj = JsonNode.Parse(obj)?.AsObject();
-                if (argObj is null) continue;
+                if (!TryParseArgs(obj, out JsonObject argObj)) continue;
                 var envelope = new JsonObject { ["name"] = m.Groups[1].Value, ["arguments"] = argObj };
                 TryAddTextCall(envelope.ToJsonString(SerOpts), list, known);
             }
@@ -626,11 +637,81 @@ internal static partial class Program
         }
     }
 
+    /// <summary>Parse JSON tolerante: estrito e, se falhar, com escapes reparados.</summary>
+    static JsonNode? TryParseJson(string json)
+    {
+        try { return JsonNode.Parse(json); } catch { }
+        string repaired = RepairJsonEscapes(json);
+        if (repaired == json) return null;
+        try { return JsonNode.Parse(repaired); } catch { return null; }
+    }
+
+    /// <summary>Repara escapes que o modelo inventa (barra + char fora do JSON:
+    /// <c>\;</c>, <c>\-</c>, <c>\s</c>) duplicando a barra. Sem isso
+    /// <c>find ... -exec cat {} \;</c> derruba o parse e a chamada narrada morre.</summary>
+    static string RepairJsonEscapes(string json)
+    {
+        var sb = new StringBuilder(json.Length + 8);
+        for (int i = 0; i < json.Length; i++)
+        {
+            char c = json[i];
+            if (c != '\\' || i + 1 >= json.Length) { sb.Append(c); continue; }
+            char n = json[i + 1];
+            if (n is '"' or '\\' or '/' or 'b' or 'f' or 'n' or 'r' or 't' or 'u')
+            { sb.Append(c).Append(n); i++; continue; }
+            sb.Append("\\\\").Append(n);   // \; -> \\; (barra literal)
+            i++;
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Argumentos de tool a partir do texto: JSON valido, JSON reparado
+    /// ou o caso <c>{"command": "..."}</c> com aspas internas soltas (shell narrado:
+    /// <c>find . -name "*evolution*.md"</c> sem escape).</summary>
+    static bool TryParseArgs(string raw, out JsonObject args)
+    {
+        args = new JsonObject();
+        if (TryParseJson(raw) is JsonObject parsed) { args = parsed; return true; }
+        var match = Regex.Match(raw, "^\\{\\s*\"command\"\\s*:\\s*\"([\\s\\S]*)\"\\s*\\}$");
+        if (!match.Success) return false;
+        string command = match.Groups[1].Value
+            .Replace("\\\"", "\"")     // \" do JSON -> aspas reais
+            .Replace("\\\\", "\\");    // \\ do JSON -> barra real
+        args = new JsonObject { ["command"] = command };
+        return true;
+    }
+
+    /// <summary>Remove do texto do historico as chamadas narradas
+    /// ("[Assistant tool call]: nome({...})"), mantendo a prosa em volta.</summary>
+    /// <remarks>A chamada de verdade vem como item function_call no mesmo input;
+    /// deixar o texto ensina o modelo a narrar em vez de emitir a chamada.</remarks>
+    static string StripNarratedCalls(string text)
+    {
+        if (string.IsNullOrEmpty(text) || !ReAssistantToolCall.IsMatch(text)) return text;
+        var sb = new StringBuilder(text.Length);
+        int i = 0;
+        while (i < text.Length)
+        {
+            var m = ReAssistantToolCall.Match(text, i);
+            if (!m.Success) { sb.Append(text, i, text.Length - i); break; }
+            sb.Append(text, i, m.Index - i);
+            int start = m.Index + m.Length;
+            if (start < text.Length && text[start] == '{' && TryBalanced(text, start, out string obj))
+            {
+                int end = start + obj.Length;
+                if (end < text.Length && text[end] == ')') end++;
+                i = end;
+            }
+            else i = m.Index + m.Length;
+        }
+        return Regex.Replace(sb.ToString(), @"[ \t]+\r?\n", "\n").TrimEnd();
+    }
+
     static void TryAddTextCall(string json, List<(string Name, string Arguments)> list, List<string>? known = null)
     {
         try
         {
-            var o = JsonNode.Parse(json.Trim())?.AsObject();
+            var o = TryParseJson(json.Trim())?.AsObject();
             if (o is null) return;
             string name = o["name"]?.GetValue<string>() ?? "";
             if (name.Length == 0) return;
@@ -730,6 +811,7 @@ internal static partial class Program
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--coerce-narrated": CoerceNarrated = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--bridge-managed": BridgeManagedAll = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-retry": AntiRepeatRetry = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--stream-per-delta": StreamPerDelta = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--harness-behavior-tail": HarnessBehaviorTail = cliArgs[i + 1]; break;
@@ -1062,6 +1144,7 @@ WriteJson(ctx, 200, new JsonObject
         ["passthrough_responses"] = PassthroughResponses,
         ["cpu_max_tokens"] = CpuMaxTokens,
         ["harness"] = TailsAtivas(), ["legacy_harness"] = LegacyHarness, ["stream_per_delta"] = StreamPerDelta,
+        ["bridge_managed"] = BridgeManagedAll ? "all" : "direct-only",
         ["uptime_seconds"] = (long)(DateTime.UtcNow - StartedAt).TotalSeconds,
         ["total_requests"] = TotalRequests, ["failed_requests"] = FailedRequests
     };
@@ -1525,7 +1608,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             ?? (hasProfile && !double.IsNaN(profTemp) ? profTemp : Temperature);
 
         // Converte a conversa Responses -> messages do formato chat
-        var messages = InputToMessages(req["input"], req["instructions"]);
+        var messages = InputToMessages(req["input"], req["instructions"], hasProfile);
         // Caudas por peca, penduradas no system que InputToMessages ja consolida
         // (instructions + os system do meio). Em producao esse system sempre existe:
         // no opencode vem do agent.md, na Web UI do system_prompt do agente. O gate
@@ -2314,10 +2397,23 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         string reasoningId = "";
         string messageId = "";
         bool thinkOpen = false, msgOpen = false, inThink = false;
+        // Cliente com harness proprio (opencode): passa reto, sem hold-back de
+        // marcador e sem coercao — o cliente gerencia as tools.
+        bool managed = ManagedFor(requestedModel);
+        // Efeito "digitando" e gestao sao do cliente direto (Web UI). No
+        // opencode (perfil) o texto agrega como antes: caminho livre.
+        bool perDelta = StreamPerDelta && managed;
+        // Coercao de tool call (texto/narrada) e do modo LEGACY da bridge. Fora
+        // dele o caminho e livre: o cliente (opencode) gerencia as tools.
+        bool coerceOn = LegacyHarness && CoerceNarrated && managed;
         bool repeatTrip = false;   // AntiRepeat: thinking repetido detectado, aborta e conteve (1 retry)
         string carry = "";   // texto ainda nao classificado (tag pode partir no meio do chunk)
         string reasonBuf = "";   // hold-back do reasoning: tag de controle pode partir entre chunks
         var toolAccum = new SortedDictionary<int, (string Id, string Name, StringBuilder Args)>();
+        // Sonda anti-repeat nos ARGUMENTS de uma mesma call (marcador curto repetido
+        // como "<tool_call|>" nao cabe na janela de 512 do thinking/content e o args
+        // cresce ate o max_tokens truncar o JSON). So loga: nao altera a saida.
+        var argsProbeLogged = new HashSet<int>();
         int inputTokens = 0, outputTokens = 0;
 
         // Emite texto de reasoning ja limpo (abre o item no primeiro delta).
@@ -2327,16 +2423,19 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             if (!thinkOpen && thinking == "events")
             {
                 reasoningId = "rs_" + NewId();
-                // Formato NATIVO do llama.cpp (reasoning_text + content), nao o
-                // par summary_text/part: com summary o opencode renderiza o
-                // raciocinio como um snippet de resumo, diferente dos demais.
+                // Formato NATIVO do llama.cpp (reasoning_text + content). O item
+                // PRECISA nascer com content[0] do tipo reasoning_text: o parser
+                // do opencode faz Y.output[idx].content[content_index] e lanca
+                // "missing content at index" (delta descartado, pensamento so
+                // aparecia no completed = quadro de snippet).
                 Emit("response.output_item.added", new JsonObject
                 {
                     ["type"] = "response.output_item.added", ["output_index"] = 0,
                     ["item"] = new JsonObject
                     {
                         ["id"] = reasoningId, ["summary"] = new JsonArray(), ["type"] = "reasoning",
-                        ["content"] = new JsonArray(), ["encrypted_content"] = "", ["status"] = "in_progress"
+                        ["content"] = new JsonArray(new JsonObject { ["type"] = "reasoning_text", ["text"] = "" }),
+                        ["encrypted_content"] = "", ["status"] = "in_progress"
                     }
                 });
                 thinkOpen = true;
@@ -2352,9 +2451,13 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                 repeatTrip = true;
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "thinking", ["window"] = AntiRepeatWindow, ["thinking_chars"] = thinkingText.Length });
             }
+            // output_index/content_index sao OBRIGATORIOS no schema do opencode
+            // para reasoning_text.delta; sem eles o evento e descartado e o
+            // pensamento so aparece no fecho (quadro de snippet).
             Emit("response.reasoning_text.delta", new JsonObject
             {
-                ["type"] = "response.reasoning_text.delta", ["delta"] = text, ["item_id"] = reasoningId
+                ["type"] = "response.reasoning_text.delta", ["delta"] = text, ["item_id"] = reasoningId,
+                ["output_index"] = 0, ["content_index"] = 0
             });
         }
 
@@ -2437,11 +2540,14 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                         inThink = true;
                         continue;
                     }
-                    if (StreamPerDelta)
+                    if (perDelta)
                     {
-                        // "Digitando": emite ja, segurando so o que pode ser
-                        // inicio de tag partida entre chunks.
-                        int hold = PartialTagPrefixLen(carry, " thinking");
+                        // "Digitando": emite ja, mas segura (a) prefixo ambiguo de
+                        // tag partida entre chunks e (b) a partir de um marcador de
+                        // tool call NARRADA — o fecho decide entre descartar como
+                        // chamada ou devolver como prosa. Sem (b) o efeito vaza
+                        // "[Assistant tool call]: nome(...)" no content.
+                        int hold = coerceOn ? ContentHoldBack(carry) : PartialTagPrefixLen(carry, " thinking");
                         int upto = carry.Length - hold;
                         if (upto > 0) { FlushMessage(carry[..upto]); carry = carry[upto..]; }
                     }
@@ -2458,7 +2564,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                         inThink = false;
                         continue;
                     }
-                    if (StreamPerDelta)
+                    if (perDelta)
                     {
                         int hold = PartialTagPrefixLen(carry, "</think>");
                         int upto = carry.Length - hold;
@@ -2542,7 +2648,19 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                     if (func?["name"]?.GetValue<string>() is string funcName && funcName.Length > 0)
                         toolAccum[index] = (acc.Id, funcName, acc.Args);
                     if (func?["arguments"]?.GetValue<string>() is string argsChunk)
+                    {
                         acc.Args.Append(argsChunk);
+                        if (AntiRepeat && acc.Args.Length >= 1024 && !argsProbeLogged.Contains(index))
+                        {
+                            string argsText = acc.Args.ToString();
+                            if (ThinkingRepeats(argsText, AntiRepeatWindow))
+                            {
+                                argsProbeLogged.Add(index);
+                                Log(new JsonObject { ["event"] = "anti-repeat-args", ["tool"] = acc.Name,
+                                    ["chars"] = argsText.Length, ["window"] = AntiRepeatWindow });
+                            }
+                        }
+                    }
                 }
             }
             if (repeatTrip) break;   // AntiRepeat: para de consumir o loop invalido
@@ -2565,22 +2683,57 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             Log(new JsonObject { ["event"] = "anti-repeat-retry" });
         }
 
-        // ---- Fecho: descarrega o resto (hold-back do reasoning inclusive), fecha itens, emite tool calls
-        if (inThink) FlushThinking(carry); else FlushMessage(carry);
+        // ---- Fecho: a cauda segurada pode ser uma tool call NARRADA
+        // (formato "[Assistant tool call]: nome({...})" que o opencode serializa
+        // no historico). A coerção roda ANTES de descarregar a cauda: com o
+        // efeito "digitando" o texto ja saiu chunk a chunk, entao a cauda nunca
+        // pode ir para a prosa antes de sabermos se e chamada ou texto.
+        string heldTail = carry;
+        carry = "";
+        if (inThink) { FlushThinking(heldTail); heldTail = ""; }
+
+        if (coerceOn && toolAccum.Count == 0 && ReqHasTools(chat))
+        {
+            var knownTail = AnnouncedTools(chat["tools"]?.AsArray());
+            var found = ExtractTextToolCalls(contentText.ToString() + heldTail, knownTail);
+            foreach (var (name, args) in found)
+                toolAccum[toolAccum.Count] = ("call_" + NewId(), name, new StringBuilder(args));
+            if (found.Count > 0)
+            {
+                // Nada a retirar do que ja foi emitido? Retira: o texto final
+                // (done/completed) para no inicio do marcador, coerente com os
+                // deltas (a cauda segurada nunca foi emitida).
+                int markerAt = TextToolMarkerIndex(contentText.ToString());
+                if (markerAt >= 0) contentText.Length = markerAt;
+                heldTail = "";
+                Log(new JsonObject { ["event"] = "coerced", ["where"] = "stream",
+                                     ["model"] = requestedModel, ["count"] = found.Count });
+            }
+        }
+        // Ja havia call nativa e a cauda narrada e eco do historico: descarta.
+        if (coerceOn && toolAccum.Count > 0 && heldTail.Length > 0 && TextToolMarkerIndex(heldTail) == 0)
+            heldTail = "";
+        if (heldTail.Length > 0) FlushMessage(heldTail);
         FlushReasonRest();
 
         int msgIndex = thinkOpen ? 1 : 0;
         if (thinkOpen)
         {
             string thinkingFinal = StripControlTags(thinkingText.ToString(), "done");
-            // Nativo: sem summary_text.done/part.done; o texto vai no content do item.
+            // Nativo (llama.cpp): o texto vai em content[].text do tipo
+            // reasoning_text; o reasoning_text.done consolida os deltas.
+            Emit("response.reasoning_text.done", new JsonObject
+            {
+                ["type"] = "response.reasoning_text.done", ["item_id"] = reasoningId,
+                ["output_index"] = 0, ["content_index"] = 0, ["text"] = thinkingFinal
+            });
             Emit("response.output_item.done", new JsonObject
             {
                 ["type"] = "response.output_item.done", ["output_index"] = 0,
                 ["item"] = new JsonObject
                 {
                     ["id"] = reasoningId, ["summary"] = new JsonArray(), ["type"] = "reasoning",
-                    ["content"] = new JsonArray(new JsonObject { ["text"] = thinkingFinal }),
+                    ["content"] = new JsonArray(new JsonObject { ["type"] = "reasoning_text", ["text"] = thinkingFinal }),
                     ["encrypted_content"] = "", ["status"] = "completed"
                 }
             });
@@ -2616,14 +2769,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             });
         }
 
-        // Coerção no fecho do stream: sem deltas de call e com tools pedidas,
-        // extrai do texto acumulado (coder/deepseek via llama). Nativo nao passa aqui.
-        if (toolAccum.Count == 0 && (LegacyHarness || CoerceNarrated) && ReqHasTools(chat))
-        {
-            var knownResp = AnnouncedTools(chat["tools"]?.AsArray());
-            foreach (var (name, args) in ExtractTextToolCalls(contentText.ToString(), knownResp))
-                toolAccum[toolAccum.Count] = ("call_" + NewId(), name, new StringBuilder(args));
-        }
+        // A coerção roda no fecho (bloco acima), sobre texto acumulado + cauda.
 
         int callIndex = (thinkOpen ? 1 : 0) + (msgOpen ? 1 : 0);
         var toolList = new List<(string Id, string Name, string Arguments)>();
@@ -2866,7 +3012,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
     /// <param name="input">Itens Responses.</param>
     /// <param name="instructions">Sistema.</param>
     /// <returns>Messages.</returns>
-    static JsonArray InputToMessages(JsonNode? input, JsonNode? instructions)
+    static JsonArray InputToMessages(JsonNode? input, JsonNode? instructions, bool profileClient = false)
     {
         var messages = new JsonArray();
 
@@ -2913,6 +3059,12 @@ if (type == "message")
                     continue;
                 }
                 if (role is not ("user" or "assistant")) role = "user";
+                // O opencode reenvia a tool call TAMBEM como texto
+                // ("[Assistant tool call]: nome({...})"). Mantido no historico, o
+                // modelo copia esse formato em vez de emitir a chamada nativa; a
+                // chamada estruturada (function_call) continua logo abaixo.
+                if (role == "assistant" && !profileClient && LegacyHarness) content = StripNarratedCalls(content);
+                if (string.IsNullOrWhiteSpace(content)) continue;
                 messages.Add(new JsonObject { ["role"] = role, ["content"] = content });
             }
             else if (type == "function_call")
@@ -3195,23 +3347,33 @@ if (type == "message")
         // Coerção: sem tool_calls nativos e com tools pedidas, extrai do texto
         // (ToolsCoercion: hermes/plural/fence — coder/deepseek via llama).
         // So atua se o texto parsear; prosa normal passa intacta.
-        if (toolCalls.Count == 0 && (LegacyHarness || CoerceNarrated) && hadTools)
+        if (LegacyHarness && CoerceNarrated && ManagedFor(model) && toolCalls.Count == 0 && hadTools)
         {
             foreach (var (name, args) in ExtractTextToolCalls(content, ChatToResponsesAnnounced))
                 toolCalls.Add(("call_" + NewId(), name, args));
             if (toolCalls.Count > 0)
             {
                 // Remove os blocos consumidos p/ nao duplicar texto + call.
+                // A narrada sai INTEIRA (marcador + args + parentese), senao o
+                // JSON dos argumentos ficaria colado na prosa.
                 content = ReToolTag.Replace(content, "");
                 content = ReToolsTag.Replace(content, "");
                 content = ReFunctionTag.Replace(content, "");
                 content = ReFencedCall.Replace(content, "");
-                content = ReAssistantToolCall.Replace(content, "");
+                content = StripNarratedCalls(content);
                 Log(new JsonObject { ["event"] = "coerced", ["model"] = model, ["count"] = toolCalls.Count });
             }
             else if (CoerceNarrated && ReAssistantToolCall.IsMatch(content))
                 Log(new JsonObject { ["event"] = "coerce-narrated-miss", ["model"] = model, ["had_tools"] = hadTools });
         }
+
+        // Sonda (so log) de repeticao nos argumentos de uma tool call no caminho
+        // nao-stream: o texto do args pode crescer em loop sem tocar thinking/content.
+        if (AntiRepeat)
+            foreach (var (_, probeName, probeArgs) in toolCalls)
+                if (probeArgs.Length >= 1024 && ThinkingRepeats(probeArgs, AntiRepeatWindow))
+                    Log(new JsonObject { ["event"] = "anti-repeat-args", ["tool"] = probeName,
+                        ["chars"] = probeArgs.Length, ["window"] = AntiRepeatWindow, ["mode"] = "convert" });
 
         // 4.6.3) Uso de tokens: chat usa prompt/completion, Responses usa input/output
         var chatUsage = chat["usage"]?.AsObject() ?? new JsonObject();
@@ -3232,7 +3394,7 @@ if (type == "message")
             output.Add(new JsonObject
             {
                 ["id"] = "rs_" + NewId(), ["summary"] = new JsonArray(), ["type"] = "reasoning",
-                ["content"] = new JsonArray(new JsonObject { ["text"] = thinking }),
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "reasoning_text", ["text"] = thinking }),
                 ["encrypted_content"] = "", ["status"] = "completed"
             });
         }
@@ -3306,6 +3468,39 @@ if (type == "message")
         for (int k = max; k > best; k--)
             if (s.EndsWith(tag[..k], StringComparison.OrdinalIgnoreCase)) { best = k; break; }
         return best;
+    }
+
+    // Marcadores TEXTUAIS de tool call: o opencode serializa a tool no historico
+    // como "[Assistant tool call]: nome({...})" e o modelo copia esse formato.
+    // No stream o texto a partir deles fica retido; quem decide (descartar como
+    // chamada ou devolver como prosa) e o fecho.
+    static readonly string[] TextToolMarkers =
+        { "[Assistant tool call]", "<tool_call>", "<tools>", "<function>" };
+
+    /// <summary>Posicao do primeiro marcador de tool call no texto (-1 = prosa).</summary>
+    static int TextToolMarkerIndex(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return -1;
+        int best = -1;
+        foreach (string marker in TextToolMarkers)
+        {
+            int at = s.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (at >= 0 && (best < 0 || at < best)) best = at;
+        }
+        return best;
+    }
+
+    /// <summary>Quanto segurar da cauda: tag partida ou inicio de marcador de call.</summary>
+    static int ContentHoldBack(string carry)
+    {
+        int hold = PartialTagPrefixLen(carry, " thinking");
+        foreach (string marker in TextToolMarkers)
+        {
+            int at = carry.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            int k = at >= 0 ? carry.Length - at : PartialTagPrefixLen(carry, marker);
+            if (k > hold) hold = k;
+        }
+        return hold;
     }
 
     /// <summary>Tamanho do maior sufixo de <paramref name="s"/> que e prefixo de uma tag de controle.</summary>
@@ -3397,7 +3592,8 @@ if (type == "message")
                 var reasoningOpen = new JsonObject
                 {
                     ["id"] = reasoningId, ["summary"] = new JsonArray(), ["type"] = "reasoning",
-                    ["content"] = new JsonArray(), ["encrypted_content"] = "", ["status"] = "in_progress"
+                    ["content"] = new JsonArray(new JsonObject { ["type"] = "reasoning_text", ["text"] = "" }),
+                    ["encrypted_content"] = "", ["status"] = "in_progress"
                 };
                 WriteEvent(sse, "response.output_item.added", new JsonObject
                 {
@@ -3405,15 +3601,24 @@ if (type == "message")
                     ["sequence_number"] = sequence++, ["item"] = reasoningOpen
                 });
                 if (thinkingText.Length > 0)
+                {
                     WriteEvent(sse, "response.reasoning_text.delta", new JsonObject
                     {
                         ["type"] = "response.reasoning_text.delta", ["delta"] = thinkingText,
-                        ["item_id"] = reasoningId, ["sequence_number"] = sequence++
+                        ["item_id"] = reasoningId, ["output_index"] = outputIndex, ["content_index"] = 0,
+                        ["sequence_number"] = sequence++
                     });
+                    WriteEvent(sse, "response.reasoning_text.done", new JsonObject
+                    {
+                        ["type"] = "response.reasoning_text.done", ["item_id"] = reasoningId,
+                        ["output_index"] = outputIndex, ["content_index"] = 0, ["text"] = thinkingText,
+                        ["sequence_number"] = sequence++
+                    });
+                }
                 var reasoningDone = new JsonObject
                 {
                     ["id"] = reasoningId, ["summary"] = new JsonArray(), ["type"] = "reasoning",
-                    ["content"] = new JsonArray(new JsonObject { ["text"] = thinkingText }),
+                    ["content"] = new JsonArray(new JsonObject { ["type"] = "reasoning_text", ["text"] = thinkingText }),
                     ["encrypted_content"] = "", ["status"] = "completed"
                 };
                 WriteEvent(sse, "response.output_item.done", new JsonObject

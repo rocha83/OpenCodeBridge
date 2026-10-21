@@ -16,6 +16,28 @@ internal static class E2EBeltsTests
         ("preta", "Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador, banco de dados SQL, repositorios e servicos, API REST, servicos bus, pipeline de Big Data com ML (regressao, classificacao, rede neural perceptron). Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida em fases por escopo e divida a tarefa usando subagent tool, dialogo em pt-br."),
     };
 
+    /// <summary>Compara nomes sem acento/caixa: o modelo nao repete o titulo ao pe do byte.</summary>
+    static string NormName(string s)
+    {
+        var d = s.Normalize(System.Text.NormalizationForm.FormD);
+        var b = new System.Text.StringBuilder();
+        foreach (char c in d)
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                b.Append(char.ToLowerInvariant(c));
+        return b.ToString();
+    }
+
+    static string? FindByTitle(string ws, string safeTitle)
+    {
+        string want = NormName(safeTitle);
+        foreach (var f in System.IO.Directory.GetFiles(ws, "*.sh"))
+        {
+            string name = NormName(System.IO.Path.GetFileNameWithoutExtension(f));
+            if (name == want || name.Contains(want) || want.Contains(name)) return f;
+        }
+        return null;
+    }
+
     static (int Code, string Out) Run(string exe, string cwd, int secs, params string[] args)
     {
         var psi = new System.Diagnostics.ProcessStartInfo(exe) { WorkingDirectory = cwd, RedirectStandardOutput = true, RedirectStandardError = true };
@@ -54,6 +76,8 @@ internal static class E2EBeltsTests
         foreach (var (key, prompt) in beltsToRun)
         {
             string ws = System.IO.Path.Combine("/tmp/opencode/belts", key);
+            // Workspace limpo: sobras de uma belt anterior inflariam scriptsOk/execOk.
+            if (System.IO.Directory.Exists(ws)) System.IO.Directory.Delete(ws, true);
             System.IO.Directory.CreateDirectory(ws);
             Log($"  [belt:{key}] START ws={ws}"); 
             try
@@ -87,7 +111,7 @@ internal static class E2EBeltsTests
                         new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write_file", ["description"]="escreve arquivo", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
                     };
                     var sh = new JsonArray(
-                        new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, 12B). Componha um script bash que executa a tarefa e o salve em " + safeTitle + ".sh com shebang. Tambem gere companion " + safeTitle + ".md descrevendo o que o script faz. Use write_file. Ao terminar responda apenas SCRIPTER-OK." },
+                        new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, 12B). Componha um script bash que executa a tarefa e o salve em " + safeTitle + ".sh com shebang. Tambem gere companion " + safeTitle + ".md descrevendo o que o script faz. Mantenha o script com no maximo 80 linhas e o companion com no maximo 20 linhas (saida curta cabe no teto de tokens). Use write_file. Ao terminar responda apenas SCRIPTER-OK." },
                         new JsonObject { ["role"]="user", ["content"]=taskPrompt });
                     for (int turn = 0; turn < 6; turn++)
                     {
@@ -101,21 +125,42 @@ internal static class E2EBeltsTests
                         sh.Add(new JsonObject { ["role"]="assistant", ["content"]=msg?["content"]?.GetValue<string>()??"", ["tool_calls"]=echo });
                         foreach (var c in calls)
                         {
-                            var a = JsonNode.Parse(c?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject();
+                            string callId = c?["id"]?.GetValue<string>() ?? "";
+                            string argsJson = c?["function"]?["arguments"]?.GetValue<string>() ?? "{}";
+                            JsonObject a;
+                            try { a = JsonNode.Parse(argsJson)?.AsObject() ?? new JsonObject(); }
+                            catch
+                            {
+                                // Args truncados/invalidos (max_tokens corta o JSON no meio)
+                                // nao podem derrubar a belt: devolve erro ao modelo e segue.
+                                Log($"  [belt:{key}] args invalidos ({argsJson.Length} chars): {argsJson[..Math.Min(60, argsJson.Length)]}");
+                                sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]="ERRO: arguments invalidos/truncados" });
+                                continue;
+                            }
                             string path = a["path"]?.GetValue<string>() ?? "";
                             string content = a["content"]?.GetValue<string>() ?? "";
+                            if (path.Length == 0 || path.Any(char.IsControl) || path.Contains("..") || System.IO.Path.IsPathRooted(path))
+                            {
+                                Log($"  [belt:{key}] path recusado: {path.Replace("\n", "\\n").Replace("\r", "")[..Math.Min(50, path.Length)]}");
+                                sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]="ERRO: path invalido" });
+                                continue;
+                            }
                             string full = System.IO.Path.Combine(ws, path);
                             System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
                             System.IO.File.WriteAllText(full, content);
-                            sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c?["id"]?.GetValue<string>()??"", ["content"]=$"escrito {path}" });
+                            sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]=$"escrito {path}" });
                         }
                     }
-                    if (System.IO.File.Exists(scriptPath))
+                    // O modelo escolhe o nome do arquivo (com/sem acento); nao da para
+                    // exigir que seja exatamente safeTitle.sh. Resolve pelo titulo
+                    // normalizado e, se nao achar, aceita o .sh mais recente da tarefa.
+                    string? produced = System.IO.File.Exists(scriptPath) ? scriptPath : FindByTitle(ws, safeTitle);
+                    if (produced is not null)
                     {
-                        string script = System.IO.File.ReadAllText(scriptPath);
-                        var (code, outp) = Run("bash", ws, 60, "-n", System.IO.Path.GetFileName(scriptPath));
-                        if (code == 0) { scriptsOk++; Log($"  [belt:{key}] script OK: {System.IO.Path.GetFileName(scriptPath)} ({script.Length} bytes)"); }
-                        else Log($"  [belt:{key}] script SYNTAX FAIL: {System.IO.Path.GetFileName(scriptPath)}: {outp}");
+                        string script = System.IO.File.ReadAllText(produced);
+                        var (code, outp) = Run("bash", ws, 60, "-n", System.IO.Path.GetFileName(produced));
+                        if (code == 0) { scriptsOk++; Log($"  [belt:{key}] script OK: {System.IO.Path.GetFileName(produced)} ({script.Length} bytes)"); }
+                        else Log($"  [belt:{key}] script SYNTAX FAIL: {System.IO.Path.GetFileName(produced)}: {outp.Split('\n')[0]}");
                     }
                 }
 

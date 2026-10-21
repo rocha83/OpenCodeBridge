@@ -1,5 +1,63 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Tubo puro por perfil, coerção só no legado, shape de reasoning e sonda de args (2026-10-20)
+
+**Regressão de tools.** Em contexto longo/compactado o 12B deixou de emitir
+`tool_calls` nativos e passou a NARRAR `[Assistant tool call]: shell({...})`.
+A coerção da bridge falhava em dois pontos e o `catch` descartava em silêncio
+(`finish=stop`, nada executava): (a) args não-JSON — `\;` de
+`find ... -exec cat {} \;` e variante com aspas internas soltas; (b) o
+fechamento não removia o bloco narrado inteiro. Correções abaixo, todas com
+gate: **gestão da bridge só no cliente direto/legado**.
+
+**Roteamento por perfil (`--bridge-managed`).** `ManagedFor(model)` devolve
+`true` só para modelo **sem** sufixo de perfil (Web UI/direto) ou com
+`--bridge-managed true`. Cliente com perfil (`-plan/-build/-orch/-moe/
+-scripter/-exec`) = opencode traz o próprio harness: a bridge **não** coagia,
+**não** segura marcador de tool call, **não** limpa o histórico e **não** faz
+`stream_per_delta` — passa reto. `/api/status` publica
+`bridge_managed: "direct-only"`.
+
+**Coerção só no modo legado.** `coerceOn = LegacyHarness && CoerceNarrated &&
+managed`, aplicado no stream traduzido e no `ChatToResponses`; o strip de
+`[Assistant tool call]` no histórico (`InputToMessages`) também exige
+`LegacyHarness`. Produção roda `--legacy-harness 0`: o caminho do opencode é o
+do llama verbatim, como pedido.
+
+**Shape nativo de reasoning.** `response.reasoning_text.delta` com
+`output_index: 0` e `content_index: 0`; item `reasoning` com
+`content: [{ type: "reasoning_text", text }]` no `output_item.added`,
+`output_item.done` e no `completed`. Sem isso o opencode descarta o delta e o
+pensamento só aparece no fecho (efeito "snippet").
+
+**Parse tolerante (legado).** `RepairJsonEscapes` conserta escapes inválidos
+(`\;`) e `TryParseArgs` cai para um fallback de `command` com aspas soltas;
+`TryParseJson` tenta estrito e depois reparado. `StripNarratedCalls` remove o
+bloco inteiro (marcador + args + parêntese), não só o marcador.
+
+**Sonda `anti-repeat-args`.** A janela de 512 chars do `thinking`/`content` não
+pega marcador curto repetido **dentro dos `arguments`** de uma mesma call (ex.:
+`<tool_call|>` em loop, args crescendo até o `max_tokens` truncar o JSON no
+meio). Evento só-diagnóstico `{event:"anti-repeat-args", tool, chars, window,
+mode}` no acumulador de tool calls do stream e no `ChatToResponses`
+(`mode:"convert"`); **não** altera a saída. Provado por `/api/convert` com args
+de 1331 chars repetidos.
+
+**Harness das belts (teste, não bridge).** `JsonNode.Parse(arguments)` sem
+proteção abortava a belt quando o args vinha truncado (24k chars); path com
+`\n`/`..`/absoluto era escrito no workspace; workspace não era limpo (sobras
+inflavam o placar); o nome do arquivo era exigido igual ao `safeTitle.sh` (o
+modelo grava sem acento). Agora: args inválidos viram tool-result de erro,
+path é validado, workspace é recriado, nome é resolvido por título normalizado
+(sem acento/caixa) e o prompt do Scripter limita 80 linhas (script) / 20
+(companion).
+
+**Medições.** Suite unitária: 23 PASS / 6 SKIP (os 5 skips de coerção são por
+design sem `--legacy-harness 1`). E2E: devpipe PASS; mission C#+F# PASS 80s
+(`2.000000 / 5.000000`); standalone 6/6 PASS (oi, tools, write, devpipe,
+science-tools, mission-tools); belts diretas — verde PASS (5 scripts, 5
+executados) e azul PASS (3 scripts, 3 executados).
+
 ## Sonda de tools, nome real do subagente, behavior de workspace e tags no reasoning (2026-10-20)
 
 **Sonda em `ToolsToChat`.** A conversão Responses→chat tem três ramos com

@@ -39,7 +39,8 @@ internal static class Program
             var st = TestContext.GetObj(TestContext.Bridge + "/api/status").GetAwaiter().GetResult();
             TestContext.ServedModel = st["model"]?.GetValue<string>() ?? "";
             TestContext.ServedThinking = st["thinking"]?.GetValue<string>() ?? "events";
-            Console.WriteLine($"[test] served={TestContext.ServedModel} coder={TestContext.ServedIsCoder} thinking={TestContext.ServedThinking}");
+            TestContext.ServedLegacy = st["legacy_harness"]?.GetValue<bool>() ?? false;
+            Console.WriteLine($"[test] served={TestContext.ServedModel} coder={TestContext.ServedIsCoder} thinking={TestContext.ServedThinking} legacy={TestContext.ServedLegacy}");
         }
         catch (Exception ex) { Console.WriteLine($"[test] sem status: {ex.Message}"); }
 
@@ -57,6 +58,8 @@ internal static class Program
         TestContext.Run("U-convert-coerced-text-call", UnitConvertTests.ConvertCoercedTextCall);
         TestContext.Run("U-convert-coerced-angle-call", UnitConvertTests.ConvertCoercedAngleCall);
         TestContext.Run("U-convert-coerced-narrated-call", UnitConvertTests.ConvertCoercedNarratedCall);
+        TestContext.Run("U-convert-coerced-narrated-find", UnitConvertTests.ConvertCoercedNarratedFindExec);
+        TestContext.Run("U-convert-coerced-narrated-loose", UnitConvertTests.ConvertCoercedNarratedLooseQuotes);
         TestContext.Run("U-tools-execute", UnitToolsExecuteTests.ToolsExecute);
         TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
         TestContext.Run("U-sanitize-system-first", UnitBypassTests.SanitizeSystemFirst);

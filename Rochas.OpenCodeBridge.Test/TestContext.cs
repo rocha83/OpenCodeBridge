@@ -51,6 +51,14 @@ internal static class TestContext
     }
     // Modo thinking da bridge (events|off): asserts de reasoning só em events.
     public static string ServedThinking = "events";
+    /// <summary>Bridge com --legacy-harness 1: unico modo em que ha coercao de tools.</summary>
+    public static bool ServedLegacy;
+
+    /// <summary>Coercao de tool call so existe no modo legacy; fora dele e SKIP.</summary>
+    public static void RequireCoercion()
+    {
+        if (!ServedLegacy) Skip("bridge sem --legacy-harness 1 (coercao desligada por design)");
+    }
     public static bool WantsReasoning => ServedThinking == "events" && !ServedIsCoder;
     static int Passed;
     static int Failed;

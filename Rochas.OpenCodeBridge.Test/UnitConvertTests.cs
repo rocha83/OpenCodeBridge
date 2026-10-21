@@ -83,6 +83,7 @@ internal static class UnitConvertTests
 
     public static async Task ConvertCoercedTextCall()
     {
+        TestContext.RequireCoercion();
         // Texto com fenced call vira function_call. A coercao vale com
         // CoerceNarrated=true (default), independente de legacy_harness.
         var body = new JsonObject
@@ -116,6 +117,7 @@ internal static class UnitConvertTests
 
     public static async Task ConvertCoercedAngleCall()
     {
+        TestContext.RequireCoercion();
         // Formato cru do 3B na CPU (observado ao vivo): <{"name": ..}}> sem
         // fences nem tags — tem que coagir igual. CoerceNarrated=true (default).
         var body = new JsonObject
@@ -177,10 +179,11 @@ internal static class UnitConvertTests
 
     public static async Task ConvertCoercedNarratedCall()
     {
+        TestContext.RequireCoercion();
         // Formato do opencode/llama.cpp em contexto longo: o modelo copia o
         // historico e escreve "[Assistant tool call]: nome({...})" no corpo
-        // em vez de emitir chamada estruturada. CoerceNarrated (default) tem
-        // de reconstruir a function_call sem depender de legacy_harness.
+        // em vez de emitir chamada estruturada. No modo legacy a bridge
+        // reconstroi a function_call (fora dele o caminho e livre).
         var body = new JsonObject
         {
             ["model"] = "openai/gemma-4-12b",
@@ -208,5 +211,76 @@ internal static class UnitConvertTests
             ?? throw new Exception("sem function_call coagida (narrated)");
         TestContext.Check(call?["name"]?.GetValue<string>() == "write", "nome extraido (narrated)");
         TestContext.Check((call?["arguments"]?.GetValue<string>() ?? "").Contains("/tmp/opencode/narrado.txt"), "args extraidos (narrated)");
+    }
+
+    public static async Task ConvertCoercedNarratedFindExec()
+    {
+        TestContext.RequireCoercion();
+        // Caso real (sessao gemma-4-12b, 20/10): o modelo narra a chamada e o
+        // comando carrega um escape que NAO e JSON ("find ... -exec cat {} \;").
+        // Sem reparar o escape o parse morria em silencio e o turno virava
+        // prosa (coerce-narrated-miss): a tool nao executava.
+        var body = new JsonObject
+        {
+            ["model"] = "openai/gemma-4-12b",
+            ["tools"] = new JsonArray(new JsonObject
+            {
+                ["type"] = "function",
+                ["function"] = new JsonObject { ["name"] = "shell", ["description"] = "roda comando" }
+            }),
+            ["completion"] = new JsonObject
+            {
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["message"] = new JsonObject
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = "Vou buscar o arquivo.\n\n[Assistant tool call]: shell({\"command\":\"find . -name \\\"*evolution*.md\\\" -exec cat {} \\;\"})"
+                    }
+                }),
+                ["usage"] = new JsonObject { ["prompt_tokens"] = 20, ["completion_tokens"] = 15 }
+            }
+        };
+        var r = await TestContext.PostObj(TestContext.Bridge + "/api/convert", body);
+        var output = r["output"]?.AsArray() ?? throw new Exception("sem output");
+        var call = output.FirstOrDefault(o => o?["type"]?.GetValue<string>() == "function_call")?.AsObject()
+            ?? throw new Exception("sem function_call coagida (narrated find)");
+        string args = call?["arguments"]?.GetValue<string>() ?? "";
+        TestContext.Check(call?["name"]?.GetValue<string>() == "shell", "nome shell (narrated find)");
+        TestContext.Check(args.Contains("-exec cat"), "args preservam o comando (narrated find)");
+        TestContext.Check(args.Contains("\\\\;"), "escape \\; vira barra literal");
+    }
+
+    public static async Task ConvertCoercedNarratedLooseQuotes()
+    {
+        TestContext.RequireCoercion();
+        // Variante do mesmo bug: aspas internas SEM escape dentro do valor
+        // ("-name "*evolution*.md""), o que tambem invalida o JSON. O fallback
+        // de comando cru reconstroi os argumentos para a chamada nao morrer.
+        string content = "[Assistant tool call]: shell({\"command\":\"find . -name \"*evolution*.md\" -exec cat {} ;\"})";
+        var body = new JsonObject
+        {
+            ["model"] = "openai/gemma-4-12b",
+            ["tools"] = new JsonArray(new JsonObject
+            {
+                ["type"] = "function",
+                ["function"] = new JsonObject { ["name"] = "shell", ["description"] = "roda comando" }
+            }),
+            ["completion"] = new JsonObject
+            {
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["message"] = new JsonObject { ["role"] = "assistant", ["content"] = content }
+                }),
+                ["usage"] = new JsonObject { ["prompt_tokens"] = 20, ["completion_tokens"] = 15 }
+            }
+        };
+        var r = await TestContext.PostObj(TestContext.Bridge + "/api/convert", body);
+        var output = r["output"]?.AsArray() ?? throw new Exception("sem output");
+        var call = output.FirstOrDefault(o => o?["type"]?.GetValue<string>() == "function_call")?.AsObject()
+            ?? throw new Exception("sem function_call coagida (aspas soltas)");
+        string args = call?["arguments"]?.GetValue<string>() ?? "";
+        TestContext.Check(call?["name"]?.GetValue<string>() == "shell", "nome shell (aspas soltas)");
+        TestContext.Check(args.Contains("*evolution*.md"), "comando reconstruido (aspas soltas)");
     }
 }
