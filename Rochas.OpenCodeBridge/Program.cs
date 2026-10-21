@@ -312,15 +312,15 @@ internal static partial class Program
     // thinking ligado + temp media p/ planejar; build = thinking fundido +
     // temp media p/ executar; orch = coordena subagentes; moe = uso geral
     // hibrido; scripter = temp baixa (determinismo) e thinking off.
-    // Escala: 0.3 (min: build/scripter/exec) / 0.6 (plan/orch) / 0.8 (moe).
+    // Escala: 0.3 (min: build/scripter/exec) / 0.5 (plan/orch) / 0.8 (moe).
     // Request sem sufixo usa os
     // globais. O caminho Qwen3 padrao (sem sufixo) fica byte-identico.
     static readonly Dictionary<string, (double Temp, string Think)> Profiles =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["plan"] = (0.6, "events"),
+            ["plan"] = (0.5, "events"),
             ["build"] = (0.3, "off"),
-            ["orch"] = (0.6, "events"),
+            ["orch"] = (0.5, "events"),
             ["moe"] = (0.8, "events"),
             ["scripter"] = (0.3, "off"),
             ["exec"] = (0.3, "off"),
@@ -1194,6 +1194,7 @@ WriteJson(ctx, 200, new JsonObject
     /// <param name="body">Corpo original.</param>
     static void Passthrough(HttpListenerContext ctx, string body)
     {
+        var startedAt = DateTime.UtcNow;
         // opencode 1.x fala chat/completions direto (sem /v1/responses): o id
         // com sufixo de perfil (-plan/-build/-orch) precisa virar o Model
         // servido, senao o vLLM responde 404. Temperatura do perfil entra
@@ -1342,7 +1343,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHeadersRead);
         if (coerceLine && upstreamResponse.IsSuccessStatusCode)
         {
-            CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent, AnnouncedTools(outBody));
+            CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent, AnnouncedTools(outBody), startedAt);
             return;
         }
         ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
@@ -1397,7 +1398,13 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
             }
             // Sonda traffic FULL (só com DIAGNOSTICS; chat stream: integros).
-            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "chat-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = rawChatSse.Length, ["res"] = rawChatSse.ToString() });
+            if (Diagnostic)
+            {
+                string dump = rawChatSse.ToString();
+                var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "chat-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = dump.Length, ["res"] = dump };
+                AddPerf(traffic, startedAt, dump);
+                Log(traffic);
+            }
         }
         else
         {
@@ -1478,7 +1485,12 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
             // Sonda traffic FULL (só com DIAGNOSTICS; chat sem stream: integros).
-            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "chat", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json });
+            if (Diagnostic)
+            {
+                var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "chat", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json };
+                AddPerf(traffic, startedAt, json);
+                Log(traffic);
+            }
         }
         ctx.Response.Close();
     }
@@ -1514,7 +1526,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
     }
 
     /// <summary>Resposta chat sem parser server-side: coage texto em tool_calls e devolve JSON ou SSE sintetizado.</summary>
-    static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream, bool headersSent = false, List<string>? known = null)
+    static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream, bool headersSent = false, List<string>? known = null, DateTime startedAt = default)
     {
         string json;
         using (var reader = new StreamReader(upstreamResponse.Content.ReadAsStream(), new UTF8Encoding(false)))
@@ -1532,7 +1544,12 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         catch { /* corpo inesperado: devolve cru */ }
         Log(new JsonObject { ["event"] = "coerced-chat", ["model"] = Model, ["count"] = coerced });
         // Sonda traffic FULL (só com DIAGNOSTICS): resposta integra.
-        if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "coerced", ["model"] = Model, ["res_len"] = json.Length, ["res"] = json });
+        if (Diagnostic)
+        {
+            var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "coerced", ["model"] = Model, ["res_len"] = json.Length, ["res"] = json };
+            AddPerf(traffic, startedAt == default ? DateTime.UtcNow : startedAt, json);
+            Log(traffic);
+        }
         if (!wantStream)
         {
             ctx.Response.StatusCode = 200;
@@ -1798,7 +1815,13 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             ["tps_output"] = Math.Round(elapsed > 0 ? outTok / elapsed : 0, 1)
         });
         // Sonda traffic FULL (só com DIAGNOSTICS): traducao req/res integros.
-        if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "translate", ["model"] = requestedModel, ["req_len"] = chat.ToJsonString().Length, ["req"] = chat.ToJsonString(), ["res_len"] = responseObj.ToJsonString().Length, ["res"] = responseObj.ToJsonString() });
+        if (Diagnostic)
+        {
+            string dumpRes = responseObj.ToJsonString();
+            var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "translate", ["model"] = requestedModel, ["req_len"] = chat.ToJsonString().Length, ["req"] = chat.ToJsonString(), ["res_len"] = dumpRes.Length, ["res"] = dumpRes };
+            AddPerf(traffic, startedAt, dumpRes);
+            Log(traffic);
+        }
         AddMetrics(inTok, outTok, elapsed);
 
         // 4.7) Sem stream: devolve JSON direto.
@@ -1915,7 +1938,13 @@ var shape = new StringBuilder();
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
             }
             // Sonda traffic FULL (só com DIAGNOSTICS): pedido e SSE integros.
-            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "responses-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = rawSse.Length, ["res"] = rawSse.ToString() });
+            if (Diagnostic)
+            {
+                string dump = rawSse.ToString();
+                var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "responses-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = dump.Length, ["res"] = dump };
+                AddPerf(traffic, startedAt, dump);
+                Log(traffic);
+            }
         }
         else
         {
@@ -1939,7 +1968,12 @@ var shape = new StringBuilder();
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
             // Sonda traffic FULL (só com DIAGNOSTICS; sem stream: integros).
-            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "responses", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json });
+            if (Diagnostic)
+            {
+                var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "responses", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json };
+                AddPerf(traffic, startedAt, json);
+                Log(traffic);
+            }
         }
         ctx.Response.Close();
     }
@@ -3742,6 +3776,57 @@ if (type == "message")
             File.AppendAllText(LogPath, obj.ToJsonString(SerOpts) + "\n");
         }
         catch { /* log nunca derruba o pedido */ }
+    }
+
+    /// <summary>Acrescenta elapsed/tps ao dump de trafego (sonda DIAGNOSTIC).</summary>
+    /// <param name="ev">Evento de log (mutado).</param>
+    /// <param name="startedAt">Inicio do atendimento.</param>
+    /// <param name="responseText">Corpo/SSE da resposta (usage ou estimativa).</param>
+    static void AddPerf(JsonObject ev, DateTime startedAt, string? responseText = null)
+    {
+        double elapsed = Math.Max(0, (DateTime.UtcNow - startedAt).TotalSeconds);
+        var (inTok, outTok) = UsageTokens(responseText);
+        if (outTok <= 0 && !string.IsNullOrEmpty(responseText))
+            outTok = Math.Max(0, responseText.Length / 4); // estimativa quando o upstream nao manda usage
+        ev["elapsed"] = Math.Round(elapsed, 2);
+        ev["input_tokens"] = inTok;
+        ev["output_tokens"] = outTok;
+        ev["tps_output"] = Math.Round(elapsed > 0 ? outTok / elapsed : 0, 1);
+        ev["tps_total"] = Math.Round(elapsed > 0 ? (inTok + outTok) / elapsed : 0, 1);
+    }
+
+    /// <summary>Extrai input/output tokens de um JSON de resposta ou das linhas SSE.</summary>
+    static (int In, int Out) UsageTokens(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return (0, 0);
+        static int Pick(JsonObject u, string a, string b)
+            => u[a]?.GetValue<int>() ?? u[b]?.GetValue<int>() ?? 0;
+        try
+        {
+            var node = JsonNode.Parse(text);
+            if (node is JsonObject obj)
+            {
+                if (obj["usage"] is JsonObject u) return (Pick(u, "input_tokens", "prompt_tokens"), Pick(u, "output_tokens", "completion_tokens"));
+                if (obj["response"]?["usage"] is JsonObject ru) return (Pick(ru, "input_tokens", "prompt_tokens"), Pick(ru, "output_tokens", "completion_tokens"));
+            }
+        }
+        catch { /* pode ser SSE: varre as linhas data: */ }
+        foreach (var raw in text.Split('\n'))
+        {
+            string line = raw.Trim();
+            if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+            string data = line["data:".Length..].Trim();
+            if (data is "" or "[DONE]") continue;
+            try
+            {
+                var node = JsonNode.Parse(data);
+                if (node is not JsonObject o) continue;
+                if (o["usage"] is JsonObject u) return (Pick(u, "input_tokens", "prompt_tokens"), Pick(u, "output_tokens", "completion_tokens"));
+                if (o["response"]?["usage"] is JsonObject ru) return (Pick(ru, "input_tokens", "prompt_tokens"), Pick(ru, "output_tokens", "completion_tokens"));
+            }
+            catch { }
+        }
+        return (0, 0);
     }
 
     /// <summary>Sonda Serilog do AntiRepeat; nunca derruba o pedido.</summary>

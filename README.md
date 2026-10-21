@@ -7,7 +7,7 @@ traduz Responses ⇄ chat, cuida de thinking + tool calling, casa **perfil por
 sufixo do model id** e aplica as **caudas de harness** (tools e comportamento).
 
 Linha local desta máquina: **Gemma 4** — `gemma-4-12b` (**GPU1**) e
-`gemma-4-e2b` (**GPU2**, multimodal), os dois 100% em GPU (`-ngl 99`) e os dois
+`gemma-4-e2b` (**GPU2**, text-only/coder), os dois 100% em GPU (`-ngl 99`) e os dois
 em **TurboQuant** (`turbo3` no KV), convivendo em **12 GB de VRAM** (RTX 3060).
 
 ## Componentes
@@ -23,8 +23,8 @@ em **TurboQuant** (`turbo3` no KV), convivendo em **12 GB de VRAM** (RTX 3060).
 
 | nome | modelo | llama | bridge |
 |---|---|---|---|
-| **GPU1** | `gemma-4-12b` (`Q4_K_M`) | `:4100` | `:4124` |
-| **GPU2** | `gemma-4-e2b` (`Q3_K_M`) | `:4110` | `:4125` |
+| **GPU1** | `gemma-4-12b` (`Q3_K_L` uncensored + mmproj) | `:4100` | `:4124` |
+| **GPU2** | `gemma-4-e2b` (`Q4_K_M` coder, text-only) | `:4110` | `:4125` |
 
 > **Nota CPU/GPU2.** O sufixo **CPU** em nomes históricos
 > (`llama-cpu.service`, `bridge-cpu.service`, `--cpu-max-tokens`, provider
@@ -35,8 +35,8 @@ em **TurboQuant** (`turbo3` no KV), convivendo em **12 GB de VRAM** (RTX 3060).
 
 ## Cenário de testes (resumo)
 
-Regime padrão: **GPU1 `-c 131072 -np 1` (128k/slot)** + **GPU2 `-c 131072
--np 2` (2×65536)**, ambos `turbo3` → ~11,15–11,20 GiB usados, ~0,85 GiB livres.
+Regime padrão: **GPU1 `-c 229376 -np 2` (2×112k/slot)** + **GPU2 `-c 393216
+-np 4` (4×96k)**, ambos `turbo3` → ~11,15 GiB usados, ~0,60 GiB livres.
 É o cenário dos testes de integração: as duas linhas servindo ao mesmo tempo no
 mesmo GPU (a taxa de cada uma cai ~metade sob concorrência). A GPU1 sobe
 **antes** da GPU2.
@@ -162,9 +162,9 @@ edit) — prosa que só *menciona* uma tool não vira chamada.
 
 C# bridge between OpenCode (`/v1/responses`) and llama.cpp, plus an MVC web UI
 with its own agentic tool loop. Local line: **Gemma 4** — `gemma-4-12b` (GPU1)
-and `gemma-4-e2b` (**GPU2**, multimodal), both fully on GPU (`-ngl 99`) and both
+and `gemma-4-e2b` (**GPU2**, text-only/coder), both fully on GPU (`-ngl 99`) and both
 using TurboQuant (`turbo3` KV, `TURBO_AUTO_ASYMMETRIC=0`) inside 12 GB of VRAM.
-GPU1 runs `-c 131072 -np 1` (128k/slot); GPU2 runs `-c 131072 -np 2` (2×65536).
+GPU1 runs `-c 229376 -np 2` (2×112k/slot); GPU2 runs `-c 393216 -np 4` (4×96k, text-only).
 Keep on with Gemma: `--passthrough-responses true`, `--legacy-harness 0`,
 `--anti-repeat 1 --anti-repeat-window 512 --anti-repeat-retry 1`,
 `--coerce-narrated 1`, `--thinking-off-roles Build,Scripter,Exec`, plus the

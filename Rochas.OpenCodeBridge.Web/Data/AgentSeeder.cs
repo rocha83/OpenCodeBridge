@@ -11,7 +11,7 @@ public static class AgentSeeder
         double Tps, int Active, string Tools);
 
     // Snapshot da revisão (9B Q4 ctx 192k na GPU :4124, Q3 texto 64k CPU :4110 :4125).
-    // Temperaturas: Plan/Orch 0.6, MoE 0.8, Build/Scripter/Exec 0.3 (espelha opencode.json
+    // Temperaturas: Plan/Orch 0.5, MoE 0.8, Build/Scripter/Exec 0.3 (espelha opencode.json
     // e o Profiles da bridge).
     // Scripter e Exec compartilham o prompt; só o Exec tem 'exec' no harness
     // (Scripter cria+valida com 'bash -n'; Exec valida e executa 'bash <arquivo>').
@@ -23,7 +23,7 @@ public static class AgentSeeder
             "planner", "Plan", 30.0, 1,
             "glob,read,grep,git,fetch,display,subagent"),
         new(2, "Engenheiro de Software - Plan - Gemma4 12B Q4 GPU", "gemma-4-12b", "http://127.0.0.1:4124",
-            0.6, "events",
+            0.5, "events",
             "Voce e um agente autonomo arquiteto engenheiro de software e dados (ML e NN) senior adepto das melhores praticas SOLID, design DDD clean arch e uso de ORM, delega tarefas a subagentes quando entende o contexto moderado (192k), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
             "executor", "Plan", 30.0, 1,
             "glob,read,grep,git,fetch,display,subagent"),
@@ -33,7 +33,7 @@ public static class AgentSeeder
             "orchestrator", "Build", 30.0, 1,
             "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec,install,subagent"),
         new(4, "Engenheiro de Software - Orch - Gemma4 12B Q4 GPU", "gemma-4-12b", "http://127.0.0.1:4124",
-            0.6, "events",
+            0.5, "events",
             "Voce e um agente arquiteto engenheiro de software e dados (ML e NN) senior, analise o enunciado expanda o compreendido divida em fases e delegue para subagentes desenvolvedores senior (porem menor capacidade de inferencia), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito. ",
             "executor", "Build", 30.0, 1,
             "glob,read,grep,git,fetch,display,subagent"),
@@ -48,7 +48,7 @@ public static class AgentSeeder
             "", "Build", 30.0, 1,
             "glob,read,grep,git,fetch,display,write,edit,proc,shell,install"),
         new(7, "Engenheiro de Software - Plan - Gemma4 E2B Q3 CPU", "gemma-4-e2b", "http://127.0.0.1:4125",
-            0.6, "events",
+            0.5, "events",
             "Voce e um agente autonomo arquiteto engenheiro de software e dados (ML e NN) senior adepto das melhores praticas SOLID, design DDD clean arch e uso de ORM, delega tarefas a subagentes quando entende que o contexto ficou limitado (80k), nunca se auto-apresente salvo pedido direto",
             "executor", "Plan", 2.5, 1,
             "glob,read,grep,git,fetch,display,subagent"),
