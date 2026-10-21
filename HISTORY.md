@@ -1,5 +1,27 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## ToolStrategy: resgate de `execute` no padrão Code Mode (2026-10-21)
+- **Problema medido:** sessão opencode `Greeting` (agente build, `gemma4-12b-build`)
+  em loop de 15 chamadas `execute` com `return tools.shell({...})`; o sandbox
+  devolveu `Unknown tool 'shell'. Use search to find available tools.` para todas
+  (`executed=false`, `metadata.error=true`), sem nunca criar a pasta/arquivo.
+- **Causa raiz:** os prompts dos agentes (`agents/build.md`, `build-exec.md`,
+  `scripter.md`) afirmavam `Sandbox da tool execute: JavaScript (CommonJS com
+  require/module.exports)` — falso: o sandbox só expõe namespaces (`opencode.*`,
+  `browser`), sem `require`/`fs`/`tools.shell`. O 12B obedeceu o prompt e tentou
+  `require('fs')` e depois `tools.shell`.
+- **Correção:** (1) frase corrigida nos prompts dos agentes — tools de arquivo são
+  chamadas diretas, `execute` só namespaces do catálogo; (2) na bridge, apenas o
+  resgate determinístico `execute{code:"return tools.X({...})"}` → tool direta `X`
+  (evento `tool-unwrap`, subset JSON5, `bash`/`sh` → `shell`). Nenhuma injeção de
+  prompt na bridge: com `--harness 0` o prompt do opencode passa intacto.
+- **Testes:** 6 units (`U-toolstrategy-*`) + suíte unit completa; build Release
+  0 erros/0 avisos.
+- **E2E real:** pasta + `notas.txt` + `git init/add/commit` concluído em
+  `/tmp/opencode/tooltest/projeto_teste` (commit `8efd479`), com `--harness 0`.
+- **Prova HTTP:** `POST /api/convert` com `function_call` `execute` →
+  `function_call` `shell` com `{"command":"mkdir -p projeto_teste && ..."}`.
+
 ## Bridge — Gemma 4 (12B denso + E2B): tubo puro e bateria E2E (2026-10-18, **parcial**)
 - **Escopo:** validar a bridge como frente única para a família **Gemma 4** (12B denso
   e E2B multimodal) no papel de modelo QA, no lugar da linha Qwen 9B/4B.

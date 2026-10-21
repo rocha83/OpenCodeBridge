@@ -64,6 +64,12 @@ internal static partial class Program
     // e sintetiza tool_calls. Liga via --coerce-text-tools ou auto quando o
     // model contém "cpu". Qwen3/AWQ (parsers nativos) ficam intactos.
     static bool CoerceTextTools;
+    // ToolStrategy: resgate deterministico do padrao Code Mode
+    // execute{ code: "return tools.shell({...})" } -> shell({...}).
+    // Independe de --harness: a regra e do formato Code Mode (o modelo tenta
+    // tools.shell, recebe "Unknown tool 'shell'" e entra em loop). A instrucao
+    // de uso mora no prompt do agente (agents/*.md), nunca na bridge.
+    static bool ToolStrategy = true;
     static bool AntiRepeat = true;                               // AntiRepeat: observa o thinking em stream e conteve repeticao
     // Inibidor mestre do harness da bridge (--harness 0): com ele desligado a
     // bridge vira tubo puro (sem sufixo guardrail, sem stop, sem pattern-strip,
@@ -146,6 +152,7 @@ internal static partial class Program
             if (cfg["usersDb"]?.GetValue<string>() is string udb && udb.Length > 0) Auth.UsersDbPath = udb;
             if (cfg["passthroughResponses"]?.GetValue<bool>() is bool pt) PassthroughResponses = pt;
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
+            if (cfg["toolStrategy"]?.GetValue<bool>() is bool tstrat) ToolStrategy = tstrat;
             if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
             if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham && ham.Length > 0) HarnessToolsTail = ham;
             if (cfg["harnessGuardTail"]?.GetValue<string>() is string ht) HarnessGuardTail = ht;
@@ -457,6 +464,7 @@ internal static partial class Program
                 case "--users-db": Auth.UsersDbPath = cliArgs[i + 1]; break;
                 case "--passthrough-responses": PassthroughResponses = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--tool-strategy": ToolStrategy = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--legacy-harness": LegacyHarness = cliArgs[i + 1] is not "false" and not "0"; break;
@@ -735,6 +743,7 @@ WriteJson(ctx, 200, new JsonObject
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
         ["passthrough_responses"] = PassthroughResponses,
+        ["tool_strategy"] = ToolStrategy,
         ["cpu_max_tokens"] = CpuMaxTokens,
         ["harness"] = Harness, ["legacy_harness"] = LegacyHarness,
         ["uptime_seconds"] = (long)(DateTime.UtcNow - StartedAt).TotalSeconds,
@@ -1578,6 +1587,206 @@ var shape = new StringBuilder();
             Log(new JsonObject { ["event"] = "pattern-strip", ["mode"] = mode, ["dropped"] = dropped, ["tools"] = ToolNames(tools as JsonArray) });
     }
 
+    // ---------------------------------------------------------------------
+    // 3.9) Estrategia de tools (ToolStrategy)
+    //   O opencode expoe a tool "execute" (Code Mode) cujo sandbox so contem
+    //   os namespaces do catalogo. Modelos pequenos (Gemma 4 12B) tentam
+    //   `return tools.shell({...})` dentro de execute, recebem
+    //   "Unknown tool 'shell'" e repetem a mesma chamada em loop.
+    //   Resgate deterministico: execute com UMA chamada tools.X({...}) vira a
+    //   tool direta X (nome/args parseados); qualquer outra forma passa
+    //   intacta. A nota de estrategia no system reduz a reincidencia.
+    // ---------------------------------------------------------------------
+    static readonly Regex ReExecuteCall = new(
+        @"^(?:return\s+|await\s+)?tools\s*(?:\.\s*([A-Za-z_$][\w$]*)|\[\s*['""]([A-Za-z_$][\w$]*)['""]\s*\])\s*\(\s*(\{[\s\S]*\})\s*\)\s*;?$",
+        RegexOptions.Compiled);
+
+    static readonly HashSet<string> DirectTools = new(StringComparer.Ordinal)
+        { "shell", "bash", "sh", "read", "write", "edit", "grep", "glob", "fetch", "webfetch", "git" };
+
+    /// <summary>Resgata execute com uma unica chamada tools.X({...}) p/ a tool direta X.</summary>
+    /// <param name="name">Nome original da tool.</param>
+    /// <param name="arguments">Argumentos JSON originais.</param>
+    /// <returns>Nome/argumentos efetivos (inalterados quando nao se aplica).</returns>
+    internal static (string Name, string Arguments) UnwrapExecuteCall(string name, string arguments)
+    {
+        if (!ToolStrategy || !string.Equals(name, "execute", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(arguments))
+            return (name, arguments);
+        try
+        {
+            string code = JsonNode.Parse(arguments)?["code"]?.GetValue<string>() ?? "";
+            var match = ReExecuteCall.Match(StripLeadingJsComments(code).Trim());
+            if (!match.Success) return (name, arguments);
+            string tool = match.Groups[1].Success && match.Groups[1].Value.Length > 0
+                ? match.Groups[1].Value
+                : match.Groups[2].Value;
+            if (tool is "bash" or "sh") tool = "shell";
+            if (!DirectTools.Contains(tool)) return (name, arguments);
+            if (!TryParseJsValue(match.Groups[3].Value, out JsonNode? parsed) || parsed is not JsonObject argsObject)
+                return (name, arguments);
+            Log(new JsonObject { ["event"] = "tool-unwrap", ["from"] = "execute", ["to"] = tool });
+            return (tool, argsObject.ToJsonString(SerOpts));
+        }
+        catch { return (name, arguments); }
+    }
+
+    /// <summary>Descarta comentarios JS iniciais (// e /* */) antes da chamada.</summary>
+    /// <param name="code">Codigo do sandbox.</param>
+    /// <returns>Codigo sem comentarios iniciais.</returns>
+    static string StripLeadingJsComments(string code)
+    {
+        int i = 0;
+        while (i < code.Length)
+        {
+            while (i < code.Length && char.IsWhiteSpace(code[i])) i++;
+            if (i + 1 < code.Length && code[i] == '/' && code[i + 1] == '/')
+            {
+                while (i < code.Length && code[i] != '\n') i++;
+                continue;
+            }
+            if (i + 1 < code.Length && code[i] == '/' && code[i + 1] == '*')
+            {
+                int end = code.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                if (end < 0) return code[i..];
+                i = end + 2;
+                continue;
+            }
+            break;
+        }
+        return code[i..];
+    }
+
+    /// <summary>Parseia um valor JS (subset JSON5) consumindo todo o texto.</summary>
+    /// <param name="text">Literal JS.</param>
+    /// <param name="node">Valor convertido (null quando falha).</param>
+    /// <returns>True quando o literal inteiro e valido.</returns>
+    static bool TryParseJsValue(string text, out JsonNode? node)
+    {
+        node = null;
+        try
+        {
+            int i = 0;
+            node = ParseJsValue(text, ref i);
+            SkipJsSpace(text, ref i);
+            return i == text.Length;
+        }
+        catch { node = null; return false; }
+    }
+
+    /// <summary>Valor JS: objeto, array, string (' " `), booleano, null ou numero.</summary>
+    static JsonNode? ParseJsValue(string s, ref int i)
+    {
+        SkipJsSpace(s, ref i);
+        if (i >= s.Length) throw new FormatException("valor JS ausente");
+        char c = s[i];
+        if (c == '{') return ParseJsObjectBody(s, ref i);
+        if (c == '[') return ParseJsArrayBody(s, ref i);
+        if (c is '"' or '\'' or '`') return JsonValue.Create(ParseJsString(s, ref i));
+        if (s.AsSpan(i).StartsWith("true", StringComparison.Ordinal)) { i += 4; return JsonValue.Create(true); }
+        if (s.AsSpan(i).StartsWith("false", StringComparison.Ordinal)) { i += 5; return JsonValue.Create(false); }
+        if (s.AsSpan(i).StartsWith("null", StringComparison.Ordinal)) { i += 4; return null; }
+        return JsonValue.Create(ParseJsNumber(s, ref i));
+    }
+
+    /// <summary>Objeto JS {chave: valor, ...} (chave identificador ou string).</summary>
+    static JsonObject ParseJsObjectBody(string s, ref int i)
+    {
+        i++; // {
+        var obj = new JsonObject();
+        while (true)
+        {
+            SkipJsSpace(s, ref i);
+            if (i >= s.Length) throw new FormatException("objeto JS sem fechamento");
+            if (s[i] == '}') { i++; return obj; }
+            string key = s[i] is '"' or '\'' or '`' ? ParseJsString(s, ref i) : ReadJsIdentifier(s, ref i);
+            SkipJsSpace(s, ref i);
+            if (i >= s.Length || s[i] != ':') throw new FormatException("objeto JS sem ':'");
+            i++;
+            obj[key] = ParseJsValue(s, ref i);
+            SkipJsSpace(s, ref i);
+            if (i < s.Length && s[i] == ',') { i++; continue; }
+            if (i < s.Length && s[i] == '}') { i++; return obj; }
+            throw new FormatException("objeto JS invalido");
+        }
+    }
+
+    /// <summary>Array JS [valor, ...].</summary>
+    static JsonArray ParseJsArrayBody(string s, ref int i)
+    {
+        i++; // [
+        var arr = new JsonArray();
+        while (true)
+        {
+            SkipJsSpace(s, ref i);
+            if (i >= s.Length) throw new FormatException("array JS sem fechamento");
+            if (s[i] == ']') { i++; return arr; }
+            arr.Add(ParseJsValue(s, ref i));
+            SkipJsSpace(s, ref i);
+            if (i < s.Length && s[i] == ',') { i++; continue; }
+            if (i < s.Length && s[i] == ']') { i++; return arr; }
+            throw new FormatException("array JS invalido");
+        }
+    }
+
+    /// <summary>String JS com aspas simples, duplas ou backtick (sem interpolacao).</summary>
+    static string ParseJsString(string s, ref int i)
+    {
+        char quote = s[i++];
+        var sb = new StringBuilder();
+        while (i < s.Length)
+        {
+            char c = s[i++];
+            if (c == quote) return sb.ToString();
+            if (c == '\\' && i < s.Length)
+            {
+                char e = s[i++];
+                switch (e)
+                {
+                    case 'n': sb.Append('\n'); break;
+                    case 't': sb.Append('\t'); break;
+                    case 'r': sb.Append('\r'); break;
+                    case 'b': sb.Append('\b'); break;
+                    case 'f': sb.Append('\f'); break;
+                    case 'u':
+                        if (i + 4 > s.Length) throw new FormatException("escape unicode curto");
+                        sb.Append((char)int.Parse(s.AsSpan(i, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture));
+                        i += 4;
+                        break;
+                    default: sb.Append(e); break;
+                }
+                continue;
+            }
+            if (quote == '`' && c == '$' && i < s.Length && s[i] == '{')
+                throw new FormatException("template com interpolacao nao suportado");
+            sb.Append(c);
+        }
+        throw new FormatException("string JS sem fechamento");
+    }
+
+    /// <summary>Numero JS (inteiro ou decimal, notacao cientifica).</summary>
+    static double ParseJsNumber(string s, ref int i)
+    {
+        int start = i;
+        while (i < s.Length && (char.IsDigit(s[i]) || s[i] is '-' or '+' or '.' or 'e' or 'E')) i++;
+        if (i == start) throw new FormatException("numero JS invalido");
+        return double.Parse(s[start..i], NumberStyles.Float, CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>Identificador JS (chave sem aspas).</summary>
+    static string ReadJsIdentifier(string s, ref int i)
+    {
+        int start = i;
+        while (i < s.Length && (char.IsLetterOrDigit(s[i]) || s[i] is '_' or '$')) i++;
+        if (i == start) throw new FormatException("chave JS invalida");
+        return s[start..i];
+    }
+
+    /// <summary>Pula espacos (e quebras) do literal JS.</summary>
+    static void SkipJsSpace(string s, ref int i)
+    {
+        while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+    }
+
     /// <summary>AntiRepeat: a cauda (janela) do thinking ja apareceu antes no proprio stream?</summary>
     /// <param name="accumulated">Thinking acumulado ate aqui.</param>
     /// <param name="window">Tamanho da cauda comparada (chars).</param>
@@ -2152,11 +2361,12 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         foreach (var (_, acc) in toolAccum)
         {
             string arguments = acc.Args.ToString();
-            toolList.Add((acc.Id, acc.Name, arguments));
+            var (effectiveName, effectiveArgs) = UnwrapExecuteCall(acc.Name, arguments);
+            toolList.Add((acc.Id, effectiveName, effectiveArgs));
             var item = new JsonObject
             {
                 ["type"] = "function_call", ["id"] = acc.Id, ["call_id"] = acc.Id,
-                ["name"] = acc.Name, ["arguments"] = arguments
+                ["name"] = effectiveName, ["arguments"] = effectiveArgs
             };
             Emit("response.output_item.added", new JsonObject
             {
@@ -2469,7 +2679,8 @@ if (type == "message")
                 string nativeName = funcObj["name"]?.GetValue<string>() ?? "";
                 if (nativeName.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
                     nativeName = nativeName["default.".Length..];
-                toolCalls.Add((id, nativeName, JsonToString(funcObj["arguments"])));
+                var (effectiveName, effectiveArgs) = UnwrapExecuteCall(nativeName, JsonToString(funcObj["arguments"]));
+                toolCalls.Add((id, effectiveName, effectiveArgs));
             }
         }
         // Coerção: sem tool_calls nativos e com tools pedidas, extrai do texto

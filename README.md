@@ -29,6 +29,23 @@ só remove itens `reasoning` e funde `instructions`/system no inicial —
 formato Responses padrão, `tool_choice` do chamador, deltas de
 `function_call` traduzidos ao vivo, `usage` real no stream.
 
+## Estratégia de tools (Code Mode)
+
+O opencode anuncia `execute` (sandbox JS) junto das tools diretas. Modelos
+pequenos tentam `return tools.shell({...})` dentro de `execute` e recebem
+`Unknown tool 'shell'` — o sandbox só expõe os namespaces do catálogo Code Mode,
+nunca `shell`/`read`/`write`/`require('fs')`.
+
+A instrução de uso vive no **prompt do agente** (`agents/build.md`,
+`build-exec.md`, `scripter.md`), não na bridge: com `--harness 0` o prompt do
+opencode atravessa intacto.
+
+Com `--tool-strategy 1` (padrão) a bridge só faz o **resgate determinístico**:
+`execute{ code: "return tools.shell({...})" }` vira a tool direta correspondente
+(evento `tool-unwrap`); `bash`/`sh` → `shell`; qualquer outro código
+(`require`/fs, namespaces do catálogo) passa intacto. Desligue com
+`--tool-strategy 0` (ou `"toolStrategy": false` no appsettings).
+
 ## Build e testes
 
 ```sh

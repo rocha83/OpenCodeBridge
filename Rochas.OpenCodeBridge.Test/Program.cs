@@ -49,6 +49,12 @@ internal static class Program
         TestContext.Run("U-convert-coerced-text-call", UnitConvertTests.ConvertCoercedTextCall);
         TestContext.Run("U-convert-coerced-angle-call", UnitConvertTests.ConvertCoercedAngleCall);
         TestContext.Run("U-tools-execute", UnitToolsExecuteTests.ToolsExecute);
+        TestContext.Run("U-toolstrategy-execute-shell", UnitToolStrategyTests.ExecuteToShell);
+        TestContext.Run("U-toolstrategy-execute-write", UnitToolStrategyTests.ExecuteToWriteSingleQuotes);
+        TestContext.Run("U-toolstrategy-bash-to-shell", UnitToolStrategyTests.ExecuteBashMapsToShell);
+        TestContext.Run("U-toolstrategy-fs-intact", UnitToolStrategyTests.ExecuteWithFsStaysIntact);
+        TestContext.Run("U-toolstrategy-nonexecute-intact", UnitToolStrategyTests.NonExecuteStaysIntact);
+        TestContext.Run("U-toolstrategy-foreign-namespace", UnitToolStrategyTests.ForeignNamespaceStaysIntact);
         TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
         TestContext.Run("U-sanitize-system-first", UnitBypassTests.SanitizeSystemFirst);
         TestContext.Run("U-translate-system-first", UnitBypassTests.TranslateSystemFirst);
