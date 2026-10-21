@@ -86,7 +86,7 @@ class RubricTest(unittest.TestCase):
         for key, prompt in BELTS:
             self.assertTrue(prompt.startswith(("Crie", "Especifique")), key)
             for noise in ("BUILD-OK", "ORCH-OK", "SCRIPTER-OK", "subagente scripter",
-                          "responda apenas", "use a tool"):
+                          "responda apenas", "use a tool", "Divida em fases"):
                 self.assertNotIn(noise, prompt, key)
 
     def test_orch_passa_com_build_direto(self) -> None:
