@@ -1,0 +1,74 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "alt12b/gemma-4-12b",
+  "small_model": "alt12b/gemma-4-12b",
+  "enabled_providers": ["alt12b", "alt-e2b"],
+  "providers": {
+    "alt12b": {
+      "name": "llama :4100 (12B, thinking off) via pattern-bridge :4300",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://127.0.0.1:4300/v1",
+        "apiKey": "guest@123"
+      },
+      "options": {
+        "timeout": 1800000,
+        "headerTimeout": 900000,
+        "chunkTimeout": 900000
+      },
+      "models": {
+        "gemma-4-12b": {
+          "modelID": "gemma-4-12b",
+          "name": "Gemma4 12B local (thinking off)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 8192
+          },
+          "temperature": 0.5
+        }
+      },
+      "body": {
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      }
+    },
+    "alt-e2b": {
+      "name": "llama :4110 (E2B, thinking off) via pattern-bridge :4301",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://127.0.0.1:4301/v1",
+        "apiKey": "guest@123"
+      },
+      "options": {
+        "timeout": 1800000,
+        "headerTimeout": 900000,
+        "chunkTimeout": 900000
+      },
+      "models": {
+        "gemma-4-e2b": {
+          "modelID": "gemma-4-e2b",
+          "name": "Gemma4 E2B local (thinking off, 64k)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 65536,
+            "output": 8192
+          },
+          "temperature": 0.3
+        }
+      },
+      "body": {
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      }
+    }
+  }
+}

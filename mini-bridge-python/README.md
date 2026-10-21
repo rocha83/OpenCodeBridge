@@ -23,7 +23,7 @@ mesma do `StripUnanchoredPatterns` da bridge C#:
 | passthrough | se nenhum `pattern` foi removido, o corpo original segue **byte a byte** |
 | escopo do filtro | só `tools` / `functions` (chat/completions **e** responses), recursivo |
 | streaming | SSE repassado em fluxo, com encerramento no `data: [DONE]` |
-| dump de stream | corpo inteiro fica **em memória** e é gravado no fim, **mesmo em erro/queda** (`--dump-stream DIR`) |
+| dump de stream | corpo inteiro fica **em memória** e é gravado no fim, **mesmo em erro/queda** (`--dump-stream DIR`); o `.meta.json` inclui `usage` com `prompt_tokens`, `completion_tokens`, `prompt_tps` e `predicted_tps` |
 | erro upstream | corpo (>=400) é bufferizado, devolvido com `Content-Length` e logado em `error_body` |
 | auditoria | JSONL por request: status, ms, bytes, `pattern_strip`, hits, tools, caminho do dump |
 

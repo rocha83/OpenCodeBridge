@@ -45,6 +45,7 @@ class Config:
     api_key: str | None = None
     log_path: str | None = None
     dump_dir: str | None = None
+    dump_request: bool = False
     verbose: bool = False
     timeout: float = 1800.0
 
@@ -59,6 +60,45 @@ def log_event(event: dict) -> None:
     with _log_lock:
         with open(CFG.log_path, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
+
+
+def extract_usage(raw: bytes) -> dict:
+    """Extrai tokens e tk/s do ultimo chunk usage/timings do SSE."""
+    out: dict = {}
+    try:
+        text = raw.decode("utf-8", "replace")
+    except Exception:
+        return out
+    usage: dict = {}
+    timings: dict = {}
+    for block in text.split("\n\n"):
+        for line in block.splitlines():
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if payload == "[DONE]" or not payload:
+                continue
+            try:
+                chunk = json.loads(payload)
+            except ValueError:
+                continue
+            if not isinstance(chunk, dict):
+                continue
+            if isinstance(chunk.get("usage"), dict):
+                usage = chunk["usage"]
+            if isinstance(chunk.get("timings"), dict):
+                timings = chunk["timings"]
+    if usage:
+        out["prompt_tokens"] = usage.get("prompt_tokens")
+        out["completion_tokens"] = usage.get("completion_tokens")
+        out["total_tokens"] = usage.get("total_tokens")
+        details = usage.get("prompt_tokens_details")
+        if isinstance(details, dict):
+            out["cache_tokens"] = details.get("cached_tokens")
+    if timings:
+        out["prompt_tps"] = timings.get("prompt_per_second")
+        out["predicted_tps"] = timings.get("predicted_per_second")
+    return out
 
 
 DUMP_CAP = 64 * 1024 * 1024  # 64 MiB por resposta; acima disso marca truncado
@@ -98,11 +138,14 @@ def write_dump(path: str, method: str, status: int, ms: int, raw: bytes,
         "pattern_strip": dropped,
         "hits": hits,
         "note": note,
+        "usage": extract_usage(body),
         "stream": str(base.with_suffix(".stream")),
     }
     base.with_suffix(".meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8"
     )
+    if CFG.dump_request:
+        base.with_suffix(".req.json").write_bytes(raw)
     return meta["stream"]
 
 
@@ -381,6 +424,8 @@ def main() -> int:
     ap.add_argument("--log", default=None, help="JSONL de cada request")
     ap.add_argument("--dump-stream", default=None, metavar="DIR",
                     help="grava o stream completo (memoria->disco) no fim de cada request")
+    ap.add_argument("--dump-request", action="store_true",
+                    help="grava tambem o corpo da request (.req.json) junto do dump")
     ap.add_argument("--timeout", type=float, default=1800.0)
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
@@ -389,6 +434,7 @@ def main() -> int:
     CFG.api_key = args.api_key
     CFG.log_path = args.log
     CFG.dump_dir = args.dump_stream
+    CFG.dump_request = args.dump_request
     CFG.verbose = args.verbose
     CFG.timeout = args.timeout
 

@@ -1,54 +1,64 @@
 #!/usr/bin/env bash
-# Sobe/derruba a mini bridge python (pattern-strip + dump de stream).
-# Uso:
-#   ./run.sh start [porta] [upstream]   # default 4300 http://127.0.0.1:4100
-#   ./run.sh stop
-#   ./run.sh status
-#   ./run.sh dump [dir]                 # roda o analisador nos dumps
+# Sobe a mini bridge (pattern-strip) e confere os 4 modelos/agentes ALT.
+# Uso: ./run-alt.sh [start|stop|status|models]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-PORT="${2:-${PORT:-4300}}"
-UPSTREAM="${3:-${UPSTREAM:-http://127.0.0.1:4100}}"
-KEY="${API_KEY:-guest@123}"
-LOG="$ROOT/logs/bridge-$PORT.jsonl"
-DUMPS="$ROOT/logs/dumps-$PORT"
-PIDFILE="$ROOT/logs/bridge-$PORT.pid"
+KEY='guest@123'
+PIDS="$ROOT/bridge.pids"
 
-cmd="${1:-status}"
+start_bridge() { # port upstream log
+  python3 "$ROOT/pattern_bridge.py" --port "$1" --upstream "$2" \
+    --api-key "$KEY" --log "$ROOT/bridge-$1.jsonl" --verbose \
+    >>"$ROOT/bridge-$1.out" 2>&1 &
+  echo $!
+}
+
+cmd="${1:-start}"
 case "$cmd" in
   start)
-    mkdir -p "$ROOT/logs" "$DUMPS"
-    setsid nohup python3 "$ROOT/pattern_bridge.py" \
-      --port "$PORT" --upstream "$UPSTREAM" --api-key "$KEY" \
-      --log "$LOG" --dump-stream "$DUMPS" --verbose \
-      >"$ROOT/logs/bridge-$PORT.out" 2>&1 < /dev/null &
-    echo $! >"$PIDFILE"
+    : >"$PIDS"
+    start_bridge 4300 http://127.0.0.1:4100 >>"$PIDS"
+    start_bridge 4301 http://127.0.0.1:4110 >>"$PIDS"
     sleep 1
-    curl -s -m 5 "http://127.0.0.1:$PORT/health" || { echo "FALHOU"; exit 1; }
-    echo " log=$LOG dumps=$DUMPS"
+    for p in 4300 4301; do
+      printf '%s -> ' "$p"
+      curl -s -m 5 "http://127.0.0.1:$p/health" || { echo "FALHOU"; exit 1; }
+      echo
+    done
+    echo "pids: $(tr '\n' ' ' <"$PIDS")"
     ;;
   stop)
-    if [ -f "$PIDFILE" ]; then
-      kill "$(cat "$PIDFILE")" 2>/dev/null || true
-      rm -f "$PIDFILE"
-      echo "parado :$PORT"
-    else
-      pid=$(ss -ltnp 2>/dev/null | grep ":$PORT " | grep -o 'pid=[0-9]*' | cut -d= -f2 | head -1)
-      [ -n "${pid:-}" ] && kill "$pid" && echo "parado :$PORT (pid $pid)" || echo "fora do ar"
-    fi
+    for p in 4300 4301; do
+      pid=$(ss -ltnp 2>/dev/null | grep ":$p " | grep -o 'pid=[0-9]*' | cut -d= -f2 | head -1)
+      [ -n "${pid:-}" ] && kill "$pid" && echo "parado :$p (pid $pid)"
+    done
+    rm -f "$PIDS"
     ;;
   status)
-    for p in "${PORT}"; do
-      printf ':%s ' "$p"
+    for p in 4300 4301; do
+      printf '%s: ' "$p"
       curl -s -m 5 "http://127.0.0.1:$p/health" || echo "fora"
       echo
     done
     ;;
-  dump)
-    python3 "$ROOT/analyze_dumps.py" --dir "${2:-$DUMPS}"
+  models)
+    cd "$ROOT" && opencode models | grep -E '^alt(12b|-e2b)/' | sort
+    ;;
+  role)
+    # ./run-alt.sh role plan-12b|build-12b|plan-e2b|build-e2b "<mensagem>"
+    role="${2:?informe plan-12b|build-12b|plan-e2b|build-e2b}"
+    shift 2
+    case "$role" in
+      plan-12b)  agent=plan;   model=alt12b/gemma-4-12b ;;
+      build-12b) agent=build;  model=alt12b/gemma-4-12b ;;
+      plan-e2b)  agent=plan;   model=alt-e2b/gemma-4-e2b ;;
+      build-e2b) agent=build;  model=alt-e2b/gemma-4-e2b ;;
+      *) echo "role invalido: $role" >&2; exit 2 ;;
+    esac
+    cd "$ROOT" && exec opencode run --agent "$agent" --model "$model" "$@"
     ;;
   *)
-    echo "uso: $0 [start|stop|status|dump] [porta] [upstream]" >&2
+    echo "uso: $0 [start|stop|status|models]" >&2
     exit 2
     ;;
 esac
