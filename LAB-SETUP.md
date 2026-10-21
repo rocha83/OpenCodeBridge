@@ -8,10 +8,10 @@ expresso (componente, cenário de teste e harness) fica no `README.md`.
 
 | linha | modelo | ctx | VRAM |
 |---|---|---|---|
-| GPU1 `:4100` | `gemma-4-12b` — Gemma4 12B **uncensored** `Q3_K_L` + mmproj F16 | `-c 229376 -np 2` = **2×112k** | 8114 MiB |
-| GPU2 `:4110` | `gemma-4-e2b` — Gemma4 E2B **coder heretic** `Q4_K_M`, **text-only** | `-c 393216 -np 4` = **4×96k** | 2956 MiB |
+| GPU1 `:4100` | `gemma-4-12b` — Gemma4 12B **uncensored** `Q4_K_M` + mmproj F16 | `-c 196608 -np 2` = **2×96k** | 8712 MiB |
+| GPU2 `:4110` | `gemma-4-e2b` — Gemma4 E2B **coder heretic** `Q4_K_M`, **text-only** | `-c 114688 -np 1` = **1×112k** | 2082 MiB |
 
-Total no boot: **11419 MiB usados / 617 MiB livres** (~11,15 GiB usados).
+Total no boot: **11168 MiB usados / 868 MiB livres** (~10,91 GiB usados).
 Temperatura média (Plan/Orch): **0.5**; Build/Scripter/Exec **0.3**; MoE **0.8**.
 Detalhes de remaster em `/media/mint/Linux/remaster-update6.md`.
 
@@ -20,7 +20,7 @@ Detalhes de remaster em `/media/mint/Linux/remaster-update6.md`.
 
 | nome | o que é | endpoint |
 |---|---|---|
-| **GPU1** | `gemma-4-12b` (12B uncensored, `Q3_K_L`) — 100% GPU | llama `:4100` / bridge `:4124` |
+| **GPU1** | `gemma-4-12b` (12B uncensored, `Q4_K_M`) — 100% GPU | llama `:4100` / bridge `:4124` |
 | **GPU2** | `gemma-4-e2b` (E2B coder, `Q4_K_M`) — 100% GPU | llama `:4110` / bridge `:4125` |
 
 Os dois rodam em **GPU full** (`-ngl 99`) e **TurboQuant** (`turbo3` no KV),
@@ -49,7 +49,7 @@ atrás de duas bridges:
 
 | provider | bridge | llama | papel |
 |---|---|---|---|
-| `openai` | `http://127.0.0.1:4124/v1` | `:4100` | GPU1 `gemma-4-12b` (12B uncensored Q3_K_L) |
+| `openai` | `http://127.0.0.1:4124/v1` | `:4100` | GPU1 `gemma-4-12b` (12B uncensored Q4_K_M) |
 | `llama` | `http://127.0.0.1:4125/v1` | `:4110` | GPU2 `gemma-4-e2b` (E2B coder Q4) |
 
 ```json
@@ -60,10 +60,10 @@ atrás de duas bridges:
       "settings": { "baseURL": "http://127.0.0.1:4124/v1", "apiKey": "guest@123" },
       "models": {
         "gemma-4-12b": {
-          "name": "Gemma4 12B Uncensored Q3_K_L GPU",
+          "name": "Gemma4 12B Uncensored Q4_K_M GPU",
           "tool_call": true,
           "compatibility": { "reasoningField": "reasoning_content" },
-          "limit": { "context": 114688, "output": 8192 },
+          "limit": { "context": 98304, "output": 8192 },
           "temperature": 0.5
         }
       }
@@ -77,7 +77,7 @@ atrás de duas bridges:
           "name": "Gemma4 E2B Coder Q4 GPU2",
           "tool_call": true,
           "compatibility": { "reasoningField": "reasoning_content" },
-          "limit": { "context": 98304, "output": 8192 },
+          "limit": { "context": 114688, "output": 8192 },
           "temperature": 0.5
         }
       }
@@ -94,8 +94,8 @@ Pontos que **quebram** a linha se ficarem errados:
   Sem isso o cliente entrega prompts de saída maiores do que o
   llama serve e o `Decode error (200 POST /v1/responses)` reaparece.
 - `limit.context` é **por requisição/slot**, não a soma dos slots. A **GPU2**
-  roda `-np 4` ⇒ cada slot tem **98304**; logo o cliente declara **98304**.
-  A **GPU1** roda `-np 2` ⇒ cada slot tem **114688 (2×112k)**.
+  roda `-np 1` ⇒ o slot único tem **114688 (1×112k)**; logo o cliente declara **114688**.
+  A **GPU1** roda `-np 2` ⇒ cada slot tem **98304 (2×96k)**.
 - O provider `llama` mantém `timeout`/`headerTimeout`/`chunkTimeout` longos
   (30/15/15 min) porque a GPU2 divide a GPU com a GPU1 e o ctx cheio é lento.
 
@@ -151,10 +151,10 @@ genérico `llama/gemma-4-e2b` cai no `--thinking events` da unit e abre reasonin
 
 | flag | valor | por quê |
 |---|---|---|
-| `-m` | `/media/mint/78AA0831AA07EB08/llama-models/…` | GGUF do modelo |
+| `-m` | `/media/mint/3686C649614854E61/llama-models/…` (12B) / `/media/mint/78AA0831AA07EB08/…` (E2B) | GGUF do modelo |
 | `--mmproj` | `mmproj-*.gguf` | projetor de visão — **só na GPU1 (12B)**; o E2B é text-only |
-| `-c` | 229376 (GPU1, 2×112k) / 393216 (GPU2, 4×96k) | contexto **total** do servidor |
-| `-np` | 2 (GPU1) / 4 (GPU2) | slots paralelos; **divide** o `-c` |
+| `-c` | 196608 (GPU1, 2×96k) / 114688 (GPU2, 1×112k) | contexto **total** do servidor |
+| `-np` | 2 (GPU1) / 1 (GPU2) | slots paralelos; **divide** o `-c` |
 | `-ngl 99` | 99 | **100% GPU** (sem offload para CPU) |
 | `-fa on` | on | Flash Attention |
 | `--cache-type-k` / `--cache-type-v` | `turbo3` | KV em TurboQuant nos dois |
@@ -167,8 +167,8 @@ Modelos no disco:
 
 | arquivo | bytes | ≈ |
 |---|---|---|
-| `/media/mint/78AA0831AA07EB08/llama-models/gemma4-12b-uncensored/Gemma4-12B-Uncensored-Q3_K_L.gguf` | 6 566 319 808 | 6,11 GiB |
-| `/media/mint/78AA0831AA07EB08/llama-models/gemma4-12b-uncensored/Gemma4-12B-Uncensored-mmproj-F16.gguf` | 122 031 744 | 116 MiB |
+| `/media/mint/3686C649614854E61/llama-models/gemma4-12b-uncensored/Gemma4-12B-Uncensored-Q4_K_M.gguf` | 7 381 382 848 | 6,87 GiB |
+| `/media/mint/3686C649614854E61/llama-models/gemma4-12b-uncensored/Gemma4-12B-Uncensored-mmproj-F16.gguf` | 122 031 744 | 116 MiB |
 | `/media/mint/78AA0831AA07EB08/llama-models/gemma4-e2b-coder-heretic/Gemma-4-E2B-it-coder-heretic-Q4_K_M.gguf` | 3 427 878 304 | 3,19 GiB |
 | `/media/mint/78AA0831AA07EB08/llama-models/gemma4-e2b-coder-heretic/mmproj-gemma-4-E2B-it-Q8_0.gguf` | 557 368 064 | 531 MiB — **não usado no E2B (text-only)** |
 
@@ -182,15 +182,15 @@ User=root
 Environment=HOME=/root
 Environment=TURBO_AUTO_ASYMMETRIC=0
 ExecStart=/usr/local/bin/llama-server --alias gemma-4-12b --host 127.0.0.1 --port 4100 \
-  -m /media/mint/78AA0831AA07EB08/llama-models/gemma4-12b-uncensored/Gemma4-12B-Uncensored-Q3_K_L.gguf \
-  --mmproj /media/mint/78AA0831AA07EB08/llama-models/gemma4-12b-uncensored/Gemma4-12B-Uncensored-mmproj-F16.gguf \
-  -c 229376 -np 2 -ngl 99 -fa on \
+  -m /media/mint/3686C649614854E61/llama-models/gemma4-12b-uncensored/Gemma4-12B-Uncensored-Q4_K_M.gguf \
+  --mmproj /media/mint/3686C649614854E61/llama-models/gemma4-12b-uncensored/Gemma4-12B-Uncensored-mmproj-F16.gguf \
+  -c 196608 -np 2 -ngl 99 -fa on \
   --cache-type-k turbo3 --cache-type-v turbo3 --prio 2 --api-key guest@123
 Restart=on-failure
 TimeoutStartSec=300
 ```
 
-Aceite do startup: `n_slots = 2, n_ctx_slot = 114688` → `model loaded` →
+Aceite do startup: `n_slots = 2, n_ctx_slot = 98304` → `model loaded` →
 `listening on http://127.0.0.1:4100`. Subir **primeiro** (ver §2.5).
 
 ### 2.3 Unit da GPU2 (E2B coder `:4110`, text-only)
@@ -207,18 +207,18 @@ Environment=HOME=/root
 Environment=TURBO_AUTO_ASYMMETRIC=0
 ExecStart=/usr/local/bin/llama-server --alias gemma-4-e2b --host 127.0.0.1 --port 4110 \
   -m /media/mint/78AA0831AA07EB08/llama-models/gemma4-e2b-coder-heretic/Gemma-4-E2B-it-coder-heretic-Q4_K_M.gguf \
-  -c 393216 -np 4 -ngl 99 -fa on -t 4 -tb 4 \
+  -c 114688 -np 1 -ngl 99 -fa on -t 4 -tb 4 \
   --cache-type-k turbo3 --cache-type-v turbo3 --prio -1 --api-key guest@123
 Restart=on-failure
 TimeoutStartSec=300
 ```
 
-Aceite do startup: `n_slots = 4, n_ctx_slot = 98304` → `model loaded` →
-`listening on http://127.0.0.1:4110` (**4×98304** = 393216 total).
+Aceite do startup: `n_slots = 1, n_ctx_slot = 114688` → `model loaded` →
+`listening on http://127.0.0.1:4110` (**114688** total).
 
-> Trocar para um slot único: `-np 1 -c 98304` **e** `limit.context = 98304` no
-> OpenCode. Você perde o paralelismo de 4 slots — que é o motivo de a config
-> atual ser `-np 4` (4×96k).
+> A config atual é **slot único** (`-np 1 -c 114688` = 1×112k) e
+> `limit.context = 114688` no OpenCode. Para paralelismo, use `-np 2 -c 114688`
+> (2×56k) ou `-np 2 -c 163840` (2×80k) — sempre medindo a VRAM.
 
 ### 2.4 TurboQuant é obrigatório nos dois
 
@@ -245,7 +245,7 @@ journalctl -u llama-gpu -u llama-cpu --no-pager | grep -Ei "auto-asymmetric"
 journalctl -u llama-gpu -u llama-cpu --no-pager | grep -Ei "fit params"
 # GPU2: um warning "failed to fit params ... n_gpu_layers already set to 99, abort"
 # é esperado com -ngl 99 e não impede o load; o que não pode é crash de CUDA graph
-# (OOM). Com E2B text-only a stack estabiliza em ~11,2 GiB usados.
+# (OOM). Com E2B text-only a stack estabiliza em ~10,9 GiB usados.
 ```
 
 ### 2.5 Ordem de carga e prioridade
@@ -262,22 +262,23 @@ journalctl -u llama-gpu -u llama-cpu --no-pager | grep -Ei "fit params"
 
 ### 2.6 VRAM medida (12 GB, ambos em `turbo3`)
 
-| configuração | GPU1 (12B Q3_K_L) | GPU2 (E2B coder Q4) | total usado | livre |
+| configuração | GPU1 (12B Q4_K_M) | GPU2 (E2B coder Q4) | total usado | livre |
 |---|---|---|---|---|
-| 12B 2×112k + E2B 4×96k, E2B sem mmproj (atual) | 8114 | 2956 | **11419** | **617** |
-| 12B 2×128k + E2B 4×96k + mmproj | ~7100 | ~2600 | 11208 | 1080 |
-| 12B 2×128k + E2B 4×112k | ~7100 | ~2900 | 11624 | 664 |
-| 12B 1×128k + E2B 2×80k | ~6600 | ~2400 | 9877 | 2411 |
+| 12B 2×96k + E2B 1×112k, E2B sem mmproj (atual) | 8712 | 2082 | **11168** | **868** |
+| 12B 2×112k + E2B 1×112k | 9014 | 2072 | 11476 | 560 |
+| 12B 2×112k + E2B 1×140k | 9014 | 2190 | 11593 | 443 |
+| 12B 2×112k + E2B 1×160k | 8892 | 2272 | 11519 | 518 |
+| 12B Q3_K_L 2×112k + E2B 4×96k (histórico) | 8114 | 2956 | 11419 | 617 |
+| 12B Q3_K_L 1×128k + E2B 2×80k (histórico) | ~6600 | ~2400 | 9877 | 2411 |
 
 Regras aprendidas com as medições:
 
-- O `-c` do llama é **total**; `-np 2` divide por 2 (`n_ctx_slot`).
-- Cortar 32k do 12B (160k→128k) **devolveu** 214 MiB; dobrar os slots da GPU2
-  custou 130 MiB. O saldo (11234→11154 MiB) pagou 2×64k úteis em paralelo.
-- O que estoura é o **KV** (cresce com `n_ctx`), não os pesos.
-- Com os modelos novos (12B Q3_K_L uncensored + E2B coder Q4 heretic), o par
-  `12B 2×112k + E2B 4×96k` só cabe com o **E2B sem mmproj**: 8114 + 2956 =
-  11070 MiB de processos, 11419 MiB com overhead, **617 MiB livres**.
+- O `-c` do llama é **total**; `-np N` divide por N (`n_ctx_slot`).
+- O que estoura é o **KV** (cresce com `n_ctx`), não só os pesos.
+- Com 12B Q4_K_M + E2B Q4 coder heretic (sem mmproj), o par
+  `12B 2×96k + E2B 1×112k` mede **11168 MiB** com overhead e deixa
+  **868 MiB livres**. O par `12B 2×112k + E2B 1×112k` sobe para 11476 MiB
+  (560 MiB livres); `E2B 1×140k` e `1×160k` apertam para 443/518 MiB.
 
 ---
 
@@ -285,10 +286,10 @@ Regras aprendidas com as medições:
 
 ### Cenário A — padrão: ambos residentes (o do E2E)
 
-GPU1 `2×112k` + GPU2 `4×96k` (sem mmproj no E2B) → ~11,15 GiB usados, ~0,60 GiB livres.
+GPU1 `2×96k` + GPU2 `1×112k` (sem mmproj no E2B) → ~10,91 GiB usados, ~0,85 GiB livres.
 É o regime dos testes de integração: as duas linhas servindo ao mesmo tempo no
-mesmo GPU (a taxa de cada uma cai ~metade sob concorrência). Alvo de VRAM no
-boot: ~11,2 GiB usados; margem de segurança ~0,6 GiB para CUDA graphs/decodes.
+mesmo GPU (a taxa de cada uma cai sob concorrência). Alvo de VRAM no
+boot: ~10,9 GiB usados; margem de segurança ~0,85 GiB para CUDA graphs/decodes.
 
 ```bash
 ./run-e2e-pipeline.sh --phase 0          # health llama/bridge + VRAM
@@ -308,17 +309,16 @@ Acima de 160k é **não medido** nesta placa.
 
 ### Cenário C — GPU2 solo / benchmark
 
-E2B coder Q4 **4×96k sem mmproj** medido em **2956 MiB**; 96k/1 em ~2022 MiB
-(modelo antigo Q3). O E2B é o modelo leve: sobra VRAM para subir `-c` acima de
-96k/1, mas meça com `nvidia-smi` antes de fixar.
+E2B coder Q4 **1×112k sem mmproj** medido em **2082 MiB**. O E2B é o modelo
+leve: sobra VRAM para subir `-c` acima de 112k, mas meça com `nvidia-smi` antes
+de fixar (1×140k = 2190 MiB; 1×160k = 2272 MiB).
 
 ### Cenário D — VRAM apertada (regras de corte)
 
 Ordem de corte, pelos deltas medidos:
 
-1. **GPU2 `128k/2` → `96k/1`**: libera ~680 MiB (2702 → 2022), ao preço de
-   perder o 2º slot (subagentes passam a serializar).
-2. **GPU1 `128k/1` → `96k/1`**: libera ~214 MiB por 32k cortado.
+1. **GPU2 `1×112k` → `1×96k`**: libera ~130 MiB, mantendo slot único.
+2. **GPU1 `2×96k` → `1×96k`**: libera o KV do 2º slot (subagentes serializam).
 3. **`--mmproj` da GPU2**: removido de vez (E2B text-only) — libera **531 MiB**.
    O 12B mantém o mmproj F16 (única linha multimodal).
 4. **Nunca** baixe `-ngl` (quebra "GPU full"). Se não cabe, reduza `-c`/`-np`,
@@ -352,11 +352,11 @@ sudo systemctl edit llama-cpu.service
 # ExecStart=
 # ExecStart=/usr/local/bin/llama-server --alias gemma-4-e2b --host 127.0.0.1 --port 4110 \
 #   -m /media/mint/78AA0831AA07EB08/llama-models/gemma4-e2b-coder-heretic/Gemma-4-E2B-it-coder-heretic-Q4_K_M.gguf \
-#   -c 393216 -np 4 -ngl 0 -fa on -t 4 -tb 4 \
+#   -c 114688 -np 1 -ngl 0 -fa on -t 4 -tb 4 \
 #   --cache-type-k turbo3 --cache-type-v turbo3 --prio -1 --api-key guest@123
 sudo systemctl daemon-reload && sudo systemctl restart llama-cpu
 journalctl -u llama-cpu --no-pager | grep -E "n_ctx_slot|offloaded" | tail -3
-# esperado: n_ctx_slot = 98304 e "offloaded 0/N layers to GPU"
+# esperado: n_ctx_slot = 114688 e "offloaded 0/N layers to GPU"
 ```
 
 Exemplo — devpipe (o filtro `--only` é "contém": `E-devpipe` roda os 5 casos):
