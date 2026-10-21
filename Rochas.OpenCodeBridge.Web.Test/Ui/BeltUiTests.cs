@@ -67,9 +67,12 @@ public static class BeltUiTests
             "crie uma subpasta devpipe-test-<datahora> em seu workspace (descubra a data e hora atuais " +
             "com segundos e use no nome), inicialize um repositorio git, crie um arquivo com nome aleatorio " +
             ".txt com conteudo 'A', faca commit, depois edite este arquivo complementando 'ABC' faca outro " +
-            "commit, abra o arquivo, procure a letra 'B', mude para 'W', busque o clima hoje em sao paulo na " +
-            "internet utilizando webdriver playwright e incremente no arquivo, salve o arquivo depois faca um " +
-            "zip desta pasta. Cada alteracao do arquivo .txt deve ter seu proprio commit, de modo que o " +
+            "commit, abra o arquivo com a tool read, procure a letra 'B' com a tool grep, mude para 'W' com a " +
+            "tool edit, busque o clima hoje em sao paulo na internet com a tool webfetch (ou websearch) e " +
+            "acrescente o clima no fim do arquivo sem alterar o conteudo existente (o trecho 'AWC' deve " +
+            "permanecer), faca outro commit e depois um zip desta pasta. Use as tools nativas (read, grep, " +
+            "edit, write, webfetch): nao edite o .txt com sed -i nem com redirecionamento. Cada alteracao do " +
+            "arquivo .txt deve ter seu proprio commit, de modo que o " +
             "historico registre a criacao e cada edicao. Ao final rode 'git log --oneline --stat' e cole a " +
             "saida na resposta. teste finalizado",
             0, 30),

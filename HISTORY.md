@@ -1,5 +1,53 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Aceite por tipo de faixa, schema de args e métrica de tps (2026-10-21, sessão 2)
+- **Três falhas medidas na bateria anterior** (`azul..preta-alone` FAIL com `artefatos=False`,
+  `roxa` com `subagent` inválido, `tools-dev-pipe` sem `AWC`): (1) aceite headless exigia
+  arquivos para faixas que respondem em texto; (2) `SanitizeToolCall` só validava JSON, não
+  chaves obrigatórias — `edit` ia sem `path`/`oldString` (JSON aninhado em `newString`,
+  100+ repetições até 30 min) e `subagent` ia sem `prompt`; (3) o template vazava para dentro
+  do comando (`date +"..."}<tool_call|>...`), gerando erro de sintaxe do bash.
+- **Schema por tool:** `RequiredArgs` cobre `edit{path,oldString,newString}`, `write{path,content}`,
+  `read{path}`, `grep/glob{pattern}`, `shell{command}`, `webfetch{url}`,
+  `subagent{agent,description,prompt}`, `skill{id}`, `question{questions}`; chave faltando vira
+  `shell` corretivo (`NudgeArgs`) com o motivo e o formato, sem repetir a chamada inválida.
+- **Lixo de template no comando:** `SanitizeShellText` corta o comando no primeiro marcador
+  (`<tool_call|>`, `<|tool_call>`, `<|channel>`, `<channel|>`), fecha chaves sobrando e, quando
+  o comando era só lixo, promove a chamada aninhada (`websearch{query: "..."}`) para tool
+  nativa; `--anti-repeat 1` nas duas units.
+- **Aceite por tipo de faixa** (`BeltKinds`): `spec` (≥1500 chars + tópicos com alternativas
+  pt/en: `repositorio|repository`, `cpf/cnpj/ddl/indice/constraint`, `dapper/regex/cep/telefone`,
+  `controller/dto/react/dockerfile/compose`, `barramento/regressao|regression/perceptron|mlp|multicamada/anomalia`),
+  `texto` (mesmos tópicos **e zero tool calls**), `tools` (histórico git), `pipe` (histórico +
+  `AWC` + zip + tools nativas `edit|write` ≥2, `read|grep` ≥1, `webfetch|websearch` ≥1 e
+  **proibido `sed -i`**). `imunow` sai como **SKIP** enquanto
+  `/media/mint/3686C649614854E6/.../Mova.Pwa/src/views` não existir (disco não montado).
+- **Bug de normalização:** `Web.Test` roda com `InvariantGlobalization=true`, onde
+  `String.Normalize(FormD)` é no-op — `Repositório`/`Regressão` nunca viravam
+  `repositorio`/`regressao` e tópicos acentuados "faltavam" sempre. `Norm` passou a usar mapa
+  explícito de acentos (sem ICU).
+- **Enunciado do pipe:** trocado `webdriver playwright` (inexistente no catálogo) por
+  `webfetch`/`websearch`, `read` para abrir, `grep` para achar o `B`, `edit` para trocar por `W`,
+  clima **acrescentado sem alterar** o conteúdo (`AWC` permanece), commit por etapa e zip;
+  proibido `sed -i`/redirecionamento.
+- **Métrica de velocidade:** cada faixa lê o delta do log da bridge (`--diagnostic 1`), soma os
+  eventos `response` (`elapsed`, `input_tokens`, `output_tokens`) e imprime
+  `tps=.. tok/s req=.. in=.. out_tok=.. wall=..`; grava `_metrics.jsonl` no workspace da faixa.
+- **Resultados:** units **45 PASS / 0 FAIL / 6 SKIP** (novos `U-toolargs-shell-leak`,
+  `-shell-inline`, `-subagent`, `-skill-ok`); bateria headless **8 PASS / 0 FAIL / 1 SKIP**:
+
+| faixa | kind | aceite | tps | wall |
+|---|---|---|---|---|
+| azul | spec | 4786 chars, deleg=33 | 27.8 | 105s |
+| verde | spec | 7437 chars, deleg=10 | 28.5 | 96s |
+| roxa | spec | 3051 chars, deleg=3 | 27.6 | 87s |
+| marrom | spec | 4089 chars, deleg=5 | 29.1 | 234s |
+| preta | spec | 6162 chars, deleg=36 | 19.9 | 60s |
+| preta-alone | texto | 1610 chars, tools=0 | 14.3 | 26s |
+| tools-full | tools | git=2cmt plano_em=2cmt | 18.5 | 33s |
+| tools-dev-pipe | pipe | git=3cmt txt_em=3cmt awc=True zip=True tools=e3/r2/f1 sed=False | 17.4 | 56s |
+| imunow | — | SKIP: disco do projeto não montado | — | — |
+
 ## Harness: Code Mode do opencode removido do catálogo + aceite por histórico git (2026-10-21)
 - **Referência medida:** dump `docs/harness/opencode` (`system.md` 14.010 chars, 12 tools,
   `req-chat.json` 28.477) capturado pela sonda com `--harness 0 --legacy-harness 0`.

@@ -121,6 +121,43 @@ internal static class UnitToolStrategyTests
         return Task.CompletedTask;
     }
 
+    public static Task SanitizeShellTrimsLeakedTemplate()
+    {
+        const string args = """{"command":"date +\"%Y-%m-%d_%H-%M-%S\"}<tool_call|>}<tool_call|><|channel>thought"}""";
+        var (name, fixedArgs) = global::Rochas.OpenCodeBridge.Program.SanitizeToolCall("shell", args);
+        TestContext.Check(name == "shell", "shell continua shell");
+        var cmd = global::System.Text.Json.Nodes.JsonNode.Parse(fixedArgs)!["command"]!.GetValue<string>();
+        TestContext.Check(cmd == "date +\"%Y-%m-%d_%H-%M-%S\"", "comando cortado no marcador e balanceado");
+        return Task.CompletedTask;
+    }
+
+    public static Task SanitizeShellPromotesInlineCall()
+    {
+        const string args = """{"command":"websearch{query: \"clima hoje em sao paulo\"}<tool_call|>]}"}""";
+        var (name, fixedArgs) = global::Rochas.OpenCodeBridge.Program.SanitizeToolCall("shell", args);
+        TestContext.Check(name == "websearch", "chamada inline vira tool nativa");
+        var query = global::System.Text.Json.Nodes.JsonNode.Parse(fixedArgs)!["query"]!.GetValue<string>();
+        TestContext.Check(query == "clima hoje em sao paulo", "argumentos da chamada inline preservados");
+        return Task.CompletedTask;
+    }
+
+    public static Task SanitizeGuidesSubagentMissingPrompt()
+    {
+        const string args = """{"agent":"general","description":"Planejamento do Dominio\",prompt:"}""";
+        var (name, fixedArgs) = global::Rochas.OpenCodeBridge.Program.SanitizeToolCall("subagent", args);
+        TestContext.Check(name == "shell", "subagent sem prompt vira shell guiado");
+        TestContext.Check(fixedArgs.Contains("prompt", StringComparison.Ordinal), "guia cita a chave prompt");
+        return Task.CompletedTask;
+    }
+
+    public static Task SanitizeKeepsSkillWithId()
+    {
+        const string ok = """{"id":"opencode"}""";
+        var (name, fixedArgs) = global::Rochas.OpenCodeBridge.Program.SanitizeToolCall("skill", ok);
+        TestContext.Check(name == "skill" && fixedArgs == ok, "skill com id passa intacta");
+        return Task.CompletedTask;
+    }
+
     public static Task HarnessTailCarriesQualityCore()
     {
         string formula = global::Rochas.OpenCodeBridge.Program.WithFormula("system base");

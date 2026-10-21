@@ -2186,13 +2186,6 @@ var shape = new StringBuilder();
         try { return JsonNode.Parse(text) is JsonObject; } catch { return false; }
     }
 
-    /// <summary>Limpa/normaliza os argumentos de uma tool call emitida pelo modelo.</summary>
-    /// <remarks>O 12B as vezes vaza tokens de template para dentro do JSON e o cliente
-    /// rejeita a chamada; repetir o mesmo codigo 256x (tools-dev-pipe) nao resolve.
-    /// Aqui a chamada invalida vira um shell com a correcao, que volta como resultado.</remarks>
-    /// <param name="name">Nome da tool pedida pelo modelo.</param>
-    /// <param name="arguments">Argumentos crus.</param>
-    /// <returns>Nome/argumentos efetivos (shell guiado quando irrecuperavel).</returns>
     /// <summary>Chaves obrigatorias por tool (validadas antes de emitir a chamada).</summary>
     static readonly Dictionary<string, string[]> RequiredArgs = new(StringComparer.Ordinal)
     {
@@ -2203,7 +2196,20 @@ var shape = new StringBuilder();
         ["glob"] = new[] { "pattern" },
         ["shell"] = new[] { "command" },
         ["webfetch"] = new[] { "url" },
+        ["subagent"] = new[] { "agent", "description", "prompt" },
+        ["skill"] = new[] { "id" },
+        ["question"] = new[] { "questions" },
     };
+
+    /// <summary>Marcadores de template que o 12B vaza para dentro do comando shell.</summary>
+    static readonly string[] LeakMarkers = { "<tool_call|>", "<|tool_call>", "<|channel>", "<channel|>" };
+
+    /// <summary>Tools que podem aparecer como chamada inline (template vazado no texto).</summary>
+    static readonly HashSet<string> InlineTools = new(StringComparer.Ordinal)
+    { "edit", "write", "read", "grep", "glob", "shell", "webfetch", "websearch", "subagent", "skill", "question" };
+
+    /// <summary>Par chave=valor de uma chamada inline (nome{chave: valor, ...}).</summary>
+    static readonly Regex ReInlineArg = new(@"(\w+)\s*[:=]\s*(""(?:[^""\\]|\\.)*""|[^,}]+)", RegexOptions.Compiled);
 
     /// <summary>Chaves obrigatorias ausentes nos argumentos (vazio p/ tool fora do mapa).</summary>
     /// <param name="name">Nome da tool.</param>
@@ -2231,11 +2237,117 @@ var shape = new StringBuilder();
         Log(new JsonObject { ["event"] = "tool-args-guide", ["tool"] = name, ["reason"] = why, ["len"] = original.Length });
         string msg = "printf '%s\\n' 'ERRO na tool " + name + ": " + why +
             ". Nao repita igual: reemita a chamada com JSON completo - " +
-            "edit=path+oldString+newString; write=path+content; read=path; grep/glob=pattern; shell=command. " +
-            "Nao aninhe JSON dentro de um valor.'";
+            "edit=path+oldString+newString; write=path+content; read=path; grep/glob=pattern; shell=command; " +
+            "subagent=agent+description+prompt. Nao aninhe JSON dentro de um valor.'";
         return ("shell", new JsonObject { ["command"] = msg }.ToJsonString(SerOpts));
     }
 
+    /// <summary>Converte o valor cru de uma chamada inline em no JSON (string, bool ou numero).</summary>
+    /// <param name="raw">Valor como veio no texto.</param>
+    /// <returns>No JSON correspondente.</returns>
+    static JsonNode? ToJsonValue(string raw)
+    {
+        string v = raw.Trim();
+        if (v.Length >= 2 && v[0] == '"' && v[^1] == '"')
+            v = v[1..^1].Replace("\\\"", "\"").Replace("\\\\", "\\");
+        if (bool.TryParse(v, out bool b)) return JsonValue.Create(b);
+        if (double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)) return JsonValue.Create(d);
+        return JsonValue.Create(v);
+    }
+
+    /// <summary>Le uma chamada inline no formato nome{chave: valor, ...} (template vazado).</summary>
+    /// <param name="text">Texto do comando.</param>
+    /// <returns>Nome + argumentos quando for uma tool conhecida; null caso contrario.</returns>
+    static (string Name, JsonObject Args)? ParseInlineCall(string text)
+    {
+        string t = text.Trim();
+        int open = t.IndexOf('{');
+        if (open <= 0) return null;
+        string name = t[..open].Trim().TrimEnd(':').Trim();
+        int call = name.LastIndexOf("call:", StringComparison.Ordinal);
+        if (call >= 0) name = name[(call + 5)..].Trim();
+        if (!InlineTools.Contains(name)) return null;
+        int end = FindObjectEnd(t, open);
+        if (end <= open) return null;
+        var args = new JsonObject();
+        foreach (Match m in ReInlineArg.Matches(t[(open + 1)..end]))
+            args[m.Groups[1].Value] = ToJsonValue(m.Groups[2].Value);
+        return (name, args);
+    }
+
+    /// <summary>Promove a chamada inline a chamada nativa (com schema conferido).</summary>
+    /// <param name="call">Nome + argumentos lidos do texto.</param>
+    /// <param name="original">Argumentos originais (para o guia quando faltar chave).</param>
+    /// <returns>Chamada efetiva (nativa ou guia).</returns>
+    static (string Name, string Arguments) PromoteInline((string Name, JsonObject Args) call, string original)
+    {
+        string args = call.Args.ToJsonString(SerOpts);
+        var missing = MissingArgs(call.Name, args);
+        if (missing.Count > 0) return NudgeArgs(call.Name, "faltam as chaves " + string.Join(", ", missing), original);
+        Log(new JsonObject { ["event"] = "tool-shell-leak", ["tool"] = call.Name, ["mode"] = "promote" });
+        return (call.Name, args);
+    }
+
+    /// <summary>Fecha chaves de fechamento sobrando no fim do comando (lixo do template).</summary>
+    /// <param name="text">Texto do comando.</param>
+    /// <returns>Comando com chaves balanceadas.</returns>
+    static string TrimUnbalanced(string text)
+    {
+        int open = text.Count(c => c == '{');
+        int close = text.Count(c => c == '}');
+        string t = text;
+        while (close > open && t.EndsWith('}'))
+        {
+            t = t[..^1].TrimEnd();
+            close--;
+        }
+        return t;
+    }
+
+    /// <summary>Corta lixo de template vazado no comando shell e promove chamada inline.</summary>
+    /// <remarks>O 12B mistura o texto do comando com o proximo tool call
+    /// (`date +"..."}&lt;tool_call|&gt;...`) e o bash quebra por sintaxe; aqui o comando
+    /// e cortado no lixo e, quando so sobra lixo, a chamada aninhada e promovida.</remarks>
+    /// <param name="name">Nome da tool.</param>
+    /// <param name="arguments">Argumentos JSON.</param>
+    /// <returns>Nome/argumentos efetivos (guia quando o comando era so lixo).</returns>
+    internal static (string Name, string Arguments) SanitizeShellText(string name, string arguments)
+    {
+        if (!ToolStrategy || !string.Equals(name, "shell", StringComparison.Ordinal)) return (name, arguments);
+        JsonObject? obj = null;
+        try { obj = JsonNode.Parse(arguments) as JsonObject; } catch { return (name, arguments); }
+        if (obj?["command"] is not JsonValue cv || !cv.TryGetValue<string>(out string? cmd)) return (name, arguments);
+        int cut = -1;
+        foreach (var m in LeakMarkers)
+        {
+            int i = cmd.IndexOf(m, StringComparison.Ordinal);
+            if (i >= 0 && (cut < 0 || i < cut)) cut = i;
+        }
+        if (cut < 0) return (name, arguments);
+        string head = cmd[..cut];
+        string tail = cmd[cut..];
+        // Chamada inline no inicio do comando (ex.: websearch{query: "..."}<tool_call|>).
+        var inline = ParseInlineCall(head.Trim());
+        if (inline is not null) return PromoteInline(inline.Value, arguments);
+        head = TrimUnbalanced(head.TrimEnd());
+        if (head.Length == 0)
+        {
+            var inTail = ParseInlineCall(tail);
+            if (inTail is not null) return PromoteInline(inTail.Value, arguments);
+            return NudgeArgs(name, "comando so tinha lixo de template (<tool_call|>)", arguments);
+        }
+        obj["command"] = head;
+        Log(new JsonObject { ["event"] = "tool-shell-leak", ["tool"] = name, ["mode"] = "trim", ["removed"] = cmd.Length - head.Length });
+        return (name, obj.ToJsonString(SerOpts));
+    }
+
+    /// <summary>Limpa/normaliza os argumentos de uma tool call emitida pelo modelo.</summary>
+    /// <remarks>O 12B as vezes vaza tokens de template para dentro do JSON e o cliente
+    /// rejeita a chamada; repetir o mesmo codigo 256x (tools-dev-pipe) nao resolve.
+    /// Aqui a chamada invalida vira um shell com a correcao, que volta como resultado.</remarks>
+    /// <param name="name">Nome da tool pedida pelo modelo.</param>
+    /// <param name="arguments">Argumentos crus.</param>
+    /// <returns>Nome/argumentos efetivos (shell guiado quando irrecuperavel).</returns>
     internal static (string Name, string Arguments) SanitizeToolCall(string name, string arguments)
     {
         if (!ToolStrategy || string.IsNullOrWhiteSpace(arguments)) return (name, arguments);
@@ -2267,6 +2379,10 @@ var shape = new StringBuilder();
                     }
                 }
             }
+            // Lixo de template dentro do comando shell: corta no marcador ou promove a chamada.
+            var shell = SanitizeShellText(name, candidate);
+            if (!shell.Name.Equals(name, StringComparison.Ordinal) || !shell.Arguments.Equals(candidate, StringComparison.Ordinal))
+                return shell;
             // Schema: o 12B manda JSON valido mas sem as chaves obrigatorias
             // (ex.: edit sem path/oldString, com o JSON aninhado em newString).
             var missing = MissingArgs(name, candidate);

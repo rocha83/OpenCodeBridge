@@ -79,6 +79,10 @@ internal static class Program
         TestContext.Run("U-toolargs-missing-keys", UnitToolStrategyTests.SanitizeGuidesMissingRequiredKeys);
         TestContext.Run("U-toolargs-write-ok", UnitToolStrategyTests.SanitizeKeepsCompleteWrite);
         TestContext.Run("U-toolargs-write-missing-content", UnitToolStrategyTests.SanitizeGuidesMissingContent);
+        TestContext.Run("U-toolargs-shell-leak", UnitToolStrategyTests.SanitizeShellTrimsLeakedTemplate);
+        TestContext.Run("U-toolargs-shell-inline", UnitToolStrategyTests.SanitizeShellPromotesInlineCall);
+        TestContext.Run("U-toolargs-subagent", UnitToolStrategyTests.SanitizeGuidesSubagentMissingPrompt);
+        TestContext.Run("U-toolargs-skill-ok", UnitToolStrategyTests.SanitizeKeepsSkillWithId);
         TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
         TestContext.Run("U-sanitize-system-first", UnitBypassTests.SanitizeSystemFirst);
         TestContext.Run("U-translate-system-first", UnitBypassTests.TranslateSystemFirst);
