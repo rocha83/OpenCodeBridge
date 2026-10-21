@@ -2193,35 +2193,86 @@ var shape = new StringBuilder();
     /// <param name="name">Nome da tool pedida pelo modelo.</param>
     /// <param name="arguments">Argumentos crus.</param>
     /// <returns>Nome/argumentos efetivos (shell guiado quando irrecuperavel).</returns>
+    /// <summary>Chaves obrigatorias por tool (validadas antes de emitir a chamada).</summary>
+    static readonly Dictionary<string, string[]> RequiredArgs = new(StringComparer.Ordinal)
+    {
+        ["edit"] = new[] { "path", "oldString", "newString" },
+        ["write"] = new[] { "path", "content" },
+        ["read"] = new[] { "path" },
+        ["grep"] = new[] { "pattern" },
+        ["glob"] = new[] { "pattern" },
+        ["shell"] = new[] { "command" },
+        ["webfetch"] = new[] { "url" },
+    };
+
+    /// <summary>Chaves obrigatorias ausentes nos argumentos (vazio p/ tool fora do mapa).</summary>
+    /// <param name="name">Nome da tool.</param>
+    /// <param name="arguments">Argumentos JSON.</param>
+    /// <returns>Lista das chaves que faltam.</returns>
+    internal static List<string> MissingArgs(string name, string arguments)
+    {
+        var missing = new List<string>();
+        if (!RequiredArgs.TryGetValue(name, out var required)) return missing;
+        JsonObject? obj = null;
+        try { obj = JsonNode.Parse(arguments) as JsonObject; } catch { }
+        if (obj is null) return missing;              // parse quebrado tem tratamento proprio
+        foreach (var k in required)
+            if (obj[k] is null) missing.Add(k);
+        return missing;
+    }
+
+    /// <summary>Chamada invalida vira shell com a correcao (o erro volta como resultado da tool).</summary>
+    /// <param name="name">Tool pedida pelo modelo.</param>
+    /// <param name="why">Motivo objetivo (o que falta/esta invalido).</param>
+    /// <param name="original">Argumentos originais (so para log).</param>
+    /// <returns>Chamada substituta (shell) com o texto corretivo.</returns>
+    static (string Name, string Arguments) NudgeArgs(string name, string why, string original)
+    {
+        Log(new JsonObject { ["event"] = "tool-args-guide", ["tool"] = name, ["reason"] = why, ["len"] = original.Length });
+        string msg = "printf '%s\\n' 'ERRO na tool " + name + ": " + why +
+            ". Nao repita igual: reemita a chamada com JSON completo - " +
+            "edit=path+oldString+newString; write=path+content; read=path; grep/glob=pattern; shell=command. " +
+            "Nao aninhe JSON dentro de um valor.'";
+        return ("shell", new JsonObject { ["command"] = msg }.ToJsonString(SerOpts));
+    }
+
     internal static (string Name, string Arguments) SanitizeToolCall(string name, string arguments)
     {
         if (!ToolStrategy || string.IsNullOrWhiteSpace(arguments)) return (name, arguments);
         try
         {
-            if (IsJsonObject(arguments)) return (name, arguments);
-            string cleaned = ReLeakedTemplate.Replace(arguments, "").Trim();
-            if (IsJsonObject(cleaned))
+            string candidate = arguments;
+            if (!IsJsonObject(candidate))
             {
-                Log(new JsonObject { ["event"] = "tool-args-clean", ["tool"] = name });
-                return (name, cleaned);
-            }
-            // Sobrou prosa depois do objeto: recorta so o objeto balanceado.
-            int open = cleaned.IndexOf('{');
-            if (open >= 0)
-            {
-                int end = FindObjectEnd(cleaned, open);
-                string slice = end > open ? cleaned[open..(end + 1)] : "";
-                if (slice.Length > 0 && IsJsonObject(slice))
+                string cleaned = ReLeakedTemplate.Replace(candidate, "").Trim();
+                if (IsJsonObject(cleaned))
                 {
-                    Log(new JsonObject { ["event"] = "tool-args-clean", ["tool"] = name, ["mode"] = "slice" });
-                    return (name, slice);
+                    Log(new JsonObject { ["event"] = "tool-args-clean", ["tool"] = name });
+                    candidate = cleaned;
+                }
+                else
+                {
+                    // Sobrou prosa depois do objeto: recorta so o objeto balanceado.
+                    int open = cleaned.IndexOf('{');
+                    int end = open >= 0 ? FindObjectEnd(cleaned, open) : -1;
+                    string slice = end > open ? cleaned[open..(end + 1)] : "";
+                    if (slice.Length > 0 && IsJsonObject(slice))
+                    {
+                        Log(new JsonObject { ["event"] = "tool-args-clean", ["tool"] = name, ["mode"] = "slice" });
+                        candidate = slice;
+                    }
+                    else
+                    {
+                        return NudgeArgs(name, "JSON invalido ou com token de template", arguments);
+                    }
                 }
             }
-            Log(new JsonObject { ["event"] = "tool-args-guide", ["tool"] = name, ["len"] = arguments.Length });
-            string msg = "printf '%s\\n' 'ERRO: argumentos invalidos para a tool " + name +
-                " (JSON quebrado ou com token de template). Reemita a chamada com JSON valido: " +
-                "edit=path+oldString+newString; write=path+content; read=path; shell=command.'";
-            return ("shell", new JsonObject { ["command"] = msg }.ToJsonString(SerOpts));
+            // Schema: o 12B manda JSON valido mas sem as chaves obrigatorias
+            // (ex.: edit sem path/oldString, com o JSON aninhado em newString).
+            var missing = MissingArgs(name, candidate);
+            if (missing.Count > 0)
+                return NudgeArgs(name, "faltam as chaves " + string.Join(", ", missing), arguments);
+            return (name, candidate);
         }
         catch { return (name, arguments); }
     }

@@ -76,6 +76,9 @@ internal static class Program
         TestContext.Run("U-toolargs-valid", UnitToolStrategyTests.SanitizeKeepsValidJson);
         TestContext.Run("U-toolargs-tokens", UnitToolStrategyTests.SanitizeStripsLeakedTokens);
         TestContext.Run("U-toolargs-guided", UnitToolStrategyTests.SanitizeGuidesBrokenArgs);
+        TestContext.Run("U-toolargs-missing-keys", UnitToolStrategyTests.SanitizeGuidesMissingRequiredKeys);
+        TestContext.Run("U-toolargs-write-ok", UnitToolStrategyTests.SanitizeKeepsCompleteWrite);
+        TestContext.Run("U-toolargs-write-missing-content", UnitToolStrategyTests.SanitizeGuidesMissingContent);
         TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
         TestContext.Run("U-sanitize-system-first", UnitBypassTests.SanitizeSystemFirst);
         TestContext.Run("U-translate-system-first", UnitBypassTests.TranslateSystemFirst);

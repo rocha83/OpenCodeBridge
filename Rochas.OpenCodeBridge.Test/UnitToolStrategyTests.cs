@@ -88,8 +88,36 @@ internal static class UnitToolStrategyTests
         const string broken = """{"newString": "ABC\",oldString:\"A\",path:\"a/b.txt\"}}<tool_call|>""";
         var (name, args) = global::Rochas.OpenCodeBridge.Program.SanitizeToolCall("edit", broken);
         TestContext.Check(name == "shell", "argumentos irrecuperaveis viram shell guiado");
-        TestContext.Check(args.Contains("Reemita a chamada com JSON valido"), "guia pede reemissao com JSON valido");
+        TestContext.Check(args.Contains("eemita a chamada com JSON completo"), "guia pede reemissao com JSON completo");
         TestContext.Check(args.Contains("edit=path+oldString+newString"), "guia lembra as chaves da edit");
+        return Task.CompletedTask;
+    }
+
+    public static Task SanitizeGuidesMissingRequiredKeys()
+    {
+        const string noPath = """{"newString":"ABC\",oldString:","replaceAll":true}""";
+        var (name, args) = global::Rochas.OpenCodeBridge.Program.SanitizeToolCall("edit", noPath);
+        TestContext.Check(name == "shell", "edit sem path/oldString vira shell guiado");
+        TestContext.Check(args.Contains("faltam as chaves", StringComparison.Ordinal)
+                          && args.Contains("path", StringComparison.Ordinal)
+                          && args.Contains("oldString", StringComparison.Ordinal), "guia lista as chaves faltantes");
+        TestContext.Check(args.Contains("Nao aninhe JSON", StringComparison.Ordinal), "guia proibe JSON aninhado");
+        return Task.CompletedTask;
+    }
+
+    public static Task SanitizeKeepsCompleteWrite()
+    {
+        const string ok = """{"path":"a/b.txt","content":"x"}""";
+        var (name, args) = global::Rochas.OpenCodeBridge.Program.SanitizeToolCall("write", ok);
+        TestContext.Check(name == "write" && args == ok, "write com path+content passa intacta");
+        return Task.CompletedTask;
+    }
+
+    public static Task SanitizeGuidesMissingContent()
+    {
+        const string noContent = """{"path":"a/b.txt"}""";
+        var (name, args) = global::Rochas.OpenCodeBridge.Program.SanitizeToolCall("write", noContent);
+        TestContext.Check(name == "shell" && args.Contains("content", StringComparison.Ordinal), "write sem content vira shell guiado");
         return Task.CompletedTask;
     }
 
