@@ -103,3 +103,22 @@ Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga. Para
 - Sem delegação no plan, cutucada mecânica (`[Plan-delegate n/2]`, máx 2).
 - Enunciado ao subagente: vai em `tool_calls.args` (`{"prompt": ...}`) e
   aparece nos labels ("Delegando a um subagente…" + trecho).
+
+## Tools e comportamento (adicionado 2026-10-19, baseado em logs dos belts)
+
+Problemas observados nos testes:
+- BUILD nao executava write (1 tool call ficticia "subagent") → asserts fracos, sem artefatos reais.
+- ORCH travava no Scripter (loop de tool calls repetindo o mesmo script).
+- Scripts com sintaxe invalida (C# inline em bash sem heredoc).
+- Permission denied intermitente em /tmp/opencode/belts/<key>.
+- HttpClient timeout 1200s em faixas complexas.
+
+Diretrizes para system prompts e tails de tools:
+1. PARALELISMO: permitir multiplas tool calls por turno quando independentes (ex.: varios write de arquivos distintos). Nao serializar chamadas independentes "uma por vez".
+2. GRAVACAO EXTENSIVA: para enunciados complexos, criar TODOS os artefatos em paralelo no mesmo turno quando nao houver dependencia. Enunciado de 5 fases → >=5 arquivos.
+3. BASH PURO: scripts devem ser bash puro. Codigo de outras linguagens via heredoc (cat << 'EOF' > arquivo.cs). Validar com bash -n.
+4. ANTI-LOOP: 1 write por arquivo, depois SCRIPTER-OK. Max 2 turnos por tarefa. Nao repetir a mesma chamada write.
+5. ANTI-FORGERY/PERMISSAO: limpar workspace (rm -rf) antes de cada run; chmod 777; nao reutilizar diretorios de runs anteriores.
+6. TIMEOUT: faixas complexas (marrom/preta) precisam de >=30 min. Rodar faixas em ordem crescente de complexidade.
+7. RETRY: Orch deve tentar ate 3x se JSON invalido; parsing tolerante (extrair JSON entre [ ]).
+8. RESULTADOS: gravar log parcial por fase (1/4, 2/4, 3/4, 4/4) com timestamp; result.json apenas no final, com escape de aspas.

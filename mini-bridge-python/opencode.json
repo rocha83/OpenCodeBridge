@@ -1,0 +1,80 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "alt12b/gemma-4-12b",
+  "small_model": "alt12b/gemma-4-12b",
+  "enabled_providers": ["alt12b", "alt-e2b"],
+  "agent": {
+    "build": {
+      "prompt": "Voce e um agente codificador desenvolvedor senior autonomo que conhece multiplas linguagens de programacao. Nao se apresente sem te perguntarem, anuncie em uma frase o que vai fazer a cada tool que for usar, responda no idioma do usuario e seja sucinto em suas respostas.",
+      "options": {
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      }
+    },
+    "plan": {
+      "prompt": "Voce e um agente codificador desenvolvedor senior autonomo que conhece multiplas linguagens de programacao. Nao se apresente sem te perguntarem, anuncie em uma frase o que vai fazer a cada tool que for usar, responda no idioma do usuario e seja sucinto em suas respostas.",
+      "options": {
+        "chat_template_kwargs": {
+          "enable_thinking": true
+        }
+      }
+    }
+  },
+  "providers": {
+    "alt12b": {
+      "name": "llama :4100 (12B) via pattern-bridge :4300",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://127.0.0.1:4300/v1",
+        "apiKey": "guest@123"
+      },
+      "options": {
+        "timeout": 1800000,
+        "headerTimeout": 900000,
+        "chunkTimeout": 900000
+      },
+      "models": {
+        "gemma-4-12b": {
+          "modelID": "gemma-4-12b",
+          "name": "Gemma4 12B local",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 8192
+          }
+        }
+      }
+    },
+    "alt-e2b": {
+      "name": "llama :4110 (E2B) via pattern-bridge :4301",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://127.0.0.1:4301/v1",
+        "apiKey": "guest@123"
+      },
+      "options": {
+        "timeout": 1800000,
+        "headerTimeout": 900000,
+        "chunkTimeout": 900000
+      },
+      "models": {
+        "gemma-4-e2b": {
+          "modelID": "gemma-4-e2b",
+          "name": "Gemma4 E2B local (64k)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 65536,
+            "output": 8192
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,86 @@
 # PENDINGS — OpenCodeBridge
 
+## Suíte E2E: trilha standalone (opencode real) + role build — feito 2026-10-19
+
+- Testes complexos com tools **não** rodam com thinking on (rambling/alucinação).
+  A suíte usa sempre o **role build** (`gemma-4-12b-build`, thinking off):
+  `TestContext.SuiteModel` aplica o sufixo de `--role` (default `build`) ao modelo
+  servido; `--model` explícito vence. Science/mission/devpipe usam `SuiteModel`.
+- Novo modo **`--standalone`**: desvia cada E2E para o **opencode CLI real**
+  (`opencode run`) com o **mesmo enunciado**, em vez de HTTP direto na bridge.
+  - Conjunto `E-standalone-{oi,tools,write,devpipe,science,mission-tools}`.
+  - `--standalone-agent` (default `build`; `exec` -> `llama/` E2B).
+  - `--standalone-model` (provider/model) sobrepõe; senão deriva do agent.
+  - Fase 3 do `run-e2e-pipeline.sh` roda build (GPU) + exec (CPU).
+- Script auxiliar: `run-opencode-standalone.sh` (mesmas 6 tarefas, direto no CLI).
+- `harnessToolsTail` ganhou regras de **F#** e de **formatação numérica**:
+  - F#: `System.Math.Sin/Cos/Sqrt/PI` (nunca `open System.Math`); sem `+. *. /.`;
+    `printfn "%.6f" valor`; `dotnet run --project`.
+  - C#: `value.ToString("F6", InvariantCulture)`; **nunca** `%.6f`.
+- Runbook: `RUNBOOK-E2E.md` (seção "Modo standalone").
+- Robustez do standalone (sob `sudo`/carga): o harness chama `opencode run --standalone`
+  (servidor **privado** — evita `Timed out waiting for the background service to start`)
+  e o pipeline exporta `XDG_CONFIG_HOME` do usuário invocador (`SUDO_USER`) para o
+  opencode achar o config de modelos/agents (senão: `Model unavailable`).
+- Relatório com métricas: `RELATORIO-SPRINT-2026-10-19.md`.
+- **Auto-gestão de testes (evolução)**: `DOC-EVOLUCAO-AUTO-TESTE.md` — supervisor (orch 12B)
+  gerencia a pipe full sobre instâncias de si (12B build) e o filho E2B (exec), com
+  segmentação azul→preta e aceite por artefato.
+
+## Permissao interativa de tools (RiskToolsAlerts) — plano para fechar
+
+**Mudanca de principio (2026-10-18):** manipular tools NAO pode mais ser radical
+omissiva. O padrao e PERMISSIVO: deixa a chamada acontecer, e o que esta na
+blacklist vira **alerta + pergunta** ao usuario — o humano decide, a bridge nao
+recusa por conta propria. `--risk-ask 0` restaura a recusa antiga (fail-closed).
+
+O que ja esta em `main` (build 0 avisos / 0 erros nos 2 projetos):
+
+| caminho | mecanismo |
+|---|---|
+| opencode (`/v1/responses`) | tool `question` nativa, com motivo `papel` ou `risco` |
+| Web UI (2 loops `ChatController`) | `ConfirmGate` (botoes Sim/Nao / aval digitado) |
+
+- **Bridge** — `ToolBlacklist` e `RiskToolsAlerts` caem na MESMA primitive
+  `PendingRisks`: emite `question`, espera `function_call_output`.
+  - `RiskQuestionArgs(tool, args, role, reason)` — texto por motivo:
+    `"papel"` (tool fora do role) / `"risco"` (comando perigoso).
+  - `RiskScanAnswers(input)` — SIM: `RiskApprovedOnce[ToolSig]` (1 execucao,
+    `TryRemove`, TTL `--risk-ask-minutes`, default 30) + aviso no historico do
+    MODELO reemitindo a chamada exata. NAO: `RiskRefused` + aviso "nao execute".
+  - `RiskToolsAlerts` por role = regex (`--risk-tools-alerts` /
+    appsettings `riskToolsAlerts`) casando `nome + argumentos` normalizados.
+  - `IsRiskCall` passa a aceitar papel+risco; precedencia: **avaliacao do
+    usuario > blacklist** (a blacklist so pergunta, nao barra).
+- **Web** — `ConfirmGate.LoadRiskAlerts(config)` no startup; `NeedsConfirmation`
+  e `ConfirmGateAsync` ganharam `agentId`; risco declarado tem precedencia no
+  rotulo (`LabelFor`).
+
+### Pendencias para concluir
+1. **Config real** nos dois `appsettings.json`:
+   - bridge: `riskToolsAlerts` (ex. `Plan`: `git\s+push`, `\brm\b`, `\bdd\b`,
+     `\bmkfs\b`, `reset --hard`, `/dev/sd`).
+   - Web: `RiskToolsAlerts` (`{ "<agentId>": [ ... ] }`) — id = id do agente.
+   - units systemd: `--risk-tools-alerts "Plan=...;Orch=..."` se preferir CLI.
+2. **Reiniciar** `bridge-gpu bridge-cpu` + o servico da Web apos a config.
+3. **Testes ao vivo**:
+   - opencode: Plan pede `write`/`git push` -> item `function_call` `question`
+     na saida, `event: tool-ask` no log; SIM -> `risk-approved` + chamada real;
+     NAO -> `risk-answer approved=false`, nada roda.
+   - Web: MESMA tool + padrao -> evento `tool_confirm` no SSE + `/Chat/Approve`;
+     `bash -n` nao pergunta (inspetor mantem `Validation` liberado).
+4. **Suítes**: `dotnet run --project Rochas.OpenCodeBridge.Test -c Release
+   --no-build -- --skip-e2e` (ultimo verde: PASS=23 FAIL=0) + `Web.Test`.
+5. **`HISTORY.md`** com a secao nova + **sync do remaster**
+   (`units/`, `web-ui/appsettings.json`).
+
+### Nao quebrar
+- tools proibidas continuam ANUNCIADAS ao modelo (a chamada que vira pergunta;
+  nunca se esconde o schema).
+- `question` no `ToolExecutor` da Web segue negada no executor — quem pergunta
+  e o `ConfirmGate` APOS a traducao (o executor nao deve perguntar 2x).
+- `write`/`edit` do `ConfirmGate` nao deixam de ser cobertos pelo `RiskToolsAlerts`.
+
 ## tools-dev-pipe (plano do enunciado de 10 passos)
 - Belt `tools-dev-pipe` em `BeltUiTests` + fase `toolsdevpipe`: enunciado via `/Chat/Stream` (agente 8, `AutoApprove=true`, sem delegar).
 - Adaptações: sem webdriver no bridge — clima SP via tool `fetch` (`wttr.in`); nome aleatório `devpipe-*.txt` gerado pelo modelo, teste casa por padrão; zip via `shell`.
@@ -129,3 +210,88 @@
 ---
 
 *Última atualização: 2026-10-15*
+
+## Politica de tools em endpoint unico (`/api/permission/check`) — estado no commit
+
+**Feito e verificado nesta rodada (sem build novo no push):**
+- Bridge e a dona da politica: `PermissionOf(modelId, tool, args)` -> `allow` /
+  `ask` / `deny`, com motivo `risco` (RiskToolsAlerts) ou `papel` (ToolBlacklist).
+- `POST /api/permission/check` (irmao de `GET /api/harness`, mesmo padrao
+  "fonte unica: a web consulta aqui") devolve `{action, reason, role, tool, notice}`.
+- Web: `ConfirmGate` perdeu a politica local (`LoadRiskAlerts`, `IsRisk`,
+  `RiskLabel`, `LabelFor`, o `agentId` condicional). `ConfirmGateAsync` consulta
+  a bridge; falha de rede = `ask` (fail-closed).
+- Config real: `riskToolsAlerts` por role no `appsettings.json` (precedencia
+  sobre a CLI), `riskAsk: true`, `riskAskMinutes: 30`. Plan/Orch/MoE **leem**
+  git; `git push`, `rm`, `dd`, `mkfs`, `shutdown`, `reset --hard`, `/dev/sd*`
+  alertam. Units perderam `git,push,sync` da blacklist.
+- Matriz medida no endpoint: 8/8 (plan shell allow, plan write ask/papel,
+  plan `git log` allow, plan `git push` ask/risco, build write allow,
+  build `git push` ask/risco, build `rm -rf` ask/risco, build `ls` allow).
+
+**PENDENTE 1 — a pergunta da bridge precisa ser APRESENTADA pela Web**
+(achado depois do commit; patch pronto em `/tmp/opencode/patch_question_present.py`,
+**nao aplicado**): no caminho padrao (`Orchestration:UseResponsesBypass =
+/v1/responses`), a bridge **ja** emite a tool nativa `question` (com
+`PendingRisks[call_id]`); a Web hoje manda essa chamada ao `ToolExecutor`, que a
+nega ("Sem interacao com o usuario neste fluxo") — ou seja, no caminho padrao a
+permissao interativa **nao** chega a aparecer. O patch: `ConfirmGate.IsQuestion`,
+`AskText`, `RiskHeader`, `AnswerFor` (Sim = primeiro rotulo, Nao = ultimo ->
+"Autorizar"/"Negar", que e o que `RiskAnswerYes` reconhece) e
+`PresentQuestionAsync` devolvendo o rotulo no MESMO `call_id`;
+`ConfirmGateAsync` ganha `bridgeDecided: true` no call site do bypass (a bridge
+filtrou: nao re-decidir) e remove o `NeedsConfirmation` morto.
+
+**PENDENTE 2 — bateria de testes com cobertura >= 80%**: falta (a) testes de
+integracao do endpoint na suite da bridge (matriz role x tool x args) e
+(b) instrumentacao de cobertura. **Bloqueio honesto: nao ha ferramenta de
+cobertura disponivel offline** — `coverlet`/`Microsoft.CodeCoverage` nao existem
+no cache NuGet (cache vazio), sem `dotnet tool` global e sem .nupkg no disco;
+instalar depende de rede. Alternativas se a rede voltar: `coverlet.msbuild` nos
+2 projetos de teste, ou `dotnet-coverage` como tool global.
+
+
+
+### Riscos abertos (ordem de severidade)
+
+| # | Risco | Evidência | Ação |
+|---|---|---|---|
+| D-01 | Treino executa dentro da requisição HTTP | `TrainingJobsController.Run` → `TrainingEngine.RunAsync` | fila + worker (`BackgroundService`), claim atômico, cancelamento cooperativo |
+| D-02 | "Sem Python" violado no modo avançado | `TrainingEngine.cs` (`QLORA_SCRIPT`, default `sft_train.py`) | decidir: adaptador externo opcional ou remoção |
+| D-03 | `TorchSharp` referenciado e não usado; backend é MLP `double[]` | `TrainingEngine.csproj`, `TorchSharpTrainingBackend` | renomear para o que é; provar TorchSharp (GPU, autograd, Adam) antes de prometer treino |
+| D-04 | Filtros de relatório eram ignorados | `ReportService.QueryAsync` | **feito nesta rodada**: De/Até, banda/faixa de acurácia, família de modelo, status por código, 400 para filtro inválido |
+| D-05 | JWT com chave fixa no código | `Api/Program.cs`, `Web/Program.cs` | mover para configuração/secret store |
+| D-06 | Credenciais seed `admin/admin` e `teste@e2e.local/Teste@123` | `Web/Program.cs` | apenas Development; troca forçada |
+| D-07 | Proxy aceita qualquer Bearer e envia `guest@123` ao upstream | `ProxyController.cs` | validar token; credencial configurável |
+| D-08 | Binding escolhido é sempre o primeiro | `ProxyController.cs` | resolver por `model`/role |
+| D-09 | `HarnessRun` gravado com `ProfileVersionId=0`/`EvidenceId=0` | `ProxyController.cs` | vincular perfil/versão/captura |
+| D-10 | Chat UI órfã (7 rotas inexistentes) | `Views/Chat/Index.cshtml` × `ChatController` | portar endpoints ou remover a view |
+| D-11 | `IRepository`/`IUnitOfWork` mortos | `Domain/Common` sem DI | implementar ou remover |
+| D-12 | `Application` referencia SQLite/Dapper | `Application.csproj` | mover dependência para Infrastructure |
+| D-13 | Relatórios carregam a tabela inteira e paginam em memória | `ReportService` | paginação/contagem em SQL (Fase 2) |
+| D-14 | Sem FKs físicas nem teste de integridade referencial | `AppDb.Init` | relatório R29 + validação de escrita |
+
+### Pendências de relatório (RP)
+
+| # | Pendência | Situação |
+|---|---|---|
+| RP-01 | `DateFrom`/`DateTo` ignorados | resolvido (inclusivo por dia, UTC) |
+| RP-02 | `AccuracyBand/Min/Max`, `ModelFamily`, `Mode`, `UserId` ignorados | resolvido para entidades que possuem a coluna/vinculo; demais retornam 400 |
+| RP-03 | `AgentId` sem FK | 400 explícito até existir vínculo |
+| RP-04 | `evidence_id` sem FK | pendente (validação + R29) |
+| RP-05 | `approved_by` textual em versões de harness | pendente |
+| RP-06 | Datas TEXT sem normalização | resolvido na comparação por dia |
+| RP-07 | PDF rotulado como HTML | resolvido (`application/pdf`) |
+| RP-08 | Página `/Reports` fora do menu | resolvido (menu + `/Approvals`) |
+| RP-09 | Paginação em memória | pendente |
+| RP-10 | Duas fontes de acurácia | pendente (regra por definição) |
+| RP-11 | `Status` textual × `status_id` | resolvido para cards (`entity_statuses.code` ou id numérico) |
+| RP-12 | Sem catálogo de definições | pendente (R1–R30) |
+
+### Decisões abertas
+
+1. `AgentId`: criar `agent_id` em runs/capturas ou remover do contrato.
+2. Acurácia canônica: card ou melhor job do experimento.
+3. Período default: sem filtro retorna tudo ou janela de 90 dias com aviso.
+4. Export assíncrono a partir de quantas linhas.
+5. `approved_by`: normalizar para `users.id` ou manter login.

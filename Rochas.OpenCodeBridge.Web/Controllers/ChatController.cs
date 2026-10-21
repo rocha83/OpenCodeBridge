@@ -42,6 +42,28 @@ public sealed class ChatController(
         catch { return true; }
     }
 
+    // Politica de tools: consulta a BRIDGE (fonte unica; a Web so apresenta).
+    // Falha de rede => "ask" (fail-closed: nunca libera por omissao).
+    private static async Task<string> PermissionCheckAsync(IHttpClientFactory http, Models.Agent? agent,
+        string name, string args, CancellationToken ct)
+    {
+        try
+        {
+            if (agent is null) return "ask";
+            var client = http.CreateClient("bridge");
+            var body = System.Text.Json.Nodes.JsonNode.Parse("{}")!.AsObject();
+            body["model"] = agent.Model;
+            body["tool"] = name;
+            body["arguments"] = args;
+            var content = new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
+            using var res = await client.PostAsync(agent.BridgeUrl.TrimEnd('/') + "/api/permission/check", content, ct);
+            if (!res.IsSuccessStatusCode) return "ask";
+            var node = System.Text.Json.Nodes.JsonNode.Parse(await res.Content.ReadAsStringAsync(ct));
+            return node?["action"]?.GetValue<string>() ?? "ask";
+        }
+        catch { return "ask"; }
+    }
+
     // Streams ativos por sessão p/ Parar via API (além do abort do fetch).
     private static readonly ConcurrentDictionary<int, CancellationTokenSource> ActiveStreams = new();
 
@@ -730,7 +752,7 @@ public sealed class ChatController(
                 var body = new JsonObject
                 {
                     ["model"] = agent.Model,
-                    ["temperature"] = 0.4,
+                    ["temperature"] = 0.6,   // resumo de compactacao = papel Plan
                     ["stream"] = false,
                     ["messages"] = new JsonArray
                     {
@@ -1326,12 +1348,33 @@ public sealed class ChatController(
                 break;
             }
 
-            // Ao contexto volta SÓ texto (user/assistant/subagente): outputs de
-            // tools NÃO entram no loop (persistidos em tool_calls + histórico).
-            // Sem tool_calls no contexto (sem elas, a API exige as respostas).
+            // Ao contexto volta texto + tool_calls + outputs truncados: o modelo
+            // vê o resultado real da tool e não repete a mesma chamada às cegas.
+            // O par assistant(tool_calls)/tool(tool_call_id) é exigido pela API.
             string turnContent = StripThinkTags(assistantContent.ToString(), assistantThinking);
-            if (!string.IsNullOrWhiteSpace(turnContent))
-                messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = turnContent });
+            if (!string.IsNullOrWhiteSpace(turnContent) || toolCalls.Count > 0)
+            {
+                var assistantTurn = new JsonObject
+                {
+                    ["role"] = "assistant",
+                    ["content"] = string.IsNullOrWhiteSpace(turnContent) ? null : turnContent,
+                };
+                if (toolCalls.Count > 0)
+                {
+                    var calls = new JsonArray();
+                    foreach (var tc in toolCalls)
+                    {
+                        calls.Add(new JsonObject
+                        {
+                            ["id"] = tc.Id,
+                            ["type"] = "function",
+                            ["function"] = new JsonObject { ["name"] = tc.Name, ["arguments"] = tc.Args },
+                        });
+                    }
+                    assistantTurn["tool_calls"] = calls;
+                }
+                messages.Add(assistantTurn);
+            }
 
             // Persiste o texto do turno ao fechar (o que a bolha já exibiu),
             // sem esperar o fim do loop com as tools. Turno só-com-espaço e sem
@@ -1352,7 +1395,10 @@ public sealed class ChatController(
 
             // Executa cada tool e adiciona resultado às mensagens.
             // Progresso vai ao cliente em tempo real para a UI indicar execução.
-            foreach (var (id, name, args) in toolCalls)
+            // ToolCall.Args vem do JSON do modelo: o compilador o trata como
+            // possivelmente nulo. Afirma-se aqui, na fronteira do laco, em vez de
+            // repetir a mesma verificacao em cada uso.
+            foreach ((string id, string name, string args) in toolCalls)
             {
                 anyToolRan = true;
                 if (name == "subagent") anySubRan = true;
@@ -1361,6 +1407,9 @@ public sealed class ChatController(
                 {
                     if (session?.Id is int sidEmpty)
                         await sessionService.LogToolAsync(sidEmpty, agent.Name, "subagent", args, false, "recusado: prompt vazio", 0);
+                    // Fecha o tool_call_id mesmo na recusa: a API exige a resposta.
+                    messages.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = id,
+                        ["content"] = "[subagent] recusado: prompt vazio. Reenvie a fase com objetivo, arquivos e o que fazer." });
                     messages.Add(new JsonObject { ["role"] = "user",
                         ["content"] = "[subagent] recusado: prompt vazio. Reenvie a fase com objetivo, arquivos e o que fazer." });
                     continue;
@@ -1386,7 +1435,9 @@ public sealed class ChatController(
                         if (session?.Id is int sidRej)
                             await sessionService.LogToolAsync(sidRej, agent.Name, "subagent", args, false, rej, 0, null, turnMsgId > 0 ? turnMsgId : null);
                         await WriteProgressAsync(outputStream, "tool_done", name, false, ct, rej, 0, "", args);
-                        // Corretivo volta ao contexto como user (fala com o modelo).
+                        // Corretivo volta ao contexto como user; o tool_call_id
+                        // também recebe resposta para não invalidar o próximo turno.
+                        messages.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = id, ["content"] = rej });
                         messages.Add(new JsonObject { ["role"] = "user", ["content"] = rej });
                         continue;
                     }
@@ -1415,15 +1466,16 @@ public sealed class ChatController(
                     : null;
                 // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
                 var gateDeny = await ConfirmGateAsync(outputStream, name, args,
-                    Services.ConfirmGate.LastUserText(messages), session?.Id, session?.AutoApprove == true, ct);
-                var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
+                    Services.ConfirmGate.LastUserText(messages), session?.Id, session?.AutoApprove == true, ct,
+                    http, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent);
+                var result = gateDeny ?? toolExecutor.Execute(name, args ?? "", 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
                 toolExecutor.LogInnerAsync = null;
                 sw.Stop();
                 if (session?.Id is int sidLog)
                 {
-                    int outerId = await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
+                    int outerId = await sessionService.LogToolAsync(sidLog, agent.Name, name, args ?? "",
                         result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds,
                         null, turnMsgId > 0 ? turnMsgId : null);
                     if (turnMsgId <= 0) lock (unlinkedToolIds) unlinkedToolIds.Add(outerId);
@@ -1462,8 +1514,15 @@ public sealed class ChatController(
                 string output = result.Output ?? "";
                 string error = result.Error ?? "";
                 string contentFull = result.Success ? output : $"Error: {error}";
-                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds, "", args);
-                // Outputs NÃO voltam ao contexto; só o texto do subagente (como assistant).
+                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds, "", args ?? "");
+                // Devolve o output truncado no par tool_call_id: o modelo enxerga
+                // o resultado real (antes só via o texto do subagente).
+                messages.Add(new JsonObject
+                {
+                    ["role"] = "tool",
+                    ["tool_call_id"] = id,
+                    ["content"] = CutForContext(contentFull),
+                });
                 if (subText is not null)
                 {
                     // Resumo curto p/ contexto: o texto integral (com as linhas
@@ -1849,12 +1908,16 @@ public sealed class ChatController(
             }
             // Executa cada call e devolve outputs no próximo turno (a API exige
             // function_call_output p/ toda call; sem isso o modelo trava).
-            foreach (var (id, name, args) in accum.Calls)
+            foreach (var call in accum.Calls)
             {
+                // Args vem do acumulador (JSON do modelo): o compilador o trata como
+                // possivelmente nulo. Afirma-se na fronteira do laco, uma vez, em vez
+                // de repetir a verificacao em cada uso.
+                string id = call.Id, name = call.Name, args = call.Args!;
                 // Trava de call idêntica (ping-pong): 3x mesma tool+args
                 // seguidas = controle no input + retry do turno (a repetida
                 // não executa, sem nota na bolha). Após 2 controles, disjuntor.
-                string toolSig = name + "\n" + (args ?? "");
+                string toolSig = name + "\n" + args;
                 if (toolSig == lastToolSig) sameToolStreak++;
                 else { lastToolSig = toolSig; sameToolStreak = 1; }
                 if (harness && sameToolStreak >= 3)
@@ -1886,7 +1949,7 @@ public sealed class ChatController(
                 if (name == "subagent" && string.IsNullOrWhiteSpace(SubPrompt(args)))
                 {
                     if (session?.Id is int sidEmpty)
-                        await sessionService.LogToolAsync(sidEmpty, agent.Name, "subagent", args, false, "recusado: prompt vazio", 0);
+                        await sessionService.LogToolAsync(sidEmpty, agent.Name, "subagent", args ?? "", false, "recusado: prompt vazio", 0);
                     input.Add(new JsonObject
                     {
                         ["type"] = "message", ["role"] = "user",
@@ -1895,7 +1958,7 @@ public sealed class ChatController(
                     });
                     continue;
                 }
-                await WriteProgressAsync(outputStream, "tool_start", name, null, ct, "", 0, "", args);
+                await WriteProgressAsync(outputStream, "tool_start", name, null, ct, "", 0, "", args ?? "");
                 // Card imediato no "digitando": o sub real adota ao no primeiro chunk.
                 if (name == "subagent") await WriteProgressAsync(outputStream, "sub_start", name, null, ct);
                 // Gate de escopo: subagent recebe UMA fase (máx 2 recusas).
@@ -1903,15 +1966,15 @@ public sealed class ChatController(
                 if (harness && name == "subagent" && subScopeRejects < 2)
                 {
                     string subPrompt = "";
-                    try { subPrompt = JsonNode.Parse(args)?.AsObject()?["prompt"]?.GetValue<string>() ?? ""; }
+                    try { subPrompt = JsonNode.Parse(args ?? "")?.AsObject()?["prompt"]?.GetValue<string>() ?? ""; }
                     catch { /* args ilegível: deixa passar */ }
                     if (SubagentScopeGate.IsFullTaskPass(originalTask, subPrompt))
                     {
                         subScopeRejects++;
                         string rej = SubagentScopeGate.RejectMessage(subScopeRejects);
                         if (session?.Id is int sidRej)
-                            await sessionService.LogToolAsync(sidRej, agent.Name, "subagent", args, false, rej, 0);
-                        await WriteProgressAsync(outputStream, "tool_done", name, false, ct, rej, 0, "", args);
+                            await sessionService.LogToolAsync(sidRej, agent.Name, "subagent", args ?? "", false, rej, 0);
+                        await WriteProgressAsync(outputStream, "tool_done", name, false, ct, rej, 0, "", args ?? "");
                         input.Add(new JsonObject
                         {
                             ["type"] = "message", ["role"] = "user",
@@ -1939,9 +2002,10 @@ public sealed class ChatController(
                     }
                     : null;
                 // Portao de confirmacao (push/write/edit): sem aval, nega com pedido (nao executa).
-                var gateDeny = await ConfirmGateAsync(outputStream, name, args,
-                    Services.ConfirmGate.LastUserInputText(input), session?.Id, session?.AutoApprove == true, ct);
-                var result = gateDeny ?? toolExecutor.Execute(name, args, 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
+                var gateDeny = await ConfirmGateAsync(outputStream, name, args ?? "",
+                    Services.ConfirmGate.LastUserInputText(input), session?.Id, session?.AutoApprove == true, ct,
+                    http, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent);
+                var result = gateDeny ?? toolExecutor.Execute(name, args ?? "", 300, null, name == "subagent" && execAgent is not null && execAgent.Id != 1 ? execAgent : agent, name == "subagent" ? agent : null); // contexto no executor, permissão no orquestrador
                 anyToolRan = true;
                 toolExecutor.ProgressAsync = null;
                 toolExecutor.SubChunkAsync = null;
@@ -1949,7 +2013,7 @@ public sealed class ChatController(
                 sw.Stop();
                 if (session?.Id is int sidLog)
                 {
-                    int outerId = await sessionService.LogToolAsync(sidLog, agent.Name, name, args,
+                    int outerId = await sessionService.LogToolAsync(sidLog, agent.Name, name, args ?? "",
                         result.Success, result.Success ? result.Output : result.Error ?? "", sw.ElapsedMilliseconds);
                     lock (unlinkedToolIds) unlinkedToolIds.Add(outerId);
                 }
@@ -1984,11 +2048,11 @@ public sealed class ChatController(
                     catch { /* histórico best-effort */ }
                 }
                 string contentFull = result.Success ? (result.Output ?? "") : $"Error: {result.Error}";
-                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds, "", args);
+                await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds, "", args ?? "");
                 input.Add(new JsonObject
                 {
                     ["type"] = "function_call", ["id"] = id, ["call_id"] = id,
-                    ["name"] = name, ["arguments"] = args,
+                    ["name"] = name, ["arguments"] = args ?? "",
                 });
                 input.Add(new JsonObject
                 {
@@ -2095,7 +2159,7 @@ public sealed class ChatController(
     // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.
 
     // Prompt do subagente nos args (vazio = call fantasma, sem label).
-    private static string SubPrompt(string argsJson)
+    private static string SubPrompt(string? argsJson)
     {
         try { return JsonNode.Parse(argsJson ?? "")?.AsObject()?["prompt"]?.GetValue<string>() ?? ""; }
         catch { return ""; }
@@ -2172,10 +2236,20 @@ public sealed class ChatController(
     // dali em diante (sem re-perguntar); Nao/timeout nega so a call atual.
     // Checkbox da sessao (autoApprove) libera tudo sem perguntar.
     private static async Task<Services.ToolResult?> ConfirmGateAsync(System.IO.Stream outputStream,
-        string name, string args, string? lastUser, int? sessionId, bool autoApprove, CancellationToken ct)
+        string name, string args, string? lastUser, int? sessionId, bool autoApprove, CancellationToken ct,
+        IHttpClientFactory? http = null, Models.Agent? riskAgent = null)
     {
         if (autoApprove) return null;
-        if (!Services.ConfirmGate.NeedsConfirmation(name, args)) return null;
+        // Decisao na BRIDGE (fonte unica): o que a Web sabe e so apresentar.
+        var verdict = http is null ? "ask" : await PermissionCheckAsync(http, riskAgent, name, args, ct);
+        if (verdict == "deny")
+        {
+            await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct,
+                Services.ConfirmGate.DenyMessage, 0, "", args, 0, Services.ConfirmGate.Label(name, args));
+            return Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
+        }
+        if (verdict == "allow" && !Services.ConfirmGate.NeedsConfirmation(name, args)) return null;
+        if (verdict == "allow") return null;
         if (sessionId is int sidSeen && Services.ConfirmGate.IsAllowed(sidSeen, name)) return null;
         if (Services.ConfirmGate.ApprovedBy(lastUser))
         {

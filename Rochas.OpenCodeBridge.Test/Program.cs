@@ -17,9 +17,17 @@ internal static class Program
             if (args[i] == "--bridge" && i + 1 < args.Length) TestContext.Bridge = args[++i].TrimEnd('/');
             else if (args[i] == "--vllm" && i + 1 < args.Length) TestContext.Vllm = args[++i].TrimEnd('/');
             else if (args[i] == "--skip-e2e") TestContext.SkipE2E = true;
-            else if (args[i] == "--only" && i + 1 < args.Length) TestContext.Only = args[++i];
-            else if (args[i] == "--api-key" && i + 1 < args.Length) TestContext.ApiKey = args[++i];
+            else if (args[i] == "--only" && i + 1 < args.Length) TestContext.Only = args[++i];
+            else if (args[i] == "--belts" && i + 1 < args.Length) TestContext.BeltsFilter = args[++i];
+
+            else if (args[i] == "--api-key" && i + 1 < args.Length) TestContext.ApiKey = args[++i];
             else if (args[i] == "--jwt" && i + 1 < args.Length) TestContext.Jwt = args[++i];
+            else if (args[i] == "--role" && i + 1 < args.Length) TestContext.Role = args[++i];
+            else if (args[i] == "--model" && i + 1 < args.Length) TestContext.Model = args[++i];
+            else if (args[i] == "--standalone") TestContext.Standalone = true;
+            else if (args[i] == "--standalone-agent" && i + 1 < args.Length) TestContext.StandaloneAgent = args[++i];
+            else if (args[i] == "--standalone-model" && i + 1 < args.Length) TestContext.StandaloneModel = args[++i];
+            else if (args[i] == "--standalone-timeout" && i + 1 < args.Length) TestContext.StandaloneTimeoutSec = int.Parse(args[++i]);
         }
         Console.WriteLine($"[test] bridge={TestContext.Bridge} vllm={TestContext.Vllm} skipE2E={TestContext.SkipE2E}");
         string? cred = TestContext.Jwt ?? TestContext.ApiKey;
@@ -31,7 +39,8 @@ internal static class Program
             var st = TestContext.GetObj(TestContext.Bridge + "/api/status").GetAwaiter().GetResult();
             TestContext.ServedModel = st["model"]?.GetValue<string>() ?? "";
             TestContext.ServedThinking = st["thinking"]?.GetValue<string>() ?? "events";
-            Console.WriteLine($"[test] served={TestContext.ServedModel} coder={TestContext.ServedIsCoder} thinking={TestContext.ServedThinking}");
+            TestContext.ServedLegacy = st["legacy_harness"]?.GetValue<bool>() ?? false;
+            Console.WriteLine($"[test] served={TestContext.ServedModel} coder={TestContext.ServedIsCoder} thinking={TestContext.ServedThinking} legacy={TestContext.ServedLegacy}");
         }
         catch (Exception ex) { Console.WriteLine($"[test] sem status: {ex.Message}"); }
 
@@ -48,34 +57,42 @@ internal static class Program
         TestContext.Run("U-convert-invalid-arguments", UnitConvertTests.ConvertInvalidArguments);
         TestContext.Run("U-convert-coerced-text-call", UnitConvertTests.ConvertCoercedTextCall);
         TestContext.Run("U-convert-coerced-angle-call", UnitConvertTests.ConvertCoercedAngleCall);
+        TestContext.Run("U-convert-coerced-narrated-call", UnitConvertTests.ConvertCoercedNarratedCall);
+        TestContext.Run("U-convert-coerced-narrated-find", UnitConvertTests.ConvertCoercedNarratedFindExec);
+        TestContext.Run("U-convert-coerced-narrated-loose", UnitConvertTests.ConvertCoercedNarratedLooseQuotes);
         TestContext.Run("U-tools-execute", UnitToolsExecuteTests.ToolsExecute);
-        TestContext.Run("U-toolstrategy-execute-shell", UnitToolStrategyTests.ExecuteToShell);
-        TestContext.Run("U-toolstrategy-execute-write", UnitToolStrategyTests.ExecuteToWriteSingleQuotes);
-        TestContext.Run("U-toolstrategy-bash-to-shell", UnitToolStrategyTests.ExecuteBashMapsToShell);
-        TestContext.Run("U-toolstrategy-nonexecute-intact", UnitToolStrategyTests.NonExecuteStaysIntact);
-        TestContext.Run("U-toolstrategy-foreign-namespace", UnitToolStrategyTests.ForeignNamespaceStaysIntact);
-        TestContext.Run("U-toolstrategy-fs-guide", UnitToolStrategyTests.ExecuteWithFsGetsGuidance);
-        TestContext.Run("U-toolstrategy-multicall", UnitToolStrategyTests.ExecuteMultiCallScript);
-        TestContext.Run("U-toolstrategy-multicall-cap", UnitToolStrategyTests.ExecuteMultiCallCapped);
-        TestContext.Run("U-harness-strip-execute-chat", UnitToolStrategyTests.StripExecuteFromChatTools);
-        TestContext.Run("U-harness-strip-execute-responses", UnitToolStrategyTests.StripExecuteFromResponsesTools);
-        TestContext.Run("U-harness-code-mode-note", UnitToolStrategyTests.NeutralizeCodeModeWritesDirectToolsNote);
-        TestContext.Run("U-harness-quality-core", UnitToolStrategyTests.HarnessTailCarriesQualityCore);
-        TestContext.Run("U-toolargs-valid", UnitToolStrategyTests.SanitizeKeepsValidJson);
-        TestContext.Run("U-toolargs-tokens", UnitToolStrategyTests.SanitizeStripsLeakedTokens);
-        TestContext.Run("U-toolargs-guided", UnitToolStrategyTests.SanitizeGuidesBrokenArgs);
         TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
         TestContext.Run("U-sanitize-system-first", UnitBypassTests.SanitizeSystemFirst);
-        TestContext.Run("U-translate-system-first", UnitBypassTests.TranslateSystemFirst);
-        TestContext.Run("U-auth-jwt-roundtrip", UnitAuthTests.JwtRoundtrip);
-        TestContext.Run("U-auth-jwt-tamper", UnitAuthTests.JwtTamper);
-        TestContext.Run("U-auth-jwt-expiry", UnitAuthTests.JwtExpiry);
-        TestContext.Run("U-auth-jwt-short-secret", UnitAuthTests.JwtShortSecret);
-        TestContext.Run("U-auth-pbkdf2", UnitAuthTests.Pbkdf2);
-        TestContext.Run("U-auth-guard-trips", UnitAuthTests.GuardTrips);
-        TestContext.Run("U-auth-login-denied", UnitAuthTests.LoginDenied);
-        TestContext.Run("U-auth-swagger-jwt-doc", UnitAuthTests.SwaggerJwtDoc);
+        TestContext.Run("U-translate-system-first", UnitBypassTests.TranslateSystemFirst);
+
+        TestContext.Run("U-auth-jwt-roundtrip", UnitAuthTests.JwtRoundtrip);
+
+        TestContext.Run("U-auth-jwt-tamper", UnitAuthTests.JwtTamper);
+
+        TestContext.Run("U-auth-jwt-expiry", UnitAuthTests.JwtExpiry);
+
+        TestContext.Run("U-auth-jwt-short-secret", UnitAuthTests.JwtShortSecret);
+
+        TestContext.Run("U-auth-pbkdf2", UnitAuthTests.Pbkdf2);
+
+        TestContext.Run("U-auth-guard-trips", UnitAuthTests.GuardTrips);
+
+        TestContext.Run("U-auth-login-denied", UnitAuthTests.LoginDenied);
+
+        TestContext.Run("U-auth-swagger-jwt-doc", UnitAuthTests.SwaggerJwtDoc);
+
         TestContext.Run("U-auth-status-guard", UnitAuthTests.StatusGuard);
+
+        // ---- e2e standalone (opencode real, mesmos enunciados)
+        if (TestContext.Standalone)
+        {
+            TestContext.Run("E-standalone-oi", E2EStandaloneTests.Oi);
+            TestContext.Run("E-standalone-tools", E2EStandaloneTests.Tools);
+            TestContext.Run("E-standalone-write", E2EStandaloneTests.Write);
+            TestContext.Run("E-standalone-devpipe", E2EStandaloneTests.DevPipe);
+            TestContext.Run("E-standalone-science-tools", E2EStandaloneTests.ScienceTools);
+            TestContext.Run("E-standalone-mission-tools", E2EStandaloneTests.MissionTools);
+        }
 
         // ---- e2e (modelo vivo)
         if (!TestContext.SkipE2E)
@@ -89,6 +106,8 @@ internal static class Program
             TestContext.Run("E-responses-simple", E2EToolTests.SimpleResponses);
             TestContext.Run("E-responses-tools", E2EToolTests.ToolResponses);
             TestContext.Run("E-devpipe-tools", E2EDevPipeTests.DevPipeTools);
+            // Teste de tools completo nos 2 modelos (GPU1 12B + GPU2 E2B) em paralelo.
+            TestContext.Run("E-tools-full", E2EToolsFullTests.FullTools);
             TestContext.Run("E-devpipe-infra", E2EDevPipeTests.DevPipeInfra);
             TestContext.Run("E-devpipe-vision", E2EDevPipeTests.DevPipeVision);
             TestContext.Run("E-devpipe-doc", E2EDevPipeTests.DevPipeDoc);
@@ -109,6 +128,21 @@ internal static class Program
             TestContext.Run("E-ent-worker", E2EEnterpriseTests.BackgroundWorker);
             TestContext.Run("E-ent-garnet", E2EEnterpriseTests.GarnetCircuit);
             TestContext.Run("E-ent-dashboard", E2EEnterpriseTests.ReactDashboard);
+            // frontpipe: o 12B gera o front (MVC+React+Bootstrap+Tailwind), o E2B ajusta
+            // pelos enunciados e a suite confere os estilos medidos no navegador.
+            TestContext.Run("E-front-gen", E2EFrontPipeTests.Gen);
+            TestContext.Run("E-front-edit", E2EFrontPipeTests.Edit);
+            TestContext.Run("E-front-verify", E2EFrontPipeTests.Verify);
+            // Scripter 12B compoe script bash (+ valida sintaxe); Scripter E2B gera companion .md; Exec (backlog) le companion e executa.
+            TestContext.Run("E-scripter-gen", E2EScripterTests.ScripterGen);
+            TestContext.Run("E-companion-gen", E2EScripterTests.CompanionGen);
+            TestContext.Run("E-exec-read", E2EScripterTests.ExecValidate);
+            // Orch 12B segmenta enunciado em tarefas atomicas (para Scripters 12B + Exec E2B).
+            TestContext.Run("E-orch-segment", E2EOrchTests.Segment);
+            // Belts (azul→preta) sem navegador: envio direto via bridge pura.
+            TestContext.Run("E-belts-direct", E2EBeltsTests.Direct);
+            // Belts (azul→preta) Trilha BUILD: 12B build implementa diretamente.
+            TestContext.Run("E-belts-build-direct", E2EBeltsBuildTests.Direct);
         }
 
         return TestContext.Summary();

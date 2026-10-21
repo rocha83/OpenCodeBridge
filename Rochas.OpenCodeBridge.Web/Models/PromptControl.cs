@@ -4,7 +4,7 @@ using Rochas.Data.Specification.Annotations;
 
 namespace Rochas.OpenCodeBridge.Web.Models;
 
-// Controles de repeticao + calda de system prompt (gerenciado no Fluxo, so admin).
+// Controles de repeticao + calda de system prompt (gerenciado no Flow, so admin).
 // Chaves conhecidas: system_tail, anti_repeat_enabled, anti_repeat_window,
 // anti_repeat_notice, guardrail (espelho informativo do sufixo da bridge).
 [Table("prompt_controls")]

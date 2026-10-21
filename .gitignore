@@ -2,3 +2,6 @@ bin/
 obj/
 *.user
 .vs/
+test-logs/
+__pycache__/
+mini-bridge-python/logs/

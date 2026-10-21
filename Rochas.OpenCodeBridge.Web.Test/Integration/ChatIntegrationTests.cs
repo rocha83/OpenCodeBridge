@@ -214,7 +214,8 @@ internal static class ChatIntegrationTests
         using var stream = await resp.Content.ReadAsStreamAsync();
         using var reader = new System.IO.StreamReader(stream);
         string? line;
-        bool gotReasoning = false, gotContent = false, gotDone = false;
+        // so o que o helper realmente verifica: conteudo, [DONE] e as duas mensagens.
+        bool gotContent = false, gotDone = false;
         while ((line = await reader.ReadLineAsync()) != null)
         {
             if (line.StartsWith("data: "))
@@ -225,7 +226,7 @@ internal static class ChatIntegrationTests
                 {
                     var chunk = JsonNode.Parse(data);
                     var delta = chunk?["choices"]?[0]?["delta"];
-                    if (delta?["reasoning_content"] != null) gotReasoning = true;
+
                     if (delta?["content"] != null) gotContent = true;
                 }
                 catch { }

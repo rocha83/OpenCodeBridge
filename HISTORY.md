@@ -1,61 +1,744 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
-## Harness: Code Mode do opencode removido do catálogo + aceite por histórico git (2026-10-21)
-- **Referência medida:** dump `docs/harness/opencode` (`system.md` 14.010 chars, 12 tools,
-  `req-chat.json` 28.477) capturado pela sonda com `--harness 0 --legacy-harness 0`.
-  `execute` é tool do **cliente** opencode (Code Mode: 4.476 chars = 31% do prompt); a
-  bridge não tem sandbox JS — o modelo só o via porque o cliente o anunciava no request.
-- **Catálogo:** `tool-strip` remove `execute` do array de tools (sob `--tool-strategy`,
-  default on) e `harness-strip` troca o bloco `# Code Mode` pela nota "tools diretas, sem
-  sandbox JS", preservando o catálogo de skills e o AGENTS.md do prompt.
-- **Resgate de script:** `tool-unwrap` converte `execute{tools.X(...)}` com N chamadas em N
-  tool calls na ordem (cap 8, chaves balanceadas, strings respeitadas); `tool-guide` devolve
-  um `shell` corretivo quando o script é `require`/`fs` puro.
-- **Hygiene de argumentos:** `SanitizeToolCall` limpa tokens de template vazados
-  (`<tool_call|>`, `<|channel>thought`), recorta o objeto balanceado quando sobra prosa e,
-  se irrecuperável, devolve `shell` pedindo reemissão (`edit=path+oldString+newString`).
-  Caso medido (`tools-dev-pipe`): **256 `Edit failed` em 259 turnos**, 30 min, 121.391 chars,
-  1 commit, sem `AWC`/zip.
-- **Harness nativo (web):** núcleo de qualidade agregado à `HarnessToolsTail` — contexto
-  primeiro (docs/AGENTS + `git log`), gravar todos os artefatos sem stub/TODO, correção por
-  `edit`/`sed` no trecho exato, ACEITE executado com evidência, build/teste vermelho = não
-  concluído, fail-fast honesto. Decisão registrada em `docs/harness/opencode/BRIDGE-NATIVE.md`
-  (não portar Code Mode, skills, `Your Model` nem Environment).
-- **Aceite dos belts pelo histórico real:** enunciados de `tools-full` e `tools-dev-pipe`
-  passam a exigir um commit por etapa (criação e edição) e `git log --oneline --stat` na
-  resposta; a verificação headless lê `git log --name-only` e exige ≥2 commits com o arquivo
-  nas duas etapas. Evidência (`tools-full` PASS): `A docs/plano.md` (commit inicial) +
-  `M docs/plano.md` (commit da edição), `git=2cmt plano_em=2cmt`.
-- **Runner headless das belts:** `--opencode-run [--belts a,b] [--agent] [--model] [--workdir]`
-  executa `opencode run --standalone --thinking --auto` no workspace do belt (padrão que já
-  existia em `Rochas.OpenCodeBridge/Gate.cs`), com `PWD` forçado (o opencode resolve o
-  workspace por essa env) e log em `_opencode.log`.
-- **Testes:** units **37 PASS / 0 FAIL / 3 SKIP** (novos: `U-toolstrategy-multicall`,
-  `-multicall-cap`, `-fs-guide`; `U-harness-strip-execute-chat`, `-responses`,
-  `U-harness-code-mode-note`, `U-harness-quality-core`, `U-toolargs-valid`, `-tokens`,
-  `-guided`); build Release 0 erros/0 avisos.
+## Tubo puro por perfil, coerção só no legado, shape de reasoning e sonda de args (2026-10-20)
 
-## ToolStrategy: resgate de `execute` no padrão Code Mode (2026-10-21)
-- **Problema medido:** sessão opencode `Greeting` (agente build, `gemma4-12b-build`)
-  em loop de 15 chamadas `execute` com `return tools.shell({...})`; o sandbox
-  devolveu `Unknown tool 'shell'. Use search to find available tools.` para todas
-  (`executed=false`, `metadata.error=true`), sem nunca criar a pasta/arquivo.
-- **Causa raiz:** os prompts dos agentes (`agents/build.md`, `build-exec.md`,
-  `scripter.md`) afirmavam `Sandbox da tool execute: JavaScript (CommonJS com
-  require/module.exports)` — falso: o sandbox só expõe namespaces (`opencode.*`,
-  `browser`), sem `require`/`fs`/`tools.shell`. O 12B obedeceu o prompt e tentou
-  `require('fs')` e depois `tools.shell`.
-- **Correção:** (1) frase corrigida nos prompts dos agentes — tools de arquivo são
-  chamadas diretas, `execute` só namespaces do catálogo; (2) na bridge, apenas o
-  resgate determinístico `execute{code:"return tools.X({...})"}` → tool direta `X`
-  (evento `tool-unwrap`, subset JSON5, `bash`/`sh` → `shell`). Nenhuma injeção de
-  prompt na bridge: com `--harness 0` o prompt do opencode passa intacto.
-- **Testes:** 6 units (`U-toolstrategy-*`) + suíte unit completa; build Release
-  0 erros/0 avisos.
-- **E2E real:** pasta + `notas.txt` + `git init/add/commit` concluído em
-  `/tmp/opencode/tooltest/projeto_teste` (commit `8efd479`), com `--harness 0`.
-- **Prova HTTP:** `POST /api/convert` com `function_call` `execute` →
-  `function_call` `shell` com `{"command":"mkdir -p projeto_teste && ..."}`.
+**Regressão de tools.** Em contexto longo/compactado o 12B deixou de emitir
+`tool_calls` nativos e passou a NARRAR `[Assistant tool call]: shell({...})`.
+A coerção da bridge falhava em dois pontos e o `catch` descartava em silêncio
+(`finish=stop`, nada executava): (a) args não-JSON — `\;` de
+`find ... -exec cat {} \;` e variante com aspas internas soltas; (b) o
+fechamento não removia o bloco narrado inteiro. Correções abaixo, todas com
+gate: **gestão da bridge só no cliente direto/legado**.
+
+**Roteamento por perfil (`--bridge-managed`).** `ManagedFor(model)` devolve
+`true` só para modelo **sem** sufixo de perfil (Web UI/direto) ou com
+`--bridge-managed true`. Cliente com perfil (`-plan/-build/-orch/-moe/
+-scripter/-exec`) = opencode traz o próprio harness: a bridge **não** coagia,
+**não** segura marcador de tool call, **não** limpa o histórico e **não** faz
+`stream_per_delta` — passa reto. `/api/status` publica
+`bridge_managed: "direct-only"`.
+
+**Coerção só no modo legado.** `coerceOn = LegacyHarness && CoerceNarrated &&
+managed`, aplicado no stream traduzido e no `ChatToResponses`; o strip de
+`[Assistant tool call]` no histórico (`InputToMessages`) também exige
+`LegacyHarness`. Produção roda `--legacy-harness 0`: o caminho do opencode é o
+do llama verbatim, como pedido.
+
+**Shape nativo de reasoning.** `response.reasoning_text.delta` com
+`output_index: 0` e `content_index: 0`; item `reasoning` com
+`content: [{ type: "reasoning_text", text }]` no `output_item.added`,
+`output_item.done` e no `completed`. Sem isso o opencode descarta o delta e o
+pensamento só aparece no fecho (efeito "snippet").
+
+**Parse tolerante (legado).** `RepairJsonEscapes` conserta escapes inválidos
+(`\;`) e `TryParseArgs` cai para um fallback de `command` com aspas soltas;
+`TryParseJson` tenta estrito e depois reparado. `StripNarratedCalls` remove o
+bloco inteiro (marcador + args + parêntese), não só o marcador.
+
+**Sonda `anti-repeat-args`.** A janela de 512 chars do `thinking`/`content` não
+pega marcador curto repetido **dentro dos `arguments`** de uma mesma call (ex.:
+`<tool_call|>` em loop, args crescendo até o `max_tokens` truncar o JSON no
+meio). Evento só-diagnóstico `{event:"anti-repeat-args", tool, chars, window,
+mode}` no acumulador de tool calls do stream e no `ChatToResponses`
+(`mode:"convert"`); **não** altera a saída. Provado por `/api/convert` com args
+de 1331 chars repetidos.
+
+**Harness das belts (teste, não bridge).** `JsonNode.Parse(arguments)` sem
+proteção abortava a belt quando o args vinha truncado (24k chars); path com
+`\n`/`..`/absoluto era escrito no workspace; workspace não era limpo (sobras
+inflavam o placar); o nome do arquivo era exigido igual ao `safeTitle.sh` (o
+modelo grava sem acento). Agora: args inválidos viram tool-result de erro,
+path é validado, workspace é recriado, nome é resolvido por título normalizado
+(sem acento/caixa) e o prompt do Scripter limita 80 linhas (script) / 20
+(companion).
+
+**Medições.** Suite unitária: 23 PASS / 6 SKIP (os 5 skips de coerção são por
+design sem `--legacy-harness 1`). E2E: devpipe PASS; mission C#+F# PASS 80s
+(`2.000000 / 5.000000`); standalone 6/6 PASS (oi, tools, write, devpipe,
+science-tools, mission-tools); belts diretas — verde PASS (5 scripts, 5
+executados) e azul PASS (3 scripts, 3 executados).
+
+## Sonda de tools, nome real do subagente, behavior de workspace e tags no reasoning (2026-10-20)
+
+**Sonda em `ToolsToChat`.** A conversão Responses→chat tem três ramos com
+`continue` e nenhum log: uma tool malformada simplesmente desaparecia do payload.
+Três eventos novos, só com `--diagnostic 1`:
+
+| evento | campos |
+|---|---|
+| `tools-to-chat` | `in`, `out`, `names`, `dropped` (`type:nome`), `default_schema`, `result_null` |
+| `tools-lost` | `asked`, `got`, `lost` (compara anunciadas × convertidas; ignora o container `namespace`) |
+| `pattern-strip` | `dropped`, `hits` (caminho exato do `pattern` removido), `tools` |
+
+Medições: payload sintético 5→4 (`custom:weird_tool` descartada, `sem_schema`
+marcada em `default_schema`); tráfego real plan 6→6 e build 12→12 — **nenhuma
+perda**. Única mutação real de schema: `pattern-strip
+hits=["$[7].function.parameters.properties.sessionID.pattern"]`, ou seja, o
+`pattern: "^(ses)"` do parâmetro `sessionID` do `subagent` (llama.cpp rejeita
+regex sem âncora).
+
+**`task` não existe no array.** O opencode 2.x anuncia a delegação como
+`subagent` (mesma descrição/params do antigo `task`). Instrução que mande chamar
+`task` produz chamada inexistente: o `RealTools` não reconhece e o cliente nega.
+`AGENTS.md` e `LAB-SETUP.md` corrigidos.
+
+**Behavior tail default.** `HarnessBehaviorTail` deixou de ser vazio (override
+continua por `appsettings`/`--harness-behavior-tail`):
+
+1. workspace — path do usuário fora do namespace: procurar um nível abaixo
+   (pastas vizinhas) e na árvore, do workspace **e** dos paths citados;
+2. formato — conversa em Unicode (setas, ≤, π), LaTeX (`$...$`) só em bloco de
+   código/fórmula. Motivo: o 12B escreve `$\rightarrow$`, a bridge repassa
+   verbatim e a TUI do opencode não renderiza math — a tag fica crua. Reescrever
+   `$...$` no parse quebraria `$VAR` em shell e blocos de código.
+
+**Tags de controle no reasoning.** `FlushThinking` emitia `reasoning_content`
+cru; vazamentos de `<|channel>`, `<channel|>`, `</thought>`, `</thinking>`
+apareciam dentro do bloco de pensamento. `StripControlTags` atua em 4 pontos
+(delta do stream, `summary_text.done`, `part.done` — o que o opencode consolida —
+e `SplitThinking`), com evento `reasoning-tag` para provar recorrência.
+
+Hold-back **só do prefixo ambíguo** (`PartialTagLen`): segurar 12 chars fixos
+atrasava o reasoning inteiro e o restante saía fora de ordem, depois do content.
+Prova com upstream falso, tag partida entre chunks (`</thou` + `ght>`):
+
+```
+deltas: A×50 (intacto) | B×50 (intacto) | "fim"
+tags: []
+log:   {"event":"reasoning-tag","where":"stream","tag":"</thought>"}
+```
+
+Stream real pós-fix: 262 KB / 1.084 deltas, zero tags, zero perda. O
+`llama-server` não guarda texto gerado (só `n_tokens`/`tg`), então a prova vem da
+ponte.
+
+**Reasoning com a estrutura nativa do llama.** A tradução emitia o par
+OpenAI `reasoning_summary_part.added` + `reasoning_summary_text.delta`; o
+llama.cpp nativo emite `response.reasoning_text.delta` e carrega o texto em
+`item.content[].text` (item aberto com `content: []`, `encrypted_content: ""`,
+`status: in_progress`; fechado com `status: completed`). Com `summary` o opencode
+renderizava o pensamento como **snippet de resumo**, diferente dos demais
+modelos. Três pontos alinhados ao nativo:
+
+- stream (`EmitThinking`/fecho): item nativo + `reasoning_text.delta`, sem
+  `summary_*`;
+- não-stream (`ChatToResponses`): item `reasoning` com `content:[{text}]` em vez
+  de `summary:[{summary_text}]`;
+- `BuildSse`: sintetiza a mesma sequência (added → reasoning_text.delta → done).
+
+Prova (mesmo pedido, `stream:true`, comparando passthrough nativo × traduzido):
+
+```
+NATIVO    : output_item.added, reasoning_text.delta (1733), content_part.added,
+            output_text.delta (446), output_item.done, completed
+TRADUZIDO : output_item.added, reasoning_text.delta (925), content_part.added,
+            output_text.delta (5), output_item.done, completed
+```
+
+Mesmo conjunto de eventos, sem `summary_*`. Não-stream: item com
+`content[0].text` (3531 chars) e `summary: []`.
+
+Regressão coberta: `U-translate-tools`, `U-convert-thinking-tools`,
+`U-translate-multi-namespace` PASS e `E-standalone-mission-tools` PASS (38.4s)
+com o binário novo.
+
+**Efeito "digitando" no content: switch `streamPerDelta`.** O reasoning já saía
+por delta (hold-back só do prefixo ambíguo), mas o content agregava até 256 chars
+antes de emitir (`RouteContent`), o que no opencode vira blocos — não digitando.
+Medição do mesmo pedido: nativo 446 `output_text.delta` × traduzido **5**.
+
+Opção liga/desliga (default **ligado**):
+
+| onde | chave/flag |
+|---|---|
+| appsettings | `"streamPerDelta": true/false` |
+| CLI | `--stream-per-delta true/false` |
+| `/api/status` | `stream_per_delta` |
+
+Ligado: emite cada chunk, segurando só o sufixo que pode ser prefixo de
+` thinking` / `</think>` (`PartialTagPrefixLen`). Desligado: mantém a agregação de
+256 chars. Prova com upstream falso (10 chunks de content):
+
+```
+stream_per_delta=true : output_text.delta=11 | texto identico
+stream_per_delta=false: output_text.delta=1  | texto identico
+```
+
+Tráfego real pós-fix: traduzido 468 deltas × nativo 446 — mesma granularidade.
+`E-standalone-mission-tools` PASS (22.7s) com o stream por delta ligado.
+
+**Sonda do anti-repeat.** Antes só a cauda era logada; agora `dup_at` (posição da
+ocorrência anterior da janela) e `dup_ctx` (80 chars a partir dela) mostram
+**onde** repetiu. Repetição real no thinking do 12B: 13:55:16, `thinking_chars=4271`,
+janela 512, seguida de `anti-repeat-retry`.
+
+**Fix de build.** O commit da dica de Simpson entrou em `HarnessToolsTail` sem o
+`;` da declaração — o projeto não compilava desde então, e o `PASS` registrado
+havia rodado com `--no-build` (binário anterior). Corrigido; teste re-executado
+com binário novo: `PASS E-standalone-mission-tools (21.3s)`.
+
+## Suíte sempre no role Build + trilha E2E standalone no opencode real (2026-10-19)
+
+**Princípio.** Teste complexo com tools e **thinking on** não faz sentido: o modelo
+gasta raciocínio, ramifica e alucina. A suíte passa a exercitar sempre o role
+**build** (`gemma-4-12b-build`, thinking off, temp 0.3) — par do agent `build` do
+opencode. Thinking on fica para Plan/Orch/MoE (planejamento, sem tools complexas).
+
+- `TestContext.SuiteModel`: `--model` explícito vence; senão aplica o sufixo de
+  `--role` (default `build`) ao modelo servido. `E-science`, `E-mission-tools` e
+  `E-devpipe` usam `SuiteModel`.
+- **`--standalone`**: desvia cada E2E para o **opencode CLI real** (`opencode run`)
+  com o **mesmo enunciado**, em vez de HTTP direto na bridge. Conjunto
+  `E-standalone-{oi,tools,write,devpipe,science,mission-tools}`.
+  `--standalone-agent` (default `build`; `exec` → provider `llama/` = E2B CPU),
+  `--standalone-model` (provider/model) sobrepõe, `--standalone-timeout`.
+- `run-opencode-standalone.sh` (as 6 tarefas direto no CLI) e fase 3 do
+  `run-e2e-pipeline.sh` (build GPU + exec CPU). Pipeline ganhou build único +
+  `--no-build` e `REPO` overridável (produção).
+- **Resultado**: fase 3 `6/6` (GPU) + `1/1` (CPU E2B); missão C#/F#+git+zip PASS.
+
+## Tail de tools: código é a fonte única (2026-10-19)
+
+Achado: `appsettings.json` **sobrescrevia** o `HarnessToolsTail` default do código
+(`Program.cs:353`), gerando divergência — o default tinha git/zip/arquivos-grandes/
+math; o appsettings tinha o guard anti-alucinação + FORMATO DE EMISSAO. Consequência:
+a missão falhava (C# e F# imprimiam `%.6f` literal; F# quebrava em `open System.Math`).
+
+- O default do **código** agora une tudo: guard anti-alucinação (`command -v`,
+  `systemctl` — não existe `service_manager`; tool bloqueada por role não contorna
+  por shell; caminhos absolutos), FORMATO DE EMISSAO (chamada **ESTRUTURADA**;
+  prosa `[Assistant tool call]:` não executa), formatação numérica (C#
+  `ToString("F6", InvariantCulture)`; F# `printfn "%.6f" valor`) + regras
+  F#/C#/math/git/zip.
+- `harnessToolsTail` **removido** dos appsettings (runtime e `remaster-fix/web-ui`).
+- **Resultado**: `E-mission-tools` PASS.
+
+## Política de tools é UM serviço da bridge: permissão interativa em vez de omissão (2026-10-18)
+
+**Princípio corrigido.** Manipular tools não pode ser radical omissivo. O padrão é
+**permissivo**: a chamada acontece; o que está declarado vira **alerta + pergunta**
+ao usuário, e o humano decide. A bridge não recusa por conta própria — ela decide
+*se pergunta* e *a quem*.
+
+**Violação SOLID corrigida na mesma sessão.** Eu havia implementado a política
+duas vezes: `RiskToolsAlerts` na bridge **e** uma segunda cópia na Web
+(`LoadRiskAlerts`, `IsRisk`, `RiskLabel`, `LabelFor` + `agentId` nos gates). Duas
+fontes de verdade para a mesma regra — SRP/DRY quebrados. A Web não deve decidir
+política: ela **interage e exibe**. Agora:
+
+| camada | responsabilidade |
+|---|---|
+| **bridge** | dona da política; `POST /api/permission/check` → `{action, reason, role, notice}` |
+| **opencode** | recebe `function_call` da tool `question` (nativa) e abre o formulário |
+| **Web UI** | consulta a bridge e **apresenta** (botões Sim/Não, aval digitado, `/Chat/Approve`) |
+
+**O padrão já existia no projeto** e foi seguido: `GET /api/harness` já era
+"fonte única: a web consulta aqui". O endpoint de permissão é o irmão dele.
+
+- `PermissionOf(modelId, tool, args)` — decisão única: `ask` (RiskAsk ligado) ou
+  `deny` (`--risk-ask 0`), com motivo `risco` ou `papel`. `BannedFor` e
+  `IsRiskCall` são insumos dela, não caminhos paralelos.
+- `POST /api/permission/check` — body `{model, tool, arguments}`; resposta com
+  `action`, `reason`, `role` e `notice`. Mesma fórmula dos 4 caminhos internos.
+- **Web**: `ConfirmGate` perdeu toda a política (`LoadRiskAlerts`, `IsRisk`,
+  `RiskLabel`, `LabelFor`, o `agentId` condicional) e manteve só o que é dela —
+  os botões, a espera de 120s, o aval digitado e o release por sessão.
+  `ConfirmGateAsync` consulta a bridge; **falha de rede = `ask`** (fail-closed:
+  nunca libera por omissão). `PermissionCheckAsync` é estático e recebe o
+  `IHttpClientFactory` + o `Agent` já resolvido no call site (sem query extra e
+  sem estado de instância, que era o que impedia o `static`).
+- `NeedsConfirmation(name, args)` voltou à assinatura de 2 parâmetros.
+
+**Matriz medida no endpoint (8/8):**
+
+| modelo | tool | comando | decisão |
+|---|---|---|---|
+| plan | shell | `ls -la` | allow |
+| plan | write | — | **ask / papel** |
+| plan | git | `git log --oneline` | allow |
+| plan | git | `git push origin main` | **ask / risco** |
+| build | write | — | allow |
+| build | shell | `git push` | **ask / risco** |
+| build | shell | `rm -rf /tmp/x` | **ask / risco** |
+| build | shell | `ls -la` | allow |
+
+**Config real aplicada** (`appsettings.json`, que tem precedência sobre a CLI):
+`riskToolsAlerts` por role, `riskAsk: true`, `riskAskMinutes: 30`. Plan/Orch/MoE
+**leem** git (`log`/`status`/`diff` fora do risco); `git push`, `rm`, `rsync`,
+`dd`, `mkfs`, `shutdown`, `reset --hard` e `/dev/sd*` alertam em todos. As units
+perderam `git,push,sync` da blacklist — era resquício que fazia `git push` cair
+como `papel` em vez de `risco`, e impedia o Plan de ler repositório.
+
+Verificação: 0 avisos / 0 erros nos 2 projetos · bridge `PASS=23 FAIL=0 SKIP=3` ·
+Web units 0 fails. Plano de fechamento em `PENDINGS.md`.
+
+## Coerção de tool narrada volta a ter teste: o SKIP dos 3 "legados" estava errado (2026-10-18)
+
+**Correção.** Os 3 testes de coerção pulavam com
+`if (status["legacy_harness"] != true) Skip(...)`, tratando a coerção como
+caminho legado. Só que `CoerceNarrated` é **default `true`** e o gate do código é
+`(LegacyHarness || CoerceNarrated)` — a coerção roda com o legado desligado. O
+skip mascarava exatamente o caminho que o Gemma4 usa no opencode.
+
+- `U-convert-coerced-text-call` e `U-convert-coerced-angle-call` **deixaram de
+  pular**: os corpos passaram a enviar `tools` (sem isso `hadTools=false` e a
+  coerção nem é exercitada).
+- Novo `U-convert-coerced-narrated-call` cobre o formato real
+  `[Assistant tool call]: nome({...})` (o modelo copia o histórico em contexto
+  longo em vez de emitir `tool_calls` estruturado).
+- Único SKIP restante: `U-cpu-max-tokens-clamp`, legítimo com `cpu_max_tokens=0`
+  (o caminho legado de clamp está desligado por design).
+
+Verificação: `0 warnings / 0 errors`; bridge viva `PASS=26 FAIL=0 SKIP=1`.
+
+## Pipeline E2E sequencial por fase (`run-e2e-pipeline.sh`)
+
+`run-e2e-pipeline.sh --phase 0|1|2|3|all` + `RUNBOOK-E2E.md`:
+fase 0 health/VRAM; fase 1 unit; fase 2 E2E science/mission; fase 3 standalone
+bridge (`/v1/responses`). Log em `/tmp/opencode/pipeline.log`.
+
+## Build sem warnings e o switch mestre `--harness` sai da linha de comando (2026-10-18)
+- **Os 3 testes SKIP sao os mesmos de antes, por decisao, nao por falha:**
+  `U-cpu-max-tokens-clamp`, `U-convert-coerced-text-call` e
+  `U-convert-coerced-angle-call`. Os tres se auto-pulam com
+  `if (status["legacy_harness"] != true) Skip(...)` — sao do **caminho legado**
+  (coercao texto -> tool_call e o clamp de `CpuMaxTokens`), que esta desligado
+  de proposito pelo "tubo puro". Nao ha o que corrigir neles: ligariam apenas se
+  `--legacy-harness 1` estivesse ligado, o que nao queremos.
+- **Warnings zerados (5 -> 0), sem suprimir nada:**
+  - `CS8714` x2 (`SessionsController.cs` e `Index.cshtml`): `Agent.Id` e `int?` e
+    nao pode ser chave de dicionario. Agora filtra `Where(a => a.Id.HasValue)`,
+    como ja era feito com `UserNames`, e a chave vira `int` — o controller e a
+    view passam a concordar.
+  - `CS8604` x2 (`ChatController`): a causa nao era a assinatura, era o
+    `(args ?? "")` dentro do laco. Num local ja declarado nao-nulo, o `??`
+    faz o compilador marcar a variavel como *maybe-null* e propaga para todos os
+    usos. Removido o `??` redundante e a afirmacao ficou **na fronteira do
+    laco** (`call.Args!`, `foreach ((string id, string name, string args) in
+    toolCalls)`) — uma vez, em vez de repetir em cada chamada.
+  - `CS0219`: `gotReasoning` era atribuida e nunca lida no
+    `ChatIntegrationTests`. O helper so verifica conteudo, `[DONE]` e as duas
+    mensagens, entao a variavel foi removida em vez de virar assercao nao
+    pedida.
+- **`--harness` (switch mestre) saiu da linha de comando.** Ele gateava as
+  caudas, mas com os ids de role com sufixo ja era **inerte** para o opencode.
+  Agora **nao existe switch**: cada enunciado se aplica por estar configurado.
+  Cada peca ganhou sua propria ativacao:
+
+  | peca | appsettings | CLI |
+  |---|---|---|
+  | comportamento | `harnessBehaviorTail` | `--harness-behavior-tail` |
+  | uso de tools | `harnessToolsTail` | `--harness-tools-tail` (novo) |
+
+  `--harness 1` saiu das duas units. `/api/harness` e `/api/status` passam a
+  reportar `TailsAtivas()` — o **fato** (ha cauda configurada?), nao um switch
+  que ninguem mais controla.
+- **Aceite:** as caudas continuam chegando sem o switch — `system` com 1502
+  chars, comportamento na posicao 21 e tools na 682; `/api/harness` →
+  `{"harness":true}`. Build Release **0 avisos, 0 erros**; suite
+  `PASS=23 FAIL=0 SKIP=3`.
+
+## `HarnessBehaviorTail` antes de `HarnessToolsTail` na montagem do prompt (2026-10-18)
+- **Renomeado** o enunciado de comportamento: `BehaviorPrompt` (variavel),
+  chave `behaviorPrompt` (appsettings) e flag `--behavior-prompt` viraram
+  **`HarnessBehaviorTail`** / `harnessBehaviorTail` / `--harness-behavior-tail`,
+  para ficar na mesma familia de `HarnessToolsTail` e do (removido)
+  `HarnessGuardTail`.
+- **Ordem de concat invertida:** o comportamento agora entra **antes** do uso
+  de tools. A ordem importa porque uma ancora a outra: o "como agir" (parar,
+  evidenciar, mudar de abordagem ao errar) e o enquadramento geral; "como
+  chamar a ferramenta" (uma call por vez, `command -v` antes de inventar comando)
+  e o especifico. Vindo depois, o especifico nao contradiz o geral.
+
+  ```
+  system = prompt original
+         + HarnessBehaviorTail   (como agir)
+         + HarnessToolsTail       (como usar a tool)
+  ```
+- **Verificado na sonda do E2B:** o `system` entregue ao modelo tem 1502 chars,
+  com `COMPORTAMENTO ESPERADO` na posicao 21 e `GUARD DE USO DE TOOLS` na 682 —
+  ou seja, comportamento primeiro, confirmado por **medicao**, nao por leitura
+  de codigo.
+- Build 0 erros; suite `PASS=23 FAIL=0 SKIP=3`.
+
+## Anti-repeat cross-turn, blacklist por role e enunciados separados (2026-10-18)
+- **Motivo:** o E2B entrou em loop na sessão "Gemma e2b - 1": reenfileirou por
+  12+ turnos o mesmo comando inventado (`service_manager update service ...`,
+  que **não existe** nesta máquina), com o shell devolvendo "comando não
+  encontrado" e o modelo repetindo a mesma abordagem.
+- **Por que o `--anti-repeat` existente não pegava:** `ThinkingRepeats`
+  (`Program.cs`) compara a cauda do thinking **dentro de um único stream**.
+  Rodei a mesma heurística sobre os 26 blocos de reasoning da sessão e deu
+  **zero trips** — o E2B repete o *template* entre turnos
+  (`Thinking Process: 1. Analyze... 2. Review...`), mas cada resposta é um texto
+  diferente. Repetição *entre* turnos é outra classe.
+- **O que foi feito (extensão do anti-repeat, não mecanismo paralelo):**
+  - `ToolSig(nome, args)` — assinatura canônica de uma tool call;
+  - `LoopedToolSigs(messages, minCount)` — assinaturas que já repetiram no
+    **histórico do request**;
+  - na emissão da chamada, se a assinatura já apareceu `>= 2` vezes, a chamada
+    **não sai** e entra o `AntiRepeatNotice` como texto (log
+    `anti-repeat-loop`). Coberto nos **dois** caminhos: `HandleResponsesStream`
+    (stream, o do opencode) e `ChatToResponses` (não-stream, o da Web UI).
+  - **Bug encontrado no meio:** `ChatToResponses` recebia o parâmetro `chat`
+    que é a **resposta** do upstream (`choices/message`), não o request — então
+    `chat["messages"]` era nulo e o histórico nunca era lido. Passou a receber
+    `historyMessages` (as `messages` do request montado).
+- **`--anti-repeat-retry` sai da condicional do `LegacyHarness`.** O retry de
+  contenção (2ª chamada ao modelo com o aviso, descartando a janela repetida)
+  estava preso ao harness legado — desligado por "tubo puro", então nunca rodava.
+  Agora é flag própria (`AntiRepeatRetry`, default `true`), então **cortar o
+  loop** e **tentar de novo** são decisões independentes.
+- **Enunciados separados por peça.** Tudo que é indução de comportamento tem
+  morar na sua própria peça, porque são coisas diferentes e mexer numa não pode
+  tocar na outra:
+
+  | peça | appsettings | CLI | assunto |
+  |---|---|---|---|
+  | `harnessToolsTail` | `harnessToolsTail` | `--harness-tools-tail` | **como usar a tool** |
+  | `harnessGuardTail` | `harnessGuardTail` | `--harness-guard-tail` | guardrails |
+  | **`behaviorPrompt`** | `behaviorPrompt` | `--behavior-prompt` | **disciplina de comportamento** |
+
+  O `behaviorPrompt` é novo: um passo = uma ação, só escrever depois da última
+  ação com evidência real, se falhar 2× **parar e relatar** em vez de insistir,
+  não anunciar passo futuro, tom e tamanho da resposta.
+- **⚠️ A exceção do opencode saiu do gate.** As causas ficavam atrás de
+  `Harness && !IsOpencodeModel(...)` — ou seja, com os ids de role que passaram
+  a ter sufixo, `--harness 1` era **inerte** para o opencode (confirmado pela
+  sonda: o `system` ia com 0 chars). Agora é só `Harness`: **não há exceção por
+  "ser opencode"** — as regras de uso de tools valem para cliente web e opencode,
+  porque são sobre *como usar a tool*, não sobre o tubo de prompt do agente. O
+  parâmetro `isOpencode` do `WithFormula` foi removido por inteiro, e as flags
+  `HarnessToolsTailExplicit`/`HarnessGuardTailExplicit` ficaram obsoletas e
+  saíram junto.
+- **`ToolBlacklist` bloqueia; não esconde.** A primeira versão **removia** a
+  tool do schema enviado ao modelo — isso *limita* o que ele pode usar, e na
+  prática hindersava os agents (o Plan via só `shell`/`read`, podia contornar
+  por shell, ou não saber por que a tool sumiu). Agora a tool **continua
+  anunciada** e é a **chamada** que não sai, com aviso explicando que a ação
+  cabe a outro role. O modelo sabe que a tool existe e pode explicar ao usuário.
+- **`ThinkingOffRoles`** (Build, Scripter, Exec) desliga o reasoning por **nome
+  de role**, acima do perfil do sufixo — o operador corrige sem renomear id.
+- **Sonda full ligada no E2B** (`--diagnostic 1` em `bridge-cpu`), o que permitiu
+  **medir** em vez de supor: é ela que mostrou o `system` de 0 chars e o
+  `service_manager` no histórico do E2B.
+- **Aceite:**
+  - anti-repeat cross-turn: mesmo comando 2× no histórico → `function_calls:
+    NENHUMA` + aviso; caminho stream → `0` `function_call` no SSE; comando
+    **novo** (`df -h`) → segue passando, sem falso positivo;
+  - `Plan` pedindo `write` → bloqueado, arquivo não criado; `Build` pedindo
+    `write` → passa;
+  - `system` entregue ao modelo = 1504 chars com **ToolsTail e BehaviorPrompt
+    separados** e legíveis;
+  - Build Release: 0 erros, 5 warnings (4 pré-existentes);
+  - suíte: `PASS=23 FAIL=0 SKIP=3`. Uma falha intermediária foi **colisão de
+    texto**, não de lógica: o `behaviorPrompt` continha a palavra "resumo", que
+    o fixture de `U-translate-drops-reasoning` usa como marcador de reasoning
+    vazado. Reformulado.
+- **Ponto em aberto:** a contenção entrega o aviso no mesmo turno. Com
+  `--anti-repeat-retry` ligado o retry passa a existir de fato (2ª chamada), e
+  isso ainda não foi medido ponta a ponta com o E2B real.
+
+## Config final de contexto: 12B 128k/1 slot + E2B 128k/2 slots (2026-10-18)
+- **Caminho percorrido até aqui.** O E2B começou em 80k/1 slot com o KV
+  rebaixado para `q8_0` (ver seção anterior). Depois de forçar turbo3 subiu
+  para 96k, tentou-se 112k/1 slot e o llama avisou
+  `failed to fit params to free device memory: n_gpu_layers already set by
+  user to 99, abort` — ou seja, **112k era o teto da VRAM, não uma escolha**.
+  A saída foi cortar contexto do 12B para caber **mais paralelismo no E2B**.
+- **⚠️ `n_ctx_slot` é o total dividido pelos slots.** Com `-c 98304 -np 2` o
+  llama loga `n_ctx_slot = 49152`: 48k **por slot**, não 96k. Para 2 slots de
+  64k cada o total tem de ser 131072.
+- **Config final:**
+
+  | | `-c` (total) | `-np` | `n_ctx_slot` real | KV | `--prio` | `--max-tokens` (bridge) |
+  |---|---|---|---|---|---|---|
+  | 12B `:4100` | **131072** | 1 | 131072 | turbo3 | 2 (high) | 16384 |
+  | E2B `:4110` | **131072** | **2** | **65536** | turbo3 | -1 (low) | 8192 |
+
+  Continua `-ngl 99` nos dois (100% GPU) e `TURBO_AUTO_ASYMMETRIC=0` + `--cache-type-k/v
+  turbo3` — **os dois modelos em TurboQuant, regra permanente** (checagem de
+  aceite = ausência do aviso `auto-asymmetric` no journal).
+- **O resultado contra-intuitivo: cortar o 12B DEVOLVEU VRAM.** Medido na mesma
+  sessão, com os dois modelos residentes:
+
+  | configuração | 12B | E2B | used | free |
+  |---|---|---|---|---|
+  | 12B 160k + E2B 96k/1 | 8512 | 2572 | 11234 | 802 |
+  | 12B 160k + E2B 112k/1 | 8512 | 2604 | 11266 | 770 |
+  | **12B 128k + E2B 128k/2** | **8298** | **2702** | **11154** | **882** |
+
+  O 12B perdeu 214 MiB cortando 32k de contexto, e o E2B gastou 130 MiB
+  dobrando os slots: **11234 → 11154 MiB**. Ou seja, o corte no 12B pagou com
+  sobra a duplicação do E2B — e os 2×64k são mais úteis que 112k num slot só,
+  porque dois subagentes rodam script em paralelo. Também sumiu o
+  `fit params` warning: os dois sobem folgados.
+- **Consumidor alinhado:** `opencode.json` foi de `ctx 163840` (12B) e `98304`
+  (E2B) para **131072 nos dois**, nos 12 ids (6 por provider). Se o
+  `limit.context` do client não acompanhar o `-c` do llama, o cliente planeja
+  prompts maiores do que o modelo aceita.
+- **Aceite:**
+  - startup: 12B `n_slots = 1, n_ctx_slot = 131072`; E2B `n_slots = 2,
+    n_ctx_slot = 65536`; ambos `model loaded` → `listening`, **zero**
+    `auto-asymmetric` e **zero** `fit params` nos dois;
+  - requests reais: 12B `stop`/OK; E2B `stop`/OK em duas chamadas;
+  - **2 slots servindo em paralelo de verdade** (o motivo da mudança): duas
+    gerações simultâneas voltaram completas (896 e 764 tokens), com o slot
+    reportando **64.6 tok/s** sob concorrência contra ~70 tok/s solo — metade
+    da taxa, como esperado quando dois slots dividem a mesma GPU;
+  - `/health` `ok` em `:4100` e `:4110`.
+- **Ordem de carga:** o 12B precisa subir **antes** do E2B. Invertido, o E2B
+  pega a VRAM primeiro e o 12B não cabe (`-ngl 99` é fixo, então ele aborta o
+  auto-fit em vez de cair para CPU). O script de reinício faz isso sequencial.
+
+## E2B em 96k com turbo3 no KV — VRAM caiu apesar do ctx maior (2026-10-18)
+> **SUPERADO pela seção seguinte (12B 128k + E2B 128k/2 slots)**, que baixa o
+> 12B de 160k para 128k e troca o E2B de 96k/1 slot por 128k/2 slots de 64k.
+> Esta entrada fica como registro do passo intermediário e da descoberta do
+> turbo3 render mais VRAM que o q8_0.
+- **Pedido:** subir o ctx do E2B de 80k para **96k**, agora que o TurboQuant
+  está corretamente em vigor. Feito: `-c 81920` → `-c 98304` em
+  `llama-cpu.service`.
+- **⚠️ REGRA PERMANENTE: os DOIS modelos têm de rodar em TurboQuant.**
+  `Environment=TURBO_AUTO_ASYMMETRIC=0` nos units `llama-gpu.service` e
+  `llama-cpu.service`, junto de `--cache-type-k turbo3 --cache-type-v turbo3`.
+  Sem isso o llama.cpp rebaixa o K para `q8_0` no E2B (GQA 8:1) e emite
+  `auto-asymmetric: GQA ratio 8:1 ... upgrading K from turbo3 to q8_0`.
+  **Verificação de startup = ausência desse aviso no journal.** Foi aplicado em
+  10:08 e revalidado a cada restart desde então (último: 14:04:59, limpo).
+- **Achado que reverte a intuição — mais contexto gastou MENOS VRAM.** O KV do
+  E2B é o que cresce com `n_ctx`; se o K estivesse em `q8_0`, subir 80k→96k
+  seria só acréscimo. O medido foi o contrário:
+
+  | | ctx | VRAM do E2B | total na GPU |
+  |---|---|---|---|
+  | com K em `q8_0` (rebaixado) | 81920 | 2602 MiB | 11160 / 12288 MiB |
+  | com K em `turbo3` (correto) | 98304 | **2022 MiB** | **10580 / 12288 MiB** |
+
+  O turbo3 comprimido **cabe mais tokens por byte** que o q8_0. Ou seja: o
+  upgrade automático não era só um par de qualidade, estava comprometendo o
+  orçamento de VRAM — e é por isso que subir o ctx só foi viável depois de
+  forçar o turbo3. Livre subiu de 1128 para **1708 MiB**.
+- **Aceite:**
+  - startup: `n_slots = 1, n_ctx_slot = 98304` → `model loaded` →
+    `listening on http://127.0.0.1:4110`, sem aviso de asymmetric;
+  - `/health` `:4110` → `ok`;
+  - request real em `:4125` → `finish_reason: stop`, 167 tok;
+  - `opencode.json`: `limit.context` dos 6 ids E2B (`gemma-4-e2b` +
+    `-build/-exec/-plan/-moe/-scripter`) ajustado de 81920 para **98304**, para
+    o client não degradar o ctx que o llama serve.
+- **Nota de capacidade:** os dois modelos seguem residentes ao mesmo tempo
+  (12B 8494 MiB + E2B 2022 MiB + Xorg 49 MiB = 10580 MiB / 12288), como
+  calibrado.
+
+## Paridade de roles E2B no opencode e fim do agent órfão `build-exec` (2026-10-18)
+- **Lacuna encontrada (por auditoria cruzada, não por falha visível):** o
+  `AgentSeeder` e a `web.db` tinham 5 roles E2B (MoE, Plan, Scripter, Build,
+  Exec), mas o `opencode.json` só declarava **3 ids** E2B
+  (`gemma-4-e2b`, `-build`, `-exec`). Plan, MoE e Scripter existiam na stack da
+  bridge/Web mas eram inalcançáveis pelo opencode — sem id com sufixo, o perfil
+  nunca era casado. A 12B tinha 6 ids; o E2B ficou com 6 também.
+- **Ids adicionados (`~/.config/opencode/opencode.json`, provider `llama`):**
+
+  | id | temp | thinking |
+  |---|---|---|
+  | `gemma-4-e2b-plan` | 0.6 | events |
+  | `gemma-4-e2b-moe` | 0.8 | events |
+  | `gemma-4-e2b-scripter` | 0.3 | off |
+
+  **Aceite:** `/api/translate` em `:4125` devolve `plan -> 0.6/events`,
+  `moe -> 0.8/events`, `scripter -> 0.3/off`. Paridade final: 12B = 6 ids,
+  E2B = 6 ids (Plan, Orch, MoE, Build, Scripter, Exec).
+- **`build-exec` era um agent órfão:** existia `agents/build-exec.md`
+  (`model: llama/gemma-4-e2b-build`) e o `orch.md` permitia `subagent` apenas
+  para `resource: "build-exec"` — ou seja, o único subagente permitido era ele
+  mesmo, que é exatamente o mesmo papel do `build` (o próprio AGENTS.md define
+  `Exec` como role **adicional só do E2B**, e `build-exec` não é role da
+  plataforma). Removido o arquivo; `orch.md` passou a `resource: "*"`, que é o
+  que o bloco já autorizava para o resto das tools.
+- **`AGENTS.md` alinhado com o estado real** (estava descrevendo a linha Qwen e
+  a escala antiga):
+  - `default.subagent.model` e a delegação via `task`: `llama/gemma-4-e2b` →
+    `llama/gemma-4-e2b-exec` (o id que casa o perfil `exec` = 0.3/off; o id
+    genérico caía no `--thinking events` da unit e abria reasoning no subagente).
+  - Escala de temperatura da seção TEMPERATURA: `Plan/Build/Orch 0.5` →
+    escala `0.3/0.6/0.8` por papel, com a regra do sufixo escrita (id sem
+    sufixo NÃO casa e cai no global da unit).
+  - Bloco MODELOS LOCAIS: temps por role (Plan/Orch 0.6, MoE 0.8,
+    Build/Scripter 0.3) e os roles E2B (`Exec` off + Plan/MoE/Scripter na mesma
+    calibragem do 12B).
+  - PIPELINE: `plan (0.6) -> build (0.3)`.
+- **Reinício do 12B agendado, não bloqueante:** o `llama-gpu` leva ~9 min para
+  recarregar o GGUF + mmproj, o que estouraria o timeout de foreground e
+  deixaria a sessão sem resposta. O restart foi disparado com `nohup` +
+  poll de saúde em script próprio (`restart-llama.sh`, log em
+  `/tmp/opencode/restart-12b.log`): **saúde em 13 s** nesta carga (a anterior
+  levou 9 min). Comprovado no processo: `-c 163840 --prio 2`.
+- **Aceite pós-restart:** as 4 units `active`; perfis da bridge viva —
+  12B `build` 0.3/off, `plan` 0.6/events, `moe` 0.8/events, `orch` 0.6/events,
+  `scripter` 0.3/off.
+
+## Escalas de temperatura 0.3 / 0.6 / 0.8 e TurboQuant forçado no E2B Q3 (2026-10-18)
+- **Recalibração dos perfis:** a escala deixa de ser `0.3 / 0.5 / 0.8` e passa a
+  **`0.3` (execução) / `0.6` (planejamento) / `0.8` (exploração)**. O build,
+  scripter e exec caem para 0.3 (determinismo: o build executa, o scripter
+  escreve shell que precisa passar em `bash -n` na primeira); plan e orch sobem
+  para 0.6 (planejamento de fato ganha com folga); MoE fica em 0.8.
+- **Régua de decisão:** temperatura é um eixo **de papel**, não de escada de
+  criatividade — build/scripter/exec executam, plan/orch raciocinam, MoE explora.
+- **Onde o perfil é decidido (`Program.cs`, `TryProfile`):** pelo **sufixo do
+  model id** (`-build`, `-plan`, ...), o que exige que os ids carreguem o
+  sufixo do role (ver item anterior). Sem sufixo, cai no `--temperature`/`--thinking`
+  globais da unit.
+- **⚠️ Armadilha encontrada — `appsettings.json` ao lado do DLL tem precedência
+  sobre o dicionário em código** (`LoadAppSettings`, bloco `profiles`). Sem
+  atualizar esse arquivo, `--no-incremental` recompila, o build fica verde e o
+  perfil em runtime continua no valor antigo.Foi o que mascarou a primeira
+  aplicação: `build` respondia `temp=0.5` mesmo com `["build"] = (0.3, ...)` no
+  fonte. **Regra:** mudar perfil em `Program.cs` ⇒ atualizar também
+  `bin/Release/net9.0/appsettings.json` (é gerado, não versionado) e reiniciar.
+- **Onde a temperatura também aparece (tudo alinhado nesta sessão):**
+
+  | lugar | arquivo | ajuste |
+  |---|---|---|
+  | perfis da bridge | `Rochas.OpenCodeBridge/Program.cs` | plan/orch 0.6, build 0.3 |
+  | perfis de runtime | `bin/Release/net9.0/appsettings.json` | idem (precede o código) |
+  | config do opencode | `~/.config/opencode/opencode.json` | 9 models com temp por role |
+  | agents do opencode | `~/.config/opencode/agents/*.md` | 7 agents com `temperature:` explícito |
+  | seed da Web UI | `Rochas.OpenCodeBridge.Web/Data/AgentSeeder.cs` | 10 seeds por role |
+  | agentes já semeados | `.../Web/bin/Release/net9.0/web.db` | `UPDATE agents` (o seeder é `INSERT OR IGNORE`, não sobrescreve) |
+  | subagente da Web | `SubagentToolHandler.FixedTemperature` | 0.5 → **0.3** (é o executor de script: mesmo papel do Scripter) |
+  | resumo de compactação | `ChatController` | 0.4 → **0.6** (sintetiza/planeja: mesmo papel do Plan) |
+  | decomposição | `Web/appsettings.json` `DecomposeTemperature` | 0.6 (já batia) |
+
+- **TurboQuant forçado no E2B Q3 (o ponto do `agentes+gemma-turboquant`):** o
+  llama.cpp rebaixa o `--cache-type-k turbo3` para `q8_0` quando o modelo tem
+  GQA assimétrico; o **E2B Q3 é exatamente o caso** (GQA 8:1, `n_head=8`,
+  `n_head_kv=1`), e o aviso era:
+
+  ```
+  W llama_kv_cache: auto-asymmetric: GQA ratio 8:1 (n_head=8, n_head_kv=1)
+  — upgrading K from turbo3 to q8_0 to prevent quality degradation.
+  Disable with TURBO_AUTO_ASYMMETRIC=0
+  ```
+
+  Correção: `Environment=TURBO_AUTO_ASYMMETRIC=0` nos dois units
+  `llama-{gpu,cpu}.service`, mantendo `--cache-type-k turbo3 --cache-type-v
+  turbo3`. No E2B Q3 isso recupera o cache KV em turbo3 (VRAM que ia para o
+  q8_0). O 12B (não assimétrico) recebe a env por uniformidade.
+  **Aceite:** o aviso sumiu do startup — o log vai direto de
+  `loaded multimodal model` → `n_slots = 1` → `model loaded` → `listening`.
+- **Prioridade entre os modelos (flag do llama, não systemd):** `--prio 2`
+  (high) no 12B e `--prio -1` (low) no E2B, para o orquestrador ganhar da
+  subagente quando disputam a GPU.
+- **Seeder sincronizado com o stack real:** o `AgentSeeder` ainda semeava
+  `qwen3.5-9b`/`qwen3.5-4b` (linha Qwen que não existe mais) enquanto a DB já
+  estava em Gemma. Nomes, models e bridge URLs foram para Gemma 4 (12B Q4 GPU
+  `:4124` / E2B Q3 `:4125`) e o prompt deixou de citar `qwen3-vl-4b` /
+  "contexto 192k|64k" (agora 160k|80k). Sem isso o seeder, em DB nova, recriaria
+  config morta.
+- **Aceite:**
+  - Build Release: **0 avisos, 0 erros**.
+  - Suíte unitária (`--skip-e2e --api-key guest@123`): **PASS=23 FAIL=0 SKIP=3**.
+  - `/api/translate` na bridge viva (o que importa — vai no payload real):
+    12B `build` 0.3/off, `orch` 0.6/events, `plan` 0.6/events, `moe` 0.8/events,
+    `scripter` 0.3/off; E2B `exec` 0.3/off, `build` 0.3/off.
+  - Teste `U-translate-profiles` continua valendo sem ajuste de lógica (a
+    asserção é `plan >= global` e `build <= global`, que 0.6/0.3 respeitam);
+    só a mensagem foi atualizada.
+- **Armadilha de edição neste repo:** `Program.cs` e os testes são CRLF. Editar
+  via escrita normal converte o arquivo inteiro e infla o diff (316 linhas
+ falsas). Editar preservando os bytes da linha ou aplicando `git checkout` + patch
+  binário; conferir com `git diff --numstat` antes de commitar.
+
+## Saída 2:1 vira 4:1 — teto de `--max-tokens` derrubado pelo `Decode error` (2026-10-18)
+- **Diagnóstico (triangulado sessão opencode + log da bridge + journal do llama):**
+  o `Decode error (200 POST /v1/responses)` **não é falha de rede nem do llama** —
+  é o modelo batendo no teto de saída e a stream morrendo sem `finish_reason`
+  válido para o cliente decodificar.
+- **Evidência 1 — storage do opencode** (sessão `Gemma 12b - 1 : Oi`, role `build`,
+  modelo `gemma-4-12b`): `finish: "error"` com
+  `{"type":"provider.transport","message":"Decode error (200 POST .../v1/responses)","status":200}`
+  e `retry.attempt: 4`; o texto chega **cortado no meio da palavra**
+  (`...no ToolE`), com stream de **476 s** (10:22:55 → 10:30:51).
+- **Evidência 2 — `/tmp/bridge-gpu.log`**: 6× `{"event":"cancel","path":"/v1/responses"}`
+  em 2 s de intervalo (10:24:55–10:25:04) — o cliente cortando, a bridge sem erro.
+- **Evidência 3 — journal do llama-gpu**: `task 39220` decodificou até
+  **`n_decoded = 32763`** (teto era 32768), com `cancel task, id_task = 26158/27749/32195`
+  nos retries. **26 tasks** no dia atingiram ≥32000 tokens, sempre coladas no teto.
+- **Erros da mesma janela que NÃO são do llama** (registrados para não reprocessar):
+  - `503 unavailable_error / "Loading model"` ×24 (09:19:27–09:24:24): **race de
+    startup** — a bridge sobe 09:18:13 e o 12B só fecha `model loaded` às 09:24:35
+    (9 min de carga). Resolve sozinho quando o modelo sobe; **pendência de correção**
+    ainda aberta (ver "Pendências").
+  - `Model muse-spark-1.3-contributor-free has been deprecated` (outra sessão):
+    modelo **cloud** do opencode, sem relação com a bridge local.
+  - `Step interrupted`: consequência direta dos dois acima.
+- **Sintoma de alucinação ligada ao mesmo bug:** com 32k tokens de saída, o 12B
+  entra em *rambling* e cita arquivos inexistentes no repo (`PromptControlService`,
+  `ToolExecutor.cs`, `ThinkingOffRoles`, `ToolBlacklist` não existem em
+  `Rochas.OpenCodeBridge`). Resposta de 32k tokens é sintoma de loop, não de
+  raciocínio — o teto menor corrige a causa, não só o sintoma.
+- **Mudança (config de deploy, nas units):**
+
+  | linha | saída (bridge `--max-tokens`) | antes | ratio vs ctx |
+  |---|---|---|---|
+  | 12B `:4124` | **16384** | 32768 | 160k ctx : 16k out |
+  | E2B `:4125` | **8192** | 16384 | 80k ctx : 8k out |
+
+  A razão **2:1** vira **4:1**. O `--max-tokens` da bridge é o clamp de
+  `limit.output` do opencode (`Program.cs`: `MaxTokens`/`CpuMaxTokens`, `0 = sem teto`).
+- **Aceite (request real, não smoke test):** ambas as pontes `active`, `/health`
+  200 em :4124 e :4125; `POST /v1/chat/completions` retornou
+  `finish_reason: "stop"` (não `"length"`) — 12B 147 tok em 5.35 s, E2B 142 tok em
+  2.19 s. **Os dois `llama-server` foram reiniciados** (E2B 3.5 s, 12B ~9 min de
+  carga) para propagar `--prio`/`TURBO_AUTO_ASYMMETRIC=0` pendentes do tuning.
+- **Tuning de prioridade gravado no mesmo restart** (flag do llama, não systemd):
+  `--prio 2` (high) no 12B e `--prio -1` (low) no E2B, para o orquestrador ganhar
+  da subagente quando disputam a GPU; `Environment=TURBO_AUTO_ASYMMETRIC=0` nos
+  dois units força K/V em **turbo3** — sem isso o E2B (GQA 8:1) tinha o
+  `--cache-type-k turbo3` rebaixado para `q8_0` pelo próprio llama.cpp.
+- **Pendências que sobraram (não resolvidas aqui):**
+  1. `Decode error` por **cancelamento do cliente** ainda é possível: quando o
+     opencode aborta o step, a stream morre sem `finish_reason`. Retry de 4×
+     em request de 8 min é desperdício.
+  2. **Race de startup** bridge-vs-modelo (503 "Loading model"): a bridge não
+     espera `/health` ficar ok. Alternativas: `After=llama-gpu.service` +
+     `ExecStartPre` com wait no health, ou retry da bridge em 503.
+  3. **`question` fora do `RealTools`** (`Program.cs`): o mapeamento
+     `question` ⇄ `ask_user_question` existe em `QwenStandard.cs`, mas o conjunto
+     que a coação reconhece como tool real não inclui `question` — só `shell`,
+     `read`, `grep`, `glob`, `fetch`, `git`, `subagent`, `write`, `edit`.
+  4. **Contexto acumulado**: sessão chegou a 36k tokens de prompt sem poda;
+     `appsettings`/`opencode.json` seguem com os tetos antigos
+     (`gemma4-12b-qa` 163840/32768) e precisam acompanhar as units.
+
+## Remaster 2026-10-20 — Gemma 4 128k, Bridge/Web e loop agêntico
+- **Modelos/serviços:** 12B em `-c 131072 -np 1`; E2B em `-c 131072 -np 2`
+  (2×65536). Bridge `--max-tokens 8192`. Perfis: Plan/Orch `0.6`,
+  Build/Scripter/Exec `0.3`, MoE `0.8` (bridge, `opencode.json` e seeder).
+- **Web:** `ContextWindow` com CPU `65536`/saída `8192`/entrada `57344` e GPU
+  `122880`; detecção de `:4125`/`e2b`. `AgentSeeder` e preset
+  `AgentsController.DefaultAgent` em `gemma-4-12b` (`:4124`, temp `0.3`,
+  thinking `off`).
+- **Nomenclatura en-US:** `FluxoController`→`FlowController` (rota `/Flow`;
+  `/Fluxo` 404), views/`FlowTests` renomeadas; `criterio`→`criteria`,
+  `de`/`ate`→`dateFrom`/`dateTo`, `ViewBag.De/Ate`→`DateFrom/DateTo`,
+  `Session.CreatedAte`→`CreatedTo`. Comentários seguem pt-BR.
+- **Loop agêntico:** no caminho chat, o turno agora envia
+  `assistant.tool_calls` + mensagens `tool` com `tool_call_id` e o output
+  truncado (`CutForContext`). Antes só o texto do subagente voltava ao
+  contexto; o modelo repetia chamadas às cegas. Caminho Responses já usava
+  `function_call_output`.
+- **Build/testes:** `Rochas.OpenCodeBridge.Web` e `.Web.Test` Release com
+  **0 warnings / 0 erros**; `--units-only` PASS. Smoke descartável em `:4131`:
+  login, `/Flow` 200, `/Sessions` 200, `/Agents` 200, `/Fluxo` 404.
+- **Desktop/remaster:** launchers `Llama GPU 12B` e `Llama GPU2-CPU E2B`
+  (128k; CPU 2 slots), `start-opencodeweb.sh` com zenity porta/senha,
+  `dbeaver.desktop` restaurado; ícones `.desktop` confiáveis (`metadata::trusted`);
+  `cloudflared 2026.10.1` instalado + tutorial de acesso externo (nginx/pgsql/
+  gitea/Web/Bridge, quick/named tunnel e Access); clone do OpenCodeBridge em
+  `/usr/src/rochas-dotnet-toolkit/OpenCodeBridge`.
 
 ## Bridge — Gemma 4 (12B denso + E2B): tubo puro e bateria E2E (2026-10-18, **parcial**)
 - **Escopo:** validar a bridge como frente única para a família **Gemma 4** (12B denso
@@ -1604,3 +2287,184 @@
   após tropeço do HD USB); sync `/usr/src`→persistente `/media` (disco
   `...61` fora no momento); decisão `--harness 0` nas units prod
   (vivo = `harness:true` legado, nenhuma das 2 receitas consagradas).
+
+## 2026-10-19 — Scripter (12B) compõe script bash + Exec (E2B) valida sintaxe
+
+- Novo E2E: `E-scripter-gen` (12B role scripter) compõe script bash (`tarefa.sh`)
+  + companion `tarefa.md` descrevendo o que o script faz (para o Exec ler antes
+  de executar), validando shebang + `bash -n`. `E-exec-validate` (E2B role exec)
+  lê o companion + script e valida sintaxe (`bash -n`) — execução fica para
+  outra fase (backlog). Execução do script NÃO ocorre nesta fase.
+- Correção `JsonNode` parent: `DeepClone()` no body do chat (evita
+  "The node already has a parent" em loops).
+- Pipeline paralelo (`run-pipeline-paralelo.sh`) atualizado: phase2 roda em
+  paralelo devpipe + scripter-gen (GPU1) e exec-validate + science-gpu2 (GPU2).
+- Contextos: 12B 131072×1 (GPU1), E2B 65536×2 (GPU2), ambos em VRAM.
+- Sonda (diagnostic) ligada; blacklist (dinâmica inversa) ativa.
+- Belts (azul→preta) e frontpipe ficam para fases posteriores.
+- Consumo: GPU ~154 W + CPU ~10 W ≈ 164 W; VRAM 11.4/12 GB.
+
+## 2026-10-19 — Scripter/Exec (arquitetura corrigida)
+
+- Scripter 12B COMPÕE o script bash + valida sintaxe (bash -n).
+- Scripter E2B LÊ o script e gera o companion .md (descrição para o Exec).
+- Exec (role exec, backlog) LÊ o companion .md e EXECUTA os scripts (fase futura).
+- Testes: E-scripter-gen (12B), E-companion-gen (E2B), E-exec-read (valida sintaxe + le companion).
+- Pipeline paralelo atualizado: 5 processos em paralelo (devpipe, scripter-gen, companion-gen, exec-read, science-gpu2).
+
+## 2026-10-19 — Belts bloqueados por endpoint Chat/Decompose ausente
+
+- Os belts (azul→preta) requerem o endpoint POST /Chat/Decompose, que não existe
+  no ChatController atual. Sem esse endpoint, DecomposeBeltAsync falha com 400/404.
+- Não foi criado o endpoint apenas para forçar verde: o objetivo é testar a
+  complexidade real suportada pelos modelos. Os belts ficam em backlog até a
+  implementação do endpoint de decomposição.
+- Trilhas verdes: bridge pura (devpipe, science-gpu, scripter-gen, companion-gen,
+  exec-read) + standalone (oi, tools, write, devpipe, science, mission).
+- Frontpipe (gen/edit/verify) pendente de validação.
+
+## 2026-10-19 — Belts bloqueados por infra de stream (web app)
+
+- Os belts (azul→preta) via --phase ui enviam o enunciado via /Chat/Stream,
+  mas o stream não retorna (conversa 0 chars, msgs=0, toolcalls=0).
+- Os integration tests (I-chat-stream-sse) também falham, indicando problema
+  de infra (web app → bridge stream), não do modelo.
+- Belts ficam em backlog até a correção do stream SSE no web app.
+- Trilhas verdes: bridge pura (devpipe, science, scripter-gen, companion-gen,
+  exec-read) + standalone (opencode real) + frontpipe (gen/edit/verify).
+
+## 2026-10-19 — Belts bloqueados por infra de stream (web app) — definitivo
+
+- Os belts (azul→preta) via --phase ui enviam o enunciado via /Chat/Stream,
+  mas o stream não retorna (conversa 0 chars, msgs=0, toolcalls=0).
+- Tentativa de reprodução manual via curl falhou (login anti-forgery).
+- Belts ficam em backlog até correção do stream SSE no web app.
+- Trilhas verdes: bridge pura (devpipe, science, scripter, companion, exec-read)
+  + standalone (opencode real) + frontpipe (gen/edit/verify).
+
+## 2026-10-19 — Orquestração por papeis (Orch -> Scripter -> Exec)
+
+- O enunciado de segmentação ("divida em tarefas menores") é do role Orch (12B),
+  que granula o enunciado em tarefas atômicas e delega para Scripters do mesmo
+  tipo (12B, role scripter) que compõem scripts bash + companion .md.
+- Os E2B (role exec) LÊEM o companion .md e EXECUTAM os scripts (fase futura).
+- Os enunciados devem citar explicitamente o nome do modelo/agente responsável
+  por cada etapa (Orch 12B, Scripter 12B, Exec E2B).
+- Não há endpoint de decomposição: a segmentação ocorre via system prompt do Orch.
+- Teste E2E: E-orch-segment (12B Orch segmenta enunciado em N tarefas).
+
+## 2026-10-19 — Orch segmenta enunciado em tarefas atomicas
+
+- E2E E-orch-segment: 12B (role orch) segmenta enunciado complexo em N tarefas
+  (JSON array) para leitura/execucao pelos Scripters (12B) e Exec (E2B).
+- Nao ha endpoint de decomposicao: a segmentacao ocorre via system prompt do Orch.
+- Enunciados citam explicitamente o modelo/agente responsavel por cada etapa.
+- Pipeline paralelo: 6 processos em paralelo (devpipe, orch-segment, scripter-gen,
+  companion-gen, exec-read, science-gpu2).
+
+## 2026-10-19 — Frontpipe bloqueado por Playwright (WaitForSelectorAsync timeout)
+
+- O frontpipe (gen/edit/verify) falha no FrontMeasure: WaitForSelectorAsync("#root")
+  timeout 30s, embora a pagina retorne 200 com #root no HTML.
+- Playwright (chrome canal) nao renderiza/executa o JS da pagina no ambiente atual.
+- Frontpipe fica em backlog ate a correcao do Playwright/browser.
+
+## 2026-10-19 — U-tools-execute (cwd do bridge)
+
+- U-tools-execute falhava com "Unable to find the specified file." (GetCwd) porque
+  o WorkingDirectory da unit apontava para bin/Release/net9.0 (removido pelo
+  git clean) ou cwd invalido.
+- Correcao: WorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net9.0
+  + ExecStart com caminho absoluto para o dll.
+- U-tools-execute agora PASS.
+
+## 2026-10-19 — Belts bloqueados por anti-forgery (login 400)
+
+- O login via curl retorna 400 Bad Request mesmo com anti-forgery token.
+- O BeltUiTests usa Playwright (Firefox) que não é suportado no ambiente.
+- Os belts ficam em backlog até a correção da infra de autenticação/stream.
+
+## 2026-10-19 — Duas trilhas de belts (Build vs Orch)
+
+- Trilha Build: 12B (role build) implementa diretamente os artefatos do enunciado
+  (sem composicao de scripts sh), usando subagentes Build E2B para implementar.
+  Asserts: resposta com tools/subagent + conteudo relevante.
+- Trilha Orch: 12B (role orch) segmenta em tarefas -> Scripter (12B) compoe
+  scripts sh + companion .md -> Exec (E2B) le e executa -> valida artefatos.
+- Ambas as trilhas rodam os belts (azul->preta). Resultados parciais guardados
+  em /tmp/opencode/belts/<key>_result.json e /tmp/opencode/belts-build/<key>_result.json.
+- A conformidade final dos artefatos resultantes e criterio de aceite do 12B
+  para ambos os modos do circuito (Build ou Orch).
+
+## 2026-10-19 — Trilha "opencode standalone" (harness nativo do opencode)
+
+Motivo: a trilha build via harness custom (E2EBeltsBuildTests) mostrou que
+`tool_choice=required` nao e honrado de forma confiavel pelo llama/Gemma4 — em
+faixas como a verde o modelo respondeu ~42k chars de texto e nao chamou `write`
+(0 arquivos). Em vez de endurecer mais o harness caseiro, decidimos testar o
+modelo **puro**, deixando o harness maduro do opencode conduzir as tools.
+
+### O que foi desligado na bridge (harness/behavior)
+- Removido `--tool-blacklist` (blacklist por role).
+- Removido `--thinking-off-roles` (override de thinking por role).
+- `--legacy-harness 0` mantido: guardrail/formula legados desligados.
+- Mantidos apenas: **fix** (cap `--max-tokens`, agora **8192** nos dois modelos),
+  **anti-repeat** (`--anti-repeat 1 --anti-repeat-window 512`), `--passthrough-responses`
+  e a API key. System prompt e roles passam a vir dos **agentes registrados no
+  opencode** (`~/.config/opencode/agents/*.md`), nao da bridge.
+
+### Por que opencode standalone
+O opencode tem harness de tools maduro (loop agentico, permissoes, leitura de
+resultado). O enunciado das belts e fruto de um *listening* feito na bridge que
+capturou o harness completo do Qwen CLI na epoca. Se o modo standalone funcionar,
+repetiremos o trabalho do "modo qwen": capturar o conteudo completo do harness,
+sintetizar uma versao bem pequena e aplica-la como **harness nativo + tails** na
+bridge (modo bypass/legacy), sempre que o cliente nao trouxer harness proprio.
+
+### Procedimento desta etapa
+1. Reiniciar `llama-gpu`/`llama-cpu` e `bridge-gpu`/`bridge-cpu`.
+2. Rodar a bateria build (azul->preta) via
+   `opencode run --standalone --auto -m openai/gemma-4-12b-build --agent build`
+   em workspace limpo por faixa.
+3. Critério de aceite: solucao implementada em arquivos reais no disco
+   (>=3 arquivos) e, quando aplicavel, compilando.
+4. Resultados/logs em `/tmp/opencode/opencode-belts/<key>/`.
+
+Nota: a trilha build custom (E2EBeltsBuildTests) fica preservada como trilha
+alternativa; esta etapa nao a remove.
+
+### Resultado da bateria build — opencode standalone (2026-10-19)
+
+Comando por faixa: `opencode run --standalone --auto -m openai/gemma-4-12b-build
+--agent build "<enunciado>"`, workspace limpo, timeout 40 min/faixa.
+Bridge com harness desligado (sem tool-blacklist/thinking-off-roles), max_tokens
+8192, anti-repeat on.
+
+| Faixa  | Status | Arquivos | Extensoes         | Tempo  |
+|--------|--------|----------|-------------------|--------|
+| azul   | PASS   | 5        | .cs, .csproj      | ~1,5m  |
+| verde  | PASS   | 4        | .cs               | ~2,2m  |
+| roxa   | PASS   | 6        | .cs               | ~2,2m  |
+| marrom | PASS   | 4        | .cs, .sql         | ~2,6m  |
+| preta  | PASS   | 8        | .cs, .sql, .py    | ~3,9m  |
+
+Total: **5/5 PASS em ~12,4 min** (o harness custom levava horas e falhava a verde).
+Confirmacao pratica de que o harness nativo do opencode e o caminho: tools
+chamadas de forma consistente, sem `tool_choice=required` forçado.
+
+Ressalvas registradas:
+- **azul**: o `.csproj` saiu malformado (`<Project S_u_e_l_l_e>` em vez de
+  `<Project Sdk="...">`) -> `dotnet build` falha (MSB4025). Arquivos entregues,
+  mas nao compila. Investigar se e ruido do modelo/anti-repeat ou do template.
+- **verde/roxa**: nao criaram `.sql` (DDL ficou declarado no texto). Exigir
+  extensao esperada por faixa no criterio.
+- **marrom**: sem `.tsx`/API (escopo front/API parcial).
+- **preta**: melhor cobertura (dominio + repos + SQL + 3 scripts ML em Python).
+
+Proximo passo sugerido: sintetizar o harness do opencode (captura) e aplica-lo
+como harness nativo + tails na bridge em modo bypass/legacy (equivalente ao
+"modo qwen"), para clientes que nao tragam harness proprio.
+
+## 2026-10-19 — Harness resumido (OpenCode) + subagente mesmo modelo
+- Núcleo global do harness inclui regra de subagente do mesmo tipo/nome de modelo
+  para contextos <=64k.

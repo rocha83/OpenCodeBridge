@@ -24,6 +24,7 @@
 //  USO:  dotnet run -c Release -- --port 4143 --upstream http://127.0.0.1:4100
 // ===========================================================================
 
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Text;
@@ -57,24 +58,29 @@ internal static partial class Program
     static readonly string Version = "2.1";
     // Trava anti-loop no nivel da bridge: complementa QUALQUER system
     // prompt no final (Responses e chat), sem depender do agente.
-    static readonly string SystemGuardrail = "ao listar arquivos locais preferencialmente use as tools glob ou read, atentando-se ao modo de uso correto destas, e ao navegar na web use somente enderecos externos, informando user agent Firefox no Windows 11 ao navegar via fetch ou curl; ao executar tools que resultem em erro, leia a mensagem de erro e adapte a proxima chamada, tentando no maximo mais 2 vezes, e sempre responda na lingua do usuario, seja verboso apenas ao declarar acoes com tools dentro do loop agentico e em conversa simples sem tools responda em no maximo 2 frases; porem envie apenas uma vez a cada mensagem do usuario JAMAIS repita a mesma pergunta varias vezes; se o usuario nao respondeu siga com a melhor suposicao e declare a decisao tomada; FORMA DE USO DAS TOOLS (obrigatoria): catalogo — leitura: glob (lista por padrao), read (le arquivo), grep (busca regex), fetch (GET http somente-leitura), display (mostra na tela); edicao: write (grava/cria), edit (substitui trecho exato); execucao: shell (comando unico; pipes/redirecionamento via bash -c); git somente-leitura (status/log/diff; escrita via shell com cd + git); delegacao: subagent (uma fase por vez); use apenas as anunciadas no bloco # Tools, com os nomes exatos, sem nenhum prefixo (nunca default., nunca outro namespace); cada chamada vai sozinha em <tool_call>{\"name\": \"<nome-exato>\", \"arguments\": {<args>}}</tool_call>, sem prosa antes, dentro ou depois do bloco; uma tool por vez, depois aguarde o resultado para a proxima acao; utilize a tool echo apenas em composicao de scripts, NUNCA para enviar mensagens ao usuario";
+    static readonly string SystemGuardrail = "ao listar arquivos locais preferencialmente use as tools glob ou read, atentando-se ao modo de uso correto destas, e ao navegar na web use somente enderecos externos, informando user agent Firefox no Windows 11 ao navegar via fetch ou curl; ao executar tools que resultem em erro, leia a mensagem de erro e adapte a proxima chamada, tentando no maximo mais 2 vezes, e sempre responda na lingua do usuario, seja verboso apenas ao declarar acoes com tools dentro do loop agentico e em conversa simples sem tools responda em no maximo 2 frases; porem envie apenas uma vez a cada mensagem do usuario JAMAIS repita a mesma pergunta varias vezes; se o usuario nao respondeu siga com a melhor suposicao e declare a decisao tomada; FORMA DE USO DAS TOOLS (obrigatoria): catalogo — leitura: glob (lista por padrao), read (le arquivo), grep (busca regex), fetch (GET http somente-leitura), display (mostra na tela); edicao: write (grava/cria), edit (substitui trecho exato); execucao: shell (comando unico; pipes/redirecionamento via bash -c); git somente-leitura (status/log/diff; escrita via shell com cd + git); delegacao: subagent (uma fase por vez); use apenas as anunciadas no bloco # Tools, com os nomes exatos, sem nenhum prefixo (nunca default., nunca outro namespace); cada chamada vai sozinha em <tool_call>{\"name\": \"<nome-exato>\", \"arguments\": {<args>}}</tool_call>, sem prosa antes, dentro ou depois do bloco; uma tool por vez, depois aguarde o resultado para a proxima acao; utilize a tool echo apenas em composicao de scripts, NUNCA para enviar mensagens ao usuario limite de writes por faixa: apos criar os artefatos planejados (max 8), responda BUILD-OK e pare. Nao repita a mesma chamada write.";
 
     // Coerção texto->tool_calls p/ upstream sem parser server-side (llama.cpp
     // na CPU): extrai ```json{"name"..} ou <tool_call>..</tool_call> do content
     // e sintetiza tool_calls. Liga via --coerce-text-tools ou auto quando o
     // model contém "cpu". Qwen3/AWQ (parsers nativos) ficam intactos.
     static bool CoerceTextTools;
-    // ToolStrategy: resgate deterministico do padrao Code Mode
-    // execute{ code: "return tools.shell({...})" } -> shell({...}).
-    // Independe de --harness: a regra e do formato Code Mode (o modelo tenta
-    // tools.shell, recebe "Unknown tool 'shell'" e entra em loop). A instrucao
-    // de uso mora no prompt do agente (agents/*.md), nunca na bridge.
-    static bool ToolStrategy = true;
     static bool AntiRepeat = true;                               // AntiRepeat: observa o thinking em stream e conteve repeticao
     // Inibidor mestre do harness da bridge (--harness 0): com ele desligado a
     // bridge vira tubo puro (sem sufixo guardrail, sem stop, sem pattern-strip,
     // sem coercao, sem retry/aviso) — todo o conteudo vem do harness opencode.
     static bool Harness = true;
+    // Coerção de tool call NARRADA: o modelo escreveu a chamada no corpo da mensagem
+    // ("[Assistant tool call]: nome({...})") em vez de emitir tool_calls estruturados.
+    // Diferente de CoerceFor (que cobre modelo sem parser nenhum): aqui ja houve intencao
+    // de tool call, so que no formato errado. Independe do LegacyHarness.
+    static bool CoerceNarrated = true;
+    // Tubo puro p/ cliente com harness proprio: opencode chama o modelo COM
+    // sufixo de perfil (-plan/-build/-orch/-moe) e gerencia as tools sozinho —
+    // nesse caminho a bridge nao coagia, nao segura marcador e nao limpa
+    // historico (passa reto). A gestao da bridge fica no cliente direto (Web UI,
+    // modelo sem sufixo). --bridge-managed true forca gestao em todos.
+    static bool BridgeManagedAll;
     // Legado (nunca liga em producao): antigas insercoes da bridge
     // (guardrail/coerce/strip/retry). --legacy-harness 1 reanima.
     static bool LegacyHarness = false;
@@ -82,8 +88,28 @@ internal static partial class Program
     static bool QwenStd = false;
     // Formula (harness=true): composta pela bridge p/ cliente web (model sem
     // sufixo). Opencode (sufixo -build/-plan/-orch) passa limpo.
-    static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit; versione com init/add/commit (commit sempre com mensagem informada). Git e zip sao comandos independentes (a ordem so importa se o enunciado pedir); se o enunciado pedir versionar E empacotar, versione primeiro e empacote depois - assim o pacote nao entra no commit. Zip: empacote com output (o arquivo .zip) e inputs (caminhos relativos ao workspace, separados por espaco), excluindo bin/obj. Tarefa de N passos: so responda texto depois de concluir TODOS - se voce anunciou um passo e ainda falta, emita a tool call em vez de texto. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada. Se um build/teste falhar, leia a mensagem de erro e ajuste o trecho exato antes de rodar de novo. Projetos: crie com `dotnet new` UMA vez e escreva o fonte na pasta do projeto com a tool write (nunca recrie o projeto nem use echo/heredoc). Arquivos grandes (>32kb): leia em blocos (offset+limit, ou head/tail/`sed -n 'N,Mp'`), nunca o arquivo inteiro de uma vez. Matematica sempre qualificada: C# use Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# use System.Math.Sin (ou `open System` e depois Math.Sin) — nunca `sin`/`cos`/`sqrt`/`pi` minusculos nem `open System.Math` (invalido em F#). F# NAO tem operadores OCaml (`+.`/`-.`/`*.`/`/.`) - isso quebra o build: use `+ - * /` normais (valem para float) e `%` so com int. F#: nao indexe lista com indice float (`x.[i]`); use `[0..n]` int ou `List.map (fun xi -> Math.Sin xi) xs` direto. F#: formate com `printfn \"%f\"`/`\"%.6f\"` (sintaxe `%`), NUNCA `{0:F6}` (isso e C#, quebra o F#). F#: rode com `dotnet run --project <dir>` (nunca o dll direto); use let/printfn/List.map, pipe |>, match com fallback. QUALIDADE E EVIDENCIA: contexto primeiro - leia docs/AGENTS.md e o git log antes de planejar; grave todos os artefatos da tarefa de uma vez, sem stub/TODO/placeholder/esqueleto (entrega parcial honesta so se o enunciado mandar parar); correcao sempre por edit/sed no trecho exato, nunca reescrevendo o arquivo inteiro; so declare pronto depois de executar o ACEITE e anexar a evidencia (trecho de log/teste); build/teste vermelho significa tarefa NAO concluida; fail-fast honesto: tool, modelo ou comando que nao existe nao se inventa - diga, liste alternativas e pare; responda no idioma do usuario.";
-    static string HarnessGuardTail = "";
+    static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit; versione com init/add/commit (commit sempre com mensagem informada). Git e zip sao comandos independentes (a ordem so importa se o enunciado pedir); se o enunciado pedir versionar E empacotar, versione primeiro e empacote depois - assim o pacote nao entra no commit. Zip: empacote com output (o arquivo .zip) e inputs (caminhos relativos ao workspace, separados por espaco), excluindo bin/obj. Tarefa de N passos: so responda texto depois de concluir TODOS - se voce anunciou um passo e ainda falta, emita a tool call em vez de texto. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada. Se um build/teste falhar, leia a mensagem de erro e ajuste o trecho exato antes de rodar de novo. Projetos: crie com `dotnet new` UMA vez e escreva o fonte na pasta do projeto com a tool write (nunca recrie o projeto nem use echo/heredoc). Arquivos grandes (>32kb): leia em blocos (offset+limit, ou head/tail/`sed -n 'N,Mp'`), nunca o arquivo inteiro de uma vez. Matematica sempre qualificada: C# use Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# use System.Math.Sin (ou `open System` e depois Math.Sin) — nunca `sin`/`cos`/`sqrt`/`pi` minusculos nem `open System.Math` (invalido em F#). F# NAO tem operadores OCaml (`+.`/`-.`/`*.`/`/.`) - isso quebra o build: use `+ - * /` normais (valem para float) e `%` so com int. F#: nao indexe lista com indice float (`x.[i]`); use `[0..n]` int ou `List.map (fun xi -> Math.Sin xi) xs` direto. F#: formate com `printfn \"%f\"`/`\"%.6f\"` (sintaxe `%`), NUNCA `{0:F6}` (isso e C#, quebra o F#). F#: rode com `dotnet run --project <dir>` (nunca o dll direto); use let/printfn/List.map, pipe |>, match com fallback. ANTI-ALUCINACAO: NUNCA invente comando ou ferramenta - antes de usar, confirme que existe (ex.: command -v <cmd>); servicos sao gerenciados por systemctl (nao existe service_manager nesta maquina). Se uma tool esta bloqueada para o seu role (ex.: write para Plan/MoE/Orch), nao tente contornar por shell: explique que a acao cabe a outro role. Prefira caminhos absolutos em write/read; nome com espaco quebra o glob. shell: confirme o caminho com ls antes de mv/rm. FORMATO DE EMISSAO (obrigatorio): para agir, emita a CHAMADA DE TOOL ESTRUTURADA (canal nativo de tool, com nome e argumentos JSON) - esse e o unico formato que executa; a chamada escrita no corpo como [Assistant tool call]: nome({...}), ou apenas anunciada como 'Vou usar a tool X', vira prosa, nada executa e o turno trava. FORMATACAO NUMERICA: em C# use ToString com o formato F6 e System.Globalization.CultureInfo.InvariantCulture - nunca o printf %.6f; em F# use printfn com %.6f passando o valor como argumento, pois %.6f sem argumento imprime o literal. F# NUMERICO: some com `[0..n] |> Seq.sumBy (fun i -> ...)` - a sequencia vai na MESMA expressao como argumento; nunca deixe a sequencia sozinha depois de Seq.map/Seq.choose (gera FS0193 'function value is missing arguments'). Use List.average xs e potencia com `**`; desvio = sqrt (List.average (List.map (fun v -> (v-media)**2.0) xs)). CAMINHOS RELATIVOS (sem barra inicial) em write/read; ARGUMENTOS JSON DAS TOOLS DEVEM SER VALIDOS E COMPLETOS (escape \\n em strings). DICA NUMERICA (Simpson): em [0,pi] com n subintervalos, alterne pesos 4 (indices impares) e 2 (pares) e multiplique por h/3; resultado esperado ~2.0 para n=100. Use Math.Sin/System.Math.Sin qualificado.";
+    // Retry de contencao do anti-repeat: 1 segunda chamada ao modelo com o aviso,
+    // descartando a janela repetida. Governado por --anti-repeat-retry, nao pelo
+    // LegacyHarness (ver o bloco do retry).
+    static bool AntiRepeatRetry = true;
+    // Emissao por delta (efeito "digitando") no content: repassa cada chunk do
+    // upstream segurando so o prefixo ambiguo de tag; false = agrega ate 256
+    // chars. Liga/desliga por appsettings (streamPerDelta) ou CLI.
+    static bool StreamPerDelta = true;
+    // Enunciado de inducAO a COMPORTAMENTO (nao e uso de tools): disciplina de execucao,
+    // como parar e entregar, como reagir a erro, tom de resposta. Vive separado da
+    // ToolsTail de proposito: COMO USAR A TOOL e uma coisa, COMO SE COMPORTAR e outra.
+    // Default: enquadramento de WORKSPACE. O usuario costuma apontar um path
+    // de fora do namespace no enunciado inicial; sem esta regra o modelo olha
+    // so o diretorio literal e conclui "nao existe", ignorando vizinhos e
+    // subpastas. Override por appsettings (harnessBehaviorTail) ou CLI.
+    static string HarnessBehaviorTail =
+        "COMPORTAMENTO (workspace): quando o usuario informar pastas de atuacao fora do workspace, procure pastas ou arquivos citados tambem um nivel abaixo (pastas vizinhas) e na arvore de subpastas, tanto do workspace quanto dos paths citados. " +
+        "COMPORTAMENTO (formato): em conversa escreva com Unicode (setas, menor-igual, pi, somatorio) em vez de LaTeX; use $...$ somente dentro de bloco de codigo ou de formula matematica, onde o cliente renderiza.";
+    // Ha alguma cauda de inducAO configurada? E o que o /api/harness reporta:
+    // nao existe mais switch mestre, o que vale e ter cauda ou nao.
+    static bool TailsAtivas() => HarnessBehaviorTail.Length > 0 || HarnessToolsTail.Length > 0;
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
     // devolve 413 pedindo compactacao em vez da resposta. Parametrizavel
@@ -93,6 +119,192 @@ internal static partial class Program
     static int ContextTokens = 0;                                // tamanho do ctx do modelo servido
     static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
     static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida; quando informada a repeticao, nao responda mais nada, apenas encerre em silencio, obrigado.";
+
+    // ThinkingOffRoles: roles que NUNCA devem mostrar reasoning, por nome de role
+    // ("Build", "Scripter", "Exec"). Vence sobre o perfil/sufixo do model id, para
+    // o operador corrigir sem renomear id. Vazio = usa so o Profiles.
+    static HashSet<string> ThinkingOffRoles = new(StringComparer.OrdinalIgnoreCase);
+
+    // ToolBlacklist: tools proibidas por role ("Plan" => write, sed, rm). Nome da
+    // tool do lado do MODELO (o que ele pede), nao do harness. Vazio = libera.
+    // A tool CONTINUA anunciada ao modelo: o bloqueio e na emissao da chamada, nao
+    // escondendo o schema. Assim o modelo sabe que a tool existe (e pode explicar ao
+    // usuario que ela e de outro role) mas nao consegue executar.    // ToolBlacklist: tools proibidas por role ("Plan" => write, sed, rm). Nome da
+    // tool do lado do MODELO (o que ele pede), nao do harness. Vazio = libera.
+    static string ToolBlockNotice = "Aqui e a ponte de conteudo OpenCodeBridge: a tool '{0}' nao esta liberada para o role '{1}' (permissao interativa desligada: --risk-ask 0) e nao sera executada; use uma alternativa permitida (shell, read) ou explique ao usuario que essa acao cabe a outro role.";
+    static Dictionary<string, HashSet<string>> ToolBlacklist = new(StringComparer.OrdinalIgnoreCase);
+
+    // RiskToolsAlerts: comandos de RISCO que nao sao executados sem confirmacao
+    // do usuario na interface. Diferente do ToolBlacklist (que barra a TOOL
+    // inteira por role), aqui o alvo e o COMANDO: "git push" casa com o git
+    // dentro de um shell, mas "git log" passa livre. O papel do role e o de
+    // decidir QUEM pergunta (Plan pergunta; Build tambem, se listado).
+    static Dictionary<string, List<Regex>> RiskToolsAlerts = new(StringComparer.OrdinalIgnoreCase);
+
+    // Pergunta em voo: call_id da pergunta -> a chamada de risco original.
+    // Cruza o turno: o opencode devolve function_call_output com esse call_id.
+    record PendingRisk(string Tool, string Args, string Role);
+    static ConcurrentDictionary<string, PendingRisk> PendingRisks = new(StringComparer.Ordinal);
+
+    // Autorizacoes concedidas: assinatura da chamada -> validade. Uma concessao
+    // vale para UMA execucao (TryRemove no consume), nao abrePermanente.
+    static ConcurrentDictionary<string, DateTime> RiskApprovedOnce = new(StringComparer.Ordinal);
+
+    /// <summary>Envia a pergunta de risco ao usuario (default ligado).</summary>
+    static bool RiskAsk = true;
+
+    /// <summary>Tempo que a pergunta de risco fica pendente (minutos).</summary>
+    static int RiskAskMinutes = 30;
+
+    /// <summary>Tools que disparam pergunta de risco: padroes regex, por role.</summary>
+    static List<Regex> RiskPatternsFor(string? role)
+        => role is not null && RiskToolsAlerts.TryGetValue(role, out var pats) ? pats : new List<Regex>();
+
+    /// <summary>Le a resposta do usuario a uma pergunta de risco; concede (uma
+    /// vez) a assinatura da chamada ou registra a recusa. Devolve true se a
+    /// chamada foi autorizada e deve sair agora.</summary>
+    static bool RiskConsumeApproval(string modelId, string tool, string args)
+    {
+        string sig = ToolSig(tool, args);
+        if (!RiskApprovedOnce.TryRemove(sig, out DateTime exp)) return false;
+        if (exp < DateTime.UtcNow) return false;
+        Log(new JsonObject { ["event"] = "risk-approved", ["tool"] = tool, ["role"] = RoleOfModel(modelId) });
+        return true;
+    }
+
+    /// <summary>Registra os function_call_output que respondem a uma pergunta de
+    /// risco. Roda na entrada do request: o opencode traz a resposta do usuario
+    /// no turno seguinte, e e la que a concessao (ou a recusa) e reconhecida.
+    /// Devolve o aviso a injetar no historico, para o modelo reemitir a chamada
+    /// exata (a concessao vale para uma unica execucao, casada por assinatura).</summary>
+    static List<string> RiskScanAnswers(JsonNode? input)
+    {
+        var notices = new List<string>();
+        if (PendingRisks.IsEmpty || input is not JsonArray arr) return notices;
+        foreach (var entry in arr)
+        {
+            if (entry is not JsonObject e) continue;
+            string type = e["type"]?.GetValue<string>() ?? "";
+            if (type is not ("function_call_output" or "custom_tool_call_output")) continue;
+            string callId = e["call_id"]?.GetValue<string>() ?? e["id"]?.GetValue<string>() ?? "";
+            if (!PendingRisks.TryRemove(callId, out PendingRisk? risk)) continue;
+            string answer = ExtractText(e["output"] ?? e["result"] ?? e["content"]);
+            bool approved = RiskAnswerYes(answer);
+            Log(new JsonObject { ["event"] = "risk-answer", ["tool"] = risk.Tool,
+                                 ["role"] = risk.Role, ["approved"] = approved });
+            if (approved)
+            {
+                RiskApprovedOnce[ToolSig(risk.Tool, risk.Args)] = DateTime.UtcNow.AddMinutes(RiskAskMinutes);
+                notices.Add($"Ponte OpenCodeBridge: o usuario AUTORIZOU a chamada de risco pendente. "
+                          + $"Reemita agora, sem mudar nada, a tool '{risk.Tool}' com os argumentos: {risk.Args}");
+            }
+            else
+            {
+                RiskRefused.Add(ToolSig(risk.Tool, risk.Args));
+                notices.Add($"Ponte OpenCodeBridge: o usuario NEGOU a chamada de risco pendente "
+                          + $"({risk.Tool}: {Truncate(risk.Args, 200)}). Nao a tente de novo e explique ao usuario "
+                          + "o que ficou por fazer.");
+            }
+        }
+        return notices;
+    }
+
+    /// <summary>Assinaturas recusadas pelo usuario neste request (o modelo precisa
+    /// saber que a acao nao aconteceu, em vez de reemitir em loop).</summary>
+    static HashSet<string> RiskRefused = new(StringComparer.Ordinal);
+
+    /// <summary>Resposta do usuario a pergunta de risco: sim/nao. Default e nao
+    /// (recusa) — o silencio do usuario nao autoriza.</summary>
+    static bool RiskAnswerYes(string answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer)) return false;
+        string a = NormRepeat(answer).ToLowerInvariant();
+        if (System.Text.RegularExpressions.Regex.IsMatch(a, @"\b(nao|nunca|negar|recusar|cancelar|deixa|rejeitar)\b"))
+            return false;
+        return System.Text.RegularExpressions.Regex.IsMatch(a, @"\b(sim|autoriza|autorizado|aprova|aprovado|pode|executa|ok|yes|confirmo|confirmado)\b");
+    }
+
+    /// <summary>DECISAO UNICA da politica de tools (fonte de verdade da ponte,
+    /// consumida tambem pela Web em /api/permission/check). Devolve:
+    /// "allow" (roda), "ask" (pergunta ao usuario; a chamada so sai com aval) ou
+    /// "deny" (nao roda e nao se pergunta: autonomia do operador desligada).</summary>
+    static (string Action, string Reason) PermissionOf(string? modelId, string tool, string args)
+    {
+        // Risco declarado: pergunta quando RiskAsk esta ligado; nega quando nao.
+        if (IsRiskCall(modelId, tool, args))
+            return (RiskAsk ? "ask" : "deny", "risco");
+        // Fora do papel: idem — permissao interativa em vez de omissao.
+        if (BannedFor(modelId).Contains(tool))
+            return (RiskAsk ? "ask" : "deny", "papel");
+        return ("allow", "");
+    }
+
+    /// <summary>A chamada e de risco e ainda nao foi autorizada: vira pergunta.</summary>
+    static bool IsRiskCall(string? modelId, string tool, string args)
+    {
+        if (!RiskAsk) return false;
+        var pats = RiskPatternsFor(RoleOfModel(modelId));
+        if (pats.Count == 0) return false;
+        string sig = ToolSig(tool, args);
+        if (RiskRefused.Contains(sig)) return false;   // ja recusado: nao insiste
+        string hay = NormRepeat(tool + " " + args);
+        foreach (var rx in pats)
+            if (rx.IsMatch(hay)) return true;
+        return false;
+    }
+
+    /// <summary>Texto legivel da chamada para a pergunta (achata o JSON).</summary>
+    static string RiskReadable(string tool, string args)
+    {
+        string flat;
+        try
+        {
+            if (JsonNode.Parse(args) is JsonObject o)
+                flat = string.Join("  ", o.Select(kv => kv.Key + "=" + ExtractText(kv.Value)));
+            else flat = args;
+        }
+        catch { flat = args; }
+        return Truncate(flat.Replace('\n', ' ').Trim(), 400);
+    }
+
+    /// <summary>Monta a chamada da tool question (nativa do opencode) pedindo a
+    /// confirmacao do usuario. E o schema que o opencode abre como formulario.
+    /// <paramref name="reason"/> = "risco" (comando perigoso) ou "papel"
+    /// (a tool nao e do role). O texto muda, o mecanismo e o mesmo.</summary>
+    static string RiskQuestionArgs(string tool, string args, string role, string reason)
+    {
+        string ask = reason == "papel"
+            ? $"O role {role} normalmente nao pode usar a tool '{tool}'. Voce autoriza esta execucao?\n\n"
+            : $"O role {role} pediu uma acao de risco, que precisa da sua autorizacao antes de rodar.\n\n";
+        var payload = new JsonObject
+        {
+            ["questions"] = new JsonArray(new JsonObject
+            {
+                ["header"] = Truncate(reason == "papel" ? "Fora do papel: " + tool : "Risco: " + tool, 30),
+                ["question"] = ask + $"{tool}: {RiskReadable(tool, args)}\n\nConfirma a execucao?",
+                ["options"] = new JsonArray(
+                    new JsonObject { ["label"] = "Autorizar", ["description"] = "Executar agora, com a autorizacao do usuario" },
+                    new JsonObject { ["label"] = "Negar", ["description"] = "Nao executar; o agente deve explicar o motivo ao usuario" }),
+                ["multiple"] = false
+            })
+        };
+        return payload.ToJsonString(SerOpts);
+    }
+
+    /// <summary>Tools bloqueadas para o role do model pedido (vazio = nenhuma).</summary>
+    static HashSet<string> BannedFor(string? modelId)
+        => ToolBlacklist.TryGetValue(RoleOfModel(modelId), out var set) ? set
+           : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Role extraido do sufixo do model id ("...-build" => "Build").</summary>
+    static string RoleOfModel(string? modelId)
+    {
+        if (string.IsNullOrEmpty(modelId)) return "";
+        foreach (var k in Profiles.Keys)
+            if (modelId.EndsWith("-" + k, StringComparison.OrdinalIgnoreCase))
+                return char.ToUpperInvariant(k[0]) + k[1..];
+        return "";
+    }
     static bool CoerceFor(string modelId) => LegacyHarness && (CoerceTextTools
         || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false));
 
@@ -100,13 +312,14 @@ internal static partial class Program
     // thinking ligado + temp media p/ planejar; build = thinking fundido +
     // temp media p/ executar; orch = coordena subagentes; moe = uso geral
     // hibrido; scripter = temp baixa (determinismo) e thinking off.
-    // Escala: 0.3 (min) / 0.5 (medio) / 0.8 (max). Request sem sufixo usa os
+    // Escala: 0.3 (min: build/scripter/exec) / 0.5 (plan/orch) / 0.8 (moe).
+    // Request sem sufixo usa os
     // globais. O caminho Qwen3 padrao (sem sufixo) fica byte-identico.
     static readonly Dictionary<string, (double Temp, string Think)> Profiles =
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["plan"] = (0.5, "events"),
-            ["build"] = (0.5, "off"),
+            ["build"] = (0.3, "off"),
             ["orch"] = (0.5, "events"),
             ["moe"] = (0.8, "events"),
             ["scripter"] = (0.3, "off"),
@@ -123,6 +336,11 @@ internal static partial class Program
             { profTemp = kv.Value.Temp; profThink = kv.Value.Think; return true; }
         return false;
     }
+
+    /// <summary>A bridge gerencia tools neste pedido? Cliente com perfil (opencode)
+    /// traz o proprio harness: passa reto. Direto/Web (sem sufixo) e gerido.</summary>
+    static bool ManagedFor(string? modelId) =>
+        BridgeManagedAll || !TryProfile(modelId ?? "", out _, out _);
 
     /// <summary>Arquivo opcional ao lado do DLL (CLI vence o arquivo).</summary>
     static void LoadAppSettings()
@@ -152,11 +370,25 @@ internal static partial class Program
             if (cfg["usersDb"]?.GetValue<string>() is string udb && udb.Length > 0) Auth.UsersDbPath = udb;
             if (cfg["passthroughResponses"]?.GetValue<bool>() is bool pt) PassthroughResponses = pt;
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
-            if (cfg["toolStrategy"]?.GetValue<bool>() is bool tstrat) ToolStrategy = tstrat;
             if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
             if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham && ham.Length > 0) HarnessToolsTail = ham;
-            if (cfg["harnessGuardTail"]?.GetValue<string>() is string ht) HarnessGuardTail = ht;
+            if (cfg["harnessBehaviorTail"]?.GetValue<string>() is string bt) HarnessBehaviorTail = bt;
+            if (cfg["antiRepeatRetry"]?.GetValue<bool>() is bool arr) AntiRepeatRetry = arr;
+            if (cfg["streamPerDelta"]?.GetValue<bool>() is bool spd) StreamPerDelta = spd;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
+            if (cfg["coerceNarrated"]?.GetValue<bool>() is bool cn) CoerceNarrated = cn;
+            if (cfg["bridgeManaged"]?.GetValue<bool>() is bool bm) BridgeManagedAll = bm;
+            if (cfg["riskAsk"]?.GetValue<bool>() is bool ra) RiskAsk = ra;
+            if (cfg["riskAskMinutes"]?.GetValue<int>() is int ram && ram > 0) RiskAskMinutes = ram;
+            if (cfg["riskToolsAlerts"]?.AsObject() is JsonObject rta)
+                foreach (var kv in rta)
+                {
+                    if (kv.Value is not JsonArray pats) continue;
+                    var rx = new List<Regex>();
+                    foreach (var p in pats)
+                        if (p?.GetValue<string>() is { Length: > 0 } pn && TryRegex(pn, out var compiled)) rx.Add(compiled);
+                    if (rx.Count > 0) RiskToolsAlerts[kv.Key] = rx;
+                }
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
             if (cfg["diagnostic"]?.GetValue<bool>() is bool dg) Diagnostic = dg;
@@ -169,6 +401,17 @@ internal static partial class Program
             if (cfg["qwenStandard"]?.GetValue<bool>() is bool qs) QwenStd = qs;
             if (Environment.GetEnvironmentVariable("DIAGNOSTIC") is "1" or "true" or "True") Diagnostic = true;
             if (Environment.GetEnvironmentVariable("HARNESS") is "0" or "false" or "False") Harness = false;
+            if (cfg["thinkingOffRoles"] is JsonArray tor)
+                foreach (var r in tor)
+                    if (r?.GetValue<string>() is { Length: > 0 } rn) ThinkingOffRoles.Add(rn.Trim());
+            if (cfg["toolBlacklist"]?.AsObject() is JsonObject tbl)
+                foreach (var kv in tbl)
+                {
+                    if (kv.Value is not JsonArray tools) continue;
+                    var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var t in tools) if (t?.GetValue<string>() is { Length: > 0 } tn) set.Add(tn.Trim());
+                    ToolBlacklist[kv.Key] = set;
+                }
             if (cfg["profiles"]?.AsObject() is JsonObject profs)
                 foreach (var kv in profs)
                 {
@@ -248,6 +491,15 @@ internal static partial class Program
     // Coder com tool_choice required: <function>{...}</function> + flood de \n.
     static readonly Regex ReFunctionTag = new(@"<function>([\s\S]*?)</function>", RegexOptions.Compiled);
 
+    // opencode serializa a tool call no historico como "[Assistant tool call]: nome({...})".
+    // Em contexto longo o modelo copia esse formato em vez de emitir a chamada estruturada, e
+    // o parser nativo do llama nao ve nada: o turno vira prosa e trava. Aqui devolvemos a
+    // chamada de verdade. Nome segue a allowlist de tools anunciadas, entao prosa
+    // que so menciona uma tool nao vira chamada.
+    static readonly Regex ReAssistantToolCall = new(
+        @"\[\s*Assistant\s+tool\s+call\s*\]\s*:?\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\(",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     // Catálogo real de tools (+ apelidos shell -> shell): só estes nomes
     // viram tool_call na coação; resto (echo alucinado) fica como prosa.
     static readonly HashSet<string> RealTools = new(StringComparer.OrdinalIgnoreCase)
@@ -293,6 +545,8 @@ internal static partial class Program
             foreach (Match m in ReFencedCall.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
         if (list.Count == 0)
             foreach (string json in ExtractAngleCalls(content, false)) TryAddTextCall(json, list, known);
+        if (list.Count == 0)
+            ExtractAssistantToolCalls(content, list, known);
         if (list.Count == 0)
         {
             // Ultimo recurso: resposta INTEIRA e um objeto {"name":..} cru
@@ -360,11 +614,104 @@ internal static partial class Program
         return false;
     }
 
+    /// <summary>Formato "[Assistant tool call]: nome({...})" -> tool call de verdade.</summary>
+    /// <remarks>Reconstroi o envelope {"name","arguments"} a partir do nome do regex e dos <see cref="TryAddTextCall"/>,
+    /// que aplica a allowlist. Le ate o fechamento balanceado do objeto de argumentos, entao
+    /// nao depende de chaves balanceadas no texto todo.</remarks>
+    static void ExtractAssistantToolCalls(string content, List<(string Name, string Arguments)> list, List<string>? known)
+    {
+        foreach (Match m in ReAssistantToolCall.Matches(content))
+        {
+            int i = m.Index + m.Length;              // logo apos o '(' do nome
+            if (i >= content.Length || content[i] != '{') continue;
+            if (!TryBalanced(content, i, out string obj)) continue;
+            try
+            {
+                // TryBalanced devolve o que esta entre as chaves do nome: sao os ARGUMENTOS,
+                // nao um envelope {"name","arguments"}. O nome vem do grupo do regex.
+                if (!TryParseArgs(obj, out JsonObject argObj)) continue;
+                var envelope = new JsonObject { ["name"] = m.Groups[1].Value, ["arguments"] = argObj };
+                TryAddTextCall(envelope.ToJsonString(SerOpts), list, known);
+            }
+            catch { /* prosa que nao e JSON: segue como texto */ }
+        }
+    }
+
+    /// <summary>Parse JSON tolerante: estrito e, se falhar, com escapes reparados.</summary>
+    static JsonNode? TryParseJson(string json)
+    {
+        try { return JsonNode.Parse(json); } catch { }
+        string repaired = RepairJsonEscapes(json);
+        if (repaired == json) return null;
+        try { return JsonNode.Parse(repaired); } catch { return null; }
+    }
+
+    /// <summary>Repara escapes que o modelo inventa (barra + char fora do JSON:
+    /// <c>\;</c>, <c>\-</c>, <c>\s</c>) duplicando a barra. Sem isso
+    /// <c>find ... -exec cat {} \;</c> derruba o parse e a chamada narrada morre.</summary>
+    static string RepairJsonEscapes(string json)
+    {
+        var sb = new StringBuilder(json.Length + 8);
+        for (int i = 0; i < json.Length; i++)
+        {
+            char c = json[i];
+            if (c != '\\' || i + 1 >= json.Length) { sb.Append(c); continue; }
+            char n = json[i + 1];
+            if (n is '"' or '\\' or '/' or 'b' or 'f' or 'n' or 'r' or 't' or 'u')
+            { sb.Append(c).Append(n); i++; continue; }
+            sb.Append("\\\\").Append(n);   // \; -> \\; (barra literal)
+            i++;
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Argumentos de tool a partir do texto: JSON valido, JSON reparado
+    /// ou o caso <c>{"command": "..."}</c> com aspas internas soltas (shell narrado:
+    /// <c>find . -name "*evolution*.md"</c> sem escape).</summary>
+    static bool TryParseArgs(string raw, out JsonObject args)
+    {
+        args = new JsonObject();
+        if (TryParseJson(raw) is JsonObject parsed) { args = parsed; return true; }
+        var match = Regex.Match(raw, "^\\{\\s*\"command\"\\s*:\\s*\"([\\s\\S]*)\"\\s*\\}$");
+        if (!match.Success) return false;
+        string command = match.Groups[1].Value
+            .Replace("\\\"", "\"")     // \" do JSON -> aspas reais
+            .Replace("\\\\", "\\");    // \\ do JSON -> barra real
+        args = new JsonObject { ["command"] = command };
+        return true;
+    }
+
+    /// <summary>Remove do texto do historico as chamadas narradas
+    /// ("[Assistant tool call]: nome({...})"), mantendo a prosa em volta.</summary>
+    /// <remarks>A chamada de verdade vem como item function_call no mesmo input;
+    /// deixar o texto ensina o modelo a narrar em vez de emitir a chamada.</remarks>
+    static string StripNarratedCalls(string text)
+    {
+        if (string.IsNullOrEmpty(text) || !ReAssistantToolCall.IsMatch(text)) return text;
+        var sb = new StringBuilder(text.Length);
+        int i = 0;
+        while (i < text.Length)
+        {
+            var m = ReAssistantToolCall.Match(text, i);
+            if (!m.Success) { sb.Append(text, i, text.Length - i); break; }
+            sb.Append(text, i, m.Index - i);
+            int start = m.Index + m.Length;
+            if (start < text.Length && text[start] == '{' && TryBalanced(text, start, out string obj))
+            {
+                int end = start + obj.Length;
+                if (end < text.Length && text[end] == ')') end++;
+                i = end;
+            }
+            else i = m.Index + m.Length;
+        }
+        return Regex.Replace(sb.ToString(), @"[ \t]+\r?\n", "\n").TrimEnd();
+    }
+
     static void TryAddTextCall(string json, List<(string Name, string Arguments)> list, List<string>? known = null)
     {
         try
         {
-            var o = JsonNode.Parse(json.Trim())?.AsObject();
+            var o = TryParseJson(json.Trim())?.AsObject();
             if (o is null) return;
             string name = o["name"]?.GetValue<string>() ?? "";
             if (name.Length == 0) return;
@@ -372,15 +719,13 @@ internal static partial class Program
             // nomes simples; "default." nunca e tool valida — remove sem risco.
             if (name.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
                 name = name["default.".Length..];
-            // Allowlist: com anunciadas casa com elas (apelido shell conta
-            // como shell; custom do harness, ex. soma, passa); sem lista,
-            // exige o catálogo real. Alucinada (echo) não vira tool_call.
+            // Sem allowlist: uso geral de tools. Com lista anunciada, casa o apelido
+            // (shell -> shell); sem lista, usa o nome como veio. O limite de escrita/
+            // execucao por role e feito na emissao (ToolBlacklist), nao aqui.
             string canon = CanonToolAlias(name);
-            string emit = "";
-            if (known is { Count: > 0 })
-                emit = known.FirstOrDefault(k => CanonToolAlias(k) == canon) ?? "";
-            else if (RealTools.Contains(canon))
-                emit = canon;
+            string emit = known is { Count: > 0 }
+                ? known.FirstOrDefault(k => CanonToolAlias(k) == canon) ?? canon
+                : canon;
             if (emit.Length == 0) return;
             list.Add((emit, JsonToString(o["arguments"])));
         }
@@ -464,12 +809,45 @@ internal static partial class Program
                 case "--users-db": Auth.UsersDbPath = cliArgs[i + 1]; break;
                 case "--passthrough-responses": PassthroughResponses = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--tool-strategy": ToolStrategy = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--coerce-narrated": CoerceNarrated = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--bridge-managed": BridgeManagedAll = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--anti-repeat-retry": AntiRepeatRetry = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--stream-per-delta": StreamPerDelta = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--harness-behavior-tail": HarnessBehaviorTail = cliArgs[i + 1]; break;
+                case "--harness-tools-tail": HarnessToolsTail = cliArgs[i + 1]; break;
                 case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--legacy-harness": LegacyHarness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--qwen-standard": QwenStd = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
+                case "--thinking-off-roles":
+                    foreach (var r in (cliArgs[i + 1] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        ThinkingOffRoles.Add(r);
+                    break;
+                case "--tool-blacklist":   // "Plan=write,sed,rm;MoE=write"
+                    foreach (var grp in (cliArgs[i + 1] ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        int eq = grp.IndexOf('=');
+                        if (eq <= 0) continue;
+                        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var t in grp[(eq + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                            set.Add(t);
+                        ToolBlacklist[grp[..eq].Trim()] = set;
+                    }
+                    break;
+                case "--risk-tools-alerts":   // "Plan=git\\s+push,\\brm\\b;Orch=\\bdd\\b"
+                    foreach (var grp in (cliArgs[i + 1] ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        int eq = grp.IndexOf('=');
+                        if (eq <= 0) continue;
+                        var rx = new List<Regex>();
+                        foreach (var p in grp[(eq + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                            if (TryRegex(p, out var compiled)) rx.Add(compiled);
+                        if (rx.Count > 0) RiskToolsAlerts[grp[..eq].Trim()] = rx;
+                    }
+                    break;
+                case "--risk-ask": RiskAsk = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--risk-ask-minutes": if (int.TryParse(cliArgs[i + 1], out int ramc) && ramc > 0) RiskAskMinutes = ramc; break;
                 case "--context-guard": ContextGuard = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--context-threshold": { double v = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); if (v >= 0.5 && v <= 0.99) ContextThreshold = v; break; }
                 case "--context-tokens": ContextTokens = int.Parse(cliArgs[i + 1]); break;
@@ -566,7 +944,28 @@ internal static partial class Program
             // Flag mestra do harness (fonte unica: a web consulta aqui).
             if (ctx.Request.HttpMethod == "GET" && path == "/api/harness")
             {
-                WriteJson(ctx, 200, new JsonObject { ["harness"] = Harness });
+                WriteJson(ctx, 200, new JsonObject { ["harness"] = TailsAtivas() });
+                return;
+            }
+
+            // Politica de tools: a Web consulta AQUI (fonte unica), em vez de
+            // manter regra propria. Body: { model, tool, arguments }.
+            if (ctx.Request.HttpMethod == "POST" && path == "/api/permission/check")
+            {
+                var pr = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
+                string pModel = pr["model"]?.GetValue<string>() ?? "";
+                string pTool = pr["tool"]?.GetValue<string>() ?? "";
+                string pArgs = pr["arguments"] is JsonValue pv && pv.TryGetValue<string>(out string? ps)
+                    ? ps : JsonToString(pr["arguments"]);
+                var (action, reason) = PermissionOf(pModel, pTool, pArgs);
+                Log(new JsonObject { ["event"] = "permission-check", ["tool"] = pTool,
+                                     ["role"] = RoleOfModel(pModel), ["action"] = action, ["reason"] = reason });
+                WriteJson(ctx, 200, new JsonObject
+                {
+                    ["action"] = action, ["reason"] = reason,
+                    ["role"] = RoleOfModel(pModel), ["tool"] = pTool,
+                    ["notice"] = reason.Length == 0 ? "" : string.Format(ToolBlockNotice, pTool, RoleOfModel(pModel)),
+                });
                 return;
             }
 
@@ -650,7 +1049,7 @@ WriteJson(ctx, 200, new JsonObject
                 string args = req["arguments"]?.ToJsonString() ?? "{}";
                 int timeout = req["timeout"]?.GetValue<int>() ?? 300;
                 string root = WorkspaceRoot.Length > 0 ? WorkspaceRoot : Environment.CurrentDirectory;
-                var executor = new Tools.BridgeToolExecutor(root);
+                var executor = new Tools.BridgeToolExecutor(root, Upstream, ApiKey);
                 var result = executor.Execute(name, args, Math.Clamp(timeout, 1, 600));
                 string output = result.Success ? result.Output : "";
                 if (ToolOutputLimit > 0 && output.Length > ToolOutputLimit) output = output[..ToolOutputLimit];
@@ -743,9 +1142,9 @@ WriteJson(ctx, 200, new JsonObject
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
         ["passthrough_responses"] = PassthroughResponses,
-        ["tool_strategy"] = ToolStrategy,
         ["cpu_max_tokens"] = CpuMaxTokens,
-        ["harness"] = Harness, ["legacy_harness"] = LegacyHarness,
+        ["harness"] = TailsAtivas(), ["legacy_harness"] = LegacyHarness, ["stream_per_delta"] = StreamPerDelta,
+        ["bridge_managed"] = BridgeManagedAll ? "all" : "direct-only",
         ["uptime_seconds"] = (long)(DateTime.UtcNow - StartedAt).TotalSeconds,
         ["total_requests"] = TotalRequests, ["failed_requests"] = FailedRequests
     };
@@ -795,6 +1194,7 @@ WriteJson(ctx, 200, new JsonObject
     /// <param name="body">Corpo original.</param>
     static void Passthrough(HttpListenerContext ctx, string body)
     {
+        var startedAt = DateTime.UtcNow;
         // opencode 1.x fala chat/completions direto (sem /v1/responses): o id
         // com sufixo de perfil (-plan/-build/-orch) precisa virar o Model
         // servido, senao o vLLM responde 404. Temperatura do perfil entra
@@ -844,7 +1244,9 @@ WriteJson(ctx, 200, new JsonObject
             }
             // Formula (Harness, cliente web = model sem sufixo de perfil):
             // system + agents + tail. Opencode (sufixo) passa limpo.
-            if (Harness && !opencodeIn && node is not null
+            // Sem switch mestre: cada cauda se aplica por estar configurada
+            // (appsettings ou --harness-behavior-tail / --harness-tools-tail).
+            if (node is not null
                 && node["messages"] is JsonArray fm)
             {
                 foreach (var m in fm)
@@ -872,16 +1274,27 @@ WriteJson(ctx, 200, new JsonObject
                 node["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = wantThinking };
                 outBody = node.ToJsonString(SerOpts);
             }
+            // Convencao do operador: cap de saida TAMBEM no repasse
+            // /v1/chat/completions. Sem isso, cliente sem max_tokens deixava o
+            // llama gerar ate o EOS (divagacao de 40k+ tokens, ~26 min/turno).
+            // O valor do cliente (ex.: belts, 4096) prevalece; so injeta quando
+            // ausente. cpuLine escolhe o teto (GPU 16k x CPU 8k).
+            if (node is not null && node["max_tokens"] is null && node["max_completion_tokens"] is null)
+            {
+                bool cpuLinePt = CoerceFor(node["model"]?.GetValue<string>() ?? "") || CoerceFor(Model);
+                int capPt = cpuLinePt ? CpuMaxTokens : MaxTokens;
+                if (capPt > 0)
+                {
+                    node["max_tokens"] = capPt;
+                    outBody = node.ToJsonString(SerOpts);
+                }
+            }
             // tools quebram o parser do template 14B (400); vale p/ qualquer
             // model id, com ou sem sufixo de perfil. Exceção permanente.
             if (node is not null && node["tools"] is JsonArray toolsArr)
             {
                 string beforeStrip = toolsArr.ToJsonString(SerOpts);
                 ApplyPatternException(toolsArr, "chat");
-                // Code Mode do opencode: sem sandbox JS na bridge, `execute` sai
-                // do catalogo (o modelo so pode escolher tools diretas).
-                StripExecuteTools(toolsArr, "chat");
-                NeutralizeCodeMode(node);
                 if (toolsArr.ToJsonString(SerOpts) != beforeStrip)
                     outBody = node.ToJsonString(SerOpts);
             }
@@ -930,7 +1343,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHeadersRead);
         if (coerceLine && upstreamResponse.IsSuccessStatusCode)
         {
-            CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent, AnnouncedTools(outBody));
+            CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent, AnnouncedTools(outBody), startedAt);
             return;
         }
         ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
@@ -985,7 +1398,13 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
             }
             // Sonda traffic FULL (só com DIAGNOSTICS; chat stream: integros).
-            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "chat-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = rawChatSse.Length, ["res"] = rawChatSse.ToString() });
+            if (Diagnostic)
+            {
+                string dump = rawChatSse.ToString();
+                var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "chat-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = dump.Length, ["res"] = dump };
+                AddPerf(traffic, startedAt, dump, outBody);
+                Log(traffic);
+            }
         }
         else
         {
@@ -1066,7 +1485,12 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
             // Sonda traffic FULL (só com DIAGNOSTICS; chat sem stream: integros).
-            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "chat", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json });
+            if (Diagnostic)
+            {
+                var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "chat", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json };
+                AddPerf(traffic, startedAt, json, outBody);
+                Log(traffic);
+            }
         }
         ctx.Response.Close();
     }
@@ -1102,7 +1526,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
     }
 
     /// <summary>Resposta chat sem parser server-side: coage texto em tool_calls e devolve JSON ou SSE sintetizado.</summary>
-    static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream, bool headersSent = false, List<string>? known = null)
+    static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream, bool headersSent = false, List<string>? known = null, DateTime startedAt = default)
     {
         string json;
         using (var reader = new StreamReader(upstreamResponse.Content.ReadAsStream(), new UTF8Encoding(false)))
@@ -1120,7 +1544,12 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         catch { /* corpo inesperado: devolve cru */ }
         Log(new JsonObject { ["event"] = "coerced-chat", ["model"] = Model, ["count"] = coerced });
         // Sonda traffic FULL (só com DIAGNOSTICS): resposta integra.
-        if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "coerced", ["model"] = Model, ["res_len"] = json.Length, ["res"] = json });
+        if (Diagnostic)
+        {
+            var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "coerced", ["model"] = Model, ["res_len"] = json.Length, ["res"] = json };
+            AddPerf(traffic, startedAt == default ? DateTime.UtcNow : startedAt, json);
+            Log(traffic);
+        }
         if (!wantStream)
         {
             ctx.Response.StatusCode = 200;
@@ -1188,24 +1617,68 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // explicita no request vence o perfil; sem perfil valem os globais.
         bool hasProfile = TryProfile(requestedModel, out double profTemp, out string profThink);
         thinking = hasProfile && !string.IsNullOrEmpty(profThink) ? profThink : Thinking;
+        // ThinkingOffRoles: o operador manda desligar por NOME de role, acima do perfil.
+        if (ThinkingOffRoles.Contains(RoleOfModel(requestedModel))) thinking = "off";
         // Temperatura: a do opencode tem prioridade; a da linha de comando
         // e so o padrao quando o request nao informa nenhuma.
         temperature = req["temperature"]?.GetValue<double>()
             ?? (hasProfile && !double.IsNaN(profTemp) ? profTemp : Temperature);
 
         // Converte a conversa Responses -> messages do formato chat
-        var messages = InputToMessages(req["input"], req["instructions"]);
-        // Formula (Harness, cliente web): system + agents + tail. Opencode limpo.
-        if (Harness && !IsOpencodeModel(requestedModel)
-            && messages.Count > 0 && messages[0] is JsonObject sys0
+        var messages = InputToMessages(req["input"], req["instructions"], hasProfile);
+        // Caudas por peca, penduradas no system que InputToMessages ja consolida
+        // (instructions + os system do meio). Em producao esse system sempre existe:
+        // no opencode vem do agent.md, na Web UI do system_prompt do agente. O gate
+        // fica como estava — sem fallback, para nao duplicar system quando o
+        // conteudo vier em lista de partes (visão/multimodal) em vez de string.
+        if (messages.Count > 0 && messages[0] is JsonObject sys0
             && sys0["role"]?.GetValue<string>() == "system"
             && sys0["content"] is JsonValue sysv && sysv.TryGetValue<string>(out string? syst))
             sys0["content"] = WithFormula(syst);
+        if (Diagnostic)
+            Log(new JsonObject
+            {
+                ["event"] = "tails",
+                ["has_system"] = messages.Count > 0 && messages[0]?["role"]?.GetValue<string>() == "system",
+                ["attached"] = messages.Count > 0 && messages[0] is JsonObject s1
+                               && s1["content"] is JsonValue s1v
+                               && (s1v.TryGetValue<string>(out string? t1) ? t1.Contains(HarnessToolsTail[..20]) : false),
+                ["behavior_chars"] = HarnessBehaviorTail.Length,
+                ["tools_chars"] = HarnessToolsTail.Length
+            });
         // Converte as tools Responses (formato "chato") -> formato chat
         var tools = ToolsToChat(req["tools"]);
+        // Sonda: tool anunciada que nao chegou ao chat (perda silenciosa).
+        if (Diagnostic && req["tools"] is JsonArray askedArr)
+        {
+            var asked = new List<string>();
+            foreach (var e in askedArr)
+                if (e is JsonObject eo && eo["type"]?.GetValue<string>() != "namespace")
+                    if (eo["function"]?["name"]?.GetValue<string>() is string fn) asked.Add(fn);
+                    else if (eo["name"]?.GetValue<string>() is string en) asked.Add(en);
+            var got = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var g in ToolNames(tools))
+                if (g?.GetValue<string>() is string gn) got.Add(gn);
+            var lostNames = new JsonArray();
+            foreach (var a in asked) if (!got.Contains(a)) lostNames.Add(a);
+            if (lostNames.Count > 0)
+            {
+                var askedNames = new JsonArray();
+                foreach (var a in asked) askedNames.Add(a);
+                Log(new JsonObject
+                {
+                    ["event"] = "tools-lost",
+                    ["asked"] = askedNames,
+                    ["got"] = ToolNames(tools),
+                    ["lost"] = lostNames
+                });
+            }
+        }
+        // Allowlist das tools pedidas: a coercao de tool call narrada depende dela
+        // (sem lista, so passaria o catalogo RealTools, que nao cobre write/edit/glob).
+        ChatToResponsesAnnounced = AnnouncedTools(req["tools"] as JsonArray);
         // Exceção permanente do pattern (sempre ligada, só este caso).
         ApplyPatternException(tools, "responses");
-        StripExecuteTools(tools, "responses");
         toolCount = tools?.Count ?? 0;
 
         // Monta o body do /v1/chat/completions
@@ -1250,7 +1723,6 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             // "required" p/ emitir tool_calls nativo em vez de texto.
             chat["tool_choice"] = IsCoder ? "required" : "auto";
         }
-        NeutralizeCodeMode(chat);
         // Stop sequences: repasse opcional (string ou array). ATENCAO: com
         // tools ativas, stop pode truncar o JSON da tool call no meio.
         if (req["stop"] is JsonNode stop)
@@ -1299,6 +1771,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // Stream real sai por caminho proprio (sem a chamada unica abaixo).
         if (wantStream)
         {
+            // Sonda: dump do request CHAT completo (system + tools) do caminho stream.
+            if (Diagnostic) Log(new JsonObject { ["event"]="traffic", ["mode"]="translate-stream-req", ["model"]=requestedModel, ["req_len"]=chat.ToJsonString().Length, ["req"]=chat.ToJsonString() });
             HandleResponsesStream(ctx, chat, requestedModel, temperature, thinking, startedAt);
             return;
         }
@@ -1325,7 +1799,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
         // 4.6) Converte a resposta chat -> objeto Responses
         var chatJson = JsonNode.Parse(responseBody)?.AsObject() ?? new JsonObject();
-        var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0);
+        var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0, chat["messages"]);
 
         double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
         int inTok = responseObj["usage"]?["input_tokens"]?.GetValue<int>() ?? 0;
@@ -1341,7 +1815,13 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             ["tps_output"] = Math.Round(elapsed > 0 ? outTok / elapsed : 0, 1)
         });
         // Sonda traffic FULL (só com DIAGNOSTICS): traducao req/res integros.
-        if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "translate", ["model"] = requestedModel, ["req_len"] = chat.ToJsonString().Length, ["req"] = chat.ToJsonString(), ["res_len"] = responseObj.ToJsonString().Length, ["res"] = responseObj.ToJsonString() });
+        if (Diagnostic)
+        {
+            string dumpRes = responseObj.ToJsonString();
+            var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "translate", ["model"] = requestedModel, ["req_len"] = chat.ToJsonString().Length, ["req"] = chat.ToJsonString(), ["res_len"] = dumpRes.Length, ["res"] = dumpRes };
+            AddPerf(traffic, startedAt, dumpRes, chat.ToJsonString());
+            Log(traffic);
+        }
         AddMetrics(inTok, outTok, elapsed);
 
         // 4.7) Sem stream: devolve JSON direto.
@@ -1368,8 +1848,7 @@ string outBody = body;
         // agents + tail. Opencode (sufixo) passa limpo.
         try
         {
-            if (Harness && !IsOpencodeModel(req["model"]?.GetValue<string>())
-                && req.TryGetPropertyValue("instructions", out JsonNode? fins) && fins is JsonValue fiv
+            if (req.TryGetPropertyValue("instructions", out JsonNode? fins) && fins is JsonValue fiv
                 && fiv.TryGetValue<string>(out string? finst))
             {
                 req["instructions"] = WithFormula(finst);
@@ -1459,7 +1938,13 @@ var shape = new StringBuilder();
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
             }
             // Sonda traffic FULL (só com DIAGNOSTICS): pedido e SSE integros.
-            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "responses-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = rawSse.Length, ["res"] = rawSse.ToString() });
+            if (Diagnostic)
+            {
+                string dump = rawSse.ToString();
+                var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "responses-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = dump.Length, ["res"] = dump };
+                AddPerf(traffic, startedAt, dump, outBody);
+                Log(traffic);
+            }
         }
         else
         {
@@ -1483,7 +1968,12 @@ var shape = new StringBuilder();
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
             // Sonda traffic FULL (só com DIAGNOSTICS; sem stream: integros).
-            if (Diagnostic) Log(new JsonObject { ["event"] = "traffic", ["mode"] = "responses", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json });
+            if (Diagnostic)
+            {
+                var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "responses", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json };
+                AddPerf(traffic, startedAt, json, outBody);
+                Log(traffic);
+            }
         }
         ctx.Response.Close();
     }
@@ -1535,12 +2025,20 @@ var shape = new StringBuilder();
         return t + "\n\n" + SystemGuardrail;
     }
 
-    /// <summary>Formula do harness (modo Harness, cliente web): system + agents + tail.</summary>
-    internal static string WithFormula(string sys)
+    /// <remarks>As duas caudas entram sempre que o Harness esta ligado: nao ha excecao
+    /// por "ser opencode". Cada enunciado de inducAO mora na sua propria peca: ToolsTail
+    /// (como usar a tool) e BehaviorPrompt (disciplina de comportamento), porque sao coisas
+    /// diferentes e mexer numa nao deve tocar na outra.</remarks>
+    /// <param name="sys">System prompt original.</param>
+    static string WithFormula(string sys)
     {
+        // --harness 0: sem caudas (cliente traz o proprio harness, ex.: opencode).
+        if (!Harness) return sys ?? "";
         string t = (sys ?? "").Trim();
+        // Ordem: comportamento primeiro (o enquadramento geral), depois uso de tools
+        // (o especifico). Assim o "como agir" vem antes do "como chamar a ferramenta".
+        if (HarnessBehaviorTail.Length > 0) t = (t.Length > 0 ? t + "\n\n" : "") + HarnessBehaviorTail;
         if (HarnessToolsTail.Length > 0) t = (t.Length > 0 ? t + "\n\n" : "") + HarnessToolsTail;
-        if (HarnessGuardTail.Length > 0) t += "\n\n" + HarnessGuardTail;
         return t;
     }
 
@@ -1559,7 +2057,7 @@ var shape = new StringBuilder();
     /// comportamento do 9B (geracao livre, description continua guiando).</remarks>
     /// <param name="node">Tools ou sub-schema (mutado no lugar).</param>
     /// <returns>Quantas chaves removidas.</returns>
-    static int StripUnanchoredPatterns(JsonNode? node)
+    static int StripUnanchoredPatterns(JsonNode? node, string path = "$", List<string>? hits = null)
     {
         int dropped = 0;
         if (node is JsonObject obj)
@@ -1568,15 +2066,16 @@ var shape = new StringBuilder();
                 && !string.IsNullOrEmpty(pat) && !(pat.StartsWith('^') && pat.EndsWith('$')))
             {
                 obj.Remove("pattern");
+                hits?.Add(path + ".pattern");
                 dropped++;
             }
             foreach (var kv in obj)
-                dropped += StripUnanchoredPatterns(kv.Value);
+                dropped += StripUnanchoredPatterns(kv.Value, path + "." + kv.Key, hits);
         }
         else if (node is JsonArray arr)
         {
-            foreach (var item in arr)
-                dropped += StripUnanchoredPatterns(item);
+            for (int i = 0; i < arr.Count; i++)
+                dropped += StripUnanchoredPatterns(arr[i], $"{path}[{i}]", hits);
         }
         return dropped;
     }
@@ -1588,412 +2087,14 @@ var shape = new StringBuilder();
     /// <param name="mode">Rótulo p/ o log (responses/chat).</param>
     static void ApplyPatternException(JsonNode? tools, string mode)
     {
-        int dropped = StripUnanchoredPatterns(tools);
+        var hits = new List<string>();
+        int dropped = StripUnanchoredPatterns(tools, "$", hits);
         if (dropped > 0)
-            Log(new JsonObject { ["event"] = "pattern-strip", ["mode"] = mode, ["dropped"] = dropped, ["tools"] = ToolNames(tools as JsonArray) });
-    }
-
-    // ---------------------------------------------------------------------
-    // 3.9) Estrategia de tools (ToolStrategy)
-    //   O opencode expoe a tool "execute" (Code Mode) cujo sandbox so contem
-    //   os namespaces do catalogo. Modelos pequenos (Gemma 4 12B) tentam
-    //   `return tools.shell({...})` dentro de execute, recebem
-    //   "Unknown tool 'shell'" e repetem a mesma chamada em loop.
-    //   Resgate deterministico: execute com UMA chamada tools.X({...}) vira a
-    //   tool direta X (nome/args parseados); qualquer outra forma passa
-    //   intacta. A nota de estrategia no system reduz a reincidencia.
-    // ---------------------------------------------------------------------
-    static readonly Regex ReExecuteCall = new(
-        @"^(?:return\s+|await\s+)?tools\s*(?:\.\s*([A-Za-z_$][\w$]*)|\[\s*['""]([A-Za-z_$][\w$]*)['""]\s*\])\s*\(\s*(\{[\s\S]*\})\s*\)\s*;?$",
-        RegexOptions.Compiled);
-
-    static readonly HashSet<string> DirectTools = new(StringComparer.Ordinal)
-        { "shell", "bash", "sh", "read", "write", "edit", "grep", "glob", "fetch", "webfetch", "git" };
-
-    /// <summary>Maximo de chamadas extraidas de um unico execute (anti-explosao).</summary>
-    const int MaxUnwrapCalls = 8;
-
-    /// <summary>Chamadas tools.X(...) embutidas em um script maior.</summary>
-    static readonly Regex ReEmbeddedToolCall = new(
-        @"tools\s*(?:\.\s*([A-Za-z_$][\w$]*)|\[\s*['""]([A-Za-z_$][\w$]*)['""]\s*\])\s*\(",
-        RegexOptions.Compiled);
-
-    /// <summary>API de Node (require/fs) que nao existe no sandbox de execute.</summary>
-    static readonly Regex ReRequireFs = new(@"\brequire\s*\(|\bfs\s*\.", RegexOptions.Compiled);
-
-    /// <summary>Mensagem guiada devolvida como resultado quando o script usa require/fs.</summary>
-    const string GuideCommand =
-        "printf '%s\\n' 'ERRO: execute e um sandbox de namespaces do catalogo - NAO existe require/fs. " +
-        "Nao repita o mesmo codigo: reemita a MESMA acao com as tools diretas (shell p/ comandos, write p/ arquivos, edit, read, grep, glob).'";
-
-    /// <summary>Nota que substitui o bloco Code Mode do opencode (sandbox JS inexistente aqui).</summary>
-    const string CodeModeNote =
-        "# Tools (harness da bridge)\n" +
-        "As tools do catalogo (shell, write, read, edit, grep, glob, webfetch, websearch, ...) sao chamadas DIRETAS. " +
-        "Esta bridge NAO oferece `execute` nem sandbox JavaScript: Code Mode nao existe aqui. " +
-        "Nao empacote varias acoes em um script; emita uma tool call por acao (paralelas quando independentes).\n";
-
-    /// <summary>Remove a tool `execute` (Code Mode do opencode) do catalogo enviado ao modelo.</summary>
-    /// <param name="tools">Array de tools (formato chat ou responses).</param>
-    /// <param name="mode">Rotulo do caminho, so para log.</param>
-    /// <returns>Quantidade removida.</returns>
-    internal static int StripExecuteTools(JsonNode? tools, string mode)
-    {
-        if (!ToolStrategy || tools is not JsonArray arr) return 0;
-        int removed = 0;
-        for (int i = arr.Count - 1; i >= 0; i--)
         {
-            string? name = arr[i]?["function"]?["name"]?.GetValue<string>() ?? arr[i]?["name"]?.GetValue<string>();
-            if (!string.Equals(name, "execute", StringComparison.Ordinal)) continue;
-            arr.RemoveAt(i);
-            removed++;
+            var where = new JsonArray();
+            foreach (var h in hits) where.Add(h);
+            Log(new JsonObject { ["event"] = "pattern-strip", ["mode"] = mode, ["dropped"] = dropped, ["hits"] = where, ["tools"] = ToolNames(tools as JsonArray) });
         }
-        if (removed > 0)
-            Log(new JsonObject { ["event"] = "tool-strip", ["mode"] = mode, ["tool"] = "execute", ["removed"] = removed, ["left"] = arr.Count });
-        return removed;
-    }
-
-    /// <summary>Troca o bloco nativo Code Mode (opencode) pela nota de tools diretas.</summary>
-    /// <param name="node">Request chat (usa "messages").</param>
-    /// <returns>Quantidade de mensagens reescritas.</returns>
-    internal static int NeutralizeCodeMode(JsonNode? node)
-    {
-        if (!ToolStrategy || node?["messages"] is not JsonArray msgs) return 0;
-        int hits = 0;
-        foreach (var m in msgs)
-        {
-            if (m is not JsonObject mo || mo["content"] is not JsonValue cv || !cv.TryGetValue<string>(out string? text)) continue;
-            int start = text.IndexOf("# Code Mode", StringComparison.Ordinal);
-            if (start < 0) continue;
-            // Preserva o catalogo de skills (vem logo apos a secao nativa).
-            int end = text.IndexOf("Skills provide specialized instructions", start + 1, StringComparison.Ordinal);
-            if (end < 0) end = text.IndexOf("\n# ", start + 1, StringComparison.Ordinal);
-            string tail = end >= 0 ? text[end..] : "";
-            mo["content"] = text[..start] + CodeModeNote + tail;
-            hits++;
-        }
-        if (hits > 0) Log(new JsonObject { ["event"] = "harness-strip", ["mode"] = "code-mode", ["hits"] = hits });
-        return hits;
-    }
-
-    /// <summary>Tokens de controle que o template vaza para dentro dos argumentos.</summary>
-    static readonly Regex ReLeakedTemplate = new(@"<\|?[A-Za-z_]{2,20}\|?>", RegexOptions.Compiled);
-
-    /// <summary>JSON valido? (objeto, tolerante a espacos).</summary>
-    /// <param name="text">Texto dos argumentos.</param>
-    /// <returns>True quando JsonNode.Parse aceita.</returns>
-    static bool IsJsonObject(string text)
-    {
-        try { return JsonNode.Parse(text) is JsonObject; } catch { return false; }
-    }
-
-    /// <summary>Limpa/normaliza os argumentos de uma tool call emitida pelo modelo.</summary>
-    /// <remarks>O 12B as vezes vaza tokens de template para dentro do JSON e o cliente
-    /// rejeita a chamada; repetir o mesmo codigo 256x (tools-dev-pipe) nao resolve.
-    /// Aqui a chamada invalida vira um shell com a correcao, que volta como resultado.</remarks>
-    /// <param name="name">Nome da tool pedida pelo modelo.</param>
-    /// <param name="arguments">Argumentos crus.</param>
-    /// <returns>Nome/argumentos efetivos (shell guiado quando irrecuperavel).</returns>
-    internal static (string Name, string Arguments) SanitizeToolCall(string name, string arguments)
-    {
-        if (!ToolStrategy || string.IsNullOrWhiteSpace(arguments)) return (name, arguments);
-        try
-        {
-            if (IsJsonObject(arguments)) return (name, arguments);
-            string cleaned = ReLeakedTemplate.Replace(arguments, "").Trim();
-            if (IsJsonObject(cleaned))
-            {
-                Log(new JsonObject { ["event"] = "tool-args-clean", ["tool"] = name });
-                return (name, cleaned);
-            }
-            // Sobrou prosa depois do objeto: recorta so o objeto balanceado.
-            int open = cleaned.IndexOf('{');
-            if (open >= 0)
-            {
-                int end = FindObjectEnd(cleaned, open);
-                string slice = end > open ? cleaned[open..(end + 1)] : "";
-                if (slice.Length > 0 && IsJsonObject(slice))
-                {
-                    Log(new JsonObject { ["event"] = "tool-args-clean", ["tool"] = name, ["mode"] = "slice" });
-                    return (name, slice);
-                }
-            }
-            Log(new JsonObject { ["event"] = "tool-args-guide", ["tool"] = name, ["len"] = arguments.Length });
-            string msg = "printf '%s\\n' 'ERRO: argumentos invalidos para a tool " + name +
-                " (JSON quebrado ou com token de template). Reemita a chamada com JSON valido: " +
-                "edit=path+oldString+newString; write=path+content; read=path; shell=command.'";
-            return ("shell", new JsonObject { ["command"] = msg }.ToJsonString(SerOpts));
-        }
-        catch { return (name, arguments); }
-    }
-
-    /// <summary>Resgata execute com uma unica chamada tools.X({...}) p/ a tool direta X.</summary>
-    /// <param name="name">Nome original da tool.</param>
-    /// <param name="arguments">Argumentos JSON originais.</param>
-    /// <returns>Nome/argumentos efetivos (inalterados quando nao se aplica).</returns>
-    internal static (string Name, string Arguments) UnwrapExecuteCall(string name, string arguments)
-    {
-        var calls = UnwrapExecuteCalls(name, arguments);
-        return calls.Count > 0 ? calls[0] : (name, arguments);
-    }
-
-    /// <summary>Resgata execute p/ uma ou mais tools diretas (script com N chamadas).</summary>
-    /// <param name="name">Nome original da tool.</param>
-    /// <param name="arguments">Argumentos JSON originais.</param>
-    /// <returns>Chamadas efetivas, na ordem do script (vazio quando nao se aplica).</returns>
-    internal static List<(string Name, string Arguments)> UnwrapExecuteCalls(string name, string arguments)
-    {
-        var result = new List<(string Name, string Arguments)>();
-        if (!ToolStrategy || !string.Equals(name, "execute", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(arguments))
-            return result;
-        try
-        {
-            string code = JsonNode.Parse(arguments)?["code"]?.GetValue<string>() ?? "";
-            string trimmed = StripLeadingJsComments(code).Trim();
-
-            var match = ReExecuteCall.Match(trimmed);
-            if (match.Success)
-            {
-                string tool = match.Groups[1].Success && match.Groups[1].Value.Length > 0
-                    ? match.Groups[1].Value
-                    : match.Groups[2].Value;
-                if (tool is "bash" or "sh") tool = "shell";
-                if (DirectTools.Contains(tool)
-                    && TryParseJsValue(match.Groups[3].Value, out JsonNode? parsed)
-                    && parsed is JsonObject single)
-                {
-                    Log(new JsonObject { ["event"] = "tool-unwrap", ["from"] = "execute", ["to"] = tool, ["calls"] = 1 });
-                    result.Add((tool, single.ToJsonString(SerOpts)));
-                    return result;
-                }
-            }
-
-            foreach (var (tool, argsJson) in ExtractEmbeddedToolCalls(trimmed))
-            {
-                if (result.Count >= MaxUnwrapCalls) break;
-                string direct = tool is "bash" or "sh" ? "shell" : tool;
-                if (!DirectTools.Contains(direct)) continue;
-                if (!TryParseJsValue(argsJson, out JsonNode? node) || node is not JsonObject obj) continue;
-                result.Add((direct, obj.ToJsonString(SerOpts)));
-            }
-            if (result.Count > 0)
-            {
-                Log(new JsonObject { ["event"] = "tool-unwrap", ["from"] = "execute", ["to"] = result[0].Name, ["calls"] = result.Count });
-                return result;
-            }
-
-            // Script puro de Node (require/fs): devolve um resultado guiado via shell
-            // para o modelo corrigir na proxima tentativa em vez de repetir o codigo.
-            if (ReRequireFs.IsMatch(trimmed))
-            {
-                Log(new JsonObject { ["event"] = "tool-guide", ["from"] = "execute", ["reason"] = "require/fs" });
-                result.Add(("shell", new JsonObject { ["command"] = GuideCommand }.ToJsonString(SerOpts)));
-            }
-            return result;
-        }
-        catch { return result; }
-    }
-
-    /// <summary>Extrai as chamadas tools.X({...}) de um script JS, na ordem do texto.</summary>
-    /// <param name="code">Codigo JS.</param>
-    /// <returns>Pares (tool, literal do objeto de argumentos).</returns>
-    static List<(string Tool, string ArgsJson)> ExtractEmbeddedToolCalls(string code)
-    {
-        var found = new List<(string, string)>();
-        foreach (Match m in ReEmbeddedToolCall.Matches(code))
-        {
-            if (found.Count >= MaxUnwrapCalls) break;
-            string tool = m.Groups[1].Success && m.Groups[1].Value.Length > 0
-                ? m.Groups[1].Value
-                : m.Groups[2].Value;
-            int brace = code.IndexOf('{', m.Index + m.Length);
-            if (brace < 0) continue;
-            int end = FindObjectEnd(code, brace);
-            if (end < 0) continue;
-            found.Add((tool, code[brace..(end + 1)]));
-        }
-        return found;
-    }
-
-    /// <summary>Indice do '}' que fecha o objeto iniciado em start (ignora strings).</summary>
-    /// <param name="s">Texto JS.</param>
-    /// <param name="start">Posicao do '{'.</param>
-    /// <returns>Indice do fechamento ou -1.</returns>
-    static int FindObjectEnd(string s, int start)
-    {
-        int depth = 0;
-        char quote = '\0';
-        for (int i = start; i < s.Length; i++)
-        {
-            char c = s[i];
-            if (quote != '\0')
-            {
-                if (c == '\\') { i++; continue; }
-                if (c == quote) quote = '\0';
-                continue;
-            }
-            if (c is '"' or '\'' or '`') { quote = c; continue; }
-            if (c == '{') depth++;
-            else if (c == '}') { depth--; if (depth == 0) return i; }
-        }
-        return -1;
-    }
-
-    /// <summary>Descarta comentarios JS iniciais (// e /* */) antes da chamada.</summary>
-    /// <param name="code">Codigo do sandbox.</param>
-    /// <returns>Codigo sem comentarios iniciais.</returns>
-    static string StripLeadingJsComments(string code)
-    {
-        int i = 0;
-        while (i < code.Length)
-        {
-            while (i < code.Length && char.IsWhiteSpace(code[i])) i++;
-            if (i + 1 < code.Length && code[i] == '/' && code[i + 1] == '/')
-            {
-                while (i < code.Length && code[i] != '\n') i++;
-                continue;
-            }
-            if (i + 1 < code.Length && code[i] == '/' && code[i + 1] == '*')
-            {
-                int end = code.IndexOf("*/", i + 2, StringComparison.Ordinal);
-                if (end < 0) return code[i..];
-                i = end + 2;
-                continue;
-            }
-            break;
-        }
-        return code[i..];
-    }
-
-    /// <summary>Parseia um valor JS (subset JSON5) consumindo todo o texto.</summary>
-    /// <param name="text">Literal JS.</param>
-    /// <param name="node">Valor convertido (null quando falha).</param>
-    /// <returns>True quando o literal inteiro e valido.</returns>
-    static bool TryParseJsValue(string text, out JsonNode? node)
-    {
-        node = null;
-        try
-        {
-            int i = 0;
-            node = ParseJsValue(text, ref i);
-            SkipJsSpace(text, ref i);
-            return i == text.Length;
-        }
-        catch { node = null; return false; }
-    }
-
-    /// <summary>Valor JS: objeto, array, string (' " `), booleano, null ou numero.</summary>
-    static JsonNode? ParseJsValue(string s, ref int i)
-    {
-        SkipJsSpace(s, ref i);
-        if (i >= s.Length) throw new FormatException("valor JS ausente");
-        char c = s[i];
-        if (c == '{') return ParseJsObjectBody(s, ref i);
-        if (c == '[') return ParseJsArrayBody(s, ref i);
-        if (c is '"' or '\'' or '`') return JsonValue.Create(ParseJsString(s, ref i));
-        if (s.AsSpan(i).StartsWith("true", StringComparison.Ordinal)) { i += 4; return JsonValue.Create(true); }
-        if (s.AsSpan(i).StartsWith("false", StringComparison.Ordinal)) { i += 5; return JsonValue.Create(false); }
-        if (s.AsSpan(i).StartsWith("null", StringComparison.Ordinal)) { i += 4; return null; }
-        return JsonValue.Create(ParseJsNumber(s, ref i));
-    }
-
-    /// <summary>Objeto JS {chave: valor, ...} (chave identificador ou string).</summary>
-    static JsonObject ParseJsObjectBody(string s, ref int i)
-    {
-        i++; // {
-        var obj = new JsonObject();
-        while (true)
-        {
-            SkipJsSpace(s, ref i);
-            if (i >= s.Length) throw new FormatException("objeto JS sem fechamento");
-            if (s[i] == '}') { i++; return obj; }
-            string key = s[i] is '"' or '\'' or '`' ? ParseJsString(s, ref i) : ReadJsIdentifier(s, ref i);
-            SkipJsSpace(s, ref i);
-            if (i >= s.Length || s[i] != ':') throw new FormatException("objeto JS sem ':'");
-            i++;
-            obj[key] = ParseJsValue(s, ref i);
-            SkipJsSpace(s, ref i);
-            if (i < s.Length && s[i] == ',') { i++; continue; }
-            if (i < s.Length && s[i] == '}') { i++; return obj; }
-            throw new FormatException("objeto JS invalido");
-        }
-    }
-
-    /// <summary>Array JS [valor, ...].</summary>
-    static JsonArray ParseJsArrayBody(string s, ref int i)
-    {
-        i++; // [
-        var arr = new JsonArray();
-        while (true)
-        {
-            SkipJsSpace(s, ref i);
-            if (i >= s.Length) throw new FormatException("array JS sem fechamento");
-            if (s[i] == ']') { i++; return arr; }
-            arr.Add(ParseJsValue(s, ref i));
-            SkipJsSpace(s, ref i);
-            if (i < s.Length && s[i] == ',') { i++; continue; }
-            if (i < s.Length && s[i] == ']') { i++; return arr; }
-            throw new FormatException("array JS invalido");
-        }
-    }
-
-    /// <summary>String JS com aspas simples, duplas ou backtick (sem interpolacao).</summary>
-    static string ParseJsString(string s, ref int i)
-    {
-        char quote = s[i++];
-        var sb = new StringBuilder();
-        while (i < s.Length)
-        {
-            char c = s[i++];
-            if (c == quote) return sb.ToString();
-            if (c == '\\' && i < s.Length)
-            {
-                char e = s[i++];
-                switch (e)
-                {
-                    case 'n': sb.Append('\n'); break;
-                    case 't': sb.Append('\t'); break;
-                    case 'r': sb.Append('\r'); break;
-                    case 'b': sb.Append('\b'); break;
-                    case 'f': sb.Append('\f'); break;
-                    case 'u':
-                        if (i + 4 > s.Length) throw new FormatException("escape unicode curto");
-                        sb.Append((char)int.Parse(s.AsSpan(i, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture));
-                        i += 4;
-                        break;
-                    default: sb.Append(e); break;
-                }
-                continue;
-            }
-            if (quote == '`' && c == '$' && i < s.Length && s[i] == '{')
-                throw new FormatException("template com interpolacao nao suportado");
-            sb.Append(c);
-        }
-        throw new FormatException("string JS sem fechamento");
-    }
-
-    /// <summary>Numero JS (inteiro ou decimal, notacao cientifica).</summary>
-    static double ParseJsNumber(string s, ref int i)
-    {
-        int start = i;
-        while (i < s.Length && (char.IsDigit(s[i]) || s[i] is '-' or '+' or '.' or 'e' or 'E')) i++;
-        if (i == start) throw new FormatException("numero JS invalido");
-        return double.Parse(s[start..i], NumberStyles.Float, CultureInfo.InvariantCulture);
-    }
-
-    /// <summary>Identificador JS (chave sem aspas).</summary>
-    static string ReadJsIdentifier(string s, ref int i)
-    {
-        int start = i;
-        while (i < s.Length && (char.IsLetterOrDigit(s[i]) || s[i] is '_' or '$')) i++;
-        if (i == start) throw new FormatException("chave JS invalida");
-        return s[start..i];
-    }
-
-    /// <summary>Pula espacos (e quebras) do literal JS.</summary>
-    static void SkipJsSpace(string s, ref int i)
-    {
-        while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
     }
 
     /// <summary>AntiRepeat: a cauda (janela) do thinking ja apareceu antes no proprio stream?</summary>
@@ -2023,6 +2124,34 @@ var shape = new StringBuilder();
             if (BlockSim(a, b) >= 0.85 && BlockSim(b, c) >= 0.85) return true;
         }
         return false;
+    }
+
+    /// <summary>AntiRepeat cross-turn: assinatura canonica de uma tool call ("nome(args)").</summary>
+    /// <remarks>Repeticao entre turnos nao aparece no thinking de um unico stream, entao
+    /// <see cref="ThinkingRepeats"/> nunca a ve. Esta assinatura compara a chamada nova
+    /// com as que ja constam no historico do proprio request.</remarks>
+    static string ToolSig(string name, string args)
+        => NormRepeat((name ?? "").Trim().ToLowerInvariant() + "(" + NormRepeat(args ?? "") + ")");
+
+    /// <summary>Assinaturas de tool call que ja se repetiram no historico (>= minCount).</summary>
+    static HashSet<string> LoopedToolSigs(JsonNode? messages, int minCount)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (messages is JsonArray arr)
+            foreach (var m in arr)
+            {
+                if (m is not JsonObject mo || mo["tool_calls"] is not JsonArray calls) continue;
+                foreach (var c in calls)
+                {
+                    if (c is not JsonObject co || co["function"] is not JsonObject fn) continue;
+                    string sig = ToolSig(fn["name"]?.GetValue<string>() ?? "",
+                                         fn["arguments"]?.GetValue<string>() ?? "");
+                    if (sig == "()") continue;
+                    counts[sig] = counts.TryGetValue(sig, out int n) ? n + 1 : 1;
+                }
+            }
+        return new HashSet<string>(counts.Where(kv => kv.Value >= minCount).Select(kv => kv.Key),
+                                   StringComparer.Ordinal);
     }
 
     /// <summary>Similaridade 0..1 entre blocos (1 - levenshtein/tamanho).</summary>
@@ -2068,7 +2197,21 @@ var shape = new StringBuilder();
         bool trip = AntiRepeat && ThinkingRepeats(accumulated, AntiRepeatWindow);
         // Sonda: loga no maximo 1x a cada 2k chars p/ nao afogar o sink em stream.
         int chars = accumulated?.Length ?? 0;
-        if (trip || chars < 512 || (chars % 2048) < 256)
+        if (trip)
+        {
+            int dupAt = -1; string dupCtx = "";
+            var norm = NormRepeat(accumulated ?? "");
+            int w = Math.Min(AntiRepeatWindow, norm.Length);
+            if (w > 0 && norm.Length >= 2 * w)
+            {
+                var win = norm[^w..];
+                dupAt = norm[..^w].IndexOf(win, StringComparison.Ordinal);
+                if (dupAt >= 0)
+                    dupCtx = Truncate(norm.Substring(dupAt, Math.Min(80, norm.Length - dupAt)), 80);
+            }
+            Sonda(where, chars, trip, Truncate(norm, 80), dupAt, dupCtx);
+        }
+        else if (chars < 512 || (chars % 2048) < 256)
             Sonda(where, chars, trip, Truncate(NormRepeat(accumulated ?? ""), 80));
         return trip;
     }
@@ -2288,28 +2431,46 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         string reasoningId = "";
         string messageId = "";
         bool thinkOpen = false, msgOpen = false, inThink = false;
+        // Cliente com harness proprio (opencode): passa reto, sem hold-back de
+        // marcador e sem coercao — o cliente gerencia as tools.
+        bool managed = ManagedFor(requestedModel);
+        // Efeito "digitando" e gestao sao do cliente direto (Web UI). No
+        // opencode (perfil) o texto agrega como antes: caminho livre.
+        bool perDelta = StreamPerDelta && managed;
+        // Coercao de tool call (texto/narrada) e do modo LEGACY da bridge. Fora
+        // dele o caminho e livre: o cliente (opencode) gerencia as tools.
+        bool coerceOn = LegacyHarness && CoerceNarrated && managed;
         bool repeatTrip = false;   // AntiRepeat: thinking repetido detectado, aborta e conteve (1 retry)
         string carry = "";   // texto ainda nao classificado (tag pode partir no meio do chunk)
+        string reasonBuf = "";   // hold-back do reasoning: tag de controle pode partir entre chunks
         var toolAccum = new SortedDictionary<int, (string Id, string Name, StringBuilder Args)>();
+        // Sonda anti-repeat nos ARGUMENTS de uma mesma call (marcador curto repetido
+        // como "<tool_call|>" nao cabe na janela de 512 do thinking/content e o args
+        // cresce ate o max_tokens truncar o JSON). So loga: nao altera a saida.
+        var argsProbeLogged = new HashSet<int>();
         int inputTokens = 0, outputTokens = 0;
 
-        // Abre o item reasoning no primeiro delta de thinking.
-        void FlushThinking(string text)
+        // Emite texto de reasoning ja limpo (abre o item no primeiro delta).
+        void EmitThinking(string text)
         {
             if (string.IsNullOrEmpty(text)) return;
             if (!thinkOpen && thinking == "events")
             {
                 reasoningId = "rs_" + NewId();
+                // Formato NATIVO do llama.cpp (reasoning_text + content). O item
+                // PRECISA nascer com content[0] do tipo reasoning_text: o parser
+                // do opencode faz Y.output[idx].content[content_index] e lanca
+                // "missing content at index" (delta descartado, pensamento so
+                // aparecia no completed = quadro de snippet).
                 Emit("response.output_item.added", new JsonObject
                 {
                     ["type"] = "response.output_item.added", ["output_index"] = 0,
-                    ["item"] = new JsonObject { ["id"] = reasoningId, ["type"] = "reasoning", ["summary"] = new JsonArray() }
-                });
-                Emit("response.reasoning_summary_part.added", new JsonObject
-                {
-                    ["type"] = "response.reasoning_summary_part.added", ["item_id"] = reasoningId,
-                    ["output_index"] = 0, ["content_index"] = 0, ["summary_index"] = 0,
-                    ["part"] = new JsonObject { ["type"] = "summary_text", ["text"] = "" }
+                    ["item"] = new JsonObject
+                    {
+                        ["id"] = reasoningId, ["summary"] = new JsonArray(), ["type"] = "reasoning",
+                        ["content"] = new JsonArray(new JsonObject { ["type"] = "reasoning_text", ["text"] = "" }),
+                        ["encrypted_content"] = "", ["status"] = "in_progress"
+                    }
                 });
                 thinkOpen = true;
             }
@@ -2324,11 +2485,37 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                 repeatTrip = true;
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "thinking", ["window"] = AntiRepeatWindow, ["thinking_chars"] = thinkingText.Length });
             }
-            Emit("response.reasoning_summary_text.delta", new JsonObject
+            // output_index/content_index sao OBRIGATORIOS no schema do opencode
+            // para reasoning_text.delta; sem eles o evento e descartado e o
+            // pensamento so aparece no fecho (quadro de snippet).
+            Emit("response.reasoning_text.delta", new JsonObject
             {
-                ["type"] = "response.reasoning_summary_text.delta", ["item_id"] = reasoningId,
-                ["output_index"] = 0, ["content_index"] = 0, ["summary_index"] = 0, ["delta"] = text
+                ["type"] = "response.reasoning_text.delta", ["delta"] = text, ["item_id"] = reasoningId,
+                ["output_index"] = 0, ["content_index"] = 0
             });
+        }
+
+        // Recebe reasoning_content. Segura 12 chars (maior tag de controle) para
+        // nao vazar tag partida entre chunks: o texto retido sai no chunk
+        // seguinte, entao NAO ha truncamento — so atraso de uma tag de tamanho.
+        void FlushThinking(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            if (thinking != "events") { EmitThinking(StripControlTags(text, "stream")); return; }
+            reasonBuf = StripControlTags(reasonBuf + text, "stream");   // tags completas saem aqui
+            int hold = PartialTagLen(reasonBuf);                        // so o prefixo ambiguo fica
+            string emit = hold > 0 ? reasonBuf[..^hold] : reasonBuf;
+            reasonBuf = hold > 0 ? reasonBuf[^hold..] : "";
+            EmitThinking(emit);
+        }
+
+        // Descarrega o hold-back no fim do stream (sanitizado).
+        void FlushReasonRest()
+        {
+            if (reasonBuf.Length == 0) return;
+            string rest = StripControlTags(reasonBuf, "stream-tail");
+            reasonBuf = "";
+            EmitThinking(rest);
         }
 
         // Abre o item message no primeiro delta de texto.
@@ -2387,7 +2574,18 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                         inThink = true;
                         continue;
                     }
-                    if (carry.Length > 256) { FlushMessage(carry[..^16]); carry = carry[^16..]; }
+                    if (perDelta)
+                    {
+                        // "Digitando": emite ja, mas segura (a) prefixo ambiguo de
+                        // tag partida entre chunks e (b) a partir de um marcador de
+                        // tool call NARRADA — o fecho decide entre descartar como
+                        // chamada ou devolver como prosa. Sem (b) o efeito vaza
+                        // "[Assistant tool call]: nome(...)" no content.
+                        int hold = coerceOn ? ContentHoldBack(carry) : PartialTagPrefixLen(carry, " thinking");
+                        int upto = carry.Length - hold;
+                        if (upto > 0) { FlushMessage(carry[..upto]); carry = carry[upto..]; }
+                    }
+                    else if (carry.Length > 256) { FlushMessage(carry[..^16]); carry = carry[^16..]; }
                     break;
                 }
                 else
@@ -2400,7 +2598,13 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                         inThink = false;
                         continue;
                     }
-                    if (carry.Length > 256) { FlushThinking(carry[..^16]); carry = carry[^16..]; }
+                    if (perDelta)
+                    {
+                        int hold = PartialTagPrefixLen(carry, "</think>");
+                        int upto = carry.Length - hold;
+                        if (upto > 0) { FlushThinking(carry[..upto]); carry = carry[upto..]; }
+                    }
+                    else if (carry.Length > 256) { FlushThinking(carry[..^16]); carry = carry[^16..]; }
                     break;
                 }
             }
@@ -2478,50 +2682,93 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                     if (func?["name"]?.GetValue<string>() is string funcName && funcName.Length > 0)
                         toolAccum[index] = (acc.Id, funcName, acc.Args);
                     if (func?["arguments"]?.GetValue<string>() is string argsChunk)
+                    {
                         acc.Args.Append(argsChunk);
+                        if (AntiRepeat && acc.Args.Length >= 1024 && !argsProbeLogged.Contains(index))
+                        {
+                            string argsText = acc.Args.ToString();
+                            if (ThinkingRepeats(argsText, AntiRepeatWindow))
+                            {
+                                argsProbeLogged.Add(index);
+                                Log(new JsonObject { ["event"] = "anti-repeat-args", ["tool"] = acc.Name,
+                                    ["chars"] = argsText.Length, ["window"] = AntiRepeatWindow });
+                            }
+                        }
+                    }
                 }
             }
             if (repeatTrip) break;   // AntiRepeat: para de consumir o loop invalido
         }
 
             if (!repeatTrip) break;
-            if (!LegacyHarness) break;   // inibido: sem aviso, sem descarte, fluxo intacto
+            // O retry de contencao e do ANTI-REPEAT, nao do harness legado: governa-lo
+            // por --anti-repeat-retry deixa "cortar o loop" e "tentar de novo" como
+            // coisas independentes, em vez de amarradas ao tubo puro.
+            if (!AntiRepeatRetry) break;
             if (attempt >= 1) break;   // 1 retry de contencao no maximo
             // Contencao: descarta a janela repetida e devolve o aviso ao modelo.
             repeatTrip = false;
             thinkingText.Clear();
             contentText.Clear();
             carry = "";
+            reasonBuf = "";
             inThink = false;
             chat["messages"]!.AsArray().Add(new JsonObject { ["role"] = "user", ["content"] = AntiRepeatNotice });
             Log(new JsonObject { ["event"] = "anti-repeat-retry" });
         }
 
-        // ---- Fecho: descarrega o resto, fecha itens, emite tool calls
-        if (inThink) FlushThinking(carry); else FlushMessage(carry);
+        // ---- Fecho: a cauda segurada pode ser uma tool call NARRADA
+        // (formato "[Assistant tool call]: nome({...})" que o opencode serializa
+        // no historico). A coerção roda ANTES de descarregar a cauda: com o
+        // efeito "digitando" o texto ja saiu chunk a chunk, entao a cauda nunca
+        // pode ir para a prosa antes de sabermos se e chamada ou texto.
+        string heldTail = carry;
+        carry = "";
+        if (inThink) { FlushThinking(heldTail); heldTail = ""; }
+
+        if (coerceOn && toolAccum.Count == 0 && ReqHasTools(chat))
+        {
+            var knownTail = AnnouncedTools(chat["tools"]?.AsArray());
+            var found = ExtractTextToolCalls(contentText.ToString() + heldTail, knownTail);
+            foreach (var (name, args) in found)
+                toolAccum[toolAccum.Count] = ("call_" + NewId(), name, new StringBuilder(args));
+            if (found.Count > 0)
+            {
+                // Nada a retirar do que ja foi emitido? Retira: o texto final
+                // (done/completed) para no inicio do marcador, coerente com os
+                // deltas (a cauda segurada nunca foi emitida).
+                int markerAt = TextToolMarkerIndex(contentText.ToString());
+                if (markerAt >= 0) contentText.Length = markerAt;
+                heldTail = "";
+                Log(new JsonObject { ["event"] = "coerced", ["where"] = "stream",
+                                     ["model"] = requestedModel, ["count"] = found.Count });
+            }
+        }
+        // Ja havia call nativa e a cauda narrada e eco do historico: descarta.
+        if (coerceOn && toolAccum.Count > 0 && heldTail.Length > 0 && TextToolMarkerIndex(heldTail) == 0)
+            heldTail = "";
+        if (heldTail.Length > 0) FlushMessage(heldTail);
+        FlushReasonRest();
 
         int msgIndex = thinkOpen ? 1 : 0;
         if (thinkOpen)
         {
-            Emit("response.reasoning_summary_text.done", new JsonObject
+            string thinkingFinal = StripControlTags(thinkingText.ToString(), "done");
+            // Nativo (llama.cpp): o texto vai em content[].text do tipo
+            // reasoning_text; o reasoning_text.done consolida os deltas.
+            Emit("response.reasoning_text.done", new JsonObject
             {
-                ["type"] = "response.reasoning_summary_text.done", ["item_id"] = reasoningId,
-                ["output_index"] = 0, ["content_index"] = 0, ["summary_index"] = 0, ["text"] = thinkingText.ToString()
-            });
-            // Sem o part.done o opencode nao consolida os deltas (text fica "").
-            Emit("response.reasoning_summary_part.done", new JsonObject
-            {
-                ["type"] = "response.reasoning_summary_part.done", ["item_id"] = reasoningId,
-                ["output_index"] = 0, ["content_index"] = 0, ["summary_index"] = 0,
-                ["part"] = new JsonObject { ["type"] = "summary_text", ["text"] = thinkingText.ToString() }
+                ["type"] = "response.reasoning_text.done", ["item_id"] = reasoningId,
+                ["output_index"] = 0, ["content_index"] = 0, ["text"] = thinkingFinal
             });
             Emit("response.output_item.done", new JsonObject
             {
                 ["type"] = "response.output_item.done", ["output_index"] = 0,
                 ["item"] = new JsonObject
                 {
-                    ["id"] = reasoningId, ["type"] = "reasoning",
-                    ["summary"] = new JsonArray(new JsonObject { ["type"] = "summary_text", ["text"] = thinkingText.ToString() })
+                    ["id"] = reasoningId, ["summary"] = new JsonArray(), ["type"] = "reasoning",
+                    ["content"] = new JsonArray(new JsonObject { ["type"] = "reasoning_text", ["text"] = thinkingFinal }),
+                    ["encrypted_content"] = "", ["status"] = "completed"
                 }
             });
         }
@@ -2556,53 +2803,188 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             });
         }
 
-        // Coerção no fecho do stream: sem deltas de call e com tools pedidas,
-        // extrai do texto acumulado (coder/deepseek via llama). Nativo nao passa aqui.
-        if (toolAccum.Count == 0 && LegacyHarness && (CoerceFor(requestedModel) || ReqHasTools(chat)))
-        {
-            var knownResp = AnnouncedTools(chat["tools"]?.AsArray());
-            foreach (var (name, args) in ExtractTextToolCalls(contentText.ToString(), knownResp))
-                toolAccum[toolAccum.Count] = ("call_" + NewId(), name, new StringBuilder(args));
-        }
+        // A coerção roda no fecho (bloco acima), sobre texto acumulado + cauda.
 
         int callIndex = (thinkOpen ? 1 : 0) + (msgOpen ? 1 : 0);
         var toolList = new List<(string Id, string Name, string Arguments)>();
+        // AntiRepeat cross-turn: a chamada ja repetiu no historico, entao e loop. Nao
+        // emitimos (o modelo so reenfileiraria o mesmo comando e o turno travaria aqui);
+        // no lugar, devolve o aviso de contencao como texto para mudar de abordagem.
+        var loopedSigs = AntiRepeat ? LoopedToolSigs(chat["messages"], 2)
+                                     : new HashSet<string>(StringComparer.Ordinal);
+        var bannedHere = ToolBlacklist.TryGetValue(RoleOfModel(requestedModel), out var bh) ? bh
+                         : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        RiskRefused.Clear();   // recusa vale no request corrente, nao para sempre
         foreach (var (_, acc) in toolAccum)
         {
             string arguments = acc.Args.ToString();
-            var effective = UnwrapExecuteCalls(acc.Name, arguments);
-            if (effective.Count == 0) effective.Add((acc.Name, arguments));
-            for (int ci = 0; ci < effective.Count; ci++)
+            // Bloqueio por role: a tool foi anunciada, mas a chamada nao sai.
+            // Risco autorizado no turno anterior: a chamada sai, com o aval do
+            // usuario registrado. Uma concessao = uma execucao.
+            bool riskOk = RiskConsumeApproval(requestedModel, acc.Name, arguments);
+            // Ordem de precedencia: blacklist de role > risco. A recusa do role
+            // e limite de papel e nao se resolve com autorizacao do usuario.
+            // Bloqueio de role virou PERMISSAO: o usuario decide, em vez de a
+            // bridge recusar por conta propria. Mesmo primitive do risco.
+            if (!riskOk && bannedHere.Contains(acc.Name) && RiskAsk)
             {
-                string callId = ci == 0 ? acc.Id : acc.Id + "_" + ci;
-                var (effectiveName, effectiveArgs) = SanitizeToolCall(effective[ci].Name, effective[ci].Arguments);
-                toolList.Add((callId, effectiveName, effectiveArgs));
-                var item = new JsonObject
+                string roleB = RoleOfModel(requestedModel);
+                string bid = "risk_" + NewId();
+                PendingRisks[bid] = new PendingRisk(acc.Name, arguments, roleB);
+                Log(new JsonObject { ["event"] = "tool-ask", ["tool"] = acc.Name, ["role"] = roleB,
+                                     ["reason"] = "papel", ["call_id"] = bid });
+                if (!msgOpen)
                 {
-                    ["type"] = "function_call", ["id"] = callId, ["call_id"] = callId,
-                    ["name"] = effectiveName, ["arguments"] = effectiveArgs
+                    messageId = "msg_" + NewId();
+                    Emit("response.output_item.added", new JsonObject
+                    {
+                        ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                        ["item"] = new JsonObject { ["id"] = messageId, ["type"] = "message",
+                            ["role"] = "assistant", ["content"] = new JsonArray(), ["status"] = "in_progress" }
+                    });
+                    msgOpen = true;
+                    callIndex++;
+                }
+                FlushMessage("\n\nEsta tool fica fora do meu papel. Pedi a confirmacao ao usuario na interface; aguardo a resposta.\n\n");
+                var bitem = new JsonObject
+                {
+                    ["type"] = "function_call", ["id"] = bid, ["call_id"] = bid,
+                    ["name"] = "question", ["arguments"] = RiskQuestionArgs(acc.Name, arguments, roleB, "papel")
                 };
                 Emit("response.output_item.added", new JsonObject
                 {
                     ["type"] = "response.output_item.added", ["output_index"] = callIndex,
-                    ["item"] = (JsonNode)item.DeepClone()
+                    ["item"] = (JsonNode)bitem.DeepClone()
                 });
                 Emit("response.function_call_arguments.delta", new JsonObject
                 {
-                    ["type"] = "response.function_call_arguments.delta", ["item_id"] = callId,
-                    ["output_index"] = callIndex, ["delta"] = effectiveArgs
+                    ["type"] = "response.function_call_arguments.delta", ["item_id"] = bid,
+                    ["output_index"] = callIndex, ["delta"] = bitem["arguments"]!.GetValue<string>()
                 });
                 Emit("response.function_call_arguments.done", new JsonObject
                 {
-                    ["type"] = "response.function_call_arguments.done", ["item_id"] = callId,
-                    ["output_index"] = callIndex, ["arguments"] = effectiveArgs
+                    ["type"] = "response.function_call_arguments.done", ["item_id"] = bid,
+                    ["output_index"] = callIndex, ["arguments"] = bitem["arguments"]!.GetValue<string>()
                 });
                 Emit("response.output_item.done", new JsonObject
                 {
-                    ["type"] = "response.output_item.done", ["output_index"] = callIndex, ["item"] = item
+                    ["type"] = "response.output_item.done", ["output_index"] = callIndex, ["item"] = bitem
                 });
                 callIndex++;
+                continue;
             }
+            if (!riskOk && bannedHere.Contains(acc.Name))
+            {
+                Log(new JsonObject { ["event"] = "tool-blocked", ["tool"] = acc.Name, ["role"] = RoleOfModel(requestedModel) });
+                if (!msgOpen)
+                {
+                    messageId = "msg_" + NewId();
+                    Emit("response.output_item.added", new JsonObject
+                    {
+                        ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                        ["item"] = new JsonObject { ["id"] = messageId, ["type"] = "message",
+                            ["role"] = "assistant", ["content"] = new JsonArray(), ["status"] = "in_progress" }
+                    });
+                    msgOpen = true;
+                    callIndex++;
+                }
+                FlushMessage("\n\n" + string.Format(ToolBlockNotice, acc.Name, RoleOfModel(requestedModel)) + "\n\n");
+                continue;
+            }
+            // Comando de risco sem aval: a chamada vira pergunta na interface.
+            if (!riskOk && IsRiskCall(requestedModel, acc.Name, arguments))
+            {
+                string role = RoleOfModel(requestedModel);
+                string qid = "risk_" + NewId();
+                PendingRisks[qid] = new PendingRisk(acc.Name, arguments, role);
+                Log(new JsonObject { ["event"] = "risk-ask", ["tool"] = acc.Name, ["role"] = role, ["call_id"] = qid });
+                if (!msgOpen)
+                {
+                    messageId = "msg_" + NewId();
+                    Emit("response.output_item.added", new JsonObject
+                    {
+                        ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                        ["item"] = new JsonObject { ["id"] = messageId, ["type"] = "message",
+                            ["role"] = "assistant", ["content"] = new JsonArray(), ["status"] = "in_progress" }
+                    });
+                    msgOpen = true;
+                    callIndex++;
+                }
+                FlushMessage("\n\nEsta acao e de risco. Pedi a confirmacao ao usuario na interface;aguardo a resposta antes de rodar.\n\n");
+                var qitem = new JsonObject
+                {
+                    ["type"] = "function_call", ["id"] = qid, ["call_id"] = qid,
+                    ["name"] = "question", ["arguments"] = RiskQuestionArgs(acc.Name, arguments, role, "risco")
+                };
+                Emit("response.output_item.added", new JsonObject
+                {
+                    ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                    ["item"] = (JsonNode)qitem.DeepClone()
+                });
+                Emit("response.function_call_arguments.delta", new JsonObject
+                {
+                    ["type"] = "response.function_call_arguments.delta", ["item_id"] = qid,
+                    ["output_index"] = callIndex, ["delta"] = qitem["arguments"]!.GetValue<string>()
+                });
+                Emit("response.function_call_arguments.done", new JsonObject
+                {
+                    ["type"] = "response.function_call_arguments.done", ["item_id"] = qid,
+                    ["output_index"] = callIndex, ["arguments"] = qitem["arguments"]!.GetValue<string>()
+                });
+                Emit("response.output_item.done", new JsonObject
+                {
+                    ["type"] = "response.output_item.done", ["output_index"] = callIndex, ["item"] = qitem
+                });
+                callIndex++;
+                continue;
+            }
+            if (riskOk)
+                FlushMessage("\n\nO usuario autorizou esta acao; executando agora.\n\n");
+            if (loopedSigs.Contains(ToolSig(acc.Name, arguments)))
+            {
+                repeatTrip = true;
+                Log(new JsonObject { ["event"] = "anti-repeat-loop", ["tool"] = acc.Name });
+                if (!msgOpen)
+                {
+                    messageId = "msg_" + NewId();
+                    Emit("response.output_item.added", new JsonObject
+                    {
+                        ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                        ["item"] = new JsonObject { ["id"] = messageId, ["type"] = "message",
+                            ["role"] = "assistant", ["content"] = new JsonArray(), ["status"] = "in_progress" }
+                    });
+                    msgOpen = true;
+                    callIndex++;
+                }
+                FlushMessage("\n\n" + AntiRepeatNotice + "\n\n");
+                continue;
+            }
+            toolList.Add((acc.Id, acc.Name, arguments));
+            var item = new JsonObject
+            {
+                ["type"] = "function_call", ["id"] = acc.Id, ["call_id"] = acc.Id,
+                ["name"] = acc.Name, ["arguments"] = arguments
+            };
+            Emit("response.output_item.added", new JsonObject
+            {
+                ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                ["item"] = (JsonNode)item.DeepClone()
+            });
+            Emit("response.function_call_arguments.delta", new JsonObject
+            {
+                ["type"] = "response.function_call_arguments.delta", ["item_id"] = acc.Id,
+                ["output_index"] = callIndex, ["delta"] = arguments
+            });
+            Emit("response.function_call_arguments.done", new JsonObject
+            {
+                ["type"] = "response.function_call_arguments.done", ["item_id"] = acc.Id,
+                ["output_index"] = callIndex, ["arguments"] = arguments
+            });
+            Emit("response.output_item.done", new JsonObject
+            {
+                ["type"] = "response.output_item.done", ["output_index"] = callIndex, ["item"] = item
+            });
+            callIndex++;
         }
 
         // Reaproveita o montador bufferizado p/ gerar o objeto final do
@@ -2664,7 +3046,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
     /// <param name="input">Itens Responses.</param>
     /// <param name="instructions">Sistema.</param>
     /// <returns>Messages.</returns>
-    static JsonArray InputToMessages(JsonNode? input, JsonNode? instructions)
+    static JsonArray InputToMessages(JsonNode? input, JsonNode? instructions, bool profileClient = false)
     {
         var messages = new JsonArray();
 
@@ -2711,6 +3093,12 @@ if (type == "message")
                     continue;
                 }
                 if (role is not ("user" or "assistant")) role = "user";
+                // O opencode reenvia a tool call TAMBEM como texto
+                // ("[Assistant tool call]: nome({...})"). Mantido no historico, o
+                // modelo copia esse formato em vez de emitir a chamada nativa; a
+                // chamada estruturada (function_call) continua logo abaixo.
+                if (role == "assistant" && !profileClient && LegacyHarness) content = StripNarratedCalls(content);
+                if (string.IsNullOrWhiteSpace(content)) continue;
                 messages.Add(new JsonObject { ["role"] = role, ["content"] = content });
             }
             else if (type == "function_call")
@@ -2742,6 +3130,11 @@ if (type == "message")
 // Outros tipos (reasoning, item_reference, calls ainda nao executados)
             // sao ignorados de proposito: nao fazem falta no fluxo chat.
         }
+        // Respostas as perguntas de risco do turno anterior viram instrucao no
+        // historico do MODELO (nao texto de prosa): e o que o reemite a chamada.
+        foreach (string notice in RiskScanAnswers(input))
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = notice });
+
         if (sysText.Length > 0)
             messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = LegacyHarness ? WithSystemGuardrail(sysText.ToString()) : sysText.ToString() });
         return messages;
@@ -2801,9 +3194,14 @@ if (type == "message")
     {
         if (tools is not JsonArray list || list.Count == 0) return null;
         var converted = new JsonArray();
+        // Sonda (--diagnostic 1): conta entrada/saida e nomeia o que caiu. A
+        // conversao tem 3 ramos com `continue` e nenhum log; sem isto uma tool
+        // malformada desaparece em silencio e o modelo so responde prosa.
+        var dropped = new JsonArray();
+        var defaulted = new JsonArray();
         foreach (var toolNode in list)
         {
-            if (toolNode is not JsonObject entry) continue;
+            if (toolNode is not JsonObject entry) { dropped.Add("nao-objeto"); continue; }
             string type = entry["type"]?.GetValue<string>() ?? "";
 
             if (type == "function" && entry["function"] is JsonObject)
@@ -2811,6 +3209,8 @@ if (type == "message")
 
             if (type == "function" && entry["name"] is not null)
             {
+                var schemaSrc = entry["parameters"] ?? entry["inputSchema"];
+                if (schemaSrc is null) defaulted.Add(entry["name"]?.GetValue<string>() ?? "?");
                 converted.Add(new JsonObject
                 {
                     ["type"] = "function",
@@ -2818,7 +3218,7 @@ if (type == "message")
                     {
                         ["name"] = entry["name"]?.GetValue<string>(),
                         ["description"] = entry["description"]?.GetValue<string>() ?? "",
-                        ["parameters"] = CloneOrDefault(entry["parameters"] ?? entry["inputSchema"])
+                        ["parameters"] = CloneOrDefault(schemaSrc)
                     }
                 });
                 continue;
@@ -2826,9 +3226,13 @@ if (type == "message")
 
             if (type == "namespace" && entry["tools"] is JsonArray nested)
             {
+                int before = converted.Count;
                 foreach (var nestedNode in nested)
                 {
-                    if (nestedNode is not JsonObject nestedTool || nestedTool["name"] is null) continue;
+                    if (nestedNode is not JsonObject nestedTool || nestedTool["name"] is null)
+                    { dropped.Add("namespace-sem-nome"); continue; }
+                    var schemaSrc = nestedTool["parameters"] ?? nestedTool["inputSchema"];
+                    if (schemaSrc is null) defaulted.Add(nestedTool["name"]?.GetValue<string>() ?? "?");
                     converted.Add(new JsonObject
                     {
                         ["type"] = "function",
@@ -2836,11 +3240,32 @@ if (type == "message")
                         {
                             ["name"] = nestedTool["name"]?.GetValue<string>(),
                             ["description"] = nestedTool["description"]?.GetValue<string>() ?? "",
-                            ["parameters"] = CloneOrDefault(nestedTool["parameters"] ?? nestedTool["inputSchema"])
+                            ["parameters"] = CloneOrDefault(schemaSrc)
                         }
                     });
                 }
+                if (converted.Count - before != nested.Count) dropped.Add("namespace-parcial");
+                continue;
             }
+
+            // Nao casa nenhum ramo: some do payload. Motivo+nome vao p/ a sonda.
+            dropped.Add($"{(type.Length == 0 ? "sem-type" : type)}:{entry["name"]?.GetValue<string>() ?? "?"}");
+        }
+        if (Diagnostic)
+        {
+            var names = new JsonArray();
+            foreach (var t in converted)
+                if (t?["function"]?["name"]?.GetValue<string>() is string name) names.Add(name);
+            Log(new JsonObject
+            {
+                ["event"] = "tools-to-chat",
+                ["in"] = list.Count,
+                ["out"] = converted.Count,
+                ["names"] = names,
+                ["dropped"] = dropped,
+                ["default_schema"] = defaulted,
+                ["result_null"] = converted.Count == 0
+            });
         }
         return converted.Count > 0 ? converted : null;
     }
@@ -2852,14 +3277,20 @@ if (type == "message")
     //   tool_calls                       -> item "function_call" (SEM status:
     //                                        o opencode conduz in_progress->completed)
     // ---------------------------------------------------------------------
+    /// <summary>Allowlist de tools vista pela ultima traducao: a coercao de tool call
+    /// narrada depende dela (sem lista, so passaria o catalogo RealTools).</summary>
+    static List<string> ChatToResponsesAnnounced = new();
+
     /// <summary>Converte resposta chat em objeto Responses (reasoning+message+calls).</summary>
     /// <param name="chat">Chat completion.</param>
     /// <param name="model">Model id p/ eco.</param>
     /// <param name="temperature">Efetiva.</param>
     /// <param name="thinkMode">Modo thinking efetivo.</param>
     /// <param name="hadTools">A resposta tinha tools disponiveis.</param>
+    /// <param name="historyMessages">Mensagens do REQUEST (nao da resposta): o anti-repeat
+    /// cross-turn compara as tool calls do historico com a chamada nova.</param>
     /// <returns>Objeto Responses.</returns>
-    static JsonObject ChatToResponses(JsonObject chat, string model, double temperature, string? thinkMode = null, bool hadTools = false)
+    static JsonObject ChatToResponses(JsonObject chat, string model, double temperature, string? thinkMode = null, bool hadTools = false, JsonNode? historyMessages = null)
     {
         thinkMode ??= Thinking;
         var choice = chat["choices"]?[0]?.AsObject() ?? new JsonObject();
@@ -2884,6 +3315,10 @@ if (type == "message")
         content = ReTemplate.Replace(content, "");
 
         var toolCalls = new List<(string Id, string Name, string Arguments)>();
+        string blockedNotice = "";
+        // AntiRepeat cross-turn: a chamada ja repetiu no historico, entao e loop.
+        var loopedSigs = AntiRepeat ? LoopedToolSigs(historyMessages, 2)
+                                     : new HashSet<string>(StringComparer.Ordinal);
         if (message["tool_calls"] is JsonArray callArray)
         {
             foreach (var callNode in callArray)
@@ -2894,33 +3329,85 @@ if (type == "message")
                 string nativeName = funcObj["name"]?.GetValue<string>() ?? "";
                 if (nativeName.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
                     nativeName = nativeName["default.".Length..];
-                string rawArgs = JsonToString(funcObj["arguments"]);
-                var effective = UnwrapExecuteCalls(nativeName, rawArgs);
-                if (effective.Count == 0) effective.Add((nativeName, rawArgs));
-                for (int ci = 0; ci < effective.Count; ci++)
+                // Risco autorizado no turno anterior: uma concessao = uma execucao.
+                bool riskOk = RiskConsumeApproval(model, nativeName, JsonToString(funcObj["arguments"]));
+                // Bloqueio por role: a tool foi anunciada ao modelo, mas a chamada nao
+                // sai. O aviso entra como texto, para o modelo explicar a recusa.
+                if (!riskOk && BannedFor(model).Contains(nativeName) && RiskAsk)
                 {
-                    var (callName, callArgs) = SanitizeToolCall(effective[ci].Name, effective[ci].Arguments);
-                    toolCalls.Add((ci == 0 ? id : id + "_" + ci, callName, callArgs));
+                    string roleB = RoleOfModel(model);
+                    string bid = "risk_" + NewId();
+                    PendingRisks[bid] = new PendingRisk(nativeName, JsonToString(funcObj["arguments"]), roleB);
+                    Log(new JsonObject { ["event"] = "tool-ask", ["tool"] = nativeName, ["role"] = roleB,
+                                         ["reason"] = "papel", ["call_id"] = bid });
+                    toolCalls.Add((bid, "question", RiskQuestionArgs(nativeName, JsonToString(funcObj["arguments"]), roleB, "papel")));
+                    if (blockedNotice.Length == 0)
+                        blockedNotice = "\n\nEsta tool fica fora do meu papel. Pedi a confirmacao ao usuario na interface; aguardo a resposta.\n\n";
+                    continue;
                 }
+                if (!riskOk && BannedFor(model).Contains(nativeName))
+                {
+                    Log(new JsonObject { ["event"] = "tool-blocked", ["tool"] = nativeName, ["role"] = RoleOfModel(model) });
+                    if (blockedNotice.Length == 0)
+                        blockedNotice = "\n\n" + string.Format(ToolBlockNotice, nativeName, RoleOfModel(model)) + "\n\n";
+                    continue;
+                }
+                // AntiRepeat cross-turn: nao emitimos a chamada que ja repetiu; o modelo
+                // so reenfileiraria o mesmo comando e o turno travaria aqui.
+                if (loopedSigs.Contains(ToolSig(nativeName, JsonToString(funcObj["arguments"]))))
+                {
+                    Log(new JsonObject { ["event"] = "anti-repeat-loop", ["tool"] = nativeName });
+                    if (blockedNotice.Length == 0)
+                        blockedNotice = "\n\n" + AntiRepeatNotice + "\n\n";
+                    continue;
+                }
+                // Comando de risco sem aval: a chamada vira pergunta na interface.
+                if (!riskOk && IsRiskCall(model, nativeName, JsonToString(funcObj["arguments"])))
+                {
+                    string role = RoleOfModel(model);
+                    string qid = "risk_" + NewId();
+                    PendingRisks[qid] = new PendingRisk(nativeName, JsonToString(funcObj["arguments"]), role);
+                    Log(new JsonObject { ["event"] = "risk-ask", ["tool"] = nativeName, ["role"] = role, ["call_id"] = qid });
+                    toolCalls.Add((qid, "question", RiskQuestionArgs(nativeName, JsonToString(funcObj["arguments"]), role, "risco")));
+                    if (blockedNotice.Length == 0)
+                        blockedNotice = "\n\nEsta acao e de risco. Pedi a confirmacao ao usuario na interface; aguardo a resposta antes de rodar.\n\n";
+                    continue;
+                }
+                if (riskOk && blockedNotice.Length == 0)
+                    blockedNotice = "\n\nO usuario autorizou esta acao; executando agora.\n\n";
+                toolCalls.Add((id, nativeName, JsonToString(funcObj["arguments"])));
             }
         }
         // Coerção: sem tool_calls nativos e com tools pedidas, extrai do texto
         // (ToolsCoercion: hermes/plural/fence — coder/deepseek via llama).
         // So atua se o texto parsear; prosa normal passa intacta.
-        if (toolCalls.Count == 0 && LegacyHarness && (CoerceFor(model) || hadTools))
+        if (LegacyHarness && CoerceNarrated && ManagedFor(model) && toolCalls.Count == 0 && hadTools)
         {
-            foreach (var (name, args) in ExtractTextToolCalls(content))
+            foreach (var (name, args) in ExtractTextToolCalls(content, ChatToResponsesAnnounced))
                 toolCalls.Add(("call_" + NewId(), name, args));
             if (toolCalls.Count > 0)
             {
                 // Remove os blocos consumidos p/ nao duplicar texto + call.
+                // A narrada sai INTEIRA (marcador + args + parentese), senao o
+                // JSON dos argumentos ficaria colado na prosa.
                 content = ReToolTag.Replace(content, "");
                 content = ReToolsTag.Replace(content, "");
                 content = ReFunctionTag.Replace(content, "");
                 content = ReFencedCall.Replace(content, "");
+                content = StripNarratedCalls(content);
                 Log(new JsonObject { ["event"] = "coerced", ["model"] = model, ["count"] = toolCalls.Count });
             }
+            else if (CoerceNarrated && ReAssistantToolCall.IsMatch(content))
+                Log(new JsonObject { ["event"] = "coerce-narrated-miss", ["model"] = model, ["had_tools"] = hadTools });
         }
+
+        // Sonda (so log) de repeticao nos argumentos de uma tool call no caminho
+        // nao-stream: o texto do args pode crescer em loop sem tocar thinking/content.
+        if (AntiRepeat)
+            foreach (var (_, probeName, probeArgs) in toolCalls)
+                if (probeArgs.Length >= 1024 && ThinkingRepeats(probeArgs, AntiRepeatWindow))
+                    Log(new JsonObject { ["event"] = "anti-repeat-args", ["tool"] = probeName,
+                        ["chars"] = probeArgs.Length, ["window"] = AntiRepeatWindow, ["mode"] = "convert" });
 
         // 4.6.3) Uso de tokens: chat usa prompt/completion, Responses usa input/output
         var chatUsage = chat["usage"]?.AsObject() ?? new JsonObject();
@@ -2940,12 +3427,15 @@ if (type == "message")
         {
             output.Add(new JsonObject
             {
-                ["id"] = "rs_" + NewId(), ["type"] = "reasoning",
-                ["summary"] = new JsonArray(new JsonObject { ["type"] = "summary_text", ["text"] = thinking })
+                ["id"] = "rs_" + NewId(), ["summary"] = new JsonArray(), ["type"] = "reasoning",
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "reasoning_text", ["text"] = thinking }),
+                ["encrypted_content"] = "", ["status"] = "completed"
             });
         }
 
-        if (!string.IsNullOrWhiteSpace(content))
+        // blockedNotice conta mesmo com content vazio: o modelo costuma emitir SO a tool
+        // call, e sem isso o turno ficaria sem texto nenhum para o usuario ler.
+        if (!string.IsNullOrWhiteSpace(content) || blockedNotice.Length > 0)
         {
             output.Add(new JsonObject
             {
@@ -2953,7 +3443,7 @@ if (type == "message")
                 ["status"] = "completed",
                 ["content"] = new JsonArray(new JsonObject
                 {
-                    ["type"] = "output_text", ["text"] = content,
+                    ["type"] = "output_text", ["text"] = content + blockedNotice,
                     ["annotations"] = new JsonArray(), ["logprobs"] = null
                 })
             });
@@ -2997,6 +3487,84 @@ if (type == "message")
     // Separa o bloco de thinking (<think>...</think>, modo hibrido do Qwen3)
     // do texto final. Sem tag de fechamento (corte por max_tokens), tudo apos
     // a abertura e considerado thinking.
+    // Tags de controle de canal/thinking que alguns templates deixam vazar no
+    // texto (Gemma 4: <|channel>thought ... <channel|>; Qwen: </thought>).
+    // Nao sao conteudo: se chegam ao reasoning, a UI mostra a tag crua no bloco
+    // de pensamento. Removidas com sonda (evento reasoning-tag).
+    static readonly string[] ControlTags =
+        { "<|channel>", "<channel|>", "<|channel|>", "<thought>", "</thought>", "<thinking>", "</thinking>" };
+
+    /// <summary>Tamanho do maior sufixo de <paramref name="s"/> que e prefixo de <paramref name="tag"/>.</summary>
+    static int PartialTagPrefixLen(string s, string tag)
+    {
+        int best = 0;
+        int max = Math.Min(tag.Length - 1, s.Length);
+        for (int k = max; k > best; k--)
+            if (s.EndsWith(tag[..k], StringComparison.OrdinalIgnoreCase)) { best = k; break; }
+        return best;
+    }
+
+    // Marcadores TEXTUAIS de tool call: o opencode serializa a tool no historico
+    // como "[Assistant tool call]: nome({...})" e o modelo copia esse formato.
+    // No stream o texto a partir deles fica retido; quem decide (descartar como
+    // chamada ou devolver como prosa) e o fecho.
+    static readonly string[] TextToolMarkers =
+        { "[Assistant tool call]", "<tool_call>", "<tools>", "<function>" };
+
+    /// <summary>Posicao do primeiro marcador de tool call no texto (-1 = prosa).</summary>
+    static int TextToolMarkerIndex(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return -1;
+        int best = -1;
+        foreach (string marker in TextToolMarkers)
+        {
+            int at = s.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (at >= 0 && (best < 0 || at < best)) best = at;
+        }
+        return best;
+    }
+
+    /// <summary>Quanto segurar da cauda: tag partida ou inicio de marcador de call.</summary>
+    static int ContentHoldBack(string carry)
+    {
+        int hold = PartialTagPrefixLen(carry, " thinking");
+        foreach (string marker in TextToolMarkers)
+        {
+            int at = carry.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            int k = at >= 0 ? carry.Length - at : PartialTagPrefixLen(carry, marker);
+            if (k > hold) hold = k;
+        }
+        return hold;
+    }
+
+    /// <summary>Tamanho do maior sufixo de <paramref name="s"/> que e prefixo de uma tag de controle.</summary>
+    /// <remarks>Serve para segurar so o pedaco ambiguo entre chunks; sem isso o
+    /// raciocinio inteiro atrasaria N chars e o hold-back sairia fora de ordem.</remarks>
+    static int PartialTagLen(string s)
+    {
+        int best = 0;
+        foreach (var tag in ControlTags)
+        {
+            int max = Math.Min(tag.Length - 1, s.Length);
+            for (int k = max; k > best; k--)
+                if (s.EndsWith(tag[..k], StringComparison.OrdinalIgnoreCase)) { best = k; break; }
+        }
+        return best;
+    }
+
+    /// <summary>Remove tags de controle do texto de reasoning, registrando o achado.</summary>
+    static string StripControlTags(string s, string where)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        foreach (var tag in ControlTags)
+        {
+            if (s.IndexOf(tag, StringComparison.OrdinalIgnoreCase) < 0) continue;
+            s = s.Replace(tag, "", StringComparison.OrdinalIgnoreCase);
+            if (Diagnostic) Log(new JsonObject { ["event"] = "reasoning-tag", ["where"] = where, ["tag"] = tag });
+        }
+        return s;
+    }
+
     /// <summary>Separa o bloco &lt;think&gt; do texto final.</summary>
     /// <param name="text">Conteudo bruto.</param>
     /// <returns>Tupla (thinking, limpo).</returns>
@@ -3009,7 +3577,7 @@ if (type == "message")
         if (closeIdx < 0) return (text[(openIdx + 7)..].Trim(), text[..openIdx].Trim());
 
         string before = text[..openIdx];
-        string thought = text[(openIdx + 7)..closeIdx];
+        string thought = StripControlTags(text[(openIdx + 7)..closeIdx], "split");
         string after = text[(closeIdx + 8)..];
         return (thought.Trim(), (before + after).Trim());
     }
@@ -3049,44 +3617,48 @@ if (type == "message")
 
             if (type == "reasoning" && thinkMode == "events")
             {
-                // Raciocinio: item aberto -> delta do resumo -> item fechado
-                string thinkingText = item["summary"]?[0]?["text"]?.GetValue<string>() ?? "";
+                // Raciocinio no formato NATIVO do llama.cpp: content[].text +
+                // reasoning_text.delta. O par summary_text/part fazia o opencode
+                // renderizar o pensamento como snippet de resumo.
+                string thinkingText = item["summary"]?[0]?["text"]?.GetValue<string>()
+                                      ?? item["content"]?[0]?["text"]?.GetValue<string>() ?? "";
                 string reasoningId = item["id"]?.GetValue<string>() ?? ("rs_" + NewId());
-                var reasoningOpen = new JsonObject { ["id"] = reasoningId, ["type"] = "reasoning", ["summary"] = new JsonArray() };
+                var reasoningOpen = new JsonObject
+                {
+                    ["id"] = reasoningId, ["summary"] = new JsonArray(), ["type"] = "reasoning",
+                    ["content"] = new JsonArray(new JsonObject { ["type"] = "reasoning_text", ["text"] = "" }),
+                    ["encrypted_content"] = "", ["status"] = "in_progress"
+                };
                 WriteEvent(sse, "response.output_item.added", new JsonObject
                 {
                     ["type"] = "response.output_item.added", ["output_index"] = outputIndex,
                     ["sequence_number"] = sequence++, ["item"] = reasoningOpen
                 });
-                WriteEvent(sse, "response.reasoning_summary_part.added", new JsonObject
+                if (thinkingText.Length > 0)
                 {
-                    ["type"] = "response.reasoning_summary_part.added", ["item_id"] = reasoningId,
-                    ["output_index"] = outputIndex, ["content_index"] = 0, ["summary_index"] = 0, ["sequence_number"] = sequence++,
-                    ["part"] = new JsonObject { ["type"] = "summary_text", ["text"] = "" }
-                });
-                WriteEvent(sse, "response.reasoning_summary_text.delta", new JsonObject
+                    WriteEvent(sse, "response.reasoning_text.delta", new JsonObject
+                    {
+                        ["type"] = "response.reasoning_text.delta", ["delta"] = thinkingText,
+                        ["item_id"] = reasoningId, ["output_index"] = outputIndex, ["content_index"] = 0,
+                        ["sequence_number"] = sequence++
+                    });
+                    WriteEvent(sse, "response.reasoning_text.done", new JsonObject
+                    {
+                        ["type"] = "response.reasoning_text.done", ["item_id"] = reasoningId,
+                        ["output_index"] = outputIndex, ["content_index"] = 0, ["text"] = thinkingText,
+                        ["sequence_number"] = sequence++
+                    });
+                }
+                var reasoningDone = new JsonObject
                 {
-                    ["type"] = "response.reasoning_summary_text.delta", ["item_id"] = reasoningId,
-                    ["output_index"] = outputIndex, ["content_index"] = 0, ["summary_index"] = 0, ["delta"] = thinkingText,
-                    ["sequence_number"] = sequence++
-                });
-                WriteEvent(sse, "response.reasoning_summary_text.done", new JsonObject
-                {
-                    ["type"] = "response.reasoning_summary_text.done", ["item_id"] = reasoningId,
-                    ["output_index"] = outputIndex, ["content_index"] = 0, ["summary_index"] = 0, ["text"] = thinkingText,
-                    ["sequence_number"] = sequence++
-                });
-                // Sem o part.done o opencode nao consolida os deltas (text fica "").
-                WriteEvent(sse, "response.reasoning_summary_part.done", new JsonObject
-                {
-                    ["type"] = "response.reasoning_summary_part.done", ["item_id"] = reasoningId,
-                    ["output_index"] = outputIndex, ["content_index"] = 0, ["summary_index"] = 0, ["sequence_number"] = sequence++,
-                    ["part"] = new JsonObject { ["type"] = "summary_text", ["text"] = thinkingText }
-                });
+                    ["id"] = reasoningId, ["summary"] = new JsonArray(), ["type"] = "reasoning",
+                    ["content"] = new JsonArray(new JsonObject { ["type"] = "reasoning_text", ["text"] = thinkingText }),
+                    ["encrypted_content"] = "", ["status"] = "completed"
+                };
                 WriteEvent(sse, "response.output_item.done", new JsonObject
                 {
                     ["type"] = "response.output_item.done", ["output_index"] = outputIndex,
-                    ["sequence_number"] = sequence++, ["item"] = item
+                    ["sequence_number"] = sequence++, ["item"] = reasoningDone
                 });
                 outputIndex++;
                 continue;
@@ -3206,22 +3778,102 @@ if (type == "message")
         catch { /* log nunca derruba o pedido */ }
     }
 
+    /// <summary>Acrescenta elapsed/tps ao dump de trafego (sonda DIAGNOSTIC).</summary>
+    /// <param name="ev">Evento de log (mutado).</param>
+    /// <param name="startedAt">Inicio do atendimento.</param>
+    /// <param name="responseText">Corpo/SSE da resposta (usage/timings ou estimativa).</param>
+    /// <param name="requestText">Corpo do request (estimativa de input quando nao ha usage).</param>
+    static void AddPerf(JsonObject ev, DateTime startedAt, string? responseText = null, string? requestText = null)
+    {
+        double elapsed = Math.Max(0, (DateTime.UtcNow - startedAt).TotalSeconds);
+        var (inTok, outTok, tpsOut, tpsIn) = UsageTokens(responseText);
+        if (inTok <= 0 && !string.IsNullOrEmpty(requestText))
+            inTok = Math.Max(0, requestText.Length / 4); // estimativa quando o upstream omite usage
+        if (outTok <= 0 && !string.IsNullOrEmpty(responseText))
+            outTok = Math.Max(0, responseText.Length / 4); // idem: sem usage/timings no SSE
+        ev["elapsed"] = Math.Round(elapsed, 2);
+        ev["input_tokens"] = inTok;
+        ev["output_tokens"] = outTok;
+        ev["tps_output"] = Math.Round(tpsOut > 0 ? tpsOut : (elapsed > 0 ? outTok / elapsed : 0), 1);
+        ev["tps_total"] = Math.Round(elapsed > 0 ? (inTok + outTok) / elapsed : 0, 1);
+        if (tpsIn > 0) ev["tps_prompt"] = Math.Round(tpsIn, 1);
+    }
+
+    /// <summary>Extrai tokens/tps de usage ou timings do JSON de resposta e das linhas SSE.</summary>
+    static (int In, int Out, double TpsOut, double TpsIn) UsageTokens(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return (0, 0, 0, 0);
+        static int Pick(JsonObject u, string a, string b)
+            => u[a]?.GetValue<int>() ?? u[b]?.GetValue<int>() ?? 0;
+        static double PickD(JsonObject u, string a)
+            => u[a]?.GetValue<double>() ?? 0;
+        static (int, int, double, double) Read(JsonObject o)
+        {
+            int i = 0, ou = 0;
+            double to = 0, ti = 0;
+            if (o["usage"] is JsonObject u)
+            {
+                i = Pick(u, "input_tokens", "prompt_tokens");
+                ou = Pick(u, "output_tokens", "completion_tokens");
+            }
+            if (o["response"]?["usage"] is JsonObject ru)
+            {
+                if (i == 0) i = Pick(ru, "input_tokens", "prompt_tokens");
+                if (ou == 0) ou = Pick(ru, "output_tokens", "completion_tokens");
+            }
+            // llama.cpp manda timings no ultimo chunk SSE (e no JSON nao-stream):
+            // predicted_n/prompt_n sao exatos; predicted_per_second evita
+            // diluir o tk/s com o overhead de rede do elapsed.
+            if (o["timings"] is JsonObject t)
+            {
+                if (i == 0) i = t["prompt_n"]?.GetValue<int>() ?? 0;
+                if (ou == 0) ou = t["predicted_n"]?.GetValue<int>() ?? 0;
+                to = PickD(t, "predicted_per_second");
+                ti = PickD(t, "prompt_per_second");
+            }
+            return (i, ou, to, ti);
+        }
+        try
+        {
+            if (JsonNode.Parse(text) is JsonObject obj) return Read(obj);
+        }
+        catch { /* pode ser SSE: varre as linhas data: */ }
+        foreach (var raw in text.Split('\n'))
+        {
+            string line = raw.Trim();
+            if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+            string data = line["data:".Length..].Trim();
+            if (data is "" or "[DONE]") continue;
+            try
+            {
+                if (JsonNode.Parse(data) is not JsonObject o) continue;
+                var r = Read(o);
+                if (r.Item2 > 0 || r.Item3 > 0) return r;
+            }
+            catch { }
+        }
+        return (0, 0, 0, 0);
+    }
+
     /// <summary>Sonda Serilog do AntiRepeat; nunca derruba o pedido.</summary>
     /// <param name="where">Ponto de observacao (thinking/content/bypass-chat/bypass-responses).</param>
     /// <param name="chars">Acumulado ate aqui.</param>
     /// <param name="trip">Detector disparou?</param>
     /// <param name="tail">Amostra da cauda (80 chars).</param>
-    static void Sonda(string where, int chars, bool trip, string tail)
+    static void Sonda(string where, int chars, bool trip, string tail, int dupAt = -1, string dupCtx = "")
     {
         if (!Diagnostic) return;
         try
         {
+            // dup_at = posicao (no texto normalizado) da ocorrencia anterior da
+            // mesma janela; dup_ctx = 80 chars a partir dela. Sem isso o log so
+            // mostra a cauda e nao prova ONDE o modelo se repetiu.
             if (trip)
-                Serilog.Log.Warning("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} tail={Tail}",
-                    where, chars, AntiRepeatWindow, trip, tail);
+                Serilog.Log.Warning("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} dup_at={DupAt} dup_ctx={DupCtx} tail={Tail}",
+                    where, chars, AntiRepeatWindow, trip, dupAt, dupCtx, tail);
             else
-                Serilog.Log.Debug("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} tail={Tail}",
-                    where, chars, AntiRepeatWindow, trip, tail);
+                Serilog.Log.Debug("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} dup_at={DupAt} tail={Tail}",
+                    where, chars, AntiRepeatWindow, trip, dupAt, tail);
         }
         catch { /* sonda nunca derruba o pedido */ }
     }
@@ -3243,6 +3895,14 @@ if (type == "message")
     /// <summary>Id aleatorio hex de 16 chars.</summary>
     /// <returns>Id.</returns>
     static string NewId() => Guid.NewGuid().ToString("N")[..16];
+
+    /// <summary>Compila um padrao de risco; padrao invalido nao derruba a bridge.</summary>
+    static bool TryRegex(string pattern, out Regex rx)
+    {
+        try { rx = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+                            TimeSpan.FromMilliseconds(100)); return true; }
+        catch { rx = null!; return false; }
+    }
     /// <summary>Corta string no tamanho maximo.</summary>
     /// <param name="s">Texto.</param>
     /// <param name="n">Maximo.</param>

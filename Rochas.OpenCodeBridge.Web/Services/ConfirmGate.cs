@@ -68,7 +68,8 @@ public static class ConfirmGate
                 Allowed.TryRemove(k, out _);
     }
 
-    /// <summary>Call mutante que exige aval? (push/install via shell, write, edit).</summary>
+    /// <summary>Call mutante que exige aval? (push/install via shell, write, edit,
+    /// e qualquer comando que case com um padrao de risco do agente).</summary>
     public static bool NeedsConfirmation(string name, string args)
     {
         string n = (name ?? "").Trim();

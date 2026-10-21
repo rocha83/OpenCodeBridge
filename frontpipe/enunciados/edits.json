@@ -1,0 +1,35 @@
+[
+  {
+    "id": "titulo-2px",
+    "titulo": "titulo 2px de font-size acima do que esta",
+    "file": "edit-titulo-2px.md",
+    "selector": "#titulo",
+    "prop": "font-size",
+    "op": "delta",
+    "value": 2,
+    "tol": 0.5,
+    "no_regress": ["#quadro:rect_w", "#quadro:rect_h", "#titulo:font-weight"]
+  },
+  {
+    "id": "quadro-320px",
+    "titulo": "quadro com largura exata de 320px",
+    "file": "edit-quadro-320px.md",
+    "selector": "#quadro",
+    "prop": "rect_w",
+    "op": "eq",
+    "value": 320,
+    "tol": 1,
+    "no_regress": ["#titulo:font-size", "#quadro:padding-left", "#quadro:rect_h"]
+  },
+  {
+    "id": "quadro-padding-16",
+    "titulo": "espacamento interno do quadro em 16px",
+    "file": "edit-quadro-padding-16.md",
+    "selector": "#quadro",
+    "prop": "padding-left",
+    "op": "eq",
+    "value": 16,
+    "tol": 0.5,
+    "no_regress": ["#quadro:rect_w", "#titulo:font-size"]
+  }
+]

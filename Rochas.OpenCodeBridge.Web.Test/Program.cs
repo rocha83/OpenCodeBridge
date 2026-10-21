@@ -52,6 +52,15 @@ internal static class Program
         bool skipIntegration = args.Contains("--skip-integration");
         if (exec > 0) Ui.BeltUiTests.SetExecOverride(exec);
 
+        // Frontpipe: modo isolado de medicao (a suite da bridge chama via shell-out
+        // nos E-front-*): --front-measure --front-url URL --front-out FILE.
+        if (args.Contains("--front-measure"))
+        {
+            string furi = ArgOf(args, "--front-url") ?? "http://127.0.0.1:5199/";
+            string fout = ArgOf(args, "--front-out") ?? "/tmp/opencode/frontpipe/measure.json";
+            return Ui.FrontMeasure.RunAsync(furi, fout).GetAwaiter().GetResult();
+        }
+
         if (!integrationOnly && !skipUnits)
         {
             UnitHash();
@@ -88,10 +97,21 @@ internal static class Program
         if (args.Contains("--opencode-run"))
             Failures += Integration.OpencodeRunBeltTests.RunAsync(belts.ToArray(), agent, model, workdir).GetAwaiter().GetResult();
         if (args.Contains("--topics-live"))
-            Failures += Integration.TopicsLiveTests.RunAsync().GetAwaiter().GetResult();
+            Failures += Integration.TopicsLiveTests.RunAsync(
+                ArgOf(args, "--topics-bridge") ?? "http://127.0.0.1:4124",
+                ArgOf(args, "--topics-model"),
+                ArgOf(args, "--topics-key")).GetAwaiter().GetResult();
 
         Console.WriteLine(Failures == 0 ? "[test] PASS" : $"[test] FAIL={Failures}");
         return Failures == 0 ? 0 : 1;
+    }
+
+    // Valor do argumento nomeado (--nome valor) ou null.
+    static string? ArgOf(string[] args, string name)
+    {
+        for (int i = 0; i + 1 < args.Length; i++)
+            if (args[i] == name) return args[i + 1];
+        return null;
     }
 
     // Unit: hash verifica certo e rejeita errado; formato com 3 partes.

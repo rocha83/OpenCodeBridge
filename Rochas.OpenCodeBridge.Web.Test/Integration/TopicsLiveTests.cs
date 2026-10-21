@@ -23,7 +23,7 @@ internal static class TopicsLiveTests
         "explique a teoria das cordas e testes de intenções em física quântica.",
     ];
 
-    public static async Task<int> RunAsync(string bridge = "http://127.0.0.1:4124")
+    public static async Task<int> RunAsync(string bridge = "http://127.0.0.1:4124", string? model = null, string? apiKey = null)
     {
         int failures = 0;
         void Check(bool ok, string name, string extra = "")
@@ -39,6 +39,18 @@ internal static class TopicsLiveTests
             ("assistant", "ok-2"),
         };
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
+        apiKey ??= Environment.GetEnvironmentVariable("BRIDGE_API_KEY") ?? "guest@123";
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            try
+            {
+                var st = JsonNode.Parse(await http.GetStringAsync(bridge + "/api/status"));
+                model = st?["model"]?.GetValue<string>();
+            }
+            catch { }
+        }
+        model = string.IsNullOrWhiteSpace(model) ? "gemma-4-12b" : model;
         var decodeRates = new List<string>();
         async Task<string> Chat(string prompt, CancellationToken ct)
         {
@@ -48,7 +60,7 @@ internal static class TopicsLiveTests
                 messages.Add(new JsonObject { ["role"] = role, ["content"] = content });
             var body = new JsonObject
             {
-                ["model"] = "qwen3.5-9b",
+                ["model"] = model,
                 ["messages"] = messages,
                 ["temperature"] = 0.4,
                 ["max_tokens"] = 256,

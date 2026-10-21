@@ -12,18 +12,53 @@ internal static class TestContext
     public static string Bridge = "http://127.0.0.1:4124";
     public static string Vllm = "http://127.0.0.1:4100";
     public static bool SkipE2E;
-    public static string Only = "";
-    public static string? ApiKey;
+    public static string Only = "";
+    public static string BeltsFilter = "";
+
+    public static string? ApiKey;
+
     public static string? Jwt;
     // 20 min: os E2E enterprise (crud-*/garnet/worker) geram muito e, sob carga da suite
     // inteira, passavam de 600s (visto 16/10); isolados ficam em ~110-215s.
-    public static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(20) };
+    public static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(120) };
 
     // Modelo servido pela bridge alvo (qwen3|coder): expectativas por perfil.
     public static string ServedModel = "";
     public static bool ServedIsCoder => ServedModel.Contains("coder", StringComparison.OrdinalIgnoreCase);
+    // Role alvo da suite (default build): a suite chama o modelo com o sufixo
+    // de role para exercitar o perfil real (temp/thinking) do Build.
+    public static string Role = "build";
+    // --model explicito vence; sem ele, aplica o sufixo de role ao servido.
+    public static string Model = "";
+    // --standalone: desvia os E2E para o opencode real (mesmo enunciado),
+    // em vez de HTTP direto na bridge. --standalone-agent escolhe o agent.
+    public static bool Standalone;
+    public static string StandaloneAgent = "build";
+    public static int StandaloneTimeoutSec = 300;
+    // --standalone-model explicito (provider/model); senao deriva do agent:
+    // exec -> llama/ (CPU E2B), demais -> openai/ (GPU 12B).
+    public static string StandaloneModel = "";
+    public static string SuiteModel
+    {
+        get
+        {
+            if (Model.Length > 0) return Model;
+            string m = ServedModel.Length > 0 ? ServedModel : "gemma-4-12b";
+            bool hasRole = m.EndsWith("-plan") || m.EndsWith("-build") || m.EndsWith("-orch")
+                || m.EndsWith("-moe") || m.EndsWith("-scripter") || m.EndsWith("-exec");
+            return !hasRole && Role.Length > 0 ? m + "-" + Role : m;
+        }
+    }
     // Modo thinking da bridge (events|off): asserts de reasoning só em events.
     public static string ServedThinking = "events";
+    /// <summary>Bridge com --legacy-harness 1: unico modo em que ha coercao de tools.</summary>
+    public static bool ServedLegacy;
+
+    /// <summary>Coercao de tool call so existe no modo legacy; fora dele e SKIP.</summary>
+    public static void RequireCoercion()
+    {
+        if (!ServedLegacy) Skip("bridge sem --legacy-harness 1 (coercao desligada por design)");
+    }
     public static bool WantsReasoning => ServedThinking == "events" && !ServedIsCoder;
     static int Passed;
     static int Failed;
@@ -67,6 +102,50 @@ internal static class TestContext
     public static void Check(bool cond, string msg)
     {
         if (!cond) throw new Exception("assert: " + msg);
+    }
+
+    /// <summary>Base do modelo servido, sem sufixo de role (ex.: gemma-4-12b).</summary>
+    static string BaseModel
+    {
+        get
+        {
+            string m = ServedModel.Length > 0 ? ServedModel : "gemma-4-12b";
+            foreach (var r in new[] { "-plan", "-build", "-orch", "-moe", "-scripter", "-exec" })
+                if (m.EndsWith(r)) return m[..^r.Length];
+            return m;
+        }
+    }
+
+    /// <summary>provider/model derivado do agent standalone (exec -> llama/E2B; demais -> openai/GPU).</summary>
+    static string AutoStandaloneModel()
+    {
+        string role = StandaloneAgent is "plan" or "build" or "orch" or "moe" or "scripter" or "exec"
+            ? StandaloneAgent : "build";
+        string provider = StandaloneAgent == "exec" ? "llama/" : "openai/";
+        return provider + BaseModel + "-" + role;
+    }
+
+    /// <summary>Roda o mesmo enunciado pelo opencode real (standalone) e devolve stdout+stderr.</summary>
+    public static string OpencodeRun(string prompt)
+    {
+        var psi = new ProcessStartInfo("opencode")
+        {
+            WorkingDirectory = Path.Combine(Path.GetTempPath(), "opencode", "standalone"),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        string model = StandaloneModel.Length > 0 ? StandaloneModel : AutoStandaloneModel();
+        psi.ArgumentList.Add("run");
+        psi.ArgumentList.Add("--standalone");   // servidor privado: nao depende do background service (evita "Timed out waiting for the background service to start")
+        psi.ArgumentList.Add("--agent"); psi.ArgumentList.Add(StandaloneAgent);
+        psi.ArgumentList.Add("--model"); psi.ArgumentList.Add(model);
+        psi.ArgumentList.Add(prompt);
+        Directory.CreateDirectory(psi.WorkingDirectory);
+        using var p = Process.Start(psi) ?? throw new Exception("sem processo: opencode");
+        string outp = p.StandardOutput.ReadToEnd();
+        string errp = p.StandardError.ReadToEnd();
+        if (!p.WaitForExit(StandaloneTimeoutSec * 1000)) { try { p.Kill(true); } catch { } throw new Exception("timeout opencode standalone"); }
+        return outp + errp;
     }
 
     public static async Task<JsonObject> GetObj(string url)

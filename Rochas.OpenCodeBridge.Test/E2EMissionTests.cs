@@ -53,7 +53,7 @@ internal static class E2EMissionTests
     public static async Task MissionTools()
     {
         string bridge = TestContext.Bridge;
-        string model = TestContext.ServedModel.Length > 0 ? TestContext.ServedModel : "qwen3.5-9b";
+        string model = TestContext.SuiteModel;
         if (!model.EndsWith("-build")) model += "-build";
         string ws = Path.Combine(Path.GetTempPath(), "e2e-mission");
         if (Directory.Exists(ws)) Directory.Delete(ws, true);
@@ -127,7 +127,7 @@ internal static class E2EMissionTests
                 while (history.Count > historyBeforeFs) history.RemoveAt(history.Count - 1);
                 LogT($"[F#] retry {attempt}: F# anterior nao compilou/rodou");
             }
-            history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) write no caminho ABSOLUTO {ws}/mfs/Program.fs (o projeto ja existe em {ws}/mfs; nao recrie): mesmo programa do C# - Simpson de sin em [0,pi] (n=100 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. (2) rode o projeto e confira a saida; se falhar, leia o erro, corrija Program.fs e rode de novo ate imprimir 2.000000 e 5.000000." });
+            history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) write no caminho ABSOLUTO {ws}/mfs/Program.fs (o projeto ja existe em {ws}/mfs; nao recrie o projeto). Escreva F# que imprima 3 numeros com 6 casas via printfn \"%.6f\" valor: (a) Simpson de sin em [0,pi] com n=100 -> 2.000000; (b) media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> 5.000000; (c) desvio padrao da mesma lista. OBRIGATORIO em F# (siga a risca): use acumulador mutavel e um for - `let mutable soma = 0.0` e `for i in 0 .. n do` com atribuicao `soma <- soma + ...`; NAO use Seq/List.map/List.fold/comprehension para a integral. Integral: h = pi / float n; para i de 1 a (n-1): soma <- soma + peso * sin(float i * h), com peso 4.0 se i for impar e 2.0 se par; resultado = h / 3.0 * soma. Desvio padrao: sqrt (List.average (List.map (fun v -> (v - media) ** 2.0) data)). (2) rode `dotnet run --project {ws}/mfs` e corrija ate imprimir 2.000000 e 5.000000." });
         for (int turn = 0; turn < 22; turn++)
         {
             var rf = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());

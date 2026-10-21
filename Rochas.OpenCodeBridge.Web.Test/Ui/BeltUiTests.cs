@@ -154,6 +154,15 @@ public static class BeltUiTests
                 switch (phase)
                 {
                     // Nova janela por faixa (as anteriores ficam abertas p/ comparar).
+                    case "ui":
+                    {
+                        var upage = await context.NewPageAsync();
+                        await upage.GotoAsync(web + "/Chat");
+                        await upage.WaitForSelectorAsync("#conv, #prompt, select#agentId",
+                            new PageWaitForSelectorOptions { Timeout = 15000 });
+                        failures += await UiChatSendAsync(api, upage, belt);
+                        break;
+                    }
                     case "batch":
                     {
                         var bpage = await context.NewPageAsync();
@@ -163,6 +172,7 @@ public static class BeltUiTests
                         failures += await UiChatSendAsync(api, bpage, belt);
                         break;
                     }
+                    case "decompose": failures += await DecomposeBeltAsync(api, belt); break;
                     case "plan": failures += await PlanBeltAsync(api, belt); break;
                     case "cognitive": failures += await CognitiveBeltAsync(api, belt); break;
                     case "cognitive-ui":
@@ -1072,8 +1082,14 @@ public static class BeltUiTests
         {
             try
             {
-                return int.Parse(await PostAsync(api, "Chat/Sessions",
-                    JsonSerializer.Serialize(new { agentId = orch, executorAgentId = executor, title }), "id"));
+                string token = await ApiAfTokenAsync(api);
+                using var res = await ApiPostAsync(api, "Chat/Sessions",
+                    JsonSerializer.Serialize(new { agentId = orch, executorAgentId = executor, title }), token);
+                string text = await res.Content.ReadAsStringAsync();
+                if (!res.IsSuccessStatusCode)
+                    throw new InvalidOperationException(((int)res.StatusCode) + " " + text[..Math.Min(200, text.Length)]);
+                using var doc = JsonDocument.Parse(text);
+                return int.Parse(doc.RootElement.GetProperty("id").GetRawText());
             }
             catch when (attempt < 3)
             {
