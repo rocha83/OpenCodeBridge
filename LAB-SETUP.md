@@ -376,6 +376,15 @@ dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
   --api-key guest@123 --bridge http://127.0.0.1:4125
 ```
 
+### Limitação medida — tools no 12B abliterated (2026-10-21)
+
+`E-devpipe-tools` no 12B (`gemma-4-12b-build`, `enable_thinking=false`) falha:
+o modelo devolve `tool_calls[glob].arguments` com **2.574** marcadores
+`<|channel>thought` (53.566 chars, `finish_reason=length` em 8192 tokens) e o
+llama rejeita o JSON no turno seguinte (`parse error at column 53567`).
+`E-responses-tools` passa, mas com `tool chamada: False` (8192 tokens em 363,7 s).
+Não é VRAM/ctx (2×96k + 868 MiB livres): é o tool calling do modelo abliterated.
+
 ---
 
 ## 4. Argumentos da bridge (referência completa)
