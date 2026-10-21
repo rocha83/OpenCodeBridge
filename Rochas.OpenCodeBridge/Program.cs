@@ -1402,7 +1402,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             {
                 string dump = rawChatSse.ToString();
                 var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "chat-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = dump.Length, ["res"] = dump };
-                AddPerf(traffic, startedAt, dump);
+                AddPerf(traffic, startedAt, dump, outBody);
                 Log(traffic);
             }
         }
@@ -1488,7 +1488,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             if (Diagnostic)
             {
                 var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "chat", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json };
-                AddPerf(traffic, startedAt, json);
+                AddPerf(traffic, startedAt, json, outBody);
                 Log(traffic);
             }
         }
@@ -1819,7 +1819,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         {
             string dumpRes = responseObj.ToJsonString();
             var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "translate", ["model"] = requestedModel, ["req_len"] = chat.ToJsonString().Length, ["req"] = chat.ToJsonString(), ["res_len"] = dumpRes.Length, ["res"] = dumpRes };
-            AddPerf(traffic, startedAt, dumpRes);
+            AddPerf(traffic, startedAt, dumpRes, chat.ToJsonString());
             Log(traffic);
         }
         AddMetrics(inTok, outTok, elapsed);
@@ -1942,7 +1942,7 @@ var shape = new StringBuilder();
             {
                 string dump = rawSse.ToString();
                 var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "responses-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = dump.Length, ["res"] = dump };
-                AddPerf(traffic, startedAt, dump);
+                AddPerf(traffic, startedAt, dump, outBody);
                 Log(traffic);
             }
         }
@@ -1971,7 +1971,7 @@ var shape = new StringBuilder();
             if (Diagnostic)
             {
                 var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "responses", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json };
-                AddPerf(traffic, startedAt, json);
+                AddPerf(traffic, startedAt, json, outBody);
                 Log(traffic);
             }
         }
@@ -3781,34 +3781,61 @@ if (type == "message")
     /// <summary>Acrescenta elapsed/tps ao dump de trafego (sonda DIAGNOSTIC).</summary>
     /// <param name="ev">Evento de log (mutado).</param>
     /// <param name="startedAt">Inicio do atendimento.</param>
-    /// <param name="responseText">Corpo/SSE da resposta (usage ou estimativa).</param>
-    static void AddPerf(JsonObject ev, DateTime startedAt, string? responseText = null)
+    /// <param name="responseText">Corpo/SSE da resposta (usage/timings ou estimativa).</param>
+    /// <param name="requestText">Corpo do request (estimativa de input quando nao ha usage).</param>
+    static void AddPerf(JsonObject ev, DateTime startedAt, string? responseText = null, string? requestText = null)
     {
         double elapsed = Math.Max(0, (DateTime.UtcNow - startedAt).TotalSeconds);
-        var (inTok, outTok) = UsageTokens(responseText);
+        var (inTok, outTok, tpsOut, tpsIn) = UsageTokens(responseText);
+        if (inTok <= 0 && !string.IsNullOrEmpty(requestText))
+            inTok = Math.Max(0, requestText.Length / 4); // estimativa quando o upstream omite usage
         if (outTok <= 0 && !string.IsNullOrEmpty(responseText))
-            outTok = Math.Max(0, responseText.Length / 4); // estimativa quando o upstream nao manda usage
+            outTok = Math.Max(0, responseText.Length / 4); // idem: sem usage/timings no SSE
         ev["elapsed"] = Math.Round(elapsed, 2);
         ev["input_tokens"] = inTok;
         ev["output_tokens"] = outTok;
-        ev["tps_output"] = Math.Round(elapsed > 0 ? outTok / elapsed : 0, 1);
+        ev["tps_output"] = Math.Round(tpsOut > 0 ? tpsOut : (elapsed > 0 ? outTok / elapsed : 0), 1);
         ev["tps_total"] = Math.Round(elapsed > 0 ? (inTok + outTok) / elapsed : 0, 1);
+        if (tpsIn > 0) ev["tps_prompt"] = Math.Round(tpsIn, 1);
     }
 
-    /// <summary>Extrai input/output tokens de um JSON de resposta ou das linhas SSE.</summary>
-    static (int In, int Out) UsageTokens(string? text)
+    /// <summary>Extrai tokens/tps de usage ou timings do JSON de resposta e das linhas SSE.</summary>
+    static (int In, int Out, double TpsOut, double TpsIn) UsageTokens(string? text)
     {
-        if (string.IsNullOrWhiteSpace(text)) return (0, 0);
+        if (string.IsNullOrWhiteSpace(text)) return (0, 0, 0, 0);
         static int Pick(JsonObject u, string a, string b)
             => u[a]?.GetValue<int>() ?? u[b]?.GetValue<int>() ?? 0;
+        static double PickD(JsonObject u, string a)
+            => u[a]?.GetValue<double>() ?? 0;
+        static (int, int, double, double) Read(JsonObject o)
+        {
+            int i = 0, ou = 0;
+            double to = 0, ti = 0;
+            if (o["usage"] is JsonObject u)
+            {
+                i = Pick(u, "input_tokens", "prompt_tokens");
+                ou = Pick(u, "output_tokens", "completion_tokens");
+            }
+            if (o["response"]?["usage"] is JsonObject ru)
+            {
+                if (i == 0) i = Pick(ru, "input_tokens", "prompt_tokens");
+                if (ou == 0) ou = Pick(ru, "output_tokens", "completion_tokens");
+            }
+            // llama.cpp manda timings no ultimo chunk SSE (e no JSON nao-stream):
+            // predicted_n/prompt_n sao exatos; predicted_per_second evita
+            // diluir o tk/s com o overhead de rede do elapsed.
+            if (o["timings"] is JsonObject t)
+            {
+                if (i == 0) i = t["prompt_n"]?.GetValue<int>() ?? 0;
+                if (ou == 0) ou = t["predicted_n"]?.GetValue<int>() ?? 0;
+                to = PickD(t, "predicted_per_second");
+                ti = PickD(t, "prompt_per_second");
+            }
+            return (i, ou, to, ti);
+        }
         try
         {
-            var node = JsonNode.Parse(text);
-            if (node is JsonObject obj)
-            {
-                if (obj["usage"] is JsonObject u) return (Pick(u, "input_tokens", "prompt_tokens"), Pick(u, "output_tokens", "completion_tokens"));
-                if (obj["response"]?["usage"] is JsonObject ru) return (Pick(ru, "input_tokens", "prompt_tokens"), Pick(ru, "output_tokens", "completion_tokens"));
-            }
+            if (JsonNode.Parse(text) is JsonObject obj) return Read(obj);
         }
         catch { /* pode ser SSE: varre as linhas data: */ }
         foreach (var raw in text.Split('\n'))
@@ -3819,14 +3846,13 @@ if (type == "message")
             if (data is "" or "[DONE]") continue;
             try
             {
-                var node = JsonNode.Parse(data);
-                if (node is not JsonObject o) continue;
-                if (o["usage"] is JsonObject u) return (Pick(u, "input_tokens", "prompt_tokens"), Pick(u, "output_tokens", "completion_tokens"));
-                if (o["response"]?["usage"] is JsonObject ru) return (Pick(ru, "input_tokens", "prompt_tokens"), Pick(ru, "output_tokens", "completion_tokens"));
+                if (JsonNode.Parse(data) is not JsonObject o) continue;
+                var r = Read(o);
+                if (r.Item2 > 0 || r.Item3 > 0) return r;
             }
             catch { }
         }
-        return (0, 0);
+        return (0, 0, 0, 0);
     }
 
     /// <summary>Sonda Serilog do AntiRepeat; nunca derruba o pedido.</summary>

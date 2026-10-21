@@ -89,7 +89,10 @@ internal static class Program
         if (args.Contains("--calib-live"))
             Failures += Integration.CalibrationLiveTests.RunAsync().GetAwaiter().GetResult();
         if (args.Contains("--topics-live"))
-            Failures += Integration.TopicsLiveTests.RunAsync().GetAwaiter().GetResult();
+            Failures += Integration.TopicsLiveTests.RunAsync(
+                ArgOf(args, "--topics-bridge") ?? "http://127.0.0.1:4124",
+                ArgOf(args, "--topics-model"),
+                ArgOf(args, "--topics-key")).GetAwaiter().GetResult();
 
         Console.WriteLine(Failures == 0 ? "[test] PASS" : $"[test] FAIL={Failures}");
         return Failures == 0 ? 0 : 1;
