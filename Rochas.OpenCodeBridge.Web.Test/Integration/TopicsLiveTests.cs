@@ -55,8 +55,12 @@ internal static class TopicsLiveTests
                 ["stream"] = false,
                 ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = false },
             };
-            using var res = await http.PostAsync(bridge + "/v1/chat/completions",
-                new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
+            using var req = new HttpRequestMessage(HttpMethod.Post, bridge + "/v1/chat/completions");
+            req.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+            string apiKey = Environment.GetEnvironmentVariable("BRIDGE_API_KEY") ?? "guest@123";
+            if (apiKey.Length > 0)
+                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+            using var res = await http.SendAsync(req, ct);
             res.EnsureSuccessStatusCode();
             var json = JsonNode.Parse(await res.Content.ReadAsStringAsync(ct))!;
             string text = json["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";

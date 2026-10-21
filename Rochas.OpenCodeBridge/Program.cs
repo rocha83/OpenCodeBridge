@@ -82,7 +82,7 @@ internal static partial class Program
     static bool QwenStd = false;
     // Formula (harness=true): composta pela bridge p/ cliente web (model sem
     // sufixo). Opencode (sufixo -build/-plan/-orch) passa limpo.
-    static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit; versione com init/add/commit (commit sempre com mensagem informada). Git e zip sao comandos independentes (a ordem so importa se o enunciado pedir); se o enunciado pedir versionar E empacotar, versione primeiro e empacote depois - assim o pacote nao entra no commit. Zip: empacote com output (o arquivo .zip) e inputs (caminhos relativos ao workspace, separados por espaco), excluindo bin/obj. Tarefa de N passos: so responda texto depois de concluir TODOS - se voce anunciou um passo e ainda falta, emita a tool call em vez de texto. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada. Se um build/teste falhar, leia a mensagem de erro e ajuste o trecho exato antes de rodar de novo. Projetos: crie com `dotnet new` UMA vez e escreva o fonte na pasta do projeto com a tool write (nunca recrie o projeto nem use echo/heredoc). Arquivos grandes (>32kb): leia em blocos (offset+limit, ou head/tail/`sed -n 'N,Mp'`), nunca o arquivo inteiro de uma vez. Matematica sempre qualificada: C# use Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# use System.Math.Sin (ou `open System` e depois Math.Sin) — nunca `sin`/`cos`/`sqrt`/`pi` minusculos nem `open System.Math` (invalido em F#). F# NAO tem operadores OCaml (`+.`/`-.`/`*.`/`/.`) - isso quebra o build: use `+ - * /` normais (valem para float) e `%` so com int. F#: nao indexe lista com indice float (`x.[i]`); use `[0..n]` int ou `List.map (fun xi -> Math.Sin xi) xs` direto. F#: formate com `printfn \"%f\"`/`\"%.6f\"` (sintaxe `%`), NUNCA `{0:F6}` (isso e C#, quebra o F#). F#: rode com `dotnet run --project <dir>` (nunca o dll direto); use let/printfn/List.map, pipe |>, match com fallback.";
+    static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma tool call por resposta; aguarde o resultado antes da proxima. Arquivos: prefira write/edit; no shell, redirecionamento (>) e pipes (|) vao via bash -c \"...\"; nunca use echo para conversar. Rede: use a tool fetch, nunca shell+curl. Git: configure user.name/user.email locais do repo antes do commit; versione com init/add/commit (commit sempre com mensagem informada). Git e zip sao comandos independentes (a ordem so importa se o enunciado pedir); se o enunciado pedir versionar E empacotar, versione primeiro e empacote depois - assim o pacote nao entra no commit. Zip: empacote com output (o arquivo .zip) e inputs (caminhos relativos ao workspace, separados por espaco), excluindo bin/obj. Tarefa de N passos: so responda texto depois de concluir TODOS - se voce anunciou um passo e ainda falta, emita a tool call em vez de texto. Se uma tool falhar, leia o erro e varie a abordagem (max 2 tentativas); nao repita a mesma chamada. Se um build/teste falhar, leia a mensagem de erro e ajuste o trecho exato antes de rodar de novo. Projetos: crie com `dotnet new` UMA vez e escreva o fonte na pasta do projeto com a tool write (nunca recrie o projeto nem use echo/heredoc). Arquivos grandes (>32kb): leia em blocos (offset+limit, ou head/tail/`sed -n 'N,Mp'`), nunca o arquivo inteiro de uma vez. Matematica sempre qualificada: C# use Math.Sin/Math.Cos/Math.Sqrt/Math.PI; F# use System.Math.Sin (ou `open System` e depois Math.Sin) — nunca `sin`/`cos`/`sqrt`/`pi` minusculos nem `open System.Math` (invalido em F#). F# NAO tem operadores OCaml (`+.`/`-.`/`*.`/`/.`) - isso quebra o build: use `+ - * /` normais (valem para float) e `%` so com int. F#: nao indexe lista com indice float (`x.[i]`); use `[0..n]` int ou `List.map (fun xi -> Math.Sin xi) xs` direto. F#: formate com `printfn \"%f\"`/`\"%.6f\"` (sintaxe `%`), NUNCA `{0:F6}` (isso e C#, quebra o F#). F#: rode com `dotnet run --project <dir>` (nunca o dll direto); use let/printfn/List.map, pipe |>, match com fallback. QUALIDADE E EVIDENCIA: contexto primeiro - leia docs/AGENTS.md e o git log antes de planejar; grave todos os artefatos da tarefa de uma vez, sem stub/TODO/placeholder/esqueleto (entrega parcial honesta so se o enunciado mandar parar); correcao sempre por edit/sed no trecho exato, nunca reescrevendo o arquivo inteiro; so declare pronto depois de executar o ACEITE e anexar a evidencia (trecho de log/teste); build/teste vermelho significa tarefa NAO concluida; fail-fast honesto: tool, modelo ou comando que nao existe nao se inventa - diga, liste alternativas e pare; responda no idioma do usuario.";
     static string HarnessGuardTail = "";
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
@@ -878,6 +878,10 @@ WriteJson(ctx, 200, new JsonObject
             {
                 string beforeStrip = toolsArr.ToJsonString(SerOpts);
                 ApplyPatternException(toolsArr, "chat");
+                // Code Mode do opencode: sem sandbox JS na bridge, `execute` sai
+                // do catalogo (o modelo so pode escolher tools diretas).
+                StripExecuteTools(toolsArr, "chat");
+                NeutralizeCodeMode(node);
                 if (toolsArr.ToJsonString(SerOpts) != beforeStrip)
                     outBody = node.ToJsonString(SerOpts);
             }
@@ -1201,6 +1205,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         var tools = ToolsToChat(req["tools"]);
         // Exceção permanente do pattern (sempre ligada, só este caso).
         ApplyPatternException(tools, "responses");
+        StripExecuteTools(tools, "responses");
         toolCount = tools?.Count ?? 0;
 
         // Monta o body do /v1/chat/completions
@@ -1245,6 +1250,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             // "required" p/ emitir tool_calls nativo em vez de texto.
             chat["tool_choice"] = IsCoder ? "required" : "auto";
         }
+        NeutralizeCodeMode(chat);
         // Stop sequences: repasse opcional (string ou array). ATENCAO: com
         // tools ativas, stop pode truncar o JSON da tool call no meio.
         if (req["stop"] is JsonNode stop)
@@ -1530,7 +1536,7 @@ var shape = new StringBuilder();
     }
 
     /// <summary>Formula do harness (modo Harness, cliente web): system + agents + tail.</summary>
-    static string WithFormula(string sys)
+    internal static string WithFormula(string sys)
     {
         string t = (sys ?? "").Trim();
         if (HarnessToolsTail.Length > 0) t = (t.Length > 0 ? t + "\n\n" : "") + HarnessToolsTail;
@@ -1604,30 +1610,233 @@ var shape = new StringBuilder();
     static readonly HashSet<string> DirectTools = new(StringComparer.Ordinal)
         { "shell", "bash", "sh", "read", "write", "edit", "grep", "glob", "fetch", "webfetch", "git" };
 
+    /// <summary>Maximo de chamadas extraidas de um unico execute (anti-explosao).</summary>
+    const int MaxUnwrapCalls = 8;
+
+    /// <summary>Chamadas tools.X(...) embutidas em um script maior.</summary>
+    static readonly Regex ReEmbeddedToolCall = new(
+        @"tools\s*(?:\.\s*([A-Za-z_$][\w$]*)|\[\s*['""]([A-Za-z_$][\w$]*)['""]\s*\])\s*\(",
+        RegexOptions.Compiled);
+
+    /// <summary>API de Node (require/fs) que nao existe no sandbox de execute.</summary>
+    static readonly Regex ReRequireFs = new(@"\brequire\s*\(|\bfs\s*\.", RegexOptions.Compiled);
+
+    /// <summary>Mensagem guiada devolvida como resultado quando o script usa require/fs.</summary>
+    const string GuideCommand =
+        "printf '%s\\n' 'ERRO: execute e um sandbox de namespaces do catalogo - NAO existe require/fs. " +
+        "Nao repita o mesmo codigo: reemita a MESMA acao com as tools diretas (shell p/ comandos, write p/ arquivos, edit, read, grep, glob).'";
+
+    /// <summary>Nota que substitui o bloco Code Mode do opencode (sandbox JS inexistente aqui).</summary>
+    const string CodeModeNote =
+        "# Tools (harness da bridge)\n" +
+        "As tools do catalogo (shell, write, read, edit, grep, glob, webfetch, websearch, ...) sao chamadas DIRETAS. " +
+        "Esta bridge NAO oferece `execute` nem sandbox JavaScript: Code Mode nao existe aqui. " +
+        "Nao empacote varias acoes em um script; emita uma tool call por acao (paralelas quando independentes).\n";
+
+    /// <summary>Remove a tool `execute` (Code Mode do opencode) do catalogo enviado ao modelo.</summary>
+    /// <param name="tools">Array de tools (formato chat ou responses).</param>
+    /// <param name="mode">Rotulo do caminho, so para log.</param>
+    /// <returns>Quantidade removida.</returns>
+    internal static int StripExecuteTools(JsonNode? tools, string mode)
+    {
+        if (!ToolStrategy || tools is not JsonArray arr) return 0;
+        int removed = 0;
+        for (int i = arr.Count - 1; i >= 0; i--)
+        {
+            string? name = arr[i]?["function"]?["name"]?.GetValue<string>() ?? arr[i]?["name"]?.GetValue<string>();
+            if (!string.Equals(name, "execute", StringComparison.Ordinal)) continue;
+            arr.RemoveAt(i);
+            removed++;
+        }
+        if (removed > 0)
+            Log(new JsonObject { ["event"] = "tool-strip", ["mode"] = mode, ["tool"] = "execute", ["removed"] = removed, ["left"] = arr.Count });
+        return removed;
+    }
+
+    /// <summary>Troca o bloco nativo Code Mode (opencode) pela nota de tools diretas.</summary>
+    /// <param name="node">Request chat (usa "messages").</param>
+    /// <returns>Quantidade de mensagens reescritas.</returns>
+    internal static int NeutralizeCodeMode(JsonNode? node)
+    {
+        if (!ToolStrategy || node?["messages"] is not JsonArray msgs) return 0;
+        int hits = 0;
+        foreach (var m in msgs)
+        {
+            if (m is not JsonObject mo || mo["content"] is not JsonValue cv || !cv.TryGetValue<string>(out string? text)) continue;
+            int start = text.IndexOf("# Code Mode", StringComparison.Ordinal);
+            if (start < 0) continue;
+            // Preserva o catalogo de skills (vem logo apos a secao nativa).
+            int end = text.IndexOf("Skills provide specialized instructions", start + 1, StringComparison.Ordinal);
+            if (end < 0) end = text.IndexOf("\n# ", start + 1, StringComparison.Ordinal);
+            string tail = end >= 0 ? text[end..] : "";
+            mo["content"] = text[..start] + CodeModeNote + tail;
+            hits++;
+        }
+        if (hits > 0) Log(new JsonObject { ["event"] = "harness-strip", ["mode"] = "code-mode", ["hits"] = hits });
+        return hits;
+    }
+
+    /// <summary>Tokens de controle que o template vaza para dentro dos argumentos.</summary>
+    static readonly Regex ReLeakedTemplate = new(@"<\|?[A-Za-z_]{2,20}\|?>", RegexOptions.Compiled);
+
+    /// <summary>JSON valido? (objeto, tolerante a espacos).</summary>
+    /// <param name="text">Texto dos argumentos.</param>
+    /// <returns>True quando JsonNode.Parse aceita.</returns>
+    static bool IsJsonObject(string text)
+    {
+        try { return JsonNode.Parse(text) is JsonObject; } catch { return false; }
+    }
+
+    /// <summary>Limpa/normaliza os argumentos de uma tool call emitida pelo modelo.</summary>
+    /// <remarks>O 12B as vezes vaza tokens de template para dentro do JSON e o cliente
+    /// rejeita a chamada; repetir o mesmo codigo 256x (tools-dev-pipe) nao resolve.
+    /// Aqui a chamada invalida vira um shell com a correcao, que volta como resultado.</remarks>
+    /// <param name="name">Nome da tool pedida pelo modelo.</param>
+    /// <param name="arguments">Argumentos crus.</param>
+    /// <returns>Nome/argumentos efetivos (shell guiado quando irrecuperavel).</returns>
+    internal static (string Name, string Arguments) SanitizeToolCall(string name, string arguments)
+    {
+        if (!ToolStrategy || string.IsNullOrWhiteSpace(arguments)) return (name, arguments);
+        try
+        {
+            if (IsJsonObject(arguments)) return (name, arguments);
+            string cleaned = ReLeakedTemplate.Replace(arguments, "").Trim();
+            if (IsJsonObject(cleaned))
+            {
+                Log(new JsonObject { ["event"] = "tool-args-clean", ["tool"] = name });
+                return (name, cleaned);
+            }
+            // Sobrou prosa depois do objeto: recorta so o objeto balanceado.
+            int open = cleaned.IndexOf('{');
+            if (open >= 0)
+            {
+                int end = FindObjectEnd(cleaned, open);
+                string slice = end > open ? cleaned[open..(end + 1)] : "";
+                if (slice.Length > 0 && IsJsonObject(slice))
+                {
+                    Log(new JsonObject { ["event"] = "tool-args-clean", ["tool"] = name, ["mode"] = "slice" });
+                    return (name, slice);
+                }
+            }
+            Log(new JsonObject { ["event"] = "tool-args-guide", ["tool"] = name, ["len"] = arguments.Length });
+            string msg = "printf '%s\\n' 'ERRO: argumentos invalidos para a tool " + name +
+                " (JSON quebrado ou com token de template). Reemita a chamada com JSON valido: " +
+                "edit=path+oldString+newString; write=path+content; read=path; shell=command.'";
+            return ("shell", new JsonObject { ["command"] = msg }.ToJsonString(SerOpts));
+        }
+        catch { return (name, arguments); }
+    }
+
     /// <summary>Resgata execute com uma unica chamada tools.X({...}) p/ a tool direta X.</summary>
     /// <param name="name">Nome original da tool.</param>
     /// <param name="arguments">Argumentos JSON originais.</param>
     /// <returns>Nome/argumentos efetivos (inalterados quando nao se aplica).</returns>
     internal static (string Name, string Arguments) UnwrapExecuteCall(string name, string arguments)
     {
+        var calls = UnwrapExecuteCalls(name, arguments);
+        return calls.Count > 0 ? calls[0] : (name, arguments);
+    }
+
+    /// <summary>Resgata execute p/ uma ou mais tools diretas (script com N chamadas).</summary>
+    /// <param name="name">Nome original da tool.</param>
+    /// <param name="arguments">Argumentos JSON originais.</param>
+    /// <returns>Chamadas efetivas, na ordem do script (vazio quando nao se aplica).</returns>
+    internal static List<(string Name, string Arguments)> UnwrapExecuteCalls(string name, string arguments)
+    {
+        var result = new List<(string Name, string Arguments)>();
         if (!ToolStrategy || !string.Equals(name, "execute", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(arguments))
-            return (name, arguments);
+            return result;
         try
         {
             string code = JsonNode.Parse(arguments)?["code"]?.GetValue<string>() ?? "";
-            var match = ReExecuteCall.Match(StripLeadingJsComments(code).Trim());
-            if (!match.Success) return (name, arguments);
-            string tool = match.Groups[1].Success && match.Groups[1].Value.Length > 0
-                ? match.Groups[1].Value
-                : match.Groups[2].Value;
-            if (tool is "bash" or "sh") tool = "shell";
-            if (!DirectTools.Contains(tool)) return (name, arguments);
-            if (!TryParseJsValue(match.Groups[3].Value, out JsonNode? parsed) || parsed is not JsonObject argsObject)
-                return (name, arguments);
-            Log(new JsonObject { ["event"] = "tool-unwrap", ["from"] = "execute", ["to"] = tool });
-            return (tool, argsObject.ToJsonString(SerOpts));
+            string trimmed = StripLeadingJsComments(code).Trim();
+
+            var match = ReExecuteCall.Match(trimmed);
+            if (match.Success)
+            {
+                string tool = match.Groups[1].Success && match.Groups[1].Value.Length > 0
+                    ? match.Groups[1].Value
+                    : match.Groups[2].Value;
+                if (tool is "bash" or "sh") tool = "shell";
+                if (DirectTools.Contains(tool)
+                    && TryParseJsValue(match.Groups[3].Value, out JsonNode? parsed)
+                    && parsed is JsonObject single)
+                {
+                    Log(new JsonObject { ["event"] = "tool-unwrap", ["from"] = "execute", ["to"] = tool, ["calls"] = 1 });
+                    result.Add((tool, single.ToJsonString(SerOpts)));
+                    return result;
+                }
+            }
+
+            foreach (var (tool, argsJson) in ExtractEmbeddedToolCalls(trimmed))
+            {
+                if (result.Count >= MaxUnwrapCalls) break;
+                string direct = tool is "bash" or "sh" ? "shell" : tool;
+                if (!DirectTools.Contains(direct)) continue;
+                if (!TryParseJsValue(argsJson, out JsonNode? node) || node is not JsonObject obj) continue;
+                result.Add((direct, obj.ToJsonString(SerOpts)));
+            }
+            if (result.Count > 0)
+            {
+                Log(new JsonObject { ["event"] = "tool-unwrap", ["from"] = "execute", ["to"] = result[0].Name, ["calls"] = result.Count });
+                return result;
+            }
+
+            // Script puro de Node (require/fs): devolve um resultado guiado via shell
+            // para o modelo corrigir na proxima tentativa em vez de repetir o codigo.
+            if (ReRequireFs.IsMatch(trimmed))
+            {
+                Log(new JsonObject { ["event"] = "tool-guide", ["from"] = "execute", ["reason"] = "require/fs" });
+                result.Add(("shell", new JsonObject { ["command"] = GuideCommand }.ToJsonString(SerOpts)));
+            }
+            return result;
         }
-        catch { return (name, arguments); }
+        catch { return result; }
+    }
+
+    /// <summary>Extrai as chamadas tools.X({...}) de um script JS, na ordem do texto.</summary>
+    /// <param name="code">Codigo JS.</param>
+    /// <returns>Pares (tool, literal do objeto de argumentos).</returns>
+    static List<(string Tool, string ArgsJson)> ExtractEmbeddedToolCalls(string code)
+    {
+        var found = new List<(string, string)>();
+        foreach (Match m in ReEmbeddedToolCall.Matches(code))
+        {
+            if (found.Count >= MaxUnwrapCalls) break;
+            string tool = m.Groups[1].Success && m.Groups[1].Value.Length > 0
+                ? m.Groups[1].Value
+                : m.Groups[2].Value;
+            int brace = code.IndexOf('{', m.Index + m.Length);
+            if (brace < 0) continue;
+            int end = FindObjectEnd(code, brace);
+            if (end < 0) continue;
+            found.Add((tool, code[brace..(end + 1)]));
+        }
+        return found;
+    }
+
+    /// <summary>Indice do '}' que fecha o objeto iniciado em start (ignora strings).</summary>
+    /// <param name="s">Texto JS.</param>
+    /// <param name="start">Posicao do '{'.</param>
+    /// <returns>Indice do fechamento ou -1.</returns>
+    static int FindObjectEnd(string s, int start)
+    {
+        int depth = 0;
+        char quote = '\0';
+        for (int i = start; i < s.Length; i++)
+        {
+            char c = s[i];
+            if (quote != '\0')
+            {
+                if (c == '\\') { i++; continue; }
+                if (c == quote) quote = '\0';
+                continue;
+            }
+            if (c is '"' or '\'' or '`') { quote = c; continue; }
+            if (c == '{') depth++;
+            else if (c == '}') { depth--; if (depth == 0) return i; }
+        }
+        return -1;
     }
 
     /// <summary>Descarta comentarios JS iniciais (// e /* */) antes da chamada.</summary>
@@ -2361,33 +2570,39 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         foreach (var (_, acc) in toolAccum)
         {
             string arguments = acc.Args.ToString();
-            var (effectiveName, effectiveArgs) = UnwrapExecuteCall(acc.Name, arguments);
-            toolList.Add((acc.Id, effectiveName, effectiveArgs));
-            var item = new JsonObject
+            var effective = UnwrapExecuteCalls(acc.Name, arguments);
+            if (effective.Count == 0) effective.Add((acc.Name, arguments));
+            for (int ci = 0; ci < effective.Count; ci++)
             {
-                ["type"] = "function_call", ["id"] = acc.Id, ["call_id"] = acc.Id,
-                ["name"] = effectiveName, ["arguments"] = effectiveArgs
-            };
-            Emit("response.output_item.added", new JsonObject
-            {
-                ["type"] = "response.output_item.added", ["output_index"] = callIndex,
-                ["item"] = (JsonNode)item.DeepClone()
-            });
-            Emit("response.function_call_arguments.delta", new JsonObject
-            {
-                ["type"] = "response.function_call_arguments.delta", ["item_id"] = acc.Id,
-                ["output_index"] = callIndex, ["delta"] = arguments
-            });
-            Emit("response.function_call_arguments.done", new JsonObject
-            {
-                ["type"] = "response.function_call_arguments.done", ["item_id"] = acc.Id,
-                ["output_index"] = callIndex, ["arguments"] = arguments
-            });
-            Emit("response.output_item.done", new JsonObject
-            {
-                ["type"] = "response.output_item.done", ["output_index"] = callIndex, ["item"] = item
-            });
-            callIndex++;
+                string callId = ci == 0 ? acc.Id : acc.Id + "_" + ci;
+                var (effectiveName, effectiveArgs) = SanitizeToolCall(effective[ci].Name, effective[ci].Arguments);
+                toolList.Add((callId, effectiveName, effectiveArgs));
+                var item = new JsonObject
+                {
+                    ["type"] = "function_call", ["id"] = callId, ["call_id"] = callId,
+                    ["name"] = effectiveName, ["arguments"] = effectiveArgs
+                };
+                Emit("response.output_item.added", new JsonObject
+                {
+                    ["type"] = "response.output_item.added", ["output_index"] = callIndex,
+                    ["item"] = (JsonNode)item.DeepClone()
+                });
+                Emit("response.function_call_arguments.delta", new JsonObject
+                {
+                    ["type"] = "response.function_call_arguments.delta", ["item_id"] = callId,
+                    ["output_index"] = callIndex, ["delta"] = effectiveArgs
+                });
+                Emit("response.function_call_arguments.done", new JsonObject
+                {
+                    ["type"] = "response.function_call_arguments.done", ["item_id"] = callId,
+                    ["output_index"] = callIndex, ["arguments"] = effectiveArgs
+                });
+                Emit("response.output_item.done", new JsonObject
+                {
+                    ["type"] = "response.output_item.done", ["output_index"] = callIndex, ["item"] = item
+                });
+                callIndex++;
+            }
         }
 
         // Reaproveita o montador bufferizado p/ gerar o objeto final do
@@ -2679,8 +2894,14 @@ if (type == "message")
                 string nativeName = funcObj["name"]?.GetValue<string>() ?? "";
                 if (nativeName.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
                     nativeName = nativeName["default.".Length..];
-                var (effectiveName, effectiveArgs) = UnwrapExecuteCall(nativeName, JsonToString(funcObj["arguments"]));
-                toolCalls.Add((id, effectiveName, effectiveArgs));
+                string rawArgs = JsonToString(funcObj["arguments"]);
+                var effective = UnwrapExecuteCalls(nativeName, rawArgs);
+                if (effective.Count == 0) effective.Add((nativeName, rawArgs));
+                for (int ci = 0; ci < effective.Count; ci++)
+                {
+                    var (callName, callArgs) = SanitizeToolCall(effective[ci].Name, effective[ci].Arguments);
+                    toolCalls.Add((ci == 0 ? id : id + "_" + ci, callName, callArgs));
+                }
             }
         }
         // Coerção: sem tool_calls nativos e com tools pedidas, extrai do texto

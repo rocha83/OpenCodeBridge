@@ -22,7 +22,11 @@ public static class BeltUiTests
     private const int BuildExecutorId = 4;
     private static int BuildGpuExecutor(string key) => 4;
 
-    private sealed record Belt(string Key, string Title, string Prompt, int ExecutorId, int TimeoutMin);
+    internal sealed record Belt(string Key, string Title, string Prompt, int ExecutorId, int TimeoutMin);
+
+    // Selecao por chave (reuso pelo runner headless `--opencode-run`).
+    internal static Belt[] Select(string[] only) =>
+        only.Length == 0 ? Belts : Belts.Where(b => only.Contains(b.Key)).ToArray();
 
     private static readonly Belt[] Belts =
     {
@@ -52,7 +56,10 @@ public static class BeltUiTests
             "Depois, usando as tools, crie um repositório git novo em tooltest/ dentro do workspace, " +
             "crie antes a subpasta tooltest/docs, escreva o resumo da referência e o plano em " +
             "tooltest/docs/plano.md e faça o commit inicial (configure user.name e user.email locais do " +
-            "repo se preciso). Faça tudo você mesmo com as suas tools, sem delegar. Diálogo em pt-br.",
+            "repo se preciso). Em seguida edite tooltest/docs/plano.md acrescentando uma seção 'Execucao' " +
+            "com uma linha e faça um segundo commit, para que o histórico registre a criação e a edição do " +
+            "mesmo arquivo. Ao final rode 'git log --oneline --stat' e cole a saída na resposta. " +
+            "Faça tudo você mesmo com as suas tools, sem delegar. Diálogo em pt-br.",
             0, 30),
         // Pipeline de tools por enunciado (10 passos: subpasta, git, write, commit,
         // edit, commit, read, grep, edit, fetch clima SP, append, zip).
@@ -62,7 +69,9 @@ public static class BeltUiTests
             ".txt com conteudo 'A', faca commit, depois edite este arquivo complementando 'ABC' faca outro " +
             "commit, abra o arquivo, procure a letra 'B', mude para 'W', busque o clima hoje em sao paulo na " +
             "internet utilizando webdriver playwright e incremente no arquivo, salve o arquivo depois faca um " +
-            "zip desta pasta. teste finalizado",
+            "zip desta pasta. Cada alteracao do arquivo .txt deve ter seu proprio commit, de modo que o " +
+            "historico registre a criacao e cada edicao. Ao final rode 'git log --oneline --stat' e cole a " +
+            "saida na resposta. teste finalizado",
             0, 30),
     };
 
@@ -134,6 +143,10 @@ public static class BeltUiTests
             // API via HttpClient com o cookie da sessao do browser (estavel; fetch no
             // contexto da pagina sofria 500 deterministico no Dapper em POST /Chat/Sessions).
             using var api = BuildApiClient(web, await context.CookiesAsync());
+            // Antiforgery: os POST JSON exigem o header RequestVerificationToken
+            // (mesmo token do form renderizado no layout); sem ele o app devolve 400.
+            string afToken = await page.GetAttributeAsync("input[name='__RequestVerificationToken']", "value") ?? "";
+            if (afToken.Length > 0) api.DefaultRequestHeaders.Add("RequestVerificationToken", afToken);
 
             foreach (var belt in wanted)
             {

@@ -30,6 +30,9 @@ internal static class Program
         string mode = "plan";
         string phase = "full";
         int exec = 0;
+        string agent = "build";
+        string model = "openai/gemma4-12b-build";
+        string workdir = "/tmp/opencode/belts";
         var belts = new List<string>();
         for (int i = 0; i + 1 < args.Length; i++)
         {
@@ -38,6 +41,9 @@ internal static class Program
             if (args[i] == "--phase") phase = args[i + 1];
             if (args[i] == "--exec" && int.TryParse(args[i + 1], out int e)) exec = e;
             if (args[i] == "--belts") belts.AddRange(args[i + 1].Split(',', StringSplitOptions.RemoveEmptyEntries));
+            if (args[i] == "--agent") agent = args[i + 1];
+            if (args[i] == "--model") model = args[i + 1];
+            if (args[i] == "--workdir") workdir = args[i + 1];
         }
         ui = args.Contains("--ui");
         bool unitsOnly = args.Contains("--units-only");
@@ -79,6 +85,8 @@ internal static class Program
             Failures += Ui.ChatBehaviorTests.RunAsync(web).GetAwaiter().GetResult();
         if (args.Contains("--calib-live"))
             Failures += Integration.CalibrationLiveTests.RunAsync().GetAwaiter().GetResult();
+        if (args.Contains("--opencode-run"))
+            Failures += Integration.OpencodeRunBeltTests.RunAsync(belts.ToArray(), agent, model, workdir).GetAwaiter().GetResult();
         if (args.Contains("--topics-live"))
             Failures += Integration.TopicsLiveTests.RunAsync().GetAwaiter().GetResult();
 

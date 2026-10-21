@@ -1,5 +1,40 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Harness: Code Mode do opencode removido do catálogo + aceite por histórico git (2026-10-21)
+- **Referência medida:** dump `docs/harness/opencode` (`system.md` 14.010 chars, 12 tools,
+  `req-chat.json` 28.477) capturado pela sonda com `--harness 0 --legacy-harness 0`.
+  `execute` é tool do **cliente** opencode (Code Mode: 4.476 chars = 31% do prompt); a
+  bridge não tem sandbox JS — o modelo só o via porque o cliente o anunciava no request.
+- **Catálogo:** `tool-strip` remove `execute` do array de tools (sob `--tool-strategy`,
+  default on) e `harness-strip` troca o bloco `# Code Mode` pela nota "tools diretas, sem
+  sandbox JS", preservando o catálogo de skills e o AGENTS.md do prompt.
+- **Resgate de script:** `tool-unwrap` converte `execute{tools.X(...)}` com N chamadas em N
+  tool calls na ordem (cap 8, chaves balanceadas, strings respeitadas); `tool-guide` devolve
+  um `shell` corretivo quando o script é `require`/`fs` puro.
+- **Hygiene de argumentos:** `SanitizeToolCall` limpa tokens de template vazados
+  (`<tool_call|>`, `<|channel>thought`), recorta o objeto balanceado quando sobra prosa e,
+  se irrecuperável, devolve `shell` pedindo reemissão (`edit=path+oldString+newString`).
+  Caso medido (`tools-dev-pipe`): **256 `Edit failed` em 259 turnos**, 30 min, 121.391 chars,
+  1 commit, sem `AWC`/zip.
+- **Harness nativo (web):** núcleo de qualidade agregado à `HarnessToolsTail` — contexto
+  primeiro (docs/AGENTS + `git log`), gravar todos os artefatos sem stub/TODO, correção por
+  `edit`/`sed` no trecho exato, ACEITE executado com evidência, build/teste vermelho = não
+  concluído, fail-fast honesto. Decisão registrada em `docs/harness/opencode/BRIDGE-NATIVE.md`
+  (não portar Code Mode, skills, `Your Model` nem Environment).
+- **Aceite dos belts pelo histórico real:** enunciados de `tools-full` e `tools-dev-pipe`
+  passam a exigir um commit por etapa (criação e edição) e `git log --oneline --stat` na
+  resposta; a verificação headless lê `git log --name-only` e exige ≥2 commits com o arquivo
+  nas duas etapas. Evidência (`tools-full` PASS): `A docs/plano.md` (commit inicial) +
+  `M docs/plano.md` (commit da edição), `git=2cmt plano_em=2cmt`.
+- **Runner headless das belts:** `--opencode-run [--belts a,b] [--agent] [--model] [--workdir]`
+  executa `opencode run --standalone --thinking --auto` no workspace do belt (padrão que já
+  existia em `Rochas.OpenCodeBridge/Gate.cs`), com `PWD` forçado (o opencode resolve o
+  workspace por essa env) e log em `_opencode.log`.
+- **Testes:** units **37 PASS / 0 FAIL / 3 SKIP** (novos: `U-toolstrategy-multicall`,
+  `-multicall-cap`, `-fs-guide`; `U-harness-strip-execute-chat`, `-responses`,
+  `U-harness-code-mode-note`, `U-harness-quality-core`, `U-toolargs-valid`, `-tokens`,
+  `-guided`); build Release 0 erros/0 avisos.
+
 ## ToolStrategy: resgate de `execute` no padrão Code Mode (2026-10-21)
 - **Problema medido:** sessão opencode `Greeting` (agente build, `gemma4-12b-build`)
   em loop de 15 chamadas `execute` com `return tools.shell({...})`; o sandbox

@@ -13,6 +13,12 @@ internal static class UnitToolStrategyTests
         return global::Rochas.OpenCodeBridge.Program.UnwrapExecuteCall("execute", arguments);
     }
 
+    static List<(string Name, string Args)> UnwrapAll(string code)
+    {
+        string arguments = new JsonObject { ["code"] = code }.ToJsonString();
+        return global::Rochas.OpenCodeBridge.Program.UnwrapExecuteCalls("execute", arguments);
+    }
+
     public static Task ExecuteToShell()
     {
         var (name, args) = Unwrap("// usa shell direto\nreturn tools.shell({ command: `mkdir -p projeto_teste && echo \"ola\" > projeto_teste/notas.txt && cd projeto_teste && git init` });");
@@ -41,11 +47,109 @@ internal static class UnitToolStrategyTests
         return Task.CompletedTask;
     }
 
-    public static Task ExecuteWithFsStaysIntact()
+    public static Task ExecuteWithFsGetsGuidance()
     {
-        var (name, args) = Unwrap("const fs = require('fs');\nfs.mkdirSync('x');");
-        TestContext.Check(name == "execute", "codigo fs (sem tools.X) fica intacto");
-        TestContext.Check(args.Contains("mkdirSync"), "argumentos intactos sem resgate");
+        var calls = UnwrapAll("const fs = require('fs');\nfs.mkdirSync('x');");
+        TestContext.Check(calls.Count == 1 && calls[0].Name == "shell", "require/fs vira shell guiado");
+        TestContext.Check(calls.Count == 1 && calls[0].Args.Contains("NAO existe require/fs"), "mensagem guiada no resultado");
+        return Task.CompletedTask;
+    }
+
+    public static Task ExecuteMultiCallScript()
+    {
+        var calls = UnwrapAll("const a = 1;\nawait tools.shell({ command: 'mkdir -p x' });\nawait tools.write({ path: 'x/a.txt', content: 'A' });\nawait tools.shell({ command: `cd x && git init && git commit -m 'c'` });");
+        TestContext.Check(calls.Count == 3, $"script com 3 tools vira 3 chamadas (veio {calls.Count})");
+        TestContext.Check(calls.Count > 0 && calls[0].Name == "shell" && calls[0].Args.Contains("mkdir -p x"), "1a chamada shell preservada");
+        TestContext.Check(calls.Count > 1 && calls[1].Name == "write" && calls[1].Args.Contains("x/a.txt"), "2a chamada write preservada");
+        TestContext.Check(calls.Count > 2 && calls[2].Name == "shell" && calls[2].Args.Contains("git init"), "3a chamada shell preservada");
+        return Task.CompletedTask;
+    }
+
+    public static Task SanitizeKeepsValidJson()
+    {
+        const string ok = """{"path":"a/b.txt","oldString":"A","newString":"ABC"}""";
+        var (name, args) = global::Rochas.OpenCodeBridge.Program.SanitizeToolCall("edit", ok);
+        TestContext.Check(name == "edit" && args == ok, "argumentos validos passam intactos");
+        return Task.CompletedTask;
+    }
+
+    public static Task SanitizeStripsLeakedTokens()
+    {
+        const string dirty = """{"path":"a/b.txt","content":"x"}<tool_call|><|channel>thought""";
+        var (name, args) = global::Rochas.OpenCodeBridge.Program.SanitizeToolCall("write", dirty);
+        TestContext.Check(name == "write", "tool preservada quando o JSON sobrevive ao corte");
+        TestContext.Check(args.Contains("\"a/b.txt\"", StringComparison.Ordinal), "path preservado apos limpeza");
+        TestContext.Check(!args.Contains("<tool_call", StringComparison.Ordinal), "token de template removido");
+        return Task.CompletedTask;
+    }
+
+    public static Task SanitizeGuidesBrokenArgs()
+    {
+        const string broken = """{"newString": "ABC\",oldString:\"A\",path:\"a/b.txt\"}}<tool_call|>""";
+        var (name, args) = global::Rochas.OpenCodeBridge.Program.SanitizeToolCall("edit", broken);
+        TestContext.Check(name == "shell", "argumentos irrecuperaveis viram shell guiado");
+        TestContext.Check(args.Contains("Reemita a chamada com JSON valido"), "guia pede reemissao com JSON valido");
+        TestContext.Check(args.Contains("edit=path+oldString+newString"), "guia lembra as chaves da edit");
+        return Task.CompletedTask;
+    }
+
+    public static Task HarnessTailCarriesQualityCore()
+    {
+        string formula = global::Rochas.OpenCodeBridge.Program.WithFormula("system base");
+        foreach (string must in new[] { "ACEITE", "fail-fast", "edit/sed", "stub/TODO/placeholder", "git log" })
+            TestContext.Check(formula.Contains(must, StringComparison.Ordinal), $"nucleo de qualidade presente: {must}");
+        TestContext.Check(formula.StartsWith("system base", StringComparison.Ordinal), "system original preservado");
+        return Task.CompletedTask;
+    }
+
+    public static Task StripExecuteFromChatTools()
+    {
+        var tools = JsonNode.Parse("""[{"type":"function","function":{"name":"execute","parameters":{}}},{"type":"function","function":{"name":"shell","parameters":{}}}]""")!.AsArray();
+        int removed = global::Rochas.OpenCodeBridge.Program.StripExecuteTools(tools, "chat");
+        TestContext.Check(removed == 1 && tools.Count == 1, "execute sai do catalogo chat (shell fica)");
+        TestContext.Check(tools[0]!["function"]!["name"]!.GetValue<string>() == "shell", "shell preservada no catalogo");
+        return Task.CompletedTask;
+    }
+
+    public static Task StripExecuteFromResponsesTools()
+    {
+        var tools = JsonNode.Parse("""[{"type":"function","name":"execute","parameters":{}},{"type":"function","name":"write","parameters":{}}]""")!.AsArray();
+        int removed = global::Rochas.OpenCodeBridge.Program.StripExecuteTools(tools, "responses");
+        TestContext.Check(removed == 1 && tools.Count == 1, "execute sai do catalogo responses (write fica)");
+        TestContext.Check(tools[0]!["name"]!.GetValue<string>() == "write", "write preservada no catalogo");
+        return Task.CompletedTask;
+    }
+
+    public static Task NeutralizeCodeModeWritesDirectToolsNote()
+    {
+        var chat = new JsonObject
+        {
+            ["messages"] = new JsonArray(new JsonObject
+            {
+                ["role"] = "system",
+                ["content"] = "intro\n# Code Mode\nUse the `execute` tool to call the tools listed below.\n" +
+                              "## Available tools\n- tools.opencode.models({...})\n" +
+                              "Skills provide specialized instructions and workflows for specific tasks.\n" +
+                              "# Instrucoes globais do agente\nregras"
+            })
+        };
+        int hits = global::Rochas.OpenCodeBridge.Program.NeutralizeCodeMode(chat);
+        string text = chat["messages"]![0]!["content"]!.GetValue<string>();
+        TestContext.Check(hits == 1, "bloco Code Mode detectado e reescrito");
+        TestContext.Check(!text.Contains("Use the `execute` tool"), "instrucao do execute removida");
+        TestContext.Check(text.Contains("NAO oferece `execute`"), "nota de tools diretas injetada");
+        TestContext.Check(text.Contains("Skills provide specialized"), "catalogo de skills preservado");
+        TestContext.Check(text.Contains("# Instrucoes globais"), "tail (AGENTS.md) preservado");
+        TestContext.Check(text.StartsWith("intro", StringComparison.Ordinal), "cabeca do system preservada");
+        return Task.CompletedTask;
+    }
+
+    public static Task ExecuteMultiCallCapped()
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < 12; i++) sb.Append($"await tools.shell({{ command: 'echo {i}' }});\n");
+        var calls = UnwrapAll(sb.ToString());
+        TestContext.Check(calls.Count == 8, $"cap de 8 chamadas por execute (veio {calls.Count})");
         return Task.CompletedTask;
     }
 
