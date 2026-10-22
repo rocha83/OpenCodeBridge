@@ -51,9 +51,6 @@ internal static class OpencodeRunBeltTests
     /// <summary>Log da bridge GPU de onde sai o tps por request (--diagnostic 1).</summary>
     const string BridgeLog = "/tmp/bridge-gpu.log";
 
-    /// <summary>Pasta das views do Imunow (disco externo; faixa SKIP quando ausente).</summary>
-    const string ImunowViews = "/media/mint/3686C649614854E6/Projetos/Imunow/mova/Mova.Pwa/src/views";
-
     /// <summary>Corre executa os enunciados em `opencode run` e confere cada aceite.</summary>
     /// <param name="only">Chaves das faixas (vazio = todas).</param>
     /// <param name="agent">Agente do opencode.</param>
@@ -74,14 +71,6 @@ internal static class OpencodeRunBeltTests
 
         foreach (var belt in belts)
         {
-            // Faixa que depende de caminho externo: sem o disco montado nao ha o que medir.
-            if (belt.Key == "imunow" && !Directory.Exists(ImunowViews))
-            {
-                Console.WriteLine($"[run] SKIP {belt.Key}: {ImunowViews} nao existe (disco nao montado)");
-                skipped++;
-                continue;
-            }
-
             string dir = Path.Combine(baseDir, $"{belt.Key}-{DateTime.Now:HHmmss}");
             Directory.CreateDirectory(dir);
             long logOffset = LogOffset();

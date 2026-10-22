@@ -94,3 +94,30 @@ grep -o '"event":"\(tool-strip\|harness-strip\|tool-unwrap\|tool-guide\)"[^}]*' 
 dotnet Rochas.OpenCodeBridge.Web.Test/bin/Release/net9.0/Rochas.OpenCodeBridge.Web.Test.dll \
   --opencode-run --belts tools-dev-pipe --workdir /tmp/opencode/belts
 ```
+
+## 7. Onde corrigir cada tipo de falha (harness × enunciado × aceite)
+
+Objetivo: o modelo amadurecer para desenvolvimento real (pipelines web/mobile), e não a
+suíte virar o produto. Ordem de preferência ao ver uma falha:
+
+1. **Harness (bridge)** — quando o defeito é de *disciplina de tool* e vale para qualquer
+   enunciado: argumento fora de schema, tool inexistente, template vazado no comando,
+   loop de repetição, `execute`/Code Mode no catálogo. Isso é genérico por construção:
+   `RequiredArgs`/`NudgeArgs`, `SanitizeShellText`, `UnwrapExecuteCalls`, `anti-repeat`,
+   `tool-strip`/`harness-strip`. Sempre que possível a correção entra aqui, com unit próprio
+   (`U-toolargs-*`, `U-toolstrategy-*`), porque beneficia todo cliente (CLI, web, belt).
+2. **Enunciado (belt)** — quando o pedido estava ambíguo ou pedia algo que não existe no
+   catálogo (ex.: `playwright`; "incremente" sem dizer se preserva o conteúdo). Corrigir o
+   texto é legítimo: o belt mede obediência a um pedido claro.
+3. **Aceite (runner)** — quando o critério media a coisa errada (ex.: exigir arquivos de uma
+   faixa que responde em texto, ou `sed` no lugar de `edit`). O aceite deve olhar o
+   **artefato**: histórico git, conteúdo do `.txt`, bloco SQL, regex executada, build.
+
+Regra prática: **harness corrige o como, enunciado diz o quê, aceite prova o resultado.**
+Se a falha é de "como" e se repete em qualquer tarefa, é harness — não enunciado.
+
+Faixas atuais: `azul`→`preta` (spec, complexidade crescente), `preta-alone` (texto puro, zero
+tool), `tools-full` e `tools-dev-pipe` (artefato + git). A faixa `imunow` foi removida do
+runner headless: dependia de caminho externo (`/media/mint/3686C649614854E6/.../Mova.Pwa`),
+não era reproduzível e o aceite media o workspace errado. Caso real de projeto entra como
+trabalho de projeto (com cópia do repo + `git diff` + build), não como belt da suíte.

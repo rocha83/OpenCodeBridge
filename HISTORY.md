@@ -1,5 +1,28 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Belt `imunow` removida e bateria 8/8 verde (2026-10-21, sessão 3)
+- **Removida a faixa `imunow`** do `BeltUiTests` e do runner headless (`ImunowViews` + `SKIP`).
+  Motivo: dependia do disco externo `/media/mint/3686C649614854E6/.../Mova.Pwa`, não era
+  reproduzível e o aceite media o workspace do belt enquanto as edições aconteceriam no
+  projeto real. Caso real de projeto passa a ser trabalho de projeto (cópia do repo +
+  `git diff` + build), não belt da suíte.
+- **Regra de evolução documentada** em `docs/harness/opencode/BRIDGE-NATIVE.md` §7:
+  harness corrige o *como* (schema/template/loop/catálogo, com unit), enunciado diz o *quê*
+  (pedido ambíguo ou tool inexistente) e aceite prova o *resultado* (git, conteúdo, SQL,
+  regex executada, build). Falha de "como" que se repete em qualquer tarefa é harness.
+- **Bateria final (8 faixas, 0 FAIL):**
+
+| faixa | kind | aceite | tps | wall |
+|---|---|---|---|---|
+| azul | spec | 4173 chars, deleg=6 | 14.0 | 86s |
+| verde | spec | 5318 chars, deleg=8 | 23.5 | 273s |
+| roxa | spec | 4522 chars, deleg=8 | 27.8 | 210s |
+| marrom | spec | 4736 chars, deleg=3 | 27.5 | 187s |
+| preta | spec | 5439 chars, deleg=17 | 27.5 | 127s |
+| preta-alone | texto | 2175 chars, tools=0 | 17.3 | 29s |
+| tools-full | tools | git=2cmt plano_em=2cmt | 17.6 | 31s |
+| tools-dev-pipe | pipe | git=4cmt txt_em=4cmt awc=True zip=True tools=e4/r2/f1 sed=False | 21.5 | 61s |
+
 ## Aceite por tipo de faixa, schema de args e métrica de tps (2026-10-21, sessão 2)
 - **Três falhas medidas na bateria anterior** (`azul..preta-alone` FAIL com `artefatos=False`,
   `roxa` com `subagent` inválido, `tools-dev-pipe` sem `AWC`): (1) aceite headless exigia
