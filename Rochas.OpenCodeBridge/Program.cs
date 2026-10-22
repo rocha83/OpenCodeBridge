@@ -3225,18 +3225,11 @@ var shape = new StringBuilder();
             };
             string json = outObj.ToJsonString(SerOpts);
 
-            // Contencao: 1 retry com o aviso invisivel, agora disparado no MEIO
-            // da geracao (o antigo rodava depois de pagar a resposta inteira).
-            if (tripped && AntiRepeatRetry)
-            {
-                string? second = RetryBypassChat(outBody, ctx);
-                if (second is not null)
-                {
-                    if (second.Contains("\"reasoning\":")) second = second.Replace("\"reasoning\":", "\"reasoning_content\":");
-                    json = second;
-                    Log(new JsonObject { ["event"] = "anti-repeat-retry", ["where"] = "stream-abort" });
-                }
-            }
+            // No caminho de abort em stream NAO fazemos retry: o retry pos-hoc
+            // re-gerava o turno inteiro e degenerava de novo (medido). Ficamos
+            // com o SALVAGE dos tool calls ja fechados + content acumulado.
+            if (tripped)
+                Log(new JsonObject { ["event"] = "anti-repeat-salvage", ["where"] = "stream-abort", ["calls"] = keep.Count });
 
             var payload = JsonNode.Parse(json)?.AsObject();
             if (payload is null) { resp.Dispose(); return false; }
