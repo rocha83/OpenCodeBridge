@@ -19,7 +19,7 @@ public sealed class ShellToolHandler : IToolHandler
 
     private static readonly string[] DeniedTokens =
     {
-        "rm", "kill", "pkill", "killall", "reboot", "shutdown", "halt",
+        "rm", "rmdir", "mv", "kill", "pkill", "killall", "reboot", "shutdown", "halt",
         "mkfs", "dd", "fdisk", "mount", "systemctl", "service", "crontab",
         "ssh", "scp", "chmod", "chown", "nohup", "setsid", "disown",
         "exec", "eval", "su", "mkfifo",

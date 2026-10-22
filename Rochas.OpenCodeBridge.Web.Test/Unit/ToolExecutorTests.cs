@@ -82,6 +82,16 @@ internal static class ToolExecutorTests
         Check(!Services.ToolDefinitions.Allowed(plan, "write") && !Services.ToolDefinitions.Allowed(plan, "edit")
             && Services.ToolDefinitions.Allowed(buildWrite, "write") && Services.ToolDefinitions.Allowed(buildWrite, "edit"),
             "U-tool-flags-write-csv");
+        // Catálogo cheio: `*` anuncia tudo; `-tool` nega (denylist). O CSV antigo
+        // (lista de permitidas) continua válido para as linhas já gravadas.
+        var full = new Models.Agent { Name = "f", Mode = "build", Tools = "*" };
+        var fullMinus = new Models.Agent { Name = "fm", Mode = "build", Tools = "*,-write,-edit" };
+        Check(Services.ToolDefinitions.Allowed(full, "write") && Services.ToolDefinitions.Allowed(full, "shell")
+            && Services.ToolDefinitions.Allowed(full, "question") && Services.ToolDefinitions.Allowed(full, "skill"),
+            "U-tool-flags-catalog-full");
+        Check(!Services.ToolDefinitions.Allowed(fullMinus, "write") && !Services.ToolDefinitions.Allowed(fullMinus, "edit")
+            && Services.ToolDefinitions.Allowed(fullMinus, "shell") && Services.ToolDefinitions.Allowed(fullMinus, "read"),
+            "U-tool-flags-denylist");
     }
 
     private static void PlanToolsFilter()

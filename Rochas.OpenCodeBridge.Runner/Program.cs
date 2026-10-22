@@ -34,7 +34,7 @@ internal static partial class Program
     // Denylist de defesa em profundidade (sem shell ja bloqueia a maioria).
     static readonly string[] DeniedTokens =
     {
-        "rm", "kill", "pkill", "killall", "reboot", "shutdown", "halt",
+        "rm", "rmdir", "mv", "kill", "pkill", "killall", "reboot", "shutdown", "halt",
         "mkfs", "dd", "fdisk", "mount", "systemctl", "service", "crontab",
         "ssh", "scp", "wget", "chmod", "chown", "nohup", "setsid", "disown",
         "exec", "eval", "su", "mkfifo",
@@ -268,6 +268,11 @@ internal static partial class Program
             case "node":
                 if (parts.Length == 0 || parts[0] is "-c" or "-e")
                 { why = $"{name}: so script de arquivo (sem -c/-e)"; return false; }
+                break;
+            case "sed":
+                // -i/-Ei/-i.bak/--in-place grava no arquivo sem passar por write/edit.
+                if (parts.Any(a => a.StartsWith("--in-place") || (a.Length > 1 && a[0] == '-' && a[1..].Contains('i'))))
+                { why = "sed: -i (in-place) negado; use a tool edit"; return false; }
                 break;
             case "tail":
                 if (parts.Contains("-f")) { why = "tail: sem -f (bloqueia)"; return false; }

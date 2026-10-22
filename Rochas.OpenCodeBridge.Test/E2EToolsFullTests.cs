@@ -24,9 +24,11 @@ internal static class E2EToolsFullTests
         var r = await Exec("read", new JsonObject { ["path"] = "a.cs" });
         TestContext.Check(r["ok"]?.GetValue<bool>() == true && (r["output"]?.GetValue<string>() ?? "").Contains("class A"), $"{label} read ok");
 
-        // 3. edit via sed
-        var e = await Exec("shell", new JsonObject { ["command"] = "sed -i 's/int X = 1/int X = 42/' a.cs && echo OK" });
-        TestContext.Check(e["ok"]?.GetValue<bool>() == true, $"{label} edit/sed ok");
+        // 3. edit nativo (trecho exato) — sed -i e negado pelo inspetor
+        var e = await Exec("edit", new JsonObject { ["path"] = "a.cs", ["oldString"] = "int X = 1", ["newString"] = "int X = 42" });
+        TestContext.Check(e["ok"]?.GetValue<bool>() == true, $"{label} edit ok");
+        var sedDenied = await Exec("shell", new JsonObject { ["command"] = "sed -i 's/int X = 42/int X = 7/' a.cs" });
+        TestContext.Check(sedDenied["ok"]?.GetValue<bool>() != true, $"{label} sed -i negado");
 
         // 4. glob
         var g = await Exec("glob", new JsonObject { ["pattern"] = "*.cs" });

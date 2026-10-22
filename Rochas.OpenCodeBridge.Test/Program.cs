@@ -83,6 +83,13 @@ internal static class Program
         TestContext.Run("U-toolargs-shell-inline", UnitToolStrategyTests.SanitizeShellPromotesInlineCall);
         TestContext.Run("U-toolargs-subagent", UnitToolStrategyTests.SanitizeGuidesSubagentMissingPrompt);
         TestContext.Run("U-toolargs-skill-ok", UnitToolStrategyTests.SanitizeKeepsSkillWithId);
+        TestContext.Run("U-shell-sed-inplace", UnitShellInspectorTests.SedInPlaceDenied);
+        TestContext.Run("U-shell-sed-readonly", UnitShellInspectorTests.SedReadOnlyAllowed);
+        TestContext.Run("U-shell-bash-payload", UnitShellInspectorTests.BashPayloadDenied);
+        TestContext.Run("U-shell-bash-payload-chain", UnitShellInspectorTests.BashPayloadChainAllowed);
+        TestContext.Run("U-shell-python-node-payload", UnitShellInspectorTests.PythonAndNodePayloadDenied);
+        TestContext.Run("U-shell-pipe-to-shell", UnitShellInspectorTests.PipeToShellDenied);
+        TestContext.Run("U-shell-mv-rmdir", UnitShellInspectorTests.MoveAndRmdirDenied);
         TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
         TestContext.Run("U-sanitize-system-first", UnitBypassTests.SanitizeSystemFirst);
         TestContext.Run("U-translate-system-first", UnitBypassTests.TranslateSystemFirst);

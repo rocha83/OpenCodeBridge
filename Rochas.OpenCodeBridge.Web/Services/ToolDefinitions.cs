@@ -19,13 +19,16 @@ public static class ToolDefinitions
         return tools;
     }
 
-    // Harness por agente: CSV com as liberadas (vazio = nenhuma).
-    // subagent é checkbox como as demais (marcou, delega). Desconhecida = negada.
-    // "display" libera shell só-echo (ver DisplayOnly) + leitura via read.
+    // Harness por agente: catálogo CHEIO por padrão; o CSV é DENYLIST.
+    // `*` (ou `all`) = todas as tools do catálogo; `-nome` nega uma tool;
+    // `display` libera shell só-echo (ver DisplayOnly) + leitura via read.
+    // CSV sem `*` continua lista explícita (compatibilidade das linhas antigas).
     public static bool Allowed(Models.Agent? a, string name)
     {
         if (a is null) return false;
         var set = ToolSet(a);
+        if (set.Contains("-" + name)) return false;
+        if (set.Contains("*") || set.Contains("all")) return true;
         if (set.Contains(name)) return true;
         return name == "shell" && set.Contains("display");
     }
@@ -38,7 +41,7 @@ public static class ToolDefinitions
     // Exibição em console: só `echo ...` simples (sem pipes/redirects).
     public static bool DisplayOnly(HashSet<string> set, string argsJson)
     {
-        if (set.Contains("shell")) return false;
+        if (set.Contains("shell") || set.Contains("*") || set.Contains("all")) return false;
         if (!set.Contains("display")) return false;
         string cmd = "";
         try { cmd = System.Text.Json.Nodes.JsonNode.Parse(argsJson)?.AsObject()?["command"]?.GetValue<string>() ?? ""; }

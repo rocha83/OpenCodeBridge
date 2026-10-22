@@ -40,8 +40,9 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
     }
 
     // Preset do form "Novo agente": Build 12B na GPU :4124 (temp 0.3, thinking off).
+    // Catálogo cheio (`*`): a restrição é denylist (`-tool`) ou policy do role.
     private static Agent DefaultAgent() =>
-        new() { Active = true, Model = "gemma-4-12b", BridgeUrl = "http://127.0.0.1:4124", Temperature = 0.3, Thinking = "off", Tools = "shell,read,write,edit,grep,glob,fetch,git" };
+        new() { Active = true, Model = "gemma-4-12b", BridgeUrl = "http://127.0.0.1:4124", Temperature = 0.3, Thinking = "off", Tools = "*" };
 
     // Presets do form -> tools reais (leitura=read+grep, escrita=write+edit).
     private static string ExpandTools(string[]? selected, string? mode)
@@ -49,6 +50,9 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
         var want = new HashSet<string>(selected ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
         // Plan nunca escreve, valida nem executa (fetch navega: fica; proc só lê: fica).
         if (string.Equals(mode, "plan", StringComparison.OrdinalIgnoreCase)) { want.Remove("write"); want.Remove("shell"); want.Remove("exec"); }
+        // Catálogo cheio: seleção completa vira `*` (denylist), não lista de permitidas.
+        var presets = new[] { "glob", "read", "write", "git", "fetch", "proc", "shell", "exec", "subagent", "display" };
+        if (presets.All(want.Contains)) return "*";
         var out_ = new List<string>();
         if (want.Contains("glob")) out_.Add("glob");
         if (want.Contains("read")) { out_.Add("read"); out_.Add("grep"); }

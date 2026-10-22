@@ -161,7 +161,7 @@ internal static class UnitToolStrategyTests
     public static Task HarnessTailCarriesQualityCore()
     {
         string formula = global::Rochas.OpenCodeBridge.Program.WithFormula("system base");
-        foreach (string must in new[] { "ACEITE", "fail-fast", "edit/sed", "stub/TODO/placeholder", "git log" })
+        foreach (string must in new[] { "ACEITE", "fail-fast", "edit no trecho exato", "stub/TODO/placeholder", "git log" })
             TestContext.Check(formula.Contains(must, StringComparison.Ordinal), $"nucleo de qualidade presente: {must}");
         TestContext.Check(formula.StartsWith("system base", StringComparison.Ordinal), "system original preservado");
         return Task.CompletedTask;
