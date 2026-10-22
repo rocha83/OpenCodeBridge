@@ -27,6 +27,40 @@ static class Metrics
     internal static int Count => Ring.Count;
     internal static int Dropped => _dropped;
 
+    // Contadores por anel: sempre ativos (mesmo sem --diagnostic), porque o
+    // desenho "catalogo cheio, deny so no risco" tem que ser medido, nao
+    // presumido. Anel 2 = chamada barrada por policy de tool/role; anel 3 =
+    // argv barrado no inspetor de shell; nudge = argumentos guiados (chamada
+    // recusada antes de executar e pedida de novo com o JSON completo).
+    static long _ring2Deny, _ring3Deny, _nudgeArgs;
+    internal static long Ring2Deny => System.Threading.Interlocked.Read(ref _ring2Deny);
+    internal static long Ring3Deny => System.Threading.Interlocked.Read(ref _ring3Deny);
+    internal static long NudgeArgs => System.Threading.Interlocked.Read(ref _nudgeArgs);
+
+    /// <summary>Conta uma recusa no anel e (se diagnostic ligado) grava o evento.</summary>
+    /// <param name="ring">"ring2", "ring3" ou "nudge".</param>
+    /// <param name="tool">Tool alvo da recusa.</param>
+    /// <param name="why">Motivo objetivo (vai para o anel/SQLite).</param>
+    internal static void Deny(string ring, string tool, string why)
+    {
+        switch (ring)
+        {
+            case "ring2": System.Threading.Interlocked.Increment(ref _ring2Deny); break;
+            case "ring3": System.Threading.Interlocked.Increment(ref _ring3Deny); break;
+            default: System.Threading.Interlocked.Increment(ref _nudgeArgs); break;
+        }
+        if (!Active) return;
+        Record(ring + "-deny", new JsonObject { ["tool"] = tool, ["reason"] = why });
+    }
+
+    /// <summary>Instantaneo dos contadores por anel (para /api/metrics e testes).</summary>
+    internal static JsonObject DenyCounters() => new()
+    {
+        ["ring2_deny"] = Ring2Deny,
+        ["ring3_deny"] = Ring3Deny,
+        ["nudge_args"] = NudgeArgs,
+    };
+
     internal static void Record(string kind, JsonObject fields)
     {
         if (!Active) return;
@@ -52,6 +86,9 @@ static class Metrics
     {
         while (Ring.TryDequeue(out _)) { }
         System.Threading.Interlocked.Exchange(ref _dropped, 0);
+        System.Threading.Interlocked.Exchange(ref _ring2Deny, 0);
+        System.Threading.Interlocked.Exchange(ref _ring3Deny, 0);
+        System.Threading.Interlocked.Exchange(ref _nudgeArgs, 0);
     }
 
     // Amostrador de GPU em background (5s; best-effort, sem nvidia-smi = mudo).

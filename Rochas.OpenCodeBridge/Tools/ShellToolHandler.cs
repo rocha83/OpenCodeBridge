@@ -39,7 +39,13 @@ public sealed class ShellToolHandler : IToolHandler
         // cadeia, payload bash -c). Checagens estruturais vêm depois.
         string command = ShellInspector.ExtractCommand(argumentsJson);
         if (ShellInspector.Validate(command) is string whyInsp)
+        {
+            // Anel 3: argv barrado. Contador sempre ativo + evento no log da
+            // bridge (a bateria conta o evento dentro da janela da faixa).
+            Metrics.Deny("ring3", "shell", whyInsp);
+            Program.Log(new JsonObject { ["event"] = "tool-deny", ["tool"] = "shell", ["reason"] = whyInsp });
             return ToolResult.Fail(whyInsp);
+        }
         var parts = SplitChain(command);
         if (parts.Count <= 1)
         {

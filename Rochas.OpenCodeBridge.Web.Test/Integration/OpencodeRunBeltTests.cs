@@ -119,14 +119,16 @@ internal static class OpencodeRunBeltTests
                 "pipe" => ValidateDevPipe(dir, clean, out detail),
                 _ => ValidateFiles(files, out detail),
             };
-            var (req, inTok, outTok, elapsed) = LogWindow(logOffset);
+            var (req, inTok, outTok, elapsed, ring2, ring3, nudge) = LogWindow(logOffset);
             double tps = elapsed > 0 ? outTok / elapsed : 0;
 
             bool ok = exited && !unknownTool && output.Length > 0 && artifacts;
             Console.WriteLine($"[run] {(ok ? "PASS" : "FAIL")} {belt.Key}: timeout={!exited} out={output.Length} chars " +
                 $"kind={kind} ok={artifacts} {detail} tps={tps:F1} tok/s req={req} in={inTok} out_tok={outTok} " +
-                $"wall={sw.Elapsed.TotalSeconds:F0}s unknownTool={unknownTool} ({log})");
-            RecordMetrics(dir, belt.Key, kind, sw.Elapsed.TotalSeconds, req, inTok, outTok, elapsed, tps, ok);
+                $"wall={sw.Elapsed.TotalSeconds:F0}s unknownTool={unknownTool} " +
+                $"ring2={ring2} ring3={ring3} nudge={nudge} ({log})");
+            RecordMetrics(dir, belt.Key, kind, sw.Elapsed.TotalSeconds, req, inTok, outTok, elapsed, tps, ok,
+                ring2, ring3, nudge);
             if (!ok) failures++;
         }
 
@@ -143,17 +145,17 @@ internal static class OpencodeRunBeltTests
         try { return File.Exists(BridgeLog) ? new FileInfo(BridgeLog).Length : 0; } catch { return 0; }
     }
 
-    /// <summary>Soma os eventos `response` gravados na bridge durante a faixa.</summary>
+    /// <summary>Soma os eventos `response` e as recusas por anel da janela da faixa.</summary>
     /// <param name="offset">Marco inicial em bytes.</param>
-    /// <returns>Requests, tokens de entrada/saida e tempo de decode somados.</returns>
-    static (int Requests, long In, long Out, double Elapsed) LogWindow(long offset)
+    /// <returns>Requests, tokens, decode, e recusas ring2/ring3/nudge.</returns>
+    static (int Requests, long In, long Out, double Elapsed, int Ring2, int Ring3, int Nudge) LogWindow(long offset)
     {
-        int req = 0;
+        int req = 0, ring2 = 0, ring3 = 0, nudge = 0;
         long inTok = 0, outTok = 0;
         double elapsed = 0;
         try
         {
-            if (!File.Exists(BridgeLog)) return (0, 0, 0, 0);
+            if (!File.Exists(BridgeLog)) return (0, 0, 0, 0, 0, 0, 0);
             using var fs = new FileStream(BridgeLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             if (offset > fs.Length) offset = 0;              // log truncado por restart
             fs.Seek(offset, SeekOrigin.Begin);
@@ -161,6 +163,13 @@ internal static class OpencodeRunBeltTests
             string? line;
             while ((line = reader.ReadLine()) is not null)
             {
+                // Recusas por anel (mede o desenho "catalogo cheio, deny no risco"):
+                // ring2 = tool barrada por policy/role; ring3 = argv barrado pelo
+                // inspetor de shell; nudge = args guiados (chamada refeita).
+                if (line.Contains("\"event\":\"tool-deny\"", StringComparison.Ordinal)) ring3++;
+                else if (line.Contains("\"event\":\"tool-args-guide\"", StringComparison.Ordinal)) nudge++;
+                else if (line.Contains("\"event\":\"tool-blocked\"", StringComparison.Ordinal)
+                      || line.Contains("\"event\":\"tool-ask\"", StringComparison.Ordinal)) ring2++;
                 if (!line.Contains("\"event\":\"response\"", StringComparison.Ordinal)) continue;
                 JsonElement e;
                 try { using var doc = JsonDocument.Parse(line); e = doc.RootElement.Clone(); } catch { continue; }
@@ -171,7 +180,7 @@ internal static class OpencodeRunBeltTests
             }
         }
         catch { }
-        return (req, inTok, outTok, elapsed);
+        return (req, inTok, outTok, elapsed, ring2, ring3, nudge);
     }
 
     /// <summary>Le um contador inteiro do evento (0 quando ausente).</summary>
@@ -182,7 +191,8 @@ internal static class OpencodeRunBeltTests
         e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : 0;
 
     /// <summary>Grava a metrica da faixa em `_metrics.jsonl` (comparacao entre rodadas).</summary>
-    static void RecordMetrics(string dir, string belt, string kind, double wall, int req, long inTok, long outTok, double elapsed, double tps, bool ok)
+    static void RecordMetrics(string dir, string belt, string kind, double wall, int req, long inTok, long outTok, double elapsed, double tps, bool ok,
+        int ring2 = 0, int ring3 = 0, int nudge = 0)
     {
         try
         {
@@ -198,6 +208,9 @@ internal static class OpencodeRunBeltTests
                 elapsed = Math.Round(elapsed, 2),
                 tps = Math.Round(tps, 1),
                 pass = ok,
+                ring2_deny = ring2,
+                ring3_deny = ring3,
+                nudge_args = nudge,
             });
             File.AppendAllText(Path.Combine(dir, "_metrics.jsonl"), json + "\n");
         }

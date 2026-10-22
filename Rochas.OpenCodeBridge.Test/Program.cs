@@ -90,6 +90,8 @@ internal static class Program
         TestContext.Run("U-shell-python-node-payload", UnitShellInspectorTests.PythonAndNodePayloadDenied);
         TestContext.Run("U-shell-pipe-to-shell", UnitShellInspectorTests.PipeToShellDenied);
         TestContext.Run("U-shell-mv-rmdir", UnitShellInspectorTests.MoveAndRmdirDenied);
+        TestContext.Run("U-metrics-deny-counters", UnitMetricsTests.CountersIncrement);
+        TestContext.Run("U-metrics-ring3-shell", UnitMetricsTests.ShellDenyIsRing3);
         TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
         TestContext.Run("U-sanitize-system-first", UnitBypassTests.SanitizeSystemFirst);
         TestContext.Run("U-translate-system-first", UnitBypassTests.TranslateSystemFirst);

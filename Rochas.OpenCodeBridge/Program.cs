@@ -933,7 +933,11 @@ internal static partial class Program
                     ["input_tokens"] = inTok, ["output_tokens"] = outTok,
                     ["elapsed_seconds"] = Math.Round(elapsed, 2),
                     ["tps_output"] = Math.Round(tpsOut, 2),
-                    ["tps_total"] = Math.Round(tpsTotal, 2)
+                    ["tps_total"] = Math.Round(tpsTotal, 2),
+                    // Recusas por anel (sempre contadas, independente do diagnostic).
+                    ["ring2_deny"] = Metrics.Ring2Deny,
+                    ["ring3_deny"] = Metrics.Ring3Deny,
+                    ["nudge_args"] = Metrics.NudgeArgs
                 });
                 return;
             }
@@ -2234,6 +2238,7 @@ var shape = new StringBuilder();
     /// <returns>Chamada substituta (shell) com o texto corretivo.</returns>
     static (string Name, string Arguments) NudgeArgs(string name, string why, string original)
     {
+        Metrics.Deny("nudge", name, why);
         Log(new JsonObject { ["event"] = "tool-args-guide", ["tool"] = name, ["reason"] = why, ["len"] = original.Length });
         string msg = "printf '%s\\n' 'ERRO na tool " + name + ": " + why +
             ". Nao repita igual: reemita a chamada com JSON completo - " +
@@ -3413,6 +3418,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                 string roleB = RoleOfModel(requestedModel);
                 string bid = "risk_" + NewId();
                 PendingRisks[bid] = new PendingRisk(acc.Name, arguments, roleB);
+                Metrics.Deny("ring2", acc.Name, "papel");
                 Log(new JsonObject { ["event"] = "tool-ask", ["tool"] = acc.Name, ["role"] = roleB,
                                      ["reason"] = "papel", ["call_id"] = bid });
                 if (!msgOpen)
@@ -3457,6 +3463,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             }
             if (!riskOk && bannedHere.Contains(acc.Name))
             {
+                Metrics.Deny("ring2", acc.Name, "role");
                 Log(new JsonObject { ["event"] = "tool-blocked", ["tool"] = acc.Name, ["role"] = RoleOfModel(requestedModel) });
                 if (!msgOpen)
                 {
@@ -3927,6 +3934,7 @@ if (type == "message")
                     string roleB = RoleOfModel(model);
                     string bid = "risk_" + NewId();
                     PendingRisks[bid] = new PendingRisk(nativeName, JsonToString(funcObj["arguments"]), roleB);
+                    Metrics.Deny("ring2", nativeName, "papel");
                     Log(new JsonObject { ["event"] = "tool-ask", ["tool"] = nativeName, ["role"] = roleB,
                                          ["reason"] = "papel", ["call_id"] = bid });
                     toolCalls.Add((bid, "question", RiskQuestionArgs(nativeName, JsonToString(funcObj["arguments"]), roleB, "papel")));
@@ -3936,6 +3944,7 @@ if (type == "message")
                 }
                 if (!riskOk && BannedFor(model).Contains(nativeName))
                 {
+                    Metrics.Deny("ring2", nativeName, "role");
                     Log(new JsonObject { ["event"] = "tool-blocked", ["tool"] = nativeName, ["role"] = RoleOfModel(model) });
                     if (blockedNotice.Length == 0)
                         blockedNotice = "\n\n" + string.Format(ToolBlockNotice, nativeName, RoleOfModel(model)) + "\n\n";
@@ -4364,7 +4373,7 @@ if (type == "message")
     // ---------------------------------------------------------------------
     /// <summary>Apende linha JSON de diagnostico; nunca derruba o pedido.</summary>
     /// <param name="obj">Evento.</param>
-    static void Log(JsonObject obj)
+    internal static void Log(JsonObject obj)
     {
         try
         {
