@@ -1,5 +1,39 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Tool policy: `shell`/`subagent` "não permitido" (2026-10-22, sessão 4)
+- **Sintoma:** em `opencode run` os agentes `plan`/`orch`/`moe` recebiam
+  `Unknown agent: default.shell` / `Unknown agent: gemma-e2b/gemma4-e2b-build` e
+  "tool não permitida" ao delegar; o subagente morria com
+  `Unsupported package for gemma-e2b/gemma4-e2b-build:`.
+- **Causa 1 — enunciado (AGENTS.md global):** o arquivo falava o vocabulário de outro
+  harness (`recipients default.*`, `default.execute`, `task` com `model` em `agent`).
+  O 12B obedecia e emitia `subagent(agent="default.shell")`. Reescrito para as tools
+  reais (`shell/read/write/edit/grep/glob/webfetch/websearch/subagent/skill/question`)
+  e `subagent` = `agent` (build-exec|explore|general) + `description` + `prompt`, com
+  `model` opcional.
+- **Causa 2 — tool policy dos agentes:** frontmatter `permissions` de `plan`/`orch`/`moe`
+  negava tudo e liberava só leitura, sem `shell`, e `subagent` apenas para o recurso
+  `plan` (que é agente *primary*, não subagente). Agora `shell` é liberado (leitura por
+  disciplina) e `subagent` aponta para os alvos reais (`build-exec`/`explore`/`general`).
+- **Causa 3 — provider:** o provider `gemma-e2b` no `opencode.json` tinha `api:
+  openai-chat` mas nenhum `package`; o opencode V2 exige `package:
+  "@ai-sdk/openai-compatible"` (o `npm:` do V1, sozinho, não resolve) — daí
+  `Unsupported package ... :` com nome vazio.
+- **Harness (genérico, com unit):** `SanitizeSubagent` move model-id de `agent` para
+  `model` (+ agent `build-exec`) e transforma `default.*` em guia com os subagentes
+  válidos; `SanitizeLeakValues` corta `<tool_call|>`/`<|channel>` de **qualquer** valor
+  string (era só `command`), cobrindo `write` com `path` sujo. Units
+  `U-toolargs-subagent-model`, `U-toolargs-subagent-tool-name`, `U-toolargs-leak-value`
+  → **48 PASS / 0 FAIL / 6 SKIP**.
+- **Infra:** a GPU (12 GB) está saturada pelo 12B a 430k ctx (11.7/12.0 GB), então o
+  `llama-gemma-e2b` em `-ngl 99` não cabe e entrava em crash-loop. E2B passou a rodar em
+  CPU (`-ngl 0 -c 32768 --cache-type-k/v q8_0 -t 4`): ~9 tok/s medido, suficiente para
+  micro-enunciados. O binário TurboQuant ainda inicializa CUDA e tenta alocar no device
+  cheio (abort no meio do decode), então a unit precisa de `CUDA_VISIBLE_DEVICES=`
+  vazio além do `-ngl 0`. Unit de usuário criada em
+  `~/.config/systemd/user/llama-e2b-cpu.service` (sem barramento de sessão neste host,
+  sobe por nohup até o `disable` da unit root, que exige sudo).
+
 ## Belt `imunow` removida e bateria 8/8 verde (2026-10-21, sessão 3)
 - **Removida a faixa `imunow`** do `BeltUiTests` e do runner headless (`ImunowViews` + `SKIP`).
   Motivo: dependia do disco externo `/media/mint/3686C649614854E6/.../Mova.Pwa`, não era
@@ -2574,3 +2608,119 @@ como harness nativo + tails na bridge em modo bypass/legacy (equivalente ao
 ## 2026-10-19 — Harness resumido (OpenCode) + subagente mesmo modelo
 - Núcleo global do harness inclui regra de subagente do mesmo tipo/nome de modelo
   para contextos <=64k.
+
+---
+
+## 2026-10-22 — Reagrupamento de flags + remoção do hardcode por nome de modelo
+
+### 1. Problema que motivou
+
+A bridge tinha um flag-deus: `--legacy-harness` governava ao mesmo tempo a
+coerção de tools (`CoerceFor`), o `coerceLine` inteiro, o `WithSystemGuardrail`,
+o stop `[END_OF_TEXT]` e — até o fix de 2026-10-22 anterior — o **retry do
+anti-repeat**. Consequência medida: `--legacy-harness 0` (pedido legítimo:
+"sem harness") apagava a contenção de loop de carona, e o turno degenerado
+pagava os 16.384 tokens inteiros (~375 s) antes de trocar o conteúdo.
+
+Segundo problema: `CoerceFor(string modelId)` decidia a coerção por
+`LegacyHarness && (CoerceTextTools || modelId.Contains("cpu"))`. Depender do
+nome do modelo é errado por dois motivos: o id é livre, e a suíte E2E roda ids
+"8b" na linha sem parser — a heurística simplesmente não disparava. A coerção
+de narrada (`CoerceNarrated`) tinha o mesmo defeito e ainda era inconsistente:
+gated por `LegacyHarness` em dois sites (3378, 4334) e ungated em um (4350).
+
+### 2. O que foi implementado em `Rochas.OpenCodeBridge/Program.cs`
+
+**Remoção do hardcode:**
+- `CoerceFor()` não olha mais nome de modelo nem `LegacyHarness`. Agora é
+  `CoerceTextTools || UpstreamParser == "none"`, onde `--upstream-parser`
+  (`native`/`none`) declara a **capacidade real do upstream** (vLLM/llama com
+  parser vs. llama sem `--jinja`).
+- `CoerceNarrated` desacoplado de `LegacyHarness` nos três sites (agora
+  consistentes).
+- `coerceLine` deixa de ser `LegacyHarness && (CoerceFor() || toolsAsked)` e
+  vira `CoerceFor() && isChat && POST/PUT/PATCH` — capacidade explícita.
+- O gate `isChat && toolsAsked && LegacyHarness` do bypass-chat virou
+  `isChat && toolsAsked && CoerceFor()` (mesma decisão única).
+- O cap da linha (`cpuLine` → `coercedLine`) e o stop `[END_OF_TEXT]` agora
+  seguem `CoerceFor()`.
+
+**Novas flags (rotinas próprias):**
+- `--upstream-parser native|none` (config `upstreamParser`)
+- `--anti-repeat-abort` (config `antiRepeatAbort`) — desliga só o corte em
+  stream, mantendo detector e retry pos-hoc
+- `--anti-repeat-notice` na CLI (já existia só em config)
+- `--diagnostic-level off|metrics|dump` (config `diagnosticLevel`) — `metrics`
+  omite os corpos `req`/`res` do log (o dump integral passava de 280 MB por
+  rodada de belt)
+- `--coerced-max-tokens` (alias `--cpu-max-tokens`) + config `maxTokensCoerced`
+- `--thinking-format` (alias `--thinking`) como nome canônico
+
+**Anti-repeat em stream (implementado na rodada anterior, agora com flag):**
+- `TryStreamAbortChat`: consome o upstream em SSE mesmo com cliente non-stream,
+  alimenta `CheckRepeat` com `content` **e** `tool_calls[].function.arguments`
+  (o ponto cego anterior), corta a geração via `resp.Dispose()` + `cts.Cancel()`,
+  preserva tool calls já fechados (inclusive args truncado, igual ao nativo do
+  llama) e tenta 1 retry com o aviso invisível. Fallback ao caminho normal só
+  se zero delta foi recebido (nunca re-gera).
+
+**Boot validation (`ValidateConfig`, antes do listener):**
+- Fail-fast (exit 2): `--diagnostic-level` inválido, `--upstream-parser`
+  inválido, `--anti-repeat-window` fora de 64..2048, `--anti-repeat-notice`
+  < 20 chars, `--context-guard 1` sem `--context-tokens`.
+- Avisos em stderr para flag aceita mas inerte: `--coerced-max-tokens` sem
+  coerção, tail com `--harness 0`, `--context-tokens`/`--context-threshold`
+  sem guard, `--legacy-harness 1`.
+
+**Observabilidade:** `GET /api/status` expõe `upstream_parser`, `anti_repeat_abort`,
+`diagnostic_level`, `coerced_max_tokens` e `config_groups` (objeto
+`{grupo: [flags ativas]}`) — o mapa das 11 rotinas em vigor.
+
+**`--diagnostic 1` (legado) sem nível declarado implica `dump`** (preserva o
+comportamento histórico das units).
+
+### 3. Reagrupamento (11 rotinas)
+
+rede/processo · auth/admin · transporte · harness/prompt · coerção de tools ·
+anti-repeat · orçamento/contexto · geração/artefatos · segurança · observabilidade ·
+legado. Cada flag vive em um único grupo; `--host` é alias de `--listen`;
+`--thinking` é alias de `--thinking-format`; `--cpu-max-tokens` é alias de
+`--coerced-max-tokens`.
+
+### 4. Coordenadas — ctx da dupla original + saída 16k
+
+**Llama (original duo, em produção):**
+- GPU1 `:4100` — Gemma4 12B uncensored `Q4_K_M` + mmproj F16, `-c 106496`
+  (1×104k), DRY off, repeat-penalty 1.1
+- GPU2 `:4110` — Gemma4 E2B coder heretic `Q3_K_M` text-only, `-c 90112`
+  (1×88k), DRY idêntico, repeat-penalty 1.15
+- Total: ~10,91 GiB usados / ~868 MiB livres (12288 MiB).
+
+**Bridge (saída 16k):**
+- `--max-tokens 16384` em ambas as bridges e no runner (`max_tokens` 16384 no
+  chat, 4096 no review); `E2EBeltsBuildTests.cs:70`/`:116`.
+- `--anti-repeat 1 --anti-repeat-retry 1`, `--harness 0 --legacy-harness 0`,
+  `--diagnostic 1` (nível dump), `--thinking events`, coerção desligada
+  (`--coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0`,
+  `--upstream-parser native` implícito), `--stream-per-delta 0`.
+
+**Impacto medido:** turno degenerado = 16.384 tokens @ ~43 t/s ≈ 375 s, com
+~15,5k tokens descartados pelo parser `peg-gemma4` e só ~900 tokens úteis
+(`content` + 3 `tool_calls`). O contorno corta em ~512 chars de texto novo.
+
+### 5. Build / verificação
+
+- `dotnet build -c Release`: **0 erros**, 5 avisos (CS1573 pré-existentes).
+- Boot validation: fail-fast exit 2 confirmado (`--context-guard 1` sem
+  `--context-tokens`); avisos de inércia confirmados.
+- `GET /api/status` com auth: expõe os grupos e as novas chaves.
+- Smoke test non-stream + `tool_choice=required`: resposta sintetizada pela bridge
+  (usage sem `prompt_tokens_details`), 1 tool call com args válido.
+- Units (`bridge-gpu.service`, `bridge-e2b.service`) não foram alteradas: os
+  novos defaults (`native`, `dump`, `true`) preservam o comportamento testado.
+
+### 6. Arquivos tocados
+
+- `/usr/src/opencodebridge/Rochas.OpenCodeBridge/Program.cs` (produção)
+- `/usr/src/opencodebridge/LAB-SETUP.md` (grupos + coordenadas)
+- `/usr/src/opencodebridge/HISTORY.md` (este bloco)

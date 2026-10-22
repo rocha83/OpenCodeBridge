@@ -2,7 +2,7 @@
   "$schema": "https://opencode.ai/config.json",
   "model": "alt12b/gemma-4-12b",
   "small_model": "alt12b/gemma-4-12b",
-  "enabled_providers": ["alt12b", "alt-e2b"],
+  "enabled_providers": ["alt12b"],
   "agent": {
     "build": {
       "prompt": "Voce e um agente codificador desenvolvedor senior autonomo que conhece multiplas linguagens de programacao. Nao se apresente sem te perguntarem, anuncie em uma frase o que vai fazer a cada tool que for usar, responda no idioma do usuario e seja sucinto em suas respostas.",
@@ -23,10 +23,10 @@
   },
   "providers": {
     "alt12b": {
-      "name": "llama :4100 (12B) via pattern-bridge :4300",
+      "name": "llama :4100 (12B) via pattern-bridge :4126",
       "package": "@opencode/ai/providers/openai-compatible",
       "settings": {
-        "baseURL": "http://127.0.0.1:4300/v1",
+        "baseURL": "http://127.0.0.1:4126/v1",
         "apiKey": "guest@123"
       },
       "options": {
@@ -43,7 +43,7 @@
             "reasoningField": "reasoning_content"
           },
           "limit": {
-            "context": 131072,
+            "context": 98304,
             "output": 8192
           }
         }

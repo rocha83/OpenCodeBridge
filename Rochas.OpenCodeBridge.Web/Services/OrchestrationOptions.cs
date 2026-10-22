@@ -26,7 +26,7 @@ public sealed class OrchestrationOptions
     public double ReviewTemperature { get; set; } = 0.1;
     // Temperatura da decomposição (análise + expansão em subtarefas): Qwen oficial
     // recomenda 0.6 p/ thinking mode (temp baixa demais murchava a granularidade: 1-3 tarefas).
-    public double DecomposeTemperature { get; set; } = 0.6;
+    public double DecomposeTemperature { get; set; } = 0.3;
     // Thinking na decomposição ("events" = raciocina; "off" = direto, sem <think>).
     // Off corta o mimetismo na fonte via chat_template_kwargs; se o parser do serve
     // desviar a resposta p/ o canal reasoning, a pipeline promove a conteúdo.

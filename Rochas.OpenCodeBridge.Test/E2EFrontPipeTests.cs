@@ -322,7 +322,7 @@ internal static class E2EFrontPipeTests
         var body = new JsonObject
         {
             ["model"] = model,
-            ["temperature"] = 0.3,
+            ["temperature"] = 0.1,
             ["stream"] = false,
             ["messages"] = messages.DeepClone(),
         };

@@ -29,7 +29,7 @@ internal static class CalibrationLiveTests
             {
                 ["model"] = "qwen3.5-9b",
                 ["messages"] = messages,
-                ["temperature"] = 0.4,
+                ["temperature"] = 0.1,
                 ["max_tokens"] = 256,
                 ["stream"] = false,
                 ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = false },

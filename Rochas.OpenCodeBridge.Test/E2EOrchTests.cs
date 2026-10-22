@@ -19,7 +19,7 @@ internal static class E2EOrchTests
             new JsonObject { ["role"]="user", ["content"]="Dominio backend C# de reembolsos corporativos: entidades, regras de aprovacao por faixa de valor, banco SQL (DDL, indices, constraints), repositorios Dapper e servicos de aplicacao. Divida em tarefas por escopo." });
 
         var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-            new JsonObject { ["model"]=model, ["temperature"]=0.6, ["stream"]=false, ["messages"]=history.DeepClone() });
+            new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["messages"]=history.DeepClone() });
         string content = r["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
         Console.WriteLine($"  [orch] resposta: {content[..Math.Min(300, content.Length)]}");
 

@@ -88,7 +88,7 @@ internal static class E2EBeltsTests
                     new JsonObject { ["role"]="system", ["content"]="Voce e o Orch (role orch, 12B). Segmenta o enunciado em tarefas atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada." },
                     new JsonObject { ["role"]="user", ["content"]=prompt });
                 var orchR = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                    new JsonObject { ["model"]=orchModel, ["temperature"]=0.6, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
+                    new JsonObject { ["model"]=orchModel, ["temperature"]=0.3, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
                 string orchContent = orchR["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
                 int s = orchContent.IndexOf('['), e = orchContent.LastIndexOf(']');
                 TestContext.Check(s >= 0 && e > s, $"[{key}] Orch segmentou em JSON array");
@@ -116,7 +116,7 @@ internal static class E2EBeltsTests
                     for (int turn = 0; turn < 6; turn++)
                     {
                         var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                            new JsonObject { ["model"]=scripterModel, ["temperature"]=0.3, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
+                            new JsonObject { ["model"]=scripterModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
                         var msg = r["choices"]?[0]?["message"]?.AsObject();
                         var calls = msg?["tool_calls"]?.AsArray();
                         if (calls is null || calls.Count == 0) break;
@@ -179,7 +179,7 @@ internal static class E2EBeltsTests
                             new JsonObject { ["role"]="system", ["content"]="Voce e o Exec (role exec, E2B). Leia o companion .md e o script. Responda apenas EXEC-READ-OK." },
                             new JsonObject { ["role"]="user", ["content"]="COMPANION:\n" + md + "\n\nSCRIPT:\n" + sh });
                         var execR = await TestContext.PostObj("http://127.0.0.1:4125/v1/chat/completions",
-                            new JsonObject { ["model"]=execModel, ["temperature"]=0.3, ["stream"]=false, ["messages"]=execHistory.DeepClone() });
+                            new JsonObject { ["model"]=execModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=execHistory.DeepClone() });
                         string execContent = execR["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
                         Log($"  [belt:{key}] exec read: {name} -> {execContent[..Math.Min(40, execContent.Length)]}");
                     }

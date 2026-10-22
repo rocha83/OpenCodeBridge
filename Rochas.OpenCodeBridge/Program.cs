@@ -47,7 +47,7 @@ internal static partial class Program
     static string Upstream = "http://127.0.0.1:4100";              // vLLM
     static string Model = "qwen3-8b-awq";                          // id servido pelo vLLM
     static string Thinking = "events";                             // "events" = mostra | "off" = descarta
-    static double Temperature = 0.5;                                 // medio (escala 0.3 min / 0.5 medio / 0.8 max); tool calling continua deterministico via tool_choice
+    static double Temperature = 0.3;                                 // medio (escala 0.1 baixo / 0.3 medio / 0.5 alto); tool calling continua deterministico via tool_choice
     static int MaxTokens;                                          // teto de saida da linha GPU: 0 = SEM TETO (a infra/llama controla via -c/--n-predict e o cliente decide via max_tokens); >0 = clamp
     static int CpuMaxTokens;                                       // teto da linha CPU: 0 = SEM TETO (deixa o llama controlar); >0 = clamp p/ conter divagacao em decode lento (~5 tok/s)
     static int ToolOutputLimit;                                      // corte por resultado de tool: 0 = SEM CORTE (padrao); config via appsettings "toolOutputLimit" / --tool-output-limit
@@ -60,12 +60,25 @@ internal static partial class Program
     // prompt no final (Responses e chat), sem depender do agente.
     static readonly string SystemGuardrail = "ao listar arquivos locais preferencialmente use as tools glob ou read, atentando-se ao modo de uso correto destas, e ao navegar na web use somente enderecos externos, informando user agent Firefox no Windows 11 ao navegar via fetch ou curl; ao executar tools que resultem em erro, leia a mensagem de erro e adapte a proxima chamada, tentando no maximo mais 2 vezes, e sempre responda na lingua do usuario, seja verboso apenas ao declarar acoes com tools dentro do loop agentico e em conversa simples sem tools responda em no maximo 2 frases; porem envie apenas uma vez a cada mensagem do usuario JAMAIS repita a mesma pergunta varias vezes; se o usuario nao respondeu siga com a melhor suposicao e declare a decisao tomada; FORMA DE USO DAS TOOLS (obrigatoria): catalogo — leitura: glob (lista por padrao), read (le arquivo), grep (busca regex), fetch (GET http somente-leitura), display (mostra na tela); edicao: write (grava/cria), edit (substitui trecho exato); execucao: shell (comando unico; pipes/redirecionamento via bash -c); git somente-leitura (status/log/diff; escrita via shell com cd + git); delegacao: subagent (uma fase por vez); use apenas as anunciadas no bloco # Tools, com os nomes exatos, sem nenhum prefixo (nunca default., nunca outro namespace); cada chamada vai sozinha em <tool_call>{\"name\": \"<nome-exato>\", \"arguments\": {<args>}}</tool_call>, sem prosa antes, dentro ou depois do bloco; uma tool por vez, depois aguarde o resultado para a proxima acao; utilize a tool echo apenas em composicao de scripts, NUNCA para enviar mensagens ao usuario limite de writes por faixa: apos criar os artefatos planejados (max 8), responda BUILD-OK e pare. Nao repita a mesma chamada write.";
 
-    // Coerção texto->tool_calls p/ upstream sem parser server-side (llama.cpp
-    // na CPU): extrai ```json{"name"..} ou <tool_call>..</tool_call> do content
-    // e sintetiza tool_calls. Liga via --coerce-text-tools ou auto quando o
-    // model contém "cpu". Qwen3/AWQ (parsers nativos) ficam intactos.
+    // Coerção texto->tool_calls p/ upstream SEM parser server-side (llama.cpp
+    // sem --jinja/parser): extrai ```json{"name"..} ou <tool_call>..</tool_call>
+    // do content e sintetiza tool_calls. Qwen3/AWQ (parser nativo) ficam intactos.
+    //
+    // QUEM DECIDE: a CAPACIDADE do upstream (--upstream-parser none) ou o pedido
+    // explicito do operador (--coerce-text-tools 1) — nunca o nome do modelo.
+    // A heuristica antiga ("cpu" no id) era mentirosa: o id e livre, a suite E2E
+    // usa ids "8b" na linha sem parser e a heuristica simplesmente nao disparava.
     static bool CoerceTextTools;
+    // Capacidade de parser de tool call do upstream:
+    //   native (padrao) = devolve tool_calls estruturados (vLLM / llama + parser)
+    //   none            = devolve texto puro; a bridge coagia e sintetiza
+    static string UpstreamParser = "native";
     static bool AntiRepeat = true;                               // AntiRepeat: observa o thinking em stream e conteve repeticao
+    // Abort em stream: com o detector tripado, corta a geracao no upstream na
+    // hora (fecha o SSE) em vez de pagar o turno degenerado inteiro (medido:
+    // 16.384 tokens ~ 375 s). Flag propria para poder desligar SO o corte e
+    // manter o detector e o retry pos-hoc.
+    static bool AntiRepeatAbort = true;
     // Inibidor mestre do harness da bridge (--harness 0): com ele desligado a
     // bridge vira tubo puro (sem sufixo guardrail, sem stop, sem pattern-strip,
     // sem coercao, sem retry/aviso) — todo o conteudo vem do harness opencode.
@@ -110,6 +123,10 @@ internal static partial class Program
     static string HarnessBehaviorTail =
         "COMPORTAMENTO (workspace): quando o usuario informar pastas de atuacao fora do workspace, procure pastas ou arquivos citados tambem um nivel abaixo (pastas vizinhas) e na arvore de subpastas, tanto do workspace quanto dos paths citados. " +
         "COMPORTAMENTO (formato): em conversa escreva com Unicode (setas, menor-igual, pi, somatorio) em vez de LaTeX; use $...$ somente dentro de bloco de codigo ou de formula matematica, onde o cliente renderiza.";
+    // O operador DECLAROU uma cauda (CLI/appsettings) ou o valor e o default
+    // embutido? Usado so pela validacao, p/ avisar "cauda inerte com --harness 0"
+    // sem acusar o default.
+    static bool BehaviorTailCustom, ToolsTailCustom;
     // Ha alguma cauda de inducAO configurada? E o que o /api/harness reporta:
     // nao existe mais switch mestre, o que vale e ter cauda ou nao.
     static bool TailsAtivas() => HarnessBehaviorTail.Length > 0 || HarnessToolsTail.Length > 0;
@@ -121,6 +138,13 @@ internal static partial class Program
     static double ContextThreshold = 0.95;                       // fracao do ctx (0.5..0.99)
     static int ContextTokens = 0;                                // tamanho do ctx do modelo servido
     static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
+    // Granularidade da sonda (grupo observabilidade):
+    //   off     = nenhuma sonda
+    //   metrics = evento de trafego com metricas (usage/tps/elapsed), SEM os
+    //             corpos req/res (o dump integral passou de 280 MB numa rodada)
+    //   dump    = metrics + corpos completos (comportamento historico)
+    // --diagnostic 1 (legado) sem nivel declarado implica "dump".
+    static string DiagnosticLevel = "off";
     static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida; quando informada a repeticao, nao responda mais nada, apenas encerre em silencio, obrigado.";
 
     // ThinkingOffRoles: roles que NUNCA devem mostrar reasoning, por nome de role
@@ -308,8 +332,14 @@ internal static partial class Program
                 return char.ToUpperInvariant(k[0]) + k[1..];
         return "";
     }
-    static bool CoerceFor(string modelId) => LegacyHarness && (CoerceTextTools
-        || (modelId?.Contains("cpu", StringComparison.OrdinalIgnoreCase) ?? false));
+    /// <summary>A linha servida precisa de coerção texto->tool_calls?</summary>
+    /// <remarks>Decidido pela CAPACIDADE do upstream (--upstream-parser none) ou
+    /// pelo pedido explicito do operador (--coerce-text-tools 1). Nao olha nome
+    /// de modelo (id e livre, e a suite E2E roda ids "8b" na linha sem parser) e
+    /// nao depende do LegacyHarness: coerção de tool call e reanimacao de modo
+    /// legado sao rotinas distintas, com flags distintas.</remarks>
+    /// <returns>True = coagir texto em tool_calls.</returns>
+    static bool CoerceFor() => CoerceTextTools || UpstreamParser == "none";
 
     // Perfis por sufixo no model (ex.: openai/qwen3.5-9b-plan): plan =
     // thinking ligado + temp media p/ planejar; build = thinking fundido +
@@ -373,10 +403,14 @@ internal static partial class Program
             if (cfg["usersDb"]?.GetValue<string>() is string udb && udb.Length > 0) Auth.UsersDbPath = udb;
             if (cfg["passthroughResponses"]?.GetValue<bool>() is bool pt) PassthroughResponses = pt;
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
+            if (cfg["upstreamParser"]?.GetValue<string>() is string usp && usp.Length > 0) UpstreamParser = usp.Trim().ToLowerInvariant();
+            if (cfg["maxTokensCoerced"]?.GetValue<int>() is int mtc && mtc >= 0) CpuMaxTokens = mtc;
             if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
-            if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham && ham.Length > 0) HarnessToolsTail = ham;
-            if (cfg["harnessBehaviorTail"]?.GetValue<string>() is string bt) HarnessBehaviorTail = bt;
+            if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham && ham.Length > 0) { HarnessToolsTail = ham; ToolsTailCustom = true; }
+            if (cfg["harnessBehaviorTail"]?.GetValue<string>() is string bt) { HarnessBehaviorTail = bt; BehaviorTailCustom = true; }
             if (cfg["antiRepeatRetry"]?.GetValue<bool>() is bool arr) AntiRepeatRetry = arr;
+            if (cfg["antiRepeatAbort"]?.GetValue<bool>() is bool arA) AntiRepeatAbort = arA;
+            if (cfg["diagnosticLevel"]?.GetValue<string>() is string dlg && dlg.Length > 0) DiagnosticLevel = dlg.Trim().ToLowerInvariant();
             if (cfg["streamPerDelta"]?.GetValue<bool>() is bool spd) StreamPerDelta = spd;
             if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
             if (cfg["coerceNarrated"]?.GetValue<bool>() is bool cn) CoerceNarrated = cn;
@@ -471,9 +505,16 @@ internal static partial class Program
     /// <param name="ctx">Contexto com os headers originais.</param>
     static void WithAuth(HttpRequestMessage req, HttpListenerContext ctx)
     {
+        // A ApiKey da bridge e a credencial do UPSTREAM (llama --api-key).
+        // O Bearer do cliente (JWT da Web) vale so na porta da bridge: repassa-lo
+        // para o llama resultava em 401 "Invalid API Key" e a Web ficava sem resposta.
+        if (!string.IsNullOrEmpty(ApiKey))
+        {
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ApiKey);
+            return;
+        }
         string? incoming = ctx.Request.Headers["Authorization"];
-        if (!string.IsNullOrWhiteSpace(incoming)) { req.Headers.TryAddWithoutValidation("Authorization", incoming.Trim()); return; }
-        if (!string.IsNullOrEmpty(ApiKey)) req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ApiKey);
+        if (!string.IsNullOrWhiteSpace(incoming)) req.Headers.TryAddWithoutValidation("Authorization", incoming.Trim());
     }
 
     // JSON sem escape unicode -> acentos do pt-BR chegam inteiros no cliente
@@ -747,6 +788,7 @@ internal static partial class Program
 
         LoadAppSettings();                                       // 1.1 arquivo (CLI vence)
         ParseArgs(cliArgs);                                        // 1.2 parse CLI
+        if (!ValidateConfig()) return 2;                           // 1.3 coerencia de flags
         // Sonda Serilog: probe do AntiRepeat, SO com DIAGNOSTIC ligado
         // (--diagnostic / appsettings diagnostic / env DIAGNOSTIC=1).
         // Desligado = Serilog mudo; o JSONL do LogPath segue sempre ativo.
@@ -755,7 +797,7 @@ internal static partial class Program
                 .MinimumLevel.Debug()
                 .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information,
                     outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}")
-                .WriteTo.File("/tmp/bridge-sonda.log", rollingInterval: Serilog.RollingInterval.Day,
+                .WriteTo.File($"/tmp/bridge-sonda-{Port}.log", rollingInterval: Serilog.RollingInterval.Day,
                     retainedFileCountLimit: 7, restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Debug)
                 .CreateLogger();
         Serilog.Log.Information("sonda diagnostic={Diagnostic} antiRepeat={AntiRepeat} window={Window}",
@@ -787,47 +829,106 @@ internal static partial class Program
     /// <summary>Interpreta a linha de comando para a configuracao estatica.</summary>
     /// <param name="cliArgs">Vetor de argumentos.</param>
     // 1.2) Argumentos simples: --chave valor
+    //
+    // GRUPOS (a ordem do switch segue o grupo e toda flag vive em UM grupo):
+    //   A) rede/processo .... --listen (alias --host) --port --upstream --model --log --workspace
+    //   B) auth/admin ....... --api-key --jwt-secret --jwt-expiry --users-db --bridge-managed
+    //   C) transporte ....... --passthrough-responses --stream-per-delta --qwen-standard
+    //                         --thinking-format (alias --thinking) --thinking-off-roles
+    //   D) harness/prompt ... --harness --harness-behavior-tail --harness-tools-tail
+    //   E) coerção de tools . --upstream-parser --coerce-text-tools --coerce-narrated --tool-strategy
+    //   F) anti-repeat ...... --anti-repeat --anti-repeat-abort --anti-repeat-retry
+    //                         --anti-repeat-window --anti-repeat-notice
+    //   G) orçamento ........ --max-tokens --coerced-max-tokens (alias --cpu-max-tokens)
+    //                         --context-guard --context-tokens --context-threshold
+    //   H) geração/artefatos  --temperature --tool-output-limit
+    //   I) segurança ........ --risk-ask --risk-ask-minutes --risk-tools-alerts --tool-blacklist
+    //   J) observabilidade .. --diagnostic --diagnostic-level
+    //   L) legado ........... --legacy-harness (nunca em producao)
     static void ParseArgs(string[] cliArgs)
     {
         for (int i = 0; i < cliArgs.Length - 1; i++)
         {
             switch (cliArgs[i])
             {
+                // ---------- A) rede/processo ----------
                 case "--port": Port = int.Parse(cliArgs[i + 1]); break;
-                // --listen 0.0.0.0 expõe a bridge na rede (opencode remoto)
+                // --listen 0.0.0.0 expõe a bridge na rede (opencode remoto).
+                // --host e ALIAS historico do mesmo destino (nao uma 2a opcao).
                 case "--listen": case "--host": Listen = cliArgs[i + 1]; break;
                 case "--upstream": Upstream = cliArgs[i + 1].TrimEnd('/'); break;
                 case "--model": Model = cliArgs[i + 1]; break;
-                case "--thinking": Thinking = cliArgs[i + 1]; break;
-                // Invariante: em locale pt-BR, Parse("0.7") quebraria sem isso
-                case "--temperature": Temperature = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); break;
-                // 0 = sem teto: a infra (llama -c/--n-predict) e o cliente mandam.
-                case "--max-tokens": MaxTokens = int.Parse(cliArgs[i + 1]); break;
-                case "--cpu-max-tokens": CpuMaxTokens = int.Parse(cliArgs[i + 1]); break;
-                // 0 = sem corte do resultado de tool (conteudo integral).
-                case "--tool-output-limit": ToolOutputLimit = int.Parse(cliArgs[i + 1]); break;
                 case "--log": LogPath = cliArgs[i + 1]; break;
+                case "--workspace": WorkspaceRoot = cliArgs[i + 1]; break;
+
+                // ---------- B) auth/admin ----------
                 case "--api-key": ApiKey = cliArgs[i + 1]; break;
                 case "--jwt-secret": if (cliArgs[i + 1].Length >= 16) Auth.JwtSecret = cliArgs[i + 1]; break;
                 case "--jwt-expiry": if (int.TryParse(cliArgs[i + 1], out int jexp) && jexp > 0) Auth.JwtExpiryMinutes = jexp; break;
                 case "--users-db": Auth.UsersDbPath = cliArgs[i + 1]; break;
-                case "--passthrough-responses": PassthroughResponses = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--tool-strategy": ToolStrategy = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--coerce-narrated": CoerceNarrated = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--bridge-managed": BridgeManagedAll = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--anti-repeat-retry": AntiRepeatRetry = cliArgs[i + 1] is not "false" and not "0"; break;
+
+                // ---------- C) transporte/compat ----------
+                case "--passthrough-responses": PassthroughResponses = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--stream-per-delta": StreamPerDelta = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--harness-behavior-tail": HarnessBehaviorTail = cliArgs[i + 1]; break;
-                case "--harness-tools-tail": HarnessToolsTail = cliArgs[i + 1]; break;
-                case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--legacy-harness": LegacyHarness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--qwen-standard": QwenStd = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
+                // --thinking-format e o nome canonico: o flag decide o FORMATO do
+                // repasse do reasoning (events/off), nao o liga/desliga do modelo
+                // (isso vem do perfil/sufixo do model id). --thinking = alias.
+                case "--thinking-format": case "--thinking": Thinking = cliArgs[i + 1]; break;
                 case "--thinking-off-roles":
                     foreach (var r in (cliArgs[i + 1] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                         ThinkingOffRoles.Add(r);
+                    break;
+
+                // ---------- D) harness/prompt ----------
+                case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--harness-behavior-tail": HarnessBehaviorTail = cliArgs[i + 1]; BehaviorTailCustom = true; break;
+                case "--harness-tools-tail": HarnessToolsTail = cliArgs[i + 1]; ToolsTailCustom = true; break;
+
+                // ---------- E) coerção de tools ----------
+                // Capacidade do upstream: native (parser proprio) x none (texto puro).
+                case "--upstream-parser": UpstreamParser = cliArgs[i + 1].Trim().ToLowerInvariant(); break;
+                case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--coerce-narrated": CoerceNarrated = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--tool-strategy": ToolStrategy = cliArgs[i + 1] is not "false" and not "0"; break;
+
+                // ---------- F) anti-repeat ----------
+                case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--anti-repeat-abort": AntiRepeatAbort = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--anti-repeat-retry": AntiRepeatRetry = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
+                case "--anti-repeat-notice": AntiRepeatNotice = cliArgs[i + 1]; break;
+
+                // ---------- G) orçamento/contexto ----------
+                // 0 = sem teto: a infra (llama -c/--n-predict) e o cliente mandam.
+                case "--max-tokens": MaxTokens = int.Parse(cliArgs[i + 1]); break;
+                // Teto da linha COAGIDA (upstream sem parser). --cpu-max-tokens e
+                // alias historico: "cpu" era a inferencia por nome de modelo.
+                case "--coerced-max-tokens": case "--cpu-max-tokens": CpuMaxTokens = int.Parse(cliArgs[i + 1]); break;
+                case "--context-guard": ContextGuard = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--context-threshold": { double v = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); if (v >= 0.5 && v <= 0.99) ContextThreshold = v; break; }
+                case "--context-tokens": ContextTokens = int.Parse(cliArgs[i + 1]); break;
+
+                // ---------- H) geração/artefatos ----------
+                // Invariante: em locale pt-BR, Parse("0.7") quebraria sem isso
+                case "--temperature": Temperature = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); break;
+                // 0 = sem corte do resultado de tool (conteudo integral).
+                case "--tool-output-limit": ToolOutputLimit = int.Parse(cliArgs[i + 1]); break;
+
+                // ---------- I) segurança/permissões ----------
+                case "--risk-ask": RiskAsk = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--risk-ask-minutes": if (int.TryParse(cliArgs[i + 1], out int ramc) && ramc > 0) RiskAskMinutes = ramc; break;
+                case "--risk-tools-alerts":   // "Plan=git\\s+push,\\brm\\b;Orch=\\bdd\\b"
+                    foreach (var grp in (cliArgs[i + 1] ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        int eq = grp.IndexOf('=');
+                        if (eq <= 0) continue;
+                        var rx = new List<Regex>();
+                        foreach (var p in grp[(eq + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                            if (TryRegex(p, out var compiled)) rx.Add(compiled);
+                        if (rx.Count > 0) RiskToolsAlerts[grp[..eq].Trim()] = rx;
+                    }
                     break;
                 case "--tool-blacklist":   // "Plan=write,sed,rm;MoE=write"
                     foreach (var grp in (cliArgs[i + 1] ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -840,26 +941,88 @@ internal static partial class Program
                         ToolBlacklist[grp[..eq].Trim()] = set;
                     }
                     break;
-                case "--risk-tools-alerts":   // "Plan=git\\s+push,\\brm\\b;Orch=\\bdd\\b"
-                    foreach (var grp in (cliArgs[i + 1] ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                    {
-                        int eq = grp.IndexOf('=');
-                        if (eq <= 0) continue;
-                        var rx = new List<Regex>();
-                        foreach (var p in grp[(eq + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                            if (TryRegex(p, out var compiled)) rx.Add(compiled);
-                        if (rx.Count > 0) RiskToolsAlerts[grp[..eq].Trim()] = rx;
-                    }
-                    break;
-                case "--risk-ask": RiskAsk = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--risk-ask-minutes": if (int.TryParse(cliArgs[i + 1], out int ramc) && ramc > 0) RiskAskMinutes = ramc; break;
-                case "--context-guard": ContextGuard = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--context-threshold": { double v = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); if (v >= 0.5 && v <= 0.99) ContextThreshold = v; break; }
-                case "--context-tokens": ContextTokens = int.Parse(cliArgs[i + 1]); break;
+
+                // ---------- J) observabilidade ----------
                 case "--diagnostic": Diagnostic = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--workspace": WorkspaceRoot = cliArgs[i + 1]; break;
+                case "--diagnostic-level": DiagnosticLevel = cliArgs[i + 1].Trim().ToLowerInvariant(); break;
+
+                // ---------- L) legado (nunca em producao) ----------
+                case "--legacy-harness": LegacyHarness = cliArgs[i + 1] is not "false" and not "0"; break;
             }
         }
+    }
+
+    /// <summary>Coerencia entre flags — roda ANTES de subir o listener.</summary>
+    /// <remarks>Fail-fast (exit 2) para combinacao impossivel; aviso em stderr
+    /// para flag aceita que ficaria INERTE — o caso que ja custou rodada: flag
+    /// ligada na unit sem nenhum efeito (ex.: retry do anti-repeat preso no
+    /// --legacy-harness).</remarks>
+    /// <returns>False = nao subir.</returns>
+    static bool ValidateConfig()
+    {
+        var errors = new List<string>();
+        var warns = new List<string>();
+
+        // --diagnostic 1 (legado) sem nivel declarado = dump integral.
+        if (Diagnostic && DiagnosticLevel == "off") DiagnosticLevel = "dump";
+        if (DiagnosticLevel is not ("off" or "metrics" or "dump"))
+            errors.Add($"--diagnostic-level '{DiagnosticLevel}' invalido (off|metrics|dump)");
+        Diagnostic = DiagnosticLevel is "metrics" or "dump";
+
+        if (UpstreamParser is not ("native" or "none"))
+            errors.Add($"--upstream-parser '{UpstreamParser}' invalido (native|none)");
+        if (AntiRepeatWindow < 64 || AntiRepeatWindow > 2048)
+            errors.Add($"--anti-repeat-window {AntiRepeatWindow} fora da faixa 64..2048");
+        if (AntiRepeatNotice.Length < 20)
+            errors.Add("--anti-repeat-notice precisa de >= 20 caracteres");
+        if (ContextGuard && ContextTokens <= 0)
+            errors.Add("--context-guard 1 exige --context-tokens > 0 (sem o tamanho do ctx o guard nunca dispara)");
+
+        if (CpuMaxTokens > 0 && !CoerceFor())
+            warns.Add($"--coerced-max-tokens {CpuMaxTokens} inerte: use --upstream-parser none ou --coerce-text-tools 1");
+        if (!Harness && (BehaviorTailCustom || ToolsTailCustom))
+            warns.Add("cauda de harness declarada com --harness 0: inerte (a bridge nao injeta prompt)");
+        if (!ContextGuard && ContextTokens > 0)
+            warns.Add($"--context-tokens {ContextTokens} inerte: --context-guard 0");
+        if (!ContextGuard && Math.Abs(ContextThreshold - 0.95) > 0.0001)
+            warns.Add("--context-threshold sem --context-guard 1: inerte");
+        if (LegacyHarness)
+            warns.Add("--legacy-harness 1 reanima guardrail/strip/retry historicos: nao usar em producao");
+
+        foreach (var w in warns) Console.Error.WriteLine("[bridge][aviso] " + w);
+        foreach (var e in errors) Console.Error.WriteLine("[bridge][erro] " + e);
+        return errors.Count == 0;
+    }
+
+    /// <summary>Grupos de flags em vigor — quem opera a bridge de fora ve o mapa
+    /// inteiro (a qual rotina cada flag pertence) sem ler a linha de comando.</summary>
+    /// <returns>Objeto { grupo: [flags ativas] }.</returns>
+    static JsonObject ConfigGroups()
+    {
+        var g = new JsonObject();
+        void Add(string group, params string[] flags)
+        {
+            var arr = new JsonArray();
+            foreach (var f in flags) if (f.Length > 0) arr.Add(f);
+            if (arr.Count > 0) g[group] = arr;
+        }
+        Add("rede-processo", "listen=" + Listen, "port=" + Port, "upstream=" + Upstream, "model=" + Model);
+        Add("transporte", "thinking-format=" + Thinking,
+            PassthroughResponses ? "passthrough-responses" : "", StreamPerDelta ? "stream-per-delta" : "",
+            QwenStd ? "qwen-standard" : "");
+        Add("harness-prompt", Harness ? "harness" : "",
+            BehaviorTailCustom ? "harness-behavior-tail" : "", ToolsTailCustom ? "harness-tools-tail" : "");
+        Add("coercao-tools", CoerceFor() ? "coercao=on" : "coercao=off", "upstream-parser=" + UpstreamParser,
+            CoerceTextTools ? "coerce-text-tools" : "", CoerceNarrated ? "coerce-narrated" : "",
+            ToolStrategy ? "tool-strategy" : "");
+        Add("anti-repeat", AntiRepeat ? "anti-repeat" : "", AntiRepeatAbort ? "anti-repeat-abort" : "",
+            AntiRepeatRetry ? "anti-repeat-retry" : "", "window=" + AntiRepeatWindow);
+        Add("orcamento", MaxTokens > 0 ? "max-tokens=" + MaxTokens : "",
+            CpuMaxTokens > 0 ? "coerced-max-tokens=" + CpuMaxTokens : "",
+            ContextGuard ? "context-guard=" + ContextTokens : "");
+        Add("observabilidade", DiagnosticLevel == "off" ? "" : "diagnostic-level=" + DiagnosticLevel);
+        Add("legado", LegacyHarness ? "legacy-harness" : "");
+        return g;
     }
 
     // =====================================================================
@@ -1152,7 +1315,11 @@ WriteJson(ctx, 200, new JsonObject
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
         ["passthrough_responses"] = PassthroughResponses,
         ["tool_strategy"] = ToolStrategy,
-        ["cpu_max_tokens"] = CpuMaxTokens,
+        ["cpu_max_tokens"] = CpuMaxTokens, ["coerced_max_tokens"] = CpuMaxTokens,
+        ["upstream_parser"] = UpstreamParser,
+        ["anti_repeat"] = AntiRepeat, ["anti_repeat_abort"] = AntiRepeatAbort,
+        ["diagnostic_level"] = DiagnosticLevel,
+        ["config_groups"] = ConfigGroups(),
         ["harness"] = TailsAtivas(), ["legacy_harness"] = LegacyHarness, ["stream_per_delta"] = StreamPerDelta,
         ["bridge_managed"] = BridgeManagedAll ? "all" : "direct-only",
         ["uptime_seconds"] = (long)(DateTime.UtcNow - StartedAt).TotalSeconds,
@@ -1220,7 +1387,7 @@ WriteJson(ctx, 200, new JsonObject
             if (node is not null && node["model"]?.GetValue<string>() is string mid && mid != Model)
             {
                 bool hasProfile = TryProfile(mid, out double profTemp, out profThinkMid);
-                if (hasProfile || CoerceFor(mid))
+                if (hasProfile || CoerceFor())
                 {
                     node["model"] = Model;
                     if (node["messages"] is JsonArray chatMessages)
@@ -1247,10 +1414,28 @@ WriteJson(ctx, 200, new JsonObject
                     // Linha CPU: o 3B entra em loop de filler ([END_OF_TEXT])
                     // quando divaga — stop dedicado (só aqui; Responses/chat
                     // nativo do vLLM jamais recebe stop automático).
-                    if (node["stop"] is null && (CoerceFor(mid) || CoerceFor(Model)))
+                    if (node["stop"] is null && CoerceFor())
                         node["stop"] = new JsonArray("[END_OF_TEXT]");
                     outBody = node.ToJsonString(SerOpts);
                 }
+            }
+            // Temperatura efetiva no repasse: o cliente manda, senao perfil/global
+            // (escala 0.1 baixo / 0.3 medio / 0.5 alto). Sem isto o llama usava o
+            // --temp 1.0 da unit e o numero do perfil nunca valia no /v1/chat.
+            if (node is not null && node["temperature"] is null)
+            {
+                double effTemp = Temperature;
+                if (node["model"]?.GetValue<string>() is string tmid2
+                    && TryProfile(tmid2, out double pt2, out _) && !double.IsNaN(pt2))
+                    effTemp = pt2;
+                node["temperature"] = effTemp;
+                outBody = node.ToJsonString(SerOpts);
+                if (Diagnostic) Log(new JsonObject
+                {
+                    ["event"] = "temp-inject",
+                    ["temp"] = effTemp,
+                    ["model"] = node["model"]?.GetValue<string>() ?? Model
+                });
             }
             // Formula (Harness, cliente web = model sem sufixo de perfil):
             // system + agents + tail. Opencode (sufixo) passa limpo.
@@ -1291,7 +1476,7 @@ WriteJson(ctx, 200, new JsonObject
             // ausente. cpuLine escolhe o teto (GPU 16k x CPU 8k).
             if (node is not null && node["max_tokens"] is null && node["max_completion_tokens"] is null)
             {
-                bool cpuLinePt = CoerceFor(node["model"]?.GetValue<string>() ?? "") || CoerceFor(Model);
+                bool cpuLinePt = CoerceFor();
                 int capPt = cpuLinePt ? CpuMaxTokens : MaxTokens;
                 if (capPt > 0)
                 {
@@ -1325,7 +1510,12 @@ WriteJson(ctx, 200, new JsonObject
         bool toolsAsked = false;
         try { toolsAsked = JsonNode.Parse(outBody)?.AsObject() is JsonObject ob && ob["tools"] is JsonArray ta && ta.Count > 0; }
         catch { }
-        bool coerceLine = LegacyHarness && (CoerceFor(Model) || (isChat && toolsAsked)) && isChat
+        // Coerção de LINHA: so quando o upstream nao tem parser proprio
+        // (--upstream-parser none) ou quando o operador pediu (--coerce-text-tools).
+        // Antes isto vinha embrulhado em LegacyHarness + um "toolsAsked => assume
+        // que o upstream nao parseia", heuristica que ligava coerção por acidente.
+        // Agora e CAPACIDADE explicita, sem flag-deus e sem nome de modelo.
+        bool coerceLine = CoerceFor() && isChat
             && ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH";
         bool wantStream = false;
         if (coerceLine)
@@ -1342,6 +1532,14 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         WithAuth(forward, ctx);
         if (ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH")
             forward.Content = new StringContent(outBody, Encoding.UTF8, "application/json");
+        // Anti-repeat com abort em stream: o cliente pediu JSON unico, mas
+        // consumimos o upstream em SSE para o detector cortar o loop DURANTE a
+        // geracao. O retry pos-hoc pagava os 16.384 tokens (~375 s) inteiros
+        // antes de trocar o conteudo.
+        if (isChat && AntiRepeat && AntiRepeatAbort && !coerceLine
+            && ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH"
+            && !BodyWantsStream(outBody) && TryStreamAbortChat(ctx, outBody, startedAt))
+            return;
         // Linha CPU + stream: o opencode TUI aborta em 300s sem headers e o
         // llama leva minutos no prefill — descarrega headers + heartbeat AGORA
         // (comentário SSE, ignorado pelo parser) e só então chama o upstream.
@@ -1383,9 +1581,10 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 if (QwenStd) line = QwenStandard.TranslateChunkNames(line);
                 writer.WriteLine(line);
                 if (Diagnostic) rawChatSse.AppendLine(line);
-                // Sonda bypass-chat-stream: so observa e registra (o fluxo NAO
-                // para; a contencao silenciosa mora no loop da Web).
-                if (isChat && !sseTrip && line.StartsWith("data:"))
+                // Sonda stream: cobre chat E completions legado (ambos passam por
+                // aqui). So observa e registra — o fluxo NAO para; a contencao
+                // silenciosa mora no loop da Web.
+                if (!sseTrip && line.StartsWith("data:"))
                 {
                     try
                     {
@@ -1396,20 +1595,21 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                     if (sseText.Length - sseChecked >= 512)
                     {
                         sseChecked = sseText.Length;
-                        if (CheckRepeat(sseText.ToString(), "bypass-chat-stream"))
+                        string whereSse = isChat ? "bypass-chat-stream" : "bypass-completions-stream";
+                        if (CheckRepeat(sseText.ToString(), whereSse))
                         {
                             sseTrip = true;
-                            Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length });
+                            Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = whereSse, ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length });
                         }
                     }
                 }
             }
             // Avaliacao de fecho: stream curto nunca atinge o passo de 512.
             // Sem break/DONE: o fluxo segue ate o fim; a Web conteve em silencio.
-            if (!sseTrip && sseText.Length > 0 && CheckRepeat(sseText.ToString(), "bypass-chat-stream"))
+            if (!sseTrip && sseText.Length > 0 && CheckRepeat(sseText.ToString(), isChat ? "bypass-chat-stream" : "bypass-completions-stream"))
             {
                 sseTrip = true;
-                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = isChat ? "bypass-chat-stream" : "bypass-completions-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
             }
             // Sonda traffic FULL (só com DIAGNOSTICS; chat stream: integros).
             if (Diagnostic)
@@ -1418,6 +1618,11 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "chat-stream", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = dump.Length, ["res"] = dump };
                 AddPerf(traffic, startedAt, dump, outBody);
                 Log(traffic);
+                // Sonda compacta: paridade com o caminho /v1/responses (t/s sem
+                // precisar varrer o dump de trafego). So com DIAGNOSTICS.
+                var perf = new JsonObject { ["event"] = "response", ["mode"] = "chat-stream", ["model"] = Model, ["chars"] = sseText.Length };
+                AddPerf(perf, startedAt, sseText.ToString(), outBody);
+                Log(perf);
             }
         }
         else
@@ -1443,11 +1648,14 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 return;
             }
             // Sonda bypass-chat: repeticao no corpo = 1 retry de contencao.
-            if (isChat && CheckRepeat(ExtractChatText(json), "bypass-chat"))
+            // Cobre tambem /v1/completions legado (mesmo corpo, chave "text").
+            if (CheckRepeat(ExtractChatText(json), isChat ? "bypass-chat" : "bypass-completions"))
             {
-                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-chat", ["window"] = AntiRepeatWindow });
-                // Retry inibivel (--harness 0): deteccao vira so sonda.
-                if (LegacyHarness)
+                Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = isChat ? "bypass-chat" : "bypass-completions", ["window"] = AntiRepeatWindow });
+                // Retry governado pelo ANTI-REPEAT (--anti-repeat-retry), nao pelo
+                // harness legado: com --legacy-harness 0 a deteccao virava so sonda
+                // e o loop ia inteiro ate o max_tokens (medido: 16.384 tok / 378 s).
+                if (AntiRepeatRetry)
                 {
                     string? second = RetryBypassChat(outBody, ctx);
                     if (second is not null)
@@ -1461,7 +1669,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             }
             // ToolsCoercion no bypass: pedido com tools sem tool_calls = sintetiza.
             // Inibivel (--harness 0): caminho limpo p/ harness opencode.
-            if (isChat && toolsAsked && LegacyHarness)
+            if (isChat && toolsAsked && CoerceFor())
             {
                 try
                 {
@@ -1504,6 +1712,10 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "chat", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json };
                 AddPerf(traffic, startedAt, json, outBody);
                 Log(traffic);
+                // Sonda compacta: paridade com o caminho /v1/responses.
+                var perf = new JsonObject { ["event"] = "response", ["mode"] = "chat", ["model"] = Model, ["chars"] = json.Length };
+                AddPerf(perf, startedAt, json, outBody);
+                Log(perf);
             }
         }
         ctx.Response.Close();
@@ -1700,12 +1912,12 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // Sem teto por padrao (MaxTokens/CpuMaxTokens = 0): a infra (llama
         // -c/--n-predict) e o cliente (max_tokens) controlam o tamanho da saida.
         // So ha clamp quando o operador define >0 via appsettings/--max-tokens.
-        // A linha e CPU quando o MODEL servido exige coercion (instancia 3B)
-        // ou o id pedido contem "cpu": nesses casos vale CpuMaxTokens e stop proprio.
-        // (Suite E2E usa ids 8b mesmo na linha CPU — decidir só pelo pedido
-        // deixava o 3B divagar até 8k.)
-        bool cpuLine = CoerceFor(requestedModel) || CoerceFor(Model);
-        int cap = cpuLine ? CpuMaxTokens : MaxTokens;   // 0 = sem teto
+        // A linha e COAGIDA quando o upstream nao tem parser proprio
+        // (--upstream-parser none) ou o operador pediu --coerce-text-tools:
+        // nesses casos vale o teto da linha coagida e o stop proprio. Nao ha
+        // mais inferencia por id de modelo ("cpu"): a capacidade define a linha.
+        bool coercedLine = CoerceFor();
+        int cap = coercedLine ? CpuMaxTokens : MaxTokens;   // 0 = sem teto
         // O pedido do cliente NAO limita a saida: o bridge ignora
         // max_tokens/max_output_tokens do corpo e usa apenas o teto do operador.
         // Motivo: Gemma 4 com thinking ON gasta centenas de tokens em raciocinio;
@@ -1751,7 +1963,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // Linha CPU sem parser: o 3B entra em loop de filler ([END_OF_TEXT])
         // quando divaga — stop dedicado corta o loop sem afetar tool calls
         // (elas nunca vem nativas aqui, só via coercion do texto).
-        else if (cpuLine) chat["stop"] = new JsonArray("[END_OF_TEXT]");
+        else if (coercedLine) chat["stop"] = new JsonArray("[END_OF_TEXT]");
         return chat;
     }
 
@@ -1857,7 +2069,23 @@ string outBody = body;
         {
             dropped = StripReasoningItems(req);
             bool moved = NormalizeSystemFirst(req);
-            if (dropped > 0 || moved) outBody = req.ToJsonString(SerOpts);
+            // Temperatura efetiva: cliente manda, senao perfil/global (0.1/0.3/0.5).
+            // Sem isto o bypass Responses caia no --temp 1.0 do llama.
+            if (req["temperature"] is null)
+            {
+                double effTemp = Temperature;
+                if (req["model"]?.GetValue<string>() is string tmid
+                    && TryProfile(tmid, out double pt, out _) && !double.IsNaN(pt))
+                    effTemp = pt;
+                req["temperature"] = effTemp;
+                if (Diagnostic) Log(new JsonObject
+                {
+                    ["event"] = "temp-inject",
+                    ["temp"] = effTemp,
+                    ["model"] = req["model"]?.GetValue<string>() ?? Model
+                });
+            }
+            if (dropped > 0 || moved || req["temperature"] is not null) outBody = req.ToJsonString(SerOpts);
         }
         catch { outBody = body; }
         // Formula (Harness, cliente web = model sem sufixo): instructions +
@@ -1971,7 +2199,8 @@ var shape = new StringBuilder();
             if (CheckRepeat(ExtractResponsesText(json), "bypass-responses"))
             {
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses", ["window"] = AntiRepeatWindow });
-                if (LegacyHarness)
+                // Mesmo desacoplamento do bypass-chat: quem governa e o anti-repeat.
+                if (AntiRepeatRetry)
                 {
                     string? second = RetryBypassResponses(req, ctx);
                     if (second is not null)
@@ -2854,6 +3083,187 @@ var shape = new StringBuilder();
     }
 
     /// <summary>Bypass chat: 1 retry de contencao com o aviso anexado as messages.</summary>
+    /// <summary>O corpo pediu stream? Decidido no corpo, nao no flag de coerce.</summary>
+    static bool BodyWantsStream(string body)
+    {
+        try { return JsonNode.Parse(body)?["stream"]?.GetValue<bool>() ?? false; }
+        catch { return false; }
+    }
+
+    /// <summary>Consome o upstream em SSE, acumula a resposta e ABORTA a geracao
+    /// quando o anti-repeat dispara: corta o loop em ~512 chars de texto novo em
+    /// vez de deixar o modelo gastar max_tokens (medido: 16.384 tok / 375 s por
+    /// turno degenerado, com ~15,5k tokens descartados pelo parser do llama).
+    /// Preserva os tool calls ja fechados e tenta 1 retry com o aviso invisivel.
+    /// Devolve true quando ja escreveu a resposta no ctx.</summary>
+    static bool TryStreamAbortChat(HttpListenerContext ctx, string outBody, DateTime startedAt)
+    {
+        string sbody;
+        try
+        {
+            var n = JsonNode.Parse(outBody)?.AsObject();
+            if (n is null) return false;
+            n["stream"] = true;
+            n["stream_options"] = new JsonObject { ["include_usage"] = true };
+            sbody = n.ToJsonString(SerOpts);
+        }
+        catch { return false; }
+
+        using var cts = new CancellationTokenSource();
+        HttpResponseMessage? resp = null;
+        try
+        {
+            var req = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/completions")
+            { Content = new StringContent(sbody, Encoding.UTF8, "application/json") };
+            WithAuth(req, ctx);
+            resp = Http.Send(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            if (!resp.IsSuccessStatusCode) { resp.Dispose(); return false; }
+            string rct = resp.Content.Headers.ContentType?.ToString() ?? "";
+            if (!rct.Contains("text/event-stream")) { resp.Dispose(); return false; }
+
+            var content = new StringBuilder();
+            var scan = new StringBuilder();
+            var calls = new SortedDictionary<int, (string Id, string Name, StringBuilder Args)>();
+            int inTok = 0, outTok = 0, checkedAt = 0;
+            bool tripped = false, gotAnything = false;
+
+            using (var rd = new StreamReader(resp.Content.ReadAsStream(cts.Token), new UTF8Encoding(false)))
+            {
+                string? line;
+                while ((line = rd.ReadLine()) != null)
+                {
+                    if (!line.StartsWith("data:")) continue;
+                    string data = line[5..].Trim();
+                    if (data.Length == 0 || data == "[DONE]") continue;
+                    JsonObject? chunk = null;
+                    try { chunk = JsonNode.Parse(data)?.AsObject(); } catch { }
+                    if (chunk is null) continue;
+                    if (chunk["usage"] is JsonObject us)
+                    {
+                        inTok = us["prompt_tokens"]?.GetValue<int>() ?? inTok;
+                        outTok = us["completion_tokens"]?.GetValue<int>() ?? outTok;
+                    }
+                    if (chunk["choices"] is not JsonArray chs || chs.Count == 0) continue;
+                    if (chs[0]?["delta"] is not JsonObject dl) continue;
+                    if (dl["content"] is JsonValue cv && cv.TryGetValue<string>(out string? ctxt) && ctxt.Length > 0)
+                    { content.Append(ctxt); scan.Append(ctxt); gotAnything = true; }
+                    if (dl["reasoning_content"] is JsonValue rv && rv.TryGetValue<string>(out string? rtxt) && rtxt.Length > 0)
+                    { scan.Append(rtxt); gotAnything = true; }
+                    // O loop mora nos ARGUMENTS do tool call (o parser do llama
+                    // descarta o resto). Sem isto o detector olhava so o content.
+                    if (dl["tool_calls"] is JsonArray tcs)
+                        foreach (var tcn in tcs)
+                        {
+                            if (tcn is not JsonObject tco) continue;
+                            int idx = tco["index"]?.GetValue<int>() ?? 0;
+                            if (!calls.TryGetValue(idx, out var cur))
+                                cur = (tco["id"]?.GetValue<string>() ?? "", "", new StringBuilder());
+                            string? nm = tco["function"]?["name"]?.GetValue<string>();
+                            string? ar = tco["function"]?["arguments"]?.GetValue<string>();
+                            if (!string.IsNullOrEmpty(nm)) { cur.Name = nm; gotAnything = true; }
+                            if (!string.IsNullOrEmpty(ar)) { cur.Args.Append(ar); scan.Append(ar); gotAnything = true; }
+                            calls[idx] = cur;
+                        }
+                    if (scan.Length - checkedAt >= 512)
+                    {
+                        checkedAt = scan.Length;
+                        if (CheckRepeat(scan.ToString(), "stream-abort"))
+                        {
+                            tripped = true;
+                            Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "stream-abort", ["window"] = AntiRepeatWindow, ["chars"] = scan.Length });
+                            break;   // para de ler; o dispose/cancel abaixo corta o upstream
+                        }
+                    }
+                }
+            }
+            if (tripped)
+            {
+                try { resp.Dispose(); } catch { }
+                try { cts.Cancel(); } catch { }
+            }
+
+            // Salvage: entra toda call que tenha nome. Arguments truncado e
+            // mantido como veio (o llama nativo tambem devolve truncado quando
+            // bate max_tokens; o runner salva o que fecha por regex).
+            var keep = new JsonArray();
+            foreach (var kv in calls)
+            {
+                if (string.IsNullOrEmpty(kv.Value.Name)) continue;
+                string a = kv.Value.Args.ToString();
+                keep.Add(new JsonObject
+                {
+                    ["id"] = string.IsNullOrEmpty(kv.Value.Id) ? "call_" + kv.Key : kv.Value.Id,
+                    ["type"] = "function",
+                    ["function"] = new JsonObject { ["name"] = kv.Value.Name, ["arguments"] = a }
+                });
+            }
+            string cbody = content.ToString();
+            // Sem nada recebido (stream vazio) e sem trip: cai no caminho normal.
+            // Qualquer delta vira resposta — nunca re-gerar (dobraria o custo).
+            if (!gotAnything) { resp.Dispose(); return false; }
+
+            var msg = new JsonObject { ["role"] = "assistant", ["content"] = cbody };
+            if (keep.Count > 0) msg["tool_calls"] = keep;
+            var outObj = new JsonObject
+            {
+                ["id"] = "chatcmpl-bridge-" + Guid.NewGuid().ToString("N")[..12],
+                ["object"] = "chat.completion",
+                ["created"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                ["model"] = Model,
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["index"] = 0,
+                    ["finish_reason"] = keep.Count > 0 ? "tool_calls" : "stop",
+                    ["message"] = msg
+                }),
+                ["usage"] = new JsonObject
+                {
+                    ["prompt_tokens"] = inTok,
+                    ["completion_tokens"] = outTok,
+                    ["total_tokens"] = inTok + outTok
+                }
+            };
+            string json = outObj.ToJsonString(SerOpts);
+
+            // Contencao: 1 retry com o aviso invisivel, agora disparado no MEIO
+            // da geracao (o antigo rodava depois de pagar a resposta inteira).
+            if (tripped && AntiRepeatRetry)
+            {
+                string? second = RetryBypassChat(outBody, ctx);
+                if (second is not null)
+                {
+                    if (second.Contains("\"reasoning\":")) second = second.Replace("\"reasoning\":", "\"reasoning_content\":");
+                    json = second;
+                    Log(new JsonObject { ["event"] = "anti-repeat-retry", ["where"] = "stream-abort" });
+                }
+            }
+
+            var payload = JsonNode.Parse(json)?.AsObject();
+            if (payload is null) { resp.Dispose(); return false; }
+            WriteJson(ctx, 200, payload);
+            if (Diagnostic)
+            {
+                Log(new JsonObject
+                {
+                    ["event"] = "traffic", ["mode"] = "chat", ["model"] = Model,
+                    ["req_len"] = outBody.Length, ["req"] = outBody,
+                    ["res_len"] = json.Length, ["res"] = json,
+                    ["aborted"] = tripped
+                });
+                var perf = new JsonObject { ["event"] = "response", ["mode"] = "chat", ["model"] = Model, ["chars"] = json.Length };
+                AddPerf(perf, startedAt, json, outBody);
+                Log(perf);
+            }
+            return true;
+        }
+        catch
+        {
+            try { resp?.Dispose(); } catch { }
+            return false;
+        }
+    }
+
+
     static string? RetryBypassChat(string outBody, HttpListenerContext ctx)
     {
         try
@@ -3024,9 +3434,10 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         // Efeito "digitando" e gestao sao do cliente direto (Web UI). No
         // opencode (perfil) o texto agrega como antes: caminho livre.
         bool perDelta = StreamPerDelta && managed;
-        // Coercao de tool call (texto/narrada) e do modo LEGACY da bridge. Fora
-        // dele o caminho e livre: o cliente (opencode) gerencia as tools.
-        bool coerceOn = LegacyHarness && CoerceNarrated && managed;
+        // Coercao de tool call narrada: rotina PROPRIA (--coerce-narrated),
+        // independente do LegacyHarness, limitada ao cliente gerido (cliente com
+        // harness proprio gerencia as tools sozinho).
+        bool coerceOn = CoerceNarrated && managed;
         bool repeatTrip = false;   // AntiRepeat: thinking repetido detectado, aborta e conteve (1 retry)
         string carry = "";   // texto ainda nao classificado (tag pode partir no meio do chunk)
         string reasonBuf = "";   // hold-back do reasoning: tag de controle pode partir entre chunks
@@ -3986,7 +4397,7 @@ if (type == "message")
         // Coerção: sem tool_calls nativos e com tools pedidas, extrai do texto
         // (ToolsCoercion: hermes/plural/fence — coder/deepseek via llama).
         // So atua se o texto parsear; prosa normal passa intacta.
-        if (LegacyHarness && CoerceNarrated && ManagedFor(model) && toolCalls.Count == 0 && hadTools)
+        if (CoerceNarrated && ManagedFor(model) && toolCalls.Count == 0 && hadTools)
         {
             foreach (var (name, args) in ExtractTextToolCalls(content, ChatToResponsesAnnounced))
                 toolCalls.Add(("call_" + NewId(), name, args));
@@ -4378,6 +4789,9 @@ if (type == "message")
         try
         {
             obj["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            // --diagnostic-level metrics: mede sem guardar os corpos (o dump
+            // integral passava de 280 MB numa rodada de belt, so de req/res).
+            if (DiagnosticLevel == "metrics") { obj.Remove("req"); obj.Remove("res"); }
             File.AppendAllText(LogPath, obj.ToJsonString(SerOpts) + "\n");
         }
         catch { /* log nunca derruba o pedido */ }

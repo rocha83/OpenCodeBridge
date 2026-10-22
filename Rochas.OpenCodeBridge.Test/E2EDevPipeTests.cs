@@ -43,7 +43,7 @@ internal static class E2EDevPipeTests
 
         var t1 = new JsonObject
         {
-            ["model"] = Model(), ["temperature"] = 0.3, ["stream"] = false,
+            ["model"] = Model(), ["temperature"] = 0.1, ["stream"] = false,
             ["messages"] = new JsonArray(new JsonObject
             {
                 ["role"] = "user",
@@ -59,7 +59,7 @@ internal static class E2EDevPipeTests
 
         var t2 = new JsonObject
         {
-            ["model"] = Model(), ["temperature"] = 0.3, ["stream"] = false,
+            ["model"] = Model(), ["temperature"] = 0.1, ["stream"] = false,
             ["messages"] = new JsonArray(
                 t1["messages"]!.AsArray()[0]!.DeepClone(),
                 new JsonObject
@@ -78,7 +78,7 @@ internal static class E2EDevPipeTests
 
         var t3 = new JsonObject
         {
-            ["model"] = Model(), ["temperature"] = 0.3, ["stream"] = false,
+            ["model"] = Model(), ["temperature"] = 0.1, ["stream"] = false,
             ["messages"] = new JsonArray(new JsonObject
             {
                 ["role"] = "user", ["content"] = "O conteúdo lido foi 'DEVPIPE-OK'. Responda SOMENTE: DEVPIPE-FIM"
@@ -131,7 +131,7 @@ internal static class E2EDevPipeTests
         if (!await CpuServesVision()) TestContext.Skip("sem modelo VL na ponte CPU :4125 (vision requer mmproj)");
         var body = new JsonObject
         {
-            ["model"] = "qwen3-vl-4b", ["temperature"] = 0.3, ["stream"] = false,
+            ["model"] = "qwen3-vl-4b", ["temperature"] = 0.1, ["stream"] = false,
             ["messages"] = new JsonArray(VisionMsg("O que esta escrito na imagem? Responda SOMENTE o texto.", Img64("placa.png"))),
         };
         var r = await TestContext.PostObj(CpuBridge + "/v1/chat/completions", body);
@@ -145,7 +145,7 @@ internal static class E2EDevPipeTests
         if (!await CpuServesVision()) TestContext.Skip("sem modelo VL na ponte CPU :4125 (vision requer mmproj)");
         var body = new JsonObject
         {
-            ["model"] = "qwen3-vl-4b", ["temperature"] = 0.3, ["stream"] = false,
+            ["model"] = "qwen3-vl-4b", ["temperature"] = 0.1, ["stream"] = false,
             ["messages"] = new JsonArray(VisionMsg("Transcreva exatamente as tres linhas da imagem, uma por linha.", Img64("doc.png"))),
         };
         var r = await TestContext.PostObj(CpuBridge + "/v1/chat/completions", body);
@@ -164,7 +164,7 @@ internal static class E2EDevPipeTests
         {
             var body = new JsonObject
             {
-                ["model"] = "qwen3-vl-4b", ["temperature"] = 0.3, ["stream"] = false,
+                ["model"] = "qwen3-vl-4b", ["temperature"] = 0.1, ["stream"] = false,
                 ["tool_choice"] = "required",
                 ["messages"] = new JsonArray(
                     new JsonObject { ["role"] = "system", ["content"] = "Voce e um desenvolvedor senior." },

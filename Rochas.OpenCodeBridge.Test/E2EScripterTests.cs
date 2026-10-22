@@ -44,7 +44,7 @@ internal static class E2EScripterTests
             new JsonObject { ["role"]="user", ["content"]="Componha o script bash." });
         for (int t = 0; t < 8; t++)
         {
-            var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
+            var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", new JsonObject { ["model"]=model, ["temperature"]=0.1, ["stream"]=false, ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
             var msg = r["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message");
             var calls = msg["tool_calls"]?.AsArray();
             if (calls is null || calls.Count == 0) { Console.WriteLine($"  [scripter] final: {msg["content"]}"); break; }
@@ -98,7 +98,7 @@ internal static class E2EScripterTests
             new JsonObject { ["role"]="user", ["content"]="SCRIPT:\n" + script + "\n\nGere o companion tarefa.md." });
         for (int t = 0; t < 8; t++)
         {
-            var r = await TestContext.PostObj(CpuBridge + "/v1/chat/completions", new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
+            var r = await TestContext.PostObj(CpuBridge + "/v1/chat/completions", new JsonObject { ["model"]=model, ["temperature"]=0.1, ["stream"]=false, ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
             var msg = r["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message");
             var calls = msg["tool_calls"]?.AsArray();
             if (calls is null || calls.Count == 0) { Console.WriteLine($"  [companion] final: {msg["content"]}"); break; }

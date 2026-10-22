@@ -67,7 +67,7 @@ internal static class E2EBeltsBuildTests
                 for (int turn = 0; turn < 10 && filesCreated < 8; turn++)
                 {
                     var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                        new JsonObject { ["model"]=model, ["temperature"]=0.5, ["stream"]=false, ["max_tokens"]=4096, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
+                        new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["max_tokens"]=4096, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
                     var msg = r["choices"]?[0]?["message"]?.AsObject();
                     string content = msg?["content"]?.GetValue<string>() ?? "";
                     totalChars += content.Length;
@@ -113,7 +113,7 @@ internal static class E2EBeltsBuildTests
                     for (int turn = 0; turn < 4; turn++)
                     {
                         var r2 = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                            new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["max_tokens"]=2048, ["messages"]=history.DeepClone(), ["tools"]=readTools.DeepClone() });
+                            new JsonObject { ["model"]=model, ["temperature"]=0.1, ["stream"]=false, ["max_tokens"]=2048, ["messages"]=history.DeepClone(), ["tools"]=readTools.DeepClone() });
                         var msg2 = r2["choices"]?[0]?["message"]?.AsObject();
                         string content2 = msg2?["content"]?.GetValue<string>() ?? "";
                         totalChars += content2.Length;

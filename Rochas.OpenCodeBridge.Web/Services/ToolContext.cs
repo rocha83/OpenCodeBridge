@@ -14,7 +14,7 @@ public sealed class ToolContext
     public string AgentName { get; init; } = "";
     public string BridgeUrl { get; init; } = "";
     public string Model { get; init; } = "";
-    public double Temperature { get; init; } = 0.2;
+    public double Temperature { get; init; } = 0.1;
     // System do agente dono do contexto (o sub o usa como system; vazio = pinado).
     public string SystemPrompt { get; init; } = "";
     // Progresso de tool (ok null=start). Sub = id do subagente (só internas).

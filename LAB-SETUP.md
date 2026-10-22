@@ -12,7 +12,7 @@ expresso (componente, cenário de teste e harness) fica no `README.md`.
 | GPU2 `:4110` | `gemma-4-e2b` — Gemma4 E2B **coder heretic** `Q4_K_M`, **text-only** | `-c 114688 -np 1` = **1×112k** | 2082 MiB |
 
 Total no boot: **11168 MiB usados / 868 MiB livres** (~10,91 GiB usados).
-Temperatura média (Plan/Orch): **0.5**; Build/Scripter/Exec **0.3**; MoE **0.8**.
+Temperatura média (Plan/Orch): **0.3**; baixa (Build/Scripter/Exec) **0.1**; alta (MoE) **0.5**.
 Detalhes de remaster em `/media/mint/Linux/remaster-update6.md`.
 
 
@@ -64,7 +64,7 @@ atrás de duas bridges:
           "tool_call": true,
           "compatibility": { "reasoningField": "reasoning_content" },
           "limit": { "context": 98304, "output": 8192 },
-          "temperature": 0.5
+          "temperature": 0.3
         }
       }
     },
@@ -78,7 +78,7 @@ atrás de duas bridges:
           "tool_call": true,
           "compatibility": { "reasoningField": "reasoning_content" },
           "limit": { "context": 114688, "output": 8192 },
-          "temperature": 0.5
+          "temperature": 0.3
         }
       }
     }
@@ -107,20 +107,20 @@ unit (`--temperature`/`--thinking`); id com sufixo **vence**.
 
 | id | temp | thinking | papel |
 |---|---|---|---|
-| `gemma-4-12b` | 0.5 | events | global GPU1 |
-| `gemma-4-12b-plan` | 0.5 | events | planeja |
-| `gemma-4-12b-build` | 0.3 | off | executa |
-| `gemma-4-12b-orch` | 0.5 | events | orquestra/delega |
-| `gemma-4-12b-moe` | 0.8 | events | explora/generalista |
-| `gemma-4-12b-scripter` | 0.3 | off | compõe scripts |
-| `gemma-4-e2b` | 0.5 | events | global GPU2 |
-| `gemma-4-e2b-plan` | 0.5 | events | planeja |
-| `gemma-4-e2b-build` | 0.3 | off | executa |
-| `gemma-4-e2b-moe` | 0.8 | events | explora |
-| `gemma-4-e2b-scripter` | 0.3 | off | compõe/valida scripts |
-| `gemma-4-e2b-exec` | 0.3 | off | valida **e executa** scripts |
+| `gemma-4-12b` | 0.3 | events | global GPU1 |
+| `gemma-4-12b-plan` | 0.3 | events | planeja |
+| `gemma-4-12b-build` | 0.1 | off | executa |
+| `gemma-4-12b-orch` | 0.3 | events | orquestra/delega |
+| `gemma-4-12b-moe` | 0.5 | events | explora/generalista |
+| `gemma-4-12b-scripter` | 0.1 | off | compõe scripts |
+| `gemma-4-e2b` | 0.3 | events | global GPU2 |
+| `gemma-4-e2b-plan` | 0.3 | events | planeja |
+| `gemma-4-e2b-build` | 0.1 | off | executa |
+| `gemma-4-e2b-moe` | 0.5 | events | explora |
+| `gemma-4-e2b-scripter` | 0.1 | off | compõe/valida scripts |
+| `gemma-4-e2b-exec` | 0.1 | off | valida **e executa** scripts |
 
-Escala de temperatura: **0.3 execução / 0.5 planejamento / 0.8 exploração**.
+Escala de temperatura: **0.1 baixo (execução) / 0.3 médio (planejamento) / 0.5 alto (exploração)**.
 Além do sufixo, `--thinking-off-roles Build,Scripter,Exec` força thinking off por
 **nome de role** (corrige sem renomear id).
 
@@ -130,13 +130,13 @@ Além do sufixo, `--thinking-off-roles Build,Scripter,Exec` força thinking off 
 
 | agent | model | temp |
 |---|---|---|
-| `plan.md` | `openai/gemma-4-12b-plan` | 0.5 |
-| `build.md` | `openai/gemma-4-12b-build` | 0.3 |
-| `orch.md` | `openai/gemma-4-12b-orch` | 0.5 |
-| `moe.md` | `openai/gemma-4-12b-moe` | 0.8 |
-| `scripter.md` | `openai/gemma-4-12b-scripter` | 0.3 |
-| `exec.md` | `llama/gemma-4-e2b-exec` | 0.3 |
-| subagente `task` | `llama/gemma-4-e2b-exec` | 0.3 |
+| `plan.md` | `openai/gemma-4-12b-plan` | 0.3 |
+| `build.md` | `openai/gemma-4-12b-build` | 0.1 |
+| `orch.md` | `openai/gemma-4-12b-orch` | 0.3 |
+| `moe.md` | `openai/gemma-4-12b-moe` | 0.5 |
+| `scripter.md` | `openai/gemma-4-12b-scripter` | 0.1 |
+| `exec.md` | `llama/gemma-4-e2b-exec` | 0.1 |
+| subagente `task` | `llama/gemma-4-e2b-exec` | 0.1 |
 
 O Exec é **só GPU2** (como Plan/Build/Orch são só GPU1). O Scripter **valida**
 (`bash -n`) sem executar; o Exec **executa** (`bash <arquivo>`). Subagente
@@ -402,9 +402,10 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 | `--upstream` | `http://127.0.0.1:4100` | base do llama.cpp (`/v1/...`) |
 | `--model` | `qwen3-8b-awq` | id servido pelo upstream (deve casar o `--alias`) |
 | `--thinking` | `events` | `events` mostra `reasoning_content`; `off` descarta |
-| `--temperature` | `0.5` | global; perfil por sufixo do id vence |
+| `--thinking-format` | `events` | nome canônico do formato de repasse do reasoning; `--thinking` é alias |
+| `--temperature` | `0.3` | global; perfil por sufixo do id vence |
 | `--max-tokens` | `0` | teto de saída (0 = sem teto; llama/cliente decidem) |
-| `--cpu-max-tokens` | `0` | teto da linha CPU (0 = sem teto) |
+| `--coerced-max-tokens` / `--cpu-max-tokens` | `0` | teto da linha COAGIDA (upstream sem parser); `--cpu-max-tokens` é alias histórico ("cpu" era inferência por nome de modelo) |
 | `--tool-output-limit` | `0` | corte por resultado de tool (0 = integral) |
 | `--log` | `/tmp/qwen3-bridge.log` | log JSONL |
 | `--api-key` | vazio | Bearer que a bridge usa no upstream e aceita do cliente |
@@ -413,22 +414,26 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 | `--users-db` | — | SQLite de usuários (login JWT) |
 | `--passthrough-responses` | `false` | **ligar**: bypass Responses nativo |
 | `--coerce-text-tools` | `false` | coage tool call em texto (```json / `<tool_call>`) |
+| `--upstream-parser` | `native` | `native`/`none` — capacidade de parser do upstream; substitui a heurística por nome de modelo |
 | `--coerce-narrated` | `true` | coage `[Assistant tool call]: nome({...})` |
 | `--anti-repeat` | `true` | contenção de repetição no stream |
 | `--anti-repeat-window` | `256` | janela em chars (64..2048) |
 | `--anti-repeat-retry` | `true` | 1 retry após contenção |
+| `--anti-repeat-abort` | `true` | corta a geração no upstream na hora (SSE) ao trip; flag própria (desliga só o corte) |
+| `--anti-repeat-notice` | (texto) | aviso invisível anexado no retry (CLI ou appsettings) |
 | `--thinking-off-roles` | vazio | CSV de roles (`Build,Scripter,Exec`) sempre sem thinking |
 | `--tool-blacklist` | vazio | `"Role=tool,tool;Role=tool"` |
 | `--risk-tools-alerts` | vazio | `"Role=regex,regex;Role=regex"` (comandos de risco) |
 | `--risk-ask` | `true` | pergunta ao usuário antes de comando de risco |
 | `--risk-ask-minutes` | `30` | validade da autorização concedida |
 | `--context-guard` | `false` | devolve 413 ao atingir o limiar do ctx |
-| `--context-threshold` | `0.95` | fração do ctx (0.5..0.99) |
+| `--context-threshold` | `0.95` | fração do ctx (0.3..0.99) |
 | `--context-tokens` | `0` | tamanho do ctx do modelo servido (0 = inativo) |
 | `--harness-behavior-tail` | vazio | tail de **comportamento** |
 | `--harness-tools-tail` | default do código | tail de **tools** — não sobrescrever |
 | `--legacy-harness` | `false` | reativa o harness legado (README — "Testes com outras famílias") |
 | `--diagnostic` | `false` | sonda Serilog extra (`/tmp/bridge-sonda.log`) |
+| `--diagnostic-level` | `off` | `off`/`metrics`/`dump` — granularidade da sonda (metrics = sem corpos req/res) |
 | `--qwen-standard` | `false` | ModelPrompt sintetizado + tools Alibaba (Qwen) |
 | `--workspace` | cwd | raiz de `POST /api/tools/execute` |
 | `--harness` | — | **inerte** (switch mestre removido); não use |
@@ -440,6 +445,75 @@ forma copiada do histórico `[Assistant tool call]: nome({...})`. A coerção de
 texto só roda com **`--legacy-harness 1`** (gate `CoerceFor`) e a allowlist são
 as tools anunciadas no pedido (`RealTools`). No Gemma 4 mantenha
 `--legacy-harness 0` e `--coerce-text-tools 0`.
+
+### 4.3 Grupos de flags (rotinas distintas)
+
+A bridge expõe **39 nomes de flags** (38 linhas `case`, pois `--host` é alias de
+`--listen`), das quais **24 estão ativas nas units**. Elas foram agrupadas em 11
+rotinas distintas para que nenhuma flag governasse dois subsistemas ao mesmo tempo
+(o bug que custou a rodada de 2026-10-22: `--legacy-harness 0` apagava o retry do
+anti-repeat e a coerção de narrada porque os três compartilhavam o mesmo flag).
+
+| grupo | flags | observação |
+|---|---|---|
+| rede/processo | `--listen` (alias `--host`) · `--port` · `--upstream` · `--model` · `--log` · `--workspace` | — |
+| auth/admin | `--api-key` · `--jwt-secret` · `--jwt-expiry` · `--users-db` · `--bridge-managed` | — |
+| transporte | `--passthrough-responses` · `--stream-per-delta` · `--qwen-standard` · `--thinking-format` (alias `--thinking`) · `--thinking-off-roles` | — |
+| harness/prompt | `--harness` · `--harness-behavior-tail` · `--harness-tools-tail` | tails inertes sem `--harness 1` |
+| coerção de tools | `--upstream-parser` · `--coerce-text-tools` · `--coerce-narrated` · `--tool-strategy` | capacidade do upstream, não nome de modelo |
+| anti-repeat | `--anti-repeat` · `--anti-repeat-abort` · `--anti-repeat-retry` · `--anti-repeat-window` · `--anti-repeat-notice` | `--anti-repeat-abort` desliga só o corte em stream |
+| orçamento/contexto | `--max-tokens` · `--coerced-max-tokens` (alias `--cpu-max-tokens`) · `--context-guard` · `--context-tokens` · `--context-threshold` | fail-fast se guard sem tokens |
+| geração/artefatos | `--temperature` · `--tool-output-limit` | — |
+| segurança | `--risk-ask` · `--risk-ask-minutes` · `--risk-tools-alerts` · `--tool-blacklist` | — |
+| observabilidade | `--diagnostic` · `--diagnostic-level` | `metrics` = sem corpos req/res |
+| legado | `--legacy-harness` | nunca em produção |
+
+As flags não-governadas por grupos (ex.: `--temperature`) ficam no grupo de
+geração. O mapa em vigor é exposto em `GET /api/status` → `config_groups`
+(objeto `{grupo: [flags ativas]}`), para quem opera a bridge de fora ver a qual
+rotina cada flag pertence sem ler a linha de comando.
+
+**Validação de coerência no boot** (`ValidateConfig`, roda antes do listener):
+`--context-guard 1` sem `--context-tokens` → exit 2 (fail-fast); `--diagnostic-level`,
+`--upstream-parser` fora do domínio → exit 2; `--anti-repeat-window` fora de
+64..2048 → exit 2; `--anti-repeat-notice` < 20 chars → exit 2. Avisos em stderr
+para flag aceita mas inerte (`--coerced-max-tokens` sem coerção, tail com
+`--harness 0`, `--context-tokens` sem guard, `--legacy-harness 1`).
+
+### 4.4 Coordenadas — ctx da dupla original + saída 16k
+
+**Llama (original duo, em produção):**
+
+| linha | serviço | modelo | ctx / slots | VRAM |
+|---|---|---|---|---|
+| GPU1 `:4100` | `llama-gpu.service` | Gemma4 12B uncensored `Q4_K_M` + mmproj F16 | `-c 106496` (1×104k) | ~8,5 GiB |
+| GPU2 `:4110` | `llama-gemma-e2b.service` (ex-`llama-cpu.service`) | Gemma4 E2B coder heretic `Q3_K_M`, text-only | `-c 90112` (1×88k) | ~2,1 GiB |
+| — | DRY default | `dry-multiplier 0.00` (desligado), breakers `\n : " *` | `dry-penalty-last-n 64` | — |
+| — | repeat-penalty | `--repeat-penalty 1.1` (GPU1) / `1.15` (GPU2), janela 64 | — | — |
+
+Total: **~10,91 GiB usados / ~868 MiB livres** (12288 MiB da RTX 3060).
+
+**Bridge (saída 16k):**
+
+| chave | valor | onde |
+|---|---|---|
+| `--max-tokens` | `16384` | `bridge-gpu.service`, `bridge-e2b.service` |
+| runner `max_tokens` (chat) | `16384` | `/tmp/opencode/run-belts-direct.sh` e `E2EBeltsBuildTests.cs:70` |
+| runner `max_tokens` (review) | `4096` | `E2EBeltsBuildTests.cs:116` |
+| `--anti-repeat` / `--anti-repeat-retry` | `1` | ambas as bridges |
+| `--harness` / `--legacy-harness` | `0` | ambas (sem harness ativo na bridge) |
+| `--diagnostic` | `1` | ambas (nível `dump` por default legado) |
+| `--thinking` | `events` | ambas (formato de repasse; o thinking efetivo vem do perfil) |
+| `--coerce-text-tools` / `--coerce-narrated` / `--tool-strategy` | `0` | ambas (upstream com parser nativo) |
+| `--upstream-parser` | `native` (default) | implícito — sem hardcode por nome de modelo |
+
+**Consequência do 16k:** o turno degenerado (loop de ~120 tokens por volta) morria
+em `completion_tokens=16384` (~375 s @43 t/s na E2B, ~15,5k tokens descartados
+pelo parser `peg-gemma4` do llama, com apenas ~900 tokens úteis de `content` +
+3 `tool_calls`). O contorno (`TryStreamAbortChat`) corta a geração no meio
+(~512 chars de texto novo) em vez de pagar o turno inteiro, preservando os
+tool calls já fechados e tentando 1 retry com o aviso invisível
+(`--anti-repeat-notice`).
 
 Subcomando: `Rochas.OpenCodeBridge.dll gate <repo> "<prompt>" [texto ...] [--review]`.
 
@@ -465,8 +539,8 @@ Regras de precedência:
 
 No deploy atual, o `appsettings.json` do runtime
 (`/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net9.0`) já está com
-`profiles.plan.temperature = 0.5` e `profiles.orch.temperature = 0.5`
-(escala 0.3/0.5/0.8); as bridges foram reiniciadas depois do ajuste.
+`profiles.plan.temperature = 0.3` e `profiles.orch.temperature = 0.3`
+(escala 0.1/0.3/0.5); as bridges foram reiniciadas depois do ajuste.
 
 Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `HARNESS=0` é legado inerte.
 
@@ -476,7 +550,7 @@ Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `HARNESS=0` é legado inert
 # bridge-gpu.service  (GPU1 / 12B)
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4124 --upstream http://127.0.0.1:4100 --model gemma-4-12b \
-  --thinking events --temperature 0.5 --max-tokens 8192 --api-key guest@123 \
+  --thinking events --temperature 0.3 --max-tokens 8192 --api-key guest@123 \
   --passthrough-responses true --legacy-harness 0 --anti-repeat 1 \
   --thinking-off-roles Build,Scripter,Exec \
   --tool-blacklist "Plan=write,edit,exec,install,git;sed,rm,chmod,chown,mv,cp;MoE=…;Orch=…" \
@@ -485,7 +559,7 @@ ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
 # bridge-cpu.service  (GPU2 / E2B coder)
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4125 --upstream http://127.0.0.1:4110 --model gemma-4-e2b \
-  --thinking events --temperature 0.5 --max-tokens 8192 --api-key guest@123 \
+  --thinking events --temperature 0.3 --max-tokens 8192 --api-key guest@123 \
   --passthrough-responses true --legacy-harness 0 --anti-repeat 1 \
   --thinking-off-roles Build,Scripter,Exec \
   --tool-blacklist "Plan=…;MoE=…;Orch=…" \

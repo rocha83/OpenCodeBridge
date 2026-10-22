@@ -101,7 +101,7 @@ public static class ChatBehaviorTests
         string html = await page.EvaluateAsync<string>(@"async () => {
           const af = (document.querySelector('input[name=__RequestVerificationToken]') || {}).value || '';
           const form = new URLSearchParams({ Name: 'UITEST-MOCK', Model: 'mock-model',
-            BridgeUrl: '__URL__', Temperature: '0.4', Thinking: 'events', Active: 'true',
+            BridgeUrl: '__URL__', Temperature: '0.1', Thinking: 'events', Active: 'true',
             Role: 'orchestrator', Mode: 'plan', SystemPrompt: 'mock',
             __RequestVerificationToken: af });
           await fetch('/Agents/Create', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });

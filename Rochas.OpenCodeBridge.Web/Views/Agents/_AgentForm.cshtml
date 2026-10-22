@@ -17,15 +17,15 @@
 </div>
 <script>
 (function () {
-  // Slider Criatividade: Baixa 0.3 / Média 0.6 / Alta 0.9 (só UI; grava o float).
+  // Slider Criatividade: Baixa 0.1 / Média 0.3 / Alta 0.5 (só UI; grava o float).
   if (window._agentCriat) return; window._agentCriat = true;
-  var vals = [0.3, 0.5, 0.8], names = ['Baixa', 'Média', 'Alta'];
+  var vals = [0.1, 0.3, 0.5], names = ['Baixa', 'Média', 'Alta'];
   function setup(range) {
     var wrap = range.closest('.row') || document;
     var hidden = wrap.querySelector('.criat-val');
     var lbl = wrap.querySelector('.criat-lbl');
     var cur = parseFloat(String((hidden && hidden.value) || '').replace(',', '.'));
-    if (isNaN(cur)) cur = 0.6;
+    if (isNaN(cur)) cur = 0.3;
     var idx = 0, bd = 1e9;
     vals.forEach(function (v, i) { var d = Math.abs(v - cur); if (d < bd) { bd = d; idx = i; } });
     function paint() {
