@@ -14,22 +14,41 @@ do `Caddyfile`, `/opt/models/*` (GGUF de 3,98 GB já na imagem) e `/etc/sudoers.
 
 ---
 
-## P1 — Arquivos de sistema (8 scripts + 4 units + 3 configs)
+## P1 — Arquivos de sistema (scripts + wrapper zenity + 4 units + configs)
 
 - [ ] Copiar scripts e units:
 
 ```bash
 S=/root/remaster-linux-2610231822
 install -m 755 "$S"/artefatos/bin/*.sh /usr/local/bin/
+install -m 755 "$S"/artefatos/bin/zenity /usr/local/bin/zenity   # wrapper (sem .sh)
 install -m 644 "$S"/artefatos/systemd/*.service /etc/systemd/system/
 install -m 644 "$S"/artefatos/etc/60-ocagents.conf /etc/ssh/sshd_config.d/
 ```
 
 Scripts: `ocagent-sandbox.sh`, `start-ocagent-tui.sh`, `start-opencode-web-dev.sh`,
 `start-opencode-web-moe.sh`, `start-ocagent-web.sh`, `start-llama-gpu2.sh`,
-`start-bridge-gpu2.sh`, `svc-common.sh`.
+`start-bridge-gpu2.sh`, `svc-common.sh`, `svc-firewall.sh`, `share-samba.sh`,
+`start-caddy.sh`, `setup-ufw-remaster.sh` — e o wrapper **`zenity`** (sem `.sh`;
+`/usr/local/bin` precisa vir antes de `/usr/bin` no PATH da sessão).
 Units: `opencode-web-dev.service`, `opencode-web-moe.service`, `llama-gpu2.service`,
 `bridge-gpu2.service`.
+
+- [ ] Confirmar o wrapper (deve imprimir o caminho `/usr/local/bin/zenity` e o teste
+      abaixo deve sair com `rc=5`, sem janela no canto superior esquerdo):
+
+```bash
+command -v zenity
+timeout 10 /usr/local/bin/zenity --question --title="TESTE ZENITY" \
+  --text="Se esta janela aparecer CENTRALIZADA e ESCURA, o padrao esta ok." --timeout=5
+echo "rc=$?"
+```
+
+- [ ] Confirmar o tema sob sudo (a janela deve sair **escura**, não branca):
+
+```bash
+sudo /usr/local/bin/zenity --info --title="TESTE ROOT" --text="Tema escuro?" --timeout=5
+```
 
 - [ ] LightDM — **mesclar** `hidden-users` (não sobrescrever o arquivo inteiro):
 
@@ -38,10 +57,15 @@ sed -i 's/^hidden-users=.*/hidden-users=nobody nobody4 noaccess moe-agent dev-ag
 grep '^hidden-users' /etc/lightdm/users.conf
 ```
 
-- [ ] Caddy — **anexar** o bloco (nada removido):
+- [ ] Caddy — o ícone (`start-caddy.sh`) **reescreve** o Caddyfile inteiro, então os blocos
+      novos precisam estar no gerador. Instalar gerador + snippet e só então anexar o bloco
+      (se o Caddyfile ainda não os tiver):
 
 ```bash
-cat "$S"/artefatos/etc/caddy-bloco.conf >> /etc/caddy/Caddyfile
+install -m 755 "$S"/artefatos/bin/start-caddy.sh /usr/local/bin/start-caddy.sh
+install -m 644 "$S"/artefatos/etc/caddy-agents.conf /usr/local/share/caddy-agents.conf
+grep -q 'rocha26.ddns.net:4230' /etc/caddy/Caddyfile || \
+  cat "$S"/artefatos/etc/caddy-bloco.conf >> /etc/caddy/Caddyfile   # 4230/4240/4250
 ```
 
 - [ ] Recarregar e validar:
@@ -58,7 +82,8 @@ caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 for f in ocagent-sandbox start-ocagent-tui start-opencode-web-dev start-opencode-web-moe \
          start-ocagent-web start-llama-gpu2 start-bridge-gpu2 svc-common; do
   test -x /usr/local/bin/$f.sh || echo "FALTA $f"; done
-grep -c 'rocha26.ddns.net:4152\|rocha26.ddns.net:4153' /etc/caddy/Caddyfile   # >= 2
+grep -c 'rocha26.ddns.net:4230\|rocha26.ddns.net:4240\|rocha26.ddns.net:4250' /etc/caddy/Caddyfile   # 3
+grep -c 'caddy-agents.conf' /usr/local/bin/start-caddy.sh   # 1
 sshd -t && echo sshd-ok
 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tail -1   # Valid configuration
 ```
@@ -202,13 +227,22 @@ PY
 
 ## P6 — Firewall (portas novas do Caddy) — **já aplicado na live, replicar no chroot**
 
-- [x] `ufw allow 4152/tcp comment 'opencode moe-agent'` e
-      `ufw allow 4153/tcp comment 'opencode dev-agent'` (aplicado 2026-10-23 19:19, v4+v6).
+- [x] Na live: `ufw allow 4230/tcp` (mint), `4240/tcp` (dev-agent), `4250/tcp` (moe-agent) e
+      `ufw delete allow` de 4147/4152/4153 (v4+v6).
+- [ ] No chroot: instalar o script canônico já ajustado (o loop dele agora inclui
+      `4220 4230 4240 4250`) e reaplicar:
 
-**ACEITE P6:** `ufw status | grep -E '4152|4153'` → 2 linhas `ALLOW` (4 contando v6).
+```bash
+install -m 755 "$S"/artefatos/bin/setup-ufw-remaster.sh /usr/local/bin/setup-ufw-remaster.sh
+/usr/local/bin/setup-ufw-remaster.sh
+```
+
+**ACEITE P6:** `ufw status | grep -E '4230|4240|4250'` → 3 linhas `ALLOW` (6 contando v6)
+e nenhuma regra para 4147/4152/4153.
 
 > Teste do proxy **exige SNI** (os sites do Caddy são por hostname):
-> `curl -sk --resolve rocha26.ddns.net:4153:127.0.0.1 -u 'dev:Developer.PCSS@LVP006' https://rocha26.ddns.net:4153/` → `200`;
+> `curl -sk --resolve rocha26.ddns.net:4240:127.0.0.1 -u 'dev:Developer.PCSS@LVP006' https://rocha26.ddns.net:4240/` → `200`;
+> `4230` com `admin:guest@123` → `200`; `4250` com `moe:...` → `200`; sem credencial → `401`.
 > sem `--resolve` o TLS responde `tlsv1 alert internal error` (curl `000`).
 
 ---
@@ -285,11 +319,11 @@ grep -c 'DELEGACAO POR CONTEXTO' /home/mint/.config/opencode/agents/*.md | grep 
 # 4) rede
 ss -ltn | grep -E ':4210|:4220' || echo 'ok (sobem por ícone)'
 grep -c 'reverse_proxy 127.0.0.1:4210\|reverse_proxy 127.0.0.1:4220' /etc/caddy/Caddyfile  # 2
-ufw status | grep -cE '4152|4153'   # 2
+ufw status | grep -cE '4230|4240|4250'   # 6 (v4+v6)
 
 # 5) boot limpo
 systemctl is-enabled opencode-web-dev opencode-web-moe   # disabled/disabled
 ```
 
 **Fora de escopo (não fazer no chroot):** `git push` do repo, criação de chaves, alteração
-das bridges, mudança de portas já publicadas (4147/4150/4151), remoção de modelos.
+das bridges, mudança de portas já publicadas (4230/4150/4151), remoção de modelos.

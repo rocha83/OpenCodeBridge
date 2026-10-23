@@ -2846,3 +2846,25 @@ bwrap responde `ok`.
   sem credencial → 401. Verificado também 4152 (moe) e o acesso direto 4210/4220 (200 com Basic auth).
 - Checklist único de pendências do chroot criado em `PENDENCIAS-CHROOT-CUBIC.md`.
 
+
+## Diálogos dos ícones: padrão único, centralização e tema (2026-10-23, sessão 6)
+
+- **Wrapper `/usr/local/bin/zenity`** (o binário real segue em `/usr/bin/zenity`):
+  `--password` vira `--forms` com campo rotulado; forms/entry ganham largura fixa 520 e
+  **altura natural** (o `--height` fixo cortava o form de 7 campos da bridge); toda
+  janela é **centralizada** (o Muffin não centraliza diálogos sem pai).
+- **Tema sob sudo**: `share-samba.sh` reexecuta como root e a janela saía **branca**
+  (GTK do root sem o tema `Mint-Y-Dark-Aqua`). O wrapper, quando `id -u` = 0, reexecuta
+  como o dono da sessão (`SUDO_USER`/`logname`) com `DISPLAY`/`XAUTHORITY`; validado por
+  screenshot (janela escura e centralizada).
+- **Uma janela por ícone**: `share-samba.sh` passou a pedir a senha do sudo no mesmo form
+  (6º campo; antes havia um `--password` extra no modo Anônimo); `ask_bridge_ports` faz
+  **uma** confirmação de firewall para as duas portas. O resto dos ícones já usava um
+  form único + confirmação de firewall depois.
+- **Bug do gerador do Caddy corrigido**: `start-caddy.sh` montava o Caddyfile dentro de
+  `sudo bash -c "..."` com `echo "    admin \$HASH"` (aspas internas não escapadas) — o
+  shell truncava o script e morria com "fim prematuro do arquivo"; o Caddyfile nunca era
+  gerado. Reescrito com lista `PORTA:BACKEND` + arquivo temporário + `install` via sudo.
+  Regenerado e validado: 12 blocos (10 admin + 4240/4250), `caddy validate` OK.
+- Portas públicas: **4230** (mint), **4240** (dev-agent), **4250** (moe-agent);
+  4147/4152/4153 fechadas no ufw.
