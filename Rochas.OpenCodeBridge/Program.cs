@@ -345,18 +345,18 @@ internal static partial class Program
     // thinking ligado + temp media p/ planejar; build = thinking fundido +
     // temp media p/ executar; orch = coordena subagentes; moe = uso geral
     // hibrido; scripter = temp baixa (determinismo) e thinking off.
-    // Escala: 0.3 (min: build/scripter/exec) / 0.5 (plan/orch) / 0.8 (moe).
+    // Escala: 0.1 (baixa: build/scripter/exec) / 0.3 (média: plan/orch) / 0.5 (alta: moe).
     // Request sem sufixo usa os
     // globais. O caminho Qwen3 padrao (sem sufixo) fica byte-identico.
     static readonly Dictionary<string, (double Temp, string Think)> Profiles =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["plan"] = (0.5, "events"),
-            ["build"] = (0.3, "off"),
-            ["orch"] = (0.5, "events"),
-            ["moe"] = (0.8, "events"),
-            ["scripter"] = (0.3, "off"),
-            ["exec"] = (0.3, "off"),
+            ["plan"] = (0.3, "events"),
+            ["build"] = (0.1, "off"),
+            ["orch"] = (0.3, "events"),
+            ["moe"] = (0.5, "events"),
+            ["scripter"] = (0.1, "off"),
+            ["exec"] = (0.1, "off"),
         };
 
     /// <summary>Descobre o perfil pelo sufixo do model (-plan/-build).</summary>

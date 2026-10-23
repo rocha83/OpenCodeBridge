@@ -8,11 +8,11 @@ expresso (componente, cenário de teste e harness) fica no `README.md`.
 
 | linha | modelo | ctx | VRAM |
 |---|---|---|---|
-| GPU1 `:4100` | `Gemma4-E4B-Q4` — Gemma4 E4B **base original** `Q4_K_M` + mmproj **Q8_0** | `-c 81920 -np 1` = **1×80k** | (medir no host; chroot sem CUDA) |
-| GPU2 `:4110` | `Gemma4-E4B-UD-Q3` — Huihui Gemma4 E4B **abliterated** `IQ3_XXS`, **text-only** | `-c 40960 -np 1` = **1×40k** | (medir no host; chroot sem CUDA) |
-| CPU `:4120` | `Gemma4-E4B-Q4` — mesmo E4B base, **CPU puro** (`-ngl 0`) | `-c 81920 -np 1` = **1×80k** | 0 (RAM) |
+| GPU1 `:4100` | `Gemma4-E4B-Q4` — Gemma4 E4B **base original** `Q4_K_M` + mmproj **Q8_0** | `-c 131072 -np 1` = **1×128k** | (medir no host; chroot sem CUDA) |
+| GPU2 `:4110` | `Gemma4-E4B-UD-Q3` — Huihui Gemma4 E4B **abliterated** `IQ3_XXS`, **text-only** | `-c 131072 -np 1` = **1×128k** | (medir no host; chroot sem CUDA) |
+| CPU `:4120` | `Gemma4-E4B-Q4` — mesmo E4B base, **CPU puro** (`-ngl 0`) | `-c 131072 -np 1` = **1×128k** | 0 (RAM) |
 
-Temperatura: CLI base **0.5**; perfis do runtime (`appsettings.json`) **plan 0.6 / build 0.3 / orch 0.6 / moe 0.8 / scripter 0.3 / exec 0.3**; o `temperature` do modelo no `opencode.json` (0.3/0.1/0.3/0.5/0.1) é só hint do cliente — o perfil da bridge vence.
+Temperatura: CLI base **0.5**; perfis do runtime (`appsettings.json`) **plan 0.3 / build 0.1 / orch 0.3 / moe 0.5 / scripter 0.1 / exec 0.1** (escala baixa **0.1**, média **0.3**, alta **0.5**); o `temperature` do modelo no `opencode.json` segue a mesma escala.
 Detalhes de remaster em `/media/mint/Linux/remaster-update6.md`.
 
 
@@ -28,7 +28,7 @@ convivendo em 12 GB de VRAM (RTX 3060, 12288 MiB).
 
 > **Nota CPU/GPU2.** O sufixo **CPU** que aparece em nomes históricos —
 > `llama-cpu.service`, `bridge-cpu.service`, `--cpu-max-tokens`, provider
-> `llama` — **não** significa que o E2B roda em CPU. O E2B é **GPU2**: roda na
+> `llama` — **não** significa que o E4B UD-Q3 roda em CPU. O E4B UD-Q3 é **GPU2**: roda na
 > GPU com `-ngl 99`. O caminho CPU existe apenas como **cenário de teste** para
 > tarefas granulares de execução de scripts (`Llama GPU2-CPU Toggle`, `-ngl 0`,
 > `-t/-tb`), para medir/validar o executor de scripts sem disputar VRAM com a
@@ -63,7 +63,7 @@ atrás de duas bridges:
           "name": "Gemma4 E4B base Q4_K_M GPU",
           "tool_call": true,
           "compatibility": { "reasoningField": "reasoning_content" },
-          "limit": { "context": 81920, "output": 16384 },
+          "limit": { "context": 131072, "output": 16384 },
           "temperature": 0.3
         }
       }
@@ -77,7 +77,7 @@ atrás de duas bridges:
           "name": "Huihui Gemma4 E4B abliterated IQ3_XXS GPU2",
           "tool_call": true,
           "compatibility": { "reasoningField": "reasoning_content" },
-          "limit": { "context": 40960, "output": 16384 },
+          "limit": { "context": 131072, "output": 16384 },
           "temperature": 0.3
         }
       }
@@ -94,10 +94,10 @@ Pontos que **quebram** a linha se ficarem errados:
   Sem isso o cliente entrega prompts de saída maiores do que o
   llama serve e o `Decode error (200 POST /v1/responses)` reaparece.
 - `limit.context` é **por requisição/slot**, não a soma dos slots. As duas rodam
-  `-np 1`: **GPU1 = 81920 (1×80k)** e **GPU2 = 40960 (1×40k)**.
+  `-np 1`: **GPU1 = 131072 (1×128k)** e **GPU2 = 131072 (1×128k)**.
 - A bridge `:4126` (`bridge-cpu-forced.service` / `llama-cpu-forced.service`,
   `-ngl 0`) é o caminho CPU puro e **não** entra no par 16k: continua com
-  `--max-tokens 8192` e `-c 81920`.
+  `--max-tokens 8192` e `-c 131072`.
 - O provider `llama` mantém `timeout`/`headerTimeout`/`chunkTimeout` longos
   (30/15/15 min) porque a GPU2 divide a GPU com a GPU1 e o ctx cheio é lento.
 
@@ -110,23 +110,23 @@ unit (`--temperature`/`--thinking`); id com sufixo **vence**.
 | id | temp | thinking | papel |
 |---|---|---|---|
 | `Gemma4-E4B-Q4` | 0.5 | events | global GPU1 (base da unit) |
-| `Gemma4-E4B-Q4-plan` | 0.6 | events | planeja |
-| `Gemma4-E4B-Q4-build` | 0.3 | off | executa |
-| `Gemma4-E4B-Q4-orch` | 0.6 | events | orquestra/delega |
-| `Gemma4-E4B-Q4-moe` | 0.8 | events | explora/generalista |
-| `Gemma4-E4B-Q4-scripter` | 0.3 | off | compõe scripts |
+| `Gemma4-E4B-Q4-plan` | 0.3 | events | planeja |
+| `Gemma4-E4B-Q4-build` | 0.1 | off | executa |
+| `Gemma4-E4B-Q4-orch` | 0.3 | events | orquestra/delega |
+| `Gemma4-E4B-Q4-moe` | 0.5 | events | explora/generalista |
+| `Gemma4-E4B-Q4-scripter` | 0.1 | off | compõe scripts |
 | `Gemma4-E4B-UD-Q3` | 0.5 | events | global GPU2 (base da unit) |
-| `Gemma4-E4B-UD-Q3-plan` | 0.6 | events | planeja |
-| `Gemma4-E4B-UD-Q3-build` | 0.3 | off | executa |
-| `Gemma4-E4B-UD-Q3-moe` | 0.8 | events | explora |
-| `Gemma4-E4B-UD-Q3-scripter` | 0.3 | off | compõe/valida scripts |
-| `Gemma4-E4B-UD-Q3-exec` | 0.3 | off | valida **e executa** scripts |
+| `Gemma4-E4B-UD-Q3-plan` | 0.3 | events | planeja |
+| `Gemma4-E4B-UD-Q3-build` | 0.1 | off | executa |
+| `Gemma4-E4B-UD-Q3-moe` | 0.5 | events | explora |
+| `Gemma4-E4B-UD-Q3-scripter` | 0.1 | off | compõe/valida scripts |
+| `Gemma4-E4B-UD-Q3-exec` | 0.1 | off | valida **e executa** scripts |
 
-Escala de temperatura: **0.3 baixo (execução) / 0.6 médio (planejamento) / 0.8 alto (exploração)**;
+Escala de temperatura: **0.1 baixa (execução) / 0.3 média (planejamento) / 0.5 alta (exploração)**;
 o global da unit é **0.5**. O `temperature` do `opencode.json` (0.3/0.1/0.3/0.5/0.1)
-é hint do cliente e **não** sobrescreve o perfil da bridge.
-Além do sufixo, `--thinking-off-roles Build,Scripter,Exec` força thinking off por
-**nome de role** (corrige sem renomear id).
+segue a mesma escala.
+O thinking off vem do perfil (build/scripter/exec); as units atuais não usam
+`--thinking-off-roles`.
 
 ### 1.3 Agents
 
@@ -143,7 +143,7 @@ Além do sufixo, `--thinking-off-roles Build,Scripter,Exec` força thinking off 
 | subagente `task` | `llama/Gemma4-E4B-UD-Q3-exec` | 0.1 |
 
 As temps acima são as do `opencode.json`; no runtime o **perfil da bridge**
-(plan/orch 0.6, build/scripter/exec 0.3, moe 0.8) vence pelo sufixo do id.
+(plan/orch 0.3, build/scripter/exec 0.1, moe 0.5) vence pelo sufixo do id.
 
 O Exec é **só GPU2** (como Plan/Build/Orch são só GPU1). O Scripter **valida**
 (`bash -n`) sem executar; o Exec **executa** (`bash <arquivo>`). Subagente
@@ -160,7 +160,7 @@ genérico `llama/Gemma4-E4B-UD-Q3` cai no `--thinking events` da unit e abre rea
 |---|---|---|
 | `-m` | `/opt/models/gemma4-e4b-base/…` (GPU1) / `/opt/models/huihui-gemma4-e4b-abliterated/…` (GPU2) | GGUF do modelo |
 | `--mmproj` | `mmproj-gemma-4-E4B-it-Q8_0.gguf` | projetor de visão — **só na GPU1 (E4B base)**; o GPU2 é text-only |
-| `-c` | 81920 (GPU1, 1×80k) / 40960 (GPU2, 1×40k) | contexto **total** do servidor |
+| `-c` | 131072 (GPU1, 1×128k) / 131072 (GPU2, 1×128k) | contexto **total** do servidor |
 | `-np` | 1 (GPU1) / 1 (GPU2) | slot único; o ctx do `-c` é o ctx do slot |
 | `-ngl 99` | 99 | **100% GPU** (sem offload para CPU) |
 | `-fa on` | on | Flash Attention |
@@ -171,13 +171,14 @@ genérico `llama/Gemma4-E4B-UD-Q3` cai no `--thinking events` da unit e abre rea
 | `--repeat-penalty` | 1.1 | anti-loop (os dois) |
 | `--dry-multiplier` / `--dry-penalty-last-n` | 0.8 / 1024 | DRY anti-repeat (os dois) |
 | `--cache-type-k` / `--cache-type-v` | `turbo3` | KV em TurboQuant nos dois |
-| `--prio` | 2 (GPU1) / -1 (GPU2) | prioridade da GPU (orquestrador ganha) |
+| `--prio` / `--prio-batch` | 2/2 (GPU1) / 1/1 (GPU2) | prioridade da GPU (orquestrador ganha) |
+| `-ot` | GPU1 `.*=CUDA0`; GPU2 embd no host, blocos/output na CUDA0 | offload por tensor (E4B) |
 | `-t` / `-tb` | 4 (GPU2) | threads — **inertes** em GPU full, usadas no teste CPU (`-ngl 0`) |
 | `--alias` | `Gemma4-E4B-Q4` / `Gemma4-E4B-UD-Q3` | id servido (bate com `--model` da bridge) |
 | `--api-key` | `guest@123` | auth do upstream (bridge repassa em Bearer) |
 
 > **CPU puro (`:4120`, `llama-cpu-forced.service`).** Mantém `-ngl 0`, `-t 4 -tb 4`,
-> `-c 81920 -np 1` e **não** usa `--no-host`/`--load-mode none`/`--op-offload`
+> `-c 131072 -np 1` e **não** usa `--no-host`/`--load-mode none`/`--op-offload`
 > (é o caminho de teste sem VRAM, intocado nesta sessão).
 
 Modelos no disco:
@@ -203,14 +204,15 @@ Environment=TURBO_AUTO_ASYMMETRIC=0
 ExecStart=/usr/local/bin/llama-server --alias Gemma4-E4B-Q4 --host 127.0.0.1 --port 4100 \
   -m /opt/models/gemma4-e4b-base/google_gemma-4-E4B-it-Q4_K_M.gguf \
   --mmproj /opt/models/gemma4-e4b-base/mmproj-gemma-4-E4B-it-Q8_0.gguf \
-  -c 81920 -np 1 -ngl 99 -fa on \
+  -c 131072 -np 1 -ngl 99 -fa on \
   --cache-type-k turbo3 --cache-type-v turbo3 --mmproj-offload --no-host --load-mode none --op-offload \
-  --prio 2 --repeat-penalty 1.1 --dry-multiplier 0.8 --dry-penalty-last-n 1024 --api-key guest@123
+  -ot ".*=CUDA0" --prio 2 --prio-batch 2 \
+  --repeat-penalty 1.1 --dry-multiplier 0.8 --dry-penalty-last-n 1024 --api-key guest@123
 Restart=on-failure
 TimeoutStartSec=300
 ```
 
-Aceite do startup: `n_slots = 1, n_ctx_slot = 81920` → `model loaded` →
+Aceite do startup: `n_slots = 1, n_ctx_slot = 131072` → `model loaded` →
 `listening on http://127.0.0.1:4100`. Subir **primeiro** (ver §2.5).
 
 ### 2.3 Unit da GPU2 (E4B abliterated `:4110`, text-only)
@@ -227,18 +229,20 @@ Environment=HOME=/root
 Environment=TURBO_AUTO_ASYMMETRIC=0
 ExecStart=/usr/local/bin/llama-server --alias Gemma4-E4B-UD-Q3 --host 127.0.0.1 --port 4110 \
   -m /opt/models/huihui-gemma4-e4b-abliterated/Huihui-gemma-4-E4B-it-qat-q4_0-unquantized-abliterated.i1-IQ3_XXS.gguf \
-  -c 40960 -np 1 -ngl 99 -fa on -t 4 -tb 4 \
+  -c 131072 -np 1 -ngl 99 -fa on -t 4 -tb 4 \
   --cache-type-k turbo3 --cache-type-v turbo3 --no-host --load-mode none --op-offload \
-  --prio -1 --repeat-penalty 1.1 --dry-multiplier 0.8 --dry-penalty-last-n 1024 --api-key guest@123
+  -ot "^per_layer_token_embd\\..*=CUDA_Host,^token_embd\\..*=CUDA_Host,^blk\\..*=CUDA0,^output\\..*=CUDA0,^output_norm\\..*=CUDA0,^per_layer_model_proj\\..*=CUDA0,^per_layer_proj_norm\\..*=CUDA0" \
+  --prio 1 --prio-batch 1 \
+  --repeat-penalty 1.1 --dry-multiplier 0.8 --dry-penalty-last-n 1024 --api-key guest@123
 Restart=on-failure
 TimeoutStartSec=300
 ```
 
-Aceite do startup: `n_slots = 1, n_ctx_slot = 40960` → `model loaded` →
-`listening on http://127.0.0.1:4110` (**40960** total).
+Aceite do startup: `n_slots = 1, n_ctx_slot = 131072` → `model loaded` →
+`listening on http://127.0.0.1:4110` (**131072** total).
 
-> A config atual é **slot único** (`-np 1 -c 40960` = 1×40k) e
-> `limit.context = 40960` no OpenCode.
+> A config atual é **slot único** (`-np 1 -c 131072` = 1×128k) e
+> `limit.context = 131072` no OpenCode.
 
 ### 2.4 TurboQuant é obrigatório nos dois
 
@@ -274,22 +278,22 @@ journalctl -u llama-gpu -u llama-cpu --no-pager | grep -Ei "fit params"
    primeiro e a GPU1 **aborta** o auto-fit (`failed to fit params to free device
    memory: n_gpu_layers already set by user to 99, abort`) porque `-ngl 99` é
    fixo.
-2. Os units `bridge-*` têm `After=`/`Wants=` nos `llama-*.service`, mas o 12B
+2. Os units `bridge-*` têm `After=`/`Wants=` nos `llama-*.service`, mas o E4B
    ainda pode levar minutos para carregar; a bridge sobe antes e devolve
    `503 Loading model` na corrida. Suba os modelos antes de abrir o OpenCode.
-3. `--prio 2` (GPU1, high) e `--prio -1` (GPU2, low): quando as duas disputam a
+3. `--prio 2` (GPU1, high) e `--prio 1` (GPU2): quando as duas disputam a
    GPU, o orquestrador ganha da subagente.
 
 ### 2.6 VRAM medida (12 GB, ambos em `turbo3`)
 
 > **Histórico (linha 12B/E2B).** A tabela abaixo é da configuração anterior.
-> Para a linha E4B atual (Q4_K_M 1×80k + IQ3_XXS 1×40k, ambos com
+> Para a linha E4B atual (Q4_K_M 1×128k + IQ3_XXS 1×128k, ambos com
 > `--no-host --load-mode none --op-offload`) a VRAM ainda não foi medida neste
 > chroot (sem CUDA); medir no host com `nvidia-smi` após o boot.
 
 | configuração | GPU1 (12B Q4_K_M) | GPU2 (E2B coder Q4) | total usado | livre |
 |---|---|---|---|---|
-| E4B Q4 1×80k + E4B IQ3_XXS 1×40k (**atual**) | (a medir) | (a medir) | (a medir) | (a medir) |
+| E4B Q4 1×128k + E4B IQ3_XXS 1×128k (**atual**) | (a medir) | (a medir) | (a medir) | (a medir) |
 | 12B 2×96k + E2B 1×112k, E2B sem mmproj (histórico) | 8712 | 2082 | **11168** | **868** |
 | 12B 2×112k + E2B 1×112k | 9014 | 2072 | 11476 | 560 |
 | 12B 2×112k + E2B 1×140k | 9014 | 2190 | 11593 | 443 |
@@ -309,6 +313,10 @@ Regras aprendidas com as medições:
 ---
 
 ## 3. Cenários de teste (12 GB + TurboQuant ativo nos dois)
+
+> **Histórico (12B/E2B).** Os cenários abaixo são da configuração anterior; a
+> config atual é **slot único `-c 131072`** nas duas linhas E4B (GPU1/GPU2) e
+> `limit.context = 131072` no OpenCode. Mantidos para referência de medição.
 
 ### Cenário A — padrão: ambos residentes (o do E2E)
 
@@ -383,12 +391,12 @@ sudo systemctl edit llama-cpu.service
 # ExecStart=/usr/local/bin/llama-server --alias Gemma4-E4B-Q4 --host 127.0.0.1 --port 4120 \
 #   -m /opt/models/gemma4-e4b-base/google_gemma-4-E4B-it-Q4_K_M.gguf \
 #   --mmproj /opt/models/gemma4-e4b-base/mmproj-gemma-4-E4B-it-Q8_0.gguf \
-#   -c 81920 -np 1 -ngl 0 -fa on -t 4 -tb 4 \
-#   --cache-type-k turbo3 --cache-type-v turbo3 --prio -1 --repeat-penalty 1.1 \
+#   -c 131072 -np 1 -ngl 0 -fa on -t 4 -tb 4 \
+#   --cache-type-k turbo3 --cache-type-v turbo3 --prio 1 --prio-batch 1 --repeat-penalty 1.1 \
 #   --dry-multiplier 0.8 --dry-penalty-last-n 1024 --api-key guest@123
 sudo systemctl daemon-reload && sudo systemctl restart llama-cpu
 journalctl -u llama-cpu --no-pager | grep -E "n_ctx_slot|offloaded" | tail -3
-# esperado: n_ctx_slot = 81920 e "offloaded 0/N layers to GPU"
+# esperado: n_ctx_slot = 131072 e "offloaded 0/N layers to GPU"
 ```
 
 Exemplo — devpipe (o filtro `--only` é "contém": `E-devpipe` roda os 5 casos):
@@ -432,14 +440,14 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 | `--port` | `4124` | porta da bridge |
 | `--listen` / `--host` | `0.0.0.0` | interface de escuta (`0.0.0.0` = exposta na rede) |
 | `--upstream` | `http://127.0.0.1:4100` | base do llama.cpp (`/v1/...`) |
-| `--model` | `qwen3-8b-awq` | id servido pelo upstream (deve casar o `--alias`) |
+| `--model` | `Gemma4-E4B-Q4` | id servido pelo upstream (deve casar o `--alias`) |
 | `--thinking` | `events` | `events` mostra `reasoning_content`; `off` descarta |
 | `--thinking-format` | `events` | nome canônico do formato de repasse do reasoning; `--thinking` é alias |
 | `--temperature` | `0.3` | global; perfil por sufixo do id vence |
 | `--max-tokens` | `0` | teto de saída (0 = sem teto; llama/cliente decidem) |
 | `--coerced-max-tokens` / `--cpu-max-tokens` | `0` | teto da linha COAGIDA (upstream sem parser); `--cpu-max-tokens` é alias histórico ("cpu" era inferência por nome de modelo) |
 | `--tool-output-limit` | `0` | corte por resultado de tool (0 = integral) |
-| `--log` | `/tmp/qwen3-bridge.log` | log JSONL |
+| `--log` | `/tmp/bridge-gpu.log` | log JSONL |
 | `--api-key` | vazio | Bearer que a bridge usa no upstream e aceita do cliente |
 | `--jwt-secret` | vazio | segredo JWT (≥16 chars) p/ o painel |
 | `--jwt-expiry` | — | validade do token em minutos |
@@ -463,14 +471,16 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 | `--context-tokens` | `0` | tamanho do ctx do modelo servido (0 = inativo) |
 | `--harness-behavior-tail` | vazio | tail de **comportamento** |
 | `--harness-tools-tail` | default do código | tail de **tools** — não sobrescrever |
-| `--legacy-harness` | `false` | reativa o harness legado (README — "Testes com outras famílias") |
+| `--legacy-harness` | `false` | reativa o harness legado (README — "Compatibilidade legada") |
 | `--diagnostic` | `false` | sonda Serilog extra (`/tmp/bridge-sonda.log`) |
 | `--diagnostic-level` | `off` | `off`/`metrics`/`dump` — granularidade da sonda (metrics = sem corpos req/res) |
-| `--qwen-standard` | `false` | ModelPrompt sintetizado + tools Alibaba (Qwen) |
+| `--qwen-standard` | `false` | **legado**: ModelPrompt + tools Alibaba (Qwen3/Qwen3.5); não usar na linha Gemma 4 |
 | `--workspace` | cwd | raiz de `POST /api/tools/execute` |
-| `--harness` | — | **inerte** (switch mestre removido); não use |
+| `--harness` | `true` | switch mestre do harness (0 = tubo puro; tails inertes) |
 
-**Coerção (Qwen3 / Qwen3.5 / DeepSeek Coder V2-Lite):** `--coerce-text-tools 1`
+> **Legado:** Qwen3/Qwen3.5 não são a linha atual; as flags marcadas (legado) não são usadas na linha Gemma 4.
+
+**Coerção (legado Qwen3/Qwen3.5 e famílias com parser textual):** `--coerce-text-tools 1`
 extrai a chamada escrita no corpo (fence ` ```json `, `<tool_call>`, `<tools>`,
 `<function>`) e sintetiza `tool_calls`; `--coerce-narrated 1` (default) resgata a
 forma copiada do histórico `[Assistant tool call]: nome({...})`. A coerção de
@@ -490,7 +500,7 @@ anti-repeat e a coerção de narrada porque os três compartilhavam o mesmo flag
 |---|---|---|
 | rede/processo | `--listen` (alias `--host`) · `--port` · `--upstream` · `--model` · `--log` · `--workspace` | — |
 | auth/admin | `--api-key` · `--jwt-secret` · `--jwt-expiry` · `--users-db` · `--bridge-managed` | — |
-| transporte | `--passthrough-responses` · `--stream-per-delta` · `--qwen-standard` · `--thinking-format` (alias `--thinking`) · `--thinking-off-roles` | — |
+| transporte | `--passthrough-responses` · `--stream-per-delta` · `--qwen-standard` (legado) · `--thinking-format` (alias `--thinking`) · `--thinking-off-roles` | — |
 | harness/prompt | `--harness` · `--harness-behavior-tail` · `--harness-tools-tail` | tails inertes sem `--harness 1` |
 | coerção de tools | `--upstream-parser` · `--coerce-text-tools` · `--coerce-narrated` · `--tool-strategy` | capacidade do upstream, não nome de modelo |
 | anti-repeat | `--anti-repeat` · `--anti-repeat-abort` · `--anti-repeat-retry` · `--anti-repeat-window` · `--anti-repeat-notice` | `--anti-repeat-abort` desliga só o corte em stream |
@@ -514,13 +524,13 @@ para flag aceita mas inerte (`--coerced-max-tokens` sem coerção, tail com
 
 ### 4.4 Coordenadas — ctx da dupla original + saída 16k
 
-**Llama (original duo, em produção):**
+**Llama (dupla E4B em produção):**
 
 | linha | serviço | modelo | ctx / slots | VRAM |
 |---|---|---|---|---|
-| GPU1 `:4100` | `llama-gpu.service` | Gemma4 E4B base `Q4_K_M` + mmproj Q8_0 | `-c 81920` (1×80k) | (medir no host) |
-| GPU2 `:4110` | `llama-cpu.service` | Huihui Gemma4 E4B abliterated `IQ3_XXS`, text-only | `-c 40960` (1×40k) | (medir no host) |
-| CPU `:4120` | `llama-cpu-forced.service` | Gemma4 E4B base `Q4_K_M` + mmproj Q8_0, `-ngl 0` | `-c 81920` (1×80k) | 0 (RAM) |
+| GPU1 `:4100` | `llama-gpu.service` | Gemma4 E4B base `Q4_K_M` + mmproj Q8_0 | `-c 131072` (1×128k) | (medir no host) |
+| GPU2 `:4110` | `llama-cpu.service` | Huihui Gemma4 E4B abliterated `IQ3_XXS`, text-only | `-c 131072` (1×128k) | (medir no host) |
+| CPU `:4120` | `llama-cpu-forced.service` | Gemma4 E4B base `Q4_K_M` + mmproj Q8_0, `-ngl 0` | `-c 131072` (1×128k) | 0 (RAM) |
 | — | DRY | `--dry-multiplier 0.8`, `--dry-penalty-last-n 1024` | — | — |
 | — | repeat-penalty | `--repeat-penalty 1.1` (os dois), janela 64 | — | — |
 
@@ -535,16 +545,15 @@ Total: **não medido neste chroot (sem CUDA)**; medir no host (RTX 3060, 12288 M
 | runner `max_tokens` (review) | `4096` | `E2EBeltsBuildTests.cs:116` |
 | `--anti-repeat` / `--anti-repeat-retry` | `1` | ambas as bridges |
 | `--harness` / `--legacy-harness` | `0` | ambas (sem harness ativo na bridge) |
-| `--diagnostic` | `1` | ambas (nível `dump` por default legado) |
+| `--diagnostic` | `0` | ambas (sonda desligada) |
 | `--thinking` | `events` | ambas (formato de repasse; o thinking efetivo vem do perfil) |
 | `--coerce-text-tools` / `--coerce-narrated` / `--tool-strategy` | `0` | ambas (upstream com parser nativo) |
 | `--anti-repeat-window` | `512` | ambas |
-| `--context-guard` / `--context-tokens` | `1` / `81920` (GPU) e `1` / `40960` (CPU) | ambas |
-| `--tool-blacklist` | Plan/MoE/Orch = escrita/exec/install/git + `sed,rm,chmod,chown,mv,cp` | ambas |
+| `--passthrough-responses` | `true` | ambas |
 | `--upstream-parser` | `native` (default) | implícito — sem hardcode por nome de modelo |
 
 A `bridge-cpu-forced.service` (`:4126`, `-ngl 0`) **não** entra no par 16k:
-continua `--max-tokens 8192`, `--context-tokens 81920` e sem os novos
+continua `--max-tokens 8192`, `--context-tokens 131072` e sem os novos
 `--harness`/`--anti-repeat-retry`.
 
 **Consequência do 16k:** o turno degenerado (loop de ~120 tokens por volta) morria
@@ -567,7 +576,7 @@ Chaves em **camelCase**, equivalentes 1:1 às flags (`port`, `listen`,
 `harnessBehaviorTail`, `diagnostic`, `workspace`, `riskAsk`, `riskAskMinutes`,
 `thinkingOffRoles[]`, `toolBlacklist{Role:[tools]}`, `riskToolsAlerts{Role:[regex]}`,
 `profiles{role:{temperature,thinking}}`, `contextGuard{enabled,threshold,contextTokens}`,
-`jwt{secret,expiryMinutes}`, `usersDb`, `qwenStandard`).
+`jwt{secret,expiryMinutes}`, `usersDb`, `qwenStandard` [legado]).
 
 Regras de precedência:
 
@@ -579,8 +588,8 @@ Regras de precedência:
 
 No deploy atual, o `appsettings.json` do runtime
 (`/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net9.0`) está com
-`profiles.plan.temperature = 0.6`, `profiles.orch.temperature = 0.6`,
-`build/scripter/exec = 0.3` e `moe = 0.8`; a unit passa `--temperature 0.5`
+`profiles.plan.temperature = 0.3`, `profiles.orch.temperature = 0.3`,
+`build/scripter/exec = 0.1` e `moe = 0.5`; a unit passa `--temperature 0.5`
 como base. As bridges foram reiniciadas depois do ajuste.
 
 Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `HARNESS=0` é legado inerte
@@ -594,26 +603,22 @@ ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4124 --upstream http://127.0.0.1:4100 --model Gemma4-E4B-Q4 \
   --thinking events --temperature 0.5 --max-tokens 16384 --api-key guest@123 \
   --passthrough-responses true --harness 0 --legacy-harness 0 \
-  --anti-repeat 1 --anti-repeat-retry 1 --thinking-off-roles Build,Scripter,Exec \
+  --anti-repeat 1 --anti-repeat-retry 1 \
   --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 \
-  --tool-blacklist "Plan=write,edit,exec,install,git;sed,rm,chmod,chown,mv,cp;MoE=write,edit,exec,install,git;sed,rm,chmod,chown,mv,cp;Orch=write,edit,exec,install,git;sed,rm,chmod,chown,mv,cp" \
-  --anti-repeat-window 512 --diagnostic 1 --context-guard 1 --context-tokens 81920 \
-  --log /tmp/bridge-gpu.log
+  --anti-repeat-window 512 --log /tmp/bridge-gpu.log
 
 # bridge-cpu.service  (GPU2 / E4B abliterated)
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4125 --upstream http://127.0.0.1:4110 --model Gemma4-E4B-UD-Q3 \
   --thinking events --temperature 0.5 --max-tokens 16384 --api-key guest@123 \
   --passthrough-responses true --harness 0 --legacy-harness 0 \
-  --anti-repeat 1 --anti-repeat-retry 1 --thinking-off-roles Build,Scripter,Exec \
+  --anti-repeat 1 --anti-repeat-retry 1 \
   --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 \
-  --tool-blacklist "Plan=write,edit,exec,install,git;sed,rm,chmod,chown,mv,cp;MoE=write,edit,exec,install,git;sed,rm,chmod,chown,mv,cp;Orch=write,edit,exec,install,git;sed,rm,chmod,chown,mv,cp" \
-  --anti-repeat-window 512 --diagnostic 1 --context-guard 1 --context-tokens 40960 \
-  --log /tmp/bridge-cpu.log
+  --anti-repeat-window 512 --log /tmp/bridge-cpu.log
 ```
 
 A `bridge-cpu-forced.service` (`:4126`, `-ngl 0`) permanece **intocada**:
-`--max-tokens 8192`, `--context-tokens 81920`, sem `--harness`/`--anti-repeat-retry`.
+`--max-tokens 8192`, `--context-tokens 131072`, sem `--harness`/`--anti-repeat-retry`.
 
 Atalhos de desktop: `OpenCode Bridge GPU/CPU` reiniciam as units e mostram
 saúde; `Llama GPU`/`Llama CPU` regeneram e reiniciam os servidores;
@@ -673,15 +678,15 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 ### 8.1 Servidores llama
 
 - `:4100` (`llama-gpu.service`): E4B base `Q4_K_M` + mmproj `Q8_0`,
-  `-c 81920 -np 1`, `-ngl 99`, KV `turbo3`, `--mmproj-offload --no-host
-  --load-mode none --op-offload`, `--prio 2`.
+  `-c 131072 -np 1`, `-ngl 99`, KV `turbo3`, `--mmproj-offload --no-host
+  --load-mode none --op-offload`, `-ot ".*=CUDA0" --prio 2 --prio-batch 2`.
 - `:4110` (`llama-cpu.service`): Huihui E4B abliterated `i1-IQ3_XXS`
   (`3 982 841 536` bytes, SHA256
   `9043e0b94e6a4f18fa498c5e5fd7e1d86a82dcfe440e1a6587f71882be76cf48`),
-  `-c 40960 -np 1`, `-ngl 99`, KV `turbo3`, `--no-host --load-mode none
-  --op-offload`, `--prio -1`.
+  `-c 131072 -np 1`, `-ngl 99`, KV `turbo3`, `--no-host --load-mode none
+  --op-offload`, `-ot` com embd no host e `--prio 1 --prio-batch 1`.
 - `:4120` (`llama-cpu-forced.service`): E4B base `Q4_K_M` + mmproj `Q8_0`,
-  `-c 81920 -np 1`, **`-ngl 0`** (CPU puro), **intocado**.
+  `-c 131072 -np 1`, **`-ngl 0`** (CPU puro), **intocado**.
 - `--no-mmap` foi substituído por `--load-mode none` (o `--no-mmap` está
   obsoleto; `none` = sem modo especial de carga). `--no-host` remove o buffer
   host; `--op-offload` leva as operações ao device. O KV continua na VRAM via
@@ -689,20 +694,21 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 
 ### 8.2 Bridge
 
-- Pull `origin/main` até `0937333` e rebuild do DLL
+- Pull `origin/main` + rebuild do DLL
   (`dotnet build Rochas.OpenCodeBridge/Rochas.OpenCodeBridge.csproj -c Release`);
   smoke test na `:4199` OK.
 - `:4124`/`:4125` com args canônicos: `--max-tokens 16384`, `--harness 0
-  --legacy-harness 0`, `--anti-repeat 1 --anti-repeat-retry 1`, `--diagnostic 1`,
+  --legacy-harness 0`, `--anti-repeat 1 --anti-repeat-retry 1`,
   `--coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0`,
-  `--anti-repeat-window 512`, `--context-guard 1` e `--context-tokens`
-  81920/40960, `--tool-blacklist` por role.
-- `:4126` (`bridge-cpu-forced.service`) **intocada** (`--max-tokens 8192`).
+  `--anti-repeat-window 512`, `--passthrough-responses true` e sem
+  `--diagnostic`/`--context-guard`/`--tool-blacklist`/`--thinking-off-roles`.
+- `:4126` (`bridge-cpu-forced.service`) **intocada** (`--max-tokens 8192`,
+  `--context-tokens 131072`).
 
 ### 8.3 OpenCode
 
 - `~/.config/opencode/opencode.json` (root e mint): `limit.output = 16384`;
-  ctx `81920` (provider `openai`/`:4124`) e `40960` (provider `llama`/`:4125`).
+  ctx `131072` (provider `openai`/`:4124`) e `131072` (provider `llama`/`:4125`).
 
 ### 8.4 Ícones de desktop
 
@@ -721,40 +727,29 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 
 - Este chroot não tem systemd (PID 1 = bash) nem CUDA visível: não houve
   `daemon-reload`/`restart` nem medição de VRAM aqui. As units/scripts valem no
-  host; ao subir, conferir `n_ctx_slot` (81920/40960), `offloaded ... layers to
+  host; ao subir, conferir `n_ctx_slot` (131072/131072), `offloaded ... layers to
   GPU`, ausência de `auto-asymmetric` e VRAM com `nvidia-smi`.
 - O warning `cauda de harness declarada com --harness 0: inerte` é esperado
   (o `appsettings.json` mantém `harnessBehaviorTail`, mas `--harness 0` não
   injeta prompt).
 
-### 8.6 `-ot ".*=CUDA0"` — modelo 100% na VRAM (2026-10-23)
+### 8.6 `-ot` por tensor e estado atual (2026-10-23)
 
-`-ngl 99` sozinho offloada as 43 camadas, mas embeddings/per-layer-input/output
-do Gemma4 continuam no host (`CUDA_Host model buffer`). Para forçar **todo** o
-modelo no device, os units passaram a usar `--override-tensor`:
+`-ngl 99` sozinho offloada as camadas, mas embeddings/per-layer-input/output
+do Gemma4 podem continuar no host (`CUDA_Host model buffer`). Os units usam
+`--override-tensor` (`-ot`) para escolher onde cada tensor fica:
 
-```ini
--ot ".*=CUDA0"
-```
+| linha | `-ot` | ctx | mmproj |
+|---|---|---|---|
+| GPU1 `:4100` `Gemma4-E4B-Q4` | `.*=CUDA0` | 131072 (1×128k) | Q8_0 presente |
+| GPU2 `:4110` `Gemma4-E4B-UD-Q3` | embd/per-layer no host; blocos/output na CUDA0 | 131072 (1×128k) | text-only |
+| CPU `:4120` `Gemma4-E4B-Q4` | sem `-ot` (`-ngl 0`) | 131072 (1×128k) | Q8_0 presente |
 
-Efeito medido (`-lv 5`, GPU1 sozinha): `CUDA0 model buffer = 5664.69 MiB`,
-`CUDA_Host model buffer = 0.00 MiB`, KV `CUDA0 = 250.13 + 7.94 MiB`.
-Sem `-ot`, GPU1 mantinha `CUDA_Host = 2730.00 MiB` (RSS ~3,98 GiB); com `-ot`,
-RSS caiu para ~0,69 GiB.
-
-Para caber os dois com `-ot`, o `--mmproj` foi removido da GPU1 (o E4B base
-fica **text-only** nesta linha). O ctx da GPU2 foi reduzido de 40960 para
-**32768** (bridge-cpu `--context-tokens 32768`). Boot validado:
-
-| linha | VRAM processo | ctx |
-|---|---|---|
-| GPU1 `:4100` `Gemma4-E4B-Q4` | 6581 MiB | 81920 |
-| GPU2 `:4110` `Gemma4-E4B-UD-Q3` | 4685 MiB | 32768 |
-| **total / livre** | **11623 / 413 MiB** | — |
-
-Queda de ctx 40k→32k liberou apenas ~64 MiB (o KV do Gemma4 com SWA/shared-KV
-é pequeno: ~125 MiB a 40k), insuficiente para devolver o `--mmproj` (~740 MiB)
-à GPU1.
+Medição histórica (commit `addade2`): com `-ot ".*=CUDA0"` nos dois, `--mmproj`
+removido da GPU1 e ctx **81920/32768**, o boot mediu 6581 MiB (GPU1) + 4685 MiB
+(GPU2) = **11623 / 413 MiB**. Essa configuração foi substituída pela atual
+(128k nas duas linhas e mmproj de volta na GPU1); a VRAM atual ainda não foi
+medida neste chroot (sem CUDA) — medir no host com `nvidia-smi`.
 
 `-ot ".*=CUDA0"` não altera o KV (continua em `CUDA0`); ele só move os tensores
 de modelo que estavam em `CUDA_Host`. Se a visão da GPU1 for necessária, é

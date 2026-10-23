@@ -6,8 +6,8 @@ harness agentivo próprio. Sem SDKs no núcleo da bridge (só BCL): a bridge
 traduz Responses ⇄ chat, cuida de thinking + tool calling, casa **perfil por
 sufixo do model id** e aplica as **caudas de harness** (tools e comportamento).
 
-Linha local desta máquina: **Gemma 4** — `gemma-4-12b` (**GPU1**) e
-`gemma-4-e2b` (**GPU2**, text-only/coder), os dois 100% em GPU (`-ngl 99`) e os dois
+Linha local desta máquina: **Gemma 4 E4B** — `Gemma4-E4B-Q4` (**GPU1**) e
+`Gemma4-E4B-UD-Q3` (**GPU2**, text-only), os dois 100% em GPU (`-ngl 99`) e os dois
 em **TurboQuant** (`turbo3` no KV), convivendo em **12 GB de VRAM** (RTX 3060).
 
 ## Componentes
@@ -23,20 +23,20 @@ em **TurboQuant** (`turbo3` no KV), convivendo em **12 GB de VRAM** (RTX 3060).
 
 | nome | modelo | llama | bridge |
 |---|---|---|---|
-| **GPU1** | `gemma-4-12b` (`Q3_K_L` uncensored + mmproj) | `:4100` | `:4124` |
-| **GPU2** | `gemma-4-e2b` (`Q4_K_M` coder, text-only) | `:4110` | `:4125` |
+| **GPU1** | `Gemma4-E4B-Q4` (`Q4_K_M` + mmproj Q8_0) | `:4100` | `:4124` |
+| **GPU2** | `Gemma4-E4B-UD-Q3` (`IQ3_XXS`, text-only) | `:4110` | `:4125` |
 
 > **Nota CPU/GPU2.** O sufixo **CPU** em nomes históricos
 > (`llama-cpu.service`, `bridge-cpu.service`, `--cpu-max-tokens`, provider
-> `llama`) **não** significa que o E2B roda em CPU: a **GPU2** roda na GPU com
+> `llama`) **não** significa que o E4B UD-Q3 roda em CPU: a **GPU2** roda na GPU com
 > `-ngl 99`. O caminho CPU existe como **cenário de teste** para **tarefas
 > granulares de execução de scripts** (`Llama GPU2-CPU Toggle`, `-ngl 0`),
 > permitindo validar o executor de scripts sem disputar VRAM com a GPU1.
 
 ## Cenário de testes (resumo)
 
-Regime padrão: **GPU1 `-c 229376 -np 2` (2×112k/slot)** + **GPU2 `-c 393216
--np 4` (4×96k)**, ambos `turbo3` → ~11,15 GiB usados, ~0,60 GiB livres.
+Regime padrão: **GPU1 e GPU2 com `-c 131072 -np 1` (1×128k/slot)**, ambos
+`turbo3`; VRAM a medir no host (chroot sem CUDA).
 É o cenário dos testes de integração: as duas linhas servindo ao mesmo tempo no
 mesmo GPU (a taxa de cada uma cai ~metade sob concorrência). A GPU1 sobe
 **antes** da GPU2.
@@ -55,7 +55,7 @@ read/write/edit/glob/grep/mkdir/git/`bash -n`/exec nos **dois** modelos em
 paralelo.
 
 Detalhe de contextos, units, VRAM, cenários A–E e como cortar VRAM:
-**`LAB-SETUP.md`**. Para rodar a GPU2 (E2B) em **CPU** com `-ngl 0` (toggle
+**`LAB-SETUP.md`**. Para rodar a GPU2 (E4B UD-Q3) em **CPU** com `-ngl 0` (toggle
 `llama-gpu2-cpu-toggle.sh`, drop-in do `llama-cpu.service` e exemplos de devpipe
 `--only E-devpipe`), veja **`LAB-SETUP.md` — Cenário E**.
 
@@ -109,22 +109,21 @@ opcional refaz **uma** chamada com o aviso, descartando a janela repetida.
 --anti-repeat 1 --anti-repeat-window 512 --anti-repeat-retry 1
 ```
 
-## Testes com outras famílias (legacy + modo Qwen + coerção)
+## Compatibilidade legada (Qwen3/Qwen3.5) + coerção
 
-Para testar **Qwen3, Qwen3.5 e DeepSeek Coder V2-Lite** na mesma bridge, o
-caminho de compatibilidade é **harness legacy + modo Qwen + coerção** — e tudo
-isso fica **em 0 no Gemma 4**:
+Qwen3/Qwen3.5 são **modelos legados**; a linha atual é **Gemma 4**. A bridge
+ainda os atende pelo caminho legado — e tudo isso fica **em 0 na linha Gemma 4**:
 
 - `--legacy-harness 1` — **reativa o harness legado**: injeta o `SystemGuardrail`
   no system, o pattern-strip, o retry e o clamp de `--cpu-max-tokens`. É também o
   **pré-requisito da coerção de texto** (`CoerceFor` só roda com legacy ligado).
-- `--qwen-standard 1` — **modo Qwen**: sintetiza o ModelPrompt
+- `--qwen-standard 1` — **modo legado Qwen**: sintetiza o ModelPrompt
   (`QwenStandard.ComposeSystem`) e anuncia as tools no padrão Alibaba
-  (`ask_user_question` etc.), para a linha Qwen3/Qwen3.5.
+  (`ask_user_question` etc.). **Não usar na linha Gemma 4.**
 - `--coerce-text-tools 1` — **coerção de texto→`tool_call`**: extrai a chamada
-  escrita no corpo e sintetiza `tool_calls`. É o caminho do **DeepSeek V2-Lite**
-  (executor textual no padrão oficial, **sem parser nativo** no upstream) e dos
-  modelos que não emitem o canal nativo.
+  escrita no corpo e sintetiza `tool_calls`. É o caminho para famílias com
+  **parser textual** (sem parser nativo no upstream) e para modelos que não
+  emitem o canal nativo.
 - `--coerce-narrated 1` (default) — resgata a chamada **narrada** que o modelo
   copia do histórico: `[Assistant tool call]: nome({...})`. Vale nos três (ctx
   longo); desligue com `--coerce-narrated 0` se o modelo já emitir o canal nativo.
@@ -132,11 +131,11 @@ isso fica **em 0 no Gemma 4**:
   nenhuma (para medir o parser nativo do upstream sem interferência).
 
 ```bash
-# Qwen3 / Qwen3.5 (parser nativo + padrão Alibaba + coerção)
+# Legado Qwen3 / Qwen3.5 (parser nativo + padrão Alibaba + coerção)
 --legacy-harness 1 --qwen-standard 1 --coerce-text-tools 1 --coerce-narrated 1 \
 --passthrough-responses false
 
-# DeepSeek Coder V2-Lite (sem parser nativo: coerção de texto obrigatória)
+# Outra família com parser textual (sem parser nativo: coerção obrigatória)
 --legacy-harness 1 --coerce-text-tools 1 --coerce-narrated 1 \
 --passthrough-responses false
 ```
@@ -161,15 +160,15 @@ edit) — prosa que só *menciona* uma tool não vira chamada.
 ## English (short)
 
 C# bridge between OpenCode (`/v1/responses`) and llama.cpp, plus an MVC web UI
-with its own agentic tool loop. Local line: **Gemma 4** — `gemma-4-12b` (GPU1)
-and `gemma-4-e2b` (**GPU2**, text-only/coder), both fully on GPU (`-ngl 99`) and both
+with its own agentic tool loop. Local line: **Gemma 4 E4B** — `Gemma4-E4B-Q4` (GPU1)
+and `Gemma4-E4B-UD-Q3` (**GPU2**, text-only), both fully on GPU (`-ngl 99`) and both
 using TurboQuant (`turbo3` KV, `TURBO_AUTO_ASYMMETRIC=0`) inside 12 GB of VRAM.
-GPU1 runs `-c 229376 -np 2` (2×112k/slot); GPU2 runs `-c 393216 -np 4` (4×96k, text-only).
+GPU1 and GPU2 run `-c 131072 -np 1` (1×128k/slot).
 Keep on with Gemma: `--passthrough-responses true`, `--legacy-harness 0`,
-`--anti-repeat 1 --anti-repeat-window 512 --anti-repeat-retry 1`,
-`--coerce-narrated 1`, `--thinking-off-roles Build,Scripter,Exec`, plus the
-behavior tail (tools tail is the code default). For **Qwen3 / Qwen3.5 /
-DeepSeek V2-Lite** tests use `--legacy-harness 1` and the Qwen mode
-`--qwen-standard 1` (`--coerce-text-tools 1` for DeepSeek). Any "CPU" reference
-to the E2B is historical: the model runs on **GPU2**; the CPU path is only the
+`--harness 0`, `--anti-repeat 1 --anti-repeat-window 512 --anti-repeat-retry 1`,
+`--coerce-narrated 0 --coerce-text-tools 0 --tool-strategy 0`, plus the
+behavior tail (tools tail is the code default). Legacy Qwen3/Qwen3.5
+compatibility remains available via `--qwen-standard 1` and `--legacy-harness 1`;
+other legacy families use `--coerce-text-tools 1` as needed. Any "CPU" reference
+to the E4B UD-Q3 is historical: the model runs on **GPU2**; the CPU path is only the
 test mode for granular script-execution tasks. Infra detail in `LAB-SETUP.md`.

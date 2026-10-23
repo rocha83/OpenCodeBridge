@@ -41,7 +41,7 @@ public static class AppDb
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, is_admin INTEGER NOT NULL DEFAULT 0);
-            CREATE TABLE IF NOT EXISTS agents (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, model TEXT NOT NULL DEFAULT 'qwen3.5-9b', bridge_url TEXT NOT NULL DEFAULT 'http://127.0.0.1:4124', temperature REAL NOT NULL DEFAULT 0.4, thinking TEXT NOT NULL DEFAULT 'events', system_prompt TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT 'build', measured_tps REAL NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, tools TEXT NOT NULL DEFAULT 'shell,read,write,edit,grep,glob,fetch,git');
+            CREATE TABLE IF NOT EXISTS agents (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, model TEXT NOT NULL DEFAULT 'Gemma4-E4B-Q4', bridge_url TEXT NOT NULL DEFAULT 'http://127.0.0.1:4124', temperature REAL NOT NULL DEFAULT 0.1, thinking TEXT NOT NULL DEFAULT 'events', system_prompt TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT 'build', measured_tps REAL NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, tools TEXT NOT NULL DEFAULT 'shell,read,write,edit,grep,glob,fetch,git');
             CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, agent_id INTEGER NOT NULL, executor_agent_id INTEGER, title TEXT NOT NULL DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id), FOREIGN KEY(agent_id) REFERENCES agents(id));
             CREATE TABLE IF NOT EXISTS message_statuses (id INTEGER PRIMARY KEY, code TEXT NOT NULL UNIQUE, label TEXT NOT NULL);
             INSERT OR IGNORE INTO message_statuses (id, code, label) VALUES (1, 'enviada', 'Enviada'), (2, 'respondida', 'Respondida'), (3, 'arquivada', 'Arquivada');
@@ -125,7 +125,7 @@ public static class AppDb
         EnsureColumn(conn, "users", "locked_until", "ALTER TABLE users ADD COLUMN locked_until TEXT NOT NULL DEFAULT '';");
         // Migração: harness de tools por agente (CSV; vazio = nenhuma).
         EnsureColumn(conn, "agents", "tools", "ALTER TABLE agents ADD COLUMN tools TEXT NOT NULL DEFAULT 'shell,read,write,edit,grep,glob,fetch,git';");
-        // Seed dos agentes revisados (só o que falta por id, nunca sobrescreve).
+        // Seed dos agentes revisados (só o que falta por id; migra ids legados para E4B).
         AgentSeeder.SeedIfEmpty(conn);
         // Seed dos controles de repeticao/calda (só o que falta por key, nunca sobrescreve).
         using (var seedpc = conn.CreateCommand())

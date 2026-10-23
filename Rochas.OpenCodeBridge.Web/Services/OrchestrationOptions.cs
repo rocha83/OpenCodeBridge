@@ -11,7 +11,7 @@ public sealed class OrchestrationOptions
     // Executores simultâneos (0 = núcleos da CPU; GPU paraleliza, CPU llama serializa).
     public int MaxParallel { get; set; } = 0;
     // tok/s assumido quando o executor nunca foi sondado e roda em CPU
-    // (llama 4B). Medido em 14/10: CPU 2.5 t/s, GPU 9B 30 t/s.
+    // (llama E4B). Medido em 14/10: CPU 2.5 t/s, GPU 30 t/s.
     public double CpuDefaultTps { get; set; } = 2.5;
     // Revisao em lote do orch sobre os resultados (pos-execucao, via /Chat/Review).
     // Inativa por padrao: o fluxo segue decompose -> aprova -> executa -> sintetiza.
@@ -22,10 +22,10 @@ public sealed class OrchestrationOptions
     // Ligado por padrao: desligar economiza contexto persistido.
     public bool ShowThinking { get; set; } = true;
     // Temperatura do julgamento (review/reviewplan): baixa para obedecer ao
-    // formato JSON sem divagar. Decompose/planejamento segue em 0.6 (criativo).
+    // formato JSON sem divagar. Decompose/planejamento segue em 0.3 (média).
     public double ReviewTemperature { get; set; } = 0.1;
-    // Temperatura da decomposição (análise + expansão em subtarefas): Qwen oficial
-    // recomenda 0.6 p/ thinking mode (temp baixa demais murchava a granularidade: 1-3 tarefas).
+    // Temperatura da decomposição (análise + expansão em subtarefas): escala atual
+    // baixa 0.1 / média 0.3 / alta 0.5; 0.3 preserva granularidade sem divagar.
     public double DecomposeTemperature { get; set; } = 0.3;
     // Thinking na decomposição ("events" = raciocina; "off" = direto, sem <think>).
     // Off corta o mimetismo na fonte via chat_template_kwargs; se o parser do serve

@@ -1,3 +1,5 @@
+> **Nota:** análise da captura histórica de 2026-10-22 (12B/E2B). Os hardcodes atuais já foram removidos/atualizados em `/root/.config/opencode/AGENTS.md` (E4B, 128k, temps 0.1/0.3/0.5).
+
 # Parte CUSTOM (nossa) — veio do agente e do AGENTS.md
 
 Injetada por nós no system prompt via config/agentes do opencode. É o que
@@ -35,7 +37,7 @@ viajar para um harness genérico.
 | 165 | `GPU tem 160k mas a CPU tem 64k` | remover (capacidade local) |
 | 166 | `64k do E2B, saída de 16k` | remover (capacidade local) |
 | 178, 180 | temperaturas `0.5/0.8/0.3` | remover (config, não harness) |
-| 12, 161-162 | `Qwen/peg-gemma4/slot único` | remover (detalhe de infra) |
+| 12, 161-162 | `peg-gemma4/slot único` | remover (detalhe de infra) |
 
 > Regra: harness descreve **comportamento**; valores de infraestrutura
 > (modelo, porta, contexto, temperatura, caminho) ficam na config, nunca no texto.

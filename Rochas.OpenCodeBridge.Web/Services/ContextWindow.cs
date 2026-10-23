@@ -5,20 +5,20 @@ using Rochas.OpenCodeBridge.Web.Models;
 namespace Rochas.OpenCodeBridge.Web.Services;
 
 // Janela de contexto por tokens (stateless). Comentários pt-BR.
-// Linha CPU: llama :4110 GPU2-CPU, Gemma4 E2B, ctx 131072 em 2 slots
-// (2x65536). Orçamento de entrada por slot = ctx_slot - saída (8192).
+// Ambas as linhas usam Gemma4 E4B com ctx 131072 em slot único (-np 1).
+// Orçamento de entrada = ctx - saída (16384) = 114688.
 public static class ContextWindow
 {
     // Orçamento por linha: GPU (ctx cheio menos saída) vs CPU (slot menos saída).
     // Heurística: ~4 chars/token (pt-BR). Se bridge devolve usage.real, usar esse.
-    public const int MaxInputTokens = 122880;
+    public const int MaxInputTokens = 114688;
     public const double CharsPerToken = 4.0;
 
     // ctx por slot da linha CPU e teto de saída: parametrizáveis via
-    // appsettings "ContextWindow" (ver ContextWindowOptions). Padrão 64k/8k.
-    public static int CpuContextTokens { get; set; } = 65536;
-    public static int CpuMaxOutputTokens { get; set; } = 8192;
-    public static int CpuMaxInputTokens { get; set; } = 57344;
+    // appsettings "ContextWindow" (ver ContextWindowOptions). Padrão 128k/16k.
+    public static int CpuContextTokens { get; set; } = 131072;
+    public static int CpuMaxOutputTokens { get; set; } = 16384;
+    public static int CpuMaxInputTokens { get; set; } = 114688;
     public static int GpuMaxInputTokens { get; set; } = MaxInputTokens;
     // Corte do args de tool ecoado no evento SSE de progresso: 0 = sem corte.
     public static int ToolArgLimit { get; set; } = 0;
@@ -33,12 +33,11 @@ public static class ContextWindow
         if (toolArgLimit >= 0) ToolArgLimit = toolArgLimit;
     }
 
-    // Orçamento de entrada por linha: CPU (:4125/Gemma4 E2B) = CpuMaxInputTokens
-    // (57k = 64k por slot menos 8k saída), resto (GPU 12B 128k) = GpuMaxInputTokens.
+    // Orçamento de entrada por linha: CPU (:4125/Gemma4 E4B UD-Q3) = CpuMaxInputTokens
+    // (114688 = 131072 - 16384), resto (GPU E4B Q4 128k) = GpuMaxInputTokens.
     public static int ResolveMaxInput(string model, string bridgeUrl)
     {
-        if ((bridgeUrl ?? "").Contains(":4125") || (model ?? "").Contains("4b")
-            || (model ?? "").Contains("e2b"))
+        if ((bridgeUrl ?? "").Contains(":4125") || (model ?? "").Contains("UD-Q3", StringComparison.OrdinalIgnoreCase))
             return CpuMaxInputTokens;
         return GpuMaxInputTokens;
     }
