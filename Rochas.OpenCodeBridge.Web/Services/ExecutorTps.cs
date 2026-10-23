@@ -9,10 +9,13 @@ public static class ExecutorTps
         exec.MeasuredTps > 0 ? exec.MeasuredTps
         : IsCpuExecutor(exec) ? (cpuDefaultTps > 0 ? cpuDefaultTps : 2.5) : 30;
 
+    // Linhas lentas: Q3 (GPU2 :4110/:4125) e CPU Forced (Q4 :4120/:4126).
+    // A GPU Q4 (:4100/:4124) é a linha rápida (30 t/s).
     public static bool IsCpuExecutor(Models.Agent exec) =>
         (exec.BridgeUrl ?? "").Contains(":4125") ||
         (exec.BridgeUrl ?? "").Contains(":4110") ||
-        (exec.BridgeUrl ?? "").Contains("llama", StringComparison.OrdinalIgnoreCase) ||
-        (exec.Model ?? "").Contains("cpu", StringComparison.OrdinalIgnoreCase) ||
-        (exec.Model ?? "").Contains("4b", StringComparison.OrdinalIgnoreCase);
+        (exec.BridgeUrl ?? "").Contains(":4126") ||
+        (exec.UpstreamUrl ?? "").Contains(":4110") ||
+        (exec.UpstreamUrl ?? "").Contains(":4120") ||
+        (exec.Model ?? "").Contains("UD-Q3", StringComparison.OrdinalIgnoreCase);
 }
