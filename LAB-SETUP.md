@@ -726,3 +726,31 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 - O warning `cauda de harness declarada com --harness 0: inerte` é esperado
   (o `appsettings.json` mantém `harnessBehaviorTail`, mas `--harness 0` não
   injeta prompt).
+
+### 8.6 `-ot ".*=CUDA0"` — modelo 100% na VRAM (2026-10-23)
+
+`-ngl 99` sozinho offloada as 43 camadas, mas embeddings/per-layer-input/output
+do Gemma4 continuam no host (`CUDA_Host model buffer`). Para forçar **todo** o
+modelo no device, os units passaram a usar `--override-tensor`:
+
+```ini
+-ot ".*=CUDA0"
+```
+
+Efeito medido (`-lv 5`, GPU1 sozinha): `CUDA0 model buffer = 5664.69 MiB`,
+`CUDA_Host model buffer = 0.00 MiB`, KV `CUDA0 = 250.13 + 7.94 MiB`.
+Sem `-ot`, GPU1 mantinha `CUDA_Host = 2730.00 MiB` (RSS ~3,98 GiB); com `-ot`,
+RSS caiu para ~0,69 GiB.
+
+Para caber os dois com `-ot` e ctx cheio (81920/40960), o `--mmproj` foi
+removido da GPU1 (o E4B base fica **text-only** nesta linha). Boot validado:
+
+| linha | VRAM processo | ctx |
+|---|---|---|
+| GPU1 `:4100` `Gemma4-E4B-Q4` | 6517 MiB | 81920 |
+| GPU2 `:4110` `Gemma4-E4B-UD-Q3` | 4749 MiB | 40960 |
+| **total / livre** | **11625 / 411 MiB** | — |
+
+`-ot ".*=CUDA0"` não altera o KV (continua em `CUDA0`); ele só move os tensores
+de modelo que estavam em `CUDA_Host`. Se a visão da GPU1 for necessária, é
+preciso reduzir ctx/quant ou aceitar o host buffer.
