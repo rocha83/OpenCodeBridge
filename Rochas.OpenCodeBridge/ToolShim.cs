@@ -18,7 +18,7 @@ public static class ToolShim
     /// Aplica o shim no body de /v1/chat/completions (mutacao no lugar).
     /// Requer tools com nome, stream=false e ao menos um tool.
     /// </summary>
-    public static bool Apply(JsonObject body, int maxString, int minCalls, out string? reason)
+    public static bool Apply(JsonObject body, int maxString, int minCalls, int maxTokens, out string? reason)
     {
         reason = null;
         if (body["tools"] is not JsonArray tools || tools.Count == 0)
@@ -64,6 +64,15 @@ public static class ToolShim
         body.Remove("parallel_tool_calls");
         body["stream"] = false;
         body.Remove("stream_options");
+        // Teto do operador: o caminho chat/passthrough nao passava por
+        // BuildChatRequest, entao --max-tokens nao valia aqui e o cliente
+        // mandava 24k. O envelope do shim fecha em dezenas/centenas de
+        // tokens; 16k e teto de seguranca, nao orcamento de divagacao.
+        if (maxTokens > 0)
+        {
+            body["max_tokens"] = maxTokens;
+            body.Remove("max_completion_tokens");
+        }
         // O grammar comeca direto no objeto JSON; thinking gastaria tokens e
         // poderia conflitar com o template nativo de tools.
         body["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = false };

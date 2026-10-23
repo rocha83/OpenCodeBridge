@@ -67,7 +67,7 @@ internal static class E2EBeltsBuildTests
                 for (int turn = 0; turn < 10 && filesCreated < 8; turn++)
                 {
                     var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                        new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["max_tokens"]=24000, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
+                        new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["max_tokens"]=16384, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
                     var msg = r["choices"]?[0]?["message"]?.AsObject();
                     string content = msg?["content"]?.GetValue<string>() ?? "";
                     totalChars += content.Length;

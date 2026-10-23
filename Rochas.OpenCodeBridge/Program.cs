@@ -1531,7 +1531,7 @@ WriteJson(ctx, 200, new JsonObject
             {
                 var sn = JsonNode.Parse(outBody)?.AsObject();
                 string? shimReason = null;
-                if (sn is not null && ToolShim.Apply(sn, ToolShimMaxString, ToolShimMinCalls, out shimReason))
+                if (sn is not null && ToolShim.Apply(sn, ToolShimMaxString, ToolShimMinCalls, MaxTokens, out shimReason))
                 {
                     outBody = sn.ToJsonString(SerOpts);
                     shimActive = true;
