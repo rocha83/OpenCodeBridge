@@ -34,6 +34,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 using Serilog;
+using Rochas.OpenCodeBridge.Core;
 
 namespace Rochas.OpenCodeBridge;
 
@@ -104,7 +105,7 @@ internal static partial class Program
     static bool QwenStd = false;
     // Formula (harness=true): composta pela bridge p/ cliente web (model sem
     // sufixo). Opencode (sufixo -build/-plan/-orch) passa limpo.
-    static string HarnessToolsTail = "MODO DE USO DAS TOOLS: uma chamada por resposta; aguarde o resultado antes da proxima e nao narre a chamada no texto. Arquivos: prefira write/edit com caminho relativo ao workspace; redirecionamento e pipes no shell vao via bash -c \"...\". Rede: use a tool fetch, nunca shell+curl. Git e zip sao independentes: se o enunciado pedir os dois, versione primeiro e empacote depois (o pacote nao entra no commit); no zip, informe output e inputs e exclua bin/obj. Tarefa de N passos: so responda texto depois de concluir todos. Erro de tool, build ou teste: leia a mensagem, varie a abordagem (max 2 tentativas) e ajuste o trecho exato antes de repetir; nunca repita a mesma chamada. NUNCA invente comando, tool ou caminho: confirme que existe (command -v, ls) antes de usar. Tool bloqueada para o role: explique que a acao cabe a outro role, nao contorne por shell. Qualidade: leia AGENTS.md/docs e o git log antes de planejar; grave todos os artefatos de uma vez, sem stub/TODO/placeholder; correcao por edit no trecho exato, nunca reescrevendo o arquivo inteiro; declare pronto so apos executar o ACEITE e anexar a evidencia (build/teste vermelho = tarefa nao concluida); responda no idioma do usuario.";
+    static string HarnessToolsTail = HarnessTails.DefaultTools;
     // Retry de contencao do anti-repeat: 1 segunda chamada ao modelo com o aviso,
     // descartando a janela repetida. Governado por --anti-repeat-retry, nao pelo
     // LegacyHarness (ver o bloco do retry).
@@ -123,9 +124,7 @@ internal static partial class Program
     // de fora do namespace no enunciado inicial; sem esta regra o modelo olha
     // so o diretorio literal e conclui "nao existe", ignorando vizinhos e
     // subpastas. Override por appsettings (harnessBehaviorTail) ou CLI.
-    static string HarnessBehaviorTail =
-        "COMPORTAMENTO (workspace): quando o usuario informar pastas de atuacao fora do workspace, procure pastas ou arquivos citados tambem um nivel abaixo (pastas vizinhas) e na arvore de subpastas, tanto do workspace quanto dos paths citados. " +
-        "COMPORTAMENTO (formato): em conversa escreva com Unicode (setas, menor-igual, pi, somatorio) em vez de LaTeX; use $...$ somente dentro de bloco de codigo ou de formula matematica, onde o cliente renderiza.";
+    static string HarnessBehaviorTail = HarnessTails.DefaultBehavior;
     // O operador DECLAROU uma cauda (CLI/appsettings) ou o valor e o default
     // embutido? Usado so pela validacao, p/ avisar "cauda inerte com --harness 0"
     // sem acusar o default.
@@ -2347,14 +2346,9 @@ var shape = new StringBuilder();
     /// <param name="sys">System prompt original.</param>
     internal static string WithFormula(string sys)
     {
-        // --harness 0: sem caudas (cliente traz o proprio harness, ex.: opencode).
-        if (!Harness) return sys ?? "";
-        string t = (sys ?? "").Trim();
-        // Ordem: comportamento primeiro (o enquadramento geral), depois uso de tools
-        // (o especifico). Assim o "como agir" vem antes do "como chamar a ferramenta".
-        if (HarnessBehaviorTail.Length > 0) t = (t.Length > 0 ? t + "\n\n" : "") + HarnessBehaviorTail;
-        if (HarnessToolsTail.Length > 0) t = (t.Length > 0 ? t + "\n\n" : "") + HarnessToolsTail;
-        return t;
+        // Fonte unica das caudas no Core; o host so decide ligar/desligar e
+        // passa as sobrescritas de CLI/appsettings.
+        return HarnessTails.Compose(sys, Harness, HarnessBehaviorTail, HarnessToolsTail);
     }
 
     /// <summary>Pedido opencode (perfil com sufixo)? Se sim, tubo puro, sem formula.</summary>

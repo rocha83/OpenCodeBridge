@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Mvc;
 using Rochas.Data.Specification.Interfaces;
 using Rochas.OpenCodeBridge.Web.Models;
 using Rochas.OpenCodeBridge.Web.Services;
+using Rochas.OpenCodeBridge.Core;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -12,13 +14,14 @@ namespace Rochas.OpenCodeBridge.Web.Controllers;
 
 using System.Collections.Concurrent;
 
-// Chat: tela + proxy de stream p/ bridge (contorna falta de CORS no HttpListener).
+// Chat: tela + stream in-process via Core (BridgeProxy) direto no llama.
 [Authorize]
 public sealed class ChatController(
     IGenericRepository<Agent> agents,
     IPersistenceRepository<Agent> agentsWrite,
     ISessionService sessionService,
     IToolExecutor toolExecutor,
+    IConfiguration cfg,
     IHttpClientFactory http,
     Services.IDiagnosticTelemetry telemetry,
     Microsoft.Extensions.Logging.ILogger<ChatController> log,
@@ -27,42 +30,34 @@ public sealed class ChatController(
 {
     private int CurrentUserId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
 
-    // Flag mestra do harness mora na bridge (GET /api/harness, fonte unica).
-    // Fallback ligado: sem resposta, os guards atuam.
-    static async Task<bool> HarnessOnAsync(IHttpClientFactory http, string bridgeUrl, CancellationToken ct)
+    // Caminho Web = núcleo in-process: harness SEMPRE ligado (sem GET /api/harness).
+    // Upstream, modelo, chave, temperatura e thinking vão por parâmetro nos
+    // métodos do Core — nenhuma porta de bridge no caminho.
+    private BridgeOptions BridgeOptionsFor(Agent a, double? temperature = null, bool? thinking = null, int? maxTokens = null)
     {
-        try
+        string upstream = !string.IsNullOrWhiteSpace(a.UpstreamUrl)
+            ? a.UpstreamUrl
+            : (a.Model.Contains("UD-Q3", StringComparison.OrdinalIgnoreCase)
+                ? "http://127.0.0.1:4110" : "http://127.0.0.1:4100");
+        return new BridgeOptions
         {
-            var client = http.CreateClient("bridge");
-            using var res = await client.GetAsync(bridgeUrl.TrimEnd('/') + "/api/harness", ct);
-            if (!res.IsSuccessStatusCode) return true;
-            var h = System.Text.Json.Nodes.JsonNode.Parse(await res.Content.ReadAsStringAsync(ct))?["harness"];
-            return h is null || (h.GetValue<bool?>() ?? true);
-        }
-        catch { return true; }
+            UpstreamUrl = upstream,
+            Model = a.Model,
+            ApiKey = cfg["Llama:ApiKey"] ?? "guest@123",
+            Temperature = temperature ?? a.Temperature,
+            MaxTokens = maxTokens ?? 16384,
+            EnableThinking = thinking ?? (a.Thinking != "off"),
+            Harness = true,
+            LegacyHarness = false,
+            CoerceTextTools = false,
+            CoerceNarrated = false,
+            ToolStrategy = false,
+        };
     }
 
-    // Politica de tools: consulta a BRIDGE (fonte unica; a Web so apresenta).
-    // Falha de rede => "ask" (fail-closed: nunca libera por omissao).
-    private static async Task<string> PermissionCheckAsync(IHttpClientFactory http, Models.Agent? agent,
-        string name, string args, CancellationToken ct)
-    {
-        try
-        {
-            if (agent is null) return "ask";
-            var client = http.CreateClient("bridge");
-            var body = System.Text.Json.Nodes.JsonNode.Parse("{}")!.AsObject();
-            body["model"] = agent.Model;
-            body["tool"] = name;
-            body["arguments"] = args;
-            var content = new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
-            using var res = await client.PostAsync(agent.BridgeUrl.TrimEnd('/') + "/api/permission/check", content, ct);
-            if (!res.IsSuccessStatusCode) return "ask";
-            var node = System.Text.Json.Nodes.JsonNode.Parse(await res.Content.ReadAsStringAsync(ct));
-            return node?["action"]?.GetValue<string>() ?? "ask";
-        }
-        catch { return "ask"; }
-    }
+    // Allowlist do agente já filtrou o catálogo; sem agente, fail-closed.
+    private static string PermissionCheck(Models.Agent? agent, string name, string args)
+        => agent is null ? "ask" : PermissionPolicy.Check(agent.Model, name, args).Action;
 
     // Streams ativos por sessão p/ Parar via API (além do abort do fetch).
     private static readonly ConcurrentDictionary<int, CancellationTokenSource> ActiveStreams = new();
@@ -149,21 +144,11 @@ public sealed class ChatController(
 
     // Ping leve na bridge do agente p/ sinalizar conectividade da engine.
     [HttpGet("/Chat/Ping")]
-    public async Task<IActionResult> Ping(int agentId)
+    public async Task<IActionResult> Ping(int agentId, CancellationToken ct)
     {
         var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == agentId);
         if (agent is null) return Json(new { ok = false });
-        try
-        {
-            var client = http.CreateClient("bridge");
-            client.Timeout = TimeSpan.FromSeconds(3);
-            using var r = await client.GetAsync(agent.BridgeUrl.TrimEnd('/') + "/api/status");
-            return Json(new { ok = r.IsSuccessStatusCode });
-        }
-        catch
-        {
-            return Json(new { ok = false });
-        }
+        return Json(new { ok = await BridgeProxy.PingAsync(BridgeOptionsFor(agent), ct) });
     }
 
     public sealed class CalibrateRequest
@@ -179,9 +164,7 @@ public sealed class ChatController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Calibrate([FromBody] CalibrateRequest req, CancellationToken ct)
     {
-        // Harness desligado na bridge = psicologo desligado: neutro.
-        if (!await HarnessOnAsync(http, (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.AgentId)?.BridgeUrl ?? "", ct))
-            return Json(new { ceded = true, balanced = true, attempts = 0, decode = "" });
+        // Harness do caminho Web é sempre ligado (BridgeOptions.Harness = true).
         var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == req.AgentId);
         if (agent is null || !agent.Active) return NotFound();
         var history = new JsonArray();
@@ -206,7 +189,6 @@ public sealed class ChatController(
             history.Add(new JsonObject { ["role"] = "user", ["content"] = prompt });
             try
             {
-                var client = http.CreateClient("bridge");
                 var body = new JsonObject
                 {
                     ["model"] = agent.Model,
@@ -216,8 +198,8 @@ public sealed class ChatController(
                     ["stream"] = false,
                     ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = false },
                 };
-                using var res = await client.PostAsync(agent.BridgeUrl.TrimEnd('/') + "/v1/chat/completions",
-                    new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json"), ct);
+                using var res = await BridgeProxy.SendChatAsync(
+                    BridgeOptionsFor(agent, maxTokens: 256, thinking: false), body, stream: false, ct);
                 res.EnsureSuccessStatusCode();
                 var json = System.Text.Json.Nodes.JsonNode.Parse(await res.Content.ReadAsStringAsync(ct));
                 string text = json?["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
@@ -760,12 +742,8 @@ public sealed class ChatController(
                         new JsonObject { ["role"] = "user", ["content"] = part },
                     },
                 };
-                using var req = new HttpRequestMessage(HttpMethod.Post, agent.BridgeUrl.TrimEnd('/') + "/v1/chat/completions")
-                {
-                    Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-                };
-                using var sumClient = http.CreateClient("bridge");
-                using var res = await sumClient.SendAsync(req, ct);
+                using var res = await BridgeProxy.SendChatAsync(
+                    BridgeOptionsFor(agent, temperature: 0.3), body, stream: false, ct);
                 if (!res.IsSuccessStatusCode) return null;
                 try
                 {
@@ -826,7 +804,7 @@ public sealed class ChatController(
         var agent = (await agents.Query(new Agent())).FirstOrDefault(a => a.Id == id);
         if (agent is null || !agent.Active) return NotFound();
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var r = await BridgeHelper.ChatAsync(bridge, agent.BridgeUrl, agent.Model, agent.Temperature,
+        var r = await BridgeHelper.ChatAsync(bridge, BridgeOptionsFor(agent).UpstreamUrl, agent.Model, agent.Temperature,
             "Responda somente: ok",
             new JsonArray { new JsonObject { ["role"] = "user", ["content"] = "Responda somente: ok" } }, ct);
         sw.Stop();
@@ -1009,9 +987,6 @@ public sealed class ChatController(
             return;
         }
         var outputStream = Response.Body;
-        var client = http.CreateClient("bridge");
-        client.Timeout = Timeout.InfiniteTimeSpan;
-
         var assistantContent = new System.Text.StringBuilder();
         var assistantThinking = new System.Text.StringBuilder();
         int? promptTokens = null;
@@ -1029,7 +1004,7 @@ public sealed class ChatController(
         var chatter = new Services.ChatterGuard();
         bool chatterAbort = false;
         // Flag mestra na bridge (fonte unica): sem ela, tubo puro.
-        bool harness = await HarnessOnAsync(http, agent.BridgeUrl, ct);
+        bool harness = true;
         // Vínculo tool->bolha: ids de tools gravadas sem mensagem dona (turno sem
         // texto ou internas de sub cujo card falhou) vão p/ a mensagem final.
         var unlinkedToolIds = new List<int>();
@@ -1138,11 +1113,7 @@ public sealed class ChatController(
 
             // Repasse ao vivo (sem buffer total): ResponseHeadersRead ou o PostAsync
             // espera o corpo inteiro antes de entregar qualquer linha.
-            using var bridgeReq = new HttpRequestMessage(HttpMethod.Post, agent.BridgeUrl.TrimEnd('/') + "/v1/chat/completions")
-            {
-                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-            };
-            using var res = await client.SendAsync(bridgeReq, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var res = await BridgeProxy.SendChatAsync(BridgeOptionsFor(agent), body, stream: true, ct);
 
             if (!res.IsSuccessStatusCode)
             {
@@ -1639,9 +1610,6 @@ public sealed class ChatController(
         // Cronômetro do stream inteiro: duração da bolha final do agente.
         var streamSw = System.Diagnostics.Stopwatch.StartNew();
         var outputStream = Response.Body;
-        var client = http.CreateClient("bridge");
-        client.Timeout = Timeout.InfiniteTimeSpan;
-
         var assistantContent = new System.Text.StringBuilder();
         var assistantThinking = new System.Text.StringBuilder();
         int? promptTokens = null, completionTokens = null;
@@ -1680,7 +1648,7 @@ public sealed class ChatController(
         int toolFixes = 0;
         bool toolLoopAbort = false;
         // Flag mestra na bridge (fonte unica): sem ela, tubo puro.
-        bool harness = await HarnessOnAsync(http, agent.BridgeUrl, ct);
+        bool harness = true;
         // Fechamento com nota quando tools rodaram mas o modelo não devolveu
         // texto (sem isto a sessão termina sem bolha: "fez mas não falou nada").
         bool anyToolRan = false;
@@ -1724,11 +1692,7 @@ public sealed class ChatController(
             if (!string.IsNullOrWhiteSpace(instructions)) body["instructions"] = instructions;
             if (respTools.Count > 0) body["tools"] = respTools.DeepClone();
 
-            using var bridgeReq = new HttpRequestMessage(HttpMethod.Post, agent.BridgeUrl.TrimEnd('/') + "/v1/responses")
-            {
-                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-            };
-            using var res = await client.SendAsync(bridgeReq, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var res = await BridgeProxy.SendResponsesAsync(BridgeOptionsFor(agent), body, stream: true, ct);
             if (!res.IsSuccessStatusCode)
             {
                 if (!Response.HasStarted) { Response.StatusCode = 502; return; }
@@ -2241,7 +2205,7 @@ public sealed class ChatController(
     {
         if (autoApprove) return null;
         // Decisao na BRIDGE (fonte unica): o que a Web sabe e so apresentar.
-        var verdict = http is null ? "ask" : await PermissionCheckAsync(http, riskAgent, name, args, ct);
+        var verdict = PermissionCheck(riskAgent, name, args);
         if (verdict == "deny")
         {
             await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct,

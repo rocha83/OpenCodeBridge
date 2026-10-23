@@ -22,6 +22,9 @@ public sealed class Agent
     [Column("bridge_url")]
     public string BridgeUrl { get; set; } = "";
 
+    [Column("upstream_url")]
+    public string UpstreamUrl { get; set; } = "";
+
     [Column("temperature")]
     public double Temperature { get; set; }
 

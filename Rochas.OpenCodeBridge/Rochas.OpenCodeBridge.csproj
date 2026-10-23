@@ -33,6 +33,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Rochas.OpenCodeBridge.Core\Rochas.OpenCodeBridge.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="GNUv2_License.txt" Pack="true" PackagePath="" />
     <PackageReference Include="Serilog" Version="4.3.1" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />

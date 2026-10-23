@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Rochas.OpenCodeBridge.Core — núcleo reutilizável da bridge, sem HTTP de entrada.
+    O host console (Rochas.OpenCodeBridge) e a Web UI referenciam este assembly e
+    passam BridgeOptions diretamente nos métodos (sem args de CLI nem porta de bridge).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Rochas.OpenCodeBridge.Core</RootNamespace>
+    <AssemblyName>Rochas.OpenCodeBridge.Core</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Description>Núcleo da OpenCodeBridge: caudas de harness e proxy in-process para o llama.cpp (chat + responses).</Description>
+  </PropertyGroup>
+
+</Project>

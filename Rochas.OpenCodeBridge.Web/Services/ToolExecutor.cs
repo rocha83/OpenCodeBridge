@@ -102,7 +102,7 @@ namespace Rochas.OpenCodeBridge.Web.Services
                 WorkspaceRoot = _repoPath,
                 TimeoutSeconds = timeoutSeconds,
                 AgentName = agent?.Name ?? "",
-                BridgeUrl = agent?.BridgeUrl ?? "",
+                BridgeUrl = !string.IsNullOrWhiteSpace(agent?.UpstreamUrl) ? agent!.UpstreamUrl : (agent?.BridgeUrl ?? ""),
                 Model = agent?.Model ?? "",
                 Temperature = agent?.Temperature ?? 0.3,
                 SystemPrompt = agent?.SystemPrompt ?? "",

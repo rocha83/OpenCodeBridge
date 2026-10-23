@@ -22,6 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Rochas.OpenCodeBridge.Core\Rochas.OpenCodeBridge.Core.csproj" />
     <ProjectReference Include="..\Rochas.OpenCodeBridge.Runner\Rochas.OpenCodeBridge.Runner.csproj" />
   </ItemGroup>
 

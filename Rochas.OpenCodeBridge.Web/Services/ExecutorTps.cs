@@ -11,6 +11,7 @@ public static class ExecutorTps
 
     public static bool IsCpuExecutor(Models.Agent exec) =>
         (exec.BridgeUrl ?? "").Contains(":4125") ||
+        (exec.BridgeUrl ?? "").Contains(":4110") ||
         (exec.BridgeUrl ?? "").Contains("llama", StringComparison.OrdinalIgnoreCase) ||
         (exec.Model ?? "").Contains("cpu", StringComparison.OrdinalIgnoreCase) ||
         (exec.Model ?? "").Contains("4b", StringComparison.OrdinalIgnoreCase);

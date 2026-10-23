@@ -42,7 +42,7 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
     // Preset do form "Novo agente": Build E4B na GPU :4124 (temp baixa 0.1, thinking off).
     // Catálogo cheio (`*`): a restrição é denylist (`-tool`) ou policy do role.
     private static Agent DefaultAgent() =>
-        new() { Active = true, Model = "Gemma4-E4B-Q4", BridgeUrl = "http://127.0.0.1:4124", Temperature = 0.1, Thinking = "off", Tools = "*" };
+        new() { Active = true, Model = "Gemma4-E4B-Q4", BridgeUrl = "http://127.0.0.1:4124", UpstreamUrl = "http://127.0.0.1:4100", Temperature = 0.1, Thinking = "off", Tools = "*" };
 
     // Presets do form -> tools reais (leitura=read+grep, escrita=write+edit).
     private static string ExpandTools(string[]? selected, string? mode)
@@ -115,6 +115,7 @@ public sealed class AgentsController(IGenericRepository<Agent> agents, IPersiste
         existing.Name = form.Name ?? "";
         existing.Model = form.Model ?? "";
         existing.BridgeUrl = form.BridgeUrl ?? "";
+        existing.UpstreamUrl = form.UpstreamUrl ?? "";
         existing.Temperature = form.Temperature;
         existing.Thinking = form.Thinking ?? "";
         existing.SystemPrompt = form.SystemPrompt ?? "";

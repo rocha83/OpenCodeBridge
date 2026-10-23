@@ -1,12 +1,13 @@
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
+using Rochas.OpenCodeBridge.Core;
 
 namespace Rochas.OpenCodeBridge.Web.Services;
 
 // Agente no banco tem seu próprio SystemPrompt; a bridge é agnóstica.
-// Proxy p/ bridge: monta chat completions e repassa o stream SSE cru.
-public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
+// Cliente in-process: monta o chat completions e chama o Core (BridgeProxy)
+// direto no llama — sem porta de bridge e sem args de processo.
+public sealed class BridgeClient(Microsoft.Extensions.Configuration.IConfiguration cfg) : IBridgeClient
 {
     public async Task<(bool ok, string error)> StreamAsync(string bridgeUrl, string model, double temperature,
         string systemPrompt, JsonArray messages, Stream output, CancellationToken ct,
@@ -28,7 +29,7 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
                 ["stream"] = true,
                 // Trava anti-eco degenerado ([shell] ok x500): repete menos.
                 ["repetition_penalty"] = 1.15,
-                // Sem isto o vLLM não devolve usage no stream (donut no chute).
+                // Sem isto o llama não devolve usage no stream (donut no chute).
                 ["stream_options"] = new JsonObject { ["include_usage"] = true },
             };
             if (maxTokens.HasValue) body["max_tokens"] = maxTokens.Value;
@@ -37,22 +38,31 @@ public sealed class BridgeClient(IHttpClientFactory http) : IBridgeClient
                 body["tools"] = (JsonNode?)tools?.DeepClone() ?? ToolDefinitions.GetTools();
                 body["tool_choice"] = toolChoice ?? JsonValue.Create("auto");
             }
-            // Corta o mimetismo <think> na fonte (executores non-thinking): sem isto o
-            // template default emite as tags como texto e o StripThink limpa depois.
+            // Corta o mimetismo  thinking na fonte (executores non-thinking).
             if (enableThinking.HasValue)
                 body["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = enableThinking.Value };
-            var client = http.CreateClient("bridge");
-            client.Timeout = Timeout.InfiniteTimeSpan;
-            using var res = await client.PostAsync(bridgeUrl.TrimEnd('/') + "/v1/chat/completions",
-                new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
+
+            var options = new BridgeOptions
+            {
+                UpstreamUrl = bridgeUrl,
+                Model = model,
+                ApiKey = cfg["Llama:ApiKey"] ?? "guest@123",
+                Temperature = temperature,
+                MaxTokens = maxTokens ?? 16384,
+                EnableThinking = enableThinking,
+                Harness = true,
+                LegacyHarness = false,
+                CoerceTextTools = false,
+                CoerceNarrated = false,
+                ToolStrategy = false,
+            };
+            using var res = await BridgeProxy.SendChatAsync(options, body, stream: true, ct);
             if (!res.IsSuccessStatusCode)
             {
-                // Corpo do erro (truncado): sem ele o "bridge 400" era
-                // inconstrutável (o motivo vem no JSON).
                 string errBody = "";
                 try { errBody = await res.Content.ReadAsStringAsync(ct); } catch { }
                 if (errBody.Length > 400) errBody = errBody[..400];
-                return (false, $"bridge {(int)res.StatusCode}: {errBody}");
+                return (false, $"llama {(int)res.StatusCode}: {errBody}");
             }
             using var stream = await res.Content.ReadAsStreamAsync(ct);
             await stream.CopyToAsync(output, ct);

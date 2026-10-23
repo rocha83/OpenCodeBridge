@@ -63,7 +63,7 @@
           <span class="fw-bold">@a.Name</span>
           <span class="badge bg-info ms-2">@(string.IsNullOrEmpty(a.Mode) ? "Build" : a.Mode)</span>
           @if (a.Active) { <span class="badge bg-success ms-1">ativo</span> } else { <span class="badge bg-warning ms-1">inativo</span> }
-          <div class="small text-muted mt-1">@a.Model · @a.BridgeUrl · temp @a.Temperature · @a.Thinking</div>
+          <div class="small text-muted mt-1">@a.Model · @(string.IsNullOrWhiteSpace(a.UpstreamUrl) ? a.BridgeUrl : a.UpstreamUrl) · temp @a.Temperature · @a.Thinking</div>
           <div class="small text-muted">@a.Tools</div>
         </div>
         <div class="btn-group btn-group-sm flex-shrink-0">
