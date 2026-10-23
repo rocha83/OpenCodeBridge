@@ -9,7 +9,7 @@ expresso (componente, cenário de teste e harness) fica no `README.md`.
 | linha | modelo | ctx | VRAM |
 |---|---|---|---|
 | GPU1 `:4100` | `Gemma4-E4B-Q4` — Gemma4 E4B **base original** `Q4_K_M` + mmproj **Q8_0** | `-c 131072 -np 1` = **1×128k** | (medir no host; chroot sem CUDA) |
-| GPU2 `:4110` | `Gemma4-E4B-UD-Q3` — Huihui Gemma4 E4B **abliterated** `IQ3_XXS`, **text-only** | `-c 131072 -np 1` = **1×128k** | (medir no host; chroot sem CUDA) |
+| GPU2 `:4110` | `Gemma4-E4B-UD-Q3` — Huihui Gemma4 E4B **abliterated** `IQ3_XXS`, **text-only** | `-c 131072 -np 2` = **2×64k** | (medir no host; chroot sem CUDA) |
 | CPU `:4120` | `Gemma4-E4B-Q4` — mesmo E4B base, **CPU puro** (`-ngl 0`) | `-c 131072 -np 1` = **1×128k** | 0 (RAM) |
 
 Temperatura: CLI base **0.5**; perfis do runtime (`appsettings.json`) **plan 0.3 / build 0.1 / orch 0.3 / moe 0.5 / scripter 0.1 / exec 0.1** (escala baixa **0.1**, média **0.3**, alta **0.5**); o `temperature` do modelo no `opencode.json` segue a mesma escala.
@@ -926,3 +926,21 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
    `nvidia-smi`, `curl -s localhost:4110/v1/models | jq .data[0].meta.n_ctx`
    (131072), `curl -sH 'Authorization: Bearer guest@123' localhost:4125/api/status`,
    `/usr/local/bin/start-models-default.sh` (rc=0).
+
+## 0.1 Contas isoladas do OpenCode (host autentica, bridge não)
+
+| conta | uid | shell | acesso | workspace | porta |
+|---|---|---|---|---|---|
+| `moe-agent` | 1001 | `/usr/sbin/nologin` | só Web (chat-only) | `/home/moe-agent/workspace` | `:4220` (Caddy `4152`) |
+| `dev-agent` | 1002 | `/bin/bash` | TUI via SSH:22 + Web | `/home/dev-agent/workspace` | `:4210` (Caddy `4153`) |
+| `mint` | 1000 | `/bin/bash` | TUI/Web completo | livre | `:4200` (Caddy `4147`) |
+
+- Nenhuma tem sudo/docker; homes `750`; `hidden-users` no LightDM.
+- Sandbox: `bwrap` via `/usr/local/bin/ocagent-sandbox.sh` (home tmpfs + bind do próprio home;
+  `/media`, `/mnt`, `/opt`, `/root`, `/srv` vazios; `--share-net` para `127.0.0.1:4125`).
+- Serviço gerenciado do OpenCode por conta: `service.json` com `49376` (dev) e `49377` (moe).
+  A `49374` é do `mint` — colisão causa sessão que morre sem mensagem.
+- `dev-agent` vê **somente** Q3 (6 modelos `llama/Gemma4-E4B-UD-Q3*`) e os papéis
+  Build/Plan/MoE/Scripter; `moe-agent` vê só `Gemma4-E4B-UD-Q3-moe` (papel MoE, chat-only).
+- Bridges continuam em `0.0.0.0` com ApiKey (consumo direto sem UI); o Caddy publica só as
+  portas do OpenCode Web, com basicauth por conta.

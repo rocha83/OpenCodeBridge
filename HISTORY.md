@@ -2782,3 +2782,55 @@ legado. Cada flag vive em um único grupo; `--host` é alias de `--listen`;
 - `/usr/src/opencodebridge/Rochas.OpenCodeBridge/Program.cs` (produção)
 - `/usr/src/opencodebridge/LAB-SETUP.md` (grupos + coordenadas)
 - `/usr/src/opencodebridge/HISTORY.md` (este bloco)
+
+## Isolamento multi-usuário + GPU2 2×64k + delegação por família (2026-10-23, sessão 6)
+
+**Contexto:** a sessão `Ola - Gemma4 E4B Q3` morria em ~1,6s sem mensagem. Causa raiz no
+log do servidor: `SessionRunnerModel.UnsupportedPackageError: Unsupported package for
+llama/Gemma4-E4B-UD-Q3-moe:` — no OpenCode V2 provedor customizado exige
+`providers.<id>.package`; o `opencode.json` usava `"api": "openai-chat"` (V1, ignorado).
+`openai` funcionava por ser ID nativo do catálogo. Fix: `"package":
+"@opencode/ai/providers/openai-compatible"` em `llama` e `cpu`.
+
+**GPU2 2×64k:** `llama-gpu2` passou a `-c 131072 -np 2` (cada slot 65536) e
+`bridge-gpu2 --context-tokens 65536`; `opencode.json` (provider `llama`) com
+`limit.context: 65536`. Ganho: duas sessões simultâneas de 64k em vez de uma de 128k.
+
+**Contas isoladas (host faz a autenticação):**
+- `moe-agent` (uid 1001, `/usr/sbin/nologin`) — só Web, chat-only.
+- `dev-agent` (uid 1002, `/bin/bash`) — TUI via SSH:22 + Web.
+- Ambas sem sudo/docker, home `750`, `hidden-users` no LightDM (não aparecem no greeter).
+- `bwrap` (`/usr/local/bin/ocagent-sandbox.sh`): `/home` vira tmpfs e só o home do dono é
+  remontado; `/media`, `/mnt`, `/opt`, `/root`, `/srv` ficam vazios; `--unshare-all
+  --share-net` mantém o acesso a `127.0.0.1:4125`. Achados: `--setenv TERM=xterm` falha
+  (precisa dois args) e serviço gerenciado do OpenCode colide na `49374` — cada conta usa
+  `service.json` com porta própria (`49376`/`49377`).
+- SSH `Match User dev-agent` + `ForceCommand /usr/local/bin/start-ocagent-tui.sh`: cai
+  direto no TUI dentro do sandbox, sem shell livre.
+- Web: `opencode-web-dev` (:4210) e `opencode-web-moe` (:4220), units **disabled** (sobem
+  pelos ícones). Caddy: `4153 -> 4210` (basicauth `dev`) e `4152 -> 4220` (`moe`);
+  `4150` já estava ocupada por `:4800`, por isso 4153.
+- Bridges **intactas**: continuam `0.0.0.0` + ApiKey (consumo direto da LLM sem UI).
+
+**Agentes (papel único, hardware no nome do modelo):** removidas as duplicatas
+`*-cpu.md` e `*-q3.md`; o sufixo de hardware vive no nome do modelo
+(`Gemma4 E4B Q4 CPU — Plan`). `dev-agent` vê só Q3 e só os papéis Build/Plan/MoE/Scripter.
+- MoE é **chat-only**: `fetch,display,subagent` (sem read/glob/grep/git/shell).
+- Delegação só para o **próprio role e própria família**; exceção: `orch` chama `scripter`.
+- Todos os agentes recebem a cláusula de delegação a **90% do contexto**
+  (>=118k de 131072 na GPU1; >=58k de 65536 na GPU2).
+- `AgentSeeder.NormalizeDelegationRules` aplica isso também em DB existente
+  (o seed é `INSERT OR IGNORE`) e remove as linhas `(CPU Forced)`; `SeedCpuCopies` saiu.
+
+**Verificação:** `dotnet build -c Release Rochas.OpenCodeBridge.slnx` = **0 erros / 0 avisos**;
+`llama :4110` reporta `n_ctx=65536` com `-c 131072 -np 2`; `web.db` com 10 agentes, MoE em
+`fetch,display,subagent` e 10/10 com a cláusula; `opencode models` do `dev-agent` lista só
+`llama/Gemma4-E4B-UD-Q3*` e o do `moe-agent` só `...-moe`; `opencode run` de ambos dentro do
+bwrap responde `ok`.
+
+**Arquivos tocados:** `Rochas.OpenCodeBridge.Web/Data/AgentSeeder.cs`, `HISTORY.md`,
+`LAB-SETUP.md`, `~/.config/opencode/opencode.json`, `~/.config/opencode/agents/*.md`,
+`/usr/local/bin/{ocagent-sandbox,start-ocagent-tui,start-opencode-web-dev,start-opencode-web-moe,start-ocagent-web}.sh`,
+`/etc/systemd/system/opencode-web-{dev,moe}.service`, `/etc/ssh/sshd_config.d/60-ocagents.conf`,
+`/etc/caddy/Caddyfile`, `/etc/lightdm/users.conf`, `/usr/local/bin/start-llama-gpu2.sh`,
+`/usr/local/bin/start-bridge-gpu2.sh`.

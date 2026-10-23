@@ -21,7 +21,7 @@ public static class AgentSeeder
             0.5, "events",
             "Voce e um agente autonomo generalista senior entende sobre todos assuntos em esfera global delega tarefas a subagentes quando entende que o contexto ficou moderado (128k), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
             "planner", "Plan", 30.0, 1,
-            "glob,read,grep,git,fetch,display,subagent"),
+            "fetch,display,subagent"),
         new(2, "Engenheiro de Software - Plan - Gemma4 E4B Q4 GPU", "Gemma4-E4B-Q4", "http://127.0.0.1:4124",
             0.3, "events",
             "Voce e um agente autonomo arquiteto engenheiro de software e dados (ML e NN) senior adepto das melhores praticas SOLID, design DDD clean arch e uso de ORM, delega tarefas a subagentes quando entende o contexto moderado (128k), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
@@ -41,7 +41,7 @@ public static class AgentSeeder
             0.5, "events",
             "Voce e um agente autonomo generalista senior entende sobre todos assuntos em esfera global delega tarefas a subagentes quando entende que o contexto ficou limitado (128k), nunca se auto-apresente salvo pedido direto",
             "executor", "Plan", 2.5, 1,
-            "glob,read,grep,git,fetch,display,subagent"),
+            "fetch,display,subagent"),
         new(6, "Desenvolvedor de Software - Scripter - Gemma4 E4B Q4 GPU", "Gemma4-E4B-Q4", "http://127.0.0.1:4124",
             0.1, "off",
             "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
@@ -100,7 +100,7 @@ public static class AgentSeeder
         MigrateLegacyConfig(conn);
         MigrateUpstreamUrls(conn);
         RenameQ3Agents(conn);
-        SeedCpuCopies(conn);
+        NormalizeDelegationRules(conn);
     }
 
     // Ids mortos (gemma-4-12b / gemma-4-e2b) não existem mais nas units. Atualiza
@@ -148,29 +148,6 @@ public static class AgentSeeder
         catch { /* migração best-effort */ }
     }
 
-    // Réplica dos agentes no par CPU Forced: E4B Q4, llama :4120, bridge :4126.
-    // Copia prompt/tools/temperatura/thinking do agente original (GPU/GPU2).
-    private static void SeedCpuCopies(SqliteConnection conn)
-    {
-        try
-        {
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = """
-                INSERT INTO agents
-                    (name, model, bridge_url, upstream_url, temperature, thinking,
-                     system_prompt, role, mode, measured_tps, active, tools)
-                SELECT a.name || ' (CPU Forced)', 'Gemma4-E4B-Q4',
-                       'http://127.0.0.1:4126', 'http://127.0.0.1:4120',
-                       a.temperature, a.thinking, a.system_prompt, a.role, a.mode,
-                       0, a.active, a.tools
-                FROM agents a
-                WHERE a.upstream_url IN ('http://127.0.0.1:4100', 'http://127.0.0.1:4110')
-                  AND NOT EXISTS (SELECT 1 FROM agents b WHERE b.name = a.name || ' (CPU Forced)');
-                """;
-            cmd.ExecuteNonQuery();
-        }
-        catch { /* seed best-effort */ }
-    }
 
     // Migração: o caminho Web fala DIRETO com o llama (núcleo in-process).
     // upstream_url vazio recebe o servidor do modelo (Q3 :4110, resto :4100);
@@ -193,5 +170,33 @@ public static class AgentSeeder
             cmd.ExecuteNonQuery();
         }
         catch { /* migração best-effort */ }
+    }
+
+    // Regra unica de delegacao (vale para seed novo e DB existente):
+    //  - MoE e CHAT-ONLY: so fetch/display/subagent (sem disco, sem git, sem shell);
+    //  - todos os demais ganham 'subagent' (inclusive Exec/Scripter);
+    //  - todo agente recebe a clausula de delegacao a 90% do contexto.
+    private static void NormalizeDelegationRules(SqliteConnection conn)
+    {
+        const string clause = " DELEGACAO POR CONTEXTO (obrigatoria): quando o contexto desta sessao atingir 90% da janela, nao continue a tarefa no mesmo fio: divida o restante em sub-tarefas atomicas e delegue via tool subagent, uma por chamada, com micro-enunciado OBJETIVO + ESCOPO + PROIBIDO + ACEITE. Delegue SOMENTE para subagentes do seu proprio role e da sua propria familia de modelo. Agregue os resultados, re-execute o ACEITE e conclua com o resumo.";
+        const string moeRule = " MODO CHAT: nao acessa disco (sem read/glob/grep/git/shell), apenas internet (fetch) e subagentes do proprio role.";
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                DELETE FROM agents WHERE name LIKE '%(CPU Forced)%';
+                UPDATE agents SET tools = 'fetch,display,subagent' WHERE name LIKE '%MoE%';
+                UPDATE agents SET tools = tools || ',subagent'
+                 WHERE name NOT LIKE '%MoE%' AND tools NOT LIKE '%subagent%';
+                UPDATE agents SET system_prompt = system_prompt || @moe
+                 WHERE name LIKE '%MoE%' AND system_prompt NOT LIKE '%MODO CHAT%';
+                UPDATE agents SET system_prompt = system_prompt || @clause
+                 WHERE system_prompt NOT LIKE '%DELEGACAO POR CONTEXTO%';
+                """;
+            cmd.Parameters.AddWithValue("@moe", moeRule);
+            cmd.Parameters.AddWithValue("@clause", clause);
+            cmd.ExecuteNonQuery();
+        }
+        catch { /* migracao best-effort */ }
     }
 }
