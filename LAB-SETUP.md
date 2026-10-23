@@ -742,14 +742,19 @@ Efeito medido (`-lv 5`, GPU1 sozinha): `CUDA0 model buffer = 5664.69 MiB`,
 Sem `-ot`, GPU1 mantinha `CUDA_Host = 2730.00 MiB` (RSS ~3,98 GiB); com `-ot`,
 RSS caiu para ~0,69 GiB.
 
-Para caber os dois com `-ot` e ctx cheio (81920/40960), o `--mmproj` foi
-removido da GPU1 (o E4B base fica **text-only** nesta linha). Boot validado:
+Para caber os dois com `-ot`, o `--mmproj` foi removido da GPU1 (o E4B base
+fica **text-only** nesta linha). O ctx da GPU2 foi reduzido de 40960 para
+**32768** (bridge-cpu `--context-tokens 32768`). Boot validado:
 
 | linha | VRAM processo | ctx |
 |---|---|---|
-| GPU1 `:4100` `Gemma4-E4B-Q4` | 6517 MiB | 81920 |
-| GPU2 `:4110` `Gemma4-E4B-UD-Q3` | 4749 MiB | 40960 |
-| **total / livre** | **11625 / 411 MiB** | — |
+| GPU1 `:4100` `Gemma4-E4B-Q4` | 6581 MiB | 81920 |
+| GPU2 `:4110` `Gemma4-E4B-UD-Q3` | 4685 MiB | 32768 |
+| **total / livre** | **11623 / 413 MiB** | — |
+
+Queda de ctx 40k→32k liberou apenas ~64 MiB (o KV do Gemma4 com SWA/shared-KV
+é pequeno: ~125 MiB a 40k), insuficiente para devolver o `--mmproj` (~740 MiB)
+à GPU1.
 
 `-ot ".*=CUDA0"` não altera o KV (continua em `CUDA0`); ele só move os tensores
 de modelo que estavam em `CUDA_Host`. Se a visão da GPU1 for necessária, é
