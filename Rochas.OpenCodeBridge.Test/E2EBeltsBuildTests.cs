@@ -39,7 +39,7 @@ internal static class E2EBeltsBuildTests
         Log($"[belts-build:direct] modelo {model} (bridge {TestContext.Bridge})");
         var tools = new JsonArray
         {
-            new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write", ["description"]="escreve arquivo em disco", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
+            new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write", ["description"]="escreve arquivo em disco", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string",["maxLength"]=1200} }, ["required"]=new JsonArray("path","content") } } }
         };
         int pass = 0, fail = 0;
         var keysEnv = string.IsNullOrWhiteSpace(TestContext.BeltsFilter) ? Environment.GetEnvironmentVariable("BELTS_KEYS") : TestContext.BeltsFilter;
@@ -57,7 +57,7 @@ internal static class E2EBeltsBuildTests
             try
             {
                 var history = new JsonArray(
-                    new JsonObject { ["role"]="system", ["content"]="Voce e um arquiteto desenvolvedor senior (role build). HARNESS NATIVO: ferramentas write/read/grep/glob/shell disponiveis. OBRIGATORIO: use a tool write com argumentos JSON validos (path string, content string) para criar arquivos. Crie pelo menos 3 arquivos .cs/.sql/.tsx com conteudo substancial. CAMINHOS RELATIVOS (sem barra inicial, ex.: reembolsos_db.sql). Nao use paths absolutos. Nao inclua texto fora do JSON da tool call. Ao terminar responda apenas BUILD-OK com resumo dos arquivos criados. Dialogo em pt-br." },
+                    new JsonObject { ["role"]="system", ["content"]="Pouca fala, mais construcao. Utilize tools (ferramentas). Voce e um arquiteto desenvolvedor senior (role build). HARNESS NATIVO: ferramentas write/read/grep/glob/shell disponiveis. OBRIGATORIO: use a tool write com argumentos JSON validos (path string, content string) para criar arquivos. Crie pelo menos 3 arquivos .cs/.sql/.tsx com conteudo substancial, mas conciso: 400 a 1200 caracteres por arquivo, UMA tool call write por arquivo, sem arquivos gigantes e sem repetir resumos. CAMINHOS RELATIVOS (sem barra inicial, ex.: reembolsos_db.sql). Nao use paths absolutos. Nao inclua texto fora do JSON da tool call. Ao terminar responda apenas BUILD-OK com resumo dos arquivos criados. Dialogo em pt-br." },
                     new JsonObject { ["role"]="user", ["content"]=prompt });
                 int filesCreated = 0;
                 int totalChars = 0;
@@ -67,7 +67,7 @@ internal static class E2EBeltsBuildTests
                 for (int turn = 0; turn < 10 && filesCreated < 8; turn++)
                 {
                     var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                        new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["max_tokens"]=4096, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
+                        new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["max_tokens"]=24000, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
                     var msg = r["choices"]?[0]?["message"]?.AsObject();
                     string content = msg?["content"]?.GetValue<string>() ?? "";
                     totalChars += content.Length;
@@ -78,16 +78,42 @@ internal static class E2EBeltsBuildTests
                         history.Add(new JsonObject { ["role"]="assistant", ["content"]=content });
                         if (nudges >= 2) { Log($"  [belt-build:{key}] sem tools apos 2 nudges, encerrando"); break; }
                         nudges++;
-                        history.Add(new JsonObject { ["role"]="user", ["content"]="Voce respondeu com texto mas NAO chamou a tool write. OBRIGATORIO agora: chame a tool write com path e content para criar o proximo arquivo real (.cs/.sql/.tsx). Nao explique, apenas chame write." });
+                        history.Add(new JsonObject { ["role"]="user", ["content"]="Pouca fala, mais construcao: voce respondeu com texto mas NAO chamou a tool write. OBRIGATORIO agora: chame a tool write com path e content para criar o proximo arquivo real (.cs/.sql/.tsx). Nao explique, apenas chame write." });
+                        continue;
+                    }
+                    // Parse primeiro: tool call truncada/invalida nao entra no historico.
+                    // Reenviar JSON quebrado ao llama costuma virar 500 peg-gemma4.
+                    var parsed = new System.Collections.Generic.List<(JsonObject Call, JsonObject Args)>();
+                    bool badArgs = false;
+                    foreach (var c in calls)
+                    {
+                        try
+                        {
+                            var co = c as JsonObject ?? throw new FormatException("tool call nao e objeto");
+                            var a = JsonNode.Parse(co["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject();
+                            if (a is null) throw new FormatException("args nao e objeto");
+                            parsed.Add((co, a));
+                        }
+                        catch
+                        {
+                            badArgs = true;
+                            break;
+                        }
+                    }
+                    if (badArgs)
+                    {
+                        Log($"  [belt-build:{key}] turno {turn}: tool call com args invalidos/truncados — nudge");
+                        nudges++;
+                        if (nudges > 2) { Log($"  [belt-build:{key}] args invalidos apos 2 nudges, encerrando"); break; }
+                        history.Add(new JsonObject { ["role"]="user", ["content"]="Sua ultima tool call veio com JSON invalido ou truncado. Reemita UMA tool call write com JSON completo: path string e content string de no maximo 1200 caracteres. Nao inclua texto fora do JSON." });
                         continue;
                     }
                     nudges = 0;
                     var echo = new JsonArray();
-                    foreach (var c in calls) echo.Add(new JsonObject { ["id"]=c?["id"]?.GetValue<string>()??"", ["type"]="function", ["function"]=new JsonObject { ["name"]=c?["function"]?["name"]?.GetValue<string>()??"", ["arguments"]=c?["function"]?["arguments"]?.GetValue<string>()??"{}" } });
+                    foreach (var (c, _) in parsed) echo.Add(new JsonObject { ["id"]=c["id"]?.GetValue<string>()??"", ["type"]="function", ["function"]=new JsonObject { ["name"]=c["function"]?["name"]?.GetValue<string>()??"", ["arguments"]=c["function"]?["arguments"]?.GetValue<string>()??"{}" } });
                     history.Add(new JsonObject { ["role"]="assistant", ["content"]=content, ["tool_calls"]=echo });
-                    foreach (var c in calls)
+                    foreach (var (c, a) in parsed)
                     {
-                        var a = JsonNode.Parse(c?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject();
                         string path = a["path"]?.GetValue<string>() ?? "";
                         string ctt = a["content"]?.GetValue<string>() ?? "";
                         if (string.IsNullOrWhiteSpace(path)) path = $"artefato_{filesCreated}.txt";
@@ -95,9 +121,14 @@ internal static class E2EBeltsBuildTests
                         System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
                         System.IO.File.WriteAllText(full, ctt);
                         filesCreated++;
-                        history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c?["id"]?.GetValue<string>()??"", ["content"]=$"criado {path} ({ctt.Length} chars)" });
+                        // Metrica de substancia: o artefato real e o conteudo
+                        // gravado em disco, nao o texto do assistant (que pode
+                        // ser so um resumo curto). Sem isto, um belt com 6
+                        // arquivos de ~4 KB era reprovado por chars=326.
+                        totalChars += ctt.Length;
+                        history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c["id"]?.GetValue<string>()??"", ["content"]=$"criado {path} ({ctt.Length} chars)" });
                     }
-                    Log($"  [belt-build:{key}] turno {turn}: {calls.Count} write(s), total arquivos={filesCreated}");
+                    Log($"  [belt-build:{key}] turno {turn}: {parsed.Count} write(s), total arquivos={filesCreated}");
                     if (filesCreated == lastFiles) stall++; else stall = 0;
                     lastFiles = filesCreated;
                     if (stall >= 2) { Log($"  [belt-build:{key}] stall detectado, encerrando"); break; }

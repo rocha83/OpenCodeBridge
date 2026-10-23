@@ -50,6 +50,9 @@ internal static partial class Program
     static double Temperature = 0.3;                                 // medio (escala 0.1 baixo / 0.3 medio / 0.5 alto); tool calling continua deterministico via tool_choice
     static int MaxTokens;                                          // teto de saida da linha GPU: 0 = SEM TETO (a infra/llama controla via -c/--n-predict e o cliente decide via max_tokens); >0 = clamp
     static int CpuMaxTokens;                                       // teto da linha CPU: 0 = SEM TETO (deixa o llama controlar); >0 = clamp p/ conter divagacao em decode lento (~5 tok/s)
+    static string ToolShimMode = "";                                // "json" = shim generico: remove tools, forca envelope JSON via grammar e converte de volta p/ tool_calls
+    static int ToolShimMaxString = 2000;                            // cap de chars por string no grammar do shim (0 = sem cap)
+    static int ToolShimMinCalls = 0;                                // calls minimas no historico antes de liberar {"final":...}; 0 = libera sempre
     static int ToolOutputLimit;                                      // corte por resultado de tool: 0 = SEM CORTE (padrao); config via appsettings "toolOutputLimit" / --tool-output-limit
     static string WorkspaceRoot = "";                               // raiz p/ POST /api/tools/execute; vazio = cwd do processo
     static string LogPath = "/tmp/qwen3-bridge.log";
@@ -430,6 +433,9 @@ internal static partial class Program
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
             if (cfg["diagnostic"]?.GetValue<bool>() is bool dg) Diagnostic = dg;
             if (cfg["toolStrategy"]?.GetValue<bool>() is bool tstrat) ToolStrategy = tstrat;
+            if (cfg["toolShim"]?.GetValue<string>() is string tsh) ToolShimMode = tsh.Trim().ToLowerInvariant();
+            if (cfg["toolShimMaxString"]?.GetValue<int>() is int tsm && tsm > 0) ToolShimMaxString = tsm;
+            if (cfg["toolShimMinCalls"]?.GetValue<int>() is int tsmc && tsmc >= 0) ToolShimMinCalls = tsmc;
             if (cfg["contextGuard"]?.AsObject() is JsonObject cg)
             {
                 if (cg["enabled"]?.GetValue<bool>() is bool cge) ContextGuard = cge;
@@ -892,6 +898,12 @@ internal static partial class Program
                 case "--coerce-text-tools": CoerceTextTools = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--coerce-narrated": CoerceNarrated = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--tool-strategy": ToolStrategy = cliArgs[i + 1] is not "false" and not "0"; break;
+                // Shim generico de tool calling: upstream llama recusa grammar
+                // customizada junto com tools; o shim remove tools, injeta a
+                // declaracao no system e forca um envelope JSON via grammar.
+                case "--tool-shim": ToolShimMode = cliArgs[i + 1].Trim().ToLowerInvariant(); break;
+                case "--tool-shim-max-string": ToolShimMaxString = int.Parse(cliArgs[i + 1]); break;
+                case "--tool-shim-min-calls": ToolShimMinCalls = int.Parse(cliArgs[i + 1]); break;
 
                 // ---------- F) anti-repeat ----------
                 case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
@@ -1315,6 +1327,8 @@ WriteJson(ctx, 200, new JsonObject
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
         ["passthrough_responses"] = PassthroughResponses,
         ["tool_strategy"] = ToolStrategy,
+        ["tool_shim"] = ToolShimMode, ["tool_shim_max_string"] = ToolShimMaxString,
+        ["tool_shim_min_calls"] = ToolShimMinCalls,
         ["cpu_max_tokens"] = CpuMaxTokens, ["coerced_max_tokens"] = CpuMaxTokens,
         ["upstream_parser"] = UpstreamParser,
         ["anti_repeat"] = AntiRepeat, ["anti_repeat_abort"] = AntiRepeatAbort,
@@ -1505,6 +1519,29 @@ WriteJson(ctx, 200, new JsonObject
         // opencode 1.x recebe texto puro, nenhuma tool executa e o agente entra
         // em loop re-planejando. Linha GPU segue em streaming real.
         bool isChat = ctx.Request.Url!.AbsolutePath.Contains("chat/completions");
+        // ToolShim generico: o llama recusa "grammar + tools" ("Cannot use
+        // custom grammar constraints with tools"). O shim remove tools, injeta
+        // a declaracao no system e forca um envelope JSON via grammar; a
+        // resposta volta convertida para tool_calls OpenAI. Tudo derivado do
+        // array tools do request (nenhum cenario hardcoded).
+        bool shimActive = false;
+        if (ToolShimMode == "json" && isChat)
+        {
+            try
+            {
+                var sn = JsonNode.Parse(outBody)?.AsObject();
+                string? shimReason = null;
+                if (sn is not null && ToolShim.Apply(sn, ToolShimMaxString, ToolShimMinCalls, out shimReason))
+                {
+                    outBody = sn.ToJsonString(SerOpts);
+                    shimActive = true;
+                    if (Diagnostic) Log(new JsonObject { ["event"] = "tool-shim", ["mode"] = "json", ["max_string"] = ToolShimMaxString });
+                }
+                else if (Diagnostic && shimReason is not null)
+                    Log(new JsonObject { ["event"] = "tool-shim-skip", ["reason"] = shimReason });
+            }
+            catch { }
+        }
         // Coerce quando o pedido traz tools e o upstream nao parseia de volta
         // (coder/deepseek via llama): força non-stream + sintetiza tool_calls.
         bool toolsAsked = false;
@@ -1536,7 +1573,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // consumimos o upstream em SSE para o detector cortar o loop DURANTE a
         // geracao. O retry pos-hoc pagava os 16.384 tokens (~375 s) inteiros
         // antes de trocar o conteudo.
-        if (isChat && AntiRepeat && AntiRepeatAbort && !coerceLine
+        if (isChat && AntiRepeat && AntiRepeatAbort && !coerceLine && !shimActive
             && ctx.Request.HttpMethod is "POST" or "PUT" or "PATCH"
             && !BodyWantsStream(outBody) && TryStreamAbortChat(ctx, outBody, startedAt))
             return;
@@ -1556,6 +1593,11 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         if (coerceLine && upstreamResponse.IsSuccessStatusCode)
         {
             CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent, AnnouncedTools(outBody), startedAt);
+            return;
+        }
+        if (shimActive && upstreamResponse.IsSuccessStatusCode)
+        {
+            ShimChatResponse(ctx, upstreamResponse, outBody, startedAt);
             return;
         }
         ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
@@ -3256,6 +3298,42 @@ var shape = new StringBuilder();
         }
     }
 
+
+    /// <summary>Le a resposta non-stream do shim, converte o envelope JSON em
+    /// tool_calls (ou content final) e devolve ao cliente.</summary>
+    static void ShimChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, string requestBody, DateTime startedAt)
+    {
+        string raw = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        JsonObject? obj = null;
+        try { obj = JsonNode.Parse(raw)?.AsObject(); } catch { }
+        if (obj is null)
+        {
+            WriteJson(ctx, 502, new JsonObject
+            {
+                ["error"] = new JsonObject
+                {
+                    ["message"] = "tool-shim: resposta upstream invalida",
+                    ["type"] = "bridge_error"
+                }
+            });
+            return;
+        }
+        var transformed = ToolShim.TransformResponse(obj);
+        string json = transformed.ToJsonString(SerOpts);
+        WriteJson(ctx, 200, transformed);
+        if (Diagnostic)
+        {
+            Log(new JsonObject
+            {
+                ["event"] = "traffic", ["mode"] = "chat-shim", ["model"] = Model,
+                ["req_len"] = requestBody.Length, ["req"] = requestBody,
+                ["res_len"] = json.Length, ["res"] = json
+            });
+            var perf = new JsonObject { ["event"] = "response", ["mode"] = "chat-shim", ["model"] = Model, ["chars"] = json.Length };
+            AddPerf(perf, startedAt, json, requestBody);
+            Log(perf);
+        }
+    }
 
     static string? RetryBypassChat(string outBody, HttpListenerContext ctx)
     {
