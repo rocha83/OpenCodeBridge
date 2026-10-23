@@ -208,7 +208,10 @@ public static class ToolShim
         sb.Append("boolean ::= \"true\" | \"false\"\n");
         sb.Append("array ::= \"[\" ws (value (ws \",\" ws value)*)? ws \"]\"\n");
         sb.Append("string ::= \"\\\"\" schar{0,").Append(maxString).Append("} \"\\\"\"\n");
-        sb.Append("schar ::= [^\"\\\\] | \"\\\\\" [\"\\\\/bfnrt] | \"\\\\u\" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]\n");
+        // JSON proibe controles crus (0x00-0x1F) dentro de string. Sem esta
+        // exclusao o Q3 emite newline literal no content e o JSON fica invalido
+        // (o Q4 escapava por conta propria; o Q3 nao).
+        sb.Append(@"schar ::= [^""\\\x00-\x1F] | ""\\"" [""\\/bfnrt] | ""\\u"" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]" + "\n");
         sb.Append("number ::= \"-\"? [0-9]+ (\".\" [0-9]+)? (\"e\" (\"+\" | \"-\")? [0-9]+)?\n");
         // ws capado: `*` deixava o modelo loopar em newlines entre "name" e
         // ":" (1000 tokens de espaco). 0..2 cobre indentacao compacta sem loop.
