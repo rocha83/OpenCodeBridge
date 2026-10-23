@@ -1,5 +1,37 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## OpenCode v2: `package` nos providers custom (Q3/CPU) e fluxo dev/prod (2026-10-23, sessão 6)
+
+**Sintoma:** a sessão `opencode juridico` não abria com `llama/Gemma4-E4B-UD-Q3-*`.
+Log: `SessionRunnerModel.UnsupportedPackageError: Unsupported package for
+llama/Gemma4-E4B-UD-Q3-moe:` (pacote vazio). O Q4 (`openai/...`) funcionava
+normalmente pela `:4124`.
+
+**Causa:** no schema `providers` do OpenCode v2, provider customizado precisa de
+`"package": "@ai-sdk/openai-compatible"`. Só `"api": "openai-chat"` não resolve o
+pacote; o `ModelResolver.resolveCatalogModel` aborta antes de chegar na bridge
+(`:4125`).
+
+**Fix:** `~/.config/opencode/opencode.json` e o bundle do remaster ganharam
+`"package": "@ai-sdk/openai-compatible"` em `providers.llama` (`:4125`) e
+`providers.cpu` (`:4126`). `providers.openai` (`:4124`) fica sem a chave: é id
+nativo do catálogo e já resolvia.
+
+**Verificação:** `opencode models` lista os 6 ids `llama/Gemma4-E4B-UD-Q3[-papel]`;
+`opencode run --model llama/Gemma4-E4B-UD-Q3 "Responda somente: ok"` → `ok`
+(rc=0); idem para `llama/Gemma4-E4B-UD-Q3-moe` (o id que falhava).
+`opencode reload` → `Configuration reloaded`; `:4125/api/status` →
+`total_requests=11`, `failed_requests=0`.
+
+**Fluxo dev/prod:** desenvolvimento em
+`/media/mint/3686C649614854E61/Projetos/Git/OpenCodeBridge/`; produção em
+`/usr/src/opencodebridge` só faz `git pull --ff-only` + redeploy. Registrado no
+`LAB-SETUP.md` e no `LER-PRIMEIRO.md` do remaster.
+
+**Arquivos tocados:** `~/.config/opencode/opencode.json`, `LAB-SETUP.md`,
+`HISTORY.md` (este bloco), bundle `artefatos/opencode/opencode.json` +
+`LER-PRIMEIRO.md` + `instalar.sh` do remaster.
+
 ## Shim unificado: Chat SSE + Responses (2026-10-23, sessão 5)
 
 **Problema:** o shim JSON só funcionava no caminho chat **non-stream** (`ShimChatResponse` devolvia JSON único) e recusava `stream=true`. A Web UI (`ChatController` → `BridgeClient`, `stream=true` + tools) e o OpenCode (`/v1/responses` → `BuildChatRequest` → chat) ficavam fora do shim; o OpenCode caía no parser nativo do llama, que não devolve `function_call` com tools. Resultado: tool calling correto só nos testes diretos non-stream.

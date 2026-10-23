@@ -15,6 +15,12 @@ expresso (componente, cenário de teste e harness) fica no `README.md`.
 Temperatura: CLI base **0.5**; perfis do runtime (`appsettings.json`) **plan 0.3 / build 0.1 / orch 0.3 / moe 0.5 / scripter 0.1 / exec 0.1** (escala baixa **0.1**, média **0.3**, alta **0.5**); o `temperature` do modelo no `opencode.json` segue a mesma escala.
 Detalhes de remaster em `/media/mint/Linux/remaster-update6.md`.
 
+**Dev × produção.** O desenvolvimento acontece em
+`/media/mint/3686C649614854E61/Projetos/Git/OpenCodeBridge/` (editar, buildar,
+commitar, `git push`). `/usr/src/opencodebridge` é **produção**: não se edita
+lá; só `git pull --ff-only origin main` e redeploy (`dotnet build -c Release`
++ restart das units).
+
 
 ## 0. Nomenclatura
 
@@ -70,6 +76,7 @@ atrás de duas bridges:
     },
     "llama": {
       "api": "openai-chat",
+      "package": "@ai-sdk/openai-compatible",
       "settings": { "baseURL": "http://127.0.0.1:4125/v1", "apiKey": "guest@123" },
       "options": { "timeout": 1800000, "headerTimeout": 900000, "chunkTimeout": 900000 },
       "models": {
@@ -88,6 +95,12 @@ atrás de duas bridges:
 
 Pontos que **quebram** a linha se ficarem errados:
 
+- **`package` em todo provider customizado** (`llama`, `cpu`):
+  `"package": "@ai-sdk/openai-compatible"`. No OpenCode v2, `"api":
+  "openai-chat"` sozinho não resolve o pacote e o `ModelResolver` aborta com
+  `Unsupported package for llama/Gemma4-E4B-UD-Q3-*` (a sessão nem abre).
+  O provider `openai` é id nativo do catálogo (`@ai-sdk/openai`), por isso
+  dispensa a chave — e é o caminho que já funcionava.
 - `tool_call: true` e `compatibility.reasoningField: reasoning_content` são
   obrigatórios (o Gemma 4 emite thinking em `reasoning_content`).
 - `limit.output` espelha o `--max-tokens` da bridge: **16384** (GPU1 e GPU2).
@@ -846,6 +859,9 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
   llama e `--max-tokens 16384` da bridge; antes estava 131072 com llama em
   40960/81920 e o upstream devolvia `exceed_context_size_error`).
 - Nomes de exibição da linha Q3 usam **GPU2** (não "CPU").
+- `providers.llama` e `providers.cpu` exigem
+  `"package": "@ai-sdk/openai-compatible"` (v2). Após editar:
+  `opencode reload` ou reabrir a TUI.
 - **Só 21 modelos habilitados** (6 Q4 + 6 Q3 + 9 do grupo `opencode` *free*).
   O provider `openai` usa o mesmo id do provider nativo do OpenCode, então o
   catálogo do models.dev injeta ~80 modelos (`gpt-5`, `gpt-4o`, ...) que **não
