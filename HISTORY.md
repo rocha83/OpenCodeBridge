@@ -1,5 +1,29 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Shim unificado: Chat SSE + Responses (2026-10-23, sessão 5)
+
+**Problema:** o shim JSON só funcionava no caminho chat **non-stream** (`ShimChatResponse` devolvia JSON único) e recusava `stream=true`. A Web UI (`ChatController` → `BridgeClient`, `stream=true` + tools) e o OpenCode (`/v1/responses` → `BuildChatRequest` → chat) ficavam fora do shim; o OpenCode caía no parser nativo do llama, que não devolve `function_call` com tools. Resultado: tool calling correto só nos testes diretos non-stream.
+
+**Implementação (bridge C#):**
+- `ToolShim.Apply` não rejeita mais `stream=true`; continua forçando o upstream **non-stream**, removendo `stream_options`. O grammar JSON, `enable_thinking=false`, teto de 16k, `--tool-shim-max-string 1200` e `--tool-shim-min-calls 3` ficaram intactos.
+- `Passthrough` (chat): captura `shimWantStream` **antes** do `Apply`; manda heartbeat `: bridge working` quando o cliente pediu stream (mantém a conexão viva durante o prefill); `ShimChatResponse` recebe `wantStream`/`headersSent` e devolve SSE quando necessário; erros de upstream viram chunk SSE de erro em vez de tentar reescrever headers já enviados.
+- `WriteChatSse` extraído e compartilhado com `CoercedChatResponse`: um chunk `chat.completion.chunk` com `delta.role/content/tool_calls`, `finish_reason` e `usage` (quando o upstream devolve), fechando com `data: [DONE]`.
+- `HandleResponses`: aplica o shim **depois** de `BuildChatRequest` (quando `toolCount > 0`), marca `shimmed` e, no non-stream, roda `ToolShim.TransformResponse` antes de `ChatToResponses`.
+- `HandleResponsesStreamShim` (novo): upstream non-stream, `TransformResponse`, `ChatToResponses` e `BuildSse` — SSE **tipado** (`response.created`, `response.output_item.added`, `response.function_call_arguments.delta/done`, `response.completed`) em vez de `choices.delta`.
+- Logs novos: `tool-shim` com `mode=responses`, `response` com `shim=true`, `traffic` com `mode=shim-translate`.
+
+**Comportamento assumido:** em turno com tools o thinking fica desligado (grammar JSON) e o texto final chega em um único delta — o efeito “digitando” do Web UI vira bloco instantâneo. Fora de turnos com tools, o streaming/thinking nativo continua. Decisão mantida: priorizar tool call correto.
+
+**Verificação:**
+- `dotnet build Rochas.OpenCodeBridge -c Release`: **0 erros**, 5 avisos CS1573 pré-existentes.
+- PROD `/usr/src/opencodebridge` em `c487822`; `bridge-gpu`/`bridge-cpu` reiniciados; `/api/status` em `:4124`/`:4125` confirma `tool_shim=json`, `max_tokens=16384`, `tool_shim_max_string=1200`, `tool_shim_min_calls=3`.
+- Smoke `:4124` chat `stream=true` + tools: SSE `: bridge working`, chunk com `read({"filePath":"/etc/hostname"})`, `finish_reason=tool_calls`, `usage` e `[DONE]`.
+- Smoke `:4124` Responses `stream=true` + tools: `response.created`, `response.output_item.added` (`function_call`), `response.function_call_arguments.delta/done`, `response.output_item.done`, `response.completed` com o function_call.
+- Regressão 16k anterior: Q4 `5/5` (215.6s) e Q3 `5/5` (242.8s) nos logs `test-logs/q4-prod-16k-belts-20261023-0228.log` e `test-logs/q3-prod-16k-belts-20261023-0228.log`.
+- Próximo: pipes devpipe/tools/ciência/mission/frontpipe em Q4 e Q3, depois belts Playwright headed.
+
+**Arquivos tocados:** `Rochas.OpenCodeBridge/Program.cs`, `Rochas.OpenCodeBridge/ToolShim.cs`, `HISTORY.md`.
+
 ## Tool policy: `shell`/`subagent` "não permitido" (2026-10-22, sessão 4)
 - **Sintoma:** em `opencode run` os agentes `plan`/`orch`/`moe` recebiam
   `Unknown agent: default.shell` / `Unknown agent: gemma-e2b/gemma4-e2b-build` e
