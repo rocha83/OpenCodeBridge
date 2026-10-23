@@ -8,10 +8,17 @@ expresso (componente, cenário de teste e harness) fica no `README.md`.
 
 | linha | modelo | ctx | VRAM |
 |---|---|---|---|
-| GPU1 `:4100` | `gemma-4-12b` — Gemma4 12B **uncensored** `Q4_K_M` + mmproj F16 | `-c 196608 -np 2` = **2×96k** | 8712 MiB |
-| GPU2 `:4110` | `gemma-4-e2b` — Gemma4 E2B **coder heretic** `Q4_K_M`, **text-only** | `-c 114688 -np 1` = **1×112k** | 2082 MiB |
+| GPU1 `:4100` (alias `gemma-4-12b`) | **Gemma4 E4B `Q4_K_M`** base (Unsloth), **text-only** | `-c 81920 -np 1` = **1×80k** | 4081 MiB |
+| GPU2 `:4110` (alias `gemma-4-e2b`) | **Gemma4 E4B `Q3_K_M` uncensored** (Huihui abliterated) | `-c 40960 -np 1` = **1×40k** | 2958 MiB |
 
-Total no boot: **11168 MiB usados / 868 MiB livres** (~10,91 GiB usados).
+Total no boot: **7039 MiB usados / 4997 MiB livres** (RTX 3060, 12288 MiB) — medido em
+LVP005 em 2026-10-22 com os dois já carregados e ociosos.
+
+> **Aliases legados (importante).** Os `--alias` continuam `gemma-4-12b` / `gemma-4-e2b`
+> porque `bridge-gpu`/`bridge-cpu`, o `opencode.json` e os `agents/*.md` casam os ids
+> (`…-build`, `…-plan`, …) por esse nome — e `U-models-passthrough` exige que o
+> `/v1/models` do upstream liste o id servido pela bridge. O que roda hoje por trás
+> desses ids são os **dois E4B** da tabela acima, não os modelos antigos.
 Temperatura média (Plan/Orch): **0.3**; baixa (Build/Scripter/Exec) **0.1**; alta (MoE) **0.5**.
 Detalhes de remaster em `/media/mint/Linux/remaster-update6.md`.
 
@@ -151,10 +158,12 @@ genérico `llama/gemma-4-e2b` cai no `--thinking events` da unit e abre reasonin
 
 | flag | valor | por quê |
 |---|---|---|
-| `-m` | `/media/mint/3686C649614854E61/llama-models/…` (12B) / `/media/mint/78AA0831AA07EB08/…` (E2B) | GGUF do modelo |
-| `--mmproj` | `mmproj-*.gguf` | projetor de visão — **só na GPU1 (12B)**; o E2B é text-only |
-| `-c` | 196608 (GPU1, 2×96k) / 114688 (GPU2, 1×112k) | contexto **total** do servidor |
-| `-np` | 2 (GPU1) / 1 (GPU2) | slots paralelos; **divide** o `-c` |
+| `-m` | `/media/mint/78AA0831AA07EB08/llama-models/gemma4-e4b-q4km/…` (GPU1) / `…/gemma4-e4b-q3km-uncensored/…` (GPU2) | GGUF do modelo |
+| `--mmproj` | **não usado** | nenhuma das duas linhas atuais carrega visão (E4B text-only aqui) |
+| `-c` | 81920 (GPU1, 1×80k) / 40960 (GPU2, 1×40k) | contexto **total** do servidor |
+| `-np` | 1 (GPU1) / 1 (GPU2) | slots paralelos; **divide** o `-c` |
+| `--dry-*` | `0.8 / 1.75 / 2 / 1024` (breakers default `\n : " *`) | DRY ligado nos dois (contenção de loop de prosa) |
+| `--repeat-penalty` | 1.1 (GPU1) / 1.15 (GPU2) | penalidade por token |
 | `-ngl 99` | 99 | **100% GPU** (sem offload para CPU) |
 | `-fa on` | on | Flash Attention |
 | `--cache-type-k` / `--cache-type-v` | `turbo3` | KV em TurboQuant nos dois |
@@ -167,10 +176,17 @@ Modelos no disco:
 
 | arquivo | bytes | ≈ |
 |---|---|---|
-| `/media/mint/3686C649614854E61/llama-models/gemma4-12b-uncensored/Gemma4-12B-Uncensored-Q4_K_M.gguf` | 7 381 382 848 | 6,87 GiB |
-| `/media/mint/3686C649614854E61/llama-models/gemma4-12b-uncensored/Gemma4-12B-Uncensored-mmproj-F16.gguf` | 122 031 744 | 116 MiB |
-| `/media/mint/78AA0831AA07EB08/llama-models/gemma4-e2b-coder-heretic/Gemma-4-E2B-it-coder-heretic-Q4_K_M.gguf` | 3 427 878 304 | 3,19 GiB |
-| `/media/mint/78AA0831AA07EB08/llama-models/gemma4-e2b-coder-heretic/mmproj-gemma-4-E2B-it-Q8_0.gguf` | 557 368 064 | 531 MiB — **não usado no E2B (text-only)** |
+| `…/gemma4-e4b-q4km/gemma-4-E4B-it-Q4_K_M.gguf` (base, Unsloth) | 4 977 171 584 | 4,64 GiB |
+| `…/gemma4-e4b-q3km-uncensored/Huihui-gemma-4-E4B-it-abliterated.Q3_K_M.gguf` | 4 850 391 552 | 4,52 GiB |
+| `…/gemma4-e4b-q3km/gemma-4-E4B-it-Q3_K_M.gguf` (base, preservado) | 4 058 137 728 | 3,78 GiB |
+| `…/gemma4-e4b-q4km-coder/gemma-4-E4B-it-Coder.i1-Q4_K_M.gguf` (preservado) | 5 335 291 296 | 4,97 GiB |
+| `…/gemma4-12b-uncensored/Gemma4-12B-Uncensored-Q4_K_M.gguf` (+ mmproj F16) | 7 381 382 848 | 6,87 GiB — fora da linha atual |
+| `…/gemma4-e2b-coder-heretic/Gemma-4-E2B-it-coder-heretic-Q4_K_M.gguf` | 3 427 878 304 | 3,19 GiB — fora da linha atual |
+
+Metadados dos dois E4B (lidos do GGUF): `block_count 42`, `head_count 8`,
+`head_count_kv 2`, `key_length 512` (SWA 256), `shared_kv_layers 18`,
+`sliding_window 512` — é isso que torna o KV em `turbo3` barato e permite
+80k + 40k com ~5 GiB livres.
 
 ### 2.2 Unit da GPU1 (12B `:4100`)
 
@@ -182,18 +198,19 @@ User=root
 Environment=HOME=/root
 Environment=TURBO_AUTO_ASYMMETRIC=0
 ExecStart=/usr/local/bin/llama-server --alias gemma-4-12b --host 127.0.0.1 --port 4100 \
-  -m /media/mint/3686C649614854E61/llama-models/gemma4-12b-uncensored/Gemma4-12B-Uncensored-Q4_K_M.gguf \
-  --mmproj /media/mint/3686C649614854E61/llama-models/gemma4-12b-uncensored/Gemma4-12B-Uncensored-mmproj-F16.gguf \
-  -c 196608 -np 2 -ngl 99 -fa on \
-  --cache-type-k turbo3 --cache-type-v turbo3 --prio 2 --api-key guest@123
+  -m /media/mint/78AA0831AA07EB08/llama-models/gemma4-e4b-q4km/gemma-4-E4B-it-Q4_K_M.gguf \
+  -c 81920 -np 1 -ngl 99 -fa on -t 4 -tb 4 \
+  --cache-type-k turbo3 --cache-type-v turbo3 --prio 2 --api-key guest@123 \
+  --repeat-penalty 1.1 --dry-multiplier 0.8 --dry-base 1.75 \
+  --dry-allowed-length 2 --dry-penalty-last-n 1024
 Restart=on-failure
 TimeoutStartSec=300
 ```
 
-Aceite do startup: `n_slots = 2, n_ctx_slot = 98304` → `model loaded` →
+Aceite do startup: `n_slots = 1, n_ctx_slot = 81920` → `model loaded` →
 `listening on http://127.0.0.1:4100`. Subir **primeiro** (ver §2.5).
 
-### 2.3 Unit da GPU2 (E2B coder `:4110`, text-only)
+### 2.3 Unit da GPU2 (E4B uncensored `:4110`, text-only)
 
 O unit chama-se `llama-cpu`, mas roda **100% GPU** (`-ngl 99`). O `-t/-tb`
 existe para o cenário de teste CPU (`Llama GPU2-CPU Toggle`, `-ngl 0`).
@@ -206,19 +223,22 @@ User=root
 Environment=HOME=/root
 Environment=TURBO_AUTO_ASYMMETRIC=0
 ExecStart=/usr/local/bin/llama-server --alias gemma-4-e2b --host 127.0.0.1 --port 4110 \
-  -m /media/mint/78AA0831AA07EB08/llama-models/gemma4-e2b-coder-heretic/Gemma-4-E2B-it-coder-heretic-Q4_K_M.gguf \
-  -c 114688 -np 1 -ngl 99 -fa on -t 4 -tb 4 \
-  --cache-type-k turbo3 --cache-type-v turbo3 --prio -1 --api-key guest@123
+  -m /media/mint/78AA0831AA07EB08/llama-models/gemma4-e4b-q3km-uncensored/Huihui-gemma-4-E4B-it-abliterated.Q3_K_M.gguf \
+  -c 40960 -np 1 -ngl 99 -fa on -t 4 -tb 4 \
+  --cache-type-k turbo3 --cache-type-v turbo3 --prio -1 --api-key guest@123 \
+  --repeat-penalty 1.15 --dry-multiplier 0.8 --dry-base 1.75 \
+  --dry-allowed-length 2 --dry-penalty-last-n 1024
 Restart=on-failure
 TimeoutStartSec=300
 ```
 
-Aceite do startup: `n_slots = 1, n_ctx_slot = 114688` → `model loaded` →
-`listening on http://127.0.0.1:4110` (**114688** total).
+Aceite do startup: `n_slots = 1, n_ctx_slot = 40960` → `model loaded` →
+`listening on http://127.0.0.1:4110` (**40960** total).
 
-> A config atual é **slot único** (`-np 1 -c 114688` = 1×112k) e
-> `limit.context = 114688` no OpenCode. Para paralelismo, use `-np 2 -c 114688`
-> (2×56k) ou `-np 2 -c 163840` (2×80k) — sempre medindo a VRAM.
+> A config atual é **slot único** (`-np 1 -c 40960` = 1×40k) e
+> `limit.context = 40960` deveria acompanhar no OpenCode. Com os dois E4B
+> residentes sobram ~5 GiB de VRAM em idle, então há espaço para subir ctx
+> (medir antes: o KV cresce junto e o prefill longo come buffer).
 
 ### 2.4 TurboQuant é obrigatório nos dois
 
@@ -262,9 +282,10 @@ journalctl -u llama-gpu -u llama-cpu --no-pager | grep -Ei "fit params"
 
 ### 2.6 VRAM medida (12 GB, ambos em `turbo3`)
 
-| configuração | GPU1 (12B Q4_K_M) | GPU2 (E2B coder Q4) | total usado | livre |
+| configuração | GPU1 | GPU2 | total usado | livre |
 |---|---|---|---|---|
-| 12B 2×96k + E2B 1×112k, E2B sem mmproj (atual) | 8712 | 2082 | **11168** | **868** |
+| **E4B Q4 1×80k + E4B unc Q3 1×40k (atual, LVP005)** | 4081 | 2958 | **7039** | **4997** |
+| 12B 2×96k + E2B 1×112k, E2B sem mmproj (histórico) | 8712 | 2082 | **11168** | **868** |
 | 12B 2×112k + E2B 1×112k | 9014 | 2072 | 11476 | 560 |
 | 12B 2×112k + E2B 1×140k | 9014 | 2190 | 11593 | 443 |
 | 12B 2×112k + E2B 1×160k | 8892 | 2272 | 11519 | 518 |
