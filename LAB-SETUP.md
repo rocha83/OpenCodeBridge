@@ -846,8 +846,22 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
   llama e `--max-tokens 16384` da bridge; antes estava 131072 com llama em
   40960/81920 e o upstream devolvia `exceed_context_size_error`).
 - Nomes de exibição da linha Q3 usam **GPU2** (não "CPU").
-- Após editar o `opencode.json`: reiniciar o `opencode serve`/TUI (o processo
-  carrega os limites no boot).
+- **Só 21 modelos habilitados** (6 Q4 + 6 Q3 + 9 do grupo `opencode` *free*).
+  O provider `openai` usa o mesmo id do provider nativo do OpenCode, então o
+  catálogo do models.dev injeta ~80 modelos (`gpt-5`, `gpt-4o`, ...) que **não
+  existem** no bridge local. Eles ficam com `"disabled": true` em
+  `providers.openai.models.<id>` (chave aceita pelo plugin
+  `opencode.config.provider`: `if (S.disabled !== undefined) T.enabled = !S.disabled`).
+  Para reabilitar um modelo do catálogo, troque para `"disabled": false` (ou
+  remova a chave) e rode `opencode reload`.
+- **Visibilidade padrão (Q3 igual ao Q4)**: `~/.local/state/opencode/model.json`
+  guarda `{recent, favorite}` do seletor de modelos. Os 12 locais entram em
+  `favorite` (bloco "Favorites" no topo do seletor), então Q4 e Q3 aparecem
+  iguais sem precisar habilitar nada em gerenciamento. Formato de cada item:
+  `{"providerID":"llama","modelID":"Gemma4-E4B-UD-Q3-exec"}`.
+- Após editar o `opencode.json`: `opencode reload` (recarrega a config no
+  servidor sem derrubar sessão). A TUI lê `model.json` no start: reabra a TUI
+  para ver o bloco de favoritos.
 
 ### 9.6 Compartilhar Samba (`/usr/local/bin/share-samba.sh`)
 
