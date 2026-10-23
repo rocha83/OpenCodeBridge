@@ -217,11 +217,13 @@ Aceite do startup: `n_slots = 1, n_ctx_slot = 131072` → `model loaded` →
 
 ### 2.3 Unit da GPU2 (E4B abliterated `:4110`, text-only)
 
-O unit chama-se `llama-cpu`, mas roda **100% GPU** (`-ngl 99`). O `-t/-tb`
-existe para o cenário de teste CPU (`Llama GPU2-CPU Toggle`, `-ngl 0`).
+O unit chama-se `llama-gpu2` (renomeado em 2026-10-23; antes `llama-cpu`) e
+roda **100% GPU** (`-ngl 99`), sem offload para CPU. CPU puro é **outro**
+serviço: `llama-cpu-forced.service` (`:4120`, `-ngl 0`). `-t/-tb` é inerte em
+GPU full e só importa no teste CPU.
 
 ```ini
-# /etc/systemd/system/llama-cpu.service  (nome histórico; roda 100% GPU)
+# /etc/systemd/system/llama-gpu2.service  (100% GPU)
 [Service]
 Type=simple
 User=root
@@ -680,7 +682,7 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 - `:4100` (`llama-gpu.service`): E4B base `Q4_K_M` + mmproj `Q8_0`,
   `-c 131072 -np 1`, `-ngl 99`, KV `turbo3`, `--mmproj-offload --no-host
   --load-mode none --op-offload`, `-ot ".*=CUDA0" --prio 2 --prio-batch 2`.
-- `:4110` (`llama-cpu.service`): Huihui E4B abliterated `i1-IQ3_XXS`
+- `:4110` (`llama-gpu2.service`, nome antigo `llama-cpu.service`): Huihui E4B abliterated `i1-IQ3_XXS`
   (`3 982 841 536` bytes, SHA256
   `9043e0b94e6a4f18fa498c5e5fd7e1d86a82dcfe440e1a6587f71882be76cf48`),
   `-c 131072 -np 1`, `-ngl 99`, KV `turbo3`, `--no-host --load-mode none
@@ -754,3 +756,143 @@ medida neste chroot (sem CUDA) — medir no host com `nvidia-smi`.
 `-ot ".*=CUDA0"` não altera o KV (continua em `CUDA0`); ele só move os tensores
 de modelo que estavam em `CUDA_Host`. Se a visão da GPU1 for necessária, é
 preciso reduzir ctx/quant ou aceitar o host buffer.
+
+## 9. Ambiente dos ícones, ponte para o OpenCode e checklist de remaster (2026-10-23)
+
+Esta seção é a **memória de remaster**: o host é live USB (overlay), então tudo
+abaixo precisa ser gravado na ISO/remaster — nada disso sobrevive a um reboot
+sem estar na imagem.
+
+### 9.1 Nomes, portas e units (fim da confusão CPU × GPU2)
+
+| papel | unit | porta | script (fonte da unit) | observação |
+|---|---|---|---|---|
+| GPU1 (orquestrador) | `llama-gpu.service` | 4100 | `/usr/local/bin/start-llama-gpu.sh` | E4B **Q4_K_M** + mmproj, `-ot .*=CUDA0` |
+| **GPU2** (segunda instância, **GPU**) | `llama-gpu2.service` | 4110 | `/usr/local/bin/start-llama-gpu2.sh` | E4B UD-Q3, sem mmproj, `-ot` com embd/per-layer no host |
+| CPU puro (bancada) | `llama-cpu-forced.service` | 4120 | `/usr/local/bin/start-llama-cpu-forced.sh` | E4B Q4 base, `-ngl 0` |
+| bridge GPU1 | `bridge-gpu.service` | 4124 | `/usr/local/bin/start-bridge-gpu.sh` | Q4, guard 131072 |
+| **bridge GPU2** | `bridge-gpu2.service` | 4125 | `/usr/local/bin/start-bridge-gpu2.sh` | Q3, guard 131072 |
+| bridge CPU puro | `bridge-cpu-forced.service` | 4126 | `/usr/local/bin/start-bridge-cpu-forced.sh` | Q4 CPU, guard 131072 |
+
+- **Removidos** em 2026-10-23: `llama-cpu.service` e `bridge-cpu.service`
+  (nomes enganosos — rodavam 100% GPU). Não recriar no remaster.
+- `GPU2` **não** é CPU. CPU puro é sempre `*-cpu-forced` (`-ngl 0`).
+- Regra de VRAM: **nunca** offload para CPU nas duas linhas GPU
+  (`-ngl 99` fixo; sem `-nkvo`, sem `--no-op-offload`). Só o CPU-forced usa `-ngl 0`.
+
+### 9.2 Launchers zenity (`/usr/local/bin`) — padrão único
+
+- Todos os ícones chamam um script em `/usr/local/bin` que **gera a unit e
+  reinicia o serviço**. A unit em `/etc/systemd/system` é derivada; a fonte é o
+  script. Mexer na unit à mão é perda de tempo: o próximo clique sobrescreve.
+- Todos aceitam **`--defaults`** (sem diálogo, com os mesmos valores do form) e
+  seguem o padrão da casa para root: **senha do formulário → `sudo -S`**
+  (como `start-nginx.sh`, `start-garnet.sh`, `start-mariadb.sh`).
+  Não usar `SUDO_ASKPASS`/`pkexec` nos novos launchers (o `pkexec` existe só em
+  `start-docker*.sh`/`start-portainer.sh`, por legado).
+- `start-models-default.sh` — sobe/valida o **par principal sem diálogo**
+  (`--restart` regenera as 4 units; sem flag só sobe o que estiver fora do ar).
+  Pede a senha do sudo no zenity e reexecuta com `sudo -n`.
+
+### 9.3 Ícones (`~/Desktop`, dono `mint`, `chmod +x`)
+
+`Llama GPU.desktop` (4100) · `Llama GPU2.desktop` (4110) ·
+`OpenCode Bridge GPU.desktop` (4124) · `OpenCode Bridge GPU2.desktop` (4125) ·
+`Llama CPU Forced.desktop` (4120) · `OpenCode Bridge CPU Forced.desktop` (4126) ·
+`Llama GPU2 + Bridge GPU2 (padrao).desktop` (launcher sem diálogo) ·
+`Compartilhar-Samba.desktop` (ver 9.6).
+
+### 9.4 Bridges — args canônicos e o que realmente está ativo
+
+Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
+
+```
+--thinking events --temperature 0.5 --max-tokens 16384
+--context-guard 1 --context-tokens 131072
+--passthrough-responses true --harness 0 --legacy-harness 0
+--anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512
+--coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0
+--upstream-parser native
+```
+
+- **anti-repeat está ligado nos dois caminhos** (chat e Responses): é contenção
+  de stream/abort no upstream, independe de harness e de sufixo de modelo.
+- **tool-shim fica desligado** (`--tool-shim ""`) na ponte do OpenCode. Motivo
+  medido em 2026-10-23: `/v1/responses` + tools, **sem shim**, devolve
+  `response.function_call_arguments.delta/done` nativo nas duas portas
+  (`:4124` e `:4125`, 4 deltas cada). O shim força upstream non-stream e desliga
+  thinking em turno com tools (perda de UX/qualidade) — use-o só no caminho puro
+  de testes/WebUI (`--tool-shim json --tool-shim-max-string 1200
+  --tool-shim-min-calls 3`), nunca por padrão na ponte do OpenCode.
+- **context-guard: aceito, reportado — e hoje inerte.** `--context-tokens 131072`
+  aparece em `/api/status` (`config_groups.orcamento`), mas o 413
+  `context_compact_required` não dispara porque (a) a guarda vive só no ramo
+  agregado non-stream do `Passthrough` (chat) e (b) com `--anti-repeat-abort 1`
+  o request non-stream é atendido antes por `TryStreamAbortChat`, que não tem
+  guarda; e (c) o OpenCode usa `/v1/responses` (`HandleResponses`), também sem
+  guarda. Prova: instância descartável `:4131` com `--context-tokens 1000`
+  recebeu prompt de 3734 tokens → **HTTP 200**. A proteção real hoje é o
+  `limit.context = 131072` do opencode + compactação do próprio cliente.
+  **Pendência para a próxima release:** estimar tokens na entrada (pré-flight)
+  e/ou plugar a guarda em `HandleResponses` e no ramo de stream-abort.
+- O harness (`--harness 0`) não injeta tails em ids com sufixo de perfil: o
+  OpenCode já roda o "tubo puro". Não é preciso "configurar caminho puro" para
+  ele — só para WebUI/testes sem sufixo.
+
+### 9.5 OpenCode (`~/.config/opencode/opencode.json`)
+
+- provider `openai` → `:4124` e provider `llama` → `:4125`, **ambos**
+  `limit.context = 131072` e `limit.output = 16384` (bate com `-c 131072` do
+  llama e `--max-tokens 16384` da bridge; antes estava 131072 com llama em
+  40960/81920 e o upstream devolvia `exceed_context_size_error`).
+- Nomes de exibição da linha Q3 usam **GPU2** (não "CPU").
+- Após editar o `opencode.json`: reiniciar o `opencode serve`/TUI (o processo
+  carrega os limites no boot).
+
+### 9.6 Compartilhar Samba (`/usr/local/bin/share-samba.sh`)
+
+- Form único (`zenity --forms`): **Modo** (`Leitura|Escrita|Anonimo`), caminho,
+  nome do share, usuário e senha de rede. `Leitura`/`Escrita` **exigem**
+  usuário+senha (padrões `mint`/`guest@123`); `Anonimo` dispensa (guest ok,
+  read only).
+- Grava em `/etc/samba/share-zenity.conf` e adiciona **uma vez**
+  `include = /etc/samba/share-zenity.conf` no `smb.conf` (não reescreve o
+  principal). Backup `smb.conf.bak-<stamp>`, `testparm` obrigatório com rollback
+  se rejeitar, `smbpasswd -a -e` para o usuário de escrita, `systemctl restart smbd`.
+- **Root é necessário** (escreve `/etc/samba`, roda `smbpasswd`, reinicia `smbd`).
+  `usershare` sem root não serve nesta imagem: `usershare max shares` está
+  comentado (=0 desabilitado). A elevação segue o padrão da casa: senha do form
+  → `sudo -S`; no modo Anônimo (sem senha no form) pede uma vez com
+  `zenity --password`.
+- Teste não interativo (hooks): `SMB_ARGS="Modo|Caminho|Nome|Usuario|Senha"`,
+  `SMB_CONF_OVERRIDE`, `SMB_INC_OVERRIDE`, `SMB_SKIP_RESTART=1`.
+  Validado em 2026-10-23: Escrita, Leitura e Anonimo, com idempotência
+  (repetir o mesmo share não duplica bloco) e `testparm` OK.
+
+### 9.7 Medições desta rodada (live, RTX 3060 12 GB)
+
+- `n_ctx` real conferido nas duas portas: **131072** (`/v1/models` → `meta.n_ctx`).
+- VRAM com os dois residentes: **10759 MiB usados / 1277 livres**
+  (GPU1 `:4100` 7643 MiB, GPU2 `:4110` 2755 MiB) — `-ot` do GPU2 devolve ~400 MiB
+  ao host sem offload de CPU.
+- Pipes: `/v1/responses` + tools com function call nativo nas duas portas;
+  `start-models-default.sh` fecha em `rc=0` com os 4 serviços `[OK]`.
+
+### 9.8 Checklist de remaster (gravar na imagem)
+
+1. Scripts `/usr/local/bin/start-*.sh` e `svc-common.sh`/`svc-firewall.sh`
+   (este repositório **não** versiona os launchers — eles vivem na imagem).
+2. Units geradas: `llama-gpu`, `llama-gpu2`, `llama-cpu-forced`, `bridge-gpu`,
+   `bridge-gpu2`, `bridge-cpu-forced` (+ `systemctl enable` se quiser boot
+   automático; hoje estão `disabled` e sobem pelos ícones/launcher).
+3. Ícones `.desktop` em `/home/mint/Desktop` com `chmod +x` e dono `mint`.
+4. `~/.config/opencode/opencode.json` com `131072/16384` nos dois providers.
+5. `/etc/samba/share-zenity.conf` + a linha `include` no `smb.conf` (se já
+   houver shares configurados).
+6. **Não** gravar: `llama-cpu.service`, `bridge-cpu.service`,
+   `sudo-askpass-zenity.sh`, `share-samba-sudo.sh`, `start_inference.sh`
+   (artefatos da tentativa quebrada de 2026-10-23, removidos).
+7. Aceite no boot do remaster:
+   `nvidia-smi`, `curl -s localhost:4110/v1/models | jq .data[0].meta.n_ctx`
+   (131072), `curl -sH 'Authorization: Bearer guest@123' localhost:4125/api/status`,
+   `/usr/local/bin/start-models-default.sh` (rc=0).
