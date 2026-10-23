@@ -2868,3 +2868,20 @@ bwrap responde `ok`.
   Regenerado e validado: 12 blocos (10 admin + 4240/4250), `caddy validate` OK.
 - Portas públicas: **4230** (mint), **4240** (dev-agent), **4250** (moe-agent);
   4147/4152/4153 fechadas no ufw.
+
+## Correção do wrapper (loop infinito com --width=) e ícones de bridge (2026-10-23, sessão 6)
+
+- **Bug do wrapper**: os casos `--width=*`/`--height=*` faziam `continue` sem incrementar
+  `i` → loop infinito de CPU e a janela **nunca abria**. Era a causa do “cliquei no Samba e
+  não abriu” (o form do Samba passa `--width=560 --height=340`). Corrigido com
+  `i=$((i+1)); continue`; testado: form do Samba abre em ~4s, escuro e centralizado.
+  Não era permissão (scripts `755 root:root`, `.desktop` `755 mint:mint`).
+- **Ícones de bridge**: removidos os atalhos redundantes
+  `Llama GPU2 + Bridge GPU2 (padrao).desktop` e
+  `Llama CPU Forced + Bridge CPU Forced (padrao).desktop`. Ficam só os três canônicos:
+  `OpenCode Bridge GPU`, `OpenCode Bridge GPU2` e `OpenCode Bridge CPU Forced`.
+- **Toggle removido**: `Llama GPU2-CPU.desktop` (no `/root/Desktop`) trocava a instância
+  `:4125` entre GPU2 e CPU e apontava para `start-llama-cpu.sh` (inexistente). Removido —
+  CPU agora é instância própria (`:4120` llama / `:4126` bridge).
+- Regra registrada no P7/§4.1.1: todo `.desktop` é `755` e pertence ao dono do Desktop que
+  o executa; o `Exec` precisa existir e ser executável.

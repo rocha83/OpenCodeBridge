@@ -264,12 +264,43 @@ install -m 755 "$S/artefatos/desktop/OpenCode Web dev-agent (4210).desktop" /hom
 install -m 755 "$S/artefatos/desktop/OpenCode Web moe-agent (4220).desktop" /home/mint/Desktop/
 ```
 
+- [ ] Remover atalhos redundantes de bridge (se ainda existirem na origem). Os ícones
+      canônicos de bridge são **só três**: `OpenCode Bridge GPU`, `OpenCode Bridge GPU2`
+      e `OpenCode Bridge CPU Forced` (ver `04-rede-e-exposicao.md` §4.1.1):
+
+```bash
+rm -f "/home/mint/Desktop/Llama GPU2 + Bridge GPU2 (padrao).desktop" \
+      "/home/mint/Desktop/Llama CPU Forced + Bridge CPU Forced (padrao).desktop" \
+      "/root/Desktop/Llama GPU2-CPU.desktop"
+```
+
+> O `Llama GPU2-CPU.desktop` era o **toggle** que trocava a instância `:4125` entre GPU2 e
+> CPU. Com o CPU Forced em instância própria (`:4120` llama / `:4126` bridge) ele não deve
+> existir.
+
+- [ ] Garantir dono/permissão dos ícones: cada `.desktop` é `755` e pertence ao **dono do
+      Desktop** que o executa (`mint`, `dev-agent`, `moe-agent`, `root`):
+
+```bash
+for d in /home/*/Desktop /root/Desktop; do
+  [ -d "$d" ] || continue
+  chown "$(stat -c %U "$d"):$(stat -c %G "$d")" "$d"/*.desktop 2>/dev/null
+  chmod 755 "$d"/*.desktop 2>/dev/null
+  find "$d" -maxdepth 1 -name '*.desktop' -printf '%u:%g %m %f\n'
+done
+```
+
 **ACEITE P7**
 
 ```bash
 systemctl is-enabled llama-gpu llama-gpu2 bridge-gpu bridge-gpu2 bridge-web caddy \
   opencode-web opencode-web-dev opencode-web-moe 2>&1 | sort | uniq -c   # todos disabled
 ls -l /home/mint/Desktop/'OpenCode Web dev-agent (4210).desktop'
+# nenhum Exec de /usr/local/bin pode faltar e todo .desktop deve ser 755 do dono:
+for f in /home/*/Desktop/*.desktop; do
+  e=$(grep -m1 '^Exec=' "$f" | sed 's/^Exec=//' | awk '{print $1}')
+  case "$e" in /usr/local/bin/*) [ -x "$e" ] || echo "QUEBRADO: $f -> $e";; esac
+done
 ```
 
 ---
