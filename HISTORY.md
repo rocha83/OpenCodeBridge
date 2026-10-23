@@ -20,7 +20,9 @@
 - Smoke `:4124` chat `stream=true` + tools: SSE `: bridge working`, chunk com `read({"filePath":"/etc/hostname"})`, `finish_reason=tool_calls`, `usage` e `[DONE]`.
 - Smoke `:4124` Responses `stream=true` + tools: `response.created`, `response.output_item.added` (`function_call`), `response.function_call_arguments.delta/done`, `response.output_item.done`, `response.completed` com o function_call.
 - Regressão 16k anterior: Q4 `5/5` (215.6s) e Q3 `5/5` (242.8s) nos logs `test-logs/q4-prod-16k-belts-20261023-0228.log` e `test-logs/q3-prod-16k-belts-20261023-0228.log`.
-- Próximo: pipes devpipe/tools/ciência/mission/frontpipe em Q4 e Q3, depois belts Playwright headed.
+- Pipes curtos (bridge pura, sem modelo): `E-devpipe-tools` **PASS** em Q4 (`2.2s`, `test-logs/pipe-q4-devpipe-20261023-0256.log`) e Q3 (`2.0s`, `test-logs/pipe-q3-devpipe-20261023-0256.log`); `E-responses-tools` **PASS** em Q4 (`0.9s`, `test-logs/pipe-q4-responses-tools-20261023-0257.log`) e Q3 (`1.0s`, `test-logs/pipe-q3-responses-tools-20261023-0257.log`).
+- **Bloqueio de ambiente (não é a bridge):** a partir de 02:57 o host começou a falhar leitura do live USB: kernel `SQUASHFS error: Failed to read block ...: -5`, `ISOFS: unable to read i-node block`, e os processos (`bridge-gpu`, `bridge-cpu`, runner de teste e `opencode`) morrem com `status=7/BUS` (SIGBUS). `E-tools-full`, `E-science-gpu` em Q4/Q3 e os pipelines longos não completaram; `bridge-gpu`/`bridge-cpu` entram em restart loop sob carga de modelo. Logs: `test-logs/pipe-tools-full-20261023-0256.log`, `test-logs/pipe-q4-science-20261023-0258.log`, `test-logs/pipe-q3-science-rt10-20261023-0302.log`, `journalctl -u bridge-gpu/-u bridge-cpu`.
+- **Próximo (após reiniciar/substituir o live USB):** rodar devpipe/tools/ciência/mission/frontpipe em Q4 e Q3, depois as belts Playwright headed (`Rochas.OpenCodeBridge.Web.Test --ui --belts ... --phase full --web http://127.0.0.1:4130`) e o standalone `opencode run --standalone`.
 
 **Arquivos tocados:** `Rochas.OpenCodeBridge/Program.cs`, `Rochas.OpenCodeBridge/ToolShim.cs`, `HISTORY.md`.
 
