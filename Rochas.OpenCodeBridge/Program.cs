@@ -1525,11 +1525,13 @@ WriteJson(ctx, 200, new JsonObject
         // resposta volta convertida para tool_calls OpenAI. Tudo derivado do
         // array tools do request (nenhum cenario hardcoded).
         bool shimActive = false;
+        bool shimWantStream = false;
         if (ToolShimMode == "json" && isChat)
         {
             try
             {
                 var sn = JsonNode.Parse(outBody)?.AsObject();
+                shimWantStream = sn?["stream"]?.GetValue<bool>() ?? false;
                 string? shimReason = null;
                 if (sn is not null && ToolShim.Apply(sn, ToolShimMaxString, ToolShimMinCalls, MaxTokens, out shimReason))
                 {
@@ -1581,7 +1583,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // llama leva minutos no prefill — descarrega headers + heartbeat AGORA
         // (comentário SSE, ignorado pelo parser) e só então chama o upstream.
         bool headersSent = false;
-        if (coerceLine && wantStream)
+        if ((coerceLine && wantStream) || (shimActive && shimWantStream))
         {
             ctx.Response.StatusCode = 200;
             ctx.Response.ContentType = "text/event-stream";
@@ -1595,9 +1597,9 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent, AnnouncedTools(outBody), startedAt);
             return;
         }
-        if (shimActive && upstreamResponse.IsSuccessStatusCode)
+        if (shimActive)
         {
-            ShimChatResponse(ctx, upstreamResponse, outBody, startedAt);
+            ShimChatResponse(ctx, upstreamResponse, outBody, shimWantStream, headersSent, startedAt);
             return;
         }
         ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
@@ -1827,6 +1829,12 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             ctx.Response.Close();
             return;
         }
+        WriteChatSse(ctx, JsonNode.Parse(json)?.AsObject() ?? new JsonObject(), headersSent);
+    }
+
+    /// <summary>Sintetiza um chunk SSE chat-completions (role/content/tool_calls/usage) e fecha com [DONE].</summary>
+    static void WriteChatSse(HttpListenerContext ctx, JsonObject root, bool headersSent)
+    {
         if (!headersSent)
         {
             ctx.Response.StatusCode = 200;
@@ -1835,8 +1843,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         using var writer = new StreamWriter(ctx.Response.OutputStream, new UTF8Encoding(false)) { AutoFlush = true };
         try
         {
-            var root = JsonNode.Parse(json)?.AsObject();
-            var msg = root?["choices"]?.AsArray().FirstOrDefault();
+            var msg = root["choices"]?.AsArray().FirstOrDefault();
             string? finish = msg?["finish_reason"]?.GetValue<string>();
             var m = msg?["message"]?.AsObject();
             var delta = new JsonObject { ["role"] = "assistant" };
@@ -1844,7 +1851,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             if (m?["tool_calls"] is JsonArray tc) delta["tool_calls"] = (JsonNode?)JsonNode.Parse(tc.ToJsonString(SerOpts));
             var chunk = new JsonObject
             {
-                ["id"] = root?["id"]?.GetValue<string>() ?? ("chatcmpl-" + Guid.NewGuid().ToString("N")[..8]),
+                ["id"] = root["id"]?.GetValue<string>() ?? ("chatcmpl-" + Guid.NewGuid().ToString("N")[..8]),
                 ["object"] = "chat.completion.chunk",
                 ["created"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 ["model"] = Model,
@@ -1853,6 +1860,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                     ["index"] = 0, ["delta"] = delta, ["finish_reason"] = finish
                 })
             };
+            if (root["usage"] is JsonObject usage) chunk["usage"] = usage.DeepClone();
             writer.WriteLine("data: " + chunk.ToJsonString(SerOpts));
             writer.WriteLine();
             writer.WriteLine("data: [DONE]");
@@ -2038,12 +2046,29 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         bool wantStream = req["stream"]?.GetValue<bool>() ?? false;
         var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out string thinking, out int toolCount);
 
+        // Shim generico tambem no caminho Responses -> chat: o upstream recusa
+        // grammar + tools, entao o envelope JSON e aplicado aqui, depois da
+        // traducao, e a resposta volta convertida para function_call.
+        bool shimmed = false;
+        string? shimReason = null;
+        if (ToolShimMode == "json" && toolCount > 0
+            && ToolShim.Apply(chat, ToolShimMaxString, ToolShimMinCalls, MaxTokens, out shimReason))
+        {
+            shimmed = true;
+            if (Diagnostic) Log(new JsonObject { ["event"] = "tool-shim", ["mode"] = "responses", ["max_string"] = ToolShimMaxString });
+        }
+        else if (Diagnostic && shimReason is not null)
+            Log(new JsonObject { ["event"] = "tool-shim-skip", ["where"] = "responses", ["reason"] = shimReason });
+
         // Stream real sai por caminho proprio (sem a chamada unica abaixo).
         if (wantStream)
         {
             // Sonda: dump do request CHAT completo (system + tools) do caminho stream.
             if (Diagnostic) Log(new JsonObject { ["event"]="traffic", ["mode"]="translate-stream-req", ["model"]=requestedModel, ["req_len"]=chat.ToJsonString().Length, ["req"]=chat.ToJsonString() });
-            HandleResponsesStream(ctx, chat, requestedModel, temperature, thinking, startedAt);
+            if (shimmed)
+                HandleResponsesStreamShim(ctx, chat, requestedModel, temperature, thinking, toolCount, startedAt);
+            else
+                HandleResponsesStream(ctx, chat, requestedModel, temperature, thinking, startedAt);
             return;
         }
 
@@ -2069,6 +2094,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
         // 4.6) Converte a resposta chat -> objeto Responses
         var chatJson = JsonNode.Parse(responseBody)?.AsObject() ?? new JsonObject();
+        if (shimmed) ToolShim.TransformResponse(chatJson);
         var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0, chat["messages"]);
 
         double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
@@ -3300,27 +3326,91 @@ var shape = new StringBuilder();
 
 
     /// <summary>Le a resposta non-stream do shim, converte o envelope JSON em
-    /// tool_calls (ou content final) e devolve ao cliente.</summary>
-    static void ShimChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, string requestBody, DateTime startedAt)
+    /// tool_calls (ou content final) e devolve JSON ou Chat SSE conforme o cliente.</summary>
+    static void ShimChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, string requestBody,
+        bool wantStream, bool headersSent, DateTime startedAt)
     {
         string raw = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        if (!upstreamResponse.IsSuccessStatusCode)
+        {
+            if (!headersSent)
+            {
+                WriteJson(ctx, (int)upstreamResponse.StatusCode, new JsonObject
+                {
+                    ["error"] = new JsonObject
+                    {
+                        ["message"] = "tool-shim: upstream " + (int)upstreamResponse.StatusCode + " — " + Truncate(raw, 400),
+                        ["type"] = "bridge_error"
+                    }
+                });
+            }
+            else
+            {
+                var errRoot = new JsonObject
+                {
+                    ["id"] = "chatcmpl-" + Guid.NewGuid().ToString("N")[..8],
+                    ["object"] = "chat.completion",
+                    ["created"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    ["model"] = Model,
+                    ["choices"] = new JsonArray(new JsonObject
+                    {
+                        ["index"] = 0,
+                        ["message"] = new JsonObject
+                        {
+                            ["role"] = "assistant",
+                            ["content"] = "tool-shim: upstream " + (int)upstreamResponse.StatusCode + " — " + Truncate(raw, 400)
+                        },
+                        ["finish_reason"] = "stop"
+                    })
+                };
+                WriteChatSse(ctx, errRoot, headersSent);
+            }
+            return;
+        }
         JsonObject? obj = null;
         try { obj = JsonNode.Parse(raw)?.AsObject(); } catch { }
         if (obj is null)
         {
-            WriteJson(ctx, 502, new JsonObject
+            if (!headersSent)
             {
-                ["error"] = new JsonObject
+                WriteJson(ctx, 502, new JsonObject
                 {
-                    ["message"] = "tool-shim: resposta upstream invalida",
-                    ["type"] = "bridge_error"
-                }
-            });
+                    ["error"] = new JsonObject
+                    {
+                        ["message"] = "tool-shim: resposta upstream invalida",
+                        ["type"] = "bridge_error"
+                    }
+                });
+            }
+            else
+            {
+                var errRoot = new JsonObject
+                {
+                    ["id"] = "chatcmpl-" + Guid.NewGuid().ToString("N")[..8],
+                    ["object"] = "chat.completion",
+                    ["created"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    ["model"] = Model,
+                    ["choices"] = new JsonArray(new JsonObject
+                    {
+                        ["index"] = 0,
+                        ["message"] = new JsonObject
+                        {
+                            ["role"] = "assistant",
+                            ["content"] = "tool-shim: resposta upstream invalida"
+                        },
+                        ["finish_reason"] = "stop"
+                    })
+                };
+                WriteChatSse(ctx, errRoot, headersSent);
+            }
             return;
         }
         var transformed = ToolShim.TransformResponse(obj);
         string json = transformed.ToJsonString(SerOpts);
-        WriteJson(ctx, 200, transformed);
+        if (!wantStream)
+            WriteJson(ctx, 200, transformed);
+        else
+            WriteChatSse(ctx, transformed, headersSent);
         if (Diagnostic)
         {
             Log(new JsonObject
@@ -3425,6 +3515,76 @@ static bool NormalizeSystemFirst(JsonObject req)
         }
         if (dropped > 0) req["input"] = clean;
         return dropped;
+    }
+
+    /// <summary>Shim no caminho Responses stream: upstream non-stream, envelope
+    /// JSON -> tool_calls, chat -> Responses e SSE tipado sintetizado.</summary>
+    /// <param name="ctx">Contexto HTTP.</param>
+    /// <param name="chat">Chat request ja montado.</param>
+    /// <param name="requestedModel">Model id p/ eco.</param>
+    /// <param name="temperature">Efetiva.</param>
+    /// <param name="thinking">Modo thinking efetivo.</param>
+    /// <param name="toolCount">Tools originais (para o mapeamento de function_call).</param>
+    /// <param name="startedAt">Inicio p/ elapsed.</param>
+    static void HandleResponsesStreamShim(HttpListenerContext ctx, JsonObject chat,
+        string requestedModel, double temperature, string thinking, int toolCount, DateTime startedAt)
+    {
+        chat["stream"] = false;
+        chat.Remove("stream_options");
+        var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/completions")
+        {
+            Content = new StringContent(chat.ToJsonString(SerOpts), Encoding.UTF8, "application/json")
+        };
+        WithAuth(chatRequest, ctx);
+
+        using var upstreamResponse = Http.Send(chatRequest);
+        string responseBody = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        if (!upstreamResponse.IsSuccessStatusCode)
+        {
+            Log(new JsonObject { ["event"] = "error", ["mode"] = "shim-responses", ["status"] = (int)upstreamResponse.StatusCode, ["upstream_error"] = Truncate(responseBody, 500) });
+            ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
+            byte[] errorBytes = Encoding.UTF8.GetBytes(responseBody);
+            ctx.Response.ContentType = "application/json";
+            ctx.Response.ContentLength64 = errorBytes.Length;
+            ctx.Response.OutputStream.Write(errorBytes);
+            ctx.Response.Close();
+            return;
+        }
+
+        var chatJson = JsonNode.Parse(responseBody)?.AsObject() ?? new JsonObject();
+        ToolShim.TransformResponse(chatJson);
+        var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0, chat["messages"]);
+
+        double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
+        int inTok = responseObj["usage"]?["input_tokens"]?.GetValue<int>() ?? 0;
+        int outTok = responseObj["usage"]?["output_tokens"]?.GetValue<int>() ?? 0;
+        Log(new JsonObject
+        {
+            ["event"] = "response", ["model"] = requestedModel, ["stream"] = true,
+            ["shim"] = true, ["message_count"] = chat["messages"]!.AsArray().Count,
+            ["tool_count"] = toolCount,
+            ["has_tool_call"] = responseObj["output"]!.AsArray().Any(i => i?["type"]?.GetValue<string>() == "function_call"),
+            ["elapsed"] = Math.Round(elapsed, 2),
+            ["input_tokens"] = inTok, ["output_tokens"] = outTok,
+            ["tps_output"] = Math.Round(elapsed > 0 ? outTok / elapsed : 0, 1)
+        });
+        if (Diagnostic)
+        {
+            string dumpRes = responseObj.ToJsonString();
+            var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "shim-translate", ["model"] = requestedModel, ["req_len"] = chat.ToJsonString().Length, ["req"] = chat.ToJsonString(), ["res_len"] = dumpRes.Length, ["res"] = dumpRes };
+            AddPerf(traffic, startedAt, dumpRes, chat.ToJsonString());
+            Log(traffic);
+        }
+        AddMetrics(inTok, outTok, elapsed);
+
+        byte[] sse = BuildSse(responseObj, thinking);
+        ctx.Response.StatusCode = 200;
+        ctx.Response.ContentType = "text/event-stream; charset=utf-8";
+        ctx.Response.Headers["Cache-Control"] = "no-cache";
+        ctx.Response.SendChunked = true;
+        ctx.Response.OutputStream.Write(sse);
+        ctx.Response.OutputStream.Flush();
+        ctx.Response.Close();
     }
 
     /// <summary>Streaming real: repassa deltas do vLLM na hora, fecha com completed.</summary>

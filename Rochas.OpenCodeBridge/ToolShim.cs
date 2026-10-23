@@ -16,7 +16,8 @@ public static class ToolShim
 {
     /// <summary>
     /// Aplica o shim no body de /v1/chat/completions (mutacao no lugar).
-    /// Requer tools com nome, stream=false e ao menos um tool.
+    /// Requer tools com nome e ao menos um tool; forca o upstream non-stream
+    /// (o cliente pode ter pedido stream=true: a bridge sintetiza o SSE).
     /// </summary>
     public static bool Apply(JsonObject body, int maxString, int minCalls, int maxTokens, out string? reason)
     {
@@ -24,11 +25,6 @@ public static class ToolShim
         if (body["tools"] is not JsonArray tools || tools.Count == 0)
         {
             reason = "sem tools";
-            return false;
-        }
-        if (body["stream"]?.GetValue<bool>() == true)
-        {
-            reason = "stream=true nao suportado pelo shim";
             return false;
         }
 
