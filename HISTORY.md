@@ -2834,3 +2834,15 @@ bwrap responde `ok`.
 `/etc/systemd/system/opencode-web-{dev,moe}.service`, `/etc/ssh/sshd_config.d/60-ocagents.conf`,
 `/etc/caddy/Caddyfile`, `/etc/lightdm/users.conf`, `/usr/local/bin/start-llama-gpu2.sh`,
 `/usr/local/bin/start-bridge-gpu2.sh`.
+
+## Firewall das portas novas + gotcha de SNI no Caddy (2026-10-23, sessão 6)
+
+- `ufw allow 4152/tcp` (moe-agent) e `ufw allow 4153/tcp` (dev-agent), com comentário;
+  regras criadas em v4 e v6. As demais portas do Caddy (4147/4150/4151/4200) já estavam liberadas.
+- Os sites do Caddy são **por hostname** (`rocha26.ddns.net:415x`, `tls internal`): testar
+  por `127.0.0.1` devolve `tlsv1 alert internal error` (curl `000`). O teste correto usa
+  `--resolve`:
+  `curl -sk --resolve rocha26.ddns.net:4153:127.0.0.1 -u 'dev:...' https://rocha26.ddns.net:4153/` → 200;
+  sem credencial → 401. Verificado também 4152 (moe) e o acesso direto 4210/4220 (200 com Basic auth).
+- Checklist único de pendências do chroot criado em `PENDENCIAS-CHROOT-CUBIC.md`.
+
