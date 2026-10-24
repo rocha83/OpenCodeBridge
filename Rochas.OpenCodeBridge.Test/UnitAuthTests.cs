@@ -36,8 +36,11 @@ internal static class UnitAuthTests
             string? tok = BridgeSrv.Auth.CreateToken("a@b.c", false);
             TestContext.Check(tok is not null, "token gerado");
             string[] p = tok!.Split('.');
-            char last = p[2][^1];
-            string bad = p[0] + "." + p[1] + "." + p[2][..^1] + (last == 'A' ? 'B' : 'A');
+            // Adultera o PRIMEIRO char da assinatura, nao o ultimo: em base64url
+            // o ultimo char carrega bits de padding e troca-lo pode decodificar
+            // os MESMOS bytes (teste instavel).
+            char first = p[2][0];
+            string bad = p[0] + "." + p[1] + "." + (first == 'A' ? 'B' : 'A') + p[2][1..];
             TestContext.Check(!BridgeSrv.Auth.TryValidate(bad, out _, out _), "assinatura adulterada rejeitada");
             TestContext.Check(!BridgeSrv.Auth.TryValidate("invalido", out _, out _), "formato invalido rejeitado");
         }

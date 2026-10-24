@@ -148,6 +148,156 @@ internal static class TestContext
         return outp + errp;
     }
 
+    // --dual: roda cada teste de tools duas vezes, no modo "pure" (HTTP direto na
+    // bridge, com a bridge executando as tools) e no modo "opencode" (opencode CLI
+    // executando as tools). Sem --dual roda so "pure", como antes.
+    public static bool Dual;
+    public static string Mode = "pure";
+    public static int ToolAgentSteps = 8;
+
+    /// <summary>
+    /// Roda o mesmo teste nos dois modos quando --dual esta ligado
+    /// (sufixo -pure / -opencode no nome do caso).
+    /// </summary>
+    /// <param name="name">Nome do caso.</param>
+    /// <param name="fn">Corpo do teste (le TestContext.Mode).</param>
+    public static void RunDual(string name, Func<Task> fn)
+    {
+        if (!Dual) { Run(name, fn); return; }
+        string prev = Mode;
+        try
+        {
+            foreach (string mode in new[] { "pure", "opencode" })
+            {
+                Mode = mode;
+                Run(name + "-" + mode, fn);
+            }
+        }
+        finally { Mode = prev; }
+    }
+
+    /// <summary>Catálogo completo de tools de sistema (formato Responses).</summary>
+    /// <returns>Array de tools.</returns>
+    public static JsonArray ToolCatalog() => new()
+    {
+        Fn("shell", "Executa um comando de console. Um comando por chamada; sem heredoc.", new JsonObject
+        {
+            ["command"] = new JsonObject { ["type"] = "string" }
+        }, "command"),
+        Fn("write", "Cria/sobrescreve um arquivo de texto.", new JsonObject
+        {
+            ["path"] = new JsonObject { ["type"] = "string" },
+            ["content"] = new JsonObject { ["type"] = "string" }
+        }, "path", "content"),
+        Fn("read", "Le um arquivo de texto.", new JsonObject
+        {
+            ["path"] = new JsonObject { ["type"] = "string" }
+        }, "path"),
+        Fn("edit", "Substitui um trecho exato de um arquivo.", new JsonObject
+        {
+            ["path"] = new JsonObject { ["type"] = "string" },
+            ["oldString"] = new JsonObject { ["type"] = "string" },
+            ["newString"] = new JsonObject { ["type"] = "string" }
+        }, "path", "oldString", "newString"),
+        Fn("glob", "Lista arquivos por padrao. Nao aceita alternancia com |.", new JsonObject
+        {
+            ["pattern"] = new JsonObject { ["type"] = "string" }
+        }, "pattern"),
+        Fn("grep", "Busca expressao regular no conteudo dos arquivos.", new JsonObject
+        {
+            ["pattern"] = new JsonObject { ["type"] = "string" }
+        }, "pattern")
+    };
+
+    static JsonObject Fn(string name, string description, JsonObject props, params string[] required)
+    {
+        var req = new JsonArray();
+        foreach (var r in required) req.Add(r);
+        return new JsonObject
+        {
+            ["type"] = "function",
+            ["function"] = new JsonObject
+            {
+                ["name"] = name,
+                ["description"] = description,
+                ["parameters"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = props,
+                    ["required"] = req
+                }
+            }
+        };
+    }
+
+    /// <summary>
+    /// Executa um enunciado agentico no modo corrente e devolve o texto final +
+    /// histórico das tools executadas.
+    /// pure     = loop HTTP na bridge (/v1/responses + /api/tools/execute);
+    /// opencode = opencode run --standalone (o cliente executa as tools).
+    /// </summary>
+    /// <param name="prompt">Enunciado.</param>
+    /// <param name="steps">Máximo de rodadas de tool no modo puro.</param>
+    /// <returns>Texto final do assistente e as tools executadas.</returns>
+    public static async Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps = 0)
+    {
+        if (Mode == "opencode") return (OpencodeRun(prompt), new List<string>());
+        int max = steps > 0 ? steps : ToolAgentSteps;
+        var input = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = prompt });
+        var calls = new List<string>();
+        string text = "";
+        for (int step = 0; step < max; step++)
+        {
+            var res = await PostObj(Bridge + "/v1/responses", new JsonObject
+            {
+                ["model"] = SuiteModel,
+                ["input"] = input.DeepClone(),
+                ["tools"] = ToolCatalog(),
+                ["stream"] = false
+            });
+            text = "";
+            if (res["output"] is JsonArray output)
+            {
+                foreach (var item in output)
+                {
+                    string type = item?["type"]?.GetValue<string>() ?? "";
+                    if (type == "message")
+                        foreach (var c in item?["content"]?.AsArray() ?? new JsonArray())
+                            if (c?["type"]?.GetValue<string>() == "output_text") text += c?["text"]?.GetValue<string>() ?? "";
+                    else if (type == "function_call")
+                    {
+                        string callId = item?["call_id"]?.GetValue<string>() ?? item?["id"]?.GetValue<string>() ?? "";
+                        string name = item?["name"]?.GetValue<string>() ?? "";
+                        string args = item?["arguments"]?.GetValue<string>() ?? "{}";
+                        input.Add(new JsonObject
+                        {
+                            ["type"] = "function_call", ["id"] = callId, ["call_id"] = callId,
+                            ["name"] = name, ["arguments"] = args
+                        });
+                        JsonObject exec;
+                        try
+                        {
+                            exec = await PostObj(Bridge + "/api/tools/execute",
+                                new JsonObject { ["name"] = name, ["arguments"] = JsonNode.Parse(args) ?? new JsonObject() });
+                        }
+                        catch (Exception ex) { exec = new JsonObject { ["ok"] = false, ["error"] = ex.Message }; }
+                        string outText = exec["ok"]?.GetValue<bool>() == true
+                            ? (exec["output"]?.GetValue<string>() ?? "")
+                            : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
+                        calls.Add($"{name}({args}) -> {(exec["ok"]?.GetValue<bool>() == true ? "ok" : "fail")}");
+                        input.Add(new JsonObject
+                        {
+                            ["type"] = "function_call_output", ["call_id"] = callId, ["output"] = outText
+                        });
+                    }
+                }
+            }
+            bool hasCall = input.Count > 0 && input[input.Count - 1]!["type"]?.GetValue<string>() == "function_call_output";
+            if (!hasCall) break;
+        }
+        return (text, calls);
+    }
+
     public static async Task<JsonObject> GetObj(string url)
     {
         using var res = await Http.GetAsync(url);

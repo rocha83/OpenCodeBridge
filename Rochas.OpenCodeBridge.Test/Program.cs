@@ -28,8 +28,11 @@ internal static class Program
             else if (args[i] == "--standalone-agent" && i + 1 < args.Length) TestContext.StandaloneAgent = args[++i];
             else if (args[i] == "--standalone-model" && i + 1 < args.Length) TestContext.StandaloneModel = args[++i];
             else if (args[i] == "--standalone-timeout" && i + 1 < args.Length) TestContext.StandaloneTimeoutSec = int.Parse(args[++i]);
+            else if (args[i] == "--dual") TestContext.Dual = true;
+            else if (args[i] == "--tool-agent-steps" && i + 1 < args.Length) TestContext.ToolAgentSteps = int.Parse(args[++i]);
         }
         Console.WriteLine($"[test] bridge={TestContext.Bridge} vllm={TestContext.Vllm} skipE2E={TestContext.SkipE2E}");
+        Console.WriteLine($"[test] dual={TestContext.Dual} mode={TestContext.Mode} role={TestContext.Role}");
         string? cred = TestContext.Jwt ?? TestContext.ApiKey;
         if (cred is not null) TestContext.Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
 
@@ -83,6 +86,17 @@ internal static class Program
         TestContext.Run("U-toolargs-shell-inline", UnitToolStrategyTests.SanitizeShellPromotesInlineCall);
         TestContext.Run("U-toolargs-subagent", UnitToolStrategyTests.SanitizeGuidesSubagentMissingPrompt);
         TestContext.Run("U-toolargs-skill-ok", UnitToolStrategyTests.SanitizeKeepsSkillWithId);
+        // Breaker de loop agentico + escape literal + cauda de tools + temperatura por role.
+        TestContext.Run("U-breaker-needs-streak", UnitToolBreakerTests.NeedsStreak);
+        TestContext.Run("U-breaker-nudges-same-target", UnitToolBreakerTests.NudgesSameTarget);
+        TestContext.Run("U-breaker-trips-at-hard", UnitToolBreakerTests.TripsAtHard);
+        TestContext.Run("U-breaker-ignores-distinct-targets", UnitToolBreakerTests.IgnoresDistinctTargets);
+        TestContext.Run("U-breaker-normalize-collapses", UnitToolBreakerTests.NormalizeCollapsesMutations);
+        TestContext.Run("U-breaker-failure-markers", UnitToolBreakerTests.DetectsFailureMarkers);
+        TestContext.Run("U-toolargs-literal-newline", UnitToolBreakerTests.FixesLiteralNewlineEscape);
+        TestContext.Run("U-tails-path-simulation-rules", UnitToolBreakerTests.ToolsTailCarriesPathAndSimulationRules);
+        TestContext.Run("U-translate-profile-temp-wins", UnitToolBreakerTests.TranslateProfileTempWins);
+        TestContext.Run("U-translate-breaker-verdicts", UnitToolBreakerTests.TranslateBreakerVerdicts);
         TestContext.Run("U-shell-sed-inplace", UnitShellInspectorTests.SedInPlaceDenied);
         TestContext.Run("U-shell-sed-readonly", UnitShellInspectorTests.SedReadOnlyAllowed);
         TestContext.Run("U-shell-bash-payload", UnitShellInspectorTests.BashPayloadDenied);
@@ -174,6 +188,8 @@ internal static class Program
             TestContext.Run("E-belts-direct", E2EBeltsTests.Direct);
             // Belts (azul→preta) Trilha BUILD: 12B build implementa diretamente.
             TestContext.Run("E-belts-build-direct", E2EBeltsBuildTests.Direct);
+            // Tools nos DOIS transportes: bridge pura e opencode (--dual roda 2x cada).
+            TestContext.RunDual("E-dual-tools", E2EDualToolTests.All);
         }
 
         return TestContext.Summary();

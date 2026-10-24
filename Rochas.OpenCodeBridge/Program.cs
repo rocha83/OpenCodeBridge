@@ -129,9 +129,32 @@ internal static partial class Program
     // embutido? Usado so pela validacao, p/ avisar "cauda inerte com --harness 0"
     // sem acusar o default.
     static bool BehaviorTailCustom, ToolsTailCustom;
+    // Onde as caudas valem (--tail-scope / appsettings tailScope):
+    //   managed = padrao historico: so cliente direto/Web, com --harness 1;
+    //   all     = tambem no caminho opencode (model com sufixo de role);
+    //   off     = nenhuma cauda, em nenhum caminho.
+    // Pedido do operador (2026-10-24): guard de tools ligado nos DOIS caminhos.
+    static string TailScope = "managed";
+    // Temperatura: perfil do role (-build = 0.1) vence a temperatura que o
+    // cliente manda? O opencode repete o valor do json para o modelo base
+    // (0.3/0.5) e o role ficava com a temperatura errada. Default: perfil vence
+    // quando o model id tem sufixo de role; --request-temp-wins 1 restaura o
+    // comportamento antigo.
+    static bool ProfileTempWins = true;
+    // Breaker de loop agentico (falhas consecutivas no mesmo alvo).
+    static int BreakerSoft = 3;                                  // falhas que injetam o aviso
+    static int BreakerHard = 6;                                  // falhas que encerram o turno
     // Ha alguma cauda de inducAO configurada? E o que o /api/harness reporta:
     // nao existe mais switch mestre, o que vale e ter cauda ou nao.
     static bool TailsAtivas() => HarnessBehaviorTail.Length > 0 || HarnessToolsTail.Length > 0;
+    // Cauda vale NESTE pedido? "all" ignora o sufixo e o --harness (operador
+    // escolheu induzir tambem o opencode); "managed" mantem o desenho antigo.
+    static bool TailsOn(string? modelId) => TailScope switch
+    {
+        "off" => false,
+        "all" => TailsAtivas(),
+        _ => Harness && ManagedFor(modelId)
+    };
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
     // devolve 413 pedindo compactacao em vez da resposta. Parametrizavel
@@ -410,6 +433,10 @@ internal static partial class Program
             if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
             if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham && ham.Length > 0) { HarnessToolsTail = ham; ToolsTailCustom = true; }
             if (cfg["harnessBehaviorTail"]?.GetValue<string>() is string bt) { HarnessBehaviorTail = bt; BehaviorTailCustom = true; }
+            if (cfg["tailScope"]?.GetValue<string>() is string tsp && tsp is "managed" or "all" or "off") TailScope = tsp;
+            if (cfg["profileTempWins"]?.GetValue<bool>() is bool ptw) ProfileTempWins = ptw;
+            if (cfg["breakerSoft"]?.GetValue<int>() is int bsoft && bsoft >= 0) BreakerSoft = bsoft;
+            if (cfg["breakerHard"]?.GetValue<int>() is int bhard && bhard >= 0) BreakerHard = bhard;
             if (cfg["antiRepeatRetry"]?.GetValue<bool>() is bool arr) AntiRepeatRetry = arr;
             if (cfg["antiRepeatAbort"]?.GetValue<bool>() is bool arA) AntiRepeatAbort = arA;
             if (cfg["diagnosticLevel"]?.GetValue<string>() is string dlg && dlg.Length > 0) DiagnosticLevel = dlg.Trim().ToLowerInvariant();
@@ -890,6 +917,13 @@ internal static partial class Program
                 case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--harness-behavior-tail": HarnessBehaviorTail = cliArgs[i + 1]; BehaviorTailCustom = true; break;
                 case "--harness-tools-tail": HarnessToolsTail = cliArgs[i + 1]; ToolsTailCustom = true; break;
+                case "--tail-scope":
+                    if (cliArgs[i + 1] is "managed" or "all" or "off") TailScope = cliArgs[i + 1];
+                    break;
+                case "--profile-temp-wins": ProfileTempWins = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--request-temp-wins": ProfileTempWins = cliArgs[i + 1] is "false" or "0"; break;
+                case "--breaker-soft": if (int.TryParse(cliArgs[i + 1], out int bs) && bs >= 0) BreakerSoft = bs; break;
+                case "--breaker-hard": if (int.TryParse(cliArgs[i + 1], out int bh) && bh >= 0) BreakerHard = bh; break;
 
                 // ---------- E) coerção de tools ----------
                 // Capacidade do upstream: native (parser proprio) x none (texto puro).
@@ -991,8 +1025,12 @@ internal static partial class Program
 
         if (CpuMaxTokens > 0 && !CoerceFor())
             warns.Add($"--coerced-max-tokens {CpuMaxTokens} inerte: use --upstream-parser none ou --coerce-text-tools 1");
-        if (!Harness && (BehaviorTailCustom || ToolsTailCustom))
-            warns.Add("cauda de harness declarada com --harness 0: inerte (a bridge nao injeta prompt)");
+        if (!Harness && (BehaviorTailCustom || ToolsTailCustom) && TailScope == "managed")
+            warns.Add("cauda de harness declarada com --harness 0: inerte (use --tail-scope all para injetar tambem no caminho opencode)");
+        if (TailScope == "all" && !TailsAtivas())
+            warns.Add("--tail-scope all com caudas vazias: nada a injetar");
+        if (BreakerHard > 0 && BreakerSoft > BreakerHard)
+            errors.Add($"--breaker-soft {BreakerSoft} maior que --breaker-hard {BreakerHard}: o aviso nunca apareceria");
         if (!ContextGuard && ContextTokens > 0)
             warns.Add($"--context-tokens {ContextTokens} inerte: --context-guard 0");
         if (!ContextGuard && Math.Abs(ContextThreshold - 0.95) > 0.0001)
@@ -1129,7 +1167,16 @@ internal static partial class Program
             // caudas declaradas, porque elas ficam inertes nesse modo.
             if (ctx.Request.HttpMethod == "GET" && path == "/api/harness")
             {
-                WriteJson(ctx, 200, new JsonObject { ["harness"] = Harness && TailsAtivas() });
+                // Efetivo por caminho: opencode (model com sufixo) x direto/Web.
+                WriteJson(ctx, 200, new JsonObject
+                {
+                    ["harness"] = Harness && TailsAtivas(),
+                    ["tail_scope"] = TailScope,
+                    ["tails_managed"] = TailsOn(""),
+                    ["tails_opencode"] = TailsOn(Model + "-build"),
+                    ["behavior_chars"] = HarnessBehaviorTail.Length,
+                    ["tools_chars"] = HarnessToolsTail.Length
+                });
                 return;
             }
 
@@ -1159,11 +1206,16 @@ internal static partial class Program
                 // Dry-run: mostra o /v1/chat/completions que SERIA enviado ao
                 // vLLM, sem chamar o modelo. Util p/ depurar a traducao.
                 var req = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
-                var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out string thinking, out int toolCount);
+                var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out string thinking, out int toolCount, out string tempSource, out string? breakerTrip, out string breakerState);
                 WriteJson(ctx, 200, new JsonObject
                 {
                     ["requested_model"] = requestedModel,
                     ["temperature"] = temperature,
+                    ["temperature_source"] = tempSource,
+                    ["request_temperature"] = req["temperature"]?.GetValue<double>(),
+                    ["tail_scope"] = TailScope,
+                    ["tails_on"] = TailsOn(requestedModel),
+                    ["breaker"] = breakerState,
                     ["thinking"] = thinking,
                     ["message_count"] = chat["messages"]!.AsArray().Count,
                     ["tool_count"] = toolCount,
@@ -1325,6 +1377,8 @@ WriteJson(ctx, 200, new JsonObject
         ["listen"] = Listen, ["port"] = Port,
         ["upstream"] = Upstream, ["model"] = Model, ["thinking"] = Thinking,
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
+["profile_temp_wins"] = ProfileTempWins, ["tail_scope"] = TailScope,
+["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
         ["passthrough_responses"] = PassthroughResponses,
         ["tool_strategy"] = ToolStrategy,
@@ -1434,36 +1488,43 @@ WriteJson(ctx, 200, new JsonObject
                     outBody = node.ToJsonString(SerOpts);
                 }
             }
-            // Temperatura efetiva no repasse: o cliente manda, senao perfil/global
-            // (escala 0.1 baixo / 0.3 medio / 0.5 alto). Sem isto o llama usava o
-            // --temp 1.0 da unit e o numero do perfil nunca valia no /v1/chat.
-            if (node is not null && node["temperature"] is null)
+            // Temperatura efetiva no repasse: perfil do role vence (mesma regra do
+            // caminho Responses); sem perfil vale o global ou o que o cliente
+            // mandou. Sem isto o llama usava o --temp da unit e o numero do
+            // perfil nunca valia no /v1/chat.
+            if (node is not null
+                && (node["temperature"] is null
+                    || (ProfileTempWins && node["model"]?.GetValue<string>() is string pm
+                        && TryProfile(pm, out double ppt, out _) && !double.IsNaN(ppt))))
             {
                 double effTemp = Temperature;
+                string src = "global";
                 if (node["model"]?.GetValue<string>() is string tmid2
                     && TryProfile(tmid2, out double pt2, out _) && !double.IsNaN(pt2))
-                    effTemp = pt2;
+                { effTemp = pt2; src = "profile"; }
+                else if (node["temperature"]?.GetValue<double>() is double rtemp) { effTemp = rtemp; src = "request"; }
                 node["temperature"] = effTemp;
                 outBody = node.ToJsonString(SerOpts);
                 if (Diagnostic) Log(new JsonObject
                 {
                     ["event"] = "temp-inject",
                     ["temp"] = effTemp,
+                    ["source"] = src,
                     ["model"] = node["model"]?.GetValue<string>() ?? Model
                 });
             }
-            // Formula (Harness, cliente web = model sem sufixo de perfil):
-            // system + agents + tail. Opencode (sufixo) passa limpo.
+            // Formula por caminho (--tail-scope): "all" injeta tambem no opencode.
             // Sem switch mestre: cada cauda se aplica por estar configurada
             // (appsettings ou --harness-behavior-tail / --harness-tools-tail).
             if (node is not null
                 && node["messages"] is JsonArray fm)
             {
+                string fmodel = node["model"]?.GetValue<string>() ?? "";
                 foreach (var m in fm)
                 {
                     if (m is JsonObject mo && mo["role"]?.GetValue<string>() is "system" or "developer"
                         && mo["content"] is JsonValue mcv && mcv.TryGetValue<string>(out string? mtext))
-                    { mo["content"] = WithFormula(mtext); break; }
+                    { mo["content"] = WithFormula(mtext, fmodel); break; }
                 }
                 outBody = node.ToJsonString(SerOpts);
             }
@@ -1884,38 +1945,80 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
     /// <param name="toolCount">No. de tools convertidas.</param>
     /// <returns>Body p/ /v1/chat/completions.</returns>
     static JsonObject BuildChatRequest(JsonObject req, out string requestedModel, out double temperature, out string thinking, out int toolCount)
+        => BuildChatRequest(req, out requestedModel, out temperature, out thinking, out toolCount, out _, out _, out _);
+
+    /// <summary>Tradução completa com procedência da temperatura e veredito do breaker.</summary>
+    /// <param name="req">Request Responses.</param>
+    /// <param name="requestedModel">Model id do cliente (eco).</param>
+    /// <param name="temperature">Temperatura efetiva.</param>
+    /// <param name="thinking">Modo thinking efetivo.</param>
+    /// <param name="toolCount">No. de tools convertidas.</param>
+    /// <param name="tempSource">"profile" | "request" | "global".</param>
+    /// <param name="breakerTrip">Aviso quando o breaker encerrou o turno (null = segue).</param>
+    /// <returns>Body p/ /v1/chat/completions.</returns>
+    static JsonObject BuildChatRequest(JsonObject req, out string requestedModel, out double temperature,
+        out string thinking, out int toolCount, out string tempSource, out string? breakerTrip, out string breakerState)
     {
+        breakerTrip = null;
+        breakerState = "none";
         // O opencode manda "openai/qwen3-8b-awq" mas o vLLM so conhece o id
         // servido ("qwen3-8b-awq") e responde 404 p/ outro id. Por isso o
         // upstream SEMPRE usa o Model configurado; o id original so volta
         // como eco no campo "model" da resposta.
         requestedModel = req["model"]?.GetValue<string>() ?? Model;
-        // Perfil (-plan/-build): temperatura+thinking do perfil; temperatura
-        // explicita no request vence o perfil; sem perfil valem os globais.
+        // Perfil (-plan/-build): temperatura+thinking do perfil.
         bool hasProfile = TryProfile(requestedModel, out double profTemp, out string profThink);
         thinking = hasProfile && !string.IsNullOrEmpty(profThink) ? profThink : Thinking;
         // ThinkingOffRoles: o operador manda desligar por NOME de role, acima do perfil.
         if (ThinkingOffRoles.Contains(RoleOfModel(requestedModel))) thinking = "off";
-        // Temperatura: a do opencode tem prioridade; a da linha de comando
-        // e so o padrao quando o request nao informa nenhuma.
-        temperature = req["temperature"]?.GetValue<double>()
-            ?? (hasProfile && !double.IsNaN(profTemp) ? profTemp : Temperature);
+        // Temperatura: o perfil do role e a fonte de verdade quando o model id
+        // tem sufixo (-build = 0.1). O cliente as vezes reenvia a temperatura do
+        // modelo BASE (0.3/0.5) e o role rodava quente — foi o que produziu os
+        // identificadores corrompidos da sessao de 2026-10-23. --request-temp-wins
+        // restaura a prioridade do cliente.
+        double? reqTemp = req["temperature"]?.GetValue<double>();
+        if (hasProfile && ProfileTempWins && !double.IsNaN(profTemp))
+        {
+            temperature = profTemp;
+            tempSource = reqTemp.HasValue && Math.Abs(reqTemp.Value - profTemp) > 0.0001 ? "profile(override)" : "profile";
+        }
+        else if (reqTemp.HasValue)
+        {
+            temperature = reqTemp.Value;
+            tempSource = "request";
+        }
+        else if (hasProfile && !double.IsNaN(profTemp))
+        {
+            temperature = profTemp;
+            tempSource = "profile";
+        }
+        else
+        {
+            temperature = Temperature;
+            tempSource = "global";
+        }
 
         // Converte a conversa Responses -> messages do formato chat
         var messages = InputToMessages(req["input"], req["instructions"], hasProfile);
         // Caudas por peca, penduradas no system que InputToMessages ja consolida
-        // (instructions + os system do meio). Em producao esse system sempre existe:
-        // no opencode vem do agent.md, na Web UI do system_prompt do agente. O gate
-        // fica como estava — sem fallback, para nao duplicar system quando o
-        // conteudo vier em lista de partes (visão/multimodal) em vez de string.
-        if (messages.Count > 0 && messages[0] is JsonObject sys0
+        // (instructions + os system do meio). O gate decide por caminho
+        // (--tail-scope): "all" injeta tambem no opencode, "managed" so no
+        // cliente direto/Web. Sem system nao ha onde pendurar: nao inventamos.
+        bool tails = TailsOn(requestedModel);
+        if (tails && messages.Count > 0 && messages[0] is JsonObject sys0
             && sys0["role"]?.GetValue<string>() == "system"
             && sys0["content"] is JsonValue sysv && sysv.TryGetValue<string>(out string? syst))
-            sys0["content"] = WithFormula(syst);
+            sys0["content"] = WithFormula(syst, requestedModel);
         if (Diagnostic)
             Log(new JsonObject
             {
                 ["event"] = "tails",
+                ["scope"] = TailScope,
+                ["on"] = tails,
+                ["model"] = requestedModel,
+                ["temperature"] = temperature,
+                ["temperature_source"] = tempSource,
+                ["request_temperature"] = reqTemp,
                 ["has_system"] = messages.Count > 0 && messages[0]?["role"]?.GetValue<string>() == "system",
                 ["attached"] = messages.Count > 0 && messages[0] is JsonObject s1
                                && s1["content"] is JsonValue s1v
@@ -1923,6 +2026,28 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 ["behavior_chars"] = HarnessBehaviorTail.Length,
                 ["tools_chars"] = HarnessToolsTail.Length
             });
+        // Breaker de loop agentico: le o historico (function_call + resultado) e
+        // decide nudge/trip. Trip = nao chama o modelo (o turno esta perdido).
+        if (BreakerSoft > 0)
+        {
+            var verdict = ToolLoopBreaker.Analyze(messages, BreakerSoft, BreakerHard);
+            if (verdict.Verdict != BreakerVerdict.None)
+            {
+                Log(new JsonObject
+                {
+                    ["event"] = "tool-error-breaker", ["model"] = requestedModel,
+                    ["verdict"] = verdict.Verdict.ToString().ToLowerInvariant(),
+                    ["streak"] = verdict.Streak, ["distinct_targets"] = verdict.DistinctTargets,
+                    ["soft"] = BreakerSoft, ["hard"] = BreakerHard
+                });
+                Metrics.BreakerTrip(verdict.Verdict.ToString().ToLowerInvariant());
+                breakerState = verdict.Verdict.ToString().ToLowerInvariant();
+                if (verdict.Verdict == BreakerVerdict.Nudge)
+                    ToolLoopBreaker.ApplyNudge(messages, verdict.Notice);
+                else
+                    breakerTrip = verdict.Notice;
+            }
+        }
         // Converte as tools Responses (formato "chato") -> formato chat
         var tools = ToolsToChat(req["tools"]);
         // Sonda: tool anunciada que nao chegou ao chat (perda silenciosa).
@@ -2045,7 +2170,28 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             return;
         }
         bool wantStream = req["stream"]?.GetValue<bool>() ?? false;
-        var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out string thinking, out int toolCount);
+        var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out string thinking,
+            out int toolCount, out string tempSource, out string? breakerTrip, out string breakerState);
+
+        // Breaker trip: o turno ja esta perdido (N falhas no mesmo alvo). Nao
+        // chama o modelo; devolve o aviso como mensagem final (o cliente mostra
+        // ao usuario e a proxima mensagem recomeca com diagnostico).
+        if (breakerTrip is not null)
+        {
+            var synthetic = new JsonObject
+            {
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["index"] = 0,
+                    ["message"] = new JsonObject { ["role"] = "assistant", ["content"] = breakerTrip },
+                    ["finish_reason"] = "stop"
+                }),
+                ["usage"] = new JsonObject { ["prompt_tokens"] = 0, ["completion_tokens"] = (breakerTrip.Length / 4) + 1 }
+            };
+            var tripObj = ChatToResponses(synthetic, requestedModel, temperature, thinking, toolCount > 0, chat["messages"]);
+            WriteJson(ctx, 200, tripObj);
+            return;
+        }
 
         // Shim generico tambem no caminho Responses -> chat: o upstream recusa
         // grammar + tools, entao o envelope JSON e aplicado aqui, depois da
@@ -2104,6 +2250,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         Log(new JsonObject
         {
             ["event"] = "response", ["model"] = requestedModel, ["stream"] = wantStream,
+            ["temperature"] = temperature, ["temperature_source"] = tempSource,
             ["message_count"] = chat["messages"]!.AsArray().Count, ["tool_count"] = toolCount,
             ["has_tool_call"] = responseObj["output"]!.AsArray().Any(i => i?["type"]?.GetValue<string>() == "function_call"),
             ["has_reasoning"] = responseObj["output"]!.AsArray().Any(i => i?["type"]?.GetValue<string>() == "reasoning"),
@@ -2138,33 +2285,39 @@ string outBody = body;
         {
             dropped = StripReasoningItems(req);
             bool moved = NormalizeSystemFirst(req);
-            // Temperatura efetiva: cliente manda, senao perfil/global (0.1/0.3/0.5).
-            // Sem isto o bypass Responses caia no --temp 1.0 do llama.
-            if (req["temperature"] is null)
+            // Temperatura efetiva no bypass: perfil do role vence (mesma regra do
+            // caminho traduzido); sem perfil vale o global. Sem isto o llama usava
+            // o --temp da unit e o numero do perfil nunca valia no /v1/responses.
+            if (req["temperature"] is null
+                || (ProfileTempWins && req["model"]?.GetValue<string>() is string pm
+                    && TryProfile(pm, out double ppt, out _) && !double.IsNaN(ppt)))
             {
                 double effTemp = Temperature;
+                string src = "global";
                 if (req["model"]?.GetValue<string>() is string tmid
                     && TryProfile(tmid, out double pt, out _) && !double.IsNaN(pt))
-                    effTemp = pt;
+                { effTemp = pt; src = "profile"; }
+                else if (req["temperature"]?.GetValue<double>() is double rt) { effTemp = rt; src = "request"; }
                 req["temperature"] = effTemp;
                 if (Diagnostic) Log(new JsonObject
                 {
                     ["event"] = "temp-inject",
                     ["temp"] = effTemp,
+                    ["source"] = src,
                     ["model"] = req["model"]?.GetValue<string>() ?? Model
                 });
             }
             if (dropped > 0 || moved || req["temperature"] is not null) outBody = req.ToJsonString(SerOpts);
         }
         catch { outBody = body; }
-        // Formula (Harness, cliente web = model sem sufixo): instructions +
-        // agents + tail. Opencode (sufixo) passa limpo.
+        // Formula: instructions + agents + tail, por caminho (--tail-scope).
+        // "all" injeta tambem no opencode; "managed" so no cliente direto/Web.
         try
         {
             if (req.TryGetPropertyValue("instructions", out JsonNode? fins) && fins is JsonValue fiv
                 && fiv.TryGetValue<string>(out string? finst))
             {
-                req["instructions"] = WithFormula(finst);
+                req["instructions"] = WithFormula(finst, req["model"]?.GetValue<string>() ?? "");
                 outBody = req.ToJsonString(SerOpts);
             }
         }
@@ -2339,16 +2492,25 @@ var shape = new StringBuilder();
         return t + "\n\n" + SystemGuardrail;
     }
 
-    /// <remarks>As duas caudas entram sempre que o Harness esta ligado: nao ha excecao
-    /// por "ser opencode". Cada enunciado de inducAO mora na sua propria peca: ToolsTail
-    /// (como usar a tool) e BehaviorPrompt (disciplina de comportamento), porque sao coisas
-    /// diferentes e mexer numa nao deve tocar na outra.</remarks>
+    /// <remarks>As duas caudas entram quando <see cref="TailsOn"/> permite o
+    /// caminho: "all" injeta tambem no opencode, "managed" so no cliente
+    /// direto/Web (--harness 1). Cada enunciado de inducAO mora na sua propria
+    /// peca: ToolsTail (como usar a tool) e BehaviorPrompt (disciplina de
+    /// comportamento), porque sao coisas diferentes e mexer numa nao deve tocar
+    /// na outra.</remarks>
     /// <param name="sys">System prompt original.</param>
-    internal static string WithFormula(string sys)
+    /// <returns>System prompt composto.</returns>
+    internal static string WithFormula(string sys) => WithFormula(sys, "");
+
+    /// <summary>Composição das caudas decidida pelo model id (perfil = opencode).</summary>
+    /// <param name="sys">System prompt original.</param>
+    /// <param name="modelId">Model id do pedido (define o caminho).</param>
+    /// <returns>System prompt composto.</returns>
+    internal static string WithFormula(string sys, string? modelId)
     {
         // Fonte unica das caudas no Core; o host so decide ligar/desligar e
         // passa as sobrescritas de CLI/appsettings.
-        return HarnessTails.Compose(sys, Harness, HarnessBehaviorTail, HarnessToolsTail);
+        return HarnessTails.Compose(sys, TailsOn(modelId), HarnessBehaviorTail, HarnessToolsTail);
     }
 
     /// <summary>Pedido opencode (perfil com sufixo)? Se sim, tubo puro, sem formula.</summary>
@@ -2602,6 +2764,34 @@ var shape = new StringBuilder();
         return t;
     }
 
+    /// <summary>Converte escape duplo ("\\n" literal de 2 chars) em quebra real no comando shell.</summary>
+    /// <remarks>Caso real (2026-10-23): o modelo emitiu
+    /// <c>python3 - &lt;&lt;'PY'\n import sqlite3</c> — o bash recebeu a sequencia
+    /// literal e respondeu "here-document delimitado pelo fim do arquivo" +
+    /// "erro de sintaxe". So atua quando o comando NAO tem nenhuma quebra real,
+    /// para nao estragar comando que cita "\n" de proposito (printf/regex).
+    /// Independe de ToolStrategy: e higiene de argumento, nao resgate de padrao.</remarks>
+    /// <param name="name">Nome da tool.</param>
+    /// <param name="arguments">Argumentos JSON.</param>
+    /// <returns>Nome/argumentos com escapes normalizados.</returns>
+    internal static (string Name, string Arguments) FixLiteralEscapes(string name, string arguments)
+    {
+        if (!string.Equals(name, "shell", StringComparison.Ordinal)
+            && !string.Equals(name, "bash", StringComparison.Ordinal)) return (name, arguments);
+        JsonObject? obj;
+        try { obj = JsonNode.Parse(arguments) as JsonObject; } catch { return (name, arguments); }
+        if (obj?["command"] is not JsonValue cv || !cv.TryGetValue<string>(out string? cmd)) return (name, arguments);
+        if (!cmd.Contains("\\n", StringComparison.Ordinal) || cmd.Contains('\n')) return (name, arguments);
+        string fixedCmd = cmd.Replace("\\r\\n", "\n").Replace("\\n", "\n").Replace("\\t", "\t");
+        obj["command"] = fixedCmd;
+        Log(new JsonObject
+        {
+            ["event"] = "tool-args-escape", ["tool"] = name,
+            ["mode"] = "literal-to-newline", ["newlines"] = fixedCmd.Count(c => c == '\n')
+        });
+        return (name, obj.ToJsonString(SerOpts));
+    }
+
     /// <summary>Corta lixo de template vazado no comando shell e promove chamada inline.</summary>
     /// <remarks>O 12B mistura o texto do comando com o proximo tool call
     /// (`date +"..."}&lt;tool_call|&gt;...`) e o bash quebra por sintaxe; aqui o comando
@@ -2648,6 +2838,9 @@ var shape = new StringBuilder();
     /// <returns>Nome/argumentos efetivos (shell guiado quando irrecuperavel).</returns>
     internal static (string Name, string Arguments) SanitizeToolCall(string name, string arguments)
     {
+        // Higiene de escape (vale mesmo com ToolStrategy desligada).
+        var escaped = FixLiteralEscapes(name, arguments);
+        name = escaped.Name; arguments = escaped.Arguments;
         if (!ToolStrategy || string.IsNullOrWhiteSpace(arguments)) return (name, arguments);
         try
         {
@@ -4295,6 +4488,10 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             // input pode ser uma string pura em vez de lista
             if (!string.IsNullOrWhiteSpace(directText))
                 messages.Add(new JsonObject { ["role"] = "user", ["content"] = directText });
+            // Sem este insert o "instructions" era perdido quando input vinha como
+            // string (caminho usado pelo /api/translate e por clientes simples).
+            if (sysText.Length > 0)
+                messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = sysText.ToString() });
             return messages;
         }
 

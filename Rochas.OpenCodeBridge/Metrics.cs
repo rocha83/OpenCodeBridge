@@ -33,9 +33,12 @@ static class Metrics
     // argv barrado no inspetor de shell; nudge = argumentos guiados (chamada
     // recusada antes de executar e pedida de novo com o JSON completo).
     static long _ring2Deny, _ring3Deny, _nudgeArgs;
+    static long _breakerNudge, _breakerTrip;
     internal static long Ring2Deny => System.Threading.Interlocked.Read(ref _ring2Deny);
     internal static long Ring3Deny => System.Threading.Interlocked.Read(ref _ring3Deny);
     internal static long NudgeArgs => System.Threading.Interlocked.Read(ref _nudgeArgs);
+    internal static long BreakerNudge => System.Threading.Interlocked.Read(ref _breakerNudge);
+    internal static long BreakerTripCount => System.Threading.Interlocked.Read(ref _breakerTrip);
 
     /// <summary>Conta uma recusa no anel e (se diagnostic ligado) grava o evento.</summary>
     /// <param name="ring">"ring2", "ring3" ou "nudge".</param>
@@ -59,11 +62,31 @@ static class Metrics
         ["ring2_deny"] = Ring2Deny,
         ["ring3_deny"] = Ring3Deny,
         ["nudge_args"] = NudgeArgs,
+        ["breaker_nudge"] = BreakerNudge,
+        ["breaker_trip"] = BreakerTripCount,
+    };
+
+    /// <summary>Conta um veredito do breaker de loop agentico (nudge|trip).</summary>
+    /// <param name="verdict">"nudge" ou "trip".</param>
+    internal static void BreakerTrip(string verdict)
+    {
+        if (string.Equals(verdict, "trip", StringComparison.OrdinalIgnoreCase))
+            System.Threading.Interlocked.Increment(ref _breakerTrip);
+        else
+            System.Threading.Interlocked.Increment(ref _breakerNudge);
+        if (!Active) return;
+        Record("tool-error-breaker", new JsonObject { ["verdict"] = verdict });
+    }
+
+    /// <summary>Instantaneo dos contadores do breaker (para /api/metrics e testes).</summary>
+    internal static JsonObject BreakerCounters() => new()
+    {
+        ["breaker_nudge"] = BreakerNudge,
+        ["breaker_trip"] = BreakerTripCount,
     };
 
     internal static void Record(string kind, JsonObject fields)
-    {
-        if (!Active) return;
+    {        if (!Active) return;
         try
         {
             fields["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -89,6 +112,8 @@ static class Metrics
         System.Threading.Interlocked.Exchange(ref _ring2Deny, 0);
         System.Threading.Interlocked.Exchange(ref _ring3Deny, 0);
         System.Threading.Interlocked.Exchange(ref _nudgeArgs, 0);
+        System.Threading.Interlocked.Exchange(ref _breakerNudge, 0);
+        System.Threading.Interlocked.Exchange(ref _breakerTrip, 0);
     }
 
     // Amostrador de GPU em background (5s; best-effort, sem nvidia-smi = mudo).

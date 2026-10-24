@@ -38,6 +38,9 @@
 
   <ItemGroup>
     <None Include="GNUv2_License.txt" Pack="true" PackagePath="" />
+    <!-- appsettings.json e a fonte persistente de perfis/tailScope/breaker: vai
+         para o output (e para o deploy), em vez de ser recriado a mao no PROD. -->
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="Serilog" Version="4.3.1" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <!-- Testes: suite console acessa Auth/ContextGuard sem HTTP -->

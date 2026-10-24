@@ -117,11 +117,17 @@ internal static class UnitTranslateTests
         double globalTemp = status["temperature"]?.GetValue<double>() ?? 0.3;
         var plan = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq-plan"));
         var planChat = plan["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request plan");
-        TestContext.Check(plan["temperature"]?.GetValue<double>() >= globalTemp, "plan temp >= global (perfil plan 0.3 sobre global 0.3)");
+        // A temperatura do perfil nao e comparavel com a global (o operador pode
+        // subir a global sem tocar no role): o invariante e plan > build e cada
+        // role com thinking proprio.
+        double planTemp = plan["temperature"]?.GetValue<double>() ?? -1;
+        TestContext.Check(planTemp > 0, $"plan com temperatura efetiva (veio {planTemp})");
         TestContext.Check(planChat["chat_template_kwargs"]?["enable_thinking"]?.GetValue<bool>() == true, "plan thinking on");
         var build = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen2.5-coder-3b-build"));
         var buildChat = build["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request build");
-        TestContext.Check(build["temperature"]?.GetValue<double>() <= globalTemp, "build temp abaixo da global");
+        double buildTemp = build["temperature"]?.GetValue<double>() ?? -1;
+        TestContext.Check(buildTemp <= globalTemp, $"build temp abaixo da global ({buildTemp} <= {globalTemp})");
+        TestContext.Check(planTemp > buildTemp, $"plan mais quente que build ({planTemp} > {buildTemp})");
         TestContext.Check(buildChat["chat_template_kwargs"]?["enable_thinking"]?.GetValue<bool>() == false, "build thinking off");
         var plain = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq"));
         TestContext.Check(plain["temperature"]?.GetValue<double>() == globalTemp, "sem sufixo usa global");
