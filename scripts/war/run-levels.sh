@@ -98,8 +98,51 @@ case "$LEVEL" in
     done
     step_webtest
     ;;
+  2)
+    # Level 2: bateria de TOOLS no atacado (full, dual, mission, responses) +
+    # cientifico nas duas linhas (Q4 :4144 e Q3 CPU :4125).
+    STEPS_DESC="tools-full; tools-dual; mission-tools; responses-tools; science-gpu; science-cpu(Q3)"
+    if [ "$LIST" = "1" ]; then
+      echo "Level 2 -> $STEPS_DESC"; exit 0
+    fi
+    log "=== LEVEL 2 ($OUT) ==="
+    for mode in pure opencode; do
+      step_bridge "tools-full-$mode" --only E-tools-full --mode "$mode"
+      step_bridge "tools-dual-$mode" --only E-dual-tools --mode "$mode"
+      step_bridge "mission-tools-$mode" --only E-mission-tools --mode "$mode"
+      step_bridge "responses-tools-$mode" --only E-responses-tools --mode "$mode"
+      step_bridge "science-gpu-$mode" --only E-science-gpu --mode "$mode"
+      # Cientifico na linha CPU/Q3 (bridge de producao :4125 por padrao).
+      # LEVEL_CPU=0 pula (ex.: quando a :4125 esta em uso por sessao real).
+      if [ "${LEVEL_CPU:-1}" = "1" ]; then
+        step_bridge "science-cpu-$mode" --only E-science-cpu --mode "$mode"
+      else
+        log "SKIP science-cpu-$mode (LEVEL_CPU=0)"
+      fi
+    done
+    step_webtest
+    ;;
+  3)
+    # Level 3: pacote completo de belts (azul -> preta) nas DUAS trilhas da
+    # suite — Build (implementa direto) e Orch (segmenta -> Scripter -> Exec) —
+    # em --mode pure e --mode opencode, com HARNESS LIGADO na bridge.
+    STEPS_DESC="belts azul->preta: trilha build + trilha orch, modos pure e opencode (harness on)"
+    if [ "$LIST" = "1" ]; then
+      echo "Level 3 -> $STEPS_DESC"; exit 0
+    fi
+    log "=== LEVEL 3 ($OUT) ==="
+    HSTATUS=$(curl -s -m 5 -H "Authorization: Bearer $API" "$BRIDGE/api/harness" 2>/dev/null)
+    [ -n "$HSTATUS" ] || HSTATUS=$(curl -s -m 5 -H "Authorization: Bearer $API" "$BRIDGE/api/status" 2>/dev/null)
+    log "harness na bridge $BRIDGE: $(echo "$HSTATUS" | head -c 300)"
+    echo "$HSTATUS" | grep -q '"main_harness":true' \
+      || log "AVISO: main_harness nao esta true — Level 3 pede harness ligado (--main-harness 1 --harness-tails 1)"
+    for mode in pure opencode; do
+      step_bridge "belts-build-all-$mode" --only E-belts-build-direct --belts azul,verde,roxa,marrom,preta --mode "$mode"
+      step_bridge "belts-orch-all-$mode" --only E-belts-direct --belts azul,verde,roxa,marrom,preta --mode "$mode"
+    done
+    ;;
   *)
-    echo "Level $LEVEL ainda nao definido (implementado: 1)"; exit 2 ;;
+    echo "Level $LEVEL ainda nao definido (implementado: 1, 2, 3)"; exit 2 ;;
 esac
 
 log ""

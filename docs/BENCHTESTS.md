@@ -189,3 +189,33 @@ LEVEL_BRIDGE=http://127.0.0.1:4144 LEVEL_BLOG=/tmp/bridge-q4-level1.log \
 Artefatos: `/tmp/opencode/levels/L1-<stamp>/{summary.tsv,steps/,state/}`; retomada pelo
 `STATE` do mesmo stamp (`LEVEL_STAMP=<stamp>`). Sem ordem fixa de faixas: `--belts azul,verde`
 filtra.
+
+### Level 2 — bateria de tools + científico
+
+`LEVEL_BRIDGE=http://127.0.0.1:4144 ./scripts/war/run-levels.sh --level 2`
+
+Roda, em `--mode pure` e `--mode opencode`: `E-tools-full`, `E-dual-tools`,
+`E-mission-tools`, `E-responses-tools`, `E-science-gpu` (Q4, bridge do level) e
+`E-science-cpu` (linha Q3, `WAR_CPU_BRIDGE` ou `:4125`), fechando com a suíte web.
+`LEVEL_CPU=0` pula o científico da linha Q3 (útil quando a `:4125` está em uso por
+sessão real). Artefatos no mesmo layout do Level 1.
+
+### Level 3 — pacote completo de belts (azul → preta)
+
+`LEVEL_BRIDGE=http://127.0.0.1:4146 ./scripts/war/run-levels.sh --level 3`
+
+Duas trilhas, nas cinco faixas (`azul,verde,roxa,marrom,preta`), em `--mode pure` e
+`--mode opencode`: **trilha Build** (`E-belts-build-direct` — role build implementa
+direto) e **trilha Orch** (`E-belts-direct` — orch segmenta → Scripter → Exec).
+Exige **harness ligado** na bridge; o runner consulta `/api/harness` e loga aviso se
+`main_harness` não estiver `true`:
+
+```bash
+cd Rochas.OpenCodeBridge/bin/Release/net9.0
+dotnet Rochas.OpenCodeBridge.dll --port 4146 --upstream http://127.0.0.1:4100 \
+  --model Gemma4-E4B-Q4 --thinking events --temperature 0.5 --max-tokens 16384 \
+  --context-guard 1 --context-tokens 131072 --api-key guest@123 \
+  --passthrough-responses true --main-harness 1 --harness-tails 1 \
+  --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
+  --log /tmp/bridge-q4-harness.log &
+```
