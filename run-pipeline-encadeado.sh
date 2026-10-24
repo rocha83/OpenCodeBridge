@@ -24,7 +24,7 @@ for url in http://127.0.0.1:4100/health http://127.0.0.1:4110/health; do
   echo -n "$url: "; curl -s -m 5 -H "Authorization: Bearer $API_KEY" "$url"; echo
 done
 for url in http://127.0.0.1:4124/api/status http://127.0.0.1:4125/api/status; do
-  echo -n "$url: "; curl -s -m 5 -H "Authorization: Bearer $API_KEY" "$url" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("status=",d.get("status"),"harness=",d.get("harness"),"max_tokens=",d.get("max_tokens"))'
+  echo -n "$url: "; curl -s -m 5 -H "Authorization: Bearer $API_KEY" "$url" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("status=",d.get("status"),"main_harness=",d.get("main_harness"),"harness_tails=",d.get("harness_tails"),"max_tokens=",d.get("max_tokens"))'
 done
 nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv,noheader
 

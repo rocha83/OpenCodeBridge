@@ -240,7 +240,7 @@ internal static class UnitToolBreakerTests
         TestContext.Check(obj["tails_on"]?.GetValue<bool>() == tailsEnabled,
             tailsEnabled
                 ? "cauda ligada no caminho opencode (tail-scope all)"
-                : "cauda desligada respeita --harness 0");
+                : "cauda desligada respeita --harness-tails 0");
     }
 
     public static async Task TranslateBreakerVerdicts()

@@ -496,7 +496,8 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 | `--diagnostic-level` | `off` | `off`/`metrics`/`dump` — granularidade da sonda (metrics = sem corpos req/res) |
 | `--qwen-standard` | `false` | **legado**: ModelPrompt + tools Alibaba (Qwen3/Qwen3.5); não usar na linha Gemma 4 |
 | `--workspace` | cwd | raiz de `POST /api/tools/execute` |
-| `--harness` | `true` | switch mestre do harness (0 = tubo puro; tails inertes) |
+| `--main-harness` | `true` | substitui o system no caminho gerido (model sem sufixo) |
+| `--harness-tails` | `true` | liga as caudas (behavior/tools) conforme `tailScope`; `0` desliga |
 
 > **Legado:** Qwen3/Qwen3.5 não são a linha atual; as flags marcadas (legado) não são usadas na linha Gemma 4.
 
@@ -521,7 +522,7 @@ anti-repeat e a coerção de narrada porque os três compartilhavam o mesmo flag
 | rede/processo | `--listen` (alias `--host`) · `--port` · `--upstream` · `--model` · `--log` · `--workspace` | — |
 | auth/admin | `--api-key` · `--jwt-secret` · `--jwt-expiry` · `--users-db` · `--bridge-managed` | — |
 | transporte | `--passthrough-responses` · `--stream-per-delta` · `--qwen-standard` (legado) · `--thinking-format` (alias `--thinking`) · `--thinking-off-roles` | — |
-| harness/prompt | `--harness` · `--harness-behavior-tail` · `--harness-tools-tail` | tails inertes sem `--harness 1` |
+| harness/prompt | `--main-harness` · `--harness-tails` · `--harness-behavior-tail` · `--harness-tools-tail` | main harness troca o system no gerido; tails são delta |
 | coerção de tools | `--upstream-parser` · `--coerce-text-tools` · `--coerce-narrated` · `--tool-strategy` | capacidade do upstream, não nome de modelo |
 | anti-repeat | `--anti-repeat` · `--anti-repeat-abort` · `--anti-repeat-retry` · `--anti-repeat-window` · `--anti-repeat-notice` | `--anti-repeat-abort` desliga só o corte em stream |
 | orçamento/contexto | `--max-tokens` · `--coerced-max-tokens` (alias `--cpu-max-tokens`) · `--context-guard` · `--context-tokens` · `--context-threshold` | fail-fast se guard sem tokens |
@@ -540,7 +541,7 @@ rotina cada flag pertence sem ler a linha de comando.
 `--upstream-parser` fora do domínio → exit 2; `--anti-repeat-window` fora de
 64..2048 → exit 2; `--anti-repeat-notice` < 20 chars → exit 2. Avisos em stderr
 para flag aceita mas inerte (`--coerced-max-tokens` sem coerção, tail com
-`--harness 0`, `--context-tokens` sem guard, `--legacy-harness 1`).
+`--harness-tails 0`, `--context-tokens` sem guard, `--legacy-harness 1`).
 
 ### 4.4 Coordenadas — ctx da dupla original + saída 16k
 
@@ -564,7 +565,7 @@ Total: **não medido neste chroot (sem CUDA)**; medir no host (RTX 3060, 12288 M
 | runner `max_tokens` (chat) | `16384` | `/tmp/opencode/run-belts-direct.sh` e `E2EBeltsBuildTests.cs:70` |
 | runner `max_tokens` (review) | `4096` | `E2EBeltsBuildTests.cs:116` |
 | `--anti-repeat` / `--anti-repeat-retry` | `1` | ambas as bridges |
-| `--harness` / `--legacy-harness` | `0` | ambas (sem harness ativo na bridge) |
+| `--main-harness` / `--harness-tails` / `--legacy-harness` | `1` / `0` / `0` | ambas (main harness ativo; tails e legado desligados) |
 | `--diagnostic` | `0` | ambas (sonda desligada) |
 | `--thinking` | `events` | ambas (formato de repasse; o thinking efetivo vem do perfil) |
 | `--coerce-text-tools` / `--coerce-narrated` / `--tool-strategy` | `0` | ambas (upstream com parser nativo) |
@@ -574,7 +575,7 @@ Total: **não medido neste chroot (sem CUDA)**; medir no host (RTX 3060, 12288 M
 
 A `bridge-cpu-forced.service` (`:4126`, `-ngl 0`) **não** entra no par 16k:
 continua `--max-tokens 8192`, `--context-tokens 131072` e sem os novos
-`--harness`/`--anti-repeat-retry`.
+`--harness-tails`/`--anti-repeat-retry`.
 
 **Consequência do 16k:** o turno degenerado (loop de ~120 tokens por volta) morria
 em `completion_tokens=16384` (~375 s @43 t/s na E2B, ~15,5k tokens descartados
@@ -612,8 +613,8 @@ No deploy atual, o `appsettings.json` do runtime
 `build/scripter/exec = 0.1` e `moe = 0.5`; a unit passa `--temperature 0.5`
 como base. As bridges foram reiniciadas depois do ajuste.
 
-Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `HARNESS=0` é legado inerte
-(use `--harness 0`).
+Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `MAIN_HARNESS=0` e
+`HARNESS_TAILS=0` desligam o main harness e as tails (equivalem às flags).
 
 ### 4.3 Units de produção (exemplo aplicado)
 
@@ -622,7 +623,7 @@ Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `HARNESS=0` é legado inert
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4124 --upstream http://127.0.0.1:4100 --model Gemma4-E4B-Q4 \
   --thinking events --temperature 0.5 --max-tokens 16384 --api-key guest@123 \
-  --passthrough-responses true --harness 0 --legacy-harness 0 \
+  --passthrough-responses true --harness-tails 0 --legacy-harness 0 \
   --anti-repeat 1 --anti-repeat-retry 1 \
   --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 \
   --anti-repeat-window 512 --log /tmp/bridge-gpu.log
@@ -631,14 +632,14 @@ ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4125 --upstream http://127.0.0.1:4110 --model Gemma4-E4B-UD-Q3 \
   --thinking events --temperature 0.5 --max-tokens 16384 --api-key guest@123 \
-  --passthrough-responses true --harness 0 --legacy-harness 0 \
+  --passthrough-responses true --harness-tails 0 --legacy-harness 0 \
   --anti-repeat 1 --anti-repeat-retry 1 \
   --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 \
   --anti-repeat-window 512 --log /tmp/bridge-cpu.log
 ```
 
 A `bridge-cpu-forced.service` (`:4126`, `-ngl 0`) permanece **intocada**:
-`--max-tokens 8192`, `--context-tokens 131072`, sem `--harness`/`--anti-repeat-retry`.
+`--max-tokens 8192`, `--context-tokens 131072`, sem `--harness-tails`/`--anti-repeat-retry`.
 
 Atalhos de desktop: `OpenCode Bridge GPU/CPU` reiniciam as units e mostram
 saúde; `Llama GPU`/`Llama CPU` regeneram e reiniciam os servidores;
@@ -717,7 +718,7 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 - Pull `origin/main` + rebuild do DLL
   (`dotnet build Rochas.OpenCodeBridge/Rochas.OpenCodeBridge.csproj -c Release`);
   smoke test na `:4199` OK.
-- `:4124`/`:4125` com args canônicos: `--max-tokens 16384`, `--harness 0
+- `:4124`/`:4125` com args canônicos: `--max-tokens 16384`, `--harness-tails 0
   --legacy-harness 0`, `--anti-repeat 1 --anti-repeat-retry 1`,
   `--coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0`,
   `--anti-repeat-window 512`, `--passthrough-responses true` e sem
@@ -749,8 +750,8 @@ antes do build** (lock de PDB) e rode com `--no-build`.
   `daemon-reload`/`restart` nem medição de VRAM aqui. As units/scripts valem no
   host; ao subir, conferir `n_ctx_slot` (131072/131072), `offloaded ... layers to
   GPU`, ausência de `auto-asymmetric` e VRAM com `nvidia-smi`.
-- O warning `cauda de harness declarada com --harness 0: inerte` é esperado
-  (o `appsettings.json` mantém `harnessBehaviorTail`, mas `--harness 0` não
+- O warning `cauda de harness declarada com --harness-tails 0: inerte` é esperado
+  (o `appsettings.json` mantém `harnessBehaviorTail`, mas `--harness-tails 0` não
   injeta prompt).
 
 ### 8.6 `-ot` por tensor e estado atual (2026-10-23)
@@ -827,7 +828,7 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
 ```
 --thinking events --temperature 0.5 --max-tokens 16384
 --context-guard 1 --context-tokens 131072
---passthrough-responses true --harness 0 --legacy-harness 0
+--passthrough-responses true --harness-tails 0 --legacy-harness 0
 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512
 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0
 --upstream-parser native
@@ -853,9 +854,9 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
   `limit.context = 131072` do opencode + compactação do próprio cliente.
   **Pendência para a próxima release:** estimar tokens na entrada (pré-flight)
   e/ou plugar a guarda em `HandleResponses` e no ramo de stream-abort.
-- O harness (`--harness 0`) não injeta tails em ids com sufixo de perfil: o
-  OpenCode já roda o "tubo puro". Não é preciso "configurar caminho puro" para
-  ele — só para WebUI/testes sem sufixo.
+- Com `--harness-tails 0` as tails não entram em nenhum caminho: o OpenCode já
+  roda o "tubo puro". Não é preciso "configurar caminho puro" para ele — só para
+  WebUI/testes sem sufixo.
 
 ### 9.5 OpenCode (`~/.config/opencode/opencode.json`)
 

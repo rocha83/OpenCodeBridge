@@ -1,5 +1,28 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Alias `harness` e nome `primordial` removidos; só `main-harness` e `harness-tails` (2026-10-24, sessão 7)
+
+**Decisão:** o harness fica com **dois switches independentes** — `--main-harness`
+(system base no caminho gerido) e `--harness-tails` (caudas behavior/tools). O
+alias legado `--harness` (e `cfg["harness"]`, env `HARNESS`) e o nome
+`primordial` saíram de código, config, CLI, API e units.
+
+**O que mudou:**
+- `Program.cs`: sem `case "--harness"`, sem `cfg["harness"]`, sem env `HARNESS`;
+  as variáveis são `MAIN_HARNESS` e `HARNESS_TAILS`. `/api/harness` e
+  `/api/status` não expõem mais o campo `harness` (só `main_harness` e
+  `harness_tails`).
+- `appsettings.json`: `mainHarness` / `harnessTails`; comentário sem alias.
+- Units `bridge-gpu.service` e `bridge-gpu2.service`: `--harness 0` →
+  `--harness-tails 0` (main harness segue ativo; tails inertes).
+- Testes e docs alinhados (`README.md`, `MAIN-HARNESS.md`, `LAB-SETUP.md`,
+  `BENCHTESTS.md`, `BRIDGE-NATIVE.md`, `docs/harness/opencode/README.md`).
+
+**Verificação:** build Release 0 warnings/0 errors; `U-main-harness-*` 9/9,
+`U-*` 75/0, `E-flag-*` 4/4. `/api/harness` no build novo responde
+`{"tail_scope":"all","main_harness":true,"main_harness_chars":9147,"harness_tails":false,...}`
+sem o campo `harness`.
+
 ## OpenCode v2: `package` nos providers custom (Q3/CPU) e fluxo dev/prod (2026-10-23, sessão 6)
 
 **Sintoma:** a sessão `opencode juridico` não abria com `llama/Gemma4-E4B-UD-Q3-*`.

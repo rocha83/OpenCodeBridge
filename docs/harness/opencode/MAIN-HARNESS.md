@@ -7,19 +7,18 @@ Atualização 2026-10-24. O **main harness** é o system prompt que a bridge usa
 dispensadas. No caminho opencode (sufixo `-build`/`-plan`/...), o system do
 cliente continua e as tails — no `appsettings.json` — entram como delta.
 
-O nome "primordial" foi aposentado: o texto é o **main harness**; as tails são
-um **delta separado** (`harness-tails`). São dois switches independentes:
+O texto é o **main harness**; as tails são um **delta separado**
+(`harness-tails`). São dois switches independentes:
 
 | Switch | CLI | appsettings | Default | Efeito |
 |---|---|---|---|---|
 | Main harness | `--main-harness` | `mainHarness` | `true` | troca o system no caminho gerido |
-| Harness tails | `--harness-tails` (legado `--harness`) | `harnessTails` (legado `harness`) | `true` | injeta behavior/tools tails conforme `tailScope` |
+| Harness tails | `--harness-tails` | `harnessTails` | `true` | injeta behavior/tools tails conforme `tailScope` |
 
-`--harness 0` é o alias legado de `--harness-tails 0`: desliga as tails, mas
-**não** desliga o main harness. Para o tubo puro, use
-`--main-harness 0 --harness-tails 0`. O serviço em produção usa `--harness 0`,
-então ele mantém o main harness ativo e as tails inertes — exatamente o desenho
-pedido.
+`--harness-tails 0` desliga as tails, mas **não** desliga o
+main harness. Para o tubo puro, use `--main-harness 0 --harness-tails 0`. O
+serviço em produção usa `--harness-tails 0`, então mantém o main harness ativo
+e as tails inertes — exatamente o desenho pedido.
 
 ## Por que existe
 
@@ -73,16 +72,16 @@ As tails deixaram de ser texto fixo no código:
   erro/retry, tool bloqueada, ACEITE).
 - String vazia desliga a peça. O código em `HarnessTails.cs` fica como fallback.
 - `tailScope: all` injeta no opencode; no gerido, `mainHarness: true` já
-  dispensa. `harnessTails: false` (ou `--harness 0`) desliga as tails nos dois
+  dispensa. `harnessTails: false` (ou `--harness-tails 0`) desliga as tails nos dois
   caminhos.
 
-`/api/harness` mostra o efetivo (exemplo com `--harness 0`):
+`/api/harness` mostra o efetivo (exemplo com `--harness-tails 0`):
 
 ```json
-{"harness":true,"tail_scope":"all","main_harness":true,"main_harness_chars":9147,"harness_tails":false,"tails_managed":false,"tails_opencode":false,"behavior_chars":833,"tools_chars":1366}
+{"tail_scope":"all","main_harness":true,"main_harness_chars":9147,"harness_tails":false,"tails_managed":false,"tails_opencode":false,"behavior_chars":833,"tools_chars":1366}
 ```
 
-O campo legado `harness` é `main_harness || tails` (efetivo); `tails_managed` e
+O efetivo é `main_harness || harness_tails`; `tails_managed` e
 `tails_opencode` mostram a decisão por caminho.
 
 ## Tamanho
@@ -100,10 +99,10 @@ O campo legado `harness` é `main_harness || tails` (efetivo); `tails_managed` e
 
 | CLI | `/api/harness` | Gerido (system) | Opencode `-build` (system) |
 |---|---|---|---|
-| `--harness 0` | main=true, tails=false | 9.213 chars: main harness + `<env>`; sem Code Mode | 23 chars: só o system do cliente; tails `attached=false` |
-| `--harness 1` | main=true, tails=true | 9.213 chars: main harness + `<env>`; tails não anexadas | 2.226 chars: cliente + behavior/tools tails; `attached=true` |
-| `--main-harness 0 --harness 1` | main=false, tails=true | 2.300 chars: cliente + tails; `tails_managed=true` | 2.226 chars: cliente + tails |
-| `--main-harness 0 --harness 0` | harness=false | 97 chars: cliente intacto (com Code Mode) | 23 chars: cliente intacto |
+| `--harness-tails 0` | main=true, tails=false | 9.213 chars: main harness + `<env>`; sem Code Mode | 23 chars: só o system do cliente; tails `attached=false` |
+| `--harness-tails 1` | main=true, tails=true | 9.213 chars: main harness + `<env>`; tails não anexadas | 2.226 chars: cliente + behavior/tools tails; `attached=true` |
+| `--main-harness 0 --harness-tails 1` | main=false, tails=true | 2.300 chars: cliente + tails; `tails_managed=true` | 2.226 chars: cliente + tails |
+| `--main-harness 0 --harness-tails 0` | main=false, tails=false | 97 chars: cliente intacto (com Code Mode) | 23 chars: cliente intacto |
 
 - O evento de diagnóstico do caminho gerido é `main-harness` com
   `chars=9147` e `tails=false`; o caminho opencode só registra `tails` com

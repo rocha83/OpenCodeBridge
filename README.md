@@ -59,17 +59,24 @@ Detalhe de contextos, units, VRAM, cenários A–E e como cortar VRAM:
 `llama-gpu2-cpu-toggle.sh`, drop-in do `llama-cpu.service` e exemplos de devpipe
 `--only E-devpipe`), veja **`LAB-SETUP.md` — Cenário E**.
 
-## Harness — argumentos e exemplos
+## Harness — main harness e caudas
 
-O harness tem **duas caudas independentes** penduradas no system:
+O harness tem **dois switches independentes**: o **main harness** (system base
+hardcoded em `Core/MainHarness.cs`) e as **duas caudas** (`HarnessBehaviorTail`
++ `HarnessToolsTail`). No caminho gerido (model sem sufixo) o main harness
+substitui o system do cliente e dispensa as tails; no caminho opencode (sufixo
+`-build`/`-plan`/...) o system do cliente continua e as tails entram como delta.
 
 ```
-system = prompt do agent + HarnessBehaviorTail (como agir) + HarnessToolsTail (como chamar a tool)
+gerido   = MainHarness + <env>/<available_skills> do cliente
+opencode = system do cliente + HarnessBehaviorTail + HarnessToolsTail
 ```
 
 | argumento | efeito (breve) | exemplo |
 |---|---|---|
 | `--passthrough-responses true` | bypass Responses nativo ao llama (caminho OpenCode) | `--passthrough-responses true` |
+| `--main-harness 0` | desliga o main harness; o system do cliente volta no caminho gerido | `--main-harness 0` |
+| `--harness-tails 0` | desliga as caudas; o main harness segue ativo | `--harness-tails 0` |
 | `--legacy-harness 0` | mantém desligado o harness antigo (guardrail/coerção/strip/retry) | `--legacy-harness 0` |
 | `--coerce-narrated 1` | resgata `[Assistant tool call]: nome({...})` copiado em ctx longo | `--coerce-narrated 1` |
 | `--coerce-text-tools 1` | coage call escrita em texto (```json / `<tool_call>`) | `--coerce-text-tools 1` |
@@ -88,9 +95,9 @@ Exemplo de `ExecStart` Gemma 4 (GPU1), com o harness que deve estar ligado:
 --anti-repeat-window 512
 ```
 
-> ⚠️ `--harness` (switch mestre) **não existe mais**: a flag é parseada por
-> compatibilidade mas é inerte. Quem manda é **ter ou não cauda configurada**
-> (`/api/harness` responde `true` quando há cauda). Não use `--harness 1`.
+> ⚠️ Use apenas `--main-harness` e `--harness-tails` (independentes). Tubo puro:
+> `--main-harness 0 --harness-tails 0`. `/api/harness` expõe `main_harness` e
+> `harness_tails`; não há campo agregado.
 
 ## Anti-repetição — argumentos e exemplos
 
@@ -165,7 +172,7 @@ and `Gemma4-E4B-UD-Q3` (**GPU2**, text-only), both fully on GPU (`-ngl 99`) and 
 using TurboQuant (`turbo3` KV, `TURBO_AUTO_ASYMMETRIC=0`) inside 12 GB of VRAM.
 GPU1 and GPU2 run `-c 131072 -np 1` (1×128k/slot).
 Keep on with Gemma: `--passthrough-responses true`, `--legacy-harness 0`,
-`--harness 0`, `--anti-repeat 1 --anti-repeat-window 512 --anti-repeat-retry 1`,
+`--harness-tails 0`, `--anti-repeat 1 --anti-repeat-window 512 --anti-repeat-retry 1`,
 `--coerce-narrated 0 --coerce-text-tools 0 --tool-strategy 0`, plus the
 behavior tail (tools tail is the code default). Legacy Qwen3/Qwen3.5
 compatibility remains available via `--qwen-standard 1` and `--legacy-harness 1`;

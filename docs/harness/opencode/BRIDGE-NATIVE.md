@@ -2,7 +2,7 @@
 
 Base: dump operacional em `docs/harness/opencode` (`system.md` 14.010 chars,
 `tools.json` com 12 tools, `req-chat.json` 28.477 chars), capturado pela sonda
-(`--diagnostic 1 --harness 0 --legacy-harness 0`) rodando
+(`--diagnostic 1 --main-harness 0 --harness-tails 0 --legacy-harness 0`) rodando
 `opencode run --standalone --auto --agent build`.
 
 ## 1. O que o opencode manda (medido)

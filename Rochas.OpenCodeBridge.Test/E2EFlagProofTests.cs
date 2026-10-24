@@ -145,7 +145,7 @@ internal static class E2EFlagProofTests
                 "--upstream", $"http://127.0.0.1:{stubPort}",
                 "--model", Model, "--thinking", "events", "--temperature", "0.5",
                 "--max-tokens", "2048", "--context-guard", "0", "--api-key", Key,
-                "--passthrough-responses", "true", "--harness", "0", "--legacy-harness", "0",
+                "--passthrough-responses", "true", "--harness-tails", "0", "--legacy-harness", "0",
                 "--anti-repeat", "0", "--anti-repeat-retry", "0", "--coerce-text-tools", "0",
                 "--coerce-narrated", "0", "--tool-strategy", "0", "--anti-repeat-window", "512",
                 "--tail-scope", "off", "--log", Log,
@@ -372,7 +372,7 @@ internal static class E2EFlagProofTests
             TestContext.Check(!sys.Contains("MODO DE USO DAS TOOLS"), "SEM --tail-scope all o system prompt nao leva a cauda de tools");
         }
 
-        using (var on = new Bridge(stub.Port, "--harness", "1", "--tail-scope", "all"))
+        using (var on = new Bridge(stub.Port, "--harness-tails", "1", "--tail-scope", "all"))
         {
             var (s, _, _) = await Chat(on.Port, ChatReq());
             string sys = stub.SystemText();

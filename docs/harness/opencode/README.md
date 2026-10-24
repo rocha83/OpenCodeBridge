@@ -17,8 +17,8 @@ simples (`opencode run --standalone --auto -m openai/gemma-4-12b-build --agent b
 ## Como reproduzir
 1. Bridge com sonda e sem harness proprio:
    `--diagnostic 1 --main-harness 0 --harness-tails 0 --legacy-harness 0`
-   (sem `--tool-blacklist`). O antigo `--harness 0` hoje desliga apenas as
-   tails; para o tubo puro use os dois switches.
+   (sem `--tool-blacklist`). Não há switch mestre nem alias: `--harness-tails 0`
+   desliga só as tails; para o tubo puro use `--main-harness 0 --harness-tails 0`.
 2. Rodar o devpipe apontando para a bridge (provider `openai`, :4124).
 3. Extrair do `/tmp/bridge-gpu.log` o evento `traffic` com `mode=translate-stream-req`
    e o maior campo `req` (é o chat com system+tools completo).

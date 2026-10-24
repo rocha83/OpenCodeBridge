@@ -239,7 +239,7 @@ O que ja esta em `main` (build 0 avisos / 0 erros nos 2 projetos):
 
 ### 7. Documentação pendente ❌
 - [ ] Atualizar README com instruções de OCR/Vision
-- [ ] Documentar flags `--prio`, `--harness`, `--diagnostic`
+- [ ] Documentar flags `--prio`, `--harness-tails`, `--diagnostic`
 - [ ] Atualizar CHANGELOG.md
 
 ---
@@ -338,3 +338,26 @@ instalar depende de rede. Alternativas se a rede voltar: `coverlet.msbuild` nos
 3. Período default: sem filtro retorna tudo ou janela de 90 dias com aviso.
 4. Export assíncrono a partir de quantas linhas.
 5. `approved_by`: normalizar para `users.id` ou manter login.
+
+### Bateria WAR v2 e frontpipe (2026-10-24)
+
+- **WAR v2** (`/tmp/opencode/run-war.sh`): 3 lanes simultâneas (Q4 `:4134` + Q3 `:4135`/`:4136`
+  nos 2 slots do llama `:4110`), fila aleatória com `WAR_SEED`, checkpoint por
+  `state/<lane>/<teste>.done` e retomada default (`--fresh` zera, `--list` inspeciona).
+  Modos: `--q4` (só Q4, pula `E-science-cpu`), `--q3` (2 sessões Q3), default `all`.
+  Evidência por step: log do teste + delta do log da bridge + `/api/metrics`/`/api/harness` +
+  `llamacpp:*` + `nvidia-smi` antes/depois; `gpu-samples.csv` contínuo; parciais em
+  `summary.tsv`/`status.json`.
+- **A/B de flags** (`E-flag-*`, stub upstream): `context-guard` (200→413
+  `context_compact_required`), `anti-repeat-retry` (1→2 chamadas e segunda geração),
+  `coerce-narrated` (tool narrada não vira call → vira `read_file` + evento `coerced`),
+  `tail-scope` (system prompt sem → com `MODO DE USO DAS TOOLS`). Pendente cobrir
+  `--coerce-text-tools`, `--tool-strategy`, `--legacy-harness`, `--thinking-format`,
+  `--stream-per-delta`, `--upstream-parser`, `--anti-repeat-abort/notice`,
+  `--context-threshold` isolado e `--passthrough-responses`.
+- **Frontpipe**: avaliação default sem webdriver, direto nos artefatos (Razor/TSX/CSS) com
+  sonda estática equivalente ao `getComputedStyle`; `--front-webdriver` reativa o Playwright.
+  Pendente: parâmetro geral para execução headed na Web UI `:4130` (hoje já aceita
+  `FRONT_WEBDRIVER_URL` e `HEADED=1`; falta o runner/CLI unificado).
+- **Execução**: bateria completa ainda não rodada nesta rodada (regra: testes só no final).
+  Build Release verde e `bash -n` OK no script.

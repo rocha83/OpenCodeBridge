@@ -92,7 +92,7 @@ e o que passou a existir no código:
 | loop de 10 tentativas no mesmo alvo com nomes mutados (anti-repeat textual não pega: cada iteração é texto novo) | `ToolLoopBreaker` (Core): lê `function_call`+resultado do próprio request, normaliza alvo (remove dígitos/separadores), 3 falhas = aviso no último resultado, 6 = curto-circuito sem chamar o modelo (`--breaker-soft/--breaker-hard`) | `Core/ToolLoopBreaker.cs` |
 | glob com alternância (`a\|b`), heredoc, `\n` literal, `cd` em nome não criado, build simulado, `sudo` em PROD, `read` em `.db` | regras novas em `HarnessTails.DefaultTools` (caminho absoluto copiado de `ls`, probe obrigatório antes do retry, glob sem `\|`, sem heredoc, sem simulação, sem `sudo`, `git init` antes do commit) | `Core/HarnessTails.cs` |
 | `\n` de 2 caracteres no comando shell → "here-document delimitado pelo fim do arquivo" | `FixLiteralEscapes`: vira quebra real quando o comando não tem nenhuma quebra; independe de `ToolStrategy` | `Program.cs` |
-| caudas inertes no caminho opencode (`--harness 0`) | `--tail-scope managed\|all\|off` (default `managed`); `all` injeta as caudas nos DOIS caminhos; `/api/harness` reporta `tails_managed`, `tails_opencode` e o efetivo | `Program.cs` + `appsettings.json` |
+| caudas inertes no caminho opencode (`--harness-tails 0`) | `--tail-scope managed\|all\|off` (default `managed`); `all` injeta as caudas nos DOIS caminhos; `/api/harness` reporta `tails_managed`, `tails_opencode` e o efetivo | `Program.cs` + `appsettings.json` |
 
 ### Configuração em produção
 `Rochas.OpenCodeBridge/appsettings.json` (versionado, copiado para o output) carrega
@@ -117,3 +117,49 @@ foi trazido para o código).
 roda Q4 e Q3 em paralelo; por modelo: unit → tools-dual → tópicos → tools-full/responses/devpipe/
 mitigação → belts → 1 pipe puro → opencode implícito (`--standalone`) → senior/enterprise/front/
 scripter/orch/arquitetura. Logs e `SUMMARY.txt` em `/tmp/opencode/battery/<stamp>/`.
+
+## 9. Bateria WAR v2 (3 sessões simultâneas, A/B de flags, retomada)
+
+Objetivo: provar cada recurso do harness **na marra** (falha sem o arg → funciona com o arg) e
+estressar a GPU com até 3 sessões simultâneas, com evidência por step.
+
+```bash
+# 3 sessões: Q4 (GPU1) + 2 slots do Q3 (GPU2)
+/tmp/opencode/run-war.sh --fresh
+# somente Q4 (uma sessão, sem lanes Q3; pula o teste explícito da ponte CPU)
+/tmp/opencode/run-war.sh --q4 --fresh
+# somente Q3 (duas sessões no llama :4110)
+/tmp/opencode/run-war.sh --q3 --fresh
+# retomar de onde parou (default) / inspecionar plano e concluídos
+/tmp/opencode/run-war.sh
+/tmp/opencode/run-war.sh --list
+```
+
+- **Lanes e bridges**: `q4` → `:4134`→llama `:4100`; `q3a` → `:4135`→`:4110`; `q3b` →
+  `:4136`→`:4110` (slots `-np 2`). Cada lane tem bridge e log próprios, então o delta de log
+  por step é limpo mesmo com as 3 rodando juntas. `WAR_CPU_BRIDGE` aponta a ponte CPU que o
+  teste deve usar (Q3 da lane ou a prod `:4125` no modo Q4).
+- **Fila aleatória reproduzível**: `WAR_SEED=42`. O plano fica em `<out>/plan.tsv`.
+- **Checkpoint**: `<out>/state/<lane>/<teste>.done`; retomar pula o que já passou (inclusive
+  após horas de GPU). `--fresh` zera. Mudar de lanes exige `--fresh`/outro `WAR_OUT`
+  (`<out>/lanes.mode` trava o modo).
+- **Evidência por step** em `<out>/steps/<lane>-<teste>.*`: log do teste, delta do log da
+  bridge (harness/sonda/breaker/coerce/tool-ask/context-guard), `/api/metrics` e
+  `/api/harness` antes/depois, `llamacpp:*` do `/metrics` antes/depois e `nvidia-smi`
+  antes/depois. Amostrador contínuo em `<out>/gpu-samples.csv`; parciais em `summary.tsv`,
+  `summary.txt` e `status.json` (atualizados a cada step).
+- **Preflight A/B (stub, sem GPU)**: `E-flag-context-guard`, `E-flag-anti-repeat`,
+  `E-flag-coerce-narrated`, `E-flag-tail-scope`. Cada um roda o cenário negativo e o positivo
+  contra um upstream stub determinístico; falha se o arg não for o responsável pela diferença.
+- **Via dupla**: `E-dual-tools` roda com `--dual` (pure + opencode); `E-standalone-*` com
+  `--standalone`.
+
+### Frontpipe sem webdriver
+
+`E-front-*` avalia a skill de criação/edição **direto nos artefatos** (Razor `.cshtml`, JS/TSX e
+CSS) por padrão: a sonda estática parseia o CSS e computa os mesmos valores do
+`getComputedStyle` (`#titulo`, `#quadro`, `rect_w/rect_h` com `box-sizing`), confere links/DOM e
+estrutura TSX (`createRoot`). O caminho de navegador fica atrás de `--front-webdriver`
+(Playwright via Web.Test `--front-measure`), com URL configurável por `FRONT_WEBDRIVER_URL` e
+`HEADED=1` para o modo visível — gancho pronto para a Web UI `:4130` quando o parâmetro headed
+geral for criado.
