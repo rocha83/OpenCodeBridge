@@ -42,10 +42,10 @@ mesmo GPU (a taxa de cada uma cai ~metade sob concorrência). A GPU1 sobe
 **antes** da GPU2.
 
 ```bash
-./run-e2e-pipeline.sh --phase 0   # health llama/bridge + VRAM
-./run-e2e-pipeline.sh --phase 1   # unit: PASS=23 FAIL=0 SKIP=3
-./run-e2e-pipeline.sh --phase 2   # E-science + E-mission-tools
-./run-e2e-pipeline.sh --phase 3   # standalone (opencode real, GPU1 + GPU2)
+./scripts/run-e2e-pipeline.sh --phase 0   # health llama/bridge + VRAM
+./scripts/run-e2e-pipeline.sh --phase 1   # unit: PASS=23 FAIL=0 SKIP=3
+./scripts/run-e2e-pipeline.sh --phase 2   # E-science + E-mission-tools
+./scripts/run-e2e-pipeline.sh --phase 3   # standalone (opencode real, GPU1 + GPU2)
 ```
 
 Aceite rápido: `/health` `ok` em `:4100`/`:4110`, `/api/status` `ok` em
@@ -55,9 +55,9 @@ read/write/edit/glob/grep/mkdir/git/`bash -n`/exec nos **dois** modelos em
 paralelo.
 
 Detalhe de contextos, units, VRAM, cenários A–E e como cortar VRAM:
-**`LAB-SETUP.md`**. Para rodar a GPU2 (E4B UD-Q3) em **CPU** com `-ngl 0` (toggle
+**`docs/LAB-SETUP.md`**. Para rodar a GPU2 (E4B UD-Q3) em **CPU** com `-ngl 0` (toggle
 `llama-gpu2-cpu-toggle.sh`, drop-in do `llama-cpu.service` e exemplos de devpipe
-`--only E-devpipe`), veja **`LAB-SETUP.md` — Cenário E**.
+`--only E-devpipe`), veja **`docs/LAB-SETUP.md` — Cenário E**.
 
 ## Harness — main harness e caudas
 
@@ -155,14 +155,19 @@ edit) — prosa que só *menciona* uma tool não vira chamada.
 
 ## Docs
 
-- `LAB-SETUP.md` — infra: OpenCode (providers/ids/contextos/agents), units
+A raiz guarda só o essencial (`README.md`, `AGENTS.md`, `HISTORY.md`, solução).
+Documentação em **`docs/`** e automação em **`scripts/`** (índices em
+`docs/README.md` e `scripts/README.md`).
+
+- `docs/LAB-SETUP.md` — infra: OpenCode (providers/ids/contextos/agents), units
   llama, TurboQuant, VRAM, cenários A–E, referência completa dos argumentos e
   `appsettings.json`.
 - `AGENTS.md` — regras do operador.
-- `AGENTS-PROMPTS.md` — system prompts versionados (fonte dos agentes).
+- `docs/AGENTS-PROMPTS.md` — system prompts versionados (fonte dos agentes).
 - `HISTORY.md` — histórico de construção e medições.
-- `RUNBOOK-E2E.md` — pipeline por fases e estado do ambiente.
-- `PENDENCIAS.md` / `PENDINGS.md` — o que ainda não foi feito.
+- `docs/RUNBOOK-E2E.md` — pipeline por fases e estado do ambiente.
+- `docs/BENCHTESTS.md` — baterias (`run-battery-dual.sh`, WAR, frontpipe).
+- `docs/PENDENCIAS.md` / `docs/PENDINGS.md` — o que ainda não foi feito.
 
 ## English (short)
 

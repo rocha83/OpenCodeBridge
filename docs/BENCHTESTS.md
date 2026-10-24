@@ -113,7 +113,7 @@ foi trazido para o código).
   `U-translate-profile-temp-wins`, `U-translate-breaker-verdicts`.
 
 ### Bateria
-`./run-battery-dual.sh` (background: `nohup ./run-battery-dual.sh > /tmp/opencode/battery.out 2>&1 &`)
+`./scripts/run-battery-dual.sh` (background: `nohup ./scripts/run-battery-dual.sh > /tmp/opencode/battery.out 2>&1 &`)
 roda Q4 e Q3 em paralelo; por modelo: unit → tools-dual → tópicos → tools-full/responses/devpipe/
 mitigação → belts → 1 pipe puro → opencode implícito (`--standalone`) → senior/enterprise/front/
 scripter/orch/arquitetura. Logs e `SUMMARY.txt` em `/tmp/opencode/battery/<stamp>/`.
@@ -125,14 +125,14 @@ estressar a GPU com até 3 sessões simultâneas, com evidência por step.
 
 ```bash
 # 3 sessões: Q4 (GPU1) + 2 slots do Q3 (GPU2)
-/tmp/opencode/run-war.sh --fresh
+./scripts/war/run-war.sh --fresh
 # somente Q4 (uma sessão, sem lanes Q3; pula o teste explícito da ponte CPU)
-/tmp/opencode/run-war.sh --q4 --fresh
+./scripts/war/run-war.sh --q4 --fresh
 # somente Q3 (duas sessões no llama :4110)
-/tmp/opencode/run-war.sh --q3 --fresh
+./scripts/war/run-war.sh --q3 --fresh
 # retomar de onde parou (default) / inspecionar plano e concluídos
-/tmp/opencode/run-war.sh
-/tmp/opencode/run-war.sh --list
+./scripts/war/run-war.sh
+./scripts/war/run-war.sh --list
 ```
 
 - **Lanes e bridges**: `q4` → `:4134`→llama `:4100`; `q3a` → `:4135`→`:4110`; `q3b` →

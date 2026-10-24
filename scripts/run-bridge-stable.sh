@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+ROOT="${ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 TAIL_FILE="$ROOT/docs/harness/opencode/summary-tail.txt"
 TAIL="$(cat "$TAIL_FILE")"
 exec dotnet run --project "$ROOT/Rochas.OpenCodeBridge" -- \

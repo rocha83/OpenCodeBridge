@@ -346,10 +346,10 @@ mesmo GPU (a taxa de cada uma cai sob concorrência). Alvo de VRAM no
 boot: ~10,9 GiB usados; margem de segurança ~0,85 GiB para CUDA graphs/decodes.
 
 ```bash
-./run-e2e-pipeline.sh --phase 0          # health llama/bridge + VRAM
-./run-e2e-pipeline.sh --phase 1          # unit: PASS=23 FAIL=0 SKIP=3
-./run-e2e-pipeline.sh --phase 2          # E-science + E-mission-tools
-./run-e2e-pipeline.sh --phase 3          # standalone (opencode real, GPU1+GPU2)
+./scripts/run-e2e-pipeline.sh --phase 0          # health llama/bridge + VRAM
+./scripts/run-e2e-pipeline.sh --phase 1          # unit: PASS=23 FAIL=0 SKIP=3
+./scripts/run-e2e-pipeline.sh --phase 2          # E-science + E-mission-tools
+./scripts/run-e2e-pipeline.sh --phase 3          # standalone (opencode real, GPU1+GPU2)
 ```
 
 `E-tools-full` cobre read/write/edit/glob/grep/mkdir/git/`bash -n`/exec nos
@@ -662,7 +662,7 @@ dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --units-only
 dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --ui --belts azul --phase batch
 
 # pipeline sequencial (fase 0 health/VRAM → 1 unit → 2 E2E → 3 standalone)
-./run-e2e-pipeline.sh --phase all
+./scripts/run-e2e-pipeline.sh --phase all
 ```
 
 Flags da suíte: `--bridge`, `--vllm`, `--api-key`, `--jwt`, `--only <teste>`,
@@ -685,10 +685,10 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 
 ## 7. Docs
 
-- `README.md` — resumo expresso (componente, cenário de teste, harness).
-- `AGENTS.md` — regras do operador.
+- `../README.md` — resumo expresso (componente, cenário de teste, harness).
+- `../AGENTS.md` — regras do operador.
 - `AGENTS-PROMPTS.md` — system prompts versionados (fonte dos agentes).
-- `HISTORY.md` — histórico de construção e medições.
+- `../HISTORY.md` — histórico de construção e medições.
 - `RUNBOOK-E2E.md` — pipeline por fases e estado do ambiente.
 - `PENDENCIAS.md` / `PENDINGS.md` — o que ainda não foi feito.
 

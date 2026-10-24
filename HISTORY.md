@@ -1,5 +1,52 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Árvore reorganizada (`docs/` + `scripts/`) e arena WAR recuperada (2026-10-24, sessão 17)
+
+**Contexto:** retomada após queda de energia. `git pull --ff-only` trouxe 9 commits
+(`f14b0d9`). As "modificações locais" em `HISTORY/LAB-SETUP/PENDENCIAS-CHROOT-CUBIC/
+04-rede/09-dialogos/AgentSeeder.cs` eram só **CRLF** (repo é LF): normalizadas com
+`sed -i 's/\r$//'` e `git add` (índice estava com stat sujo). `.lab-backup/` entrou no
+`.gitignore`.
+
+**Reorganização (raiz estava poluída):**
+
+| antes | agora |
+|---|---|
+| 12 `.md` na raiz | `docs/` (+ `docs/README.md` como índice) |
+| 10 `.sh` na raiz | `scripts/` (+ `scripts/README.md` como índice) |
+| raiz | só `README.md`, `AGENTS.md`, `HISTORY.md`, solução e pastas de projeto |
+
+- Todo script deriva `REPO` de `$(dirname $0)/..` com override por env (`REPO=`,
+  `WAR_ROOT=`, `LEVEL_ROOT=`), então funciona em qualquer clone
+  (`/media/mint/78AA...`, `/media/mint/3686...`, `/usr/src/opencodebridge`).
+- Corrigidos paths **quebrados**: `deploy-web.sh` e `gate.sh` apontavam para
+  `/media/mint/3686C649614854E6/...` (caminho inexistente, faltava um dígito).
+- `run-opencode-standalone.sh` tinha modelos legados (`gemma-4-12b`/`gemma-4-e2b`);
+  agora `openai/Gemma4-E4B-Q4-build` e `llama/Gemma4-E4B-UD-Q3-exec`.
+- Docs e README atualizados para os novos caminhos (`./scripts/run-*.sh`,
+  `docs/LAB-SETUP.md`).
+
+**Recuperação da arena (tmpfs zerado pela queda):** `/tmp/opencode` perdeu
+`run-war.sh` e `run-levels.sh` (nunca versionados). Ambos foram reconstruídos a
+partir do JSON da sessão 14 (o `write` original + os 12/1 `edit`s aplicados em
+ordem; `bash -n` OK) e agora vivem em `scripts/war/`.
+
+- `run-war.sh` (WAR v2, 3 lanes Q4/Q3): `--harness 0` → `--main-harness 0
+  --harness-tails 0` (o alias `--harness` foi removido em `ad61f4f`; o script
+  antigo não subiria a lane). Novos envs: `WAR_BRIDGE_ARGS` (delta de flags por
+  experimento, ex. `--anti-repeat 0`) e `WAR_TAIL_SCOPE`.
+- `run-levels.sh` (Level 1 = units + devpipe + belts azul/verde em `--mode pure` e
+  `--mode opencode` + Web.Test integração/tópicos): `LEVEL_ROOT`/`LEVEL_BRIDGE`/
+  `LEVEL_BLOG` para apontar lane e log.
+
+**Verificação:** `dotnet build -c Release Rochas.OpenCodeBridge.slnx` → 0 avisos,
+0 erros; `bash -n` verde nos 12 scripts.
+
+**Estado do ambiente na retomada:** llama `:4100` (Q4 GPU, `--repeat-penalty 1.1`,
+`--dry-multiplier 0.8 --dry-penalty-last-n 1024`), `:4110` (Q3) e `:4120` (Q4 CPU)
+de pé; **bridges `:4124`/`:4125` e web `:4130` caíram** com a energia.
+
+
 ## Alias `harness` e nome `primordial` removidos; só `main-harness` e `harness-tails` (2026-10-24, sessão 7)
 
 **Decisão:** o harness fica com **dois switches independentes** — `--main-harness`

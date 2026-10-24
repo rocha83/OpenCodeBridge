@@ -8,7 +8,7 @@
 > não-editável = o do Build) replicam estes textos.
 
 > **Legado:** Qwen3/Qwen3.5 não são a linha atual; a compatibilidade está
-> documentada no `README.md` e no `LAB-SETUP.md`. Os prompts abaixo são da linha Gemma 4.
+> documentada no `../README.md` e no `LAB-SETUP.md`. Os prompts abaixo são da linha Gemma 4.
 
 ## Canônicos — opencode Plan/Build/Orch/MoE/Scripter (bridge C# como provider, sem Atomic), fonte `AgentSeeder.cs`
 

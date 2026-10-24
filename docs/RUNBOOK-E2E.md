@@ -1,15 +1,15 @@
 # RUNBOOK — Pipeline E2E sequencial (por fase)
 
-Script: `run-e2e-pipeline.sh` (raiz do repo OpenCodeBridge).
+Script: `scripts/run-e2e-pipeline.sh` (na raiz do repo).
 
 ## Uso
 
 ```bash
-./run-e2e-pipeline.sh --phase 0   # health llama + bridge + VRAM
-./run-e2e-pipeline.sh --phase 1   # unit tests (skip e2e)
-./run-e2e-pipeline.sh --phase 2   # bridge pure E2E (science + mission)
-./run-e2e-pipeline.sh --phase 3   # standalone bridge calls (link opencode)
-./run-e2e-pipeline.sh --phase all # tudo, em ordem
+./scripts/run-e2e-pipeline.sh --phase 0   # health llama + bridge + VRAM
+./scripts/run-e2e-pipeline.sh --phase 1   # unit tests (skip e2e)
+./scripts/run-e2e-pipeline.sh --phase 2   # bridge pure E2E (science + mission)
+./scripts/run-e2e-pipeline.sh --phase 3   # standalone bridge calls (link opencode)
+./scripts/run-e2e-pipeline.sh --phase all # tudo, em ordem
 ```
 
 Log: `/tmp/opencode/pipeline.log` (tee).
@@ -64,7 +64,7 @@ dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
 
 ## Métricas (tok/s) — bench limpo 2026-10-19 (GPU/CPU ociosos)
 
-`./bench-tok-s.sh 3 256` (prompt de contagem, `n_predict=256`, `ignore_eos=true`):
+`./scripts/bench-tok-s.sh 3 256` (prompt de contagem, `n_predict=256`, `ignore_eos=true`):
 
 | modelo | onde | geração (média / mediana) | prompt eval |
 |---|---|---|---|
@@ -83,7 +83,7 @@ Obs.: medições E2B mais baixas (21–28 tok/s) vistas antes eram contenção d
   ```bash
   sudo dotnet build Rochas.OpenCodeBridge.Test/Rochas.OpenCodeBridge.Test.csproj -c Release   # bridges paradas
   sudo systemctl start bridge-gpu bridge-cpu bridge-web
-  sudo REPO=/usr/src/opencodebridge bash run-e2e-pipeline.sh --phase all --no-build
+  sudo REPO=/usr/src/opencodebridge bash scripts/run-e2e-pipeline.sh --phase all --no-build
   ```
 - O `harnessToolsTail` é **fonte única no código** (`Program.cs`); não definir nos appsettings.
 - Sob `sudo`, o `HOME` vira `/root` e o `opencode` perde o config de modelos/agents

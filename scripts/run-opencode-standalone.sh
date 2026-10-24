@@ -5,8 +5,8 @@ set -uo pipefail
 
 TASK="${1:-all}"; [[ "$TASK" == "--task" ]] && TASK="${2:-all}"
 AGENT="${3:-build}"; [[ "${3:-}" == "--agent" ]] && AGENT="${4:-build}"
-MODEL="openai/gemma-4-12b-build"
-[[ "$AGENT" == "exec" ]] && MODEL="llama/gemma-4-e2b-exec"
+MODEL="openai/Gemma4-E4B-Q4-build"
+[[ "$AGENT" == "exec" ]] && MODEL="llama/Gemma4-E4B-UD-Q3-exec"
 
 LOG=/tmp/opencode/standalone.log
 mkdir -p /tmp/opencode/standalone

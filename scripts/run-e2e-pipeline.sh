@@ -8,7 +8,7 @@ if [[ "$PHASE" == "--phase" ]]; then PHASE="${2:-all}"; fi
 NOBUILD=0
 for a in "$@"; do [[ "$a" == "--no-build" ]] && NOBUILD=1; done
 
-REPO="${REPO:-/media/mint/3686C649614854E61/Projetos/Git/OpenCodeBridge}"
+REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 # Sob sudo, o HOME vira /root: o opencode perde o config de modelos/agents.
 # Aponta o XDG_CONFIG_HOME para o home do usuario invocador.
 CFG_USER="${SUDO_USER:-$(id -un)}"

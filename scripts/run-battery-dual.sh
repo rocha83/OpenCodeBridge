@@ -21,7 +21,7 @@
 # =============================================================================
 set -uo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 OUT="/tmp/opencode/battery/$(date +%Y%m%d-%H%M%S)"
 API_KEY="guest@123"
 mkdir -p "$OUT"

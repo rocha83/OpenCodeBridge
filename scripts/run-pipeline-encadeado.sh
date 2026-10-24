@@ -3,7 +3,7 @@
 # Reporta tempo e status a cada fase. Log persistente.
 set -uo pipefail
 
-REPO="/media/mint/3686C649614854E61/Projetos/Git/OpenCodeBridge"
+REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 LOG="$REPO/test-logs/pipeline-encadeado.log"
 mkdir -p "$REPO/test-logs"
 exec > >(tee -a "$LOG") 2>&1

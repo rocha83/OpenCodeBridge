@@ -2,7 +2,7 @@
 # Pipeline com GPU1 (12B) e GPU2 (E2B) rodando em paralelo (forca total na GPU).
 set -uo pipefail
 
-REPO="/media/mint/3686C649614854E61/Projetos/Git/OpenCodeBridge"
+REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 LOG="$REPO/test-logs/pipeline-paralelo.log"
 mkdir -p "$REPO/test-logs"
 exec > >(tee -a "$LOG") 2>&1

@@ -20,7 +20,7 @@ VRAM: ~11.25 GiB / 12 GiB (`.used` 11.5 GiB). Sem `auto-asymmetric`.
 
 ## 3. Métricas de velocidade (tok/s)
 
-Bench controlado `./bench-tok-s.sh 3 256` (prompt de contagem, `n_predict=256`,
+Bench controlado `./scripts/bench-tok-s.sh 3 256` (prompt de contagem, `n_predict=256`,
 `ignore_eos=true`, GPU/CPU ociosos):
 
 | modelo | onde | geração (média / mediana) | faixa (min–max) | prompt eval |
@@ -79,13 +79,13 @@ limpo o E2B faz ~56 tok/s (é um 2B Q3).
 
 ```bash
 # bench
-./bench-tok-s.sh 3 256
+./scripts/bench-tok-s.sh 3 256
 # fases
-./run-e2e-pipeline.sh --phase 1
-./run-e2e-pipeline.sh --phase 2
-./run-e2e-pipeline.sh --phase 3
+./scripts/run-e2e-pipeline.sh --phase 1
+./scripts/run-e2e-pipeline.sh --phase 2
+./scripts/run-e2e-pipeline.sh --phase 3
 # standalone avulso
-./run-opencode-standalone.sh --task all
+./scripts/run-opencode-standalone.sh --task all
 ```
 
 ## 8. Pendências honestas

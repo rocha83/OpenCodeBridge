@@ -341,7 +341,7 @@ instalar depende de rede. Alternativas se a rede voltar: `coverlet.msbuild` nos
 
 ### Bateria WAR v2 e frontpipe (2026-10-24)
 
-- **WAR v2** (`/tmp/opencode/run-war.sh`): 3 lanes simultâneas (Q4 `:4134` + Q3 `:4135`/`:4136`
+- **WAR v2** (`scripts/war/run-war.sh`): 3 lanes simultâneas (Q4 `:4134` + Q3 `:4135`/`:4136`
   nos 2 slots do llama `:4110`), fila aleatória com `WAR_SEED`, checkpoint por
   `state/<lane>/<teste>.done` e retomada default (`--fresh` zera, `--list` inspeciona).
   Modos: `--q4` (só Q4, pula `E-science-cpu`), `--q3` (2 sessões Q3), default `all`.
