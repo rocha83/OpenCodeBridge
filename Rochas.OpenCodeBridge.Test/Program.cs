@@ -92,6 +92,7 @@ internal static class Program
         TestContext.Run("U-main-harness-compact", UnitMainHarnessTests.IsCompact);
         TestContext.Run("U-main-harness-managed", UnitMainHarnessTests.ReplacesManagedSystem);
         TestContext.Run("U-main-harness-profile", UnitMainHarnessTests.KeepsProfileSystem);
+        TestContext.Run("U-main-harness-opencode-master", UnitMainHarnessTests.KeepsOpencodeMasterWithoutProfile);
         TestContext.Run("U-main-harness-dynamic", UnitMainHarnessTests.PreservesDynamicBlocks);
         TestContext.Run("U-main-harness-master", UnitMainHarnessTests.DropsMasterButKeepsEnv);
         TestContext.Run("U-toolargs-valid", UnitToolStrategyTests.SanitizeKeepsValidJson);

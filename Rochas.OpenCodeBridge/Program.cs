@@ -1185,6 +1185,8 @@ internal static partial class Program
                 {
                     ["tail_scope"] = TailScope,
                     ["main_harness"] = MainHarnessOn,
+                    ["main_harness_scope"] = "managed-only",
+                    ["main_harness_opencode"] = false,
                     ["main_harness_chars"] = MainHarness.Text.Length,
                     ["harness_tails"] = TailsEnabled,
                     ["tails_managed"] = TailsOn("") && !MainHarnessOn,
@@ -1393,7 +1395,7 @@ WriteJson(ctx, 200, new JsonObject
         ["upstream"] = Upstream, ["model"] = Model, ["thinking"] = Thinking,
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
 ["profile_temp_wins"] = ProfileTempWins, ["tail_scope"] = TailScope,
-["main_harness"] = MainHarnessOn, ["harness_tails"] = TailsEnabled, ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
+["main_harness"] = MainHarnessOn, ["main_harness_scope"] = "managed-only", ["main_harness_opencode"] = false, ["harness_tails"] = TailsEnabled, ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
         ["passthrough_responses"] = PassthroughResponses,
         ["tool_strategy"] = ToolStrategy,
@@ -4554,6 +4556,9 @@ if (type == "message")
         if (messages.Count > 0 && messages[0] is JsonObject first
             && first["role"]?.GetValue<string>() == "system")
             clientSystem = first["content"]?.GetValue<string>();
+        // opencode manda o master dele (Code Mode/AGENTS.md) e nao quer o
+        // nosso no lugar, mesmo quando usa o model base sem sufixo de role.
+        if (LooksLikeOpencodeMaster(clientSystem)) return false;
 
         string text = BuildMainHarnessSystem(clientSystem);
         if (messages.Count > 0 && messages[0] is JsonObject sys
@@ -4562,6 +4567,19 @@ if (type == "message")
         else
             messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = text });
         return true;
+    }
+
+    /// <summary>System do opencode (master Code Mode/AGENTS.md) nao e substituido.</summary>
+    /// <param name="clientSystem">System enviado pelo cliente.</param>
+    /// <returns>True quando o cliente ja traz o harness proprio do opencode.</returns>
+    internal static bool LooksLikeOpencodeMaster(string? clientSystem)
+    {
+        if (string.IsNullOrWhiteSpace(clientSystem)) return false;
+        string t = clientSystem.Trim();
+        return t.Length > 6000
+            || t.Contains("# Code Mode", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("Instructions from:", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("You are opencode", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -4583,8 +4601,7 @@ if (type == "message")
         // main harness ja substitui; um system pequeno pode ser instrucao
         // especifica do agente e vale preservar.
         string trimmed = clientSystem?.Trim() ?? "";
-        bool isMaster = trimmed.Length > 6000
-            || trimmed.Contains("# Code Mode", StringComparison.OrdinalIgnoreCase);
+        bool isMaster = LooksLikeOpencodeMaster(trimmed);
         if (!isMaster && trimmed.Length > 0)
             sb.Append("\n\nINSTRUCOES DO CLIENTE\n").Append(trimmed);
         return sb.ToString();

@@ -57,12 +57,14 @@ internal static class UnitMainHarnessTests
         var messages = new JsonArray(new JsonObject
         {
             ["role"] = "system",
-            ["content"] = "# Code Mode\nUse the execute tool."
+            ["content"] = "Voce e um backend senior. Respostas curtas."
         });
         bool applied = global::Rochas.OpenCodeBridge.Program.ApplyMainHarness(messages, hasProfile: false, enabled: true);
         TestContext.Check(applied, "aplica no caminho gerido");
         string? content = messages[0]?["content"]?.GetValue<string>();
-        TestContext.Check(content == global::Rochas.OpenCodeBridge.Core.MainHarness.Text, "system substituido pelo main harness");
+        TestContext.Check(content?.StartsWith(global::Rochas.OpenCodeBridge.Core.MainHarness.Text) == true,
+            "system substituido pelo main harness");
+        TestContext.Check(content?.Contains("INSTRUCOES DO CLIENTE") == true, "preserva instrucoes pequenas");
         return Task.CompletedTask;
     }
 
@@ -72,6 +74,20 @@ internal static class UnitMainHarnessTests
         bool applied = global::Rochas.OpenCodeBridge.Program.ApplyMainHarness(messages, hasProfile: true, enabled: true);
         TestContext.Check(!applied, "nao aplica no opencode");
         TestContext.Check(messages[0]?["content"]?.GetValue<string>() == "cliente", "system do opencode intacto");
+        return Task.CompletedTask;
+    }
+
+    public static Task KeepsOpencodeMasterWithoutProfile()
+    {
+        var messages = new JsonArray(new JsonObject
+        {
+            ["role"] = "system",
+            ["content"] = "# Code Mode\nUse the execute tool."
+        });
+        bool applied = global::Rochas.OpenCodeBridge.Program.ApplyMainHarness(messages, hasProfile: false, enabled: true);
+        TestContext.Check(!applied, "nao aplica no master opencode sem sufixo");
+        TestContext.Check(messages[0]?["content"]?.GetValue<string>()?.Contains("# Code Mode") == true,
+            "system do opencode intacto");
         return Task.CompletedTask;
     }
 
