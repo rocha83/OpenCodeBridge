@@ -1106,6 +1106,21 @@ O sufixo de role no **nome do modelo** é o que a bridge usa para aplicar o perf
 (temp/thinking/coerção): `Gemma4-E4B-Q4-build` ≠ `Gemma4-E4B-Q4`. Sem sufixo, roda o
 perfil base.
 
+## 14. Persistência dos artefatos de teste (sda3, `logs/`)
+
+Regra: execução no live grava log/artefato em **disco não volátil** — `logs/levels/`, na
+`/dev/sda3` (montada em `/media/mint/78AA0831AA07EB08`, 160 GB), sob
+`/Projetos/Git/OpenCodeBridge/logs`. `/tmp` não é destino final de execução de teste.
+
+- Default do runner: `OUT="${LEVEL_OUT:-$ROOT/logs/levels}/L<level>-<stamp>"`
+  (`LEVEL_OUT` sobrepõe; `LEVEL_STAMP` nomeia).
+- Conteúdo por run: `summary.tsv`, `summary.txt`, `steps/*.test.log`,
+  `steps/*.bridge.log` (delta do log da bridge), `state/*.done`.
+- `logs/` está no `.gitignore`: é artefato de execução, não fonte.
+- Bridge de bancada: `--log` também sob `logs/` (ex.: `logs/bridge-q4-level1.log`).
+- Retenção: o disco tem ~20 GB livres — limpar runs antigas com
+  `ls -1dt logs/levels/L* | tail -n +11 | xargs rm -rf` (mantém as 10 últimas).
+
 ### Flags efetivas dos serviços (retrato desta release)
 
 | serviço | flags-chave |

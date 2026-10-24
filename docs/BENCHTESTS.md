@@ -184,13 +184,13 @@ dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4100 \
   --context-guard 1 --context-tokens 131072 --api-key guest@123 \
   --passthrough-responses true --main-harness 0 --harness-tails 0 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
-  --log /tmp/bridge-q4-level1.log &
+  --log logs/bridge-q4-level1.log &
 
-LEVEL_BRIDGE=http://127.0.0.1:$PORT LEVEL_BLOG=/tmp/bridge-q4-level1.log \
+LEVEL_BRIDGE=http://127.0.0.1:$PORT LEVEL_BLOG=logs/bridge-q4-level1.log \
   ./scripts/war/run-levels.sh --level 1
 ```
 
-Artefatos: `/tmp/opencode/levels/L1-<stamp>/{summary.tsv,steps/,state/}`; retomada pelo
+Artefatos: `logs/levels/L1-<stamp>/{summary.tsv,steps/,state/}` (disco da sda3); retomada pelo
 `STATE` do mesmo stamp (`LEVEL_STAMP=<stamp>`). Sem ordem fixa de faixas: `--belts azul,verde`
 filtra.
 
@@ -207,10 +207,10 @@ dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4110 \
   --context-guard 1 --context-tokens 65536 --api-key guest@123 \
   --passthrough-responses true --main-harness 0 --harness-tails 0 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
-  --log /tmp/bridge-q3-level1.log &
+  --log logs/bridge-q3-level1.log &
 
 LEVEL_BRIDGE=http://127.0.0.1:$PORT LEVEL_UPSTREAM=http://127.0.0.1:4110 \
-LEVEL_BLOG=/tmp/bridge-q3-level1.log ./scripts/war/run-levels.sh --level 1
+LEVEL_BLOG=logs/bridge-q3-level1.log ./scripts/war/run-levels.sh --level 1
 ```
 
 Duas variáveis mandam na raia: **`LEVEL_UPSTREAM`** vira `WAR_UPSTREAM` (o assert
@@ -246,7 +246,7 @@ dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4100 \
   --context-guard 1 --context-tokens 131072 --api-key guest@123 \
   --passthrough-responses true --main-harness 1 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
-  --log /tmp/bridge-q4-harness.log &
+  --log logs/bridge-q4-harness.log &
 ```
 
 ## 11. Auto-gestão da bateria (supervisor orch)

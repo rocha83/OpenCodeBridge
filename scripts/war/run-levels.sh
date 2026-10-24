@@ -28,7 +28,8 @@ while [ $# -gt 0 ]; do
 done
 
 STAMP="${LEVEL_STAMP:-$(date +%Y%m%d-%H%M%S)}"
-OUT="/tmp/opencode/levels/L$LEVEL-$STAMP"
+# Artefatos em disco NAO volatil (sda3): logs/levels do repo (override por LEVEL_OUT).
+OUT="${LEVEL_OUT:-$ROOT/logs/levels}/L$LEVEL-$STAMP"
 STEPS="$OUT/steps"; STATE="$OUT/state"
 mkdir -p "$STEPS" "$STATE"
 API="${LEVEL_API_KEY:-guest@123}"; BRIDGE="${LEVEL_BRIDGE:-http://127.0.0.1:4124}"
