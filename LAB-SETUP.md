@@ -106,8 +106,8 @@ Pontos que **quebram** a linha se ficarem errados:
 - `limit.output` espelha o `--max-tokens` da bridge: **16384** (GPU1 e GPU2).
   Sem isso o cliente entrega prompts de saída maiores do que o
   llama serve e o `Decode error (200 POST /v1/responses)` reaparece.
-- `limit.context` é **por requisição/slot**, não a soma dos slots. As duas rodam
-  `-np 1`: **GPU1 = 131072 (1×128k)** e **GPU2 = 131072 (1×128k)**.
+- `limit.context` é **por requisição/slot**, não a soma dos slots. **GPU1** roda
+  `-np 1`: **131072 (1×128k)**; **GPU2** roda `-np 2`: **131072 (2×64k, 65536 por slot)**.
 - A bridge `:4126` (`bridge-cpu-forced.service` / `llama-cpu-forced.service`,
   `-ngl 0`) é o caminho CPU puro e **não** entra no par 16k: continua com
   `--max-tokens 8192` e `-c 131072`.
@@ -173,8 +173,8 @@ genérico `llama/Gemma4-E4B-UD-Q3` cai no `--thinking events` da unit e abre rea
 |---|---|---|
 | `-m` | `/opt/models/gemma4-e4b-base/…` (GPU1) / `/opt/models/huihui-gemma4-e4b-abliterated/…` (GPU2) | GGUF do modelo |
 | `--mmproj` | `mmproj-gemma-4-E4B-it-Q8_0.gguf` | projetor de visão — **só na GPU1 (E4B base)**; o GPU2 é text-only |
-| `-c` | 131072 (GPU1, 1×128k) / 131072 (GPU2, 1×128k) | contexto **total** do servidor |
-| `-np` | 1 (GPU1) / 1 (GPU2) | slot único; o ctx do `-c` é o ctx do slot |
+| `-c` | 131072 (GPU1, 1×128k) / 131072 (GPU2, 2×64k) | contexto **total** do servidor |
+| `-np` | 1 (GPU1) / 2 (GPU2) | GPU1 slot único; GPU2 dois slots de 65536 |
 | `-ngl 99` | 99 | **100% GPU** (sem offload para CPU) |
 | `-fa on` | on | Flash Attention |
 | `--no-host` | — | sem buffer host; pesos e KV ficam na VRAM (GPU1/GPU2) |
@@ -189,6 +189,11 @@ genérico `llama/Gemma4-E4B-UD-Q3` cai no `--thinking events` da unit e abre rea
 | `-t` / `-tb` | 4 (GPU2) | threads — **inertes** em GPU full, usadas no teste CPU (`-ngl 0`) |
 | `--alias` | `Gemma4-E4B-Q4` / `Gemma4-E4B-UD-Q3` | id servido (bate com `--model` da bridge) |
 | `--api-key` | `guest@123` | auth do upstream (bridge repassa em Bearer) |
+
+> **Form do ícone (`ask_llama_config`).** `-c` e `-np` não são mais fixos no script: a
+> janela pede Porta, Usuário, Senha, **Ctx** e **Slots** (labels curtos para telas
+> baixas). Defaults: GPU1 `131072/1`, GPU2 `131072/2` (2×64k), CPU `131072/1`;
+> `--defaults` mantém esses valores e o subtítulo mostra o `ctx/slots` por slot.
 
 > **CPU puro (`:4120`, `llama-cpu-forced.service`).** Mantém `-ngl 0`, `-t 4 -tb 4`,
 > `-c 131072 -np 1` e **não** usa `--no-host`/`--load-mode none`/`--op-offload`
@@ -931,9 +936,9 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
 
 | conta | uid | shell | acesso | workspace | porta |
 |---|---|---|---|---|---|
-| `moe-agent` | 1001 | `/usr/sbin/nologin` | só Web (chat-only) | `/home/moe-agent/workspace` | `:4220` (Caddy `4152`) |
-| `dev-agent` | 1002 | `/bin/bash` | TUI via SSH:22 + Web | `/home/dev-agent/workspace` | `:4210` (Caddy `4153`) |
-| `mint` | 1000 | `/bin/bash` | TUI/Web completo | livre | `:4200` (Caddy `4147`) |
+| `moe-agent` | 1001 | `/usr/sbin/nologin` | só Web (chat-only) | `/home/moe-agent/workspace` | `:4220` (Caddy `4250`) |
+| `dev-agent` | 1002 | `/bin/bash` | TUI via SSH:22 + Web | `/home/dev-agent/workspace` | `:4210` (Caddy `4240`) |
+| `mint` | 1000 | `/bin/bash` | TUI/Web completo | livre | `:4200` (Caddy `4230`) |
 
 - Nenhuma tem sudo/docker; homes `750`; `hidden-users` no LightDM.
 - Sandbox: `bwrap` via `/usr/local/bin/ocagent-sandbox.sh` (home tmpfs + bind do próprio home;
@@ -944,3 +949,20 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
   Build/Plan/MoE/Scripter; `moe-agent` vê só `Gemma4-E4B-UD-Q3-moe` (papel MoE, chat-only).
 - Bridges continuam em `0.0.0.0` com ApiKey (consumo direto sem UI); o Caddy publica só as
   portas do OpenCode Web, com basicauth por conta.
+
+## 0.2 Atualização do chroot (2026-10-23) — GPU2 2×64k e smoke CPU
+
+- A linha **GPU2** usa `llama-gpu2` com `-c 131072 -np 2` = **2×64k**; a bridge
+  `bridge-gpu2` usa `SVC_CTX=65536` / `--context-tokens 65536` e o `opencode.json`
+  (`llama`) usa `limit.context: 65536`. Menções históricas a "GPU2 1×128k"
+  (cenários das seções 2.x/9.x) descrevem a configuração anterior.
+- Portas públicas do Caddy por conta: `4230` (mint), `4240` (dev-agent), `4250`
+  (moe-agent); `4147/4152/4153` fechadas.
+- Chroot aplicado: contas 1001/1002, homes `750`, `service.json` 49376/49377,
+  LightDM hidden, units `disabled` (sem symlink). `AgentSeeder` → 10 agentes,
+  10/10 com cláusula, 0 `(CPU Forced)`. Build Release 0/0.
+- Smoke CPU no chroot: `:4120` (llama `-ngl 0`, n_ctx 131072) e `:4126`
+  (bridge) responderam `ok`; GPU indisponível no ambiente. `bwrap` não monta
+  `/proc` no chroot quando cria user+PID namespace (`mount -t proc` retorna
+  `EPERM` no runtime externo) — validar no host live; não é falta de `CAP_SYS_ADMIN`
+  no processo do agente.

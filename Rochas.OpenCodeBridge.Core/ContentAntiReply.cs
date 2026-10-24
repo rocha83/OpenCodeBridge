@@ -1,0 +1,158 @@
+using System.Text;
+
+namespace Rochas.OpenCodeBridge.Core;
+
+/// <summary>
+/// Classe-mae do escopo de CONTEUDO: decide se o texto gerado entrou em repeticao
+/// invalida. Os helpers ficam no nivel abaixo, um por superficie observada:
+/// <see cref="AntiRepeatReply"/> (algoritmo de cauda) e as especializacoes
+/// <see cref="StreamAntiRepeatReply"/> (deltas do stream) e
+/// <see cref="ToolArgsAntiRepeatReply"/> (argumentos de tool).
+/// </summary>
+/// <remarks>
+/// A separacao e por RESPONSABILIDADE, nao por ponto de chamada: texto repetido
+/// passa por este escopo; ciclo de tool passa por <see cref="ToolsAntiReply"/>.
+/// </remarks>
+public abstract class ContentAntiReply
+{
+    /// <summary>Onde este detector atua (vai para log/sonda).</summary>
+    public abstract string Scope { get; }
+
+    /// <summary>O texto acumulado entrou em repeticao?</summary>
+    /// <param name="text">Texto acumulado ate aqui.</param>
+    /// <returns>True = repeticao invalida provavel.</returns>
+    public abstract bool IsRepeat(string? text);
+}
+
+/// <summary>
+/// Helper de conteudo: algoritmo unico de cauda repetida (verbatim ou 3 blocos
+/// finais similares). Nao olha para tools nem para o cliente: so para o texto.
+/// </summary>
+public abstract class AntiRepeatReply : ContentAntiReply
+{
+    /// <summary>Menor janela aceita: abaixo disso a comparacao vira ruido.</summary>
+    public const int MinWindow = 32;
+
+    /// <summary>Similaridade minima entre blocos consecutivos (loop curto com variacao).</summary>
+    public const double BlockSimilarity = 0.85;
+
+    /// <summary>Tamanho da cauda comparada, em caracteres normalizados.</summary>
+    public int Window { get; }
+
+    /// <summary>Cria o helper com a janela configurada (nunca menor que <see cref="MinWindow"/>).</summary>
+    /// <param name="window">Janela em caracteres.</param>
+    protected AntiRepeatReply(int window) => Window = Math.Max(MinWindow, window);
+
+    /// <inheritdoc />
+    public override bool IsRepeat(string? text) => TailRepeats(text, Window);
+
+    /// <summary>Normaliza texto para comparacao: minusculo e espacos colapsados.</summary>
+    /// <param name="s">Texto cru.</param>
+    /// <returns>Texto canonico (vazio quando a entrada e vazia).</returns>
+    public static string Normalize(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        var b = new StringBuilder(s.Length);
+        bool space = false;
+        foreach (char c in s)
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                if (!space) { b.Append(' '); space = true; }
+            }
+            else
+            {
+                b.Append(char.ToLowerInvariant(c));
+                space = false;
+            }
+        }
+        return b.ToString().Trim();
+    }
+
+    /// <summary>Razao de caracteres iguais entre dois blocos de mesmo tamanho.</summary>
+    /// <param name="a">Bloco A.</param>
+    /// <param name="b">Bloco B.</param>
+    /// <returns>0..1 (0 quando algum bloco e vazio).</returns>
+    public static double Similarity(ReadOnlySpan<char> a, ReadOnlySpan<char> b)
+    {
+        if (a.Length == 0 || b.Length == 0) return 0;
+        int len = Math.Min(a.Length, b.Length);
+        int same = 0;
+        for (int i = 0; i < len; i++)
+            if (a[i] == b[i]) same++;
+        return (double)same / len;
+    }
+
+    /// <summary>
+    /// Regra unica de repeticao: cauda verbatim ja vista ou 3 blocos finais
+    /// consecutivos similares (loop curto com variacao, ex.: "Ola!").
+    /// </summary>
+    /// <param name="accumulated">Texto acumulado.</param>
+    /// <param name="window">Janela comparada (chars normalizados).</param>
+    /// <returns>True = repeticao detectada.</returns>
+    public static bool TailRepeats(string? accumulated, int window)
+    {
+        if (string.IsNullOrEmpty(accumulated) || window < MinWindow) return false;
+        string norm = Normalize(accumulated);
+        // Cauda verbatim (loops longos exatos).
+        if (norm.Length >= 2 * window)
+        {
+            string tail = norm[^window..];
+            if (norm.AsSpan(0, norm.Length - window).IndexOf(tail.AsSpan(), StringComparison.Ordinal) >= 0)
+                return true;
+        }
+        // Loop curto com variacao: 3 blocos finais consecutivos parecidos.
+        foreach (int unit in new[] { 24, 32, 40, 48, 64, 80, 96, 128 })
+        {
+            if (norm.Length < 3 * unit) continue;
+            var a = norm.AsSpan(norm.Length - unit);
+            var b = norm.AsSpan(norm.Length - 2 * unit, unit);
+            var c = norm.AsSpan(norm.Length - 3 * unit, unit);
+            if (Similarity(a, b) >= BlockSimilarity && Similarity(b, c) >= BlockSimilarity) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Posicao (no texto normalizado) onde a cauda repetida comecou, para a sonda.</summary>
+    /// <param name="accumulated">Texto acumulado.</param>
+    /// <param name="window">Janela comparada.</param>
+    /// <returns>Indice da primeira ocorrencia da cauda, ou -1.</returns>
+    public static int TailDuplicateAt(string? accumulated, int window)
+    {
+        string norm = Normalize(accumulated);
+        int w = Math.Min(window, norm.Length);
+        if (w <= 0 || norm.Length < 2 * w) return -1;
+        return norm[..^w].IndexOf(norm[^w..], StringComparison.Ordinal);
+    }
+}
+
+/// <summary>
+/// Helper de conteudo no STREAM: cauda do texto que chega em deltas (thinking,
+/// content, corpo SSE do bypass).
+/// </summary>
+public sealed class StreamAntiRepeatReply : AntiRepeatReply
+{
+    /// <summary>Cria o detector do stream.</summary>
+    /// <param name="window">Janela em caracteres (64..2048 na CLI).</param>
+    public StreamAntiRepeatReply(int window) : base(window) { }
+
+    /// <inheritdoc />
+    public override string Scope => "stream";
+}
+
+/// <summary>
+/// Helper de conteudo nos TOOL-ARGS: cauda dos argumentos de uma tool call, que
+/// pode crescer em ciclo sem tocar thinking/content.
+/// </summary>
+public sealed class ToolArgsAntiRepeatReply : AntiRepeatReply
+{
+    /// <summary>Tamanho minimo dos args para valer a pena sondar.</summary>
+    public const int ProbeMinChars = 1024;
+
+    /// <summary>Cria o detector de argumentos.</summary>
+    /// <param name="window">Janela em caracteres.</param>
+    public ToolArgsAntiRepeatReply(int window) : base(window) { }
+
+    /// <inheritdoc />
+    public override string Scope => "tool-args";
+}

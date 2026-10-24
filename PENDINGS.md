@@ -1,5 +1,48 @@
 # PENDINGS — OpenCodeBridge
 
+## AVALIAÇÃO PENDENTE — parâmetros do llama × anti-repeat em camadas (2026-10-24)
+
+**Origem:** sessões reais de 2026-10-23/24 (uso de tools por modelos locais limitados,
+repetição constante). O fix de 2026-10-24 resolveu o que era medível — temperatura do
+role vencendo o request (0.5 → 0.1 no `-build`), breaker de loop por falha no mesmo
+alvo, cauda de tools nos dois caminhos —, mas **não** provou qual parcela do problema
+vem dos parâmetros de amostragem do `llama-server`.
+
+**Estado medido hoje (live):**
+
+| camada | Q4 `:4100` | Q3 `:4110` | onde |
+|---|---|---|---|
+| `--repeat-penalty` | 1.1 | 1.1 | unit do llama |
+| DRY (`--dry-multiplier`) | 0.8 (`--dry-penalty-last-n 1024`) | 0.8 (`1024`) | unit do llama |
+| anti-repeat textual da bridge | on, janela 512, com retry | idem | `--anti-repeat*` |
+| breaker de loop de tool | soft 3 / hard 6 | idem | `appsettings.json` |
+
+**Hipótese a testar (não aplicar correção nova antes da medição):**
+
+1. **Temperatura** é o fator dominante já medido: role `-build` rodava a 0.5 e corrompia
+   identificadores (`proj-teste-001` → `999`, `opencodebridge` → `opencodedbidge`).
+   O perfil por role (0.1) está ativo; falta medir 0.0/0.1/0.2 no MESMO enunciado de tools.
+2. **DRY + repeat-penalty no llama** penalizam dígitos e trechos de caminho — exatamente o
+   que precisa ser copiado verbatim numa tool call. Podem *causar* a mutação que o breaker
+   tenta conter. Medir DRY off × on e repeat-penalty 1.0 × 1.1.
+3. **Anti-repeat em duas camadas** (llama + bridge textual + breaker) pode estar
+   sobre-corrigindo: cada camada empurra o modelo para longe do token exato (nome de tool,
+   path) e o resultado vira deriva, não repetição. A ponte deve ser a última linha, não a
+   primeira.
+
+**Desenho mínimo da medição (mesma bateria, sem mudar código):**
+
+- Enunciado fixo com tools (write/read/edit/glob+grep/git/sqlite) e alvo com dígitos.
+- Matriz: `temp {0.0, 0.1, 0.5}` × `DRY {off, 0.8}` × `bridge anti-repeat {on, off}`.
+- Métrica: artefato correto em disco (não texto), nº de chamadas por passo, repetições
+  exatas do mesmo comando e identificadores corrompidos no comando emitido.
+- Critério de promoção: só sobe para a unit o valor que reduzir chamadas/repetição **sem**
+  perder o artefato; nenhuma camada nova na bridge antes disso.
+
+**Regra de ouro até fechar:** estabilidade para os juniores vem de **menos** correção
+automática e mais determinismo (temp baixa, contexto curto por tarefa, artefato como
+aceite). Não adicionar heurística nova na bridge para compensar parâmetro de amostragem.
+
 ## Suíte E2E: trilha standalone (opencode real) + role build — feito 2026-10-19
 
 - Testes complexos com tools **não** rodam com thinking on (rambling/alucinação).

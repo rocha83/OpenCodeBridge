@@ -2885,3 +2885,86 @@ bwrap responde `ok`.
   CPU agora é instância própria (`:4120` llama / `:4126` bridge).
 - Regra registrada no P7/§4.1.1: todo `.desktop` é `755` e pertence ao dono do Desktop que
   o executa; o `Exec` precisa existir e ser executável.
+
+## Aplicação no chroot Cubic + smoke CPU (2026-10-23, sessão 7)
+
+**Ambiente:** container `systemd-nspawn` `cubic` (host live LMDE 7 20261023 13:43). O
+`systemd` não é PID 1 no console (PID 1 = `bash`), então `systemctl`, `ufw` e `bwrap`
+não operam; tudo foi validado por arquivo/JSON e as units ficaram `disabled`
+(sem symlink em `*.wants`).
+
+- **Contas (P2):** `moe-agent` uid 1001 `/usr/sbin/nologin`; `dev-agent` uid 1002
+  `/bin/bash`; homes `750`, `workspace`/`.run` do dono; senhas via `usermod -p`;
+  `hidden-users` no LightDM. Sem sudo/docker.
+- **GPU2 2×64k:** `start-llama-gpu2.sh` e `llama-gpu2.service` com `-c 131072 -np 2`;
+  `start-bridge-gpu2.sh` com `SVC_CTX=65536`; `bridge-gpu2.service` com
+  `--context-tokens 65536`; `opencode.json` do `mint` com `limit.context: 65536`
+  (6 ocorrências, 2 `package`).
+- **Agentes/seeder (P5):** `AgentSeeder.cs` do repo (HEAD `8d7cb88`) aplicado ao
+  `web.db`: **10 agentes**, **10/10** com a cláusula de 90%, **0** `(CPU Forced)`;
+  MoE = `fetch,display,subagent`. Build Release: **0 erros / 0 avisos**.
+- **Firewall (P6):** `ufw` não aplica no nspawn (sem NET_ADMIN/initcaps). Regras
+  persistidas em `/etc/ufw/user*.rules`: `4220/4230/4240/4250` em v4+v6 e `4147`
+  removido. O script canônico `setup-ufw-remaster.sh` foi reconciliado: `4147` removido
+  do loop; as regras persistidas já estavam sem 4147/4152/4153.
+- **Smoke CPU (GPU indisponível):** `llama-server :4120` (`-ngl 0`, `n_ctx=131072`)
+  → `/health` ok e chat `ok`; `bridge :4126` → `/v1/models` `[Gemma4-E4B-Q4]` e chat
+  `ok` (~1 s). Processos do smoke encerrados; portas livres.
+- **Limitações do console:** `bwrap` falha em `--proc` (sem CAP_SYS_ADMIN);
+  `opencode models` sobe `serve --service` e não retorna. JSON das 3 contas validado
+  (llama com `package`, ctx 65536).
+- **Espelho não versionado:** `/usr/src/rochas-dotnet-toolkit/OpenCodeBridge`
+  sincronizado (rsync, sem `.git/bin/obj`).
+
+## Form do llama com Ctx/Slots (2026-10-23, sessão 8)
+
+**Pedido:** os ícones do llama passam a pedir **Ctx** e **Slots** além de porta/usuário/
+senha; defaults E4B Q4 = 1 slot, E4B UD-Q3 = 2 slots (2×64k), com labels curtos para
+resoluções baixas.
+
+- `svc-common.sh`: novo `ask_llama_config <porta> <ctx> <slots> <titulo>` — form de 5
+  campos + confirmação de firewall; subtítulo `ctx N | S slots x M`; valida numéricos,
+  `ctx >= 1024` e `ctx >= slots`; exporta `SVC_CTX`/`SVC_SLOTS`.
+- `start-llama-gpu.sh` (4100/131072/1), `start-llama-gpu2.sh` (4110/131072/2) e
+  `start-llama-cpu-forced.sh` (4120/131072/1) geram `-c $SVC_CTX -np $SVC_SLOTS`;
+  mensagens finais/erros enxutos. `--defaults` preserva os valores canônicos.
+- **Verificação:** `bash -n` nos 4 scripts; dry-run com stubs gerou `-c 131072 -np 2`
+  (GPU2) e `-c 65536 -np 4` no caminho customizado; `artefatos/bin/` idêntico ao
+  `/usr/local/bin` (`cmp` OK).
+
+## Alinhamento final à release (2026-10-23, sessão 9)
+
+- Prevalecem os docs da release: `4200` em `127.0.0.1` (script + unit) e `4147`
+  fechada (sem bloco, sem gerador, sem ufw). `4152/4153` seguem fechadas.
+- `start-opencodeweb.sh` e `opencode-web.service` entram nos artefatos/P1 para o
+  chroot não herdar o bind `0.0.0.0` da imagem base.
+- `caddy validate` OK (12 blocos); `bash -n` OK; artefatos/zip regerados.
+- O zip leva `APLICAR.md` + `artefatos/`; o checklist não depende do host.
+
+## Consolidação do anti-repeat em dois escopos + deploy live (2026-10-24, sessão 14)
+
+**Pedido:** o operador apontou que `ToolLoopBreaker` e o anti-repeat textual faziam o
+mesmo papel com nomes diferentes; consolidar por responsabilidade, com helpers no nível
+abaixo das duas classes-mãe.
+
+**Feito (`Rochas.OpenCodeBridge.Core`):**
+
+- `ContentAntiReply` (classe-mãe de conteúdo) → helper `AntiRepeatReply` (algoritmo único
+  de cauda: normalização, similaridade, `TailRepeats`, `TailDuplicateAt`) e as
+  especializações `StreamAntiRepeatReply` (deltas) e `ToolArgsAntiRepeatReply` (args).
+- `ToolsAntiReply` (classe-mãe de tools) → helpers `ToolSig` (assinatura/alvo/falha),
+  `Breaker` (loop por falha no mesmo alvo, soft/hard) e `RepeatedCall` (assinatura
+  reemitida no histórico).
+- `ToolLoopBreaker.cs` removido; `Program.cs` passou a usar só as classes dos dois
+  escopos (nenhum detector duplicado). Comportamento preservado (mesmas regras/limiares).
+- Testes: `U-content-antireply-scopes` e `U-tools-antireply-helpers` (helpers declaram
+  escopo e respondem à classe-mãe). Suíte: **PASS=66 FAIL=0 SKIP=6**.
+
+**Deploy:** `git pull --ff-only` no `/usr/src/opencodebridge` (3 commits) + build Release
+**0 erros / 0 avisos**; `bridge-gpu` e `bridge-gpu2` reiniciadas com `tail_scope=all`,
+`breaker 3/6`. Smoke em `:4125`: request `temperature=0.5` no modelo `-build` →
+`temperature=0.1`, `temperature_source=profile(override)`, `tails_on=true`, `breaker=none`.
+
+**Pendência registrada:** avaliar parâmetros do llama (temperatura, `repeat-penalty`, DRY)
+× anti-repeat em camadas — ver `PENDINGS.md` (topo). Nenhuma heurística nova na bridge
+antes da medição.

@@ -1,11 +1,10 @@
 # PENDÊNCIAS — chroot Cubic (LMDE 7 "gigi" / Debian 13 trixie)
 
 Base da release: `lmde-7-cinnamon-64bit-20261023.iso` (Cubic 2026-10-23 13:43).
-Tudo abaixo foi feito **na live depois do build** e **não está na imagem**. Este é o
-checklist único: só o que falta aplicar no chroot. Artefatos prontos em:
+Tudo abaixo é o que falta aplicar no chroot (não está na imagem). Este é o checklist
+único. O kit está neste zip:
 
 ```
-/media/mint/78AA0831AA07EB08/IsoTemp/remaster-linux-2610231822.zip
 # descompactar no chroot:  S=/root/remaster-linux-2610231822
 ```
 
@@ -14,7 +13,7 @@ do `Caddyfile`, `/opt/models/*` (GGUF de 3,98 GB já na imagem) e `/etc/sudoers.
 
 ---
 
-## P1 — Arquivos de sistema (scripts + wrapper zenity + 4 units + configs)
+## P1 — Arquivos de sistema (scripts + wrapper zenity + 5 units + configs)
 
 - [ ] Copiar scripts e units:
 
@@ -27,12 +26,12 @@ install -m 644 "$S"/artefatos/etc/60-ocagents.conf /etc/ssh/sshd_config.d/
 ```
 
 Scripts: `ocagent-sandbox.sh`, `start-ocagent-tui.sh`, `start-opencode-web-dev.sh`,
-`start-opencode-web-moe.sh`, `start-ocagent-web.sh`, `start-llama-gpu2.sh`,
-`start-bridge-gpu2.sh`, `svc-common.sh`, `svc-firewall.sh`, `share-samba.sh`,
-`start-caddy.sh`, `setup-ufw-remaster.sh` — e o wrapper **`zenity`** (sem `.sh`;
-`/usr/local/bin` precisa vir antes de `/usr/bin` no PATH da sessão).
-Units: `opencode-web-dev.service`, `opencode-web-moe.service`, `llama-gpu2.service`,
-`bridge-gpu2.service`.
+`start-opencode-web-moe.sh`, `start-opencodeweb.sh`, `start-ocagent-web.sh`,
+`start-llama-gpu2.sh`, `start-bridge-gpu2.sh`, `svc-common.sh`, `svc-firewall.sh`,
+`share-samba.sh`, `start-caddy.sh`, `start-lazydocker.sh`, `setup-ufw-remaster.sh` — e o wrapper **`zenity`**
+(sem `.sh`; `/usr/local/bin` precisa vir antes de `/usr/bin` no PATH da sessão).
+Units: `opencode-web.service`, `opencode-web-dev.service`, `opencode-web-moe.service`,
+`llama-gpu2.service`, `bridge-gpu2.service`.
 
 - [ ] Confirmar o wrapper (deve imprimir o caminho `/usr/local/bin/zenity` e o teste
       abaixo deve sair com `rc=5`, sem janela no canto superior esquerdo):
@@ -80,8 +79,11 @@ caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
 ```bash
 for f in ocagent-sandbox start-ocagent-tui start-opencode-web-dev start-opencode-web-moe \
-         start-ocagent-web start-llama-gpu2 start-bridge-gpu2 svc-common; do
+         start-opencodeweb start-ocagent-web start-llama-gpu2 start-bridge-gpu2 \
+         start-caddy start-lazydocker setup-ufw-remaster svc-common; do
   test -x /usr/local/bin/$f.sh || echo "FALTA $f"; done
+grep -q 'hostname 127.0.0.1' /usr/local/bin/start-opencodeweb.sh && echo web-script-ok
+grep -q 'hostname 127.0.0.1' /etc/systemd/system/opencode-web.service && echo web-unit-ok
 grep -c 'rocha26.ddns.net:4230\|rocha26.ddns.net:4240\|rocha26.ddns.net:4250' /etc/caddy/Caddyfile   # 3
 grep -c 'caddy-agents.conf' /usr/local/bin/start-caddy.sh   # 1
 sshd -t && echo sshd-ok
@@ -257,11 +259,13 @@ for u in llama-gpu llama-gpu2 llama-cpu-forced bridge-gpu bridge-gpu2 bridge-cpu
   systemctl disable "$u" 2>/dev/null; done
 ```
 
-- [ ] Instalar os 2 ícones novos e deixá-los executáveis:
+- [ ] Instalar os 2 ícones novos e atualizar o ícone do Lazydocker (wrapper que
+      inicia o Docker antes da TUI):
 
 ```bash
 install -m 755 "$S/artefatos/desktop/OpenCode Web dev-agent (4210).desktop" /home/mint/Desktop/
 install -m 755 "$S/artefatos/desktop/OpenCode Web moe-agent (4220).desktop" /home/mint/Desktop/
+install -m 755 "$S/artefatos/desktop/Lazydocker.desktop" /home/mint/Desktop/Lazydocker.desktop
 ```
 
 - [ ] Remover atalhos redundantes de bridge (se ainda existirem na origem). Os ícones
@@ -328,6 +332,34 @@ install -d -o moe-agent -g moe-agent -m 750 /home/moe-agent/.run
 
 ---
 
+## P9 — Docker/lazydocker/Portainer (só o que não rodou no chroot)
+
+> No chroot o `dockerd` manual (vfs, bridge none) subiu, `docker info` e
+> `docker pull portainer/portainer-ce:latest` passaram. O que **não** rodou foi:
+> `docker run` (`failed to create default sandbox: operation not permitted`), a TUI
+> gráfica do lazydocker (sem `DISPLAY`) e o container do Portainer. Só esses itens
+> ficam pendentes no host.
+
+- [ ] Containers Docker: validar `docker run --rm hello-world` (ou o container do Portainer)
+      com o Docker do sistema, não pelo `dockerd` manual do chroot.
+- [ ] lazydocker pelo ícone: `Lazydocker.desktop` chama `start-lazydocker.sh`, que inicia
+      `docker.service` e abre a TUI; validar numa sessão gráfica.
+- [ ] Portainer: `start-portainer.sh` cria/inicia o container `portainer`, usa
+      `portainer.service` e publica `:9100` (admin/guest@123); validar `/api/status`.
+- [ ] O Docker **não** fica `enabled` no boot; `start-lazydocker.sh`/ícone sobe sob demanda.
+
+```bash
+sudo systemctl start docker
+sudo -u mint /usr/local/bin/start-lazydocker.sh   # wrapper + TUI; feche depois
+# Portainer: ícone; se o container já existir:
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9100/api/status
+```
+
+**ACEITE P9:** `docker run --rm hello-world` conclui; a TUI abre pelo ícone Lazydocker;
+`/api/status` do Portainer retorna `200`, `302` ou `401`.
+
+---
+
 ## Critérios de pronto (rodar antes de fechar a imagem)
 
 ```bash
@@ -336,7 +368,8 @@ cd /usr/src/opencodebridge && dotnet build -c Release Rochas.OpenCodeBridge.slnx
 for f in /usr/local/bin/ocagent-sandbox.sh /usr/local/bin/start-ocagent-tui.sh \
          /usr/local/bin/start-opencode-web-dev.sh /usr/local/bin/start-opencode-web-moe.sh \
          /usr/local/bin/start-ocagent-web.sh /usr/local/bin/start-llama-gpu2.sh \
-         /usr/local/bin/start-bridge-gpu2.sh; do bash -n "$f" || echo "ERRO $f"; done
+         /usr/local/bin/start-bridge-gpu2.sh /usr/local/bin/start-lazydocker.sh; do
+  bash -n "$f" || echo "ERRO $f"; done
 
 # 2) contas e isolamento
 getent passwd moe-agent dev-agent | cut -d: -f1,3,7

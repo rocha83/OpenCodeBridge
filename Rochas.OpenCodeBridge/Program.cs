@@ -217,7 +217,7 @@ internal static partial class Program
     /// chamada foi autorizada e deve sair agora.</summary>
     static bool RiskConsumeApproval(string modelId, string tool, string args)
     {
-        string sig = ToolSig(tool, args);
+        string sig = ToolSig.Of(tool, args);
         if (!RiskApprovedOnce.TryRemove(sig, out DateTime exp)) return false;
         if (exp < DateTime.UtcNow) return false;
         Log(new JsonObject { ["event"] = "risk-approved", ["tool"] = tool, ["role"] = RoleOfModel(modelId) });
@@ -246,13 +246,13 @@ internal static partial class Program
                                  ["role"] = risk.Role, ["approved"] = approved });
             if (approved)
             {
-                RiskApprovedOnce[ToolSig(risk.Tool, risk.Args)] = DateTime.UtcNow.AddMinutes(RiskAskMinutes);
+                RiskApprovedOnce[ToolSig.Of(risk.Tool, risk.Args)] = DateTime.UtcNow.AddMinutes(RiskAskMinutes);
                 notices.Add($"Ponte OpenCodeBridge: o usuario AUTORIZOU a chamada de risco pendente. "
                           + $"Reemita agora, sem mudar nada, a tool '{risk.Tool}' com os argumentos: {risk.Args}");
             }
             else
             {
-                RiskRefused.Add(ToolSig(risk.Tool, risk.Args));
+                RiskRefused.Add(ToolSig.Of(risk.Tool, risk.Args));
                 notices.Add($"Ponte OpenCodeBridge: o usuario NEGOU a chamada de risco pendente "
                           + $"({risk.Tool}: {Truncate(risk.Args, 200)}). Nao a tente de novo e explique ao usuario "
                           + "o que ficou por fazer.");
@@ -270,7 +270,7 @@ internal static partial class Program
     static bool RiskAnswerYes(string answer)
     {
         if (string.IsNullOrWhiteSpace(answer)) return false;
-        string a = NormRepeat(answer).ToLowerInvariant();
+        string a = AntiRepeatReply.Normalize(answer).ToLowerInvariant();
         if (System.Text.RegularExpressions.Regex.IsMatch(a, @"\b(nao|nunca|negar|recusar|cancelar|deixa|rejeitar)\b"))
             return false;
         return System.Text.RegularExpressions.Regex.IsMatch(a, @"\b(sim|autoriza|autorizado|aprova|aprovado|pode|executa|ok|yes|confirmo|confirmado)\b");
@@ -297,9 +297,9 @@ internal static partial class Program
         if (!RiskAsk) return false;
         var pats = RiskPatternsFor(RoleOfModel(modelId));
         if (pats.Count == 0) return false;
-        string sig = ToolSig(tool, args);
+        string sig = ToolSig.Of(tool, args);
         if (RiskRefused.Contains(sig)) return false;   // ja recusado: nao insiste
-        string hay = NormRepeat(tool + " " + args);
+        string hay = AntiRepeatReply.Normalize(tool + " " + args);
         foreach (var rx in pats)
             if (rx.IsMatch(hay)) return true;
         return false;
@@ -2033,7 +2033,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // decide nudge/trip. Trip = nao chama o modelo (o turno esta perdido).
         if (BreakerSoft > 0)
         {
-            var verdict = ToolLoopBreaker.Analyze(messages, BreakerSoft, BreakerHard);
+            var loopGuard = new Breaker(BreakerSoft, BreakerHard);
+            var verdict = loopGuard.Evaluate(messages);
             if (verdict.Verdict != BreakerVerdict.None)
             {
                 Log(new JsonObject
@@ -2046,7 +2047,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 Metrics.BreakerTrip(verdict.Verdict.ToString().ToLowerInvariant());
                 breakerState = verdict.Verdict.ToString().ToLowerInvariant();
                 if (verdict.Verdict == BreakerVerdict.Nudge)
-                    ToolLoopBreaker.ApplyNudge(messages, verdict.Notice);
+                    loopGuard.ApplyNudge(messages, verdict.Notice);
                 else
                     breakerTrip = verdict.Notice;
             }
@@ -3173,81 +3174,6 @@ var shape = new StringBuilder();
         }
     }
 
-    /// <summary>AntiRepeat: a cauda (janela) do thinking ja apareceu antes no proprio stream?</summary>
-    /// <param name="accumulated">Thinking acumulado ate aqui.</param>
-    /// <param name="window">Tamanho da cauda comparada (chars).</param>
-    /// <returns>True se a sequencia se repete (loop invalido provavel).</returns>
-    static bool ThinkingRepeats(string accumulated, int window)
-    {
-        if (string.IsNullOrEmpty(accumulated) || window < 32) return false;
-        // Normaliza (caixa/espaco) p/ pegar repeticao quase-verbatim do decoder.
-        string norm = NormRepeat(accumulated);
-        // Cauda verbatim (loops longos exatos).
-        if (norm.Length >= 2 * window)
-        {
-            string tail = norm[^window..];
-            if (norm.AsSpan(0, norm.Length - window).IndexOf(tail.AsSpan(), StringComparison.Ordinal) >= 0)
-                return true;
-        }
-        // Loop curto com variacao ("Olá!" no meio): 3 blocos finais
-        // consecutivos similares (>=0.85) = repeticao invalida provavel.
-        foreach (int u in new[] { 24, 32, 40, 48, 64, 80, 96, 128 })
-        {
-            if (norm.Length < 3 * u) continue;
-            var a = norm.AsSpan(norm.Length - u);
-            var b = norm.AsSpan(norm.Length - 2 * u, u);
-            var c = norm.AsSpan(norm.Length - 3 * u, u);
-            if (BlockSim(a, b) >= 0.85 && BlockSim(b, c) >= 0.85) return true;
-        }
-        return false;
-    }
-
-    /// <summary>AntiRepeat cross-turn: assinatura canonica de uma tool call ("nome(args)").</summary>
-    /// <remarks>Repeticao entre turnos nao aparece no thinking de um unico stream, entao
-    /// <see cref="ThinkingRepeats"/> nunca a ve. Esta assinatura compara a chamada nova
-    /// com as que ja constam no historico do proprio request.</remarks>
-    static string ToolSig(string name, string args)
-        => NormRepeat((name ?? "").Trim().ToLowerInvariant() + "(" + NormRepeat(args ?? "") + ")");
-
-    /// <summary>Assinaturas de tool call que ja se repetiram no historico (>= minCount).</summary>
-    static HashSet<string> LoopedToolSigs(JsonNode? messages, int minCount)
-    {
-        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-        if (messages is JsonArray arr)
-            foreach (var m in arr)
-            {
-                if (m is not JsonObject mo || mo["tool_calls"] is not JsonArray calls) continue;
-                foreach (var c in calls)
-                {
-                    if (c is not JsonObject co || co["function"] is not JsonObject fn) continue;
-                    string sig = ToolSig(fn["name"]?.GetValue<string>() ?? "",
-                                         fn["arguments"]?.GetValue<string>() ?? "");
-                    if (sig == "()") continue;
-                    counts[sig] = counts.TryGetValue(sig, out int n) ? n + 1 : 1;
-                }
-            }
-        return new HashSet<string>(counts.Where(kv => kv.Value >= minCount).Select(kv => kv.Key),
-                                   StringComparer.Ordinal);
-    }
-
-    /// <summary>Similaridade 0..1 entre blocos (1 - levenshtein/tamanho).</summary>
-    static double BlockSim(ReadOnlySpan<char> a, ReadOnlySpan<char> b)
-    {
-        int n = a.Length, m = b.Length;
-        if (n == 0 || m == 0) return 0;
-        Span<int> prev = stackalloc int[m + 1];
-        Span<int> cur = stackalloc int[m + 1];
-        for (int j = 0; j <= m; j++) prev[j] = j;
-        for (int i = 1; i <= n; i++)
-        {
-            cur[0] = i;
-            for (int j = 1; j <= m; j++)
-                cur[j] = Math.Min(prev[j] + 1, Math.Min(cur[j - 1] + 1, prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1)));
-            var t = prev; prev = cur; cur = t;
-        }
-        return 1.0 - (double)prev[m] / Math.Max(n, m);
-    }
-
     internal static bool ContextGuardEnabled() => ContextGuard;
     internal static (bool Enabled, double Threshold, int Tokens) ContextGuardConfig() => (ContextGuard, ContextThreshold, ContextTokens);
     internal static void ContextGuardSetup(bool enabled, double threshold, int tokens)
@@ -3270,13 +3196,13 @@ var shape = new StringBuilder();
     /// <returns>True se repeticao detectada.</returns>
     static bool CheckRepeat(string accumulated, string where)
     {
-        bool trip = AntiRepeat && ThinkingRepeats(accumulated, AntiRepeatWindow);
+        bool trip = AntiRepeat && new StreamAntiRepeatReply(AntiRepeatWindow).IsRepeat(accumulated);
         // Sonda: loga no maximo 1x a cada 2k chars p/ nao afogar o sink em stream.
         int chars = accumulated?.Length ?? 0;
         if (trip)
         {
             int dupAt = -1; string dupCtx = "";
-            var norm = NormRepeat(accumulated ?? "");
+            var norm = AntiRepeatReply.Normalize(accumulated ?? "");
             int w = Math.Min(AntiRepeatWindow, norm.Length);
             if (w > 0 && norm.Length >= 2 * w)
             {
@@ -3288,7 +3214,7 @@ var shape = new StringBuilder();
             Sonda(where, chars, trip, Truncate(norm, 80), dupAt, dupCtx);
         }
         else if (chars < 512 || (chars % 2048) < 256)
-            Sonda(where, chars, trip, Truncate(NormRepeat(accumulated ?? ""), 80));
+            Sonda(where, chars, trip, Truncate(AntiRepeatReply.Normalize(accumulated ?? ""), 80));
         return trip;
     }
 
@@ -4111,7 +4037,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                         if (AntiRepeat && acc.Args.Length >= 1024 && !argsProbeLogged.Contains(index))
                         {
                             string argsText = acc.Args.ToString();
-                            if (ThinkingRepeats(argsText, AntiRepeatWindow))
+                            if (new ToolArgsAntiRepeatReply(AntiRepeatWindow).IsRepeat(argsText))
                             {
                                 argsProbeLogged.Add(index);
                                 Log(new JsonObject { ["event"] = "anti-repeat-args", ["tool"] = acc.Name,
@@ -4234,7 +4160,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         // AntiRepeat cross-turn: a chamada ja repetiu no historico, entao e loop. Nao
         // emitimos (o modelo so reenfileiraria o mesmo comando e o turno travaria aqui);
         // no lugar, devolve o aviso de contencao como texto para mudar de abordagem.
-        var loopedSigs = AntiRepeat ? LoopedToolSigs(chat["messages"], 2)
+        var loopedSigs = AntiRepeat ? new RepeatedCall(2).Find(chat["messages"])
                                      : new HashSet<string>(StringComparer.Ordinal);
         var bannedHere = ToolBlacklist.TryGetValue(RoleOfModel(requestedModel), out var bh) ? bh
                          : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -4366,7 +4292,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             }
             if (riskOk)
                 FlushMessage("\n\nO usuario autorizou esta acao; executando agora.\n\n");
-            if (loopedSigs.Contains(ToolSig(acc.Name, arguments)))
+            if (loopedSigs.Contains(ToolSig.Of(acc.Name, arguments)))
             {
                 repeatTrip = true;
                 Log(new JsonObject { ["event"] = "anti-repeat-loop", ["tool"] = acc.Name });
@@ -4755,7 +4681,7 @@ if (type == "message")
         var toolCalls = new List<(string Id, string Name, string Arguments)>();
         string blockedNotice = "";
         // AntiRepeat cross-turn: a chamada ja repetiu no historico, entao e loop.
-        var loopedSigs = AntiRepeat ? LoopedToolSigs(historyMessages, 2)
+        var loopedSigs = AntiRepeat ? new RepeatedCall(2).Find(historyMessages)
                                      : new HashSet<string>(StringComparer.Ordinal);
         if (message["tool_calls"] is JsonArray callArray)
         {
@@ -4794,7 +4720,7 @@ if (type == "message")
                 }
                 // AntiRepeat cross-turn: nao emitimos a chamada que ja repetiu; o modelo
                 // so reenfileiraria o mesmo comando e o turno travaria aqui.
-                if (loopedSigs.Contains(ToolSig(nativeName, JsonToString(funcObj["arguments"]))))
+                if (loopedSigs.Contains(ToolSig.Of(nativeName, JsonToString(funcObj["arguments"]))))
                 {
                     Log(new JsonObject { ["event"] = "anti-repeat-loop", ["tool"] = nativeName });
                     if (blockedNotice.Length == 0)
@@ -4852,7 +4778,7 @@ if (type == "message")
         // nao-stream: o texto do args pode crescer em loop sem tocar thinking/content.
         if (AntiRepeat)
             foreach (var (_, probeName, probeArgs) in toolCalls)
-                if (probeArgs.Length >= 1024 && ThinkingRepeats(probeArgs, AntiRepeatWindow))
+                if (probeArgs.Length >= 1024 && new ToolArgsAntiRepeatReply(AntiRepeatWindow).IsRepeat(probeArgs))
                     Log(new JsonObject { ["event"] = "anti-repeat-args", ["tool"] = probeName,
                         ["chars"] = probeArgs.Length, ["window"] = AntiRepeatWindow, ["mode"] = "convert" });
 
@@ -5326,20 +5252,6 @@ if (type == "message")
                     where, chars, AntiRepeatWindow, trip, dupAt, tail);
         }
         catch { /* sonda nunca derruba o pedido */ }
-    }
-
-    /// <summary>Normaliza texto p/ o detector (minusculo, espacos colapsados).</summary>
-    static string NormRepeat(string s)
-    {
-        if (string.IsNullOrEmpty(s)) return "";
-        var b = new StringBuilder(s.Length);
-        bool sp = false;
-        foreach (char c in s)
-        {
-            if (char.IsWhiteSpace(c)) { if (!sp) { b.Append(' '); sp = true; } }
-            else { b.Append(char.ToLowerInvariant(c)); sp = false; }
-        }
-        return b.ToString();
     }
 
     /// <summary>Id aleatorio hex de 16 chars.</summary>
