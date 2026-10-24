@@ -163,7 +163,7 @@ internal static class Program
             Check(await users.Get(new User { Id = got.Id }) is null, "I-crud-remove");
 
             var agents = new GenericRepository<Agent>(DatabaseEngine.SQLite, AppDb.ConnectionString);
-            await agents.Add(new Agent { Name = "gpu", Model = "qwen3-8b-awq" });
+            await agents.Add(new Agent { Name = "gpu", Model = "Gemma4-E4B-Q4" });
             var list = await agents.Query(new Agent());
             Check(list.Any(a => a.Name == "gpu"), "I-crud-agent");
             // ORM: Active=true filtra no WHERE; Search usa as [Filterable].

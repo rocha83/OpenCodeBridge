@@ -7,7 +7,7 @@ internal static class UnitBypassTests
 {
     static JsonObject ComplexInput() => new()
     {
-        ["model"] = "openai/qwen3.5-9b",
+        ["model"] = "openai/Gemma4-E4B-Q4",
         ["instructions"] = "Voce e um backend senior. Respostas curtas.",
         ["input"] = new JsonArray(
             new JsonObject

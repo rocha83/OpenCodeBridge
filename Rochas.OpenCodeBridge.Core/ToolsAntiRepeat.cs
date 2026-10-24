@@ -43,16 +43,15 @@ public abstract class ToolsAntiRepeat
 
     /// <summary>Aviso injetado no ultimo resultado (modo Nudge).</summary>
     public const string NudgeNotice =
-        "\n\n[BRIDGE-BREAKER] Detectei {N} falhas consecutivas no MESMO alvo. PARE de reescrever o nome/caminho de memoria. " +
-        "Proximo passo obrigatorio: (1) rodar `ls -la <diretorio-pai>` e copiar o nome REAL da saida; " +
-        "(2) se o diretorio nao existir, criar com caminho absoluto e conferir com `ls`; " +
-        "(3) se ainda falhar, encerre e relate ao usuario o que tentou e o erro exato, sem nova tentativa.";
+        "\n\n[BRIDGE-BREAKER] A ponte notou {N} falhas seguidas no mesmo alvo. Se fizer sentido, vale conferir o caminho real " +
+        "com `ls -la <diretorio-pai>` e copiar o nome da saida; se o diretorio nao existir, criar com caminho absoluto e " +
+        "conferir com `ls`. Se preferir, relate o erro exato e o que ja tentou.";
 
     /// <summary>Aviso devolvido no curto-circuito (modo Trip).</summary>
     public const string TripNotice =
-        "[BRIDGE-BREAKER] Turno encerrado pela bridge: {N} falhas consecutivas no mesmo alvo, sem mudanca de estrategia. " +
-        "Nao houve chamada ao modelo. Relate ao usuario o erro exato e a ultima saida de tool; " +
-        "para prosseguir, comece a proxima mensagem validando o caminho com `ls -la` e usando o nome copiado da saida.";
+        "[BRIDGE-BREAKER] A ponte encerrou este turno apos {N} falhas seguidas no mesmo alvo, para evitar repeticao. " +
+        "Nao houve chamada ao modelo. Vale relatar o erro exato e a ultima saida; na proxima mensagem, " +
+        "conferir o caminho com `ls -la` e usar o nome copiado.";
 
     /// <summary>Marcadores que caracterizam resultado de falha de tool.</summary>
     private static readonly Regex FailureMarkers = new(

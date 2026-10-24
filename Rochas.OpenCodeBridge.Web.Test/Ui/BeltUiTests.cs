@@ -907,7 +907,7 @@ public static class BeltUiTests
         using var rres = await bridge.PostAsync("http://127.0.0.1:4124/v1/chat/completions",
             new StringContent(JsonSerializer.Serialize(new
             {
-                model = "qwen3-8b-awq",
+                model = "Gemma4-E4B-Q4",
                 temperature = 0.1,
                 max_tokens = 4096,
                 messages = new[] { new { role = "user", content } },
@@ -1022,7 +1022,7 @@ public static class BeltUiTests
             using var rres = await bridge.PostAsync("http://127.0.0.1:4124/v1/chat/completions",
                 new StringContent(JsonSerializer.Serialize(new
                 {
-                    model = "qwen3-8b-awq",
+                    model = "Gemma4-E4B-Q4",
                     temperature = 0.1,
                     max_tokens = 4096,
                     messages = new[] { new { role = "user", content = sb.ToString() } },

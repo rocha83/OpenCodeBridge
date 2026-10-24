@@ -9,7 +9,7 @@ internal static class E2EMitigationTests
     public static async Task ErrorMitigation()
     {
         // Mitigação real: corpo malformado (sem input) deve falhar alto com 4xx, sem hang.
-        var body = new JsonObject { ["model"] = "openai/qwen3-8b-awq", ["stream"] = false };
+        var body = new JsonObject { ["model"] = "openai/Gemma4-E4B-Q4", ["stream"] = false };
         using var res = await TestContext.Http.PostAsync(TestContext.Bridge + "/v1/responses", new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"));
         string text = await res.Content.ReadAsStringAsync();
         TestContext.Check(!res.IsSuccessStatusCode, "corpo sem input falha alto, veio: " + (int)res.StatusCode);

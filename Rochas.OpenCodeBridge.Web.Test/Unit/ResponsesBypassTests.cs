@@ -32,8 +32,8 @@ internal static class ResponsesBypassTests
         var msgs = new JsonArray(
             new JsonObject { ["role"] = "user", ["content"] = "oi" },
             new JsonObject { ["role"] = "assistant", ["content"] = "ola" });
-        var body = Services.ResponsesBypass.BuildBody("qwen3.5-9b", 0.6, "seja breve", msgs, 1024);
-        Check(body["model"]?.GetValue<string>() == "qwen3.5-9b", "U-bypass-model");
+        var body = Services.ResponsesBypass.BuildBody("Gemma4-E4B-Q4", 0.6, "seja breve", msgs, 1024);
+        Check(body["model"]?.GetValue<string>() == "Gemma4-E4B-Q4", "U-bypass-model");
         Check(body["instructions"]?.GetValue<string>() == "seja breve", "U-bypass-instructions");
         Check(body["stream"]?.GetValue<bool>() == true, "U-bypass-stream");
         Check(body["max_tokens"]?.GetValue<int>() == 1024, "U-bypass-maxtokens");

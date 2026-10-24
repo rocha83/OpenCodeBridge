@@ -7,7 +7,7 @@ internal static class E2EEnterpriseTests
 {
     static JsonObject Req(string text, bool stream = false) => new()
     {
-        ["model"] = "openai/qwen3-8b-awq-build",
+        ["model"] = "openai/Gemma4-E4B-Q4-build",
         ["stream"] = stream,
         ["input"] = new JsonArray(new JsonObject
         {

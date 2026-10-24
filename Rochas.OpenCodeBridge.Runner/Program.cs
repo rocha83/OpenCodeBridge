@@ -51,7 +51,7 @@ internal static partial class Program
 
     // Escalares com padrao; appsettings ajusta, CLI vence o arquivo.
     static string CfgBridge = "http://127.0.0.1:4125";
-    static string CfgModel = "qwen2.5-coder-3b-cpu";
+    static string CfgModel = "Gemma4-E4B-UD-Q3";
     static string CfgLog = "/tmp/runner-exec.log";
     static string CfgTemp = "0.5";
     static string CfgVerbosity = "normal";

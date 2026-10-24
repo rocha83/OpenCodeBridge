@@ -53,7 +53,7 @@ internal static class Gate
 
         string before = Run(repo, "git", "rev-parse HEAD");
 
-        // Agente pinado no Qwen local (garantia do AGENTS.md). Timeout de 9min:
+        // Agente pinado no modelo local (garantia do AGENTS.md). Timeout de 9min:
         // calc travou em 10min sem responder — FAIL em vez de pendurar.
         string agentOut = RunAgent(repo, prompt);
         try { File.AppendAllText(policy.LogFile, agentOut + "\n"); } catch { }
@@ -173,7 +173,7 @@ internal static class Gate
     static string RunAgent(string repo, string prompt)
     {
         string escaped = prompt.Replace("'", "'\\''");
-        string cmd = "opencode run --standalone --thinking --auto --agent build --model openai/qwen3-8b-awq"
+        string cmd = "opencode run --standalone --thinking --auto --agent build --model openai/Gemma4-E4B-Q4-build"
             + $" '{escaped}' >> \"{LogPath()}\" 2>&1; echo \"agent exit=$?\"";
         // Log direto no arquivo (dialogo completo preservado fora do stdout).
         string marker = Guid.NewGuid().ToString("N")[..8];

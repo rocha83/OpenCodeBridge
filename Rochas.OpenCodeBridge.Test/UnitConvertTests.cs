@@ -9,7 +9,7 @@ internal static class UnitConvertTests
     {
         var body = new JsonObject
         {
-            ["model"] = "openai/qwen3-8b-awq",
+            ["model"] = "openai/Gemma4-E4B-Q4",
             ["temperature"] = 0.1,
             ["completion"] = new JsonObject
             {
@@ -48,7 +48,7 @@ internal static class UnitConvertTests
         // Mitigação: arguments fora de JSON válido não devem quebrar o convert.
         var body = new JsonObject
         {
-            ["model"] = "openai/qwen3-8b-awq",
+            ["model"] = "openai/Gemma4-E4B-Q4",
             ["completion"] = new JsonObject
             {
                 ["choices"] = new JsonArray(new JsonObject

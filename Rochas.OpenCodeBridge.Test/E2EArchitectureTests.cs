@@ -10,7 +10,7 @@ internal static class E2EArchitectureTests
         // Fluxo dev: dispositivo IoT -> ingestão -> fila de eventos -> push.
         var body = new JsonObject
         {
-            ["model"] = "openai/qwen3-8b-awq",
+            ["model"] = "openai/Gemma4-E4B-Q4",
             ["stream"] = false,
             ["instructions"] = "Voce e um arquiteto de software senior (backend C#, DDD, filas de eventos). Resposta curta.",
             ["input"] = new JsonArray(new JsonObject
@@ -36,7 +36,7 @@ internal static class E2EArchitectureTests
         // Ciclo complexo: translate (tools IoT) -> responses com tool -> convert valida saída.
         var tr = await TestContext.PostObj(TestContext.Bridge + "/api/translate", new JsonObject
         {
-            ["model"] = "openai/qwen3-8b-awq",
+            ["model"] = "openai/Gemma4-E4B-Q4",
             ["input"] = new JsonArray(new JsonObject
             {
                 ["type"] = "message", ["role"] = "user",
@@ -47,7 +47,7 @@ internal static class E2EArchitectureTests
         TestContext.Check(tr["tool_count"]?.GetValue<int>() == 1, "translate 1 tool");
         var r = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", new JsonObject
         {
-            ["model"] = "openai/qwen3-8b-awq",
+            ["model"] = "openai/Gemma4-E4B-Q4",
             ["stream"] = false,
             ["input"] = new JsonArray(new JsonObject
             {

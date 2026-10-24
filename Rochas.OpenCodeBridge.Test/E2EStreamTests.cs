@@ -10,7 +10,7 @@ internal static class E2EStreamTests
     {
         var body = new JsonObject
         {
-            ["model"] = "openai/qwen3-8b-awq",
+            ["model"] = "openai/Gemma4-E4B-Q4",
             ["stream"] = true,
             ["input"] = new JsonArray(new JsonObject
             {
@@ -48,7 +48,7 @@ internal static class E2EStreamTests
     {
         var body = new JsonObject
         {
-            ["model"] = "openai/qwen3-8b-awq",
+            ["model"] = "openai/Gemma4-E4B-Q4",
             ["stream"] = false,
             ["instructions"] = "Voce e um arquiteto de software senior fazendo code review. Seja direto: 1 risco principal.",
             ["input"] = new JsonArray(new JsonObject

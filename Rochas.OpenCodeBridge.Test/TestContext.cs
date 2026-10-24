@@ -22,7 +22,7 @@ internal static class TestContext
     // inteira, passavam de 600s (visto 16/10); isolados ficam em ~110-215s.
     public static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(120) };
 
-    // Modelo servido pela bridge alvo (qwen3|coder): expectativas por perfil.
+    // Modelo servido pela bridge alvo (gemma|coder): expectativas por perfil.
     public static string ServedModel = "";
     public static bool ServedIsCoder => ServedModel.Contains("coder", StringComparison.OrdinalIgnoreCase);
     // Role alvo da suite (default build): a suite chama o modelo com o sufixo

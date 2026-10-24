@@ -27,7 +27,7 @@ internal static class CalibrationLiveTests
                 messages.Add(new JsonObject { ["role"] = role, ["content"] = content });
             var body = new JsonObject
             {
-                ["model"] = "qwen3.5-9b",
+                ["model"] = "Gemma4-E4B-Q4",
                 ["messages"] = messages,
                 ["temperature"] = 0.1,
                 ["max_tokens"] = 256,

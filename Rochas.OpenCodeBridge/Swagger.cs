@@ -1,5 +1,5 @@
 // ===========================================================================
-//  Swagger da Qwen3-Bridge — pagina propria, sem dependencia externa.
+//  Swagger da OpenCodeBridge — pagina propria, sem dependencia externa.
 // ---------------------------------------------------------------------------
 //  Sem pacotes NuGet (Swashbuckle) e sem CDN: a especificacao OpenAPI e um
 //  texto estatico e a pagina HTML/CSS/JS e 100% autocontida. Funciona ate
@@ -22,7 +22,7 @@ internal static partial class Program
         {
           "openapi": "3.0.0",
           "info": {
-            "title": "Qwen3-Bridge API",
+            "title": "OpenCodeBridge API",
             "version": "1.4",
             "description": "Padrao novo (/v1/responses, traduzido) + padrao antigo (/v1/chat/completions, /v1/completions, repasse) + gerenciamento."
           },
@@ -77,7 +77,7 @@ internal static partial class Program
                   "content": {
                     "application/json": {
                       "example": {
-                        "model": "openai/qwen3-8b-awq",
+                        "model": "openai/Gemma4-E4B-Q4",
                         "stream": true,
                         "instructions": "seja breve",
                         "input": [
@@ -116,7 +116,7 @@ internal static partial class Program
                   "content": {
                     "application/json": {
                       "example": {
-                        "model": "qwen3-8b-awq",
+                        "model": "Gemma4-E4B-Q4",
                         "messages": [
                           {
                             "role": "user",
@@ -143,7 +143,7 @@ internal static partial class Program
                   "content": {
                     "application/json": {
                       "example": {
-                        "model": "qwen3-8b-awq",
+                        "model": "Gemma4-E4B-Q4",
                         "prompt": "diga ok",
                         "max_tokens": 50
                       }
@@ -188,7 +188,7 @@ internal static partial class Program
                   "content": {
                     "application/json": {
                       "example": {
-                        "model": "openai/qwen3-8b-awq",
+                        "model": "openai/Gemma4-E4B-Q4",
                         "instructions": "x",
                         "input": "oi",
                         "tools": [
@@ -219,7 +219,7 @@ internal static partial class Program
                   "content": {
                     "application/json": {
                       "example": {
-                        "model": "qwen3-8b-awq",
+                        "model": "Gemma4-E4B-Q4",
                         "temperature": 0,
                         "completion": {
                           "choices": [

@@ -9,7 +9,7 @@ internal static class UnitTranslateTests
     {
         var body = new JsonObject
         {
-            ["model"] = "openai/qwen3-8b-awq",
+            ["model"] = "openai/Gemma4-E4B-Q4",
             ["instructions"] = "Voce e um arquiteto de software senior. Respostas curtas.",
             ["input"] = new JsonArray(
                 new JsonObject
@@ -55,7 +55,7 @@ internal static class UnitTranslateTests
     {
         var body = new JsonObject
         {
-            ["model"] = "openai/qwen3-8b-awq",
+            ["model"] = "openai/Gemma4-E4B-Q4",
             ["input"] = new JsonArray(new JsonObject
             {
                 ["type"] = "message", ["role"] = "user",
@@ -75,7 +75,7 @@ internal static class UnitTranslateTests
     {
         var body = new JsonObject
         {
-            ["model"] = "openai/qwen3-8b-awq",
+            ["model"] = "openai/Gemma4-E4B-Q4",
             ["input"] = new JsonArray(new JsonObject
             {
                 ["type"] = "message", ["role"] = "user",
@@ -115,7 +115,7 @@ internal static class UnitTranslateTests
         };
         var status = await TestContext.GetObj(TestContext.Bridge + "/api/status");
         double globalTemp = status["temperature"]?.GetValue<double>() ?? 0.3;
-        var plan = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq-plan"));
+        var plan = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/Gemma4-E4B-Q4-plan"));
         var planChat = plan["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request plan");
         // A temperatura do perfil nao e comparavel com a global (o operador pode
         // subir a global sem tocar no role): o invariante e plan > build e cada
@@ -123,13 +123,13 @@ internal static class UnitTranslateTests
         double planTemp = plan["temperature"]?.GetValue<double>() ?? -1;
         TestContext.Check(planTemp > 0, $"plan com temperatura efetiva (veio {planTemp})");
         TestContext.Check(planChat["chat_template_kwargs"]?["enable_thinking"]?.GetValue<bool>() == true, "plan thinking on");
-        var build = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen2.5-coder-3b-build"));
+        var build = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/Gemma4-E4B-Q4-build"));
         var buildChat = build["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request build");
         double buildTemp = build["temperature"]?.GetValue<double>() ?? -1;
         TestContext.Check(buildTemp <= globalTemp, $"build temp abaixo da global ({buildTemp} <= {globalTemp})");
         TestContext.Check(planTemp > buildTemp, $"plan mais quente que build ({planTemp} > {buildTemp})");
         TestContext.Check(buildChat["chat_template_kwargs"]?["enable_thinking"]?.GetValue<bool>() == false, "build thinking off");
-        var plain = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq"));
+        var plain = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/Gemma4-E4B-Q4"));
         TestContext.Check(plain["temperature"]?.GetValue<double>() == globalTemp, "sem sufixo usa global");
     }
 
@@ -155,7 +155,7 @@ internal static class UnitTranslateTests
         var cpu = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("llama/qwen25-coder-3b-cpu-build", 8192));
         var cpuChat = cpu["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request cpu");
         TestContext.Check(cpuChat["max_tokens"]?.GetValue<int>() == System.Math.Min(8192, cpuCap), "cpu clampado em cpu_max_tokens, veio: " + cpuChat["max_tokens"]);
-        var gpu = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/qwen3-8b-awq-build", 8192));
+        var gpu = await TestContext.PostObj(TestContext.Bridge + "/api/translate", Body("openai/Gemma4-E4B-Q4-build", 8192));
         var gpuChat = gpu["chat_request"]?.AsObject() ?? throw new Exception("sem chat_request gpu");
         // Na linha CPU todo request vai p/ o llama: vale o teto CPU mesmo com id 8b.
         int gpuExpect = TestContext.ServedIsCoder ? System.Math.Min(8192, cpuCap) : System.Math.Min(8192, gpuCap);

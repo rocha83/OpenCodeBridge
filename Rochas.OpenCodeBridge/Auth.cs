@@ -1,5 +1,5 @@
 // ===========================================================================
-//  Auth da Qwen3-Bridge — JWT HS256 + login contra a base de usuarios do Web.
+//  Auth da OpenCodeBridge — JWT HS256 + login contra a base de usuarios do Web.
 // ---------------------------------------------------------------------------
 //  Sem pacotes NuGet (BCL: HMACSHA256 + PBKDF2 + Microsoft.Data.Sqlite).
 //  Login valida email/senha na tabela users do web.db (mesmo hash PBKDF2

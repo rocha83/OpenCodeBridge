@@ -43,7 +43,7 @@ internal static class Program
         string? cred = TestContext.Jwt ?? TestContext.ApiKey;
         if (cred is not null) TestContext.Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
 
-        // Descobre o modelo servido p/ ajustar as expectativas (qwen3|coder).
+        // Descobre o modelo servido p/ ajustar as expectativas (gemma|coder).
         try
         {
             var st = TestContext.GetObj(TestContext.Bridge + "/api/status").GetAwaiter().GetResult();
@@ -174,7 +174,7 @@ internal static class Program
         if (TestContext.RunCpu) TestContext.Run("E-science-cpu", E2EScienceTests.ScienceCpu);
         else Console.WriteLine("[test] skip E-science-cpu (--skip-cpu)");
         TestContext.Run("E-mission-tools", E2EMissionTests.MissionTools);
-            // Sonda direta do parser hermes no vLLM: so faz sentido no Qwen3.
+            // Sonda direta do parser hermes no vLLM: so faz sentido no parser nativo.
             if (!TestContext.ServedIsCoder) TestContext.Run("E-vllm-tool-hermes", E2EToolTests.VllmToolHermes);
             else Console.WriteLine("[test] skip E-vllm-tool-hermes (perfil coder)");
             TestContext.Run("E-responses-simple", E2EToolTests.SimpleResponses);

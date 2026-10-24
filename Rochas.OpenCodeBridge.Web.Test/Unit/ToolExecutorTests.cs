@@ -250,8 +250,8 @@ internal static class ToolExecutorTests
     }
     private static void CpuEtaTps()
     {
-        var cpu = new Models.Agent { BridgeUrl = "http://127.0.0.1:4125", Model = "qwen3-4b-awq-build" };
-        var gpu = new Models.Agent { BridgeUrl = "http://127.0.0.1:4124", Model = "qwen3-8b-awq-build" };
+        var cpu = new Models.Agent { BridgeUrl = "http://127.0.0.1:4125", Model = "Gemma4-E4B-UD-Q3-build" };
+        var gpu = new Models.Agent { BridgeUrl = "http://127.0.0.1:4124", Model = "Gemma4-E4B-Q4-build" };
         var probed = new Models.Agent { BridgeUrl = "http://127.0.0.1:4125", Model = "cpu", MeasuredTps = 3.1 };
         Check(Services.ExecutorTps.ResolveTps(cpu, 3) == 3, "U-exec-cpu-tps");
         Check(Services.ExecutorTps.ResolveTps(gpu, 2.5) == 30, "U-exec-gpu-tps");

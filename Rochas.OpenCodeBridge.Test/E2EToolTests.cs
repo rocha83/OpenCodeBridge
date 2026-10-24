@@ -42,7 +42,7 @@ internal static class E2EToolTests
     {
         var body = new JsonObject
         {
-            ["model"] = "openai/qwen3-8b-awq",
+            ["model"] = "openai/Gemma4-E4B-Q4",
             ["stream"] = false,
             ["input"] = new JsonArray(new JsonObject
             {
@@ -61,7 +61,7 @@ internal static class E2EToolTests
     {
         var body = new JsonObject
         {
-            ["model"] = "openai/qwen3-8b-awq",
+            ["model"] = "openai/Gemma4-E4B-Q4",
             ["stream"] = false,
             ["input"] = new JsonArray(new JsonObject
             {

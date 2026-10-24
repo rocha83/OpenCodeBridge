@@ -25,7 +25,7 @@
     <Authors>Renato Rocha</Authors>
     <Copyright>Renato Rocha</Copyright>
     <Description>Bridge HTTP que traduz /v1/responses (opencode) para /v1/chat/completions (vLLM), com tool calling, thinking e streaming progressivo.</Description>
-    <PackageTags>opencode vllm qwen bridge responses chat-completions llm local-ai</PackageTags>
+    <PackageTags>opencode llama gemma bridge responses chat-completions llm local-ai</PackageTags>
     <RepositoryType>Git</RepositoryType>
     <RepositoryUrl>https://github.com/rocha83/OpenCodeBridge</RepositoryUrl>
     <PackageProjectUrl>https://github.com/rocha83/OpenCodeBridge</PackageProjectUrl>

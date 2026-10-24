@@ -1,5 +1,5 @@
 // ===========================================================================
-//  Metrics da Qwen3-Bridge — anel em memoria + dump SQLite.
+//  Metrics da OpenCodeBridge — anel em memoria + dump SQLite.
 // ---------------------------------------------------------------------------
 //  So atua com DIAGNOSTIC ligado (--diagnostic / appsettings diagnostic /
 //  env DIAGNOSTIC=1): cada request chat, login, guarda e amostra de GPU vira

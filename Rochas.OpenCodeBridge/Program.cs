@@ -1,5 +1,5 @@
 // ===========================================================================
-//  Qwen3-Bridge  (C# / .NET console)  —  v1.1
+//  OpenCodeBridge  (C# / .NET console)
 // ---------------------------------------------------------------------------
 //  PROBLEMA
 //  --------
@@ -11,13 +11,13 @@
 //  SOLUCAO (propositalmente simples)
 //  ---------------------------------
 //  Bridge que recebe /v1/responses e traduz para /v1/chat/completions do
-//  vLLM — o MESMO caminho que ja funciona no qwen CLI. Depois converte a
+//  Llama — o MESMO caminho que ja funciona no cliente local. Depois converte a
 //  resposta (tool_calls + thinking) de volta para o formato Responses.
 //
 //  O QUE NAO ESTA AQUI (de proposito — heranca problematica legada):
 //  coercion de paths, grounding, extracao de pseudo-tool-call em texto,
 //  retry com nudge, footer de tokens, strip agressivo de template.
-//  Se surgir algo especifico do Qwen3-8B, amadurecemos nesta versao.
+//  Se surgir algo especifico do modelo servido, amadurecemos nesta versao.
 //
 //  CONVENCAO DE IDIOMA: identificadores em en-US, comentarios em pt-BR.
 //
@@ -46,7 +46,7 @@ internal static partial class Program
     static int Port = 4124;                                        // porta da bridge
     static string Listen = "0.0.0.0";                              // interface de escuta padrao: rede toda (acesso externo; units systemd repetem via --listen)
     static string Upstream = "http://127.0.0.1:4100";              // vLLM
-    static string Model = "qwen3-8b-awq";                          // id servido pelo vLLM
+    static string Model = "Gemma4-E4B-Q4";                          // id servido pelo Llama
     static string Thinking = "events";                             // "events" = mostra | "off" = descarta
     static double Temperature = 0.3;                                 // medio (escala 0.1 baixo / 0.3 medio / 0.5 alto); tool calling continua deterministico via tool_choice
     static int MaxTokens;                                          // teto de saida da linha GPU: 0 = SEM TETO (a infra/llama controla via -c/--n-predict e o cliente decide via max_tokens); >0 = clamp
@@ -56,7 +56,7 @@ internal static partial class Program
     static int ToolShimMinCalls = 0;                                // calls minimas no historico antes de liberar {"final":...}; 0 = libera sempre
     static int ToolOutputLimit;                                      // corte por resultado de tool: 0 = SEM CORTE (padrao); config via appsettings "toolOutputLimit" / --tool-output-limit
     static string WorkspaceRoot = "";                               // raiz p/ POST /api/tools/execute; vazio = cwd do processo
-    static string LogPath = "/tmp/qwen3-bridge.log";
+    static string LogPath = "/tmp/opencodebridge.log";
     static string ApiKey = "";
     static bool PassthroughResponses = false;                    // Bypass p/ upstream com Responses nativo (llama.cpp): so remove itens reasoning, resto passa direto                                     // Bearer p/ upstream com auth (llama --api-key); vazio = so repasse
     static readonly string Version = "2.1";
@@ -176,7 +176,7 @@ internal static partial class Program
     //   dump    = metrics + corpos completos (comportamento historico)
     // --diagnostic 1 (legado) sem nivel declarado implica "dump".
     static string DiagnosticLevel = "off";
-    static string AntiRepeatNotice = "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, provavelmente voce entrou em repeticao invalida; quando informada a repeticao, nao responda mais nada, apenas encerre em silencio, obrigado.";
+    static string AntiRepeatNotice = "A ponte OpenCodeBridge percebeu uma possivel repeticao nesta resposta. Se fizer sentido, vale reformular o raciocinio ou seguir por outro caminho; se a repeticao for intencional, pode continuar. Obrigado.";
 
     // ThinkingOffRoles: roles que NUNCA devem mostrar reasoning, por nome de role
     // ("Build", "Scripter", "Exec"). Vence sobre o perfil/sufixo do model id, para
@@ -372,13 +372,13 @@ internal static partial class Program
     /// <returns>True = coagir texto em tool_calls.</returns>
     static bool CoerceFor() => CoerceTextTools || UpstreamParser == "none";
 
-    // Perfis por sufixo no model (ex.: openai/qwen3.5-9b-plan): plan =
+    // Perfis por sufixo no model (ex.: openai/Gemma4-E4B-Q4-plan): plan =
     // thinking ligado + temp media p/ planejar; build = thinking fundido +
     // temp media p/ executar; orch = coordena subagentes; moe = uso geral
     // hibrido; scripter = temp baixa (determinismo) e thinking off.
     // Escala: 0.1 (baixa: build/scripter/exec) / 0.3 (média: plan/orch) / 0.5 (alta: moe).
     // Request sem sufixo usa os
-    // globais. O caminho Qwen3 padrao (sem sufixo) fica byte-identico.
+    // globais. O caminho Gemma 4 padrao (sem sufixo) fica byte-identico.
     static readonly Dictionary<string, (double Temp, string Think)> Profiles =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -510,7 +510,7 @@ internal static partial class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[qwen3-bridge] appsettings ignorado: {ex.Message}");
+            Console.WriteLine($"[opencodebridge] appsettings ignorado: {ex.Message}");
         }
     }
 
@@ -861,7 +861,7 @@ internal static partial class Program
         listener.Prefixes.Add($"http://{prefixHost}:{Port}/");
         listener.Start();
         StartedAt = DateTime.UtcNow;
-        Console.WriteLine($"[qwen3-bridge] {Listen}:{Port} -> {Upstream} (model={Model}, thinking={Thinking})");
+        Console.WriteLine($"[opencodebridge] {Listen}:{Port} -> {Upstream} (model={Model}, thinking={Thinking})");
 
         // Loop infinito de aceitacao; cada requisicao roda na thread do pool
         while (true)
@@ -1319,7 +1319,7 @@ WriteJson(ctx, 200, new JsonObject
             {
                 WriteJson(ctx, 200, new JsonObject
                 {
-                    ["status"] = "ok", ["bridge"] = "qwen3-csharp",
+                    ["status"] = "ok", ["bridge"] = "opencodebridge",
                     ["upstream"] = Upstream, ["model"] = Model, ["thinking"] = Thinking
                 });
                 return;
@@ -1388,7 +1388,7 @@ WriteJson(ctx, 200, new JsonObject
     /// <returns>Status JSON.</returns>
     static JsonObject BuildStatus() => new()
     {
-        ["status"] = "ok", ["bridge"] = "qwen3-csharp", ["version"] = Version,
+        ["status"] = "ok", ["bridge"] = "opencodebridge", ["version"] = Version,
         ["listen"] = Listen, ["port"] = Port,
         ["upstream"] = Upstream, ["model"] = Model, ["thinking"] = Thinking,
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
@@ -1553,7 +1553,7 @@ WriteJson(ctx, 200, new JsonObject
                 if (Diagnostic) Log(new JsonObject { ["event"] = "qwen-tools", ["count"] = nq });
             }
             // Thinking default da linha (--thinking): sem o kwargs o template
-            // Qwen liga thinking sozinho; vale p/ todo cliente sem flag propria.
+            // O template pode ligar thinking sozinho; vale p/ todo cliente sem flag propria.
             if (node is not null && node["chat_template_kwargs"] is null)
             {
                 bool wantThinking = profThinkMid.Length > 0 ? profThinkMid == "events" : Thinking == "events";
@@ -1977,8 +1977,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
     {
         breakerTrip = null;
         breakerState = "none";
-        // O opencode manda "openai/qwen3-8b-awq" mas o vLLM so conhece o id
-        // servido ("qwen3-8b-awq") e responde 404 p/ outro id. Por isso o
+        // O opencode manda "openai/Gemma4-E4B-Q4" mas o Llama so conhece o id
+        // servido ("Gemma4-E4B-Q4") e responde 404 p/ outro id. Por isso o
         // upstream SEMPRE usa o Model configurado; o id original so volta
         // como eco no campo "model" da resposta.
         requestedModel = req["model"]?.GetValue<string>() ?? Model;
@@ -2155,7 +2155,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         if (tools is { Count: > 0 })
         {
             chat["tools"] = tools;
-            // Qwen3 decide sozinho ("auto", bake-off 3/3); Coder precisa de
+            // Gemma 4 decide sozinho ("auto", bake-off 3/3); Coder precisa de
             // "required" p/ emitir tool_calls nativo em vez de texto.
             chat["tool_choice"] = IsCoder ? "required" : "auto";
         }
@@ -3614,7 +3614,7 @@ var shape = new StringBuilder();
         catch { return null; }
     }
 
-    /// <summary>Funde system/developer do input num unico system inicial (jinja Qwen exige system primeiro).</summary>
+    /// <summary>Funde system/developer do input num unico system inicial (o template exige system primeiro).</summary>
     /// <param name="req">Request Responses (mutado no lugar).</param>
     /// <returns>True se reordenou.</returns>
 static bool NormalizeSystemFirst(JsonObject req)
@@ -4445,7 +4445,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         var messages = new JsonArray();
 
 // "instructions" + todo system/developer do meio viram UM system inicial
-        // (jinja Qwen exige system primeiro; resumo de compactacao chega no meio).
+        // (o template exige system primeiro; resumo de compactacao chega no meio).
         var sysText = new StringBuilder();
         if (instructions is JsonValue instructionNode && instructionNode.TryGetValue<string>(out string? systemText) && !string.IsNullOrWhiteSpace(systemText))
             sysText.Append(systemText.Trim());
@@ -4741,7 +4741,7 @@ if (type == "message")
 
     // ---------------------------------------------------------------------
     // 4.6) resposta chat -> objeto Responses
-    //   reasoning (thinking do Qwen3-8B) -> item "reasoning"   [modo events]
+    //   reasoning (thinking do modelo) -> item "reasoning"   [modo events]
     //   content                          -> item "message"
     //   tool_calls                       -> item "function_call" (SEM status:
     //                                        o opencode conduz in_progress->completed)
@@ -4962,7 +4962,7 @@ if (type == "message")
         };
     }
 
-    // Separa o bloco de thinking (<think>...</think>, modo hibrido do Qwen3)
+    // Separa o bloco de thinking (<think>...</think>, modo hibrido do template)
     // do texto final. Sem tag de fechamento (corte por max_tokens), tudo apos
     // a abertura e considerado thinking.
     // Tags de controle de canal/thinking que alguns templates deixam vazar no
