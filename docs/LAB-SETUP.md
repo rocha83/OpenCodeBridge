@@ -958,8 +958,8 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
   (`llama`) usa `limit.context: 65536`. Menções históricas a "GPU2 1×128k"
   (cenários das seções 2.x/9.x) descrevem a configuração anterior.
 - Portas públicas do Caddy por conta: `4230` (mint), `4240` (dev-agent), `4250`
-  (moe-agent). Portas de bancada (bridges de teste) **não** ficam abertas no firewall:
-  o firewall só conhece os serviços oficiais (`4124`, `4125`, `4126`, `4130`, `4200`).
+  (moe-agent). A lista do firewall é a de `setup-ufw-remaster.sh` — fonte única, **não**
+  é alterada por teste: bancada roda em porta livre e a liberação é descartada junto.
 - Chroot aplicado: contas 1001/1002, homes `750`, `service.json` 49376/49377,
   LightDM hidden, units `disabled` (sem symlink). `AgentSeeder` → 10 agentes,
   10/10 com cláusula, 0 `(CPU Forced)`. Build Release 0/0.

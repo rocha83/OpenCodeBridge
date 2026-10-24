@@ -172,17 +172,21 @@ bloco em dois passes (`--mode pure` e `--mode opencode`), fechando com a suíte 
 (`E-belts-build-direct` = role build implementa direto; `E-belts-direct` = role orch
 segmenta → Scripter → Exec); o runner só passou a executá-las **nesta ordem**.
 
+> **`export PORT=<porta livre>`** antes dos blocos abaixo. A bridge é **de bancada**:
+> descartável, criada e morta na execução. Ela **não** entra em unit, firewall, `opencode.json`
+> nem em agente — o ambiente só conhece os serviços predefinidos (retrato em `LAB-SETUP.md` §12).
+
 ```bash
 # bridge própria (para testar o build do repo, não o binário de produção)
 cd Rochas.OpenCodeBridge/bin/Release/net9.0
-dotnet Rochas.OpenCodeBridge.dll --port 4144 --upstream http://127.0.0.1:4100 \
+dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4100 \
   --model Gemma4-E4B-Q4 --thinking events --temperature 0.5 --max-tokens 16384 \
   --context-guard 1 --context-tokens 131072 --api-key guest@123 \
   --passthrough-responses true --main-harness 0 --harness-tails 0 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
   --log /tmp/bridge-q4-level1.log &
 
-LEVEL_BRIDGE=http://127.0.0.1:4144 LEVEL_BLOG=/tmp/bridge-q4-level1.log \
+LEVEL_BRIDGE=http://127.0.0.1:$PORT LEVEL_BLOG=/tmp/bridge-q4-level1.log \
   ./scripts/war/run-levels.sh --level 1
 ```
 
@@ -198,14 +202,14 @@ ambiente, sem tocar no catálogo:
 
 ```bash
 # bridge Q3 dedicada (harness off, mesmo perfil da :4125)
-dotnet Rochas.OpenCodeBridge.dll --port 4147 --upstream http://127.0.0.1:4110 \
+dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4110 \
   --model Gemma4-E4B-UD-Q3 --thinking events --temperature 0.5 --max-tokens 16384 \
   --context-guard 1 --context-tokens 65536 --api-key guest@123 \
   --passthrough-responses true --main-harness 0 --harness-tails 0 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
   --log /tmp/bridge-q3-level1.log &
 
-LEVEL_BRIDGE=http://127.0.0.1:4147 LEVEL_UPSTREAM=http://127.0.0.1:4110 \
+LEVEL_BRIDGE=http://127.0.0.1:$PORT LEVEL_UPSTREAM=http://127.0.0.1:4110 \
 LEVEL_BLOG=/tmp/bridge-q3-level1.log ./scripts/war/run-levels.sh --level 1
 ```
 
@@ -217,7 +221,7 @@ imagem. Sem essas variáveis o comportamento é o de antes (`:4100`, visão liga
 
 ### Level 2 — bateria de tools + científico
 
-`LEVEL_BRIDGE=http://127.0.0.1:4144 ./scripts/war/run-levels.sh --level 2`
+`LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 2`
 
 Roda, em `--mode pure` e `--mode opencode`: `E-tools-full`, `E-dual-tools`,
 `E-mission-tools`, `E-responses-tools`, `E-science-gpu` (Q4, bridge do level) e
@@ -227,7 +231,7 @@ sessão real). Artefatos no mesmo layout do Level 1.
 
 ### Level 3 — pacote completo de belts (azul → preta)
 
-`LEVEL_BRIDGE=http://127.0.0.1:4146 ./scripts/war/run-levels.sh --level 3`
+`LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 3`
 
 Duas trilhas, nas cinco faixas (`azul,verde,roxa,marrom,preta`), em `--mode pure` e
 `--mode opencode`: **trilha Build** (`E-belts-build-direct` — role build implementa
@@ -237,7 +241,7 @@ Exige **harness ligado** na bridge; o runner consulta `/api/harness` e loga avis
 
 ```bash
 cd Rochas.OpenCodeBridge/bin/Release/net9.0
-dotnet Rochas.OpenCodeBridge.dll --port 4146 --upstream http://127.0.0.1:4100 \
+dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4100 \
   --model Gemma4-E4B-Q4 --thinking events --temperature 0.5 --max-tokens 16384 \
   --context-guard 1 --context-tokens 131072 --api-key guest@123 \
   --passthrough-responses true --main-harness 1 --harness-tails 1 \
@@ -280,7 +284,7 @@ Reprodução sem supervisor (execução manual da mesma fila):
 ```bash
 # trilha build, faixas azul+verde, modo puro
 dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
-  --bridge http://127.0.0.1:4144 --only E-belts-build-direct --belts azul,verde --mode pure
+  --bridge http://127.0.0.1:$PORT --only E-belts-build-direct --belts azul,verde --mode pure
 # fila completa por nível
-LEVEL_BRIDGE=http://127.0.0.1:4144 ./scripts/war/run-levels.sh --level 2
+LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 2
 ```
