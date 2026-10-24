@@ -101,6 +101,30 @@ public static class AgentSeeder
         MigrateUpstreamUrls(conn);
         RenameQ3Agents(conn);
         NormalizeDelegationRules(conn);
+        PromoteRoleTemperatures(conn);
+    }
+
+    // Série criatividade (pós Level 3 green / WAR ready): sobe a temperatura dos
+    // roles ao limite medido sem alucinação — plan/orch 0.5, moe 0.8,
+    // build/scripter/exec 0.2. Idempotente: roda a cada boot e só toca agentes
+    // Gemma4 E4B ativos; modelo base e agentes custom ficam intactos.
+    private static void PromoteRoleTemperatures(SqliteConnection conn)
+    {
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                UPDATE agents SET temperature = CASE
+                    WHEN name LIKE '%MoE%' THEN 0.8
+                    WHEN name LIKE '%Plan%' OR name LIKE '%Orch%' THEN 0.5
+                    WHEN name LIKE '%Build%' OR name LIKE '%Scripter%' OR name LIKE '%Exec%' THEN 0.2
+                    ELSE temperature END
+                WHERE model LIKE 'Gemma4-E4B%' AND active = 1
+                  AND (temperature IN (0.1, 0.3, 0.5, 0.8));
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        catch { /* migração best-effort */ }
     }
 
     // Ids mortos (gemma-4-12b / gemma-4-e2b) não existem mais nas units. Atualiza

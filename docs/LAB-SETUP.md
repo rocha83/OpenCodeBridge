@@ -1078,6 +1078,33 @@ grep -o -- '--dry-multiplier [^ ]*' /etc/systemd/system/llama-*.service   # 0.0 
 for p in $(pgrep -f llama-server); do tr '\0' ' ' < /proc/$p/cmdline | grep -o -- '--port [0-9]*\|--dry-multiplier [^ ]*'; echo; done
 ```
 
+## 13. Agentes do opencode — um role por comportamento (sem duplicata `*-cpu`)
+
+Regra: **role = comportamento** (`plan`, `build`, `orch`, `moe`, `scripter`, `exec`). O que
+muda entre as linhas é só o **modelo** escolhido — nunca o role.
+
+| linha | provider | modelo escolhido | encadeamento |
+|---|---|---|---|
+| GPU1 Q4 | `openai` | `Gemma4-E4B-Q4-<role>` | bridge `:4124` → llama `:4100` |
+| GPU2 Q3 | `llama` | `Gemma4-E4B-UD-Q3-<role>` | bridge `:4125` → llama `:4110` |
+| CPU forced | `cpu` | `Gemma4-E4B-Q4-<role>` | bridge `:4126` → llama `:4120` |
+
+Config em `~/.config/opencode/agents/`: `build.md`, `exec.md`, `moe.md`, `orch.md`,
+`plan.md`, `scripter.md` (os homes isolados `dev-agent`/`moe-agent` têm também
+`build-exec.md`).
+
+**Removidas as duplicatas** `build-cpu.md`, `exec-cpu.md`, `moe-cpu.md`, `orch-cpu.md`,
+`plan-cpu.md`, `scripter-cpu.md`: eram o mesmo role com outra linha de modelo e
+`(CPU Forced)` na descrição. Para rodar um role na linha CPU basta selecionar
+`cpu/Gemma4-E4B-Q4-<role>` no seletor de modelo — system prompt, permissões e tools são
+idênticos. O provider `cpu` **continua** no `opencode.json` (é ele que dá sentido ao
+sufixo). Backup dos arquivos removidos:
+`/tmp/opencode/agents-cpu-backup-<stamp>/`.
+
+O sufixo de role no **nome do modelo** é o que a bridge usa para aplicar o perfil
+(temp/thinking/coerção): `Gemma4-E4B-Q4-build` ≠ `Gemma4-E4B-Q4`. Sem sufixo, roda o
+perfil base.
+
 ### Flags efetivas dos serviços (retrato desta release)
 
 | serviço | flags-chave |

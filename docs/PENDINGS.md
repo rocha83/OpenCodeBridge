@@ -1,5 +1,33 @@
 # PENDINGS — OpenCodeBridge
 
+## SÉRIE CRIATIVIDADE (obrigatória) — só depois de GREEN total no Level 3 / WAR READY
+
+**Obrigação:** subir a criatividade dos modelos em operação ao limite possível **sem**
+alucinação, erro de manipulação de tools e sem aumento de repetição. A série só começa
+com os três níveis (L1/L2/L3) fechados em verde nas raias Q4 **e** Q3.
+
+**Alvo de temperatura (volta próxima de como era antes):**
+
+| role | temp |
+|---|---|
+| `plan`, `orch` | 0.5 |
+| `moe` | 0.8 |
+| `build`, `scripter`, `exec` | 0.2 |
+
+**Escopo da promoção:**
+
+1. **Configs do opencode (TODOS os homes)** — `scripts/war/promote-creativity.sh`
+   (dry-run por padrão; `--apply` grava com backup `.bak-temps-<stamp>`). Cobre
+   `mint`, `dev-agent` e `moe-agent`, e atualiza também o rótulo
+   `(Thinking On, 0.3)` do campo `name`. Modelo base (sem sufixo de role) fica intacto.
+2. **Seeder da Web UI** — `Rochas.OpenCodeBridge.Web/Data/AgentSeeder.cs`:
+   `PromoteRoleTemperatures` (idempotente; só `Gemma4-E4B%` ativos; preserva agentes
+   custom). Exige `dotnet build -c Release` + restart de `bridge-web` para valer no banco.
+3. **Aceite:** repetir a bateria que fechou o Level 3 verde com as novas temps e comparar
+   com o baseline (repetição, tool-error, nomes/paths preservados). Qualquer regressão de
+   alucinação/manipulação volta a temperatura do role afetado — não do conjunto.
+
+
 ## AVALIAÇÃO PENDENTE — parâmetros do llama × anti-repeat em camadas (2026-10-24)
 
 **Origem:** sessões reais de 2026-10-23/24 (uso de tools por modelos locais limitados,
