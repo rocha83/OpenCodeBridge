@@ -80,3 +80,40 @@ Não é anti-repeat da bridge, nem prompt, nem ctx. Mitigações possíveis
 (não aplicadas): retry da bridge nesse 500 específico (reamostragem
 costuma sair limpa); trocar o template de chat do VL no llama;
 parâmetros que reduzam o vazamento de template.
+
+## 8. Bateria dual (puro + opencode) e guardas de tools — 2026-10-24
+Origem: análise de duas sessões reais (`an-lise-falha-uso-de-ferramentas-em-opencode-sqlite.json`
+e `greeting-and-quick-check-in.json`) com 18 falhas em 30 chamadas de tool. Causas medidas
+e o que passou a existir no código:
+
+| Causa medida | Guarda implementada | Onde |
+|---|---|---|
+| role `-build` rodando em temp 0.5 (o cliente reenviava a temp do modelo base) → identificador corrompido (`proj-teste-001`→`999`, `opencodebridge`→`opencodedbidge`) | perfil do role vence a temp do request; `--request-temp-wins` restaura o antigo; `temperature_source` exposto em `/api/status`, `/api/translate` e no log `response` | `Program.cs` (`BuildChatRequest`, `ForwardResponses`, `Passthrough`) |
+| loop de 10 tentativas no mesmo alvo com nomes mutados (anti-repeat textual não pega: cada iteração é texto novo) | `ToolLoopBreaker` (Core): lê `function_call`+resultado do próprio request, normaliza alvo (remove dígitos/separadores), 3 falhas = aviso no último resultado, 6 = curto-circuito sem chamar o modelo (`--breaker-soft/--breaker-hard`) | `Core/ToolLoopBreaker.cs` |
+| glob com alternância (`a\|b`), heredoc, `\n` literal, `cd` em nome não criado, build simulado, `sudo` em PROD, `read` em `.db` | regras novas em `HarnessTails.DefaultTools` (caminho absoluto copiado de `ls`, probe obrigatório antes do retry, glob sem `\|`, sem heredoc, sem simulação, sem `sudo`, `git init` antes do commit) | `Core/HarnessTails.cs` |
+| `\n` de 2 caracteres no comando shell → "here-document delimitado pelo fim do arquivo" | `FixLiteralEscapes`: vira quebra real quando o comando não tem nenhuma quebra; independe de `ToolStrategy` | `Program.cs` |
+| caudas inertes no caminho opencode (`--harness 0`) | `--tail-scope managed\|all\|off` (default `managed`); `all` injeta as caudas nos DOIS caminhos; `/api/harness` reporta `tails_managed`, `tails_opencode` e o efetivo | `Program.cs` + `appsettings.json` |
+
+### Configuração em produção
+`Rochas.OpenCodeBridge/appsettings.json` (versionado, copiado para o output) carrega
+`tailScope: all`, `profileTempWins: true`, `breakerSoft: 3`, `breakerHard: 6` e os seis
+perfis. As caudas de texto moram só em `HarnessTails.cs` — não sobrescrever
+`harnessBehaviorTail`/`harnessToolsTail` no appsettings (o parágrafo que existia só no PROD
+foi trazido para o código).
+
+### Testes
+- **`--dual`**: `E-dual-tools` roda a matriz (write/read/edit, glob+grep, ciclo git, probe
+  obrigatório, script com erro de sintaxe sem simulação, SQLite via python3) em dois
+  transportes — `pure` (HTTP `/v1/responses` + `/api/tools/execute`) e `opencode`
+  (`opencode run --standalone`) — com sufixo `-pure`/`-opencode` e checagem de ARTEFATO em
+  disco, não do texto do modelo.
+- **`--standalone-provider openai|llama`** escolhe o provider do opencode (Q4 :4124 x Q3 :4125).
+- **Unit novos**: `U-breaker-*` (streak, alvo mutado, trip, alvos distintos, normalização,
+  marcadores pt/en), `U-toolargs-literal-newline`, `U-tails-path-simulation-rules`,
+  `U-translate-profile-temp-wins`, `U-translate-breaker-verdicts`.
+
+### Bateria
+`./run-battery-dual.sh` (background: `nohup ./run-battery-dual.sh > /tmp/opencode/battery.out 2>&1 &`)
+roda Q4 e Q3 em paralelo; por modelo: unit → tools-dual → tópicos → tools-full/responses/devpipe/
+mitigação → belts → 1 pipe puro → opencode implícito (`--standalone`) → senior/enterprise/front/
+scripter/orch/arquitetura. Logs e `SUMMARY.txt` em `/tmp/opencode/battery/<stamp>/`.

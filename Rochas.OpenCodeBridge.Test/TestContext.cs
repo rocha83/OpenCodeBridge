@@ -38,6 +38,9 @@ internal static class TestContext
     // --standalone-model explicito (provider/model); senao deriva do agent:
     // exec -> llama/ (CPU E2B), demais -> openai/ (GPU 12B).
     public static string StandaloneModel = "";
+    // --standalone-provider: forca o provider do opencode (openai=Q4 :4124,
+    // llama=Q3 :4125, cpu=:4126). Vazio = heuristica antiga (exec -> llama).
+    public static string StandaloneProvider = "";
     public static string SuiteModel
     {
         get
@@ -121,7 +124,9 @@ internal static class TestContext
     {
         string role = StandaloneAgent is "plan" or "build" or "orch" or "moe" or "scripter" or "exec"
             ? StandaloneAgent : "build";
-        string provider = StandaloneAgent == "exec" ? "llama/" : "openai/";
+        string provider = StandaloneProvider.Length > 0
+            ? StandaloneProvider + "/"
+            : (StandaloneAgent == "exec" ? "llama/" : "openai/");
         return provider + BaseModel + "-" + role;
     }
 

@@ -1170,7 +1170,10 @@ internal static partial class Program
                 // Efetivo por caminho: opencode (model com sufixo) x direto/Web.
                 WriteJson(ctx, 200, new JsonObject
                 {
-                    ["harness"] = Harness && TailsAtivas(),
+                    // Coerente com as caudas efetivas: com --tail-scope all elas
+                    // valem nos dois caminhos, entao o campo legado "harness"
+                    // (consultado pela Web) passa a refletir isso.
+                    ["harness"] = TailsAtivas() && TailsOn(""),
                     ["tail_scope"] = TailScope,
                     ["tails_managed"] = TailsOn(""),
                     ["tails_opencode"] = TailsOn(Model + "-build"),

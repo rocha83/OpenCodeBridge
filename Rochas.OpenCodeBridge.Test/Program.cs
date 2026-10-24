@@ -28,6 +28,7 @@ internal static class Program
             else if (args[i] == "--standalone-agent" && i + 1 < args.Length) TestContext.StandaloneAgent = args[++i];
             else if (args[i] == "--standalone-model" && i + 1 < args.Length) TestContext.StandaloneModel = args[++i];
             else if (args[i] == "--standalone-timeout" && i + 1 < args.Length) TestContext.StandaloneTimeoutSec = int.Parse(args[++i]);
+            else if (args[i] == "--standalone-provider" && i + 1 < args.Length) TestContext.StandaloneProvider = args[++i];
             else if (args[i] == "--dual") TestContext.Dual = true;
             else if (args[i] == "--tool-agent-steps" && i + 1 < args.Length) TestContext.ToolAgentSteps = int.Parse(args[++i]);
         }
