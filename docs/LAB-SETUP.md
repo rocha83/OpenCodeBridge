@@ -717,7 +717,7 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 
 - Pull `origin/main` + rebuild do DLL
   (`dotnet build Rochas.OpenCodeBridge/Rochas.OpenCodeBridge.csproj -c Release`);
-  smoke test na `:4199` OK.
+  smoke test em instância descartável OK.
 - `:4124`/`:4125` com args canônicos: `--max-tokens 16384`, `--harness-tails 0
   --legacy-harness 0`, `--anti-repeat 1 --anti-repeat-retry 1`,
   `--coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0`,
@@ -849,7 +849,7 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
   agregado non-stream do `Passthrough` (chat) e (b) com `--anti-repeat-abort 1`
   o request non-stream é atendido antes por `TryStreamAbortChat`, que não tem
   guarda; e (c) o OpenCode usa `/v1/responses` (`HandleResponses`), também sem
-  guarda. Prova: instância descartável `:4131` com `--context-tokens 1000`
+  guarda. Prova: instância descartável (porta efêmera) com `--context-tokens 1000`
   recebeu prompt de 3734 tokens → **HTTP 200**. A proteção real hoje é o
   `limit.context = 131072` do opencode + compactação do próprio cliente.
   **Pendência para a próxima release:** estimar tokens na entrada (pré-flight)
@@ -958,7 +958,8 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
   (`llama`) usa `limit.context: 65536`. Menções históricas a "GPU2 1×128k"
   (cenários das seções 2.x/9.x) descrevem a configuração anterior.
 - Portas públicas do Caddy por conta: `4230` (mint), `4240` (dev-agent), `4250`
-  (moe-agent); `4147/4152/4153` fechadas.
+  (moe-agent). Portas de bancada (bridges de teste) **não** ficam abertas no firewall:
+  o firewall só conhece os serviços oficiais (`4124`, `4125`, `4126`, `4130`, `4200`).
 - Chroot aplicado: contas 1001/1002, homes `750`, `service.json` 49376/49377,
   LightDM hidden, units `disabled` (sem symlink). `AgentSeeder` → 10 agentes,
   10/10 com cláusula, 0 `(CPU Forced)`. Build Release 0/0.
@@ -1032,9 +1033,9 @@ tools, e os dois objetos de resposta (shell do SSE e resposta única) reportam
 `false`. Não é flag: é comportamento padrão. O opencode continua emitindo vários
 **passos**; cada passo traz um call.
 
-**Verificação:** `curl -s :4144/api/status` mostra o bridge up; o corpo enviado
-ao llama sai com o campo (conferir em `traffic` com `--diagnostic 1`). Level 1 Q4
-rodou com esse build (`units-pure`, `devpipe-pure` PASS).
+**Verificação:** `curl -s :4124/api/status` mostra a bridge up; o corpo enviado
+ao llama sai com o campo (conferir em `traffic` com `--diagnostic 1`). A suíte de
+níveis (`BENCHTESTS.md`) usa esse mesmo build nas bridges de bancada.
 
 Referência do flag: llama.cpp#21375.
 
