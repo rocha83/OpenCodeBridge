@@ -2216,9 +2216,9 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             // Sonda: dump do request CHAT completo (system + tools) do caminho stream.
             if (Diagnostic) Log(new JsonObject { ["event"]="traffic", ["mode"]="translate-stream-req", ["model"]=requestedModel, ["req_len"]=chat.ToJsonString().Length, ["req"]=chat.ToJsonString() });
             if (shimmed)
-                HandleResponsesStreamShim(ctx, chat, requestedModel, temperature, thinking, toolCount, startedAt);
+                HandleResponsesStreamShim(ctx, chat, requestedModel, temperature, thinking, toolCount, startedAt, tempSource);
             else
-                HandleResponsesStream(ctx, chat, requestedModel, temperature, thinking, startedAt);
+                HandleResponsesStream(ctx, chat, requestedModel, temperature, thinking, startedAt, tempSource);
             return;
         }
 
@@ -3719,7 +3719,8 @@ static bool NormalizeSystemFirst(JsonObject req)
     /// <param name="toolCount">Tools originais (para o mapeamento de function_call).</param>
     /// <param name="startedAt">Inicio p/ elapsed.</param>
     static void HandleResponsesStreamShim(HttpListenerContext ctx, JsonObject chat,
-        string requestedModel, double temperature, string thinking, int toolCount, DateTime startedAt)
+        string requestedModel, double temperature, string thinking, int toolCount, DateTime startedAt,
+        string tempSource = "")
     {
         chat["stream"] = false;
         chat.Remove("stream_options");
@@ -3753,6 +3754,7 @@ static bool NormalizeSystemFirst(JsonObject req)
         Log(new JsonObject
         {
             ["event"] = "response", ["model"] = requestedModel, ["stream"] = true,
+            ["temperature"] = temperature, ["temperature_source"] = tempSource,
             ["shim"] = true, ["message_count"] = chat["messages"]!.AsArray().Count,
             ["tool_count"] = toolCount,
             ["has_tool_call"] = responseObj["output"]!.AsArray().Any(i => i?["type"]?.GetValue<string>() == "function_call"),
@@ -3787,7 +3789,8 @@ static bool NormalizeSystemFirst(JsonObject req)
     /// <param name="thinking">Modo thinking efetivo.</param>
     /// <param name="startedAt">Inicio p/ elapsed.</param>
     static void HandleResponsesStream(HttpListenerContext ctx, JsonObject chat,
-        string requestedModel, double temperature, string thinking, DateTime startedAt)
+        string requestedModel, double temperature, string thinking, DateTime startedAt,
+        string tempSource = "")
     {
         // Pede stream ao upstream (com usage no fim p/ fechar os tokens).
         chat["stream"] = true;
@@ -4456,6 +4459,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         Log(new JsonObject
         {
             ["event"] = "response", ["mode"] = "live", ["model"] = requestedModel, ["stream"] = true,
+            ["temperature"] = temperature, ["temperature_source"] = tempSource,
             ["message_count"] = chat["messages"]!.AsArray().Count, ["tool_count"] = toolList.Count,
             ["has_tool_call"] = toolList.Count > 0, ["has_reasoning"] = thinkOpen,
             ["elapsed"] = Math.Round(liveElapsed, 2),
