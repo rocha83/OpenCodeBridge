@@ -1,4 +1,8 @@
 > **Nota:** análise da captura histórica de 2026-10-22 (12B/E2B). Os hardcodes atuais já foram removidos/atualizados em `/root/.config/opencode/AGENTS.md` (E4B, 128k, temps 0.1/0.3/0.5).
+>
+> **Status (2026-10-24):** o comportamento consolidado virou o `MainHarness`
+> hardcoded e as tails ficaram no `appsettings.json`; ver `MAIN-HARNESS.md`.
+> Esta tabela permanece como registro da análise, não como config vigente.
 
 # Parte CUSTOM (nossa) — veio do agente e do AGENTS.md
 

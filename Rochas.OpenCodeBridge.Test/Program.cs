@@ -30,7 +30,13 @@ internal static class Program
             else if (args[i] == "--standalone-timeout" && i + 1 < args.Length) TestContext.StandaloneTimeoutSec = int.Parse(args[++i]);
             else if (args[i] == "--standalone-provider" && i + 1 < args.Length) TestContext.StandaloneProvider = args[++i];
             else if (args[i] == "--dual") TestContext.Dual = true;
+            else if (args[i] == "--mode" && i + 1 < args.Length) TestContext.Mode = args[++i];
             else if (args[i] == "--tool-agent-steps" && i + 1 < args.Length) TestContext.ToolAgentSteps = int.Parse(args[++i]);
+            else if (args[i] == "--skip-unit") TestContext.SkipUnit = true;
+            else if (args[i] == "--front-webdriver" || args[i] == "--webdriver") TestContext.WebDriver = true;
+            else if (args[i] == "--webdriver-url" && i + 1 < args.Length) TestContext.WebDriverUrl = args[++i];
+            else if (args[i] == "--skip-cpu") TestContext.RunCpu = false;
+            else if (args[i] == "--cpu") TestContext.RunCpu = true;
         }
         Console.WriteLine($"[test] bridge={TestContext.Bridge} vllm={TestContext.Vllm} skipE2E={TestContext.SkipE2E}");
         Console.WriteLine($"[test] dual={TestContext.Dual} mode={TestContext.Mode} role={TestContext.Role}");
@@ -49,6 +55,8 @@ internal static class Program
         catch (Exception ex) { Console.WriteLine($"[test] sem status: {ex.Message}"); }
 
         // ---- unit (bridge, sem modelo)
+        if (!TestContext.SkipUnit)
+        {
         TestContext.Run("U-status", UnitStatusTests.Status);
         TestContext.Run("U-metrics", UnitStatusTests.Metrics);
         TestContext.Run("U-models-passthrough", UnitStatusTests.ModelsPassthrough);
@@ -77,6 +85,15 @@ internal static class Program
         TestContext.Run("U-harness-strip-execute-responses", UnitToolStrategyTests.StripExecuteFromResponsesTools);
         TestContext.Run("U-harness-code-mode-note", UnitToolStrategyTests.NeutralizeCodeModeWritesDirectToolsNote);
         TestContext.Run("U-harness-quality-core", UnitToolStrategyTests.HarnessTailCarriesQualityCore);
+        TestContext.Run("U-main-harness-no-sandbox", UnitMainHarnessTests.NoSandboxInstructions);
+        TestContext.Run("U-main-harness-tools", UnitMainHarnessTests.CompleteToolUsage);
+        TestContext.Run("U-main-harness-skills-env", UnitMainHarnessTests.KeepsSkillsAndEnv);
+        TestContext.Run("U-main-harness-moe", UnitMainHarnessTests.HasMoeSection);
+        TestContext.Run("U-main-harness-compact", UnitMainHarnessTests.IsCompact);
+        TestContext.Run("U-main-harness-managed", UnitMainHarnessTests.ReplacesManagedSystem);
+        TestContext.Run("U-main-harness-profile", UnitMainHarnessTests.KeepsProfileSystem);
+        TestContext.Run("U-main-harness-dynamic", UnitMainHarnessTests.PreservesDynamicBlocks);
+        TestContext.Run("U-main-harness-master", UnitMainHarnessTests.DropsMasterButKeepsEnv);
         TestContext.Run("U-toolargs-valid", UnitToolStrategyTests.SanitizeKeepsValidJson);
         TestContext.Run("U-toolargs-tokens", UnitToolStrategyTests.SanitizeStripsLeakedTokens);
         TestContext.Run("U-toolargs-guided", UnitToolStrategyTests.SanitizeGuidesBrokenArgs);
@@ -131,6 +148,8 @@ internal static class Program
 
         TestContext.Run("U-auth-status-guard", UnitAuthTests.StatusGuard);
 
+        }
+
         // ---- e2e standalone (opencode real, mesmos enunciados)
         if (TestContext.Standalone)
         {
@@ -145,8 +164,15 @@ internal static class Program
         // ---- e2e (modelo vivo)
         if (!TestContext.SkipE2E)
         {
+        // Provas A/B das flags do harness (stub upstream, sem GPU): falha sem o arg,
+        // funciona com o arg ligado. Rodam primeiro e em segundos.
+        TestContext.Run("E-flag-context-guard", E2EFlagProofTests.ContextGuard);
+        TestContext.Run("E-flag-anti-repeat", E2EFlagProofTests.AntiRepeatRetry);
+        TestContext.Run("E-flag-coerce-narrated", E2EFlagProofTests.CoerceNarrated);
+        TestContext.Run("E-flag-tail-scope", E2EFlagProofTests.TailScope);
         TestContext.Run("E-science-gpu", E2EScienceTests.ScienceGpu);
-        TestContext.Run("E-science-cpu", E2EScienceTests.ScienceCpu);
+        if (TestContext.RunCpu) TestContext.Run("E-science-cpu", E2EScienceTests.ScienceCpu);
+        else Console.WriteLine("[test] skip E-science-cpu (--skip-cpu)");
         TestContext.Run("E-mission-tools", E2EMissionTests.MissionTools);
             // Sonda direta do parser hermes no vLLM: so faz sentido no Qwen3.
             if (!TestContext.ServedIsCoder) TestContext.Run("E-vllm-tool-hermes", E2EToolTests.VllmToolHermes);
@@ -191,6 +217,7 @@ internal static class Program
             TestContext.Run("E-belts-direct", E2EBeltsTests.Direct);
             // Belts (azul→preta) Trilha BUILD: 12B build implementa diretamente.
             TestContext.Run("E-belts-build-direct", E2EBeltsBuildTests.Direct);
+            TestContext.Run("E-belts-webui", E2EBeltsTests.WebUi);
             // Tools nos DOIS transportes: bridge pura e opencode (--dual roda 2x cada).
             TestContext.RunDual("E-dual-tools", E2EDualToolTests.All);
         }

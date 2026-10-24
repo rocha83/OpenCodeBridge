@@ -11,7 +11,7 @@ namespace Rochas.OpenCodeBridge.Test;
 //   3) Exec (role exec) — backlog: le o companion .md e EXECUTA os scripts.
 internal static class E2EScripterTests
 {
-    const string CpuBridge = "http://127.0.0.1:4125";
+    static string CpuBridge => Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125";
 
     static (int Code, string Out) Run(string exe, string cwd, int secs, params string[] args)
     {

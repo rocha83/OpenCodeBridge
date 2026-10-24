@@ -160,9 +160,12 @@ internal static class UnitToolStrategyTests
 
     public static Task HarnessTailCarriesQualityCore()
     {
+        // O nucleo de qualidade saiu das tails e mora no MainHarness; as
+        // tails agora sao so o delta da bridge. O teste guarda o novo contrato.
+        string core = global::Rochas.OpenCodeBridge.Core.MainHarness.Text;
+        foreach (string must in new[] { "ACEITE", "explique a dificuldade", "edit", "stub", "contexto", "bash -n" })
+            TestContext.Check(core.Contains(must, StringComparison.Ordinal), $"nucleo de qualidade presente: {must}");
         string formula = global::Rochas.OpenCodeBridge.Program.WithFormula("system base");
-        foreach (string must in new[] { "ACEITE", "fail-fast", "edit no trecho exato", "stub/TODO/placeholder", "git log" })
-            TestContext.Check(formula.Contains(must, StringComparison.Ordinal), $"nucleo de qualidade presente: {must}");
         TestContext.Check(formula.StartsWith("system base", StringComparison.Ordinal), "system original preservado");
         return Task.CompletedTask;
     }

@@ -9,7 +9,7 @@ namespace Rochas.OpenCodeBridge.Test;
 
 internal static class E2EScienceTests
 {
-    const string CpuBridge = "http://127.0.0.1:4125";
+    static string CpuBridge => Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125";
     const string SystemPrompt = "Voce e um professor universitario de exatas. Responda com rigor tecnico, "
         + "derive quando pedido e corrija premissas falsas em vez de aceita-las. "
         + "Responda apenas em TEXTO: proibido emitir tool calls ou templates; so prosa tecnica.";
@@ -74,5 +74,22 @@ internal static class E2EScienceTests
     public static Task ScienceGpu() =>
         Run(TestContext.Bridge, TestContext.SuiteModel, 12000);
 
-    public static Task ScienceCpu() => Run(CpuBridge, "qwen3-vl-4b-build", 8000);
+    static string CpuForcedBridge =>
+        Environment.GetEnvironmentVariable("CPU_FORCED_BRIDGE") ?? "http://127.0.0.1:4126";
+
+    public static Task ScienceCpu()
+    {
+        // CPU forced (:4126 -> llama :4120) pode estar parada (unit disabled).
+        // Nao falha o teste por infra ausente: SKIP com a acao exata.
+        try
+        {
+            using var r = TestContext.Http.GetAsync(CpuForcedBridge + "/api/status").GetAwaiter().GetResult();
+            if (!r.IsSuccessStatusCode) throw new Exception("status " + (int)r.StatusCode);
+        }
+        catch
+        {
+            TestContext.Skip("CPU forced :4126 fora do ar (sudo systemctl start llama-cpu-forced bridge-cpu-forced)");
+        }
+        return Run(CpuForcedBridge, "Gemma4-E4B-Q4-build", 8000);
+    }
 }

@@ -146,17 +146,89 @@ internal static class TestContext
         psi.ArgumentList.Add("--model"); psi.ArgumentList.Add(model);
         psi.ArgumentList.Add(prompt);
         Directory.CreateDirectory(psi.WorkingDirectory);
-        using var p = Process.Start(psi) ?? throw new Exception("sem processo: opencode");
-        string outp = p.StandardOutput.ReadToEnd();
-        string errp = p.StandardError.ReadToEnd();
-        if (!p.WaitForExit(StandaloneTimeoutSec * 1000)) { try { p.Kill(true); } catch { } throw new Exception("timeout opencode standalone"); }
+
+        // A sessao e criada pelo `opencode run`; a unit de teste e dona dela e
+        // precisa remover o que criou (senao o opencode acumula sessoes orfas).
+        var before = OpencodeSessionIds(psi.WorkingDirectory);
+        string outp, errp;
+        using (var p = Process.Start(psi) ?? throw new Exception("sem processo: opencode"))
+        {
+            var so = p.StandardOutput.ReadToEndAsync();
+            var se = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(StandaloneTimeoutSec * 1000))
+            {
+                try { p.Kill(true); } catch { }
+                throw new Exception("timeout opencode standalone");
+            }
+            outp = so.Result;
+            errp = se.Result;
+        }
+        OpencodeSessionsCleanup(psi.WorkingDirectory, before);
         return outp + errp;
+    }
+
+    /// <summary>IDs de sessao opencode do projeto (dir), lidos via `session list --format json`.</summary>
+    static HashSet<string> OpencodeSessionIds(string dir)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            var psi = new ProcessStartInfo("opencode") { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
+            psi.ArgumentList.Add("session"); psi.ArgumentList.Add("list");
+            psi.ArgumentList.Add("--standalone"); psi.ArgumentList.Add("--format"); psi.ArgumentList.Add("json");
+            psi.ArgumentList.Add("-n"); psi.ArgumentList.Add("200");
+            using var p = Process.Start(psi);
+            if (p is null) return ids;
+            string json = p.StandardOutput.ReadToEnd();
+            _ = p.StandardError.ReadToEnd();
+            if (!p.WaitForExit(30000)) { try { p.Kill(true); } catch { } return ids; }
+            var arr = JsonNode.Parse(json)?.AsArray();
+            if (arr is null) return ids;
+            foreach (var it in arr)
+                if (it is JsonObject o)
+                    foreach (var kv in o)
+                        if (kv.Value is JsonValue v && v.TryGetValue<string>(out var s) && s.StartsWith("ses", StringComparison.Ordinal))
+                        { ids.Add(s); break; }
+        }
+        catch { }
+        return ids;
+    }
+
+    /// <summary>Remove as sessoes criadas pelo teste (diferenca antes/depois).</summary>
+    static void OpencodeSessionsCleanup(string dir, HashSet<string> before)
+    {
+        foreach (var id in OpencodeSessionIds(dir).Where(id => !before.Contains(id)).ToArray())
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("opencode") { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
+                psi.ArgumentList.Add("session"); psi.ArgumentList.Add("delete"); psi.ArgumentList.Add("--standalone"); psi.ArgumentList.Add(id);
+                using var p = Process.Start(psi);
+                if (p is null) continue;
+                _ = p.StandardOutput.ReadToEnd(); _ = p.StandardError.ReadToEnd();
+                if (!p.WaitForExit(30000)) { try { p.Kill(true); } catch { } }
+                Console.WriteLine($"[cleanup] sessao opencode removida: {id}");
+            }
+            catch { }
+        }
     }
 
     // --dual: roda cada teste de tools duas vezes, no modo "pure" (HTTP direto na
     // bridge, com a bridge executando as tools) e no modo "opencode" (opencode CLI
     // executando as tools). Sem --dual roda so "pure", como antes.
     public static bool Dual;
+
+    /// <summary>Pula o bloco unit (bateria E2E com log de bridge limpo por step).</summary>
+    public static bool SkipUnit;
+
+    /// <summary>Testes de navegador (frontpipe/belts) medem na Web UI em vez da via estatica/direta.</summary>
+    public static bool WebDriver;
+
+    /// <summary>URL da Web UI usada pelos testes de navegador (default :4130).</summary>
+    public static string WebDriverUrl = "http://127.0.0.1:4130";
+
+    /// <summary>Roda os testes explicitos de CPU/Q3 (--skip-cpu desliga).</summary>
+    public static bool RunCpu = true;
     public static string Mode = "pure";
     public static int ToolAgentSteps = 8;
 

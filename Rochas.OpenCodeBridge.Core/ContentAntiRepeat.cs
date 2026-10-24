@@ -3,32 +3,16 @@ using System.Text;
 namespace Rochas.OpenCodeBridge.Core;
 
 /// <summary>
-/// Classe-mae do escopo de CONTEUDO: decide se o texto gerado entrou em repeticao
-/// invalida. Os helpers ficam no nivel abaixo, um por superficie observada:
-/// <see cref="AntiRepeatReply"/> (algoritmo de cauda) e as especializacoes
-/// <see cref="StreamAntiRepeatReply"/> (deltas do stream) e
-/// <see cref="ToolArgsAntiRepeatReply"/> (argumentos de tool).
+/// Classe-mae do escopo de CONTEUDO: contem o algoritmo de repeticao de texto
+/// (normalizacao, similaridade de blocos e cauda) e a decisao <see cref="IsRepeat"/>.
 /// </summary>
 /// <remarks>
-/// A separacao e por RESPONSABILIDADE, nao por ponto de chamada: texto repetido
-/// passa por este escopo; ciclo de tool passa por <see cref="ToolsAntiReply"/>.
+/// A separacao e por RESPONSABILIDADE: texto repetido (thinking, content, args de
+/// tool em stream) passa por este escopo; ciclo de tool passa por
+/// <see cref="ToolsAntiRepeat"/>. Os helpers abaixo sao finos: so declaram ONDE a
+/// cauda e medida e herdam o trabalho daqui.
 /// </remarks>
-public abstract class ContentAntiReply
-{
-    /// <summary>Onde este detector atua (vai para log/sonda).</summary>
-    public abstract string Scope { get; }
-
-    /// <summary>O texto acumulado entrou em repeticao?</summary>
-    /// <param name="text">Texto acumulado ate aqui.</param>
-    /// <returns>True = repeticao invalida provavel.</returns>
-    public abstract bool IsRepeat(string? text);
-}
-
-/// <summary>
-/// Helper de conteudo: algoritmo unico de cauda repetida (verbatim ou 3 blocos
-/// finais similares). Nao olha para tools nem para o cliente: so para o texto.
-/// </summary>
-public abstract class AntiRepeatReply : ContentAntiReply
+public abstract class ContentAntiRepeat
 {
     /// <summary>Menor janela aceita: abaixo disso a comparacao vira ruido.</summary>
     public const int MinWindow = 32;
@@ -39,14 +23,19 @@ public abstract class AntiRepeatReply : ContentAntiReply
     /// <summary>Tamanho da cauda comparada, em caracteres normalizados.</summary>
     public int Window { get; }
 
-    /// <summary>Cria o helper com a janela configurada (nunca menor que <see cref="MinWindow"/>).</summary>
+    /// <summary>Onde este detector atua (vai para log/sonda).</summary>
+    public abstract string Scope { get; }
+
+    /// <summary>Cria o detector com a janela configurada (nunca menor que <see cref="MinWindow"/>).</summary>
     /// <param name="window">Janela em caracteres.</param>
-    protected AntiRepeatReply(int window) => Window = Math.Max(MinWindow, window);
+    protected ContentAntiRepeat(int window) => Window = Math.Max(MinWindow, window);
 
-    /// <inheritdoc />
-    public override bool IsRepeat(string? text) => TailRepeats(text, Window);
+    /// <summary>O texto acumulado entrou em repeticao? (regra unica da classe-mae)</summary>
+    /// <param name="text">Texto acumulado ate aqui.</param>
+    /// <returns>True = repeticao invalida provavel.</returns>
+    public virtual bool IsRepeat(string? text) => TailRepeats(text, Window);
 
-    /// <summary>Normaliza texto para comparacao: minusculo e espacos colapsados.</summary>
+    /// <summary>Normaliza texto para comparacao: minusculo, espacos colapsados e trim.</summary>
     /// <param name="s">Texto cru.</param>
     /// <returns>Texto canonico (vazio quando a entrada e vazia).</returns>
     public static string Normalize(string? s)
@@ -127,9 +116,20 @@ public abstract class AntiRepeatReply : ContentAntiReply
 }
 
 /// <summary>
-/// Helper de conteudo no STREAM: cauda do texto que chega em deltas (thinking,
-/// content, corpo SSE do bypass).
+/// Helper fino de conteudo: detector padrao de texto (herda toda a regra da
+/// classe-mae; so fixa o escopo).
 /// </summary>
+public class AntiRepeatReply : ContentAntiRepeat
+{
+    /// <summary>Cria o detector de texto.</summary>
+    /// <param name="window">Janela em caracteres.</param>
+    public AntiRepeatReply(int window) : base(window) { }
+
+    /// <inheritdoc />
+    public override string Scope => "content";
+}
+
+/// <summary>Helper fino de conteudo no STREAM: cauda dos deltas (thinking/content/SSE).</summary>
 public sealed class StreamAntiRepeatReply : AntiRepeatReply
 {
     /// <summary>Cria o detector do stream.</summary>
@@ -140,10 +140,7 @@ public sealed class StreamAntiRepeatReply : AntiRepeatReply
     public override string Scope => "stream";
 }
 
-/// <summary>
-/// Helper de conteudo nos TOOL-ARGS: cauda dos argumentos de uma tool call, que
-/// pode crescer em ciclo sem tocar thinking/content.
-/// </summary>
+/// <summary>Helper fino de conteudo nos TOOL-ARGS: cauda dos argumentos de uma chamada.</summary>
 public sealed class ToolArgsAntiRepeatReply : AntiRepeatReply
 {
     /// <summary>Tamanho minimo dos args para valer a pena sondar.</summary>

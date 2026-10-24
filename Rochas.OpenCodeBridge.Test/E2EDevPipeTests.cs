@@ -89,8 +89,8 @@ internal static class E2EDevPipeTests
         TestContext.Check(content3.Contains("DEVPIPE-FIM"), "devpipe final DEVPIPE-FIM");
     }
 
-    // ---- visão VL (ponte CPU :4125, mmproj): imagem -> texto + tool específica.
-    const string CpuBridge = "http://127.0.0.1:4125";
+    // ---- visão VL: GPU1 (Q4, llama :4100 com --mmproj). GPU2 nao tem vision.
+    static string VisionBridge => Environment.GetEnvironmentVariable("VISION_BRIDGE") ?? TestContext.Bridge;
 
     static string Img64(string name)
     {
@@ -104,17 +104,26 @@ internal static class E2EDevPipeTests
         return Convert.ToBase64String(File.ReadAllBytes(Path.Combine(dir, name)));
     }
 
-    // Pontes CPU so servem VL quando o modelo tem "vl"/"vision" no nome; sem
-    // isso os testes de visao nao tem mmproj e devem ser pulados (nao falhar).
-    static async Task<bool> CpuServesVision()
+    // Gate de visao: le /props do upstream (o que a bridge status informa) e exige
+    // modalities.vision=true. Sem mmproj, SKIP com motivo — nao FAIL.
+    static async Task<(string Bridge, string Model)> VisionReady()
     {
-        try
+        var st = await TestContext.GetObj(VisionBridge + "/api/status");
+        string model = st["model"]?.GetValue<string>() ?? "Gemma4-E4B-Q4";
+        string upstream = st["upstream"]?.GetValue<string>() ?? "";
+        if (upstream.Length > 0)
         {
-            var st = await TestContext.GetObj(CpuBridge + "/api/status");
-            string m = st["model"]?.GetValue<string>() ?? "";
-            return m.Contains("vl", StringComparison.OrdinalIgnoreCase) || m.Contains("vision", StringComparison.OrdinalIgnoreCase);
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                http.DefaultRequestHeaders.Authorization = TestContext.Http.DefaultRequestHeaders.Authorization;
+                var props = JsonNode.Parse(await http.GetStringAsync(upstream.TrimEnd('/') + "/props"));
+                if (props?["modalities"]?["vision"]?.GetValue<bool>() != true)
+                    TestContext.Skip($"{model}: upstream sem modalities.vision (mmproj desligado) em {VisionBridge}");
+            }
+            catch { /* upstream sem /props: segue para o teste real */ }
         }
-        catch { return false; }
+        return (VisionBridge, model);
     }
 
     static JsonObject VisionMsg(string prompt, string img64) => new()
@@ -128,13 +137,13 @@ internal static class E2EDevPipeTests
     // VL lê a imagem e identifica o texto.
     public static async Task DevPipeVision()
     {
-        if (!await CpuServesVision()) TestContext.Skip("sem modelo VL na ponte CPU :4125 (vision requer mmproj)");
+        var (bridge, model) = await VisionReady();
         var body = new JsonObject
         {
-            ["model"] = "qwen3-vl-4b", ["temperature"] = 0.1, ["stream"] = false,
+            ["model"] = model, ["temperature"] = 0.1, ["stream"] = false,
             ["messages"] = new JsonArray(VisionMsg("O que esta escrito na imagem? Responda SOMENTE o texto.", Img64("placa.png"))),
         };
-        var r = await TestContext.PostObj(CpuBridge + "/v1/chat/completions", body);
+        var r = await TestContext.PostObj(bridge + "/v1/chat/completions", body);
         var content = r["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
         TestContext.Check(content.Contains("TESTE") && content.Contains("456"), "visao identifica TESTE 456");
     }
@@ -142,13 +151,13 @@ internal static class E2EDevPipeTests
     // VL decompõe o documento em texto, linha a linha.
     public static async Task DevPipeDoc()
     {
-        if (!await CpuServesVision()) TestContext.Skip("sem modelo VL na ponte CPU :4125 (vision requer mmproj)");
+        var (bridge, model) = await VisionReady();
         var body = new JsonObject
         {
-            ["model"] = "qwen3-vl-4b", ["temperature"] = 0.1, ["stream"] = false,
+            ["model"] = model, ["temperature"] = 0.1, ["stream"] = false,
             ["messages"] = new JsonArray(VisionMsg("Transcreva exatamente as tres linhas da imagem, uma por linha.", Img64("doc.png"))),
         };
-        var r = await TestContext.PostObj(CpuBridge + "/v1/chat/completions", body);
+        var r = await TestContext.PostObj(bridge + "/v1/chat/completions", body);
         var content = r["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
         TestContext.Check(content.Contains("UM") && content.Contains("DOIS") && content.Contains("TRES"), "doc decomposto em 3 linhas");
     }
@@ -157,31 +166,34 @@ internal static class E2EDevPipeTests
     // Dialeto Alibaba direto (o que o VL entende) + required; retry ×3 (Q3 flakey).
     public static async Task DevPipeVisionTool()
     {
-        if (!await CpuServesVision()) TestContext.Skip("sem modelo VL na ponte CPU :4125 (vision requer mmproj)");
+        var (bridge, model) = await VisionReady();
         string img64 = Img64("placa.png");
-        bool okName = false, okPath = false;
-        for (int attempt = 0; attempt < 3 && !(okName && okPath); attempt++)
+        // Orcamento e politica da bridge/perfil (16k no chat real), nao do teste:
+        // 512/1024 foram residuo do diagnostico de truncamento e nao representam
+        // o cliente da Web UI, que nunca ajusta max_tokens por enunciado.
+        string toolModel = model.EndsWith("-build", StringComparison.OrdinalIgnoreCase) ? model : model + "-build";
+        var body = new JsonObject
         {
-            var body = new JsonObject
-            {
-                ["model"] = "qwen3-vl-4b", ["temperature"] = 0.1, ["stream"] = false,
-                ["tool_choice"] = "required",
-                ["messages"] = new JsonArray(
-                    new JsonObject { ["role"] = "system", ["content"] = "Voce e um desenvolvedor senior." },
-                    VisionMsg("Identifique o texto da imagem via visao e CHAME a tool read_file com file_path /tmp/vlimg/placa.png.", img64)),
-                ["tools"] = new JsonArray(Tool("read_file", "Le arquivo", new JsonObject { ["file_path"] = Str("caminho") }, "file_path")),
-            };
-            var r = await TestContext.PostObj(CpuBridge + "/v1/chat/completions", body);
-            var tc = r["choices"]?[0]?["message"]?["tool_calls"]?.AsArray();
-            if (tc is not { Count: > 0 }) continue;
-            var fn = tc[0]?["function"];
-            string name = fn?["name"]?.GetValue<string>() ?? "";
-            string args = fn?["arguments"]?.GetValue<string>() ?? "";
-            if (name is "read" or "read_file") okName = true;
-            if (args.Contains("placa")) okPath = true;
-        }
-        TestContext.Check(okName, "visao+tool chama read");
-        TestContext.Check(okPath, "visao+tool path exato");
+            ["model"] = toolModel, ["temperature"] = 0.1, ["stream"] = false,
+            ["tool_choice"] = "required",
+            ["messages"] = new JsonArray(
+                new JsonObject { ["role"] = "system", ["content"] = "Voce e um desenvolvedor senior." },
+                VisionMsg("Identifique o texto da imagem via visao e CHAME a tool read_file com file_path /tmp/vlimg/placa.png.", img64)),
+            ["tools"] = new JsonArray(Tool("read_file", "Le arquivo", new JsonObject { ["file_path"] = Str("caminho") }, "file_path")),
+        };
+        var r = await TestContext.PostObj(bridge + "/v1/chat/completions", body);
+        string finish = r["choices"]?[0]?["finish_reason"]?.GetValue<string>() ?? "";
+        string content = r["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
+        var tc = r["choices"]?[0]?["message"]?["tool_calls"]?.AsArray();
+        var fn = tc is { Count: > 0 } ? tc[0]?["function"] : null;
+        string name = fn?["name"]?.GetValue<string>() ?? "";
+        string args = fn?["arguments"]?.GetValue<string>() ?? "";
+        Console.WriteLine($"[devpipe] vision-tool: model={toolModel} finish={finish} content={content.Length} name={name} args={args}");
+        bool exact = false;
+        try { exact = JsonNode.Parse(args)?["file_path"]?.GetValue<string>() == "/tmp/vlimg/placa.png"; }
+        catch { exact = args.Contains("/tmp/vlimg/placa.png"); }
+        TestContext.Check(name is "read" or "read_file", "visao+tool chama read");
+        TestContext.Check(exact, "visao+tool path exato");
     }
 
     // Infra dev direto no executor da bridge: git, gh, fetch internet.

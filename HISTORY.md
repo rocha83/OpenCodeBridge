@@ -2949,10 +2949,10 @@ abaixo das duas classes-mãe.
 
 **Feito (`Rochas.OpenCodeBridge.Core`):**
 
-- `ContentAntiReply` (classe-mãe de conteúdo) → helper `AntiRepeatReply` (algoritmo único
+- `ContentAntiRepeat` (classe-mãe de conteúdo) → helper `AntiRepeatReply` (algoritmo único
   de cauda: normalização, similaridade, `TailRepeats`, `TailDuplicateAt`) e as
   especializações `StreamAntiRepeatReply` (deltas) e `ToolArgsAntiRepeatReply` (args).
-- `ToolsAntiReply` (classe-mãe de tools) → helpers `ToolSig` (assinatura/alvo/falha),
+- `ToolsAntiRepeat` (classe-mãe de tools) → helpers `ToolSig` (assinatura/alvo/falha),
   `Breaker` (loop por falha no mesmo alvo, soft/hard) e `RepeatedCall` (assinatura
   reemitida no histórico).
 - `ToolLoopBreaker.cs` removido; `Program.cs` passou a usar só as classes dos dois
@@ -2968,3 +2968,68 @@ abaixo das duas classes-mãe.
 **Pendência registrada:** avaliar parâmetros do llama (temperatura, `repeat-penalty`, DRY)
 × anti-repeat em camadas — ver `PENDINGS.md` (topo). Nenhuma heurística nova na bridge
 antes da medição.
+
+## Princípio de harness: abstração antes de remendo (2026-10-24, sessão 15)
+
+**Correção de rumo do operador:** guard tails, gates e classes de switch de harness não
+podem inflar a cada sintoma novo observado num teste. Sintoma de modelo fraco não vira
+feature do harness.
+
+**Regra de decisão (antes de propor qualquer fix):**
+
+1. **Qual é o papel do fonte?** Identificar se o arquivo é contrato (valida, decide,
+   registra) ou política (limiar, retry, tail). Fix de política não entra no contrato.
+2. **O problema é do harness ou do modelo?** Contrato ambíguo/faltante = corrigir o
+   contrato, uma vez, genérico. Modelo incapaz de cumprir o contrato = registrar e
+   reprovar; o harness não compensa incapacidade.
+3. **A correção é genérica ou é remendo de cenário?** Se a regra só vale para o caso
+   observado, não entra. Se vale para toda execução de script, entra num único ponto.
+
+**Consequências práticas:**
+
+- Validação de artefato é **um** contrato (`bash -n` + conteúdo sem chamada de tool
+  colada + path resolvido pelo argumento do `write_file`), não um `if` por sintoma.
+- Retry é **uma** política (N tentativas com o erro devolvido), não um check novo por
+  tipo de falha.
+- Log mostra a causa e o caminho real; não esconde o limite do modelo atrás de um
+  passe.
+- Proibido: mudar o enunciado para o modelo "passar", inflar tails para compensar
+  modelo fraco, duplicar a mesma validação em pontos diferentes, criar classe de switch
+  para cada cenário.
+
+**Aplicado nesta sessão:** a `azul` falhou com sintomas distintos (C# dentro de `.sh`,
+path inventado, `write_file{...}` colado no conteúdo, nome com espaço/barra invertida).
+O fix ficou em três pontos genéricos — resolver o path pelo arg, um gate de conteúdo +
+`bash -n`, e um retry com o erro devolvido — e a faixa passou (`1/1 PASS`, 173s).
+Limite conhecido e não mascarado: script que engole erro (`exit=0` com mensagem de
+falha) continua contando como executado; isso é capacidade do modelo, registrado em
+log, não regra nova.
+
+**Nomenclatura final (correção do operador):** `ToolsAntiRepeat` é a classe-mãe e
+**chama** o helper `ToolsBreaker`; `ContentAntiRepeat` segue como escopo de conteúdo.
+O rename intermediário `ToolsLoopBreaker` foi revertido.
+
+## Main harness consolidado; tails separadas (2026-10-24, sessão 16)
+
+**Rename e separação de switches.** O texto antes chamado de "primordial" passou a
+ser o **main harness** (`Rochas.OpenCodeBridge.Core/MainHarness.cs`). As tails
+continuam sendo um delta independente no `appsettings.json`.
+
+- `--main-harness` / `mainHarness` (default `true`): troca o system do cliente no
+  caminho gerido (`!hasProfile`) pelo texto hardcoded + blocos dinâmicos
+  (`<env>`, `<available_skills>`, data, instruções pequenas).
+- `--harness-tails` / `harnessTails` (default `true`): liga behavior/tools tails
+  conforme `tailScope`. O legado `--harness` / `harness` é alias **apenas das
+  tails**.
+- `--harness 0` agora desliga as tails e **mantém** o main harness ativo. Tubo
+  puro = `--main-harness 0 --harness-tails 0`. O serviço em produção já usa
+  `--harness 0`, então o main harness passa a valer sem mudar o `ExecStart`.
+- `/api/harness` ganhou `main_harness`, `main_harness_chars` e `harness_tails`;
+  o campo legado `harness` virou `main_harness || tails`.
+- Testes `U-primordial-*` renomeados para `U-main-harness-*` (9/9 PASS).
+  `dotnet build -c Release`: 0 warnings, 0 errors.
+- A/B com upstream de captura: main harness 9.147 chars; gerido 9.213 (com
+  `<env>`); opencode com tails 2.226; gerido com main off + tails 2.300; tubo
+  puro 97. Evento de diagnóstico do gerido: `main-harness`.
+- Pendência: reiniciar `bridge-gpu.service`/`bridge-gpu2.service` para carregar o
+  binário novo (exige root).

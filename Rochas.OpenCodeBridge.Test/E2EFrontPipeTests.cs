@@ -2,8 +2,11 @@
 //  Frontpipe E2E (front MVC + React + Bootstrap + Tailwind pelos modelos):
 //    12B (bridge GPU) GERA os 3 artefatos no workspace;
 //    E2B (bridge CPU, role exec) AJUSTA pelos enunciados (frontpipe/enunciados/*.md);
-//    a suite MEDE os estilos computados no navegador (Playwright C# via
-//    Rochas.OpenCodeBridge.Web.Test --front-measure) e exige delta/no-regressao.
+//    a suite AVALIA os artefatos direto (Razor/TSX/CSS) por padrao: sonda estatica
+//    que parseia o CSS e computa os mesmos estilos do getComputedStyle, sem webdriver.
+//    O caminho de navegador (Playwright C# via Rochas.OpenCodeBridge.Web.Test
+//    --front-measure) fica atras de --front-webdriver (futuro: headed na Web UI
+//    :4130, via FRONT_WEBDRIVER_URL) e exige delta/no-regressao da mesma forma.
 //  Fases (rodaveis isoladas com --only E-front-*): gen -> edit -> verify.
 //  Dumps para auditoria: <ws>/gen, <ws>/edit/<id>, <ws>/reports (ws=/tmp/opencode/frontpipe).
 // ===========================================================================
@@ -18,8 +21,8 @@ namespace Rochas.OpenCodeBridge.Test;
 
 internal static class E2EFrontPipeTests
 {
-    const string CpuBridge = "http://127.0.0.1:4125";
-    const string Url = "http://127.0.0.1:5199/";
+    static string CpuBridge => Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125";
+    static string Url => (Environment.GetEnvironmentVariable("FRONT_WEBDRIVER_URL") ?? "http://127.0.0.1:5199").TrimEnd('/') + "/";
     const string AppName = "FrontApp";
     const string CssRel = "app/wwwroot/css/app.css";
 
@@ -31,6 +34,170 @@ internal static class E2EFrontPipeTests
     static string Css => Path.Combine(App, "wwwroot", "css", "app.css");
     static string IndexView => Path.Combine(App, "Views", "Home", "Index.cshtml");
     static string AppJs => Path.Combine(App, "wwwroot", "js", "app.js");
+
+    // Medicao no navegador so' quando pedida (--front-webdriver); padrao = sonda estatica.
+    static bool WebDriver => TestContext.WebDriver;
+
+    // ------------------------------------------------ sonda estatica (sem webdriver)
+    // Parseia o CSS gerado e computa os mesmos valores que o getComputedStyle daria
+    // para os alvos do contrato (#titulo/#quadro), incluindo rect_w/rect_h com
+    // box-sizing. Le tambem Razor e TSX (quando existir) para checar a estrutura.
+    static Dictionary<string, string> CssDecls(string css, string selector)
+    {
+        string clean = Regex.Replace(css ?? "", @"/\*.*?\*/", "", RegexOptions.Singleline);
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Match m in Regex.Matches(clean, @"([^{}]+)\{([^{}]*)\}", RegexOptions.Singleline))
+        {
+            if (!m.Groups[1].Value.Split(',').Any(s => s.Trim() == selector)) continue;
+            foreach (string decl in m.Groups[2].Value.Split(';'))
+            {
+                int i = decl.IndexOf(':');
+                if (i <= 0) continue;
+                map[decl[..i].Trim().ToLowerInvariant()] = decl[(i + 1)..].Trim();
+            }
+        }
+        return map;
+    }
+
+    static double Px(string? v)
+    {
+        if (string.IsNullOrWhiteSpace(v)) return double.NaN;
+        Match m = Regex.Match(v, @"(-?\d+(?:\.\d+)?)\s*(px|rem|em|pt)?", RegexOptions.IgnoreCase);
+        if (!m.Success) return double.NaN;
+        double n = double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        return m.Groups[2].Value.ToLowerInvariant() switch
+        {
+            "rem" or "em" => n * 16,
+            "pt" => n * 96 / 72,
+            _ => n,
+        };
+    }
+
+    static string SideToken(string[] parts, int i) => parts.Length switch
+    {
+        0 => "",
+        1 => parts[0],
+        2 => parts[i % 2],
+        3 => i switch { 0 => parts[0], 2 => parts[2], _ => parts[1] },
+        _ => parts[Math.Min(i, 3)],
+    };
+
+    static double Side(Dictionary<string, string> d, string prop, string side, int idx)
+    {
+        if (d.TryGetValue(prop + "-" + side, out string? direct)) return Px(direct);
+        if (!d.TryGetValue(prop, out string? sh)) return 0;
+        string[] parts = sh.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return Px(SideToken(parts, idx));
+    }
+
+    static double BorderTop(Dictionary<string, string> d)
+    {
+        if (d.TryGetValue("border-top-width", out string? bw)) return Px(bw);
+        string? sh = d.TryGetValue("border", out string? b) ? b : d.TryGetValue("border-top", out string? bt) ? bt : null;
+        if (sh is null) return 0;
+        string? token = sh.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault(x => Regex.IsMatch(x, @"\d"));
+        return Px(token);
+    }
+
+    static string Weight(string? v)
+    {
+        if (string.IsNullOrWhiteSpace(v)) return "";
+        if (v.Trim().Equals("bold", StringComparison.OrdinalIgnoreCase)) return "700";
+        if (v.Trim().Equals("normal", StringComparison.OrdinalIgnoreCase)) return "400";
+        double n = Px(v);
+        return double.IsNaN(n) ? v : n.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    static JsonObject StaticStyles(string css)
+    {
+        var q = CssDecls(css, "#quadro");
+        var t = CssDecls(css, "#titulo");
+        double w = q.TryGetValue("width", out string? wv) ? Px(wv) : double.NaN;
+        double h = q.TryGetValue("height", out string? hv) ? Px(hv) : double.NaN;
+        double pl = Side(q, "padding", "left", 3), pr = Side(q, "padding", "right", 1);
+        double pt = Side(q, "padding", "top", 0), pb = Side(q, "padding", "bottom", 2);
+        double bt = BorderTop(q);
+        bool borderBox = q.TryGetValue("box-sizing", out string? bs)
+            && bs.Contains("border-box", StringComparison.OrdinalIgnoreCase);
+        double rw = double.IsNaN(w) ? w : w + (borderBox ? 0 : pl + pr);
+        double rh = double.IsNaN(h) ? h : h + (borderBox ? 0 : pt + pb + bt);
+        string S(double v) => double.IsNaN(v) ? "" : v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        string V(Dictionary<string, string> d, string k) => d.TryGetValue(k, out string? v) ? v : "";
+        return new JsonObject
+        {
+            ["#titulo"] = new JsonObject
+            {
+                ["font-size"] = V(t, "font-size"),
+                ["font-weight"] = Weight(V(t, "font-weight")),
+                ["color"] = V(t, "color"),
+            },
+            ["#quadro"] = new JsonObject
+            {
+                ["width"] = V(q, "width"),
+                ["height"] = V(q, "height"),
+                ["padding-left"] = S(pl),
+                ["padding-top"] = S(pt),
+                ["rect_w"] = S(rw),
+                ["rect_h"] = S(rh),
+                ["background-color"] = V(q, "background-color"),
+                ["border-top-width"] = S(bt),
+                ["box-sizing"] = V(q, "box-sizing"),
+            },
+            ["#root"] = new JsonObject { ["display"] = "block" },
+        };
+    }
+
+    // Snapshot no mesmo formato do --front-measure (http_status/dom/console_errors/
+    // links/styles) para CheckSnapshot e o Verify funcionarem iguais nos dois modos.
+    static JsonObject StaticSnapshot(string step)
+    {
+        string idx = File.Exists(IndexView) ? File.ReadAllText(IndexView) : "";
+        string css = File.Exists(Css) ? File.ReadAllText(Css) : "";
+        string js = File.Exists(AppJs) ? File.ReadAllText(AppJs) : "";
+        var errors = new JsonArray();
+        foreach (string a in new[] { "/css/bootstrap.min.css", "/css/app.css", "/js/tailwind.js",
+                                     "/js/react.production.min.js", "/js/react-dom.production.min.js", "/js/app.js" })
+        {
+            if (!idx.Contains(a)) { errors.Add("asset nao referenciado: " + a); continue; }
+            string? local = a switch
+            {
+                "/css/app.css" => Css,
+                "/js/app.js" => AppJs,
+                "/css/bootstrap.min.css" => Path.Combine(App, "wwwroot", "css", "bootstrap.min.css"),
+                "/js/react.production.min.js" => Path.Combine(App, "wwwroot", "js", "react.production.min.js"),
+                "/js/react-dom.production.min.js" => Path.Combine(App, "wwwroot", "js", "react-dom.production.min.js"),
+                "/js/tailwind.js" => Path.Combine(App, "wwwroot", "js", "tailwind.js"),
+                _ => null,
+            };
+            if (local is not null && !File.Exists(local)) errors.Add("asset ausente no disco: " + a);
+        }
+        string? clients = Path.Combine(App, "ClientApp");
+        if (Directory.Exists(clients))
+        {
+            string[] tsx = Directory.GetFiles(clients, "*.tsx", SearchOption.AllDirectories);
+            if (tsx.Length > 0)
+            {
+                string all = string.Join("\n", tsx.Select(File.ReadAllText));
+                if (!all.Contains("createRoot")) errors.Add("TSX sem createRoot");
+                if (Regex.IsMatch(all, @"ReactDOM\.render\s*\(")) errors.Add("TSX com ReactDOM.render legado");
+            }
+        }
+        var links = new JsonArray();
+        foreach (Match m in Regex.Matches(idx, @"(?:href|src)=""([^""]+)""")) links.Add(m.Groups[1].Value);
+        return new JsonObject
+        {
+            ["mode"] = "static",
+            ["url"] = step,
+            ["http_status"] = idx.Length > 0 && css.Length > 0 && js.Length > 0 ? 200 : 0,
+            ["dom"] = new JsonObject
+            {
+                ["root_children"] = idx.Contains("id=\"root\"") && js.Contains("createRoot") ? 1 : 0,
+            },
+            ["console_errors"] = errors,
+            ["links"] = links,
+            ["styles"] = StaticStyles(css),
+        };
+    }
 
     // ------------------------------------------------------------------ helpers
     static string RepoDir(string rel)
@@ -494,8 +661,18 @@ internal static class E2EFrontPipeTests
         TestContext.Check(code == 0 && (buildOut.Contains("Build succeeded") || buildOut.Contains("êxito") || buildOut.Contains("succeeded")),
             "app builda (dotnet build -c Release): " + Clip(buildOut.Split('\n')[0], 200));
 
-        EnsureServer();
-        var before = Measure(Path.Combine(genDir, "before.json"));
+        JsonObject before;
+        if (WebDriver)
+        {
+            EnsureServer();
+            before = Measure(Path.Combine(genDir, "before.json"));
+        }
+        else
+        {
+            before = StaticSnapshot("baseline");
+            File.WriteAllText(Path.Combine(genDir, "before.json"), before.ToJsonString(Indented));
+            Console.WriteLine("  [front] sonda estatica (Razor/CSS/TSX), sem webdriver");
+        }
         CheckSnapshot("baseline", before, requireQuadro: true);
         double fs = Num(before["styles"]?["#titulo"]?["font-size"]);
         double qw = Num(before["styles"]?["#quadro"]?["width"]);
@@ -510,8 +687,17 @@ internal static class E2EFrontPipeTests
         // Volta ao baseline do gen (idempotente em re-run) e re-mede o "before".
         string genCss = Path.Combine(Ws, "gen", "app.css");
         if (File.Exists(genCss)) File.Copy(genCss, Css, true);
-        EnsureServer();
-        var before = Measure(Path.Combine(Ws, "gen", "before.json"));
+        JsonObject before;
+        if (WebDriver)
+        {
+            EnsureServer();
+            before = Measure(Path.Combine(Ws, "gen", "before.json"));
+        }
+        else
+        {
+            before = StaticSnapshot("baseline");
+            File.WriteAllText(Path.Combine(Ws, "gen", "before.json"), before.ToJsonString(Indented));
+        }
         CheckSnapshot("baseline", before, requireQuadro: true);
 
         string model = await E2bModel();
@@ -526,27 +712,46 @@ internal static class E2EFrontPipeTests
             var rule = e!.AsObject();
             string id = rule["id"]!.GetValue<string>();
             string file = rule["file"]!.GetValue<string>();
+            string kind = rule["kind"]?.GetValue<string>() ?? "css";
+            bool isRazor = kind == "razor";
+            string target = isRazor ? IndexView : Css;
+            string rel = rule["path"]?.GetValue<string>() ?? CssRel;
             string prompt = Enunciado(file);
-            string pre = File.ReadAllText(Css);
+            string pre = File.ReadAllText(target);
             string dump = Path.Combine(Ws, "edit", id, "transcript.json");
             var sum = TestContext.Standalone
                 ? await StandalonePhase("exec", prompt, dump, id)
-                : await AgentLoop(CpuBridge, model, sys, prompt, new[] { CssRel },
+                : await AgentLoop(CpuBridge, model, sys, prompt, new[] { rel },
                     new[] { "read_file", "write_file", "edit_file" }, 8, dump, id);
 
-            string post = File.ReadAllText(Css);
+            string post = File.ReadAllText(target);
             string editDir = Path.Combine(Ws, "edit", id);
             Directory.CreateDirectory(editDir);
-            File.Copy(Css, Path.Combine(editDir, "app.css"), true);
+            File.Copy(target, Path.Combine(editDir, isRazor ? "Index.cshtml" : "app.css"), true);
             File.WriteAllText(Path.Combine(editDir, "enunciado.md"), prompt);
             int diff = DiffLines(pre, post);
             TestContext.Check(diff <= 3, $"{id}: mexeu so no trecho do enunciado ({diff} linha(s) alterada(s), max 3)");
-            TestContext.Check(Regex.IsMatch(post, @"#quadro\s*\{[^}]*width\s*:", RegexOptions.Singleline)
-                && Regex.IsMatch(post, @"#titulo\s*\{[^}]*font-size\s*:", RegexOptions.Singleline),
-                $"{id}: CSS continua com #quadro e #titulo definidos");
+            if (isRazor)
+            {
+                foreach (var mc in rule["must_contain"]?.AsArray() ?? new JsonArray())
+                    TestContext.Check(post.Contains(mc!.GetValue<string>()), $"{id}: Razor contem {mc}");
+                TestContext.Check(post.Contains("id=\"root\""), $"{id}: Razor continua montando #root");
+            }
+            else
+            {
+                TestContext.Check(Regex.IsMatch(post, @"#quadro\s*\{[^}]*width\s*:", RegexOptions.Singleline)
+                    && Regex.IsMatch(post, @"#titulo\s*\{[^}]*font-size\s*:", RegexOptions.Singleline),
+                    $"{id}: CSS continua com #quadro e #titulo definidos");
+            }
             Console.WriteLine($"  [front:edit] {id}: {sum["out_tokens"]} tok em {sum["model_seconds"]}s = {sum["tps"]} tok/s, linhas alteradas={diff}");
 
-            var after = Measure(Path.Combine(editDir, "after.json"));
+            JsonObject after;
+            if (WebDriver) after = Measure(Path.Combine(editDir, "after.json"));
+            else
+            {
+                after = StaticSnapshot(id);
+                File.WriteAllText(Path.Combine(editDir, "after.json"), after.ToJsonString(Indented));
+            }
             CheckSnapshot(id, after, requireQuadro: true);
         }
     }
@@ -604,6 +809,30 @@ internal static class E2EFrontPipeTests
         {
             var rule = edits[i]!.AsObject();
             string id = rule["id"]!.GetValue<string>();
+            string kind = rule["kind"]?.GetValue<string>() ?? "css";
+            if (kind == "razor")
+            {
+                string razor = File.Exists(IndexView) ? File.ReadAllText(IndexView) : "";
+                foreach (var mc in rule["must_contain"]?.AsArray() ?? new JsonArray())
+                {
+                    string token = mc!.GetValue<string>();
+                    Verdict(id, "razor contem " + token, razor.Contains(token), token);
+                }
+                foreach (var mn in rule["must_not_contain"]?.AsArray() ?? new JsonArray())
+                {
+                    string token = mn!.GetValue<string>();
+                    Verdict(id, "razor nao contem " + token, !razor.Contains(token), token);
+                }
+                foreach (var nr in rule["no_regress"]?.AsArray() ?? new JsonArray())
+                {
+                    string[] parts = (nr?.GetValue<string>() ?? "").Split(':');
+                    if (parts.Length != 2) continue;
+                    double n0 = Num(chain[i].Snap["styles"]?[parts[0]]?[parts[1]]);
+                    double n1 = Num(chain[i + 1].Snap["styles"]?[parts[0]]?[parts[1]]);
+                    Verdict(id, $"no-regressao {parts[0]} {parts[1]}", Math.Abs(n1 - n0) <= 0.5, $"antes={n0} depois={n1}");
+                }
+                continue;
+            }
             string sel = rule["selector"]!.GetValue<string>();
             string prop = rule["prop"]!.GetValue<string>();
             string op = rule["op"]!.GetValue<string>();

@@ -17,6 +17,10 @@ Também é nativo (fora do system prompt) o request interno de *title generator*
 (`gpt-6-luna`, ~2,6 KB), que roda antes da conversa principal.
 
 ## Decisão
-- **Não portar** Code Mode, catálogo de tools, skills e env para a bridge.
-- No modo bypass/legacy (cliente sem harness próprio), anexar apenas o **Núcleo**
-  do `SUMMARY.md` + a tail do role. O catálogo de tools vem da API.
+- **Não portar** Code Mode nem o catálogo assinado de tools para a bridge.
+- **Exceção deliberada:** o main harness preserva os blocos dinâmicos `<env>` e
+  `<available_skills>` que o cliente já envia no system; não os hardcode, apenas
+  mantém o que veio. Ver `MAIN-HARNESS.md`.
+- No caminho gerido, o system base é o `MainHarness` hardcoded; no caminho
+  opencode, o system do cliente continua e as tails entram como delta. O
+  catálogo de tools vem da API.

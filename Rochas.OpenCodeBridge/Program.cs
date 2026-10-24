@@ -83,10 +83,9 @@ internal static partial class Program
     // 16.384 tokens ~ 375 s). Flag propria para poder desligar SO o corte e
     // manter o detector e o retry pos-hoc.
     static bool AntiRepeatAbort = true;
-    // Inibidor mestre do harness da bridge (--harness 0): com ele desligado a
-    // bridge vira tubo puro (sem sufixo guardrail, sem stop, sem pattern-strip,
-    // sem coercao, sem retry/aviso) — todo o conteudo vem do harness opencode.
-    static bool Harness = true;
+    // Switch das tails (--harness-tails; --harness e o alias legado). Nao e mais
+    // o inibidor mestre da bridge: mainHarness e harnessTails sao independentes.
+    static bool TailsEnabled = true;
     // Coerção de tool call NARRADA: o modelo escreveu a chamada no corpo da mensagem
     // ("[Assistant tool call]: nome({...})") em vez de emitir tool_calls estruturados.
     // Diferente de CoerceFor (que cobre modelo sem parser nenhum): aqui ja houve intencao
@@ -135,6 +134,11 @@ internal static partial class Program
     //   off     = nenhuma cauda, em nenhum caminho.
     // Pedido do operador (2026-10-24): guard de tools ligado nos DOIS caminhos.
     static string TailScope = "managed";
+    // Main harness (--main-harness): substitui o system do cliente no caminho
+    // gerido (model sem sufixo de role) pelo resumo unico do Core e dispensa as
+    // tails nesse caminho. Opencode (sufixo) segue com o system do cliente; para
+    // ele, o main harness nao troca o Code Mode do protocolo.
+    static bool MainHarnessOn = true;
     // Temperatura: perfil do role (-build = 0.1) vence a temperatura que o
     // cliente manda? O opencode repete o valor do json para o modelo base
     // (0.3/0.5) e o role ficava com a temperatura errada. Default: perfil vence
@@ -144,17 +148,20 @@ internal static partial class Program
     // Breaker de loop agentico (falhas consecutivas no mesmo alvo).
     static int BreakerSoft = 3;                                  // falhas que injetam o aviso
     static int BreakerHard = 6;                                  // falhas que encerram o turno
-    // Ha alguma cauda de inducAO configurada? E o que o /api/harness reporta:
-    // nao existe mais switch mestre, o que vale e ter cauda ou nao.
+    // Ha alguma cauda configurada? O /api/harness reporta isso; a decisao por
+    // caminho fica em TailsOn (harnessTails + tailScope).
     static bool TailsAtivas() => HarnessBehaviorTail.Length > 0 || HarnessToolsTail.Length > 0;
-    // Cauda vale NESTE pedido? "all" ignora o sufixo e o --harness (operador
-    // escolheu induzir tambem o opencode); "managed" mantem o desenho antigo.
-    static bool TailsOn(string? modelId) => TailScope switch
-    {
-        "off" => false,
-        "all" => TailsAtivas(),
-        _ => Harness && ManagedFor(modelId)
-    };
+    // Cauda vale NESTE pedido? --harness-tails (ou o legado --harness) e o
+    // switch das tails; tailScope decide o caminho. "all" inclui opencode;
+    // "managed" so o cliente direto/Web.
+    static bool TailsOn(string? modelId) =>
+        TailsEnabled && (TailScope switch
+        {
+            "off" => false,
+            "all" => TailsAtivas(),
+            "managed" => ManagedFor(modelId) && TailsAtivas(),
+            _ => false
+        });
     static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
     // devolve 413 pedindo compactacao em vez da resposta. Parametrizavel
@@ -270,7 +277,7 @@ internal static partial class Program
     static bool RiskAnswerYes(string answer)
     {
         if (string.IsNullOrWhiteSpace(answer)) return false;
-        string a = AntiRepeatReply.Normalize(answer).ToLowerInvariant();
+        string a = ContentAntiRepeat.Normalize(answer).ToLowerInvariant();
         if (System.Text.RegularExpressions.Regex.IsMatch(a, @"\b(nao|nunca|negar|recusar|cancelar|deixa|rejeitar)\b"))
             return false;
         return System.Text.RegularExpressions.Regex.IsMatch(a, @"\b(sim|autoriza|autorizado|aprova|aprovado|pode|executa|ok|yes|confirmo|confirmado)\b");
@@ -299,7 +306,7 @@ internal static partial class Program
         if (pats.Count == 0) return false;
         string sig = ToolSig.Of(tool, args);
         if (RiskRefused.Contains(sig)) return false;   // ja recusado: nao insiste
-        string hay = AntiRepeatReply.Normalize(tool + " " + args);
+        string hay = ContentAntiRepeat.Normalize(tool + " " + args);
         foreach (var rx in pats)
             if (rx.IsMatch(hay)) return true;
         return false;
@@ -377,7 +384,7 @@ internal static partial class Program
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["plan"] = (0.3, "events"),
-            ["build"] = (0.1, "off"),
+            ["build"] = (0.0, "off"),
             ["orch"] = (0.3, "events"),
             ["moe"] = (0.5, "events"),
             ["scripter"] = (0.1, "off"),
@@ -430,8 +437,14 @@ internal static partial class Program
             if (cfg["coerceTextTools"]?.GetValue<bool>() is bool coerce) CoerceTextTools = coerce;
             if (cfg["upstreamParser"]?.GetValue<string>() is string usp && usp.Length > 0) UpstreamParser = usp.Trim().ToLowerInvariant();
             if (cfg["maxTokensCoerced"]?.GetValue<int>() is int mtc && mtc >= 0) CpuMaxTokens = mtc;
-            if (cfg["harness"]?.GetValue<bool>() is bool hn) Harness = hn;
-            if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham && ham.Length > 0) { HarnessToolsTail = ham; ToolsTailCustom = true; }
+            // Dois switches separados: mainHarness (texto base) e harnessTails
+            // (delta). As chaves antigas "harness"/"primordial" seguem como alias.
+            if (cfg["harness"]?.GetValue<bool>() is bool hn) TailsEnabled = hn;
+            if (cfg["harnessTails"]?.GetValue<bool>() is bool ht) TailsEnabled = ht;
+            if (cfg["primordial"]?.GetValue<bool>() is bool pr) MainHarnessOn = pr;
+            if (cfg["mainHarness"]?.GetValue<bool>() is bool mh) MainHarnessOn = mh;
+            // Caudas ajustaveis no appsettings (string vazia desliga a peca).
+            if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham) { HarnessToolsTail = ham; ToolsTailCustom = true; }
             if (cfg["harnessBehaviorTail"]?.GetValue<string>() is string bt) { HarnessBehaviorTail = bt; BehaviorTailCustom = true; }
             if (cfg["tailScope"]?.GetValue<string>() is string tsp && tsp is "managed" or "all" or "off") TailScope = tsp;
             if (cfg["profileTempWins"]?.GetValue<bool>() is bool ptw) ProfileTempWins = ptw;
@@ -470,7 +483,9 @@ internal static partial class Program
             }
             if (cfg["qwenStandard"]?.GetValue<bool>() is bool qs) QwenStd = qs;
             if (Environment.GetEnvironmentVariable("DIAGNOSTIC") is "1" or "true" or "True") Diagnostic = true;
-            if (Environment.GetEnvironmentVariable("HARNESS") is "0" or "false" or "False") Harness = false;
+            // HARNESS=0 e o alias legado das tails; MAIN_HARNESS=0 desliga o texto base.
+            if (Environment.GetEnvironmentVariable("HARNESS") is "0" or "false" or "False") TailsEnabled = false;
+            if (Environment.GetEnvironmentVariable("MAIN_HARNESS") is "0" or "false" or "False") MainHarnessOn = false;
             if (cfg["thinkingOffRoles"] is JsonArray tor)
                 foreach (var r in tor)
                     if (r?.GetValue<string>() is { Length: > 0 } rn) ThinkingOffRoles.Add(rn.Trim());
@@ -914,12 +929,16 @@ internal static partial class Program
                     break;
 
                 // ---------- D) harness/prompt ----------
-                case "--harness": Harness = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--harness": // legado: equivale a --harness-tails
+                case "--harness-tails": TailsEnabled = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--harness-behavior-tail": HarnessBehaviorTail = cliArgs[i + 1]; BehaviorTailCustom = true; break;
                 case "--harness-tools-tail": HarnessToolsTail = cliArgs[i + 1]; ToolsTailCustom = true; break;
                 case "--tail-scope":
                     if (cliArgs[i + 1] is "managed" or "all" or "off") TailScope = cliArgs[i + 1];
                     break;
+                case "--main-harness":
+                case "--primordial": // legado
+                    MainHarnessOn = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--profile-temp-wins": ProfileTempWins = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--request-temp-wins": ProfileTempWins = cliArgs[i + 1] is "false" or "0"; break;
                 case "--breaker-soft": if (int.TryParse(cliArgs[i + 1], out int bs) && bs >= 0) BreakerSoft = bs; break;
@@ -1025,7 +1044,7 @@ internal static partial class Program
 
         if (CpuMaxTokens > 0 && !CoerceFor())
             warns.Add($"--coerced-max-tokens {CpuMaxTokens} inerte: use --upstream-parser none ou --coerce-text-tools 1");
-        if (!Harness && (BehaviorTailCustom || ToolsTailCustom) && TailScope == "managed")
+        if (!TailsEnabled && (BehaviorTailCustom || ToolsTailCustom) && TailScope == "managed")
             warns.Add("cauda de harness declarada com --harness 0: inerte (use --tail-scope all para injetar tambem no caminho opencode)");
         if (TailScope == "all" && !TailsAtivas())
             warns.Add("--tail-scope all com caudas vazias: nada a injetar");
@@ -1059,7 +1078,7 @@ internal static partial class Program
         Add("transporte", "thinking-format=" + Thinking,
             PassthroughResponses ? "passthrough-responses" : "", StreamPerDelta ? "stream-per-delta" : "",
             QwenStd ? "qwen-standard" : "");
-        Add("harness-prompt", Harness ? "harness" : "",
+        Add("harness-prompt", MainHarnessOn ? "main-harness" : "", TailsEnabled ? "harness-tails" : "",
             BehaviorTailCustom ? "harness-behavior-tail" : "", ToolsTailCustom ? "harness-tools-tail" : "");
         Add("coercao-tools", CoerceFor() ? "coercao=on" : "coercao=off", "upstream-parser=" + UpstreamParser,
             CoerceTextTools ? "coerce-text-tools" : "", CoerceNarrated ? "coerce-narrated" : "",
@@ -1163,8 +1182,8 @@ internal static partial class Program
             }
 
             // Flag mestra EFETIVA do harness (fonte unica: a web consulta aqui).
-            // Harness=0 (tubo puro, ex.: OpenCode) responde false mesmo com as
-            // caudas declaradas, porque elas ficam inertes nesse modo.
+            // Com as tails desligadas (--harness 0), o efetivo responde false
+            // mesmo com as caudas declaradas; o main harness segue independente.
             if (ctx.Request.HttpMethod == "GET" && path == "/api/harness")
             {
                 // Efetivo por caminho: opencode (model com sufixo) x direto/Web.
@@ -1173,9 +1192,12 @@ internal static partial class Program
                     // Coerente com as caudas efetivas: com --tail-scope all elas
                     // valem nos dois caminhos, entao o campo legado "harness"
                     // (consultado pela Web) passa a refletir isso.
-                    ["harness"] = TailsAtivas() && TailsOn(""),
+                    ["harness"] = MainHarnessOn || TailsOn(""),
                     ["tail_scope"] = TailScope,
-                    ["tails_managed"] = TailsOn(""),
+                    ["main_harness"] = MainHarnessOn,
+                    ["main_harness_chars"] = MainHarness.Text.Length,
+                    ["harness_tails"] = TailsEnabled,
+                    ["tails_managed"] = TailsOn("") && !MainHarnessOn,
                     ["tails_opencode"] = TailsOn(Model + "-build"),
                     ["behavior_chars"] = HarnessBehaviorTail.Length,
                     ["tools_chars"] = HarnessToolsTail.Length
@@ -1381,7 +1403,7 @@ WriteJson(ctx, 200, new JsonObject
         ["upstream"] = Upstream, ["model"] = Model, ["thinking"] = Thinking,
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
 ["profile_temp_wins"] = ProfileTempWins, ["tail_scope"] = TailScope,
-["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
+["main_harness"] = MainHarnessOn, ["harness_tails"] = TailsEnabled, ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
         ["passthrough_responses"] = PassthroughResponses,
         ["tool_strategy"] = ToolStrategy,
@@ -1392,7 +1414,7 @@ WriteJson(ctx, 200, new JsonObject
         ["anti_repeat"] = AntiRepeat, ["anti_repeat_abort"] = AntiRepeatAbort,
         ["diagnostic_level"] = DiagnosticLevel,
         ["config_groups"] = ConfigGroups(),
-        ["harness"] = TailsAtivas(), ["legacy_harness"] = LegacyHarness, ["stream_per_delta"] = StreamPerDelta,
+        ["harness"] = MainHarnessOn || TailsOn(""), ["legacy_harness"] = LegacyHarness, ["stream_per_delta"] = StreamPerDelta,
         ["bridge_managed"] = BridgeManagedAll ? "all" : "direct-only",
         ["uptime_seconds"] = (long)(DateTime.UtcNow - StartedAt).TotalSeconds,
         ["total_requests"] = TotalRequests, ["failed_requests"] = FailedRequests
@@ -1958,6 +1980,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
     /// <param name="toolCount">No. de tools convertidas.</param>
     /// <param name="tempSource">"profile" | "request" | "global".</param>
     /// <param name="breakerTrip">Aviso quando o breaker encerrou o turno (null = segue).</param>
+    /// <param name="breakerState">Estado do breaker: "none" | "nudge" | "trip".</param>
     /// <returns>Body p/ /v1/chat/completions.</returns>
     static JsonObject BuildChatRequest(JsonObject req, out string requestedModel, out double temperature,
         out string thinking, out int toolCount, out string tempSource, out string? breakerTrip, out string breakerState)
@@ -2003,11 +2026,23 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
 
         // Converte a conversa Responses -> messages do formato chat
         var messages = InputToMessages(req["input"], req["instructions"], hasProfile);
+        // Main harness: no caminho gerido ele substitui o system do cliente e
+        // dispensa as tails (a essencia ja esta no texto unico). Preserva
+        // env/skills/data do cliente e instrucoes pequenas de agente.
+        bool mainHarness = ApplyMainHarness(messages, hasProfile, MainHarnessOn);
+        if (Diagnostic && mainHarness)
+            Log(new JsonObject
+            {
+                ["event"] = "main-harness",
+                ["model"] = requestedModel,
+                ["chars"] = MainHarness.Text.Length,
+                ["tails"] = false
+            });
         // Caudas por peca, penduradas no system que InputToMessages ja consolida
         // (instructions + os system do meio). O gate decide por caminho
         // (--tail-scope): "all" injeta tambem no opencode, "managed" so no
         // cliente direto/Web. Sem system nao ha onde pendurar: nao inventamos.
-        bool tails = TailsOn(requestedModel);
+        bool tails = TailsOn(requestedModel) && !mainHarness;
         if (tails && messages.Count > 0 && messages[0] is JsonObject sys0
             && sys0["role"]?.GetValue<string>() == "system"
             && sys0["content"] is JsonValue sysv && sysv.TryGetValue<string>(out string? syst))
@@ -2025,7 +2060,11 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 ["has_system"] = messages.Count > 0 && messages[0]?["role"]?.GetValue<string>() == "system",
                 ["attached"] = messages.Count > 0 && messages[0] is JsonObject s1
                                && s1["content"] is JsonValue s1v
-                               && (s1v.TryGetValue<string>(out string? t1) ? t1.Contains(HarnessToolsTail[..20]) : false),
+                               && (s1v.TryGetValue<string>(out string? t1)
+                                   ? (HarnessToolsTail.Length == 0
+                                       ? false
+                                       : t1.Contains(HarnessToolsTail[..Math.Min(20, HarnessToolsTail.Length)]))
+                                   : false),
                 ["behavior_chars"] = HarnessBehaviorTail.Length,
                 ["tools_chars"] = HarnessToolsTail.Length
             });
@@ -2033,7 +2072,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // decide nudge/trip. Trip = nao chama o modelo (o turno esta perdido).
         if (BreakerSoft > 0)
         {
-            var loopGuard = new Breaker(BreakerSoft, BreakerHard);
+            var loopGuard = new ToolsBreaker(BreakerSoft, BreakerHard);
             var verdict = loopGuard.Evaluate(messages);
             if (verdict.Verdict != BreakerVerdict.None)
             {
@@ -2531,6 +2570,8 @@ var shape = new StringBuilder();
     /// rejeita pattern sem ^...$ (400); o do 9B ignorava. Remover equivale ao
     /// comportamento do 9B (geracao livre, description continua guiando).</remarks>
     /// <param name="node">Tools ou sub-schema (mutado no lugar).</param>
+    /// <param name="path">Caminho do schema (usado no log da remocao).</param>
+    /// <param name="hits">Acumulador dos caminhos removidos.</param>
     /// <returns>Quantas chaves removidas.</returns>
     static int StripUnanchoredPatterns(JsonNode? node, string path = "$", List<string>? hits = null)
     {
@@ -3202,7 +3243,7 @@ var shape = new StringBuilder();
         if (trip)
         {
             int dupAt = -1; string dupCtx = "";
-            var norm = AntiRepeatReply.Normalize(accumulated ?? "");
+            var norm = ContentAntiRepeat.Normalize(accumulated ?? "");
             int w = Math.Min(AntiRepeatWindow, norm.Length);
             if (w > 0 && norm.Length >= 2 * w)
             {
@@ -3214,7 +3255,7 @@ var shape = new StringBuilder();
             Sonda(where, chars, trip, Truncate(norm, 80), dupAt, dupCtx);
         }
         else if (chars < 512 || (chars % 2048) < 256)
-            Sonda(where, chars, trip, Truncate(AntiRepeatReply.Normalize(accumulated ?? ""), 80));
+            Sonda(where, chars, trip, Truncate(ContentAntiRepeat.Normalize(accumulated ?? ""), 80));
         return trip;
     }
 
@@ -3644,6 +3685,7 @@ static bool NormalizeSystemFirst(JsonObject req)
     /// <param name="thinking">Modo thinking efetivo.</param>
     /// <param name="toolCount">Tools originais (para o mapeamento de function_call).</param>
     /// <param name="startedAt">Inicio p/ elapsed.</param>
+    /// <param name="tempSource">Procedencia da temperatura (vai para o log).</param>
     static void HandleResponsesStreamShim(HttpListenerContext ctx, JsonObject chat,
         string requestedModel, double temperature, string thinking, int toolCount, DateTime startedAt,
         string tempSource = "")
@@ -3714,6 +3756,7 @@ static bool NormalizeSystemFirst(JsonObject req)
     /// <param name="temperature">Efetiva.</param>
     /// <param name="thinking">Modo thinking efetivo.</param>
     /// <param name="startedAt">Inicio p/ elapsed.</param>
+    /// <param name="tempSource">Procedencia da temperatura (vai para o log).</param>
     static void HandleResponsesStream(HttpListenerContext ctx, JsonObject chat,
         string requestedModel, double temperature, string thinking, DateTime startedAt,
         string tempSource = "")
@@ -4405,6 +4448,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
     /// <summary>Converte input/instructions Responses em messages do chat.</summary>
     /// <param name="input">Itens Responses.</param>
     /// <param name="instructions">Sistema.</param>
+    /// <param name="profileClient">Model com sufixo de perfil (tubo puro, sem formula)?</param>
     /// <returns>Messages.</returns>
     static JsonArray InputToMessages(JsonNode? input, JsonNode? instructions, bool profileClient = false)
     {
@@ -4502,6 +4546,77 @@ if (type == "message")
         if (sysText.Length > 0)
             messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = LegacyHarness ? WithSystemGuardrail(sysText.ToString()) : sysText.ToString() });
         return messages;
+    }
+
+    /// <summary>
+    /// Aplica o main harness no caminho gerido (model sem sufixo de role).
+    /// Preserva os blocos dinamicos do cliente (env, skills, data) e, se o system
+    /// for pequeno, tambem as instrucoes especificas do agente.
+    /// </summary>
+    /// <param name="messages">Mensagens ja convertidas.</param>
+    /// <param name="hasProfile">Model com sufixo de role (opencode): nao troca.</param>
+    /// <param name="enabled">Flag --main-harness/appsettings.</param>
+    /// <returns>true se substituiu o system.</returns>
+    internal static bool ApplyMainHarness(JsonArray messages, bool hasProfile, bool enabled)
+    {
+        if (!enabled || hasProfile) return false;
+        string? clientSystem = null;
+        if (messages.Count > 0 && messages[0] is JsonObject first
+            && first["role"]?.GetValue<string>() == "system")
+            clientSystem = first["content"]?.GetValue<string>();
+
+        string text = BuildMainHarnessSystem(clientSystem);
+        if (messages.Count > 0 && messages[0] is JsonObject sys
+            && sys["role"]?.GetValue<string>() == "system")
+            sys["content"] = text;
+        else
+            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = text });
+        return true;
+    }
+
+    /// <summary>
+    /// Monta o system do main harness preservando o que e dinamico no cliente:
+    /// bloco &lt;env&gt;, &lt;available_skills&gt;, data e instrucoes pequenas.
+    /// O master grande do opencode (Code Mode/AGENTS.md) nao e copiado.
+    /// </summary>
+    internal static string BuildMainHarnessSystem(string? clientSystem)
+    {
+        var sb = new StringBuilder(MainHarness.Text);
+        string? env = ExtractBlock(clientSystem, "<env>", "</env>");
+        if (env is not null) sb.Append("\n\nAMBIENTE REAL (cliente)\n").Append(env);
+        string? skills = ExtractBlock(clientSystem, "<available_skills>", "</available_skills>");
+        if (skills is not null) sb.Append("\n\nSKILLS DISPONIVEIS (cliente)\n").Append(skills);
+        string? date = ExtractLine(clientSystem, "Today's date:");
+        if (date is not null) sb.Append("\n\n").Append(date);
+
+        // O master do opencode e grande e traz o Code Mode/AGENTS.md que o
+        // main harness ja substitui; um system pequeno pode ser instrucao
+        // especifica do agente e vale preservar.
+        string trimmed = clientSystem?.Trim() ?? "";
+        bool isMaster = trimmed.Length > 6000
+            || trimmed.Contains("# Code Mode", StringComparison.OrdinalIgnoreCase);
+        if (!isMaster && trimmed.Length > 0)
+            sb.Append("\n\nINSTRUCOES DO CLIENTE\n").Append(trimmed);
+        return sb.ToString();
+    }
+
+    static string? ExtractBlock(string? text, string open, string close)
+    {
+        if (string.IsNullOrEmpty(text)) return null;
+        int start = text.IndexOf(open, StringComparison.OrdinalIgnoreCase);
+        if (start < 0) return null;
+        int end = text.IndexOf(close, start + open.Length, StringComparison.OrdinalIgnoreCase);
+        if (end < 0) return null;
+        return text[start..(end + close.Length)];
+    }
+
+    static string? ExtractLine(string? text, string prefix)
+    {
+        if (string.IsNullOrEmpty(text)) return null;
+        foreach (string line in text.Split('\n'))
+            if (line.TrimStart().StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return line.Trim();
+        return null;
     }
 
     // Extrai texto de content/output seja string, lista de partes ou objeto.
@@ -5236,6 +5351,8 @@ if (type == "message")
     /// <param name="chars">Acumulado ate aqui.</param>
     /// <param name="trip">Detector disparou?</param>
     /// <param name="tail">Amostra da cauda (80 chars).</param>
+    /// <param name="dupAt">Indice da duplicata na cauda (-1 = nao localizada).</param>
+    /// <param name="dupCtx">Trecho da duplicata (até 80 chars).</param>
     static void Sonda(string where, int chars, bool trip, string tail, int dupAt = -1, string dupCtx = "")
     {
         if (!Diagnostic) return;

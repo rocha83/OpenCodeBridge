@@ -22,7 +22,8 @@ internal static class E2EBeltsTests
         var d = s.Normalize(System.Text.NormalizationForm.FormD);
         var b = new System.Text.StringBuilder();
         foreach (char c in d)
-            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark
+                && char.IsLetterOrDigit(c))
                 b.Append(char.ToLowerInvariant(c));
         return b.ToString();
     }
@@ -95,6 +96,23 @@ internal static class E2EBeltsTests
                 var tasks = JsonNode.Parse(orchContent[s..(e+1)])?.AsArray() ?? new JsonArray();
                 Log($"  [belt:{key}] Orch: {tasks.Count} tarefas");
 
+                // Grounding: sem isso o Scripter escreve as cegas e inventa caminhos
+                // (ex.: ./data/reembolsos.db, DataAccessLayer/*.csproj). O inventario
+                // real entra no system prompt e vira contrato de path.
+                var ground = new System.Text.StringBuilder();
+                ground.AppendLine("FATOS DO AMBIENTE (nao invente caminhos fora desta lista):");
+                ground.AppendLine("- workspace=" + ws + " e o cwd de execucao; ele comeca VAZIO.");
+                ground.AppendLine("- /usr/src/opencodebridge existe (repo do produto), mas NAO e o workspace da tarefa.");
+                foreach (var exe in new[] { "dotnet", "sqlite3", "python3", "psql", "sqlplus" })
+                {
+                    var (c, _) = Run("bash", ws, 10, "-lc", "command -v " + exe + " >/dev/null 2>&1");
+                    ground.AppendLine($"- {(c == 0 ? "tem" : "NAO tem")} {exe} no PATH");
+                }
+                ground.AppendLine("- NAO existe banco previo, .csproj previo nem servidor SQL ativo.");
+                ground.AppendLine("- Todo path citado deve ser relativo ao cwd ou criado pelo script (mkdir -p).");
+                ground.AppendLine("- O script e bash puro: C#/SQL so via heredoc ou arquivo separado, NUNCA solto no .sh.");
+                string grounded = ground.ToString();
+
                 // 2) Scripter (12B) compoe script bash + companion .md para cada tarefa.
                 Log($"  [belt:{key}] 2/4 Scripter compondo scripts...");
                 int scriptsOk = 0;
@@ -105,13 +123,15 @@ internal static class E2EBeltsTests
                     string safeTitle = title.Replace(" ", "_").ToLowerInvariant();
                     string scriptPath = System.IO.Path.Combine(ws, safeTitle + ".sh");
                     string metaPath = System.IO.Path.Combine(ws, safeTitle + ".md");
+                    var beforeFiles = new HashSet<string>(System.IO.Directory.GetFiles(ws, "*.sh"));
+                    var writtenScripts = new List<string>();
 
                     var tools = new JsonArray
                     {
                         new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write_file", ["description"]="escreve arquivo", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
                     };
                     var sh = new JsonArray(
-                        new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, 12B). Componha um script bash que executa a tarefa e o salve em " + safeTitle + ".sh com shebang. Tambem gere companion " + safeTitle + ".md descrevendo o que o script faz. Mantenha o script com no maximo 80 linhas e o companion com no maximo 20 linhas (saida curta cabe no teto de tokens). Use write_file. Ao terminar responda apenas SCRIPTER-OK." },
+                        new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, 12B). Componha um script bash que executa a tarefa e o salve em " + safeTitle + ".sh com shebang. Tambem gere companion " + safeTitle + ".md descrevendo o que o script faz. Mantenha o script com no maximo 80 linhas e o companion com no maximo 20 linhas (saida curta cabe no teto de tokens). Use write_file. Ao terminar responda apenas SCRIPTER-OK.\n\n" + grounded + "REGRA: bash puro; nunca escreva C#/SQL dentro do .sh (use heredoc ou arquivo separado)." },
                         new JsonObject { ["role"]="user", ["content"]=taskPrompt });
                     for (int turn = 0; turn < 6; turn++)
                     {
@@ -141,26 +161,97 @@ internal static class E2EBeltsTests
                             string content = a["content"]?.GetValue<string>() ?? "";
                             if (path.Length == 0 || path.Any(char.IsControl) || path.Contains("..") || System.IO.Path.IsPathRooted(path))
                             {
-                                Log($"  [belt:{key}] path recusado: {path.Replace("\n", "\\n").Replace("\r", "")[..Math.Min(50, path.Length)]}");
-                                sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]="ERRO: path invalido" });
+                                string why = path.Length == 0 ? "vazio"
+                                    : path.Any(char.IsControl) ? "control-char"
+                                    : path.Contains("..") ? ".."
+                                    : "absoluto";
+                                string shown = path.Replace("\n", "\\n").Replace("\r", "");
+                                Log($"  [belt:{key}] path recusado ({why}): \"{shown[..Math.Min(50, shown.Length)]}\"");
+                                sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]="ERRO: path invalido (" + why + ")" });
                                 continue;
                             }
                             string full = System.IO.Path.Combine(ws, path);
                             System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
                             System.IO.File.WriteAllText(full, content);
+                            if (path.EndsWith(".sh", StringComparison.OrdinalIgnoreCase)) writtenScripts.Add(full);
                             sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]=$"escrito {path}" });
                         }
                     }
-                    // O modelo escolhe o nome do arquivo (com/sem acento); nao da para
-                    // exigir que seja exatamente safeTitle.sh. Resolve pelo titulo
-                    // normalizado e, se nao achar, aceita o .sh mais recente da tarefa.
-                    string? produced = System.IO.File.Exists(scriptPath) ? scriptPath : FindByTitle(ws, safeTitle);
-                    if (produced is not null)
+                    // O modelo escolhe o nome do arquivo (com/sem acento, as vezes com
+                    // espacos/barra invertida). Resolve por titulo normalizado e, por
+                    // ultimo, pelo .sh mais recente criado nesta tarefa.
+                    string? ResolveScript()
+                    {
+                        // O path do arg e a fonte da verdade: foi o que o Scripter mandou escrever.
+                        if (writtenScripts.Count > 0) return writtenScripts[^1];
+                        if (System.IO.File.Exists(scriptPath)) return scriptPath;
+                        var byTitle = FindByTitle(ws, safeTitle);
+                        if (byTitle is not null) return byTitle;
+                        return System.IO.Directory.GetFiles(ws, "*.sh")
+                            .Where(f => !beforeFiles.Contains(f))
+                            .OrderByDescending(System.IO.File.GetLastWriteTimeUtc)
+                            .FirstOrDefault();
+                    }
+                    string? produced = ResolveScript();
+                    if (produced is not null && !System.IO.File.Exists(scriptPath))
+                        Log($"  [belt:{key}] script resolvido: {System.IO.Path.GetFileName(produced)}");
+                    for (int gate = 0; produced is not null && gate < 3; gate++)
                     {
                         string script = System.IO.File.ReadAllText(produced);
-                        var (code, outp) = Run("bash", ws, 60, "-n", System.IO.Path.GetFileName(produced));
-                        if (code == 0) { scriptsOk++; Log($"  [belt:{key}] script OK: {System.IO.Path.GetFileName(produced)} ({script.Length} bytes)"); }
-                        else Log($"  [belt:{key}] script SYNTAX FAIL: {System.IO.Path.GetFileName(produced)}: {outp.Split('\n')[0]}");
+                        string? err = null;
+                        if (script.Contains("write_file{") || script.Contains("\"path\":") || script.Contains("```"))
+                            err = "conteudo do .sh tem chamada de tool colada (write_file{...}) ou bloco markdown";
+                        else
+                        {
+                            var (code, outp) = Run("bash", ws, 60, "-n", System.IO.Path.GetFileName(produced));
+                            if (code != 0) err = outp.Trim();
+                        }
+                        if (err is null)
+                        {
+                            scriptsOk++;
+                            Log($"  [belt:{key}] script OK: {System.IO.Path.GetFileName(produced)} ({script.Length} bytes)");
+                            break;
+                        }
+                        Log($"  [belt:{key}] script SYNTAX FAIL: {System.IO.Path.GetFileName(produced)}: {err.Split('\n')[0]}");
+                        if (gate == 2) break;
+
+                        // Gate corretivo: erro de sintaxe volta ao Scripter (2 retries)
+                        // em vez de executar um script que ja sabemos invalido.
+                        Log($"  [belt:{key}] gate: devolvendo erro ao Scripter (retry {gate + 1}/2)");
+                        sh.Add(new JsonObject { ["role"] = "assistant", ["content"] = "SCRIPTER-REWRITE" });
+                        sh.Add(new JsonObject { ["role"] = "user", ["content"] = "O script falhou em `bash -n`:\n" + err + "\nReescreva o arquivo " + System.IO.Path.GetFileName(produced) + " via write_file corrigindo a sintaxe. Bash puro; nunca C#/SQL solto. Responda SCRIPTER-OK." });
+                        for (int turn = 0; turn < 4; turn++)
+                        {
+                            var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
+                                new JsonObject { ["model"]=scripterModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
+                            var msg = r["choices"]?[0]?["message"]?.AsObject();
+                            var calls = msg?["tool_calls"]?.AsArray();
+                            if (calls is null || calls.Count == 0) break;
+                            var echo = new JsonArray();
+                            foreach (var c in calls) echo.Add(new JsonObject { ["id"]=c?["id"]?.GetValue<string>()??"", ["type"]="function", ["function"]=new JsonObject { ["name"]=c?["function"]?["name"]?.GetValue<string>()??"", ["arguments"]=c?["function"]?["arguments"]?.GetValue<string>()??"{}" } });
+                            sh.Add(new JsonObject { ["role"]="assistant", ["content"]=msg?["content"]?.GetValue<string>()??"", ["tool_calls"]=echo });
+                            foreach (var c in calls)
+                            {
+                                string callId = c?["id"]?.GetValue<string>() ?? "";
+                                string argsJson = c?["function"]?["arguments"]?.GetValue<string>() ?? "{}";
+                                JsonObject a;
+                                try { a = JsonNode.Parse(argsJson)?.AsObject() ?? new JsonObject(); }
+                                catch { sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]="ERRO: arguments invalidos/truncados" }); continue; }
+                                string p2 = a["path"]?.GetValue<string>() ?? "";
+                                string content2 = a["content"]?.GetValue<string>() ?? "";
+                                if (p2.Length == 0 || p2.Any(char.IsControl) || p2.Contains("..") || System.IO.Path.IsPathRooted(p2))
+                                {
+                                    sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]="ERRO: path invalido" });
+                                    continue;
+                                }
+                                string full2 = System.IO.Path.Combine(ws, p2);
+                                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full2)!);
+                                System.IO.File.WriteAllText(full2, content2);
+                                if (p2.EndsWith(".sh", StringComparison.OrdinalIgnoreCase)) writtenScripts.Add(full2);
+                                sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]=$"escrito {p2}" });
+                            }
+                        }
+                        produced = ResolveScript();
                     }
                 }
 
@@ -170,6 +261,18 @@ internal static class E2EBeltsTests
                 foreach (var f in System.IO.Directory.GetFiles(ws, "*.sh"))
                 {
                     string name = System.IO.Path.GetFileName(f);
+                    string body = System.IO.File.ReadAllText(f);
+                    if (body.Contains("write_file{") || body.Contains("\"path\":") || body.Contains("```"))
+                    {
+                        Log($"  [belt:{key}] exec SKIP (tool colada no .sh): {name}");
+                        continue;
+                    }
+                    var (syntax, syntaxErr) = Run("bash", ws, 60, "-n", name);
+                    if (syntax != 0)
+                    {
+                        Log($"  [belt:{key}] exec SKIP (sintaxe): {name}: {syntaxErr.Trim().Split('\n')[0]}");
+                        continue;
+                    }
                     string meta = System.IO.Path.ChangeExtension(f, ".md");
                     if (System.IO.File.Exists(meta))
                     {
@@ -178,7 +281,7 @@ internal static class E2EBeltsTests
                         var execHistory = new JsonArray(
                             new JsonObject { ["role"]="system", ["content"]="Voce e o Exec (role exec, E2B). Leia o companion .md e o script. Responda apenas EXEC-READ-OK." },
                             new JsonObject { ["role"]="user", ["content"]="COMPANION:\n" + md + "\n\nSCRIPT:\n" + sh });
-                        var execR = await TestContext.PostObj("http://127.0.0.1:4125/v1/chat/completions",
+                        var execR = await TestContext.PostObj((Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125") + "/v1/chat/completions",
                             new JsonObject { ["model"]=execModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=execHistory.DeepClone() });
                         string execContent = execR["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
                         Log($"  [belt:{key}] exec read: {name} -> {execContent[..Math.Min(40, execContent.Length)]}");
@@ -204,6 +307,41 @@ internal static class E2EBeltsTests
             }
         }
         TestContext.Check(fail == 0, $"belts direct: {fail} falharam");
-        Log($"[belts:direct] {pass}/{Belts.Length} PASS");
+        Log($"[belts:direct] {pass}/{beltsToRun.Length} PASS");
+    }
+
+    static string WebTestDll()
+    {
+        var probe = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+        while (probe is not null)
+        {
+            string bin = System.IO.Path.Combine(probe.FullName, "Rochas.OpenCodeBridge.Web.Test", "bin", "Release");
+            if (System.IO.Directory.Exists(bin))
+            {
+                string? hit = System.IO.Directory.GetFiles(bin, "Rochas.OpenCodeBridge.Web.Test.dll", System.IO.SearchOption.AllDirectories).FirstOrDefault();
+                if (hit is not null) return hit;
+            }
+            probe = probe.Parent;
+        }
+        throw new Exception("Web.Test nao buildado (dotnet build -c Release Rochas.OpenCodeBridge.slnx)");
+    }
+
+    /// <summary>Belts pela Web UI real (stream, tools e quadros gerados na sessao) via Web.Test --ui.</summary>
+    public static async Task WebUi()
+    {
+        if (!TestContext.WebDriver)
+            TestContext.Skip("WebDriver desligado: use --webdriver (HEADED=1 para acompanhar)");
+        string keys = string.IsNullOrWhiteSpace(TestContext.BeltsFilter) ? "" : TestContext.BeltsFilter;
+        var args = new List<string>
+        {
+            "exec", WebTestDll(), "--web", TestContext.WebDriverUrl, "--ui",
+            "--skip-units", "--skip-integration", "--mode", "plan", "--phase", "full",
+        };
+        if (keys.Length > 0) { args.Add("--belts"); args.Add(keys); }
+        var (code, outp) = Run("dotnet", "/tmp/opencode", 5400, args.ToArray());
+        Log($"[belts:webui] {TestContext.WebDriverUrl} keys={(keys.Length == 0 ? "all" : keys)} exit={code}");
+        Log(outp.Length > 4000 ? outp[^4000..] : outp);
+        TestContext.Check(code == 0, $"belts via Web UI ({TestContext.WebDriverUrl}) exit={code}");
+        await Task.CompletedTask;
     }
 }

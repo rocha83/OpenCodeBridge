@@ -77,7 +77,7 @@ internal static class E2EToolsFullTests
     {
         await Task.WhenAll(
             RunOnBridge("http://127.0.0.1:4124", "GPU1-12B"),
-            RunOnBridge("http://127.0.0.1:4125", "GPU2-E2B"));
+            RunOnBridge(Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125", "GPU2-E2B"));
         Console.WriteLine("[toolsfull] 2/2 modelos PASS");
     }
 }

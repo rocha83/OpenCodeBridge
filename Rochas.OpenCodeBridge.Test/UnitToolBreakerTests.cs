@@ -48,7 +48,7 @@ internal static class UnitToolBreakerTests
             ("tool", "", "", "File not found: /home/mint/a.json"),
             ("assistant", "read", PathArgs("/home/mint/a.json"), ""),
             ("tool", "", "", "File not found: /home/mint/a.json"));
-        var guard = new global::Rochas.OpenCodeBridge.Core.Breaker(3, 6);
+        var guard = new global::Rochas.OpenCodeBridge.Core.ToolsBreaker(3, 6);
         var r = guard.Evaluate(msgs);
         TestContext.Check(r.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.None, "2 falhas nao disparam");
         TestContext.Check(r.Streak == 2, "streak conta 2 falhas seguidas");
@@ -65,7 +65,7 @@ internal static class UnitToolBreakerTests
             ("tool", "", "", "/bin/bash: cd: proj-teste-200: Arquivo ou diretorio inexistente"),
             ("assistant", "shell", ShellArgs("mkdir proj-teste-099 && cd proj-teste-999"), ""),
             ("tool", "", "", "fatal: not a git repository (or any parent up to mount point /home)"));
-        var guard = new global::Rochas.OpenCodeBridge.Core.Breaker(3, 6);
+        var guard = new global::Rochas.OpenCodeBridge.Core.ToolsBreaker(3, 6);
         var r = guard.Evaluate(msgs);
         TestContext.Check(r.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Nudge, "3 falhas no mesmo alvo = nudge");
         TestContext.Check(r.DistinctTargets == 1, $"alvos mutados colapsam em 1 (veio {r.DistinctTargets})");
@@ -95,7 +95,7 @@ internal static class UnitToolBreakerTests
             });
             msgs.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = id, ["content"] = "Unable to write /usr/src/opencodedbidge/AgentSeedercs" });
         }
-        var guard = new global::Rochas.OpenCodeBridge.Core.Breaker(3, 6);
+        var guard = new global::Rochas.OpenCodeBridge.Core.ToolsBreaker(3, 6);
         var r = guard.Evaluate(msgs);
         TestContext.Check(r.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Trip, "6 falhas encerram o turno");
         TestContext.Check(r.Notice.Contains("Nao houve chamada ao modelo"), "aviso de trip explica o curto-circuito");
@@ -110,7 +110,7 @@ internal static class UnitToolBreakerTests
             ("assistant", "read", PathArgs("/b/dois.json"), ""), ("tool", "", "", "File not found: /b/dois.json"),
             ("assistant", "read", PathArgs("/c/tres.json"), ""), ("tool", "", "", "File not found: /c/tres.json"),
             ("assistant", "read", PathArgs("/d/quatro.json"), ""), ("tool", "", "", "File not found: /d/quatro.json"));
-        var guard = new global::Rochas.OpenCodeBridge.Core.Breaker(3, 6);
+        var guard = new global::Rochas.OpenCodeBridge.Core.ToolsBreaker(3, 6);
         var r = guard.Evaluate(msgs);
         TestContext.Check(r.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.None, "alvos distintos nao disparam");
         TestContext.Check(r.DistinctTargets == 4, $"4 alvos distintos (veio {r.DistinctTargets})");
@@ -140,7 +140,7 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
-    // ---- dois escopos: conteudo (AntiRepeatReply) x tools (ToolSig/Breaker/RepeatedCall) ----
+    // ---- dois escopos: conteudo (AntiRepeatReply) x tools (ToolSig/ToolsBreaker/RepeatedCall) ----
 
     public static Task ContentScopeUsesHelperSubclasses()
     {
@@ -149,12 +149,12 @@ internal static class UnitToolBreakerTests
         var args = new global::Rochas.OpenCodeBridge.Core.ToolArgsAntiRepeatReply(64);
         TestContext.Check(stream.Scope == "stream" && args.Scope == "tool-args", "helpers declaram o escopo");
         TestContext.Check(stream is global::Rochas.OpenCodeBridge.Core.AntiRepeatReply, "stream e helper de conteudo");
-        TestContext.Check(stream is global::Rochas.OpenCodeBridge.Core.ContentAntiReply, "helper responde a classe-mae");
+        TestContext.Check(stream is global::Rochas.OpenCodeBridge.Core.ContentAntiRepeat, "helper responde a classe-mae");
         TestContext.Check(stream.IsRepeat(loop), "cauda repetida no stream");
         TestContext.Check(args.IsRepeat(loop), "mesma regra para os argumentos");
         TestContext.Check(!stream.IsRepeat("texto unico, sem repeticao alguma aqui"), "texto novo nao dispara");
-        TestContext.Check(global::Rochas.OpenCodeBridge.Core.AntiRepeatReply.Normalize("  Ola   MUNDO ") == "ola mundo", "normalizacao canonica");
-        TestContext.Check(global::Rochas.OpenCodeBridge.Core.AntiRepeatReply.TailDuplicateAt(loop, 64) >= 0, "posicao da duplicata para a sonda");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ContentAntiRepeat.Normalize("  Ola   MUNDO ") == "ola mundo", "normalizacao canonica");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ContentAntiRepeat.TailDuplicateAt(loop, 64) >= 0, "posicao da duplicata para a sonda");
         return Task.CompletedTask;
     }
 
@@ -167,11 +167,11 @@ internal static class UnitToolBreakerTests
             ("tool", "", "", "File not found: /tmp/opencode/escopo/a.json"),
             ("assistant", "read", PathArgs("/tmp/opencode/escopo/a.json"), ""),
             ("tool", "", "", "File not found: /tmp/opencode/escopo/a.json"));
-        var breaker = new global::Rochas.OpenCodeBridge.Core.Breaker(3, 6);
+        var breaker = new global::Rochas.OpenCodeBridge.Core.ToolsBreaker(3, 6);
         var repeated = new global::Rochas.OpenCodeBridge.Core.RepeatedCall(2);
         TestContext.Check(breaker.Scope == "failure-loop" && repeated.Scope == "repeated-call", "helpers declaram o escopo");
-        TestContext.Check(breaker is global::Rochas.OpenCodeBridge.Core.ToolsAntiReply, "breaker responde a classe-mae");
-        TestContext.Check(repeated is global::Rochas.OpenCodeBridge.Core.ToolsAntiReply, "repeated responde a classe-mae");
+        TestContext.Check(breaker is global::Rochas.OpenCodeBridge.Core.ToolsAntiRepeat, "breaker responde a classe-mae");
+        TestContext.Check(repeated is global::Rochas.OpenCodeBridge.Core.ToolsAntiRepeat, "repeated responde a classe-mae");
         TestContext.Check(breaker.Evaluate(msgs).Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Nudge, "3 falhas no mesmo alvo = nudge");
         TestContext.Check(repeated.Find(msgs).Count == 1, "assinatura reemitida encontrada");
         TestContext.Check(
@@ -224,6 +224,8 @@ internal static class UnitToolBreakerTests
     public static async Task TranslateProfileTempWins()
     {
         await RequireNewBridge();
+        var harness = await TestContext.GetObj(TestContext.Bridge + "/api/harness");
+        bool tailsEnabled = harness["harness_tails"]?.GetValue<bool>() ?? true;
         var body = new JsonObject
         {
             ["model"] = TestContext.ServedModel.Length > 0 ? TestContext.ServedModel + "-build" : "qualquer-build",
@@ -235,7 +237,10 @@ internal static class UnitToolBreakerTests
         string src = obj["temperature_source"]?.GetValue<string>() ?? "";
         TestContext.Check(Math.Abs(temp - 0.1) < 0.0001, $"perfil build = 0.1 (veio {temp})");
         TestContext.Check(src.StartsWith("profile"), $"procedencia profile (veio '{src}')");
-        TestContext.Check(obj["tails_on"]?.GetValue<bool>() == true, "cauda ligada no caminho opencode (tail-scope all)");
+        TestContext.Check(obj["tails_on"]?.GetValue<bool>() == tailsEnabled,
+            tailsEnabled
+                ? "cauda ligada no caminho opencode (tail-scope all)"
+                : "cauda desligada respeita --harness 0");
     }
 
     public static async Task TranslateBreakerVerdicts()

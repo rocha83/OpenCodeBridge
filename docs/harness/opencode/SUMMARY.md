@@ -1,5 +1,10 @@
 # Resumo proposto do harness (sem hardcodes)
 
+> **Status:** proposta histórica (2026-10-22). O texto consolidado e os switches
+> atuais estão em [`MAIN-HARNESS.md`](MAIN-HARNESS.md) e em
+> `Rochas.OpenCodeBridge.Core/MainHarness.cs`; as tails ficam no
+> `appsettings.json`.
+
 Síntese do que é **comportamento** (universal) separado do que é **infra**
 (nunca vai no texto). Base: `system.md` capturado, excluindo a parte nativa do
 opencode (Code Mode, catálogo de tools, skills, env).
