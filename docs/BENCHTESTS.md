@@ -190,6 +190,31 @@ Artefatos: `/tmp/opencode/levels/L1-<stamp>/{summary.tsv,steps/,state/}`; retoma
 `STATE` do mesmo stamp (`LEVEL_STAMP=<stamp>`). Sem ordem fixa de faixas: `--belts azul,verde`
 filtra.
 
+### Raia Q3 (Level 1 texto-only)
+
+A `:4110` roda o UD-Q3 **sem mmproj**, então os testes de imagem (`E-devpipe-vision`,
+`E-devpipe-doc`, `E-devpipe-vision-tool`) não têm como passar. O runner trata isso por
+ambiente, sem tocar no catálogo:
+
+```bash
+# bridge Q3 dedicada (harness off, mesmo perfil da :4125)
+dotnet Rochas.OpenCodeBridge.dll --port 4147 --upstream http://127.0.0.1:4110 \
+  --model Gemma4-E4B-UD-Q3 --thinking events --temperature 0.5 --max-tokens 16384 \
+  --context-guard 1 --context-tokens 65536 --api-key guest@123 \
+  --passthrough-responses true --main-harness 0 --harness-tails 0 \
+  --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
+  --log /tmp/bridge-q3-level1.log &
+
+LEVEL_BRIDGE=http://127.0.0.1:4147 LEVEL_UPSTREAM=http://127.0.0.1:4110 \
+LEVEL_BLOG=/tmp/bridge-q3-level1.log ./scripts/war/run-levels.sh --level 1
+```
+
+Duas variáveis mandam na raia: **`LEVEL_UPSTREAM`** vira `WAR_UPSTREAM` (o assert
+`U-status` compara o `upstream` do `/api/status` com esse valor, em vez do `:4100` fixo) e
+**`WAR_NO_VISION`** marca upstream sem visão — o runner liga `1` automaticamente quando
+`LEVEL_UPSTREAM` termina em `:4110`, e `LEVEL_NO_VISION=0` força a execução dos testes de
+imagem. Sem essas variáveis o comportamento é o de antes (`:4100`, visão ligada).
+
 ### Level 2 — bateria de tools + científico
 
 `LEVEL_BRIDGE=http://127.0.0.1:4144 ./scripts/war/run-levels.sh --level 2`

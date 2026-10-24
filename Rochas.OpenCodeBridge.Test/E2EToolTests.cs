@@ -32,7 +32,7 @@ internal static class E2EToolTests
             ["tool_choice"] = new JsonObject { ["type"] = "function", ["function"] = new JsonObject { ["name"] = "soma" } },
             ["temperature"] = 0.1
         };
-        var r = await TestContext.PostObj(TestContext.Vllm + "/v1/chat/completions", body);
+        var r = await TestContext.PostObj(TestContext.Llama + "/v1/chat/completions", body);
         var tc = r["choices"]?[0]?["message"]?["tool_calls"]?.AsArray();
         TestContext.Check(tc is { Count: > 0 }, "hermes extraiu tool_call");
         TestContext.Check(tc![0]?["function"]?["name"]?.GetValue<string>() == "soma", "tool soma chamada");

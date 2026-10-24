@@ -15,7 +15,7 @@ internal static class Program
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--bridge" && i + 1 < args.Length) TestContext.Bridge = args[++i].TrimEnd('/');
-            else if (args[i] == "--vllm" && i + 1 < args.Length) TestContext.Vllm = args[++i].TrimEnd('/');
+            else if (args[i] is "--vllm" or "--llama" && i + 1 < args.Length) TestContext.Llama = args[++i].TrimEnd('/');
             else if (args[i] == "--skip-e2e") TestContext.SkipE2E = true;
             else if (args[i] == "--only" && i + 1 < args.Length) TestContext.Only = args[++i];
             else if (args[i] == "--belts" && i + 1 < args.Length) TestContext.BeltsFilter = args[++i];
@@ -38,7 +38,7 @@ internal static class Program
             else if (args[i] == "--skip-cpu") TestContext.RunCpu = false;
             else if (args[i] == "--cpu") TestContext.RunCpu = true;
         }
-        Console.WriteLine($"[test] bridge={TestContext.Bridge} vllm={TestContext.Vllm} skipE2E={TestContext.SkipE2E}");
+        Console.WriteLine($"[test] bridge={TestContext.Bridge} llama={TestContext.Llama} skipE2E={TestContext.SkipE2E}");
         Console.WriteLine($"[test] dual={TestContext.Dual} mode={TestContext.Mode} role={TestContext.Role}");
         string? cred = TestContext.Jwt ?? TestContext.ApiKey;
         if (cred is not null) TestContext.Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
@@ -187,9 +187,14 @@ internal static class Program
             // Teste de tools completo nos 2 modelos (GPU1 12B + GPU2 E2B) em paralelo.
             TestContext.Run("E-tools-full", E2EToolsFullTests.FullTools);
             TestContext.Run("E-devpipe-infra", E2EDevPipeTests.DevPipeInfra);
-            TestContext.Run("E-devpipe-vision", E2EDevPipeTests.DevPipeVision);
-            TestContext.Run("E-devpipe-doc", E2EDevPipeTests.DevPipeDoc);
-            TestContext.Run("E-devpipe-vision-tool", E2EDevPipeTests.DevPipeVisionTool);
+            if (TestContext.NoVision)
+                Console.WriteLine("SKIP E-devpipe-vision (upstream sem mmproj)");
+            else
+            {
+                TestContext.Run("E-devpipe-vision", E2EDevPipeTests.DevPipeVision);
+                TestContext.Run("E-devpipe-doc", E2EDevPipeTests.DevPipeDoc);
+                TestContext.Run("E-devpipe-vision-tool", E2EDevPipeTests.DevPipeVisionTool);
+            }
             TestContext.Run("E-stream-architect", E2EStreamTests.ArchitectStream);
             TestContext.Run("E-review-architect", E2EStreamTests.ArchitectReview);
             TestContext.Run("E-iot-event-queue", E2EArchitectureTests.IotEventQueue);

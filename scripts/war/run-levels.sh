@@ -32,6 +32,11 @@ OUT="/tmp/opencode/levels/L$LEVEL-$STAMP"
 STEPS="$OUT/steps"; STATE="$OUT/state"
 mkdir -p "$STEPS" "$STATE"
 API="${LEVEL_API_KEY:-guest@123}"; BRIDGE="${LEVEL_BRIDGE:-http://127.0.0.1:4124}"
+export WAR_UPSTREAM="${LEVEL_UPSTREAM:-http://127.0.0.1:4100}"
+# Raia sem visao (Q3 :4110 nao carrega mmproj): pula E-devpipe-vision*, salvo override.
+NO_VISION="${LEVEL_NO_VISION:-}"
+if [ -z "$NO_VISION" ]; then case "${LEVEL_UPSTREAM:-}" in *":4110"*) NO_VISION=1 ;; *) NO_VISION=0 ;; esac; fi
+export WAR_NO_VISION="$NO_VISION"
 BLOG="${LEVEL_BLOG:-/tmp/bridge-gpu.log}"
 TESTPROJ="$ROOT/Rochas.OpenCodeBridge.Test"
 WEBTEST="$ROOT/Rochas.OpenCodeBridge.Web.Test/bin/Release/net9.0/Rochas.OpenCodeBridge.Web.Test.dll"

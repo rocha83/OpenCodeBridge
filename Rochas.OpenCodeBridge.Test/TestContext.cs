@@ -10,9 +10,14 @@ namespace Rochas.OpenCodeBridge.Test;
 internal static class TestContext
 {
     public static string Bridge = "http://127.0.0.1:4124";
-    public static string Vllm = "http://127.0.0.1:4100";
+    // Upstream esperado no /api/status da bridge alvo. Default Q4 (:4100); a raia Q3
+    // exporta WAR_UPSTREAM=http://127.0.0.1:4110 (run-levels: LEVEL_UPSTREAM).
+    public static string Llama = Environment.GetEnvironmentVariable("WAR_UPSTREAM") is { Length: > 0 } warUp
+        ? warUp : "http://127.0.0.1:4100";
     public static bool SkipE2E;
     public static string Only = "";
+    // Upstream sem mmproj (ex.: Q3 :4110 nao carrega visao): pula os testes de imagem.
+    public static bool NoVision = Environment.GetEnvironmentVariable("WAR_NO_VISION") is "1" or "true" or "True";
     public static string BeltsFilter = "";
 
     public static string? ApiKey;

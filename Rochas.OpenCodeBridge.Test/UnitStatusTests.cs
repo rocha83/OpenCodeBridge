@@ -10,7 +10,7 @@ internal static class UnitStatusTests
         var s = await TestContext.GetObj(TestContext.Bridge + "/api/status");
         TestContext.Check(s["status"]?.GetValue<string>() == "ok", "status ok");
         TestContext.Check(!string.IsNullOrEmpty(s["model"]?.GetValue<string>()), "model presente");
-        TestContext.Check(s["upstream"]?.GetValue<string>() == TestContext.Vllm, "upstream == vllm");
+        TestContext.Check(s["upstream"]?.GetValue<string>() == TestContext.Llama, "upstream == llama");
     }
 
     public static async Task Metrics()
