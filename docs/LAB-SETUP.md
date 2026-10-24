@@ -182,7 +182,7 @@ genérico `llama/Gemma4-E4B-UD-Q3` cai no `--thinking events` da unit e abre rea
 | `--op-offload` | — | operações no device (CUDA) |
 | `--mmproj-offload` | — | **só GPU1**: projetor de visão na GPU |
 | `--repeat-penalty` | 1.1 | anti-loop (os dois) |
-| `--dry-multiplier` / `--dry-penalty-last-n` | 0.8 / 1024 | DRY anti-repeat (os dois) |
+| `--dry-multiplier` / `--dry-penalty-last-n` | **0.0** / 1024 | DRY **desligado** nos dois: medido como causa da mutação de nomes/paths (ver §10) |
 | `--cache-type-k` / `--cache-type-v` | `turbo3` | KV em TurboQuant nos dois |
 | `--prio` / `--prio-batch` | 2/2 (GPU1) / 1/1 (GPU2) | prioridade da GPU (orquestrador ganha) |
 | `-ot` | GPU1 `.*=CUDA0`; GPU2 embd no host, blocos/output na CUDA0 | offload por tensor (E4B) |
@@ -225,7 +225,7 @@ ExecStart=/usr/local/bin/llama-server --alias Gemma4-E4B-Q4 --host 127.0.0.1 --p
   -c 131072 -np 1 -ngl 99 -fa on \
   --cache-type-k turbo3 --cache-type-v turbo3 --mmproj-offload --no-host --load-mode none --op-offload \
   -ot ".*=CUDA0" --prio 2 --prio-batch 2 \
-  --repeat-penalty 1.1 --dry-multiplier 0.8 --dry-penalty-last-n 1024 --api-key guest@123
+  --repeat-penalty 1.1 --dry-multiplier 0.0 --dry-penalty-last-n 1024 --api-key guest@123
 Restart=on-failure
 TimeoutStartSec=300
 ```
@@ -253,7 +253,7 @@ ExecStart=/usr/local/bin/llama-server --alias Gemma4-E4B-UD-Q3 --host 127.0.0.1 
   --cache-type-k turbo3 --cache-type-v turbo3 --no-host --load-mode none --op-offload \
   -ot "^per_layer_token_embd\\..*=CUDA_Host,^token_embd\\..*=CUDA_Host,^blk\\..*=CUDA0,^output\\..*=CUDA0,^output_norm\\..*=CUDA0,^per_layer_model_proj\\..*=CUDA0,^per_layer_proj_norm\\..*=CUDA0" \
   --prio 1 --prio-batch 1 \
-  --repeat-penalty 1.1 --dry-multiplier 0.8 --dry-penalty-last-n 1024 --api-key guest@123
+  --repeat-penalty 1.1 --dry-multiplier 0.0 --dry-penalty-last-n 1024 --api-key guest@123
 Restart=on-failure
 TimeoutStartSec=300
 ```
@@ -413,7 +413,7 @@ sudo systemctl edit llama-cpu.service
 #   --mmproj /opt/models/gemma4-e4b-base/mmproj-gemma-4-E4B-it-Q8_0.gguf \
 #   -c 131072 -np 1 -ngl 0 -fa on -t 4 -tb 4 \
 #   --cache-type-k turbo3 --cache-type-v turbo3 --prio 1 --prio-batch 1 --repeat-penalty 1.1 \
-#   --dry-multiplier 0.8 --dry-penalty-last-n 1024 --api-key guest@123
+#   --dry-multiplier 0.0 --dry-penalty-last-n 1024 --api-key guest@123
 sudo systemctl daemon-reload && sudo systemctl restart llama-cpu
 journalctl -u llama-cpu --no-pager | grep -E "n_ctx_slot|offloaded" | tail -3
 # esperado: n_ctx_slot = 131072 e "offloaded 0/N layers to GPU"
@@ -552,7 +552,7 @@ para flag aceita mas inerte (`--coerced-max-tokens` sem coerção, tail com
 | GPU1 `:4100` | `llama-gpu.service` | Gemma4 E4B base `Q4_K_M` + mmproj Q8_0 | `-c 131072` (1×128k) | (medir no host) |
 | GPU2 `:4110` | `llama-cpu.service` | Huihui Gemma4 E4B abliterated `IQ3_XXS`, text-only | `-c 131072` (1×128k) | (medir no host) |
 | CPU `:4120` | `llama-cpu-forced.service` | Gemma4 E4B base `Q4_K_M` + mmproj Q8_0, `-ngl 0` | `-c 131072` (1×128k) | 0 (RAM) |
-| — | DRY | `--dry-multiplier 0.8`, `--dry-penalty-last-n 1024` | — | — |
+| — | DRY | `--dry-multiplier 0.0` (**off**), `--dry-penalty-last-n 1024` | — | — |
 | — | repeat-penalty | `--repeat-penalty 1.1` (os dois), janela 64 | — | — |
 
 Total: **não medido neste chroot (sem CUDA)**; medir no host (RTX 3060, 12288 MiB).
@@ -967,3 +967,73 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
   `/proc` no chroot quando cria user+PID namespace (`mount -t proc` retorna
   `EPERM` no runtime externo) — validar no host live; não é falta de `CAP_SYS_ADMIN`
   no processo do agente.
+
+## 10. DRY desligado nos dois llama (2026-10-24) — mutação de nomes era sampler
+
+**Sintoma (uso real e testes):** o modelo troca letras/dígitos de nomes que o
+usuário acabou de escrever, sobretudo **na hora de gravar via tool**:
+`placa.png` → `placa.ng`, `placa.PNG`; `placa-001.png` →
+`placa-placa-001.txt`; `TESTE-APAGAR-123` → `mkdir TESTE-APAGAR-2024_subfolder`,
+`TESTE-APAGAR-124`, `TESTE-APAGRAR-123`.
+
+**Medição (`scripts/war/param_matrix.py`, Q4 `:4100` e Q3 `:4110`):** duas
+variantes de cenário — `chat-vision` (imagem + tool `read_file`, **sem** tails) e
+`resp-path` (Responses com tool `write`, com tails/anti-repeat conforme a
+variante). Métrica = argumento emitido igual ao path pedido.
+
+| eixo | variantes | path exato |
+|---|---|---|
+| **DRY 0.8** | rp 1.0 e 1.1 × tails on/off × anti-repeat on/off × main harness | **0%** (0/64) |
+| **DRY 0.0** | idem | **100%** (64/64) |
+| repeat-penalty | 1.0 × 1.1 | sem diferença |
+| harness | tails on, tails off, anti-repeat on/off, main harness | sem diferença |
+| temperatura | 0.0 / 0.1 / 0.2 | sem diferença (com DRY off: 100%) |
+
+**Causa:** o sampler DRY penaliza sequências repetidas — exatamente o
+identificador que precisa ser **copiado verbatim** do prompt para o argumento da
+tool. A mutação não vinha das tails nem do anti-repeat da bridge: reproduz no
+caminho `chat`, que não recebe tail nenhuma.
+
+**Mudança aplicada na infra (host live):**
+
+```
+/etc/systemd/system/llama-gpu.service          --dry-multiplier 0.8 -> 0.0
+/etc/systemd/system/llama-gpu2.service         --dry-multiplier 0.8 -> 0.0
+/etc/systemd/system/llama-cpu-forced.service   --dry-multiplier 0.8 -> 0.0
+```
+
+- Script idempotente (faz backup `.bak-<stamp>` e `daemon-reload`):
+  `scripts/lab/llama-dry-fix.sh --dry 0.0` (reverter: `--restore`).
+- `--repeat-penalty 1.1` **mantido** (não teve efeito na medição; segue como
+  anti-loop leve). O anti-repeat textual da bridge continua como última linha.
+- Verificação: `pgrep -af llama-server` mostra `--dry-multiplier 0.0` nas três
+  instâncias (`:4100`, `:4110`, `:4120`); `/health` 200.
+
+**Sonda em uso real (`:4125`):** drop-in
+`/etc/systemd/system/bridge-gpu2.service.d/diagnostic.conf` acrescenta
+`--diagnostic 1` (o resto do `ExecStart` é o mesmo do unit). Reverter:
+`sudo rm -rf /etc/systemd/system/bridge-gpu2.service.d && sudo systemctl daemon-reload && sudo systemctl restart bridge-gpu2`.
+Com a sonda, `/tmp/bridge-gpu2.log` registra `traffic`/`response`/`tool-*` por
+request — usar junto de `scripts/war/probe_session.py --session <id>` para ver,
+ao vivo, o args que o modelo emitiu e o que a bridge fez.
+
+**Regra que fica:** parâmetro de amostragem é infra, não harness. Para copiar
+nome/caminho verbatim, DRY fica **off**; qualquer camada nova de correção na
+bridge exige medição primeiro (ver `PENDINGS.md`).
+
+## 11. Um tool call por resposta — `parallel_tool_calls: false` (2026-10-24)
+
+Decisão do lab: **um tool call por resposta**, para passo determinístico e
+contável. O default do servidor não garante single-call, então a bridge
+explicita o campo.
+
+**Mudança:** `BuildChatRequest` envia `"parallel_tool_calls": false` sempre que há
+tools, e os dois objetos de resposta (shell do SSE e resposta única) reportam
+`false`. Não é flag: é comportamento padrão. O opencode continua emitindo vários
+**passos**; cada passo traz um call.
+
+**Verificação:** `curl -s :4144/api/status` mostra o bridge up; o corpo enviado
+ao llama sai com o campo (conferir em `traffic` com `--diagnostic 1`). Level 1 Q4
+rodou com esse build (`units-pure`, `devpipe-pure` PASS).
+
+Referência do flag: llama.cpp#21375.

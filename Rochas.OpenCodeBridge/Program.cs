@@ -109,6 +109,11 @@ internal static partial class Program
     // descartando a janela repetida. Governado por --anti-repeat-retry, nao pelo
     // LegacyHarness (ver o bloco do retry).
     static bool AntiRepeatRetry = true;
+    // Repasse opcional de parametros de amostragem do cliente ao upstream
+    // (repeat_penalty, dry_*, top_p/k, min_p, seed...). Desligado por padrao:
+    // sem a flag a bridge continua montando o body como antes. Nao e politica:
+    // e config do llama que o cliente/experimento decide.
+    static bool SamplingPassthrough = false;
     // ToolStrategy: resgate deterministico do padrao Code Mode do opencode
     // (execute{tools.X} -> tool X, strip da tool execute, guia de argumentos).
     static bool ToolStrategy = true;
@@ -448,6 +453,7 @@ internal static partial class Program
             if (cfg["breakerSoft"]?.GetValue<int>() is int bsoft && bsoft >= 0) BreakerSoft = bsoft;
             if (cfg["breakerHard"]?.GetValue<int>() is int bhard && bhard >= 0) BreakerHard = bhard;
             if (cfg["antiRepeatRetry"]?.GetValue<bool>() is bool arr) AntiRepeatRetry = arr;
+            if (cfg["samplingPassthrough"]?.GetValue<bool>() is bool spp) SamplingPassthrough = spp;
             if (cfg["antiRepeatAbort"]?.GetValue<bool>() is bool arA) AntiRepeatAbort = arA;
             if (cfg["diagnosticLevel"]?.GetValue<string>() is string dlg && dlg.Length > 0) DiagnosticLevel = dlg.Trim().ToLowerInvariant();
             if (cfg["streamPerDelta"]?.GetValue<bool>() is bool spd) StreamPerDelta = spd;
@@ -973,6 +979,9 @@ internal static partial class Program
                 case "--temperature": Temperature = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); break;
                 // 0 = sem corte do resultado de tool (conteudo integral).
                 case "--tool-output-limit": ToolOutputLimit = int.Parse(cliArgs[i + 1]); break;
+                // Repasse dos parametros de amostragem do cliente ao llama
+                // (repeat_penalty/dry_*/top_p/min_p/seed). Opt-in.
+                case "--sampling-passthrough": SamplingPassthrough = cliArgs[i + 1] is not "false" and not "0"; break;
 
                 // ---------- I) segurança/permissões ----------
                 case "--risk-ask": RiskAsk = cliArgs[i + 1] is not "false" and not "0"; break;
@@ -1289,7 +1298,7 @@ WriteJson(ctx, 200, new JsonObject
                     MaxTokens = maxTokens;
                 if (req["cpu_max_tokens"]?.GetValue<int>() is int cpuMax && cpuMax >= 0)
                     CpuMaxTokens = cpuMax;
-                Log(new JsonObject { ["event"] = "config", ["thinking"] = Thinking, ["temperature"] = Temperature, ["max_tokens"] = MaxTokens, ["cpu_max_tokens"] = CpuMaxTokens });
+                Log(new JsonObject { ["event"] = "config", ["thinking"] = Thinking, ["temperature"] = Temperature, ["max_tokens"] = MaxTokens, ["cpu_max_tokens"] = CpuMaxTokens, ["sampling_passthrough"] = SamplingPassthrough });
                 WriteJson(ctx, 200, BuildStatus());
                 return;
             }
@@ -1404,6 +1413,7 @@ WriteJson(ctx, 200, new JsonObject
         ["cpu_max_tokens"] = CpuMaxTokens, ["coerced_max_tokens"] = CpuMaxTokens,
         ["upstream_parser"] = UpstreamParser,
         ["anti_repeat"] = AntiRepeat, ["anti_repeat_abort"] = AntiRepeatAbort,
+        ["sampling_passthrough"] = SamplingPassthrough,
         ["diagnostic_level"] = DiagnosticLevel,
         ["config_groups"] = ConfigGroups(),
         ["legacy_harness"] = LegacyHarness, ["stream_per_delta"] = StreamPerDelta,
@@ -2154,12 +2164,19 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         };
         // Sem teto e sem pedido do cliente: omite max_tokens (llama decide).
         if (outTokens.HasValue) chat["max_tokens"] = outTokens.Value;
+        // Amostragem: quando ligado, o cliente decide (o llama aceita
+        // repeat_penalty/dry_* por request). Opt-in para nao mudar o body padrao.
+        if (SamplingPassthrough) CopySamplingParams(req, chat);
         if (tools is { Count: > 0 })
         {
             chat["tools"] = tools;
             // Gemma 4 decide sozinho ("auto", bake-off 3/3); Coder precisa de
             // "required" p/ emitir tool_calls nativo em vez de texto.
             chat["tool_choice"] = IsCoder ? "required" : "auto";
+            // Um tool call por resposta (decisao do lab: 1 call por step, passo
+            // deterministico e contavel). O default do servidor nao garante
+            // single-call; explicitamos. Referencia: llama.cpp#21375.
+            chat["parallel_tool_calls"] = false;
         }
         NeutralizeCodeMode(chat);
         // Stop sequences: repasse opcional (string ou array). ATENCAO: com
@@ -2176,6 +2193,28 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // (elas nunca vem nativas aqui, só via coercion do texto).
         else if (coercedLine) chat["stop"] = new JsonArray("[END_OF_TEXT]");
         return chat;
+    }
+
+    /// <summary>Campos de amostragem que o llama.cpp aceita por request.</summary>
+    static readonly string[] SamplingKeys =
+    {
+        "repeat_penalty", "repeat_last_n", "dry_multiplier", "dry_base",
+        "dry_allowed_length", "dry_penalty_last_n", "top_p", "top_k",
+        "min_p", "typical_p", "frequency_penalty", "presence_penalty",
+        "seed", "xtc_probability", "xtc_threshold"
+    };
+
+    /// <summary>Copia ao upstream os campos de amostragem numericos do cliente.</summary>
+    /// <param name="from">Request do cliente (Responses).</param>
+    /// <param name="to">Body montado para o /v1/chat/completions.</param>
+    internal static void CopySamplingParams(JsonObject from, JsonObject to)
+    {
+        foreach (string key in SamplingKeys)
+        {
+            if (from[key] is not JsonNode node) continue;
+            if (node.GetValueKind() != JsonValueKind.Number) continue;
+            to[key] = node.DeepClone();
+        }
     }
 
     /// <summary>Nucleo: Responses -> chat -> vLLM -> Responses (JSON ou SSE).</summary>
@@ -3799,7 +3838,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             ["id"] = respId, ["object"] = "response",
             ["created_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             ["status"] = "in_progress", ["model"] = requestedModel,
-            ["output"] = new JsonArray(), ["parallel_tool_calls"] = true,
+            ["output"] = new JsonArray(), ["parallel_tool_calls"] = false,
             ["tool_choice"] = "auto", ["tools"] = new JsonArray(),
             ["temperature"] = temperature, ["service_tier"] = "auto",
             ["usage"] = null
@@ -4961,7 +5000,7 @@ if (type == "message")
             ["status"] = "completed",
             ["model"] = model,
             ["output"] = output,
-            ["parallel_tool_calls"] = true,
+            ["parallel_tool_calls"] = false,
             ["tool_choice"] = "auto",
             ["tools"] = new JsonArray(),
             ["temperature"] = temperature,

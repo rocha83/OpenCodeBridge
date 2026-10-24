@@ -43,6 +43,18 @@ vem dos parâmetros de amostragem do `llama-server`.
 automática e mais determinismo (temp baixa, contexto curto por tarefa, artefato como
 aceite). Não adicionar heurística nova na bridge para compensar parâmetro de amostragem.
 
+**Resultado da medição (2026-10-24, fechado para DRY):** matriz `param_matrix.py` (150
+chamadas Q4 + 40 Q3, cenários `chat-vision` e `resp-path`): **DRY 0.8 = 0% de path exato
+(0/64); DRY 0.0 = 100%**. `repeat_penalty` 1.0 × 1.1, temperatura 0.0/0.1/0.2, tails e
+anti-repeat **não** mudaram nada. DRY desligado nos três units (`scripts/lab/llama-dry-fix.sh`),
+`--repeat-penalty 1.1` mantido. Ver `LAB-SETUP.md` §10.
+
+**Aplicado (2026-10-24):** `parallel_tool_calls: false` no request ao upstream —
+decisão do lab de 1 call por step (passo determinístico e contável). Campo em
+`BuildChatRequest` e nas duas respostas (shell) que emitimos. Referência do flag:
+llama.cpp#21375.
+
+
 ## Suíte E2E: trilha standalone (opencode real) + role build — feito 2026-10-19
 
 - Testes complexos com tools **não** rodam com thinking on (rambling/alucinação).

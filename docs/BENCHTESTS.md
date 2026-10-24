@@ -163,3 +163,29 @@ estrutura TSX (`createRoot`). O caminho de navegador fica atrás de `--front-web
 (Playwright via Web.Test `--front-measure`), com URL configurável por `FRONT_WEBDRIVER_URL` e
 `HEADED=1` para o modo visível — gancho pronto para a Web UI `:4130` quando o parâmetro headed
 geral for criado.
+
+## 10. Level 1 — ordem das trilhas (`scripts/war/run-levels.sh`)
+
+Level 1 é a subida antes da produção: **units → devpipe → belts Build → belts Orch**, cada
+bloco em dois passes (`--mode pure` e `--mode opencode`), fechando com a suíte web
+(integração + tópicos). As duas trilhas de belts já existiam como testes separados
+(`E-belts-build-direct` = role build implementa direto; `E-belts-direct` = role orch
+segmenta → Scripter → Exec); o runner só passou a executá-las **nesta ordem**.
+
+```bash
+# bridge própria (para testar o build do repo, não o binário de produção)
+cd Rochas.OpenCodeBridge/bin/Release/net9.0
+dotnet Rochas.OpenCodeBridge.dll --port 4144 --upstream http://127.0.0.1:4100 \
+  --model Gemma4-E4B-Q4 --thinking events --temperature 0.5 --max-tokens 16384 \
+  --context-guard 1 --context-tokens 131072 --api-key guest@123 \
+  --passthrough-responses true --main-harness 0 --harness-tails 0 \
+  --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
+  --log /tmp/bridge-q4-level1.log &
+
+LEVEL_BRIDGE=http://127.0.0.1:4144 LEVEL_BLOG=/tmp/bridge-q4-level1.log \
+  ./scripts/war/run-levels.sh --level 1
+```
+
+Artefatos: `/tmp/opencode/levels/L1-<stamp>/{summary.tsv,steps/,state/}`; retomada pelo
+`STATE` do mesmo stamp (`LEVEL_STAMP=<stamp>`). Sem ordem fixa de faixas: `--belts azul,verde`
+filtra.

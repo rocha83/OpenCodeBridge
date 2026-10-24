@@ -1,5 +1,87 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Mutação de nomes era o sampler DRY — desligado nos três llama (2026-10-24, sessão 17)
+
+**Sintoma real (sessão vizinha `ses_e9033b492ffelmhnkKZMJGQ8MY`, Q3 `:4125`):** o
+modelo erra nomes/dígitos que o usuário acabou de escrever, com força na hora de
+gravar via tool. Sequência vista ao vivo pelo `probe_session.py`:
+
+| pedido do usuário | o que ele emitiu |
+|---|---|
+| `TESTE-APAGAR-123` | `mkdir TESTE-APAGAR-2024_subfolder` |
+| `TESTE-APAGAR-123` | `mkdir TESTE-APAR-1923` |
+| `TESTE-APAGAR-123` | `mkdir TESTE-APARGAR-123` |
+| `TESTE-APAGAR-123` | prosa: `TESTE-APARG-123`, `TESTE-APAGRAR-123`, `TESTE-APAGAR-124` |
+
+**Causa medida, não inferida** (`scripts/war/param_matrix.py`, 150 chamadas no Q4
+`:4100` + 40 no Q3 `:4110`, cenários `chat-vision` e `resp-path`):
+
+| eixo | variantes | path exato |
+|---|---|---|
+| **DRY 0.8** | rp 1.0/1.1 × tails on/off × anti-repeat on/off × main harness × temp 0.0/0.1/0.2 | **0%** (0/64) |
+| **DRY 0.0** | idem | **100%** (64/64) |
+| repeat-penalty | 1.0 × 1.1 | sem diferença |
+| tails / anti-repeat / main harness | off e on | sem diferença |
+
+Mutações típicas com DRY 0.8: `placa.png` → `placa.ng`, `placa.PNG`;
+`placa-001.png` → `placa-placa-001.txt`. O DRY penaliza **sequência repetida** —
+exatamente o identificador que precisa ser copiado verbatim do prompt para o args
+da tool. Não era tails, não era anti-repeat, não era temperatura, não era harness:
+o caminho `chat` (sem tail nenhuma) reproduz igual.
+
+**Infra (host live, `sudo` já aplicado):**
+
+```
+/etc/systemd/system/llama-gpu.service          --dry-multiplier 0.8 -> 0.0
+/etc/systemd/system/llama-gpu2.service         --dry-multiplier 0.8 -> 0.0
+/etc/systemd/system/llama-cpu-forced.service   --dry-multiplier 0.8 -> 0.0
+--repeat-penalty 1.1 mantido (não teve efeito na medição)
+```
+
+- `scripts/lab/llama-dry-fix.sh` (backup `.bak-<stamp>`, `daemon-reload`, restart,
+  verificação de `/health` e da flag no `ps`; `--restore` volta o backup).
+- Atenção: `llama-*` estão `disabled` mas `active` no systemd — o script reinicia
+  só unidades ativas, por isso o primeiro passe não reiniciou nada.
+- Após restart: `:4100`, `:4110` e `:4120` com `--dry-multiplier 0.0` e `/health`
+  200; `:4110` levou ~3,5 min para carregar (VRAM em 11,6/12 GB com as três
+  instâncias residentes).
+
+**Sonda em uso real:** drop-in
+`/etc/systemd/system/bridge-gpu2.service.d/diagnostic.conf` acrescenta
+`--diagnostic 1` ao `ExecStart` da `:4125` (resto idêntico ao unit). Com isso o
+log passa a registrar `traffic` (req/resp íntegros), `response` e `tool-*`.
+`scripts/war/probe_session.py` acompanha o banco do opencode + o log da bridge e
+agora ignora tool call em `status=streaming` (antes imprimia `shell {}`, artefato
+da leitura durante o stream, não erro do modelo).
+
+**Bridge: `--sampling-passthrough` (opt-in).** Para medir variantes de sampler sem
+reiniciar o llama, a bridge aceita repassar `repeat_penalty`, `dry_multiplier`,
+`dry_base`, `dry_allowed_length`, `dry_penalty_last_n`, `min_p`, `top_p`, `top_k`
+do request. Whitelist em `SamplingKeys`/`CopySamplingParams`, exposta em
+`/api/status` (`sampling_passthrough`) e no evento `config`. Desligada por padrão:
+sem a flag, o corpo que chega ao llama é o mesmo de antes. Coberta por 3 units
+`U-sampling-*` (`Rochas.OpenCodeBridge.Test/UnitSamplingTests.cs`).
+
+**Regra que fica:** parâmetro de amostragem é infra, não harness. Copiar
+nome/caminho verbatim exige DRY **off**; qualquer camada nova de correção na
+bridge precisa de medição primeiro (`docs/PENDINGS.md`).
+
+### `parallel_tool_calls: false` no request ao upstream (2026-10-24)
+
+Decisão do lab: **um tool call por resposta**. O passo fica determinístico e
+contável (1 call por step), que é o que os testes medem. O default do servidor
+não garante single-call, então explicitamos:
+
+- `BuildChatRequest` envia `parallel_tool_calls: false` quando há tools.
+- Os dois objetos de resposta (shell do SSE e resposta única) reportam `false`.
+- O opencode segue emitindo vários **passos**; cada passo traz um call.
+
+Verificação no lab: Level 1 Q4 contra bridge própria em `:4144` (`units-pure` e
+`devpipe-pure` PASS) — nenhuma mudança de contrato observada nos testes.
+
+Referência do flag: llama.cpp#21375.
+
+
 ## Árvore reorganizada (`docs/` + `scripts/`) e arena WAR recuperada (2026-10-24, sessão 17)
 
 **Contexto:** retomada após queda de energia. `git pull --ff-only` trouxe 9 commits

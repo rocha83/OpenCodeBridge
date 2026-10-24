@@ -52,6 +52,10 @@ internal static class E2EBeltsTests
 
     static void Log(string msg) { Console.WriteLine(msg); Console.Out.Flush(); }
 
+    /// <summary>String tolerante: o modelo as vezes manda `false`/numero onde o contrato pede string.</summary>
+    static string Str(JsonNode? n, string fallback = "")
+        => n is JsonValue v && v.TryGetValue<string>(out var s) ? s : fallback;
+
     static void SaveResult(string key, string status, string detail)
     {
         try
@@ -90,7 +94,7 @@ internal static class E2EBeltsTests
                     new JsonObject { ["role"]="user", ["content"]=prompt });
                 var orchR = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
                     new JsonObject { ["model"]=orchModel, ["temperature"]=0.3, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
-                string orchContent = orchR["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
+                string orchContent = Str(orchR["choices"]?[0]?["message"]?["content"]);
                 int s = orchContent.IndexOf('['), e = orchContent.LastIndexOf(']');
                 TestContext.Check(s >= 0 && e > s, $"[{key}] Orch segmentou em JSON array");
                 var tasks = JsonNode.Parse(orchContent[s..(e+1)])?.AsArray() ?? new JsonArray();
@@ -118,8 +122,8 @@ internal static class E2EBeltsTests
                 int scriptsOk = 0;
                 foreach (var t in tasks)
                 {
-                    string title = t?["title"]?.GetValue<string>() ?? "tarefa";
-                    string taskPrompt = t?["prompt"]?.GetValue<string>() ?? prompt;
+                    string title = Str(t?["title"], "tarefa");
+                    string taskPrompt = Str(t?["prompt"], prompt);
                     string safeTitle = title.Replace(" ", "_").ToLowerInvariant();
                     string scriptPath = System.IO.Path.Combine(ws, safeTitle + ".sh");
                     string metaPath = System.IO.Path.Combine(ws, safeTitle + ".md");
@@ -141,12 +145,12 @@ internal static class E2EBeltsTests
                         var calls = msg?["tool_calls"]?.AsArray();
                         if (calls is null || calls.Count == 0) break;
                         var echo = new JsonArray();
-                        foreach (var c in calls) echo.Add(new JsonObject { ["id"]=c?["id"]?.GetValue<string>()??"", ["type"]="function", ["function"]=new JsonObject { ["name"]=c?["function"]?["name"]?.GetValue<string>()??"", ["arguments"]=c?["function"]?["arguments"]?.GetValue<string>()??"{}" } });
-                        sh.Add(new JsonObject { ["role"]="assistant", ["content"]=msg?["content"]?.GetValue<string>()??"", ["tool_calls"]=echo });
+                        foreach (var c in calls) echo.Add(new JsonObject { ["id"]=Str(c?["id"]), ["type"]="function", ["function"]=new JsonObject { ["name"]=Str(c?["function"]?["name"]), ["arguments"]=Str(c?["function"]?["arguments"], "{}") } });
+                        sh.Add(new JsonObject { ["role"]="assistant", ["content"]=Str(msg?["content"]), ["tool_calls"]=echo });
                         foreach (var c in calls)
                         {
-                            string callId = c?["id"]?.GetValue<string>() ?? "";
-                            string argsJson = c?["function"]?["arguments"]?.GetValue<string>() ?? "{}";
+                            string callId = Str(c?["id"]);
+                            string argsJson = Str(c?["function"]?["arguments"], "{}");
                             JsonObject a;
                             try { a = JsonNode.Parse(argsJson)?.AsObject() ?? new JsonObject(); }
                             catch
@@ -157,8 +161,8 @@ internal static class E2EBeltsTests
                                 sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]="ERRO: arguments invalidos/truncados" });
                                 continue;
                             }
-                            string path = a["path"]?.GetValue<string>() ?? "";
-                            string content = a["content"]?.GetValue<string>() ?? "";
+                            string path = Str(a["path"]);
+                            string content = Str(a["content"]);
                             if (path.Length == 0 || path.Any(char.IsControl) || path.Contains("..") || System.IO.Path.IsPathRooted(path))
                             {
                                 string why = path.Length == 0 ? "vazio"
@@ -228,17 +232,17 @@ internal static class E2EBeltsTests
                             var calls = msg?["tool_calls"]?.AsArray();
                             if (calls is null || calls.Count == 0) break;
                             var echo = new JsonArray();
-                            foreach (var c in calls) echo.Add(new JsonObject { ["id"]=c?["id"]?.GetValue<string>()??"", ["type"]="function", ["function"]=new JsonObject { ["name"]=c?["function"]?["name"]?.GetValue<string>()??"", ["arguments"]=c?["function"]?["arguments"]?.GetValue<string>()??"{}" } });
-                            sh.Add(new JsonObject { ["role"]="assistant", ["content"]=msg?["content"]?.GetValue<string>()??"", ["tool_calls"]=echo });
+                            foreach (var c in calls) echo.Add(new JsonObject { ["id"]=Str(c?["id"]), ["type"]="function", ["function"]=new JsonObject { ["name"]=Str(c?["function"]?["name"]), ["arguments"]=Str(c?["function"]?["arguments"], "{}") } });
+                            sh.Add(new JsonObject { ["role"]="assistant", ["content"]=Str(msg?["content"]), ["tool_calls"]=echo });
                             foreach (var c in calls)
                             {
-                                string callId = c?["id"]?.GetValue<string>() ?? "";
-                                string argsJson = c?["function"]?["arguments"]?.GetValue<string>() ?? "{}";
+                                string callId = Str(c?["id"]);
+                                string argsJson = Str(c?["function"]?["arguments"], "{}");
                                 JsonObject a;
                                 try { a = JsonNode.Parse(argsJson)?.AsObject() ?? new JsonObject(); }
                                 catch { sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]="ERRO: arguments invalidos/truncados" }); continue; }
-                                string p2 = a["path"]?.GetValue<string>() ?? "";
-                                string content2 = a["content"]?.GetValue<string>() ?? "";
+                                string p2 = Str(a["path"]);
+                                string content2 = Str(a["content"]);
                                 if (p2.Length == 0 || p2.Any(char.IsControl) || p2.Contains("..") || System.IO.Path.IsPathRooted(p2))
                                 {
                                     sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]="ERRO: path invalido" });
@@ -283,7 +287,7 @@ internal static class E2EBeltsTests
                             new JsonObject { ["role"]="user", ["content"]="COMPANION:\n" + md + "\n\nSCRIPT:\n" + sh });
                         var execR = await TestContext.PostObj((Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125") + "/v1/chat/completions",
                             new JsonObject { ["model"]=execModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=execHistory.DeepClone() });
-                        string execContent = execR["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
+                        string execContent = Str(execR["choices"]?[0]?["message"]?["content"]);
                         Log($"  [belt:{key}] exec read: {name} -> {execContent[..Math.Min(40, execContent.Length)]}");
                     }
                     var (ecode, eout) = Run("bash", ws, 120, name);

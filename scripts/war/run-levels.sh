@@ -84,7 +84,7 @@ step_webtest() { # integracao + topicos (suite web; TopicsSweep roda no bloco un
 
 case "$LEVEL" in
   1)
-    STEPS_DESC="units pure/opencode; devpipe pure/opencode; belts azul,verde pure/opencode; webui integracao+topicos"
+    STEPS_DESC="units pure/opencode; devpipe pure/opencode; belts build (azul,verde) pure/opencode; belts orch (azul,verde) pure/opencode; webui integracao+topicos"
     if [ "$LIST" = "1" ]; then
       echo "Level 1 -> $STEPS_DESC"; exit 0
     fi
@@ -92,7 +92,9 @@ case "$LEVEL" in
     for mode in pure opencode; do
       step_bridge "units-$mode" --only U- --mode "$mode"
       step_bridge "devpipe-$mode" --only E-devpipe --mode "$mode"
-      step_bridge "belts-azul-verde-$mode" --only E-belts-direct --belts azul,verde --mode "$mode"
+      # Ordem: trilha Build primeiro, trilha Orch depois (duas trilhas da suite).
+      step_bridge "belts-build-$mode" --only E-belts-build-direct --belts azul,verde --mode "$mode"
+      step_bridge "belts-orch-$mode" --only E-belts-direct --belts azul,verde --mode "$mode"
     done
     step_webtest
     ;;
