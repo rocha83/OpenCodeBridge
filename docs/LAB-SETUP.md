@@ -1037,3 +1037,60 @@ ao llama sai com o campo (conferir em `traffic` com `--diagnostic 1`). Level 1 Q
 rodou com esse build (`units-pure`, `devpipe-pure` PASS).
 
 Referência do flag: llama.cpp#21375.
+
+## 12. Política de bind e estado do DRY (2026-10-24)
+
+### Bind — interno × exposto
+
+Regra da release: **porta interna escuta só em loopback; porta de serviço de cara
+para o cliente escuta em `0.0.0.0`**.
+
+| porta | bind | o que é |
+|---|---|---|
+| `4100` / `4110` / `4120` | `127.0.0.1` | llama Q4 / Q3 / CPU forçada (**interno**) |
+| `4210` / `4220` | `127.0.0.1` | opencode web dev-agent / moe-agent (**interno**) |
+| `4124` / `4125` / `4126` | `0.0.0.0` | bridges (única face p/ o llama, `--api-key`) |
+| `4130` | `0.0.0.0` | Web UI (`Core` in-process, não chama bridge) |
+| `4200` | **`0.0.0.0`** | opencode web principal — **indispensável na próxima remaster** |
+
+**Pegadinha do `4200`:** ele é configurado em **dois** lugares — em
+`/etc/systemd/system/opencode-web.service` **e** em `/usr/local/bin/start-opencodeweb.sh`
+(o ícone sobe processo próprio com pidfile `/run/opencodeweb.pid`, fora do systemd).
+Mudar só a unit faz o próximo clique no ícone reverter para `127.0.0.1`. Os dois arquivos
+precisam sair com `--hostname 0.0.0.0` no pacote da remaster (critério de pronto).
+Os `start-*.sh` dos outros serviços seguem a mesma lógica de duplicação: unit e script
+andam em par.
+
+```bash
+ss -tlnH | grep -E ':(4100|4110|4120|4210|4220)\b'    # 127.0.0.1
+ss -tlnH | grep -E ':(4124|4125|4126|4130|4200)\b'    # 0.0.0.0
+curl -s -m3 -o /dev/null -w '%{http_code}\n' http://<IP-LAN>:4200/
+```
+
+### DRY do llama
+
+Os três units (e os três processos vivos) estão com `--dry-multiplier 0.0` — o
+sintoma de mutação de nomes/paths era o sampler (§10). `--repeat-penalty 1.1`
+permanece.
+
+```bash
+grep -o -- '--dry-multiplier [^ ]*' /etc/systemd/system/llama-*.service   # 0.0 nos 3
+for p in $(pgrep -f llama-server); do tr '\0' ' ' < /proc/$p/cmdline | grep -o -- '--port [0-9]*\|--dry-multiplier [^ ]*'; echo; done
+```
+
+### Flags efetivas dos serviços (retrato desta release)
+
+| serviço | flags-chave |
+|---|---|
+| bridges `:4124` / `:4125` / `:4126` | `--main-harness 0 --harness-tails 0 --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 --passthrough-responses true`; request com **`parallel_tool_calls: false`** (comportamento do código, não flag — §11) |
+| Web UI `:4130` | `Core` in-process: `mainHarness`, `harnessTails` e `antiRepeat` nos defaults (ligados) — o `BridgeUrl` do agente só dimensiona contexto |
+| llama `:4100` / `:4110` / `:4120` | `--dry-multiplier 0.0`, `--repeat-penalty 1.1` (§10) |
+
+- O alias **`--harness`** não existe mais: o binário atual recusa no boot. Os
+  `start-bridge-*.sh` reescrevem a unit do zero — já emitindo
+  `--main-harness 0 --harness-tails 0`; se um pacote antigo voltar, o clique no ícone
+  recria a unit quebrada (mesmo padrão do `4200` acima).
+- Deploy verificado em 2026-10-24: `/usr/src/opencodebridge` em `a451b1c`,
+  `dotnet build -c Release` com 0 avisos/0 erros, `bridge-gpu`, `bridge-gpu2`,
+  `bridge-cpu-forced` e `bridge-web` `active`, `/api/status` `ok` nas três bridges e
+  smoke `chat/completions` respondendo.

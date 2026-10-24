@@ -17,9 +17,8 @@ aqui ou automação em `../scripts/`.
 
 | doc | conteúdo |
 |---|---|
-| `BENCHTESTS.md` | catálogo de testes: unit, E2E, belts, frontpipe, bateria dual e **WAR v2** (lanes Q4/Q3) |
+| `BENCHTESTS.md` | catálogo de testes: unit, E2E, belts, frontpipe, bateria dual, **WAR v2** (lanes Q4/Q3), Levels 1–3 e **auto-gestão** (supervisor orch, §11) |
 | `RUNBOOK-E2E.md` | pipeline por fases (`scripts/run-e2e-pipeline.sh`) e estado do ambiente |
-| `DOC-EVOLUCAO-AUTO-TESTE.md` | auto-gestão da bateria (supervisor/orch) |
 | `RELATORIO-SPRINT-2026-10-19.md` | relatório do sprint de E2E/standalone |
 | `harness/opencode/` | captura e análise do harness do opencode: `README.md` (captura), `NATIVE.md`, `CUSTOM.md`, `SUMMARY.md`, `MAIN-HARNESS.md` (texto e switches atuais), `system.md` |
 

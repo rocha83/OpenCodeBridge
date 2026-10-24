@@ -219,3 +219,43 @@ dotnet Rochas.OpenCodeBridge.dll --port 4146 --upstream http://127.0.0.1:4100 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
   --log /tmp/bridge-q4-harness.log &
 ```
+
+## 11. Auto-gestão da bateria (supervisor orch)
+
+Objetivo: o **próprio modelo** gerencia a bateria E2E sobre instâncias de si mesmo,
+por subagentes, com segmentação compatível com a capacidade do alvo. Absorve o antigo
+`DOC-EVOLUCAO-AUTO-TESTE.md` (que citava 12B/E2B — modelos aposentados; hoje os alvos
+são **Gemma4 E4B Q4** na GPU1 e **UD-Q3** na GPU2).
+
+```
+Supervisor (orch Q4)  ── lê o catálogo E-* e GERA a fila de micro-enunciados
+   ├── Runner build (Q4, GPU1)   ── micro-tarefas de código multi-arquivo
+   ├── Runner exec  (Q3, GPU2)   ── executa/valida scripts e micro-tarefas simples
+   └── Aceite (suíte)            ── PASS/FAIL por artefato; retroalimenta o supervisor
+```
+
+- **Micro-enunciado** (formato canônico em `../AGENTS.md`): `OBJETIVO` (1 frase) +
+  `ESCOPO` (arquivos exatos) + `PROIBIDO` (o que não tocar) + `ACEITE` (comando exato).
+  Um micro por chamada `task`; ao subagente volta só o **erro** (trecho), não o log inteiro.
+- **Supervisor não improvisa**: a fila sai do catálogo `E-*`; ele só ordena, segmenta
+  e re-despacha. Micro que estoura ctx/ambiguidade é **refatiado em dois**.
+- **Aceite por artefato** (arquivo/log/número), nunca "parece bom"; o supervisor
+  re-executa o ACEITE de cada micro antes de avançar (≤2 tentativas por micro).
+
+| faixa | escopo | alvo | aceite (artefato) |
+|---|---|---|---|
+| **azul** | aquecimento (1 tool) | Q3 exec | saída de tool no texto |
+| **verde** | domínio + SQL (CRUD) | Q4 build | DDL + entidades compilam |
+| **roxa** | + repositórios/serviços | Q4 build | `dotnet build` verde |
+| **marrom** | + API + React + Docker | Q4 build | build + `compose config` |
+| **preta** | full stack + CI | Q4 build + Q3 exec | build + teste do ACEITE |
+
+Reprodução sem supervisor (execução manual da mesma fila):
+
+```bash
+# trilha build, faixas azul+verde, modo puro
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --bridge http://127.0.0.1:4144 --only E-belts-build-direct --belts azul,verde --mode pure
+# fila completa por nível
+LEVEL_BRIDGE=http://127.0.0.1:4144 ./scripts/war/run-levels.sh --level 2
+```
