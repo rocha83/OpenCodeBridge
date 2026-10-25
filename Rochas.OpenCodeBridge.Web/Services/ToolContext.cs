@@ -15,6 +15,9 @@ public sealed class ToolContext
     public string BridgeUrl { get; init; } = "";
     public string Model { get; init; } = "";
     public double Temperature { get; init; } = 0.1;
+    // Role do agente dono do contexto ("plan", "build", "exec"...). Decide o que a
+    // tool pode fazer: plan é somente leitura; build/exec escrevem.
+    public string Role { get; init; } = "";
     // System do agente dono do contexto (o sub o usa como system; vazio = pinado).
     public string SystemPrompt { get; init; } = "";
     // Progresso de tool (ok null=start). Sub = id do subagente (só internas).

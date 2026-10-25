@@ -385,7 +385,13 @@ internal static class TestContext
                         try
                         {
                             exec = await PostObj(Bridge + "/api/tools/execute",
-                                new JsonObject { ["name"] = name, ["arguments"] = JsonNode.Parse(args) ?? new JsonObject() });
+                                new JsonObject
+                                {
+                                    ["name"] = name,
+                                    ["arguments"] = JsonNode.Parse(args) ?? new JsonObject(),
+                                    // Role do agente: a tool git libera escrita só p/ build/exec.
+                                    ["model"] = SuiteModel
+                                });
                         }
                         catch (Exception ex) { exec = new JsonObject { ["ok"] = false, ["error"] = ex.Message }; }
                         string outText = exec["ok"]?.GetValue<bool>() == true

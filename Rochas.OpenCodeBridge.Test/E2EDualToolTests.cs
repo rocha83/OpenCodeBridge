@@ -69,7 +69,8 @@ internal static class E2EDualToolTests
         string hist = Path.Combine(dir, "historico.log");
         string prompt =
             $"Trabalhe em {dir}. Crie {dados} com a data de hoje. Coloque esse diretorio sob git " +
-            $"(use a ferramenta git para isso), assine os commits como Teste <teste@exemplo.local>, " +
+            $"(tool shell: `git init {dir}`), assine os commits como Teste <teste@exemplo.local> " +
+            $"(use `git -C {dir} -c user.name=Teste -c user.email=teste@exemplo.local commit -m \"...\"`), " +
             $"faca o commit inicial, acrescente uma linha em {dados} com uma alteracao pontual, commite de novo " +
             $"e salve o historico de commits em {hist}. Use caminho absoluto nas chamadas.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 16);

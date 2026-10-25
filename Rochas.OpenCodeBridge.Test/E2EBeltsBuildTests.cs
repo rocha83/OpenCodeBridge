@@ -57,7 +57,7 @@ internal static class E2EBeltsBuildTests
             try
             {
                 var history = new JsonArray(
-                    new JsonObject { ["role"]="system", ["content"]="Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Implemente os artefatos pedidos direto no disco, sem plano e sem prosa. Crie pelo menos 3 arquivos .cs/.sql/.tsx usando caminhos absolutos dentro do workspace. Ao terminar responda apenas BUILD-OK com o resumo dos arquivos." },
+                    new JsonObject { ["role"]="system", ["content"]=$"Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Trabalhe em {ws}. Implemente os artefatos pedidos direto no disco, sem plano e sem prosa. Crie pelo menos 3 arquivos .cs/.sql/.tsx usando caminhos absolutos dentro de {ws}. Ao terminar responda apenas BUILD-OK com o resumo dos arquivos." },
                     new JsonObject { ["role"]="user", ["content"]=prompt.Replace("{ws}", ws) });
                 int filesCreated = 0;
                 int totalChars = 0;

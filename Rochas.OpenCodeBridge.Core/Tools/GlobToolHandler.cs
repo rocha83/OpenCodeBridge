@@ -22,13 +22,29 @@ public sealed class GlobToolHandler : IToolHandler
 
         if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, subdir, out string baseDir, out string why))
             return ToolResult.Fail(why);
-        if (!Directory.Exists(baseDir)) return ToolResult.Fail($"diretório não encontrado: '{subdir}'");
 
         // "**" é recursão (AllDirectories já desce): "src/**" vira busca "*" em src,
         // "**/*.cs" vira "*.cs" na raiz. O matcher do .NET trataria "**" como nome
         // literal de diretório e falharia.
         string pat = pattern.Trim();
         string searchDir = baseDir;
+
+        // Padrão absoluto (ex.: "/tmp/x/*.cs") é aceito como no OpenCode: separa o
+        // diretório do nome do arquivo. Sem isso o matcher do .NET recusa o padrão
+        // ("Second path fragment must not be a drive or UNC name") e o agente conclui
+        // que a tool não funciona.
+        if (Path.IsPathRooted(pat))
+        {
+            int wild = pat.IndexOfAny(new[] { '*', '?' });
+            string dirPart = wild < 0 ? pat : pat[..wild];
+            dirPart = dirPart.TrimEnd('/', '\\');
+            if (dirPart.Length == 0) dirPart = Path.GetPathRoot(pat) ?? "/";
+            pat = wild < 0 ? "*" : pat[wild..].TrimStart('/', '\\');
+            baseDir = dirPart;
+            searchDir = dirPart;
+        }
+
+        if (!Directory.Exists(baseDir)) return ToolResult.Fail($"diretório não encontrado: '{subdir}'");
         int star = pat.IndexOf("**", StringComparison.Ordinal);
         if (star >= 0)
         {

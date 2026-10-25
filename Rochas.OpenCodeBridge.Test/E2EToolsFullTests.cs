@@ -13,7 +13,7 @@ internal static class E2EToolsFullTests
         async Task<JsonObject> Exec(string name, JsonObject args)
         {
             return await TestContext.PostObj(bridge + "/api/tools/execute",
-                new JsonObject { ["name"] = name, ["arguments"] = args });
+                new JsonObject { ["name"] = name, ["arguments"] = args, ["role"] = "build" });
         }
 
         // 1. write

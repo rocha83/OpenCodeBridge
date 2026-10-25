@@ -1072,7 +1072,13 @@ WriteJson(ctx, 200, new JsonObject
                 string args = req["arguments"]?.ToJsonString() ?? "{}";
                 int timeout = req["timeout"]?.GetValue<int>() ?? 300;
                 string root = WorkspaceRoot.Length > 0 ? WorkspaceRoot : Environment.CurrentDirectory;
-                var executor = new Core.Tools.BridgeToolExecutor(root, Upstream, ApiKey, Log);
+                // Role do pedido: 'role' explícito ou sufixo do model id (ex.:
+                // Gemma4-E4B-Q4-build => build). Sem role = política conservadora
+                // (git somente leitura), como o Plan.
+                string role = req["role"]?.GetValue<string>() ?? "";
+                if (string.IsNullOrWhiteSpace(role))
+                    RoleProfiles.TryResolve(req["model"]?.GetValue<string>(), Profiles, out role, out _);
+                var executor = new Core.Tools.BridgeToolExecutor(root, Upstream, ApiKey, Log, role);
                 var result = executor.Execute(name, args, Math.Clamp(timeout, 1, 600));
                 string output = result.Success ? result.Output : "";
                 if (ToolOutputLimit > 0 && output.Length > ToolOutputLimit) output = output[..ToolOutputLimit];

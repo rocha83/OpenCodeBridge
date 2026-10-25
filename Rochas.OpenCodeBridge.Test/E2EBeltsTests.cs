@@ -69,9 +69,17 @@ internal static class E2EBeltsTests
 
     public static async Task Direct()
     {
-        string orchModel = "gemma-4-12b-orch";
-        string scripterModel = "gemma-4-12b-scripter";
-        string execModel = "gemma-4-e2b-exec";
+        // Modelos das roles derivados do modelo realmente servido pela bridge
+        // (ex.: Gemma4-E4B-Q4 -> Gemma4-E4B-Q4-orch/-scripter/-exec). Nomes
+        // fixos de outra familia (12b/e2b) nao existem neste lab e faziam o
+        // Orch falhar com 0 tarefas antes de qualquer medida do modelo.
+        string baseModel = TestContext.ServedModel;
+        foreach (var r in new[] { "-plan", "-build", "-orch", "-moe", "-scripter", "-exec" })
+            if (baseModel.EndsWith(r)) { baseModel = baseModel[..^r.Length]; break; }
+        if (baseModel.Length == 0) baseModel = "Gemma4-E4B-Q4";
+        string orchModel = baseModel + "-orch";
+        string scripterModel = baseModel + "-scripter";
+        string execModel = baseModel + "-exec";
         Log($"[belts:direct] Orch={orchModel} Scripter={scripterModel} Exec={execModel}");
         int pass = 0, fail = 0;
         var keysEnv = string.IsNullOrWhiteSpace(TestContext.BeltsFilter) ? Environment.GetEnvironmentVariable("BELTS_KEYS") : TestContext.BeltsFilter;

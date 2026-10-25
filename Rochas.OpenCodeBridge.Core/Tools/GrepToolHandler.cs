@@ -31,12 +31,14 @@ public sealed class GrepToolHandler : IToolHandler
 
         if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, subdir, out string baseDir, out string why))
             return ToolResult.Fail(why);
-        if (!Directory.Exists(baseDir)) return ToolResult.Fail($"diretório não encontrado: '{subdir}'");
+        // `path` pode ser arquivo (grep pontual, como no OpenCode) ou diretório.
+        bool singleFile = File.Exists(baseDir);
+        if (!singleFile && !Directory.Exists(baseDir)) return ToolResult.Fail($"caminho não encontrado: '{subdir}'");
 
         try
         {
             var found = new List<string>();
-            foreach (string file in EnumerateFiles(baseDir))
+            foreach (string file in singleFile ? new[] { baseDir } : EnumerateFiles(baseDir))
             {
                 if (found.Count >= MaxMatches) break;
                 if (!MatchGlob(Path.GetFileName(file), include)) continue;

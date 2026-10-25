@@ -43,6 +43,8 @@ public static class HarnessTails
         "COMANDO INVALIDO: se o git responder 'unknown option' ou 'usage:', nao repita a mesma chamada; leia a sintaxe e use a forma correta (`git init` antes de config/add/commit; `git -C <dir> config user.email ...`). " +
         "EDIT/WRITE: alteracao pontual usa edit, sem reescrever o arquivo inteiro; write cria um arquivo por chamada e emite so o JSON da tool call, sem texto em volta. " +
         "PROJETO EXISTENTE: leia e edite os arquivos do projeto; nao recrie o que ja existe. " +
+        "DOTNET RUN/BUILD: com mais de um projeto na pasta, `--project <pasta>` e ambiguo ('contains more than one project file'); aponte o ARQUIVO do projeto (`--project <dir>/<nome>.fsproj` ou `.csproj`). " +
+        "F#: o entrypoint e `module Program` em Program.fs e o namespace/modulo NAO e o nome da classe como em C#; o assembly e o nome do .fsproj. " +
         "FASES: quando o enunciado pedir divisao/delegacao, use a tool de subagente e agregue o retorno. " +
         "BINARIO: .db/.sqlite/.png via shell+python3, nao read. REDE: webfetch/websearch, nao shell+curl. " +
         "NUNCA simule execucao: sem output real da tool, a acao esta NAO FEITA; nao relate sucesso. " +
