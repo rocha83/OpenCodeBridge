@@ -279,7 +279,7 @@ internal static class ToolExecutorTests
 
     private static void ShellMetacharDenied(ToolExecutor exec)
     {
-        var h = new Rochas.OpenCodeBridge.Web.Services.ShellToolHandler();
+        var h = new ShellToolHandler();
         var ctx = new ToolContext { WorkspaceRoot = Path.GetTempPath(), TimeoutSeconds = 30 };
         // Cadeia com ';' executa em sequência (set -e); pipe continua negado.
         var r = h.Handle("echo a; echo b", ctx);

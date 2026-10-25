@@ -68,7 +68,7 @@ builder.Services.AddScoped<BridgeClient>();
 builder.Services.AddScoped<MockBridgeClient>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddSingleton<IPasswordHasher, PasswordHasherService>();
-builder.Services.AddScoped<IToolHandler, Rochas.OpenCodeBridge.Web.Services.ShellToolHandler>();
+builder.Services.AddScoped<IToolHandler, ShellToolHandler>();
 builder.Services.AddScoped<IToolHandler, ReadToolHandler>();
 builder.Services.AddScoped<IToolHandler, WriteToolHandler>();
 builder.Services.AddScoped<IToolHandler, EditToolHandler>();
