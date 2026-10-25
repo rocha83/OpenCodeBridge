@@ -177,6 +177,17 @@ internal static class UnitToolBreakerTests
         TestContext.Check(
             global::Rochas.OpenCodeBridge.Core.ToolSig.Of("SHELL", ShellArgs("ls")) ==
             global::Rochas.OpenCodeBridge.Core.ToolSig.Of("shell", ShellArgs("ls")), "assinatura canonica (caixa)");
+        // Caso real: historico com JSON espaçado (": ") e modelo emitindo compacto (":").
+        string spaced = "{\"command\": \"ls\"}";
+        TestContext.Check(
+            global::Rochas.OpenCodeBridge.Core.ToolSig.Of("shell", spaced) ==
+            global::Rochas.OpenCodeBridge.Core.ToolSig.Of("shell", ShellArgs("ls")), "assinatura ignora espacos do JSON");
+        var spacedLoop = Chat(
+            ("assistant", "shell", spaced, ""),
+            ("tool", "", "", "unknown option: --add"),
+            ("assistant", "shell", spaced, ""),
+            ("tool", "", "", "unknown option: --add"));
+        TestContext.Check(repeated.Find(spacedLoop).Count == 1, "repeticao com JSON espaçado");
         return Task.CompletedTask;
     }
 

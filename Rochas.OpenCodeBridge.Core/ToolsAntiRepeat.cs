@@ -72,8 +72,20 @@ public abstract class ToolsAntiRepeat
     /// <param name="arguments">Argumentos crus.</param>
     /// <returns>Assinatura normalizada.</returns>
     public static string Signature(string? name, string? arguments)
-        => ContentAntiRepeat.Normalize((name ?? "").Trim().ToLowerInvariant()
-            + "(" + ContentAntiRepeat.Normalize(arguments ?? "") + ")");
+    {
+        // JSON canonico: o mesmo comando pode voltar com ou sem espaco depois dos
+        // dois-pontos (historico do cliente x emissao nova do modelo); sem isso a
+        // assinatura nao casa e o anti-repeat deixa passar a chamada repetida.
+        string raw = arguments ?? "";
+        try
+        {
+            if (JsonNode.Parse(raw) is JsonNode parsed)
+                raw = parsed.ToJsonString();
+        }
+        catch { /* argumento nao-JSON: compara o cru */ }
+        return ContentAntiRepeat.Normalize((name ?? "").Trim().ToLowerInvariant()
+            + "(" + ContentAntiRepeat.Normalize(raw) + ")");
+    }
 
     /// <summary>
     /// Chave de alvo normalizada: sem digitos, sem separadores e em minusculas.
