@@ -11,7 +11,7 @@ namespace Rochas.OpenCodeBridge.Test;
 // "\n" literal, build simulado e loop de retry no mesmo alvo.
 internal static class E2EDualToolTests
 {
-    static string Root => "/tmp/opencode/dual";
+    static string Root => Path.Combine("/tmp/opencode", $"dual-{TestContext.Mode}-{Environment.ProcessId}");
 
     static string Fresh(string scenario)
     {
@@ -29,7 +29,7 @@ internal static class E2EDualToolTests
         string dir = Fresh("write-read-edit");
         string target = Path.Combine(dir, "nota.md");
         string prompt =
-            $"No diretorio {dir}: crie o arquivo nota.md com o texto 'versao 1'; leia o arquivo para conferir; " +
+            $"No diretorio {dir}: crie o arquivo {target} com o texto 'versao 1'; leia {target} para conferir; " +
             "troque 'versao 1' por 'versao 2' com a tool edit; responda apenas WRITE-READ-EDIT-OK.";
         var (text, calls) = await TestContext.ToolAgent(prompt);
         string body = ReadFile(target);
@@ -48,7 +48,7 @@ internal static class E2EDualToolTests
         File.WriteAllText(Path.Combine(dir, "alfa.cs"), "class Alfa { }");
         File.WriteAllText(Path.Combine(dir, "beta.txt"), "beta texto");
         string prompt =
-            $"No diretorio {dir}: liste os arquivos .cs com glob (padrao simples, sem usar | ) e diga o nome do arquivo; " +
+            $"No diretorio {dir}: liste os arquivos .cs com glob no caminho {dir} (padrao simples, sem usar | ) e diga o nome do arquivo; " +
             "confirme com grep que ele contem 'class Alfa'; responda apenas GLOB-GREP-OK e o nome do arquivo.";
         var (text, calls) = await TestContext.ToolAgent(prompt);
         TestContext.Check(text.Contains("alfa", StringComparison.OrdinalIgnoreCase),
@@ -65,12 +65,15 @@ internal static class E2EDualToolTests
     public static async Task GitCycle()
     {
         string dir = Fresh("git-cycle");
+        string dados = Path.Combine(dir, "dados.txt");
+        string hist = Path.Combine(dir, "historico.log");
         string prompt =
-            $"Trabalhe em {dir}. Crie o arquivo dados.txt com a data atual. Inicialize o repositorio com git init, " +
-            "configure a identidade local (git config user.email teste@exemplo.local e user.name Teste), faça o primeiro commit, " +
-            "altere o arquivo acrescentando uma linha, faça o segundo commit e salve o log em historico.log. " +
+            $"Trabalhe em {dir}. (1) Crie {dados} com a data atual usando a tool write (nao use shell/echo). " +
+            $"(2) Inicialize o repositorio com `git -C {dir} init`, configure a identidade local " +
+            $"(`git -C {dir} config user.email teste@exemplo.local` e `git -C {dir} config user.name Teste`), faça o primeiro commit, " +
+            $"altere {dados} acrescentando uma linha com a tool edit, faça o segundo commit e salve o log em {hist}. " +
             "Use caminho absoluto em todas as chamadas. Responda apenas GIT-CYCLE-OK.";
-        var (text, calls) = await TestContext.ToolAgent(prompt, 12);
+        var (text, calls) = await TestContext.ToolAgent(prompt, 16);
         TestContext.Check(Directory.Exists(Path.Combine(dir, ".git")), $"[{TestContext.Mode}] .git criado em {dir}");
         TestContext.Check(File.Exists(Path.Combine(dir, "dados.txt")), $"[{TestContext.Mode}] dados.txt criado");
         string log = ReadFile(Path.Combine(dir, "historico.log"));
@@ -93,7 +96,7 @@ internal static class E2EDualToolTests
         File.WriteAllText(real, "conteudo-real-42");
         string prompt =
             $"Existe um arquivo cujo nome termina em 'final.txt' dentro de {dir}, mas nao sei o nome exato. " +
-            "Descubra com ls (ou glob) e leia o arquivo; responda apenas PROBE-OK seguido do conteudo lido.";
+            $"Descubra com ls (ou glob) no caminho {dir} e leia o arquivo; responda apenas PROBE-OK seguido do conteudo lido.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 8);
         TestContext.Check(text.Contains("conteudo-real-42"),
             $"[{TestContext.Mode}] achou o alvo por probe (texto='{text[..Math.Min(160, text.Length)]}')");

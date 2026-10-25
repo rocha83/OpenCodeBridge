@@ -3357,3 +3357,29 @@ Sem repetição entre níveis:
 `run-levels.sh`: L2 ganhou `belts-build-roxa-*`/`belts-orch-roxa-*`; L3 passou
 de `azul,verde,roxa,marrom,preta` para `marrom,preta` (steps renomeados
 `belts-build-final-*`/`belts-orch-final-*`). `bash -n` OK.
+
+### L1 da trilha 20261025-093452: verde de fato; L2 com 1 FAIL em tools-dual
+
+- **L1**: 9/9 PASS (units, devpipe, belts build/orch azul+verde bridge+opencode, webui 70s).
+  O driver registrou `rc=2` porque o `run-levels.sh` foi editado durante a execução
+  (bash releu offset inconsistente). Gate recalculado com o script estável:
+  `LEVEL_STAMP=20261025-093452-l1 ... --gate-only` -> **rc=0, 9 PASS/0 FAIL**.
+- **L2**: `tools-full-bridge` PASS; `tools-dual-bridge` FAIL em
+  `[bridge] dados.txt criado` (subteste `GitCycle`; `write-read-edit` e `glob-grep`
+  passaram). Investigar calls do git-cycle e retestar o step após o driver.
+- Composição aplicada: L1 azul+verde; L2 roxa e **sem webui**; L3 marrom+preta
+  com **webui no fim**.
+
+### L2 (20261025-093452-l2): FAILs de tools-dual e mission-tools (causa + correcao)
+
+- `tools-dual-bridge`: o subteste `GitCycle` falhou em `dados.txt criado`; o `.git`
+  foi criado (root) mas sem arquivo/commits. Correcao de enunciado: `GitCycle` agora
+  manda criar `dados.txt` com a tool `write` e caminho absoluto (sem shell/echo),
+  editar com `edit` e usar `git -C <dir>` (sem `cd`); turnos 12 -> 16. Assertivas
+  inalteradas.
+- `mission-tools-bridge`: F# falhou com FS0588 (o bloco `let` terminou com outro
+  `let`); a fase C# passou. Correcao de enunciado/retry: regra explicita de que o
+  bloco `let simpson =` termina com a expressao `(h / 3.0) * soma`, e retry focado
+  no FS0588. Assertivas inalteradas.
+- Nao rebuildar durante o run: `stale_check` marca o step como STALE se o binario
+  mudar. O build e o reteste dos steps FAIL ficam para depois do driver.
