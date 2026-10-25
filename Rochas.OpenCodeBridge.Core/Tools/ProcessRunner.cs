@@ -4,7 +4,7 @@ using System.Text;
 namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Execução de processos com timeout e morte da árvore (infra compartilhada).
-internal static class ProcessRunner
+public static class ProcessRunner
 {
     public static ToolResult Run(string exe, string[] args, string workingDirectory, int timeoutSeconds)
     {

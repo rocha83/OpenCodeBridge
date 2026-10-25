@@ -43,7 +43,7 @@ public sealed class ReadToolHandler : IToolHandler
         int offset = ClampInt(obj["offset"]?.GetValue<int>() ?? 0, 0, int.MaxValue);
         int limit = ClampInt(obj["limit"]?.GetValue<int>() ?? DefaultLimit, 1, MaxLines);
 
-        if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why))
+        if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why, context.ExtraRoots))
             return ToolResult.Fail(why);
         if (!File.Exists(full)) return ToolResult.Fail($"arquivo não encontrado: '{path}'");
 

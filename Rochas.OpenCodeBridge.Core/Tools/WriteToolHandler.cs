@@ -21,7 +21,7 @@ public sealed class WriteToolHandler : IToolHandler
         if (string.IsNullOrWhiteSpace(path)) return ToolResult.Fail("path é obrigatório");
         if (content.Length > MaxChars) return ToolResult.Fail($"conteúdo grande demais ({content.Length} chars, teto {MaxChars})");
 
-        if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why))
+        if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why, context.ExtraRoots))
             return ToolResult.Fail(why);
 
         try

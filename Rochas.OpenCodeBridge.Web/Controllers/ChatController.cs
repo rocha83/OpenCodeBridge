@@ -441,7 +441,7 @@ public sealed class ChatController(
             catch { continue; }
             if (string.IsNullOrWhiteSpace(f) || !seen.Add(f)) continue;
             bool exists = false; long size = 0; string? modified = null;
-            if (Services.WorkspaceGuard.TryResolve(WorkspaceRoot, f, out string full, out _))
+            if (WorkspaceGuard.TryResolve(WorkspaceRoot, f, out string full, out _))
             {
                 try
                 {
@@ -465,7 +465,7 @@ public sealed class ChatController(
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
-        if (!Services.WorkspaceGuard.TryResolve(WorkspaceRoot, path ?? "", out string full, out string why))
+        if (!WorkspaceGuard.TryResolve(WorkspaceRoot, path ?? "", out string full, out string why))
             return BadRequest(why);
         System.IO.FileInfo fi;
         try { fi = new System.IO.FileInfo(full); } catch { return BadRequest("caminho inválido"); }
@@ -491,7 +491,7 @@ public sealed class ChatController(
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
-        if (!Services.WorkspaceGuard.TryResolve(WorkspaceRoot, req?.Path ?? "", out string full, out string why))
+        if (!WorkspaceGuard.TryResolve(WorkspaceRoot, req?.Path ?? "", out string full, out string why))
             return BadRequest(why);
         string content = req?.Content ?? "";
         if (content.Length > 1_000_000) return StatusCode(413, "conteúdo grande demais (teto 1MB)");
@@ -518,14 +518,14 @@ public sealed class ChatController(
     {
         var s = await sessionService.GetAsync(id, CurrentUserId);
         if (s is null) return NotFound();
-        if (!Services.WorkspaceGuard.TryResolve(WorkspaceRoot, path ?? "", out string full, out string why))
+        if (!WorkspaceGuard.TryResolve(WorkspaceRoot, path ?? "", out string full, out string why))
             return BadRequest(why);
         if (!System.IO.File.Exists(full)) return NotFound();
         string dir = System.IO.Path.GetDirectoryName(full) ?? WorkspaceRoot;
         string top;
         try
         {
-            var rp = Services.ProcessRunner.Run("git", new[] { "rev-parse", "--show-toplevel" }, dir, 15);
+            var rp = ProcessRunner.Run("git", new[] { "rev-parse", "--show-toplevel" }, dir, 15);
             if (!rp.Success) return Json(new { diff = (string?)null, message = "fora de repo git: diff indisponível" });
             top = (rp.Output ?? "").Trim();
         }
@@ -536,15 +536,15 @@ public sealed class ChatController(
         {
             // Arquivo novo (fora do HEAD): diff integral (o alterado real).
             // Versionado: contra o HEAD (stageadas + não-stageadas).
-            var inHead = Services.ProcessRunner.Run("git", new[] { "cat-file", "-e", "HEAD:" + rel }, top, 15);
+            var inHead = ProcessRunner.Run("git", new[] { "cat-file", "-e", "HEAD:" + rel }, top, 15);
             bool isNew = !inHead.Success;
             if (!isNew)
             {
-                var d = Services.ProcessRunner.Run("git", new[] { "diff", "--no-color", "HEAD", "--", rel }, top, 15);
+                var d = ProcessRunner.Run("git", new[] { "diff", "--no-color", "HEAD", "--", rel }, top, 15);
                 diff = d.Success ? (d.Output ?? "") : "";
                 if (string.IsNullOrWhiteSpace(diff))
                 {
-                    var d2 = Services.ProcessRunner.Run("git", new[] { "diff", "--no-color", "--", rel }, top, 15);
+                    var d2 = ProcessRunner.Run("git", new[] { "diff", "--no-color", "--", rel }, top, 15);
                     diff = d2.Success ? (d2.Output ?? "") : "";
                 }
             }
@@ -553,7 +553,7 @@ public sealed class ChatController(
             {
                 // Untracked: --no-index sai 1 quando HÁ diferenças (é o normal
                 // aqui) e o Fail esvazia Output — o diff vem em "exit 1: ...".
-                var u = Services.ProcessRunner.Run("git", new[] { "diff", "--no-color", "--no-index", "/dev/null", full }, top, 15);
+                var u = ProcessRunner.Run("git", new[] { "diff", "--no-color", "--no-index", "/dev/null", full }, top, 15);
                 string uout = u.Output ?? "";
                 if (string.IsNullOrWhiteSpace(uout) && (u.Error ?? "").StartsWith("exit 1", StringComparison.Ordinal))
                     uout = u.Error!.Substring(u.Error.IndexOf(": ", StringComparison.Ordinal) + 2).Replace("\n[stderr]\n", "\n");
@@ -2255,7 +2255,7 @@ public sealed class ChatController(
     // Aval e por tool, fixo na sessao: Sim ou "pode fazer" libera a tool
     // dali em diante (sem re-perguntar); Nao/timeout nega so a call atual.
     // Checkbox da sessao (autoApprove) libera tudo sem perguntar.
-    private static async Task<Services.ToolResult?> ConfirmGateAsync(System.IO.Stream outputStream,
+    private static async Task<ToolResult?> ConfirmGateAsync(System.IO.Stream outputStream,
         string name, string args, string? lastUser, int? sessionId, bool autoApprove, CancellationToken ct,
         IHttpClientFactory? http = null, Models.Agent? riskAgent = null)
     {
@@ -2266,7 +2266,7 @@ public sealed class ChatController(
         {
             await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct,
                 Services.ConfirmGate.DenyMessage, 0, "", args, 0, Services.ConfirmGate.Label(name, args));
-            return Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
+            return ToolResult.Fail(Services.ConfirmGate.DenyMessage);
         }
         if (verdict == "allow" && !Services.ConfirmGate.NeedsConfirmation(name, args)) return null;
         if (verdict == "allow") return null;
@@ -2279,13 +2279,13 @@ public sealed class ChatController(
         if (sessionId is not int sid)
         {
             await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args, 0, Services.ConfirmGate.Label(name, args));
-            return Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
+            return ToolResult.Fail(Services.ConfirmGate.DenyMessage);
         }
         int approveId = Services.ConfirmGate.NextId();
         await WriteProgressAsync(outputStream, "tool_confirm", name, null, ct, Services.ConfirmGate.DenyMessage, 0, "", args, approveId, Services.ConfirmGate.Label(name, args));
         bool ok = await Services.ConfirmGate.WaitAsync(sid, approveId, ct);
         if (ok) Services.ConfirmGate.Allow(sid, name);
-        return ok ? null : Services.ToolResult.Fail(Services.ConfirmGate.DenyMessage);
+        return ok ? null : ToolResult.Fail(Services.ConfirmGate.DenyMessage);
     }
 
     // POST /Chat/Approve - Resolve pendencia Sim/Nao (sem mensagem na bolha).

@@ -1,9 +1,9 @@
 namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Trava de workspace: resolve caminho e garante que fica dentro da raiz.
-internal static class WorkspaceGuard
+public static class WorkspaceGuard
 {
-    public static bool TryResolve(string root, string path, out string full, out string why)
+    public static bool TryResolve(string root, string path, out string full, out string why, string[]? extraRoots = null)
     {
         full = "";
         why = "";
@@ -14,7 +14,7 @@ internal static class WorkspaceGuard
             string baseRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             string candidate = Path.GetFullPath(Path.Combine(baseRoot, path ?? ""));
             if (candidate != baseRoot && !candidate.StartsWith(baseRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-                && !UnderExtraRoot(candidate))
+                && !UnderExtraRoot(candidate, extraRoots ?? ToolContext.DefaultExtraRoots))
             {
                 why = $"caminho '{path}' fora do workspace";
                 return false;
@@ -29,12 +29,10 @@ internal static class WorkspaceGuard
         }
     }
 
-    // Raízes extras permitidas além do workspace: /mnt e /media e subpastas.
-    private static readonly string[] ExtraRoots = { "/mnt", "/media", "/tmp" };
-
-    private static bool UnderExtraRoot(string candidate)
+    // Raízes extras permitidas além do workspace (politica do host, vem do contexto).
+    private static bool UnderExtraRoot(string candidate, string[] roots)
     {
-        foreach (string r in ExtraRoots)
+        foreach (string r in roots)
             if (candidate == r || candidate.StartsWith(r + Path.DirectorySeparatorChar, StringComparison.Ordinal))
                 return true;
         return false;

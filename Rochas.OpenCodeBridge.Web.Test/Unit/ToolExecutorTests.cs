@@ -3,6 +3,7 @@
 
 using System.IO;
 using Rochas.OpenCodeBridge.Web.Services;
+using Rochas.OpenCodeBridge.Core.Tools;
 
 namespace Rochas.OpenCodeBridge.Web.Test.Unit;
 
@@ -119,26 +120,26 @@ internal static class ToolExecutorTests
     private static void ShellInspectorBlocks()
     {
         // Negação uniforme: direto, cadeia e payload bash -c (furo antigo).
-        Check(Services.ShellInspector.Validate("rm -rf /tmp/x") is not null, "U-insp-rm");
-        Check(Services.ShellInspector.Validate("sh -c \"rm -rf /tmp/x\"") is not null, "U-insp-bash-rm");
-        Check(Services.ShellInspector.Validate("echo ok; kill 123") is not null, "U-insp-chain-kill");
-        Check(Services.ShellInspector.Validate("mv a b") is not null, "U-insp-mv");
-        Check(Services.ShellInspector.Validate("rmdir sub") is not null, "U-insp-rmdir");
-        Check(Services.ShellInspector.Validate("echo x > /dev/sda") is not null, "U-insp-dev");
-        Check(Services.ShellInspector.Validate("find /tmp -name \"x*\" 2>/dev/null") is null, "U-insp-devnull-ok");
-        Check(Services.ShellInspector.Validate("top") is not null, "U-insp-top-interactive");
+        Check(ShellInspector.Validate("rm -rf /tmp/x") is not null, "U-insp-rm");
+        Check(ShellInspector.Validate("sh -c \"rm -rf /tmp/x\"") is not null, "U-insp-bash-rm");
+        Check(ShellInspector.Validate("echo ok; kill 123") is not null, "U-insp-chain-kill");
+        Check(ShellInspector.Validate("mv a b") is not null, "U-insp-mv");
+        Check(ShellInspector.Validate("rmdir sub") is not null, "U-insp-rmdir");
+        Check(ShellInspector.Validate("echo x > /dev/sda") is not null, "U-insp-dev");
+        Check(ShellInspector.Validate("find /tmp -name \"x*\" 2>/dev/null") is null, "U-insp-devnull-ok");
+        Check(ShellInspector.Validate("top") is not null, "U-insp-top-interactive");
         // Liberados: printf/cp (só cp entre os destrutivos), ps, top batch.
-        Check(Services.ShellInspector.Validate("printf '%s\\n' oi") is null, "U-insp-printf-ok");
-        Check(Services.ShellInspector.Validate("cp a b") is null, "U-insp-cp-ok");
-        Check(Services.ShellInspector.Validate("ps aux") is null, "U-insp-ps-ok");
-        Check(Services.ShellInspector.Validate("top -b -n 1") is null, "U-insp-top-batch-ok");
-        Check(Services.ShellInspector.Validate("bash -n run.sh") is null, "U-insp-bashn-ok");
+        Check(ShellInspector.Validate("printf '%s\\n' oi") is null, "U-insp-printf-ok");
+        Check(ShellInspector.Validate("cp a b") is null, "U-insp-cp-ok");
+        Check(ShellInspector.Validate("ps aux") is null, "U-insp-ps-ok");
+        Check(ShellInspector.Validate("top -b -n 1") is null, "U-insp-top-batch-ok");
+        Check(ShellInspector.Validate("bash -n run.sh") is null, "U-insp-bashn-ok");
         // Sem falso-positivo em palavra contida.
-        Check(Services.ShellInspector.Validate("echo firmware ok") is null, "U-insp-substring-ok");
-        Check(Services.ShellInspector.Classify("bash run.sh") == Services.ShellInspector.ShellClass.Execution, "U-insp-class-exec");
-        Check(Services.ShellInspector.Classify("bash -n run.sh") == Services.ShellInspector.ShellClass.Validation, "U-insp-class-validation");
-        Check(Services.ShellInspector.Classify("ps aux") == Services.ShellInspector.ShellClass.Proc, "U-insp-class-proc");
-        Check(Services.ShellInspector.Classify("ls -la") == Services.ShellInspector.ShellClass.Other, "U-insp-class-other");
+        Check(ShellInspector.Validate("echo firmware ok") is null, "U-insp-substring-ok");
+        Check(ShellInspector.Classify("bash run.sh") == ShellInspector.ShellClass.Execution, "U-insp-class-exec");
+        Check(ShellInspector.Classify("bash -n run.sh") == ShellInspector.ShellClass.Validation, "U-insp-class-validation");
+        Check(ShellInspector.Classify("ps aux") == ShellInspector.ShellClass.Proc, "U-insp-class-proc");
+        Check(ShellInspector.Classify("ls -la") == ShellInspector.ShellClass.Other, "U-insp-class-other");
     }
 
     private static void ShellProcExecGates(ToolExecutor exec)
@@ -278,7 +279,7 @@ internal static class ToolExecutorTests
 
     private static void ShellMetacharDenied(ToolExecutor exec)
     {
-        var h = new ShellToolHandler();
+        var h = new Rochas.OpenCodeBridge.Web.Services.ShellToolHandler();
         var ctx = new ToolContext { WorkspaceRoot = Path.GetTempPath(), TimeoutSeconds = 30 };
         // Cadeia com ';' executa em sequência (set -e); pipe continua negado.
         var r = h.Handle("echo a; echo b", ctx);

@@ -64,9 +64,9 @@ public sealed class ShellToolHandler : IToolHandler
             {
                 string target = p.Length > 2 ? p[2..].Trim().Trim('"', '\'') : ".";
                 if (string.IsNullOrWhiteSpace(target)) target = ".";
-                if (!WorkspaceGuard.TryResolve(dir, target, out string nd, out string whyCd))
+                if (!WorkspaceGuard.TryResolve(dir, target, out string nd, out string whyCd, context.ExtraRoots))
                     return ToolResult.Fail(whyCd);
-                if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, nd, out _, out _))
+                if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, nd, out _, out _, context.ExtraRoots))
                     return ToolResult.Fail("cd fora do workspace");
                 dir = nd;
                 continue;

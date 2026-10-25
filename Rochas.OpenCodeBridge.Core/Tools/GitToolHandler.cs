@@ -44,7 +44,7 @@ public sealed class GitToolHandler : IToolHandler
         string wantPath = obj["path"]?.GetValue<string>() ?? "";
         if (!string.IsNullOrWhiteSpace(wantPath))
         {
-            if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, wantPath, out string resolved, out string whyPath))
+            if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, wantPath, out string resolved, out string whyPath, context.ExtraRoots))
                 return ToolResult.Fail(whyPath);
             repoDir = resolved;
         }
