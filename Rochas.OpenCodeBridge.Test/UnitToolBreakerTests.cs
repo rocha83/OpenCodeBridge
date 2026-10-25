@@ -214,15 +214,23 @@ internal static class UnitToolBreakerTests
 
     public static Task ToolsTailCarriesPathAndSimulationRules()
     {
+        // A cauda e COMPLEMENTO do main harness: so a mecanica que o main nao
+        // tem. Regra de comportamento continua no main (fonte unica) e este
+        // teste garante que ninguem a duplique na cauda.
         string tail = global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools;
-        TestContext.Check(tail.Contains("ls -la"), "cauda exige probe com ls -la");
         TestContext.Check(tail.Contains("GLOB: nao tem alternancia"), "cauda proibe | no glob");
-        TestContext.Check(tail.Contains("NUNCA simule execucao"), "cauda proibe build simulado");
-        TestContext.Check(tail.Contains("sudo"), "cauda proibe sudo sem ordem");
-        TestContext.Check(tail.Contains("heredoc"), "cauda proibe heredoc");
-        TestContext.Check(tail.Contains("git init"), "cauda lembra git init");
+        TestContext.Check(tail.Contains("git init <dir>"), "cauda exige git init com diretorio explicito");
         TestContext.Check(tail.Contains("rev-parse --show-toplevel"), "cauda exige confirmar a raiz do repo");
         TestContext.Check(tail.Contains("unknown option"), "cauda proibe repetir comando invalido");
+        TestContext.Check(tail.Contains("--project"), "cauda aponta o arquivo do projeto no dotnet");
+        TestContext.Check(tail.Contains("module Program"), "cauda explica o entrypoint de F#");
+        TestContext.Check(!tail.Contains("NUNCA simule execucao") && !tail.Contains("sudo"),
+            "cauda nao duplica regra de comportamento (moram no main)");
+
+        string main = global::Rochas.OpenCodeBridge.Core.MainHarness.Text;
+        TestContext.Check(main.Contains("Nunca simule execução"), "main proibe build simulado");
+        TestContext.Check(main.Contains("sudo"), "main proibe sudo sem ordem");
+        TestContext.Check(main.Contains("ls -la"), "main exige probe com ls -la");
         return Task.CompletedTask;
     }
 

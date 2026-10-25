@@ -228,16 +228,22 @@ internal static class ToolExecutorTests
 
     private static void GitRepoPath(ToolExecutor exec, ToolContext ctx)
     {
-        // Tool git com path: roda no repo certo; escrita orienta p/ shell.
+        // Tool git com path: roda no repo certo; escrita segue o ROLE (plan le,
+        // build grava) — a regra de escrita mora no handler, nao no texto.
         string sub = System.IO.Path.Combine(ctx.WorkspaceRoot, "repo-path-test");
         System.IO.Directory.CreateDirectory(sub);
         var init = exec.Execute("shell", "{\"command\": \"cd repo-path-test && git init\"}", 30);
         Check(init.Success, "U-git-path-init");
         var h = new GitToolHandler();
-        var st = h.Handle("{\"command\": \"status\", \"path\": \"repo-path-test\"}", ctx);
+        var ctxPlan = new ToolContext { WorkspaceRoot = ctx.WorkspaceRoot, TimeoutSeconds = 30, Role = "plan" };
+        var st = h.Handle("{\"command\": \"status\", \"path\": \"repo-path-test\"}", ctxPlan);
         Check(st.Success, "U-git-path-status");
-        var add = h.Handle("{\"command\": \"add x\"}", ctx);
-        Check(!add.Success && add.Error.Contains("shell"), "U-git-write-hint");
+        var add = h.Handle("{\"command\": \"add x\", \"path\": \"repo-path-test\"}", ctxPlan);
+        Check(!add.Success && add.Error.Contains("role 'plan'"), "U-git-write-hint");
+        System.IO.File.WriteAllText(System.IO.Path.Combine(sub, "x.txt"), "x");
+        var ctxBuild = new ToolContext { WorkspaceRoot = ctx.WorkspaceRoot, TimeoutSeconds = 30, Role = "build" };
+        var addOk = h.Handle("{\"command\": \"add .\", \"path\": \"repo-path-test\"}", ctxBuild);
+        Check(addOk.Success, "U-git-build-writes");
     }
 
     // ETA estimada pelo modelo no cabeçalho do script; ausente = vazio.
