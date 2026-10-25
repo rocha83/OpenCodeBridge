@@ -260,9 +260,10 @@ internal static class UnitToolBreakerTests
         bool tailsEnabled = harness["harness_tails"]?.GetValue<bool>() ?? true;
         string scope = harness["tail_scope"]?.GetValue<string>() ?? "";
         int tailChars = (harness["behavior_chars"]?.GetValue<int>() ?? 0) + (harness["tools_chars"]?.GetValue<int>() ?? 0);
-        // Caminho opencode (model com sufixo de role): a cauda e OPCIONAL e so
-        // entra com tail-scope=all; em "managed"/"off" o harness do cliente manda.
-        bool expectTails = tailsEnabled && scope == "all" && tailChars > 0;
+        // O tail-scope decide por CLIENTE (nao pelo sufixo do modelo): este teste
+        // fala direto com a bridge (UA != opencode), logo recebe a cauda em "all"
+        // e em "managed"; so "off" desliga.
+        bool expectTails = tailsEnabled && scope is "all" or "managed" && tailChars > 0;
         string model = (TestContext.ServedModel.Length > 0 ? TestContext.ServedModel : "qualquer") + "-build";
 
         // 1) cliente informa temperatura: passa intacta (quem manda e o tunel)
