@@ -1136,7 +1136,8 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
 
 | serviço | flags-chave |
 |---|---|
-| bridges `:4124` / `:4125` / `:4126` | `--main-harness 0 --harness-tails 0 --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 --passthrough-responses true`; request com **`parallel_tool_calls: false`** (comportamento do código, não flag — §11) |
+| bridges `:4124` / `:4125` | `--main-harness 0 --harness-tails 1 --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 --passthrough-responses true`; request com **`parallel_tool_calls: false`** (comportamento do código, não flag — §11) |
+| bridge `:4126` (CPU forced) | **parada e desabilitada** (o usuário não ligou a linha CPU); unit preservada com `--harness-tails 1` para quando for ativada |
 | Web UI `:4130` | `Core` in-process: `mainHarness`, `harnessTails` e `antiRepeat` nos defaults (ligados) — o `BridgeUrl` do agente só dimensiona contexto |
 | llama `:4100` / `:4110` / `:4120` | `--dry-multiplier 0.0`, `--repeat-penalty 1.08` (§10) |
 
@@ -1144,7 +1145,31 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
   `start-bridge-*.sh` reescrevem a unit do zero — já emitindo
   `--main-harness 0 --harness-tails 0`; se um pacote antigo voltar, o clique no ícone
   recria a unit quebrada (mesmo padrão do `4200` acima).
-- Deploy verificado em 2026-10-24: `/usr/src/opencodebridge` em `a451b1c`,
-  `dotnet build -c Release` com 0 avisos/0 erros, `bridge-gpu`, `bridge-gpu2`,
-  `bridge-cpu-forced` e `bridge-web` `active`, `/api/status` `ok` nas três bridges e
-  smoke `chat/completions` respondendo.
+## Estado final do ambiente (2026-10-25, pós-deploy)
+
+- **Produção** `/usr/src/opencodebridge` em **`6e49fd3`** (`git reset --hard origin/main`,
+  `dotnet build -c Release` 0 avisos/0 erros). Persistente no mesmo commit.
+- **GPU1 `:4124`** — `Gemma4-E4B-Q4`, `-c 131072 -np 1` (1×128k), bridge
+  `--context-tokens 131072`, **tails ON** (`tail_scope=all`), `anti_repeat=true`,
+  breaker `soft=3/hard=6`, `passthrough_responses=true`.
+- **GPU2 `:4125`** — `Gemma4-E4B-UD-Q3`, `-c 114688 -np 2` (2×57344), bridge
+  `--context-tokens 57344`, **tails ON** (`tail_scope=all`), 100% GPU, `anti_repeat=true`.
+- **CPU Forced `:4120/:4126`** — **parada e desabilitada**; VRAM liberada (~906 MiB).
+- **Logs**: `:4124` → `/tmp/bridge-gpu.log`; `:4125` → `/tmp/bridge-gpu2.log`
+  (o antigo `/tmp/bridge-cpu.log` não é mais escrito); `:4126` →
+  `/tmp/bridge-cpu-forced.log` (quando ativa).
+- **Anti-repeat de tools**: vale no caminho **`/v1/responses`** (OpenCode/provider
+  `openai`, WAR e agentes GPU1). A assinatura agora canonicaliza JSON
+  (`{"a": 1}` == `{"a":1}`), então chamada idêntica reemitida é bloqueada e vira
+  `AntiRepeatNotice` (`anti-repeat-loop` no log).
+- **Limitação conhecida**: o passthrough **`/v1/chat/completions`** (provider
+  `llama`/openai-chat, usado pelo dev-agent na GPU2) **não tem** o anti-repeat de
+  tools — ele só repassa o stream. O loop do dev-agent (`--add --config=true`
+  repetido) aconteceu nesse caminho; lá a contenção é enunciado + tails. Guarda
+  de tools no passthrough chat fica como próximo passo (não aplicar com WAR ativa).
+- **Tails**: `HarnessTails.DefaultTools` inclui `GIT-RAIZ` (repo nasce na pasta do
+  projeto; conferir `git -C <dir> rev-parse --show-toplevel`) e `COMANDO INVALIDO`
+  (`unknown option`/`usage:` não repete a mesma chamada).
+- **WAR**: reiniciada do começo em Q4 (`run-all-levels.sh`), stamp
+  **`L1-20261025-130450-l1`**, driver em `logs/levels/driver-console.out`.
+- **Cloudflare**: `code/dev/moe/home` respondendo 200 (inalterado).
