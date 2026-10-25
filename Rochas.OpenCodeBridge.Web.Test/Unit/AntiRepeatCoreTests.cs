@@ -45,7 +45,7 @@ internal static class AntiRepeatCoreTests
 
     private static void NoticeAndWindow()
     {
-        Check(ContentAntiRepeat.DefaultWindow == 128, "U-antirepeat-janela-128");
+        Check(ContentAntiRepeat.DefaultWindow == 256, "U-antirepeat-janela-256");
         Check(ContentAntiRepeat.Notice.Contains("contencao", StringComparison.OrdinalIgnoreCase)
               && ContentAntiRepeat.Notice.Contains("repeticao", StringComparison.OrdinalIgnoreCase),
             "U-antirepeat-aviso");

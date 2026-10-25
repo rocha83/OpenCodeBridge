@@ -48,10 +48,18 @@ internal static class E2EToolsFullTests
         var w2 = await Exec("write", new JsonObject { ["path"] = "sub/b.cs", ["content"] = "class B { }" });
         TestContext.Check(w2["ok"]?.GetValue<bool>() == true, $"{label} write subpasta ok");
 
-        // 8. git read-only (status + log) — escrita git validada em DevPipeInfra
-        var gst = await Exec("shell", new JsonObject { ["command"] = "git status --short" });
+        // 8. git: repo ISOLADO no /tmp — nunca o cwd do workspace (um `git init`
+        // espurio no root da workspace envenenava o log dos testes seguintes)
+        string gdir = "/tmp/opencode/toolsfull/git-" + Environment.ProcessId;
+        var ginit = await Exec("shell", new JsonObject { ["command"] = $"mkdir -p {gdir} && git init {gdir}" });
+        TestContext.Check(ginit["ok"]?.GetValue<bool>() == true, $"{label} git init ok");
+        var gcfg = await Exec("shell", new JsonObject { ["command"] = $"git -C {gdir} config user.email teste@exemplo.local" });
+        TestContext.Check(gcfg["ok"]?.GetValue<bool>() == true, $"{label} git config ok");
+        var gcm = await Exec("shell", new JsonObject { ["command"] = $"git -C {gdir} commit --allow-empty -m inicial" });
+        TestContext.Check(gcm["ok"]?.GetValue<bool>() == true, $"{label} git commit ok");
+        var gst = await Exec("shell", new JsonObject { ["command"] = $"git -C {gdir} status --short" });
         TestContext.Check(gst["ok"]?.GetValue<bool>() == true, $"{label} git status ok");
-        var glog = await Exec("shell", new JsonObject { ["command"] = "git log --oneline" });
+        var glog = await Exec("shell", new JsonObject { ["command"] = $"git -C {gdir} log --oneline" });
         TestContext.Check(glog["ok"]?.GetValue<bool>() == true, $"{label} git log ok");
 
         // 9. compilacao C# (dotnet new + build + run)

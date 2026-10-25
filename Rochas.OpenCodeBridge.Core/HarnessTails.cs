@@ -32,27 +32,13 @@ public static class HarnessTails
     /// glob com alternancia "|", escape "\\n" literal no shell, comando simulado
     /// reportado como build OK e loop de 10 tentativas sem teste discriminante.</remarks>
     public const string DefaultTools =
-        "MODO DE USO DAS TOOLS (delta da bridge): " +
-        "CAMINHOS: ao citar pasta/arquivo fora do workspace use caminho ABSOLUTO e COPIE o nome da saida de ls/glob; nunca reescreva de memoria. " +
-        "Se mkdir/read/edit/write/cd falhar com 'nao existe'/'not found', rode `ls -la <diretorio-pai>` e use o nome exato; nao tente variacao do mesmo nome. " +
-        "`mkdir X && cd Y` so vale com X e Y identicos. " +
+        "MODO DE USO DAS TOOLS (complemento ao harness; NAO repete regra de comportamento): " +
+        "SHELL: um comando por chamada; nunca quebre linha com escape literal; para script, write + `bash <arquivo>`; `cd` NAO persiste entre chamadas — use `cd <dir> && <cmd>` na mesma call. " +
         "GLOB: nao tem alternancia nem regex — use `**/*.{cs,js,ts,json}` ou chame glob duas vezes. " +
-        "SHELL: um comando por chamada; nunca quebre linha com escape literal; para script, write + `bash <arquivo>`; heredoc so se o role permitir, com `<<'EOF'` fechado. " +
-        "GIT/ZIP: git init antes do primeiro add/commit; identidade via `git -c user.email=... -c user.name=...`; PROIBIDO `git config --global` (so local, via `git -C <dir> config`); `cd` NAO persiste entre chamadas: use `cd <dir> && <cmd>` na mesma call ou `git -C <dir>`; se pedir os dois, versione e depois empacote (sem bin/obj). " +
-        "GIT-RAIZ: o repositorio nasce na pasta do projeto indicada no enunciado (ex.: teste-001), nunca no workspace inteiro por acidente; confirme com `git -C <dir> rev-parse --show-toplevel` antes do primeiro commit. " +
-        "COMANDO INVALIDO: se o git responder 'unknown option' ou 'usage:', nao repita a mesma chamada; leia a sintaxe e use a forma correta (`git init` antes de config/add/commit; `git -C <dir> config user.email ...`). " +
-        "EDIT/WRITE: alteracao pontual usa edit, sem reescrever o arquivo inteiro; write cria um arquivo por chamada e emite so o JSON da tool call, sem texto em volta. " +
-        "PROJETO EXISTENTE: leia e edite os arquivos do projeto; nao recrie o que ja existe. " +
-        "DOTNET RUN/BUILD: com mais de um projeto na pasta, `--project <pasta>` e ambiguo ('contains more than one project file'); aponte o ARQUIVO do projeto (`--project <dir>/<nome>.fsproj` ou `.csproj`). " +
-        "F#: o entrypoint e `module Program` em Program.fs e o namespace/modulo NAO e o nome da classe como em C#; o assembly e o nome do .fsproj. " +
-        "FASES: quando o enunciado pedir divisao/delegacao, use a tool de subagente e agregue o retorno. " +
-        "BINARIO: .db/.sqlite/.png via shell+python3, nao read. REDE: webfetch/websearch, nao shell+curl. " +
-        "NUNCA simule execucao: sem output real da tool, a acao esta NAO FEITA; nao relate sucesso. " +
-        "PROIBIDO `sudo` sem ordem explicita e build/deploy em /usr/src (PROD). " +
-        "ERRO: leia a mensagem, varie a abordagem (max 2) e ajuste o trecho exato; nao repita a mesma chamada/caminho. " +
-        "NAO invente comando, tool ou caminho: confirme com `command -v`/`ls`. " +
-        "Tool bloqueada para o role: explique que cabe a outro role, nao contorne por shell. " +
-        "Pronto so com ACEITE executado e evidencia anexada.";
+        "`mkdir X && cd Y` so vale com X e Y identicos. " +
+        "GIT: `git init <dir>` SEMPRE com o diretorio explicito (nunca no cwd do workspace); o repo nasce na pasta do projeto do enunciado; confirme com `git -C <dir> rev-parse --show-toplevel`; identidade so local (`git -C <dir> config user.email/user.name`) — `--global` proibido; se vier 'unknown option'/'usage:', leia a sintaxe e nao repita a chamada. " +
+        "DOTNET: com mais de um projeto na pasta, `--project <pasta>` e ambiguo ('contains more than one project file'): aponte o ARQUIVO (`<dir>/<nome>.fsproj` ou `.csproj`). " +
+        "F#: o entrypoint e `module Program` em Program.fs; o assembly e o nome do .fsproj.";
 
     /// <summary>
     /// Compõe o system prompt com as caudas. Com harness desligado devolve o

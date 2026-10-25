@@ -20,14 +20,38 @@ public abstract class ContentAntiRepeat
     /// <summary>Similaridade minima entre blocos consecutivos (loop curto com variacao).</summary>
     public const double BlockSimilarity = 0.85;
 
-    /// <summary>Janela padrao do anti-repeat de conteudo (mesma da bridge/Web).</summary>
-    public const int DefaultWindow = 128;
+    /// <summary>
+    /// Janela padrao do anti-repeat de conteudo, em caracteres normalizados.
+    /// E a MESMA da bridge (`Program.AntiRepeatWindow`, faixa 64..2048, ajustavel
+    /// por `--anti-repeat-window`/`antiRepeatWindow`): a bridge manda, o Core
+    /// espelha o default e a Web consome daqui — nunca um literal proprio.
+    /// </summary>
+    public const int DefaultWindow = 256;
 
-    /// <summary>Aviso de contencao devolvido ao modelo no retry (Web/bridge).</summary>
+    /// <summary>Faixa aceita para a janela no deployment (`--anti-repeat-window`).</summary>
+    public const int WindowMin = 64;
+
+    /// <summary>Teto da janela no deployment (`--anti-repeat-window`).</summary>
+    public const int WindowMax = 2048;
+
+    /// <summary>
+    /// Aviso de contencao FORTE, injetado no retry do caminho Web (ChatController):
+    /// pede para encerrar em silencio — a Web ja mostrou texto demais.
+    /// </summary>
     public const string Notice =
         "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, " +
         "provavelmente voce entrou em repeticao invalida; quando informada a repeticao, " +
         "nao responda mais nada, apenas encerre em silencio, obrigado.";
+
+    /// <summary>
+    /// Aviso BRANDO do retry da bridge (`--anti-repeat-notice`): avisa a possivel
+    /// repeticao e deixa o modelo reformular ou continuar se for intencional.
+    /// Fonte unica: o host so sobrescreve o texto, nunca redefine o default.
+    /// </summary>
+    public const string SoftNotice =
+        "A ponte OpenCodeBridge percebeu uma possivel repeticao nesta resposta. " +
+        "Se fizer sentido, vale reformular o raciocinio ou seguir por outro caminho; " +
+        "se a repeticao for intencional, pode continuar. Obrigado.";
 
     /// <summary>Tamanho da cauda comparada, em caracteres normalizados.</summary>
     public int Window { get; }

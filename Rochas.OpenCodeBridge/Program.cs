@@ -169,7 +169,7 @@ internal static partial class Program
             "managed" => ManagedFor(modelId) && TailsAtivas(),
             _ => false
         });
-    static int AntiRepeatWindow = 256;                           // janela (chars) da cauda comparada com o historico (64..2048)
+    static int AntiRepeatWindow = ContentAntiRepeat.DefaultWindow; // janela (chars) da cauda comparada com o historico (64..2048); default unico no Core
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
     // devolve 413 pedindo compactacao em vez da resposta. Parametrizavel
     // via appsettings (contextGuard) ou CLI; ContextTokens=0 = inativo.
@@ -184,7 +184,7 @@ internal static partial class Program
     //   dump    = metrics + corpos completos (comportamento historico)
     // --diagnostic 1 (legado) sem nivel declarado implica "dump".
     static string DiagnosticLevel = "off";
-    static string AntiRepeatNotice = "A ponte OpenCodeBridge percebeu uma possivel repeticao nesta resposta. Se fizer sentido, vale reformular o raciocinio ou seguir por outro caminho; se a repeticao for intencional, pode continuar. Obrigado.";
+    static string AntiRepeatNotice = ContentAntiRepeat.SoftNotice; // texto BRANDO da bridge (default unico no Core)
 
     // ThinkingOffRoles: roles que NUNCA devem mostrar reasoning, por nome de role
     // ("Build", "Scripter", "Exec"). Vence sobre o perfil/sufixo do model id, para
@@ -457,7 +457,7 @@ internal static partial class Program
                         if (p?.GetValue<string>() is { Length: > 0 } pn && TryRegex(pn, out var compiled)) rx.Add(compiled);
                     if (rx.Count > 0) RiskToolsAlerts[kv.Key] = rx;
                 }
-            if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= 64 && arw <= 2048) AntiRepeatWindow = arw;
+            if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= ContentAntiRepeat.WindowMin && arw <= ContentAntiRepeat.WindowMax) AntiRepeatWindow = arw;
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
             if (cfg["diagnostic"]?.GetValue<bool>() is bool dg) Diagnostic = dg;
             if (cfg["toolStrategy"]?.GetValue<bool>() is bool tstrat) ToolStrategy = tstrat;
@@ -795,8 +795,8 @@ internal static partial class Program
 
         if (UpstreamParser is not ("native" or "none"))
             errors.Add($"--upstream-parser '{UpstreamParser}' invalido (native|none)");
-        if (AntiRepeatWindow < 64 || AntiRepeatWindow > 2048)
-            errors.Add($"--anti-repeat-window {AntiRepeatWindow} fora da faixa 64..2048");
+        if (AntiRepeatWindow < ContentAntiRepeat.WindowMin || AntiRepeatWindow > ContentAntiRepeat.WindowMax)
+            errors.Add($"--anti-repeat-window {AntiRepeatWindow} fora da faixa {ContentAntiRepeat.WindowMin}..{ContentAntiRepeat.WindowMax}");
         if (AntiRepeatNotice.Length < 20)
             errors.Add("--anti-repeat-notice precisa de >= 20 caracteres");
         if (ContextGuard && ContextTokens <= 0)
@@ -1180,6 +1180,7 @@ WriteJson(ctx, 200, new JsonObject
         ["cpu_max_tokens"] = CpuMaxTokens, ["coerced_max_tokens"] = CpuMaxTokens,
         ["upstream_parser"] = UpstreamParser,
         ["anti_repeat"] = AntiRepeat, ["anti_repeat_abort"] = AntiRepeatAbort,
+        ["anti_repeat_window"] = AntiRepeatWindow,
         ["sampling_passthrough"] = SamplingPassthrough,
         ["diagnostic_level"] = DiagnosticLevel,
         ["config_groups"] = ConfigGroups(),

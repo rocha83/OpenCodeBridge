@@ -1696,6 +1696,11 @@ public sealed class ChatController(
         }
         try
         {
+        // Janela do anti-repeat: a BRIDGE manda (--anti-repeat-window do
+        // deployment); o Core so publica o default. Cache curto (60s) e bridge
+        // fora nao derruba o detector — cai no default.
+        int antiRepeatWindow = await Services.AntiRepeatWindowProvider.ResolveAsync(
+            agent.BridgeUrl, cfg["Llama:ApiKey"] ?? "guest@123", ct);
         int maxTurns = orchOptions.Value.MaxTurns; // <=0 = sem teto (era do ctx 32k do 8B; freios: anti-giro/repeat)
         for (int turn = 0; (maxTurns <= 0 || turn < maxTurns) && !ct.IsCancellationRequested; turn++)
         {
@@ -1799,7 +1804,7 @@ public sealed class ChatController(
                 var t = Services.ResponsesBypass.TranslateData(data, assistantContent, assistantThinking,
                     ref promptTokens, ref completionTokens, accum);
                 if (!turnTripped && assistantContent.Length - turnStartLen >= 72
-                    && ContentAntiRepeat.TailRepeats(assistantContent.ToString(), ContentAntiRepeat.DefaultWindow))
+                    && ContentAntiRepeat.TailRepeats(assistantContent.ToString(), antiRepeatWindow))
                 {
                     turnTripped = true;
                     LoopTrace("anti-repeat", session?.Id, turn, $"chars={assistantContent.Length} suprimido");
@@ -1830,7 +1835,7 @@ public sealed class ChatController(
                             evaluated = true;
                             if (ContentAntiRepeat.TailRepeats(
                                 assistantContent.ToString() + "\n" + assistantThinking.ToString(),
-                                ContentAntiRepeat.DefaultWindow))
+                                antiRepeatWindow))
                             {
                                 turnTripped = true;
                                 pending.Clear();
@@ -1867,7 +1872,7 @@ public sealed class ChatController(
                 // Sem isso o modelo esquece a própria resposta e repete sempre.
                 // Inibivel (harness): sem ele, a prosa segue pura.
                 if (harness && repeatFixes < 2
-                    && ContentAntiRepeat.TailRepeats(assistantContent.ToString(), ContentAntiRepeat.DefaultWindow))
+                    && ContentAntiRepeat.TailRepeats(assistantContent.ToString(), antiRepeatWindow))
                 {
                     repeatFixes++;
                     LoopTrace("anti-repeat", session?.Id, turn, $"chars={assistantContent.Length} fix={repeatFixes}");
