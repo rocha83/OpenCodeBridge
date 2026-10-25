@@ -1,5 +1,33 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Fim das copias de tools: uma implementacao no Core (2026-10-25, sessao 18d)
+
+Depois de matar a duplicacao do anti-repeat, a auditoria de tipos por nome achou
+**16 tipos declarados nos dois projetos**: `ToolContext`, `ToolResult`,
+`IToolHandler`, `ProcessRunner`, `ShellInspector`, `WorkspaceGuard`,
+`ToolProgress`, `InnerToolLog` e os handlers `read/write/edit/glob/grep/git/fetch`.
+Eram arquivos **byte a byte iguais** (menos o namespace) e eu vinha corrigindo
+tudo **duas vezes** (glob, grep e git da sessao 18b) — o mesmo anti-padrao do
+`RepeatLoop`.
+
+Refatorado em worktree isolado (`dry/tools-core`): `ToolContext` passou a ser o
+**superset unico** no Core (host: workspace/timeout/upstream/apiKey/role/log +
+Web: agente, bridge, modelo, temperatura, system e os sinks de progresso); 13
+arquivos saem da Web e ela consome `Core.Tools` por `global using`; ficam na Web
+apenas `ShellToolHandler` e `SubagentToolHandler` (tem progresso/sink proprios).
+`ProcessRunner` e `WorkspaceGuard` viraram `public`.
+
+**A divergencia real apareceu nos testes.** `U-tool-traversal` e
+`U-glob-absolute-outside` falharam so no worktree: o `WorkspaceGuard` do Core
+tinha `/tmp` como raiz extra (fix de 24/10 para os cenarios do deployment) e o da
+Web nao. Em vez de escolher um dos dois, a guarda virou **uma** implementacao que
+recebe `ToolContext.ExtraRoots`: Web = `/mnt,/media`; `BridgeToolExecutor` =
+`/mnt,/media,/tmp`. Politica do host como dado, comportamento identico.
+
+Validacao no worktree: build Release **0/0** e `ToolExecutor Unit 77/77 PASS`
+(os 2 vermelhos viraram verdes). O merge e o deploy ficam para depois do placar
+da bateria `20261025-195625`, que mede o estado ja deployado.
+
 ## DRY no harness: anti-repeat unico, tools tail como complemento, scope managed (2026-10-25, sessao 18c)
 
 **Merge do trabalho paralelo.** `origin/main` trouxe `8a20554` ("consome anti-repeat do Core

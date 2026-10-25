@@ -154,6 +154,29 @@ dois caminhos; `off` desliga geral. `/api/harness` reporta `tail_scope`, e o uni
 `U-translate-temp-respeita-tunel` deriva a expectativa do valor reportado (não de
 um literal).
 
+### Uma implementacao de tools (Core) — fim das copias na Web
+
+Ate 2026-10-25 existiam **16 tipos duplicados** entre `Core/Tools` e `Web/Services`
+(`ToolContext`, `ToolResult`, `IToolHandler`, `ProcessRunner`, `ShellInspector`,
+`WorkspaceGuard`, `ToolProgress`, `InnerToolLog` e os handlers read/write/edit/
+glob/grep/git/fetch) — o mesmo padrao do `RepeatLoop`. Agora:
+
+- **Fonte unica:** `Rochas.OpenCodeBridge.Core/Tools/*`. O `ToolContext` do Core e o
+  superset (workspace/timeout/upstream/apiKey/role/log do host **+** agente, bridge,
+  modelo, temperatura, system e os sinks `ProgressAsync`/`SubChunkAsync`/
+  `LogInnerAsync` da Web). A Web consome via `global using ...Core.Tools;`.
+- **So ficam na Web** `ShellToolHandler` e `SubagentToolHandler` (progresso e sink
+  proprios); `Program.cs` e o `Web.Test` os qualificam pelo nome completo porque os
+  tipos do Core tem o mesmo nome.
+- **Politica do jail vem do host:** `WorkspaceGuard.TryResolve(..., extraRoots)` usa
+  `ToolContext.ExtraRoots`. Web = `/mnt`, `/media`; `BridgeToolExecutor` = `/mnt`,
+  `/media`, **`/tmp`** (cenarios do deployment). Era exatamente essa a diferenca
+  escondida entre as duas copias — `U-tool-traversal` e `U-glob-absolute-outside`
+  passaram a acusar; a guarda e uma so, a lista e um dado.
+- `ProcessRunner`/`WorkspaceGuard` agora sao `public` (a Web usa); nada mais e
+  copiado. Regra: **handler de tool se escreve no Core**; se a Web precisar de algo
+  diferente, isso vira campo/parametro do contexto, nunca uma segunda classe.
+
 ## Subagente (`SubagentToolHandler.cs`, temp 0.1 fixa, tools write/edit/shell)
 
 ```text
