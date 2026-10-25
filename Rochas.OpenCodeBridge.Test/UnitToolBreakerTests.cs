@@ -226,6 +226,17 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    public static Task BehaviorTailForcesToolFirst()
+    {
+        string tail = global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultBehavior;
+        TestContext.Check(tail.Contains("ZERO linha de prosa"), "behavior exige tool antes de prosa");
+        TestContext.Check(tail.Contains("PERSISTENCIA"), "behavior exige continuar no mesmo turno");
+        TestContext.Check(tail.Contains("PRIORIDADE"), "behavior resolve conflito com o nativo");
+        TestContext.Check(tail.Contains("execute primeiro"), "behavior executa antes de explicar");
+        TestContext.Check(!tail.Contains("no maximo 2 linhas antes"), "behavior nao autoriza 2 linhas de prosa");
+        return Task.CompletedTask;
+    }
+
     // ---- HTTP: dependem do binario novo rodando (skip em bridge antiga) ----
 
     static async Task RequireNewBridge()

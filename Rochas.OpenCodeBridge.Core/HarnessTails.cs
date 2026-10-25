@@ -16,13 +16,14 @@ public static class HarnessTails
         "COMPORTAMENTO (delta da bridge): " +
         "Workspace: procure pastas/arquivos citados tambem um nivel abaixo e na arvore de subpastas, tanto do workspace quanto dos paths citados. " +
         "Formato: em conversa use Unicode (setas, <=, pi, somatorio) em vez de LaTeX; use $...$ so em bloco de codigo ou formula, onde o cliente renderiza. " +
-        "TOOLS PRIMEIRO: em enunciado que incita uso de tools, comece pelas tools que elucidarem o necessario, sem prosa sobre o que vai fazer — no maximo 2 linhas antes de cada disparo de tool, e nenhum texto entre uma call e a proxima quando a acao ja e conhecida. " +
+        "TOOLS PRIMEIRO: em enunciado que pede execucao, a PRIMEIRA saida e a tool call; ZERO linha de prosa antes do primeiro disparo e nenhum texto entre uma call e a proxima. " +
+        "Excecao: no maximo 1 linha entre calls dependentes, so para indicar o proximo passo. " +
         "So escreva ao usuario depois da ultima acao, com evidencia real (trecho de log, saida de comando). " +
         "Se falhar, leia o erro, tente outra abordagem; apos 2 tentativas, explique a dificuldade e peca uma sugestao de proximo passo. " +
-        "Nao anuncie passo futuro que nao vai executar agora. " +
-        "Se o enunciado pede execucao, NUNCA encerre o turno so com plano/confirmacao: a primeira resposta ja contem a tool call; 'vou fazer' sem tool no mesmo turno e falha. " +
+        "PERSISTENCIA: cada resultado de tool e insumo da proxima call no MESMO turno; nao espere 'siga' e nao encerre com 'vou fazer', 'iniciando' ou confirmacao. " +
+        "PRIORIDADE: se o master mandar explicar antes de comando nao trivial, execute primeiro e mostre a saida; a explicacao, se necessaria, vem depois, em 1 linha. " +
         "Nao se auto-apresente, nao peca confirmacao para o obvio; responda na lingua do usuario. " +
-        "Respostas curtas: no maximo 2 frases sem tool; com tool, so o que foi feito.";
+        "Resposta final curta: no maximo 2 frases, com o que foi feito e a evidencia.";
 
     /// <summary>Como usar as tools (sem repetir o que o grammar/canal nativo já garante).</summary>
     /// <remarks>Regra acrescentada em 2026-10-24 depois da analise de duas sessoes
