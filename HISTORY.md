@@ -28,6 +28,38 @@ Validacao no worktree: build Release **0/0** e `ToolExecutor Unit 77/77 PASS`
 (os 2 vermelhos viraram verdes). O merge e o deploy ficam para depois do placar
 da bateria `20261025-195625`, que mede o estado ja deployado.
 
+**Segunda fatia (mesmo dia):** o `ShellToolHandler` tambem era duplicado — e a
+copia da Web era *pior* (sem `Metrics.Deny` nem evento `tool-deny`). A Web passou
+a registrar o handler do Core; sobraram na Web apenas `ShellToolHandler`
+(removido) e `SubagentToolHandler` (adapter de host: `IBridgeClient`, sinks de
+progresso e sessao). Para nao repetir a historia, entrou o **`DedupGuardTests`**:
+varre as fontes dos dois projetos e **falha se qualquer tipo for declarado em
+Core e Web ao mesmo tempo** (`U-sem-tipos-duplicados`), com excecao nomeada e
+justificada so para o subagente. Auditoria final: **zero arquivos identicos**
+entre Core e Web alem do subagente (6746 vs 9830 chars).
+
+**Medicao da bateria `20261025-195625`** (PROD `1018ffa`, `--tail-scope managed`,
+janela 512, tools tail 1001 chars), L1 parcial ate 20:40:
+
+| passo | secs | referencia (18:56, `all`) |
+|---|---|---|
+| `units-bridge` | 5 | 5 |
+| `devpipe-bridge` | 266 | 269 |
+| `belts-build-bridge` | **833** | 302 |
+| `belts-orch-bridge` | 297 | 334 |
+| `units-opencode` | 4 | 4 |
+| `devpipe-opencode` | 10 | 12 |
+| `belts-build-opencode` | **961** | 755 |
+| `belts-orch-opencode` | 233 | 253 |
+
+Tudo **PASS**. Os dois belts de build ficaram ~2,7x e ~1,3x mais lentos; parte e
+contaminacao medida (um `Web.Test` meu rodou em paralelo por ~3 min disputando a
+GPU, antes de eu perceber), parte e o `--tail-scope managed` tirando a cauda dos
+modelos com sufixo de role (`*-build`, `*-orch`) — o belt depende do
+`DefaultBehavior` ("ZERO linha de prosa", "execute primeiro"). `belts-orch`
+**nao** piorou, entao a hipotese ainda nao fecha: decisao pendente com a bateria
+limpa (sem concorrencia) antes de voltar para `--tail-scope all`.
+
 ## DRY no harness: anti-repeat unico, tools tail como complemento, scope managed (2026-10-25, sessao 18c)
 
 **Merge do trabalho paralelo.** `origin/main` trouxe `8a20554` ("consome anti-repeat do Core
