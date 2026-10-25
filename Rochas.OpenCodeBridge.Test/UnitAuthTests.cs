@@ -89,18 +89,14 @@ internal static class UnitAuthTests
 
     public static Task GuardTrips()
     {
-        (bool g, double t, int c) = BridgeSrv.Program.ContextGuardConfig();
-        try
-        {
-            BridgeSrv.Program.ContextGuardSetup(true, 0.95, 1000);
-            TestContext.Check(BridgeSrv.Program.ContextGuardTripped("{\"usage\":{\"prompt_tokens\":950}}", out _, out _), "95% dispara");
-            TestContext.Check(!BridgeSrv.Program.ContextGuardTripped("{\"usage\":{\"prompt_tokens\":949}}", out _, out _), "94.9% passa");
-            BridgeSrv.Program.ContextGuardSetup(true, 0.95, 0);
-            TestContext.Check(!BridgeSrv.Program.ContextGuardTripped("{\"usage\":{\"prompt_tokens\":99999}}", out _, out _), "sem contextTokens inativo");
-            BridgeSrv.Program.ContextGuardSetup(false, 0.95, 1000);
-            TestContext.Check(!BridgeSrv.Program.ContextGuardTripped("{\"usage\":{\"prompt_tokens\":99999}}", out _, out _), "desligado inativo");
-        }
-        finally { BridgeSrv.Program.ContextGuardSetup(g, t, c); }
+        // A regra e do Core: o teste exercita a regra, nao o estado global do console.
+        var on = new Rochas.OpenCodeBridge.Core.ContextGuardSettings(true, 0.95, 1000);
+        var noTokens = new Rochas.OpenCodeBridge.Core.ContextGuardSettings(true, 0.95, 0);
+        var off = new Rochas.OpenCodeBridge.Core.ContextGuardSettings(false, 0.95, 1000);
+        TestContext.Check(Rochas.OpenCodeBridge.Core.ContextGuard.Tripped("{\"usage\":{\"prompt_tokens\":950}}", on, out _, out _), "95% dispara");
+        TestContext.Check(!Rochas.OpenCodeBridge.Core.ContextGuard.Tripped("{\"usage\":{\"prompt_tokens\":949}}", on, out _, out _), "94.9% passa");
+        TestContext.Check(!Rochas.OpenCodeBridge.Core.ContextGuard.Tripped("{\"usage\":{\"prompt_tokens\":99999}}", noTokens, out _, out _), "sem contextTokens inativo");
+        TestContext.Check(!Rochas.OpenCodeBridge.Core.ContextGuard.Tripped("{\"usage\":{\"prompt_tokens\":99999}}", off, out _, out _), "desligado inativo");
         return Task.CompletedTask;
     }
 

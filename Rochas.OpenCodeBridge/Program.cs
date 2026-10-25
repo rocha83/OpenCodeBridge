@@ -3003,16 +3003,11 @@ var shape = new StringBuilder();
     internal static void ContextGuardSetup(bool enabled, double threshold, int tokens)
     { ContextGuard = enabled; ContextThreshold = threshold; ContextTokens = tokens; }
 
-    // Guarda de ctx: prompt atingiu o limiar configurado.
-    internal static bool ContextGuardTripped(string json, out int promptTokens, out double fraction)
-    {
-        promptTokens = 0; fraction = 0;
-        if (!ContextGuard || ContextTokens <= 0) return false;
-        try { promptTokens = JsonNode.Parse(json)?.AsObject()?["usage"]?["prompt_tokens"]?.GetValue<int>() ?? 0; }
-        catch { return false; }
-        fraction = (double)promptTokens / ContextTokens;
-        return fraction >= ContextThreshold;
-    }
+    // Guarda de ctx: a regra mora no Core (ContextGuard); aqui so os parametros.
+    internal static bool ContextGuardTripped(string json, out int promptTokens, out double fraction) =>
+        Rochas.OpenCodeBridge.Core.ContextGuard.Tripped(json,
+            new ContextGuardSettings(ContextGuardEnabled(), ContextThreshold, ContextTokens),
+            out promptTokens, out fraction);
 
     /// <summary>Detector com sonda: avalia e registra o probe Serilog (trip=Warning, resto=Debug).</summary>
     /// <param name="accumulated">Texto acumulado ate aqui.</param>
