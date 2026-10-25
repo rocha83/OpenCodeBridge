@@ -29,7 +29,7 @@ public sealed class GrepToolHandler : IToolHandler
         try { regex = new Regex(pattern, RegexOptions.Compiled); }
         catch (Exception ex) { return ToolResult.Fail($"regex inválida: {ex.Message}"); }
 
-        if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, subdir, out string baseDir, out string why))
+        if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, subdir, out string baseDir, out string why, context.ExtraRoots))
             return ToolResult.Fail(why);
         // `path` pode ser arquivo (grep pontual, como no OpenCode) ou diretório.
         bool singleFile = File.Exists(baseDir);

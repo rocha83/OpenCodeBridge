@@ -159,14 +159,23 @@ internal static partial class Program
     // Ha alguma cauda configurada? O /api/harness reporta isso; a decisao por
     // caminho fica em TailsOn (harnessTails + tailScope).
     static bool TailsAtivas() => HarnessBehaviorTail.Length > 0 || HarnessToolsTail.Length > 0;
+    // Cliente da requisicao corrente. O CLI do opencode traz harness proprio, entao
+    // a cauda ali e opcional; qualquer outro cliente (WAR, Web, SDK) recebe a cauda
+    // mesmo com modelo de role (sufixo). O sufixo NAO identifica cliente — era o
+    // erro que tirava a cauda do WAR em modo bridge.
+    static readonly AsyncLocal<bool> OpencodeClient = new();
+
+    static bool IsOpencodeClient(HttpListenerContext? ctx) =>
+        (ctx?.Request.Headers["User-Agent"] ?? "").Contains("opencode", StringComparison.OrdinalIgnoreCase);
+
     // Cauda vale NESTE pedido? --harness-tails e o switch das tails; tailScope
-    // decide o caminho. "all" inclui opencode; "managed" so o cliente direto/Web.
+    // decide o caminho: "all" = todos; "managed" = todos menos o CLI do opencode.
     static bool TailsOn(string? modelId) =>
         TailsEnabled && (TailScope switch
         {
             "off" => false,
             "all" => TailsAtivas(),
-            "managed" => ManagedFor(modelId) && TailsAtivas(),
+            "managed" => !OpencodeClient.Value && TailsAtivas(),
             _ => false
         });
     static int AntiRepeatWindow = ContentAntiRepeat.DefaultWindow; // janela (chars) da cauda comparada com o historico (64..2048); default unico no Core
@@ -863,6 +872,9 @@ internal static partial class Program
     static void HandleRequest(HttpListenerContext ctx)
     {
         var path = ctx.Request.Url?.AbsolutePath ?? "/";
+        // Quem e o cliente DESTE pedido (uma vez por requisicao): o tail-scope
+        // "managed" decide por cliente e nao pelo sufixo do modelo.
+        OpencodeClient.Value = IsOpencodeClient(ctx);
         try
         {
             Interlocked.Increment(ref TotalRequests);
@@ -957,8 +969,8 @@ internal static partial class Program
                     ["main_harness_opencode"] = false,
                     ["main_harness_chars"] = MainHarness.Text.Length,
                     ["harness_tails"] = TailsEnabled,
-                    ["tails_managed"] = TailsOn("") && !MainHarnessOn,
-                    ["tails_opencode"] = TailsOn(Model + "-build"),
+                    ["tails_managed"] = TailsAtivas() && TailScope is "all" or "managed" && !MainHarnessOn,
+                    ["tails_opencode"] = TailsAtivas() && TailScope == "all",
                     ["behavior_chars"] = HarnessBehaviorTail.Length,
                     ["tools_chars"] = HarnessToolsTail.Length
                 });

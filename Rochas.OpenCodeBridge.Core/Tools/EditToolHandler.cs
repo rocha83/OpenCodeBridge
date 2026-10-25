@@ -23,7 +23,7 @@ public sealed class EditToolHandler : IToolHandler
         if (string.IsNullOrWhiteSpace(path)) return ToolResult.Fail("path é obrigatório");
         if (string.IsNullOrEmpty(oldString)) return ToolResult.Fail("oldString é obrigatório");
 
-        if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why))
+        if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why, context.ExtraRoots))
             return ToolResult.Fail(why);
         if (!File.Exists(full)) return ToolResult.Fail($"arquivo não encontrado: '{path}'");
 

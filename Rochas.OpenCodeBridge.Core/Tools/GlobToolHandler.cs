@@ -20,7 +20,7 @@ public sealed class GlobToolHandler : IToolHandler
         if (string.IsNullOrWhiteSpace(pattern)) return ToolResult.Fail("pattern é obrigatório");
         string subdir = obj["path"]?.GetValue<string>() ?? "";
 
-        if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, subdir, out string baseDir, out string why))
+        if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, subdir, out string baseDir, out string why, context.ExtraRoots))
             return ToolResult.Fail(why);
 
         // "**" é recursão (AllDirectories já desce): "src/**" vira busca "*" em src,

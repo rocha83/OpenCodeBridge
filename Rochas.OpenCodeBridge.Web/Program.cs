@@ -76,7 +76,7 @@ builder.Services.AddScoped<IToolHandler, GrepToolHandler>();
 builder.Services.AddScoped<IToolHandler, GlobToolHandler>();
 builder.Services.AddScoped<IToolHandler, FetchToolHandler>();
 builder.Services.AddScoped<IToolHandler, GitToolHandler>();
-builder.Services.AddScoped<IToolHandler>(sp => new SubagentToolHandler(sp.GetRequiredService<IBridgeClient>()));
+builder.Services.AddScoped<IToolHandler>(sp => new Rochas.OpenCodeBridge.Web.Services.SubagentToolHandler(sp.GetRequiredService<IBridgeClient>()));
 builder.Services.AddScoped<IToolExecutor>(sp => new ToolExecutor(
     sp.GetServices<IToolHandler>(),
     repoPath: AppContext.BaseDirectory,

@@ -44,7 +44,18 @@ public sealed class BridgeToolExecutor
         string key = name is "bash" or "sh" ? "shell" : name is "webfetch" ? "fetch" : name is "task" ? "subagent" : name;
         if (!_handlers.TryGetValue(key, out IToolHandler? handler))
             return ToolResult.Fail($"tool desconhecida: '{name}' (válidas: shell, read, write, edit, grep, glob, fetch, git)");
-        var context = new ToolContext { WorkspaceRoot = _workspaceRoot, TimeoutSeconds = timeoutSeconds, UpstreamUrl = _upstreamUrl, ApiKey = _apiKey, Role = _role, Log = _log };
+        // Bridge: os cenarios do deployment moram em /tmp/opencode, logo /tmp e raiz
+        // extra legitima (a Web NAO herda isso — la o workspace e o jail).
+        var context = new ToolContext
+        {
+            WorkspaceRoot = _workspaceRoot,
+            TimeoutSeconds = timeoutSeconds,
+            UpstreamUrl = _upstreamUrl,
+            ApiKey = _apiKey,
+            Role = _role,
+            ExtraRoots = new[] { "/mnt", "/media", "/tmp" },
+            Log = _log
+        };
         try { return handler.Handle(arguments ?? "", context); }
         catch (Exception ex) { return ToolResult.Fail($"falha interna na tool '{name}': {ex.Message}"); }
     }
