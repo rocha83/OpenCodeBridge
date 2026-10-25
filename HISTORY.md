@@ -3560,3 +3560,58 @@ o `belts-build-final-bridge` chegou a iniciar às 17:25 e foi interrompido (sem 
 sampler (DRY 0.8) e das units — resultado não vale como gate. Nova bateria completa no Q4
 iniciada às 18:03 com stamp **`20261025-180305`** (`--war-all`, lock único, L1→L3),
 sem alterar enunciados, aceite, ctx ou `max_tokens`.
+
+## Tools por role, glob/grep absolutos e dica de dotnet/F# (2026-10-25, sessão 18b)
+
+**Motivo.** A bateria `20261025-180305` (L1 6/9, L2 5/8) mostrou falhas que
+pareciam regressão do fluxo da bridge. A investigação apontou **três bugs de tool**
+e **dois bugs de teste**, não sampler/tail:
+
+1. `glob` com padrão absoluto → `falha no glob: Second path fragment must not be a
+   drive or UNC name` (o matcher do .NET recebia o caminho inteiro como padrão).
+2. `grep` com `path` apontando **arquivo** → `diretório não encontrado`.
+3. `git` era **somente leitura para todos os roles**, por design do Plan — o Build
+   não podia `init/add/commit`, então o modelo insistia, recebia recusa e entrava
+   em `anti-repeat-loop` (6 eventos), sem criar `.git`.
+4. `E2EBeltsBuildTests` (modo bridge) não informava o `ws` no system → o verde
+   gravou em `/workspace` (acesso negado).
+5. `E2EBeltsTests.Direct` fixava `gemma-4-12b-*`/`gemma-4-e2b-*` (legado).
+
+**Correções (commit `6310790`; deploy `af40e3e`).**
+
+- `GlobToolHandler`: padrão absoluto separa diretório do nome (`/tmp/x/*.cs`,
+  `/tmp/x/**/*.cs`); saída relativa ao workspace ou absoluta quando fora.
+- `GrepToolHandler`: `path` aceita arquivo ou diretório.
+- `GitToolHandler` + `ToolContext.Role`: leitura (`status/log/diff/show/branch/
+  ls-files/rev-parse`) para **qualquer** role; escrita (`init/add/commit/rm/mv/tag`)
+  **só para build/exec**; `plan` (e role desconhecido) segue somente leitura.
+  `push/reset/clean/rebase/merge/checkout/filter-branch/--force` continuam negados;
+  `-c` liberado só para `user.name`/`user.email`.
+- `POST /api/tools/execute` aceita `role` ou `model` (resolve o role pelo sufixo);
+  sem role = política conservadora (Plan).
+- Tools tail ganhou a dica semântica (é instrução de uso, não muleta de modelo):
+  `dotnet run/build --project <pasta>` é ambíguo com mais de um projeto → apontar o
+  **arquivo** (`<dir>/<nome>.fsproj|.csproj`); em F# o entrypoint é `module Program`
+  em `Program.fs` e o assembly é o nome do `.fsproj` (namespace/módulo não é classe
+  como em C#). Tail foi de **2291 → 2625** chars.
+- Testes: `ToolAgent` e `E2EToolsFull` enviam o role no `/api/tools/execute`; o
+  enunciado do dual passou a pedir `git init`/`commit` pela tool **shell** (o
+  catálogo do teste não expõe tool `git`), com `-c user.name/user.email`.
+- `E2EBeltsTests` deriva `-orch/-scripter/-exec` do modelo servido.
+
+**Deploy (PROD, net9 preservado).** GitHub sem credencial no host, então o PROD
+recebeu o fix por **remote local**: worktree `/tmp/opencode/deploy-net9` a partir de
+`2ea54fd` + cherry-pick do `6310790` (`af40e3e`), `git fetch localfix` +
+`merge --ff-only`, `dotnet build -c Release` **0/0**, restart de `bridge-gpu`,
+`bridge-gpu2` e `bridge-web`. PROD agora em **`af40e3e`** (não é o `origin/main`);
+o persistente segue em `6310790` (.NET 10) e o push continua pendente de token.
+Verificado: `tools_chars=2625`, tails ON, `/api/status` ok nas duas bridges, Web 302.
+
+**Provas de tool (antes → depois).** glob absoluto: falha → `ok` com o `.cs`;
+grep em arquivo: `diretório não encontrado` → `ok` com a linha; `git init` role
+build: negado → `ok`; `git init` role plan: negado (correto); `git status` role plan:
+`ok`.
+
+**WAR.** Nova bateria **L1+L2** (L3 fica para o fim, por decisão do autor) com stamp
+**`20261025-185656`**, `--war-levels 1,2`, binários atuais, sem tocar em aceite, ctx
+ou `max_tokens`.

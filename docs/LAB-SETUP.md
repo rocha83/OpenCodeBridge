@@ -1318,10 +1318,11 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
   Correção: atualizar o `start-bridge-*.sh` e rodar `--defaults`.
 ## Estado final do ambiente (2026-10-25, redeploy: Q4 + Q3 + Web `:4130`, prod `2ea54fd`)
 
-- **Produção** `/usr/src/opencodebridge` em **`2ea54fd`** (`git pull --ff-only origin main`
-  como root; docs locais antigas descartadas com patch salvo em
-  `/tmp/opencode/prod-local-*.patch`; `dotnet build Rochas.OpenCodeBridge.slnx -c Release`
-  = **0 avisos / 0 erros**, saída `net9.0`).
+- **Produção** `/usr/src/opencodebridge` em **`af40e3e`** — `2ea54fd` + cherry-pick do
+  fix de tools (`6310790`), deploy por **remote local** (`/tmp/opencode/deploy-net9`)
+  porque o host não tem credencial de push; `git merge --ff-only` + `dotnet build
+  Rochas.OpenCodeBridge.slnx -c Release` = **0 avisos / 0 erros** (`net9.0`) e restart
+  de `bridge-gpu`/`bridge-gpu2`/`bridge-web`. O `.NET 10` **não** foi para o PROD.
 - **Persistente (dev)** em **`1f635a6`** (migração `.NET 10` local, **2 commits à frente**
   do `origin/main` `2ea54fd` — ainda não enviados). Rollback do PROD continua sendo o
   `bin/Release/net9.0` atual.
@@ -1368,5 +1369,22 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
   repetido) aconteceu nesse caminho; lá a contenção é enunciado + tails. Guarda
   de tools no passthrough chat fica como próximo passo (não aplicar com WAR ativa).
 - **Tails**: `HarnessTails.DefaultTools` inclui `GIT-RAIZ` (repo nasce na pasta do
-  projeto; conferir `git -C <dir> rev-parse --show-toplevel`) e `COMANDO INVALIDO`
-  (`unknown option`/`usage:` não repete a mesma chamada).
+  projeto; conferir `git -C <dir> rev-parse --show-toplevel`), `COMANDO INVALIDO`
+  (`unknown option`/`usage:` não repete a mesma chamada) e `DOTNET RUN/BUILD`
+  (com mais de um projeto na pasta, `--project <pasta>` é ambíguo: apontar o
+  **arquivo** `<dir>/<nome>.fsproj|.csproj`; em F# o entrypoint é `module Program`
+  e o assembly é o nome do `.fsproj`). A tail de tools foi de **2291 → 2625** chars
+  em 2026-10-25 — o `tools_chars` do `/api/harness` é a prova de que o restart
+  carregou o texto novo.
+- **Tools por role** (`POST /api/tools/execute` aceita `role` ou `model`):
+  - leitura liberada para todos: `status`, `log`, `diff`, `show`, `branch`,
+    `ls-files`, `rev-parse`;
+  - escrita de git **só** para `build` e `exec`: `init`, `add`, `commit`, `rm`,
+    `mv`, `tag`;
+  - `plan` (e role omitido/desconhecido) é **somente leitura** — é o contrato do
+    Plan, que planeja e não grava;
+  - sempre negados: `push`, `reset`, `clean`, `rebase`, `merge`, `checkout`,
+    `filter-branch`, `--force`; `-c` só aceita `user.name`/`user.email`.
+- **`glob`/`grep` com caminho absoluto**: `glob` aceita padrão absoluto
+  (`/tmp/x/*.cs`, `/tmp/x/**/*.cs`) e o `grep` aceita `path` de **arquivo** ou
+  diretório — antes o modelo concluía “glob/grep não funcionam” e entrava em loop.
