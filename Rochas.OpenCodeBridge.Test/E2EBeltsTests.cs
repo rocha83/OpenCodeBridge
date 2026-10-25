@@ -11,7 +11,7 @@ internal static class E2EBeltsTests
     {
         ("azul", "Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
         ("verde", "Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ. Escopo: dominio + banco SQL. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
-        ("roxa", "Especifique o dominio backend C# de cadastro de clientes e fornecedores, o banco de dados SQL (DDL, indices, constraints) e os repositorios e servicos: repositorio generico Dapper, servicos de aplicacao, validacao e mascaras de e-mail, telefone BR com DDD e CEP. Escopo: dominio + banco SQL + repositorios e servicos. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
+        ("roxa", "Trabalhe no workspace da tarefa. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Entregue a implementacao em arquivos .cs e .sql no workspace da tarefa."),
         ("marrom", "Especifique o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL, os repositorios e servicos (Dapper), a API REST e o frontend React. Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
         ("preta", "Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador, banco de dados SQL, repositorios e servicos, API REST, servicos bus, pipeline de Big Data com ML (regressao, classificacao, rede neural perceptron). Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
     };
@@ -91,7 +91,7 @@ internal static class E2EBeltsTests
                 Log($"  [belt:{key}] 1/4 Orch segmentando...");
                 var orchHistory = new JsonArray(
                     new JsonObject { ["role"]="system", ["content"]="Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada." },
-                    new JsonObject { ["role"]="user", ["content"]=prompt });
+                    new JsonObject { ["role"]="user", ["content"]=prompt.Replace("{ws}", ws) });
                 var orchR = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
                     new JsonObject { ["model"]=orchModel, ["temperature"]=0.3, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
                 string orchContent = Str(orchR["choices"]?[0]?["message"]?["content"]);
@@ -123,7 +123,7 @@ internal static class E2EBeltsTests
                 foreach (var t in tasks)
                 {
                     string title = Str(t?["title"], "tarefa");
-                    string taskPrompt = Str(t?["prompt"], prompt);
+                    string taskPrompt = Str(t?["prompt"], prompt).Replace("{ws}", ws);
                     string safeTitle = title.Replace(" ", "_").ToLowerInvariant();
                     string scriptPath = System.IO.Path.Combine(ws, safeTitle + ".sh");
                     string metaPath = System.IO.Path.Combine(ws, safeTitle + ".md");

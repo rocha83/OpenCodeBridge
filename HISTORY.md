@@ -3414,3 +3414,45 @@ de `azul,verde,roxa,marrom,preta` para `marrom,preta` (steps renomeados
   smoke `chat/completions` em `:4125` respondeu `OK`; VRAM 11825/12288
   (463 MiB livres). Se o OOM de graph repetir sob carga, a válvula é desligar
   o CPU forced (`:4120`, 906 MiB) durante a bateria ou reduzir para 1 slot.
+
+### Princípios de teste WAR documentados (2026-10-25, pós-L2 roxa)
+
+- Criada a seção **4.5** em `docs/LAB-SETUP.md` com a regra de ouro: a bridge
+  tem estratégia fixa (flags/ctx/max_tokens/harness/tails) e os testes se
+  adaptam a ela; a bridge nunca se adapta ao teste. PASS obtido mudando
+  instância (Q4→Q3), schema, coerção ou `max_tokens` é **PASS indevido**.
+- Orçamento estável registrado: Q4 `131072`/`16384`, Q3 `114688` (2×57344)/
+  `16384`, Web `16384`; runner chat `16384` (`E2EBeltsBuildTests.cs:70`) e
+  review `2048` (`:147`). Complexidade usa o mesmo teto; não se cria
+  `max_tokens` por belt.
+- Divergência identificada: o `write` de produção não tem `maxLength`
+  (`ToolCatalog.cs:30`), mas o teste usa `content.maxLength=1200` e pede
+  400–1200 chars/arquivo. É artefato de teste; alinhar ao schema de produção
+  sem afrouxar o aceite, com decisão explícita (não para obter PASS).
+- L2 roxa (13:50) segue FAIL honesto no Q4: 3 turnos sem tools, `arquivos=0`,
+  ~11,3k/14,4k chars de prosa somados; `tool_choice=required` honrado pela
+  bridge; não é teto de 16k/128k. Q4 rodava tail 1019/1527; Q3 já tinha
+  1275/2289.
+- Diagnóstico Q3 (tail nova 1275/2289): turno 0 com 10.785 chars de prosa e
+  nenhuma tool. A causa era o enunciado "Especifique ..." (pede spec, não
+  implementação) e a falta de caminho/ação de write; não era ctx/token.
+- Belt roxa revisada no padrão `tools-dual`: "Trabalhe em {ws}. Implemente
+  ...", caminho absoluto dentro do ws, ordem domínio→SQL→repos/serviços,
+  "não escreva plano, vá direto ao write", BUILD-OK; system sem cap 400–1200
+  e schema write sem maxLength. Aceite inalterado (≥3 arquivos, >500 chars).
+  Roxa orch com enunciado imperativo e paths relativos (Scripter recusa
+  absoluto).
+- Validação do gate Q4 com o enunciado novo: `belts-build-roxa-bridge` **PASS**,
+  8 arquivos, 16.327 chars, 213,4 s; turnos 3/5/7 vieram com prosa
+  (4.630/2.566/2.066 chars) e o nudge recuperou no turno seguinte. Q4 rodou com
+  a tail antiga 1019/1527, sem restart e sem coerção; Q3 segue diagnóstico,
+  não gate.
+- Regra operacional: rodada no Q3 é **diagnóstico**; o gate é a instância
+  estável (Q4). Não contar PASS de Q3 como WAR; Q4 só muda com restart
+  autorizado.
+- Critério de fix registrado: comportamento repetido/instável que atinge mais
+  de 30% dos diálogos da esteira (ex.: roxa build 2/2 transportes) é elegível
+  para correção de enunciado/teste; abaixo disso, flaky, sem mexer na bridge.
+  A correção mantém o aceite e valida no gate Q4 (Q3 = diagnóstico).
+- L3 (marrom/preta) não rodou: lock stale em `/tmp/opencode/war.lock` (rc=3).
+  Sem diretório `L3-*`; pendente limpar lock e decidir instância/tail do gate.

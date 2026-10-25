@@ -561,7 +561,7 @@ Total: **não medido neste chroot (sem CUDA)**; medir no host (RTX 3060, 12288 M
 |---|---|---|
 | `--max-tokens` | `16384` | `bridge-gpu.service`, `bridge-cpu.service` |
 | runner `max_tokens` (chat) | `16384` | `/tmp/opencode/run-belts-direct.sh` e `E2EBeltsBuildTests.cs:70` |
-| runner `max_tokens` (review) | `4096` | `E2EBeltsBuildTests.cs:116` |
+| runner `max_tokens` (review) | `2048` | `E2EBeltsBuildTests.cs:147` |
 | `--anti-repeat` / `--anti-repeat-retry` | `1` | ambas as bridges |
 | `--main-harness` / `--harness-tails` / `--tail-scope` / `--legacy-harness` | `0` / `1` / `all` / `0` | todas (master do cliente intacto; tails nos dois caminhos) |
 | `--diagnostic` | `0` | ambas (sonda desligada) |
@@ -584,6 +584,125 @@ tool calls já fechados e tentando 1 retry com o aviso invisível
 (`--anti-repeat-notice`).
 
 Subcomando: `Rochas.OpenCodeBridge.dll gate <repo> "<prompt>" [texto ...] [--review]`.
+
+### 4.5 Princípios dos testes WAR — a bridge é fixa, o teste se adapta (2026-10-25)
+
+**Regra de ouro.** A bridge tem uma única estratégia estável, a mesma usada por
+OpenCode, Web UI e produção: flags, ctx, `max_tokens`, harness e tails. A esteira
+WAR mede o modelo **dentro** dessa estratégia. O teste se adapta à bridge; a
+bridge nunca se adapta ao teste.
+
+Consequências diretas (proibido para obter PASS):
+
+- baixar/alterar `max_tokens`, ctx, temperatura ou `tool_choice` por belt;
+- ligar `--coerce-text-tools`, `--coerce-narrated`, `--tool-strategy`,
+  `--main-harness` ou tails especiais só no run;
+- trocar a instância/modelo do gate (Q4 `:4124` → Q3 `:4125`) ou usar uma
+  instância com tail diferente para "ficar mais fácil";
+- afrouxar assertiva, aceite, `maxLength` de schema ou número de arquivos;
+- contar PASS de Q3 (diagnóstico) como PASS do gate Q4.
+
+PASS que só existe depois de mudar a bridge, o schema do teste ou a instância é
+**PASS indevido**. O resultado honesto é FAIL, com a evidência.
+
+**Horizonte estável de ctx/saída (não oscilar):**
+
+| item | valor estável | fonte |
+|---|---|---|
+| Q4 `:4124` (gate do L2; L3 conforme driver) | ctx `131072` (1×128k), saída `16384` | `llama-gpu.service` + `bridge-gpu.service` |
+| Q3 `:4125` (diagnóstico) | ctx `114688` (2×57344), saída `16384` | `llama-gpu2.service` + `bridge-gpu2.service` |
+| Web UI `:4130` | saída `16384` (default do cliente) | `BridgeClient` |
+| runner WAR — chat | `max_tokens=16384` | `E2EBeltsBuildTests.cs:70` |
+| runner WAR — review | `max_tokens=2048` | `E2EBeltsBuildTests.cs:147` |
+
+A complexidade sobe dentro do mesmo teto: o modelo usa mais dos 16k, divide em
+mais turnos/tools ou falha. Não se cria um `max_tokens` por belt. Se um belt
+precisar de mais de 16k de saída, isso é sintoma (loop/plano em prosa), não
+justificativa para mudar o default de produção.
+
+**Schema do teste = schema de produção.** O `write` de produção não tem
+`maxLength` (`ToolCatalog.cs:30`). O teste **adicionava** `content.maxLength=1200`
+e o enunciado pedia 400–1200 chars/arquivo. Era um artefato do teste, não um
+threshold de produção: distorcia belts complexos (roxa/marrom/preta) e não
+podia ser usado para justificar saída baixa. Em 2026-10-25 o cap foi **removido**
+do schema e o system prompt passou a pedir implementação (≥3 arquivos), **sem**
+afrouxar o aceite (≥3 arquivos, >500 chars, arquivos reais no disco). A mudança
+foi do teste para a bridge, nunca o contrário; não foi aplicada para transformar
+FAIL em PASS, e sim para remover um limite que a produção não tem.
+
+**`tool_choice=required` e prosa.** A bridge honra `tool_choice` explícito
+(bloco `BuildChatRequest` em `Program.cs`); o WAR envia `required`. Se o modelo
+devolve prosa e `finish_reason=stop`, é comportamento do modelo/harness
+(tail/instrução), **não** falta de `max_tokens` nem de ctx. A correção é na
+tail/instrução e a validação é na instância do gate. Coerção
+(`coerce-text-tools`) fica `0` em produção e não pode ser ligada para o teste
+passar.
+
+**Evidência L2 roxa (2026-10-25 13:50).** `belts-build-roxa-bridge` e
+`-opencode`: 3 turnos sem tools, `arquivos=0`, com ~11,3k/14,4k chars de prosa
+somados nos turnos. O volume (~3–4k tokens) não mostra corte em 16k, e o ctx de
+128k não foi pressionado. O L2 rodou no Q4 (gate) com tail antiga 1019/1527; o
+Q3 já tinha 1275/2289. O FAIL do L2 é o resultado honesto do Q4. Um eventual
+PASS no Q3 é **diagnóstico** e não substitui o gate até o Q4 rodar a mesma tail
+(restart exige autorização).
+
+**Gate Q4 com o enunciado novo (2026-10-25, pós-13:50).**
+`belts-build-roxa-bridge` no Q4 (`:4124`, tail 1019/1527) **PASS**: 8 arquivos,
+16.327 chars, 213,4 s. Turnos 3/5/7 vieram com prosa (4.630/2.566/2.066 chars);
+o nudge recuperou e o turno seguinte chamou `write`. O gate usou a instância
+estável, sem restart e sem coerção; o Q3 segue diagnóstico. Confirma que o FAIL
+anterior era enunciado, não orçamento.
+
+**Causa do roxa não era teto: verbo do enunciado (2026-10-25).** Um run
+isolado no Q3 com a tail nova (1275/2289) repetiu o sintoma: turno 0 com
+10.785 chars de prosa e nenhuma tool call. O enunciado começava com
+"Especifique ..." e não dizia onde implementar: o modelo entregou uma
+especificação, não arquivos. Tail/ctx/`max_tokens` estavam corretos.
+
+**Correção da belt roxa (teste, padrão tools-dual).** O enunciado passou a ser
+imperativo e caminhado, como um humano no OpenCode/Web UI:
+
+- `Trabalhe em {ws}. Implemente ...` (não "Especifique");
+- `Crie os arquivos .cs e .sql com caminho absoluto dentro de {ws}, usando a
+  tool write`;
+- ordem explícita: domínio → SQL → repositórios/serviços;
+- `não escreva plano, vá direto ao write`; resposta final `BUILD-OK`;
+- system prompt sem o cap "400 a 1200 chars"; schema `write` sem `maxLength`
+  (igual à produção);
+- aceite inalterado: ≥3 arquivos, >500 chars, arquivos reais no disco.
+
+O mesmo padrão do `tools-dual` (caminho absoluto, ação por tool, saída curta)
+foi aplicado à belt roxa build; a roxa orch recebeu o enunciado imperativo e
+mantém paths relativos no workspace (o Scripter recusa path absoluto).
+
+**Regra de redação de enunciado.** O verbo manda: "Especifique" produz prosa;
+"Implemente/Crie" produz tool call. Enunciado humano = objetivo + escopo +
+caminho + ação + aceite, sem meta-instrução de planejamento. Ajustar enunciado
+é legítimo (teste se adapta à bridge); não é legítimo mexer em ctx,
+`max_tokens`, coerção ou instância para passar.
+
+**Critério de correção (>30%).** Comportamento repetido/instável que atinge mais
+de 30% dos diálogos da esteira (ex.: roxa build falhou nos 2 transportes, 2/2)
+é elegível para correção de enunciado/teste. Abaixo disso, registrar como flaky,
+não alterar a bridge nem os defaults. A correção mantém o aceite e é validada
+no gate Q4; o Q3 continua diagnóstico.
+
+**Checklist antes de declarar PASS:**
+
+1. `/api/harness` da instância do gate: `main_harness=false`,
+   `harness_tails=true`, `tail_scope=all`, `coerce=0`; anotar chars das tails.
+2. `/api/status`: upstream/modelo/ctx esperados; instância = a do gate.
+3. Request do teste: `max_tokens=16384`, `tool_choice=required`, schema `write`
+   igual ao de produção.
+4. Evidência: `finish_reason`, `completion_tokens`, tool calls, arquivos no
+   disco e aceite inalterado.
+5. Se FAIL: registrar causa (teto vs comportamento vs schema) e corrigir
+   tail/teste; nunca relaxar o default de produção.
+
+**Onde documentar:** `AGENTS.md` = comportamento do agente/roles/tools;
+`docs/LAB-SETUP.md` = referência operacional (esta seção: ctx, max_tokens,
+flags, testes); `HISTORY.md` = registro cronológico com evidência. Princípio
+novo de orçamento/teste entra aqui e é referenciado no HISTORY.
 
 ### 4.2 `appsettings.json` (opcional, ao lado do DLL)
 

@@ -14,7 +14,7 @@ internal static class E2EBeltsBuildTests
     {
         ("azul", "Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie arquivos .cs com as classes, interfaces e repositorios."),
         ("verde", "Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ. Escopo: dominio + banco SQL. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs (entidades/VOs) e .sql (DDL)."),
-        ("roxa", "Especifique o dominio backend C# de cadastro de clientes e fornecedores, o banco de dados SQL (DDL, indices, constraints) e os repositorios e servicos: repositorio generico Dapper, servicos de aplicacao, validacao e mascaras de e-mail, telefone BR com DDD e CEP. Escopo: dominio + banco SQL + repositorios e servicos. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs e .sql."),
+        ("roxa", "Trabalhe em {ws}. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Crie os arquivos .cs e .sql com caminho absoluto dentro de {ws}, usando a tool write. Comece pelo dominio, depois o SQL e depois repositorios/servicos; nao escreva plano, va direto ao write. Ao terminar responda apenas BUILD-OK com a lista dos arquivos."),
         ("marrom", "Especifique o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL, os repositorios e servicos (Dapper), a API REST e o frontend React. Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs, .sql e .tsx/.jsx."),
         ("preta", "Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador, banco de dados SQL, repositorios e servicos, API REST, servicos bus, pipeline de Big Data com ML (regressao, classificacao, rede neural perceptron). Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs, .sql e scripts de treino."),
     };
@@ -39,7 +39,7 @@ internal static class E2EBeltsBuildTests
         Log($"[belts-build:direct] modelo {model} (bridge {TestContext.Bridge})");
         var tools = new JsonArray
         {
-            new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write", ["description"]="escreve arquivo em disco", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string",["maxLength"]=1200} }, ["required"]=new JsonArray("path","content") } } }
+            new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write", ["description"]="escreve arquivo em disco", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
         };
         int pass = 0, fail = 0;
         var keysEnv = string.IsNullOrWhiteSpace(TestContext.BeltsFilter) ? Environment.GetEnvironmentVariable("BELTS_KEYS") : TestContext.BeltsFilter;
@@ -57,8 +57,8 @@ internal static class E2EBeltsBuildTests
             try
             {
                 var history = new JsonArray(
-                    new JsonObject { ["role"]="system", ["content"]="Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Construa os artefatos pedidos direto no disco, sem prosa. Crie pelo menos 3 arquivos .cs/.sql/.tsx com 400 a 1200 caracteres cada, usando caminhos relativos. Ao terminar responda apenas BUILD-OK com o resumo dos arquivos." },
-                    new JsonObject { ["role"]="user", ["content"]=prompt });
+                    new JsonObject { ["role"]="system", ["content"]="Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Implemente os artefatos pedidos direto no disco, sem plano e sem prosa. Crie pelo menos 3 arquivos .cs/.sql/.tsx usando caminhos absolutos dentro do workspace. Ao terminar responda apenas BUILD-OK com o resumo dos arquivos." },
+                    new JsonObject { ["role"]="user", ["content"]=prompt.Replace("{ws}", ws) });
                 int filesCreated = 0;
                 int totalChars = 0;
                 int lastFiles = 0;
@@ -105,7 +105,7 @@ internal static class E2EBeltsBuildTests
                         Log($"  [belt-build:{key}] turno {turn}: tool call com args invalidos/truncados — nudge");
                         nudges++;
                         if (nudges > 2) { Log($"  [belt-build:{key}] args invalidos apos 2 nudges, encerrando"); break; }
-                        history.Add(new JsonObject { ["role"]="user", ["content"]="Sua ultima tool call veio com JSON invalido ou truncado. Reemita UMA tool call write com JSON completo: path string e content string de no maximo 1200 caracteres. Nao inclua texto fora do JSON." });
+                        history.Add(new JsonObject { ["role"]="user", ["content"]="Sua ultima tool call veio com JSON invalido ou truncado. Reemita UMA tool call write com JSON completo: path string e content string. Nao inclua texto fora do JSON." });
                         continue;
                     }
                     nudges = 0;
