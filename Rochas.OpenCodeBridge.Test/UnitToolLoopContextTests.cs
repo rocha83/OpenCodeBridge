@@ -126,7 +126,7 @@ internal static class UnitToolLoopContextTests
             },
         };
 
-        var msgs = Rochas.OpenCodeBridge.Program.InputToMessages(input, null, profileClient: true);
+        var msgs = Rochas.OpenCodeBridge.Core.ResponsesTranslation.InputToMessages(input, null, profileClient: true);
         string[] roles = msgs.Select(m => m?["role"]?.GetValue<string>() ?? "").ToArray();
         TestContext.Check(roles.SequenceEqual(new[] { "user", "assistant", "tool", "tool", "user" }),
             "responses: ordem user/assistant/tool(s)/user preservada");

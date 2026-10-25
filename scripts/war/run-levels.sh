@@ -42,6 +42,19 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Lock unico: dois runners em paralelo se atropelam (porta, GPU, binario). O
+# segundo vira BLOCKED (exit 3) em vez de contaminar o resultado do primeiro.
+# --gate-only e leitura pura: nao precisa do lock.
+WAR_LOCK="${WAR_LOCK:-/tmp/opencode/war.lock}"
+mkdir -p "$(dirname "$WAR_LOCK")"
+if [ "$GATE_ONLY" != "1" ]; then
+  exec 9>"$WAR_LOCK"
+  if ! flock -n 9; then
+    echo "BLOCKED: outro runner ativo ($WAR_LOCK) — pare com scripts/war/stop-all.sh"
+    exit 3
+  fi
+fi
+
 STAMP="${LEVEL_STAMP:-$(date +%Y%m%d-%H%M%S)}"
 # Artefatos em disco NAO volatil (sda3): logs/levels do repo (override por LEVEL_OUT).
 OUT="${LEVEL_OUT:-$ROOT/logs/levels}/L$LEVEL-$STAMP"

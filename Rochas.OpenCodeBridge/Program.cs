@@ -35,6 +35,8 @@ using System.Text.RegularExpressions;
 
 using Serilog;
 using Rochas.OpenCodeBridge.Core;
+using static Rochas.OpenCodeBridge.Core.ResponsesTranslation;
+using static Rochas.OpenCodeBridge.Core.TextGrammar;
 
 namespace Rochas.OpenCodeBridge;
 
@@ -62,7 +64,6 @@ internal static partial class Program
     static readonly string Version = "2.1";
     // Trava anti-loop no nivel da bridge: complementa QUALQUER system
     // prompt no final (Responses e chat), sem depender do agente.
-    static readonly string SystemGuardrail = "ao listar arquivos locais preferencialmente use as tools glob ou read, atentando-se ao modo de uso correto destas, e ao navegar na web use somente enderecos externos, informando user agent Firefox no Windows 11 ao navegar via fetch ou curl; ao executar tools que resultem em erro, leia a mensagem de erro e adapte a proxima chamada, tentando no maximo mais 2 vezes, e sempre responda na lingua do usuario, seja verboso apenas ao declarar acoes com tools dentro do loop agentico e em conversa simples sem tools responda em no maximo 2 frases; porem envie apenas uma vez a cada mensagem do usuario JAMAIS repita a mesma pergunta varias vezes; se o usuario nao respondeu siga com a melhor suposicao e declare a decisao tomada; FORMA DE USO DAS TOOLS (obrigatoria): catalogo — leitura: glob (lista por padrao), read (le arquivo), grep (busca regex), fetch (GET http somente-leitura), display (mostra na tela); edicao: write (grava/cria), edit (substitui trecho exato); execucao: shell (comando unico; pipes/redirecionamento via bash -c); git somente-leitura (status/log/diff; escrita via shell com cd + git); delegacao: subagent (uma fase por vez); use apenas as anunciadas no bloco # Tools, com os nomes exatos, sem nenhum prefixo (nunca default., nunca outro namespace); cada chamada vai sozinha em <tool_call>{\"name\": \"<nome-exato>\", \"arguments\": {<args>}}</tool_call>, sem prosa antes, dentro ou depois do bloco; uma tool por vez, depois aguarde o resultado para a proxima acao; utilize a tool echo apenas em composicao de scripts, NUNCA para enviar mensagens ao usuario limite de writes por faixa: apos criar os artefatos planejados (max 8), responda BUILD-OK e pare. Nao repita a mesma chamada write.";
 
     // Coerção texto->tool_calls p/ upstream SEM parser server-side (llama.cpp
     // sem --jinja/parser): extrai ```json{"name"..} ou <tool_call>..</tool_call>
@@ -359,14 +360,7 @@ internal static partial class Program
            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Role extraido do sufixo do model id ("...-build" => "Build").</summary>
-    static string RoleOfModel(string? modelId)
-    {
-        if (string.IsNullOrEmpty(modelId)) return "";
-        foreach (var k in Profiles.Keys)
-            if (modelId.EndsWith("-" + k, StringComparison.OrdinalIgnoreCase))
-                return char.ToUpperInvariant(k[0]) + k[1..];
-        return "";
-    }
+    static string RoleOfModel(string? modelId) => RoleProfiles.RoleOf(modelId, Profiles);
     /// <summary>A linha servida precisa de coerção texto->tool_calls?</summary>
     /// <remarks>Decidido pela CAPACIDADE do upstream (--upstream-parser none) ou
     /// pelo pedido explicito do operador (--coerce-text-tools 1). Nao olha nome
@@ -383,26 +377,16 @@ internal static partial class Program
     // Escala: 0.1 (baixa: build/scripter/exec) / 0.3 (média: plan/orch) / 0.5 (alta: moe).
     // Request sem sufixo usa os
     // globais. O caminho Gemma 4 padrao (sem sufixo) fica byte-identico.
-    static readonly Dictionary<string, (double Temp, string Think)> Profiles =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["plan"] = (0.3, "events"),
-            ["build"] = (0.0, "off"),
-            ["orch"] = (0.3, "events"),
-            ["moe"] = (0.5, "events"),
-            ["scripter"] = (0.1, "off"),
-            ["exec"] = (0.1, "off"),
-        };
+    // Dinamica dos roles (temp/thinking) mora no Core: RoleProfiles.
+    static Dictionary<string, RoleProfile> Profiles = RoleProfiles.DefaultCopy();
 
     /// <summary>Descobre o perfil pelo sufixo do model (-plan/-build).</summary>
     static bool TryProfile(string requestedModel, out double profTemp, out string profThink)
     {
         profTemp = double.NaN; profThink = "";
-        if (string.IsNullOrEmpty(requestedModel)) return false;
-        foreach (var kv in Profiles)
-            if (requestedModel.EndsWith("-" + kv.Key, StringComparison.OrdinalIgnoreCase))
-            { profTemp = kv.Value.Temp; profThink = kv.Value.Think; return true; }
-        return false;
+        if (!RoleProfiles.TryResolve(requestedModel, Profiles, out _, out RoleProfile? rp) || rp is null) return false;
+        profTemp = rp.Temperature; profThink = rp.Thinking;
+        return true;
     }
 
     /// <summary>A bridge gerencia tools neste pedido? Cliente com perfil (opencode)
@@ -499,18 +483,7 @@ internal static partial class Program
                     foreach (var t in tools) if (t?.GetValue<string>() is { Length: > 0 } tn) set.Add(tn.Trim());
                     ToolBlacklist[kv.Key] = set;
                 }
-            if (cfg["profiles"]?.AsObject() is JsonObject profs)
-                foreach (var kv in profs)
-                {
-                    var o = kv.Value?.AsObject();
-                    if (o is null) continue;
-                    double t = o["temperature"]?.GetValue<double>() ?? double.NaN;
-                    string th = o["thinking"]?.GetValue<string>() ?? "";
-                    Profiles.TryGetValue(kv.Key, out var cur);
-                    if (double.IsNaN(t)) t = cur.Temp != 0 ? cur.Temp : Temperature;
-                    if (th is not ("events" or "off")) th = cur.Think ?? Thinking;
-                    Profiles[kv.Key] = (t, th);
-                }
+            RoleProfiles.Apply(Profiles, cfg["profiles"]?.AsObject(), Temperature, Thinking);
             Log(new JsonObject { ["event"] = "appsettings", ["path"] = path });
         }
         catch (Exception ex)
@@ -585,24 +558,11 @@ internal static partial class Program
     // Coder com tool_choice required: <function>{...}</function> + flood de \n.
     static readonly Regex ReFunctionTag = new(@"<function>([\s\S]*?)</function>", RegexOptions.Compiled);
 
-    // opencode serializa a tool call no historico como "[Assistant tool call]: nome({...})".
-    // Em contexto longo o modelo copia esse formato em vez de emitir a chamada estruturada, e
-    // o parser nativo do llama nao ve nada: o turno vira prosa e trava. Aqui devolvemos a
-    // chamada de verdade. Nome segue a allowlist de tools anunciadas, entao prosa
-    // que so menciona uma tool nao vira chamada.
-    static readonly Regex ReAssistantToolCall = new(
-        @"\[\s*Assistant\s+tool\s+call\s*\]\s*:?\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\(",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     // Catálogo real de tools (+ apelidos shell -> shell): só estes nomes
     // viram tool_call na coação; resto (echo alucinado) fica como prosa.
     static readonly HashSet<string> RealTools = new(StringComparer.OrdinalIgnoreCase)
         { "shell", "read", "grep", "glob", "fetch", "webfetch", "websearch", "git", "subagent", "write", "edit", "question", "skill" };
-    static string CanonToolAlias(string n) => n.Trim().ToLowerInvariant() switch
-    {
-        "bash" or "sh" or "exec" or "proc" => "shell",
-        _ => n.Trim(),
-    };
 
     /// <summary>Nomes de tools anunciadas no pedido (chat ou responses).</summary>
     static List<string> AnnouncedTools(JsonArray? tools)
@@ -679,34 +639,6 @@ internal static partial class Program
         return out_;
     }
 
-    /// <summary>Extrai objeto JSON com chaves balanceadas a partir de um <c>{</c> (respeita strings).</summary>
-    static bool TryBalanced(string s, int start, out string json)
-    {
-        json = "";
-        int depth = 0;
-        bool inStr = false, esc = false;
-        for (int k = start; k < s.Length; k++)
-        {
-            char c = s[k];
-            if (inStr)
-            {
-                if (esc) esc = false;
-                else if (c == '\\') esc = true;
-                else if (c == '"') inStr = false;
-            }
-            else
-            {
-                if (c == '"') inStr = true;
-                else if (c == '{') depth++;
-                else if (c == '}')
-                {
-                    depth--;
-                    if (depth == 0) { json = s.Substring(start, k - start + 1); return true; }
-                }
-            }
-        }
-        return false;
-    }
 
     /// <summary>Formato "[Assistant tool call]: nome({...})" -> tool call de verdade.</summary>
     /// <remarks>Reconstroi o envelope {"name","arguments"} a partir do nome do regex e dos <see cref="TryAddTextCall"/>,
@@ -731,33 +663,7 @@ internal static partial class Program
         }
     }
 
-    /// <summary>Parse JSON tolerante: estrito e, se falhar, com escapes reparados.</summary>
-    static JsonNode? TryParseJson(string json)
-    {
-        try { return JsonNode.Parse(json); } catch { }
-        string repaired = RepairJsonEscapes(json);
-        if (repaired == json) return null;
-        try { return JsonNode.Parse(repaired); } catch { return null; }
-    }
 
-    /// <summary>Repara escapes que o modelo inventa (barra + char fora do JSON:
-    /// <c>\;</c>, <c>\-</c>, <c>\s</c>) duplicando a barra. Sem isso
-    /// <c>find ... -exec cat {} \;</c> derruba o parse e a chamada narrada morre.</summary>
-    static string RepairJsonEscapes(string json)
-    {
-        var sb = new StringBuilder(json.Length + 8);
-        for (int i = 0; i < json.Length; i++)
-        {
-            char c = json[i];
-            if (c != '\\' || i + 1 >= json.Length) { sb.Append(c); continue; }
-            char n = json[i + 1];
-            if (n is '"' or '\\' or '/' or 'b' or 'f' or 'n' or 'r' or 't' or 'u')
-            { sb.Append(c).Append(n); i++; continue; }
-            sb.Append("\\\\").Append(n);   // \; -> \\; (barra literal)
-            i++;
-        }
-        return sb.ToString();
-    }
 
     /// <summary>Argumentos de tool a partir do texto: JSON valido, JSON reparado
     /// ou o caso <c>{"command": "..."}</c> com aspas internas soltas (shell narrado:
@@ -775,31 +681,6 @@ internal static partial class Program
         return true;
     }
 
-    /// <summary>Remove do texto do historico as chamadas narradas
-    /// ("[Assistant tool call]: nome({...})"), mantendo a prosa em volta.</summary>
-    /// <remarks>A chamada de verdade vem como item function_call no mesmo input;
-    /// deixar o texto ensina o modelo a narrar em vez de emitir a chamada.</remarks>
-    static string StripNarratedCalls(string text)
-    {
-        if (string.IsNullOrEmpty(text) || !ReAssistantToolCall.IsMatch(text)) return text;
-        var sb = new StringBuilder(text.Length);
-        int i = 0;
-        while (i < text.Length)
-        {
-            var m = ReAssistantToolCall.Match(text, i);
-            if (!m.Success) { sb.Append(text, i, text.Length - i); break; }
-            sb.Append(text, i, m.Index - i);
-            int start = m.Index + m.Length;
-            if (start < text.Length && text[start] == '{' && TryBalanced(text, start, out string obj))
-            {
-                int end = start + obj.Length;
-                if (end < text.Length && text[end] == ')') end++;
-                i = end;
-            }
-            else i = m.Index + m.Length;
-        }
-        return Regex.Replace(sb.ToString(), @"[ \t]+\r?\n", "\n").TrimEnd();
-    }
 
     static void TryAddTextCall(string json, List<(string Name, string Arguments)> list, List<string>? known = null)
     {
@@ -1509,13 +1390,13 @@ WriteJson(ctx, 200, new JsonObject
                             if (m is JsonObject mo && mo["role"]?.GetValue<string>() is string mrole && (mrole == "system" || mrole == "developer"))
                             {
                                 if (mo["content"] is JsonValue mcv && mcv.TryGetValue<string>(out string? mtext) && !string.IsNullOrWhiteSpace(mtext))
-                                    mo["content"] = LegacyHarness ? WithSystemGuardrail(mtext) : mtext;
+                                    mo["content"] = LegacyHarness ? WithSystemGuardrail(mtext, QwenStd) : mtext;
                                 else if (mo["content"] is JsonArray mparts)
                                 {
                                     foreach (var p in mparts)
                                     {
                                         if (p is JsonObject po && po["text"] is JsonValue ptv && ptv.TryGetValue<string>(out string? ptext) && !string.IsNullOrWhiteSpace(ptext))
-                                        { po["text"] = LegacyHarness ? WithSystemGuardrail(ptext) : ptext; break; }
+                                        { po["text"] = LegacyHarness ? WithSystemGuardrail(ptext, QwenStd) : ptext; break; }
                                     }
                                 }
                             }
@@ -2025,7 +1906,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         (temperature, tempSource) = Sampling.Temperature(reqTemp, hasProfile, profTemp, Temperature);
 
         // Converte a conversa Responses -> messages do formato chat
-        var messages = InputToMessages(req["input"], req["instructions"], hasProfile);
+        var messages = InputToMessages(req["input"], req["instructions"], hasProfile,
+            new TranslationOptions(LegacyHarness, QwenStd, ToolOutputLimit, RiskScanAnswers));
         // Main harness: no caminho gerido ele substitui o system do cliente e
         // dispensa as tails (a essencia ja esta no texto unico). Preserva
         // env/skills/data do cliente e instrucoes pequenas de agente.
@@ -2512,52 +2394,9 @@ var shape = new StringBuilder();
         ctx.Response.Close();
     }
 
-/// <summary>Texto de content Responses (string ou lista de partes input/output_text).</summary>
-    static string ExtractResponseText(JsonNode? node)
-    {
-        if (node is null) return "";
-        if (node is JsonValue v && v.TryGetValue<string>(out string? s)) return s ?? "";
-        if (node is JsonArray arr)
-        {
-            var b = new StringBuilder();
-            foreach (var part in arr)
-                if (part is JsonObject o && o["text"] is JsonValue tv && tv.TryGetValue<string>(out string? t) && !string.IsNullOrWhiteSpace(t))
-                { if (b.Length > 0) b.Append('\n'); b.Append(t); }
-            return b.ToString();
-        }
-        return "";
-    }
 
-    /// <summary>Nomes das tools anunciadas (diagnostico: o que o opencode mandou).</summary>
-    static JsonArray ToolNames(JsonArray? tools)
-    {
-        var arr = new JsonArray();
-        if (tools is null) return arr;
-        foreach (var t in tools)
-        {
-            string n = (t as JsonObject)?["function"]?["name"]?.GetValue<string>()
-                ?? (t as JsonObject)?["name"]?.GetValue<string>() ?? "?";
-            if (arr.Count < 24) arr.Add(n);
-        }
-        return arr;
-    }
 
-    /// <summary>Request com tools anunciadas? (llama /v1/responses nao suporta tools).</summary>
-    static bool ReqHasTools(JsonObject req) => req["tools"] is JsonArray a && a.Count > 0;
 
-    /// <summary>Complementa qualquer system prompt com o sufixo padrao anti-loop (sem duplicar).</summary>
-    /// <param name="text">System prompt original.</param>
-    /// <returns>System prompt com o sufixo no final.</returns>
-    static string WithSystemGuardrail(string text)
-    {
-        string t = (text ?? "").Trim();
-        if (t.Length == 0) return t;
-        // QwenStandard: ModelPrompt sintetizado PREFIXADO + system do agente;
-        // sem o guardrail legado (o anti-repeat textual vive só no ModelPrompt).
-        if (QwenStd) return QwenStandard.ComposeSystem(t);
-        if (t.Contains("mais 2 vezes", StringComparison.OrdinalIgnoreCase)) return t;
-        return t + "\n\n" + SystemGuardrail;
-    }
 
     /// <remarks>As duas caudas entram quando <see cref="TailsOn"/> permite o
     /// caminho: "all" injeta tambem no opencode, "managed" so no cliente
@@ -3598,7 +3437,7 @@ static bool NormalizeSystemFirst(JsonObject req)
             new JsonObject
             {
                 ["type"] = "message", ["role"] = "system",
-                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = LegacyHarness ? WithSystemGuardrail(sys.ToString()) : sys.ToString() })
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = LegacyHarness ? WithSystemGuardrail(sys.ToString(), QwenStd) : sys.ToString() })
             }
         };
         foreach (var it in rest) final.Add(it?.DeepClone());
@@ -3606,19 +3445,6 @@ static bool NormalizeSystemFirst(JsonObject req)
         return true;
     }
 
-    static int StripReasoningItems(JsonObject req)
-    {
-        if (req["input"] is not JsonArray list) return 0;
-        var clean = new JsonArray();
-        int dropped = 0;
-        foreach (var it in list)
-        {
-            if (it is JsonObject o && o["type"]?.GetValue<string>() == "reasoning") { dropped++; continue; }
-            clean.Add(it?.DeepClone());
-        }
-        if (dropped > 0) req["input"] = clean;
-        return dropped;
-    }
 
     /// <summary>Shim no caminho Responses stream: upstream non-stream, envelope
     /// JSON -> tool_calls, chat -> Responses e SSE tipado sintetizado.</summary>
@@ -4383,157 +4209,8 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         ctx.Response.Close();
     }
 
-    // ---------------------------------------------------------------------
-    // 4.2) input (Responses) -> messages (chat)
-    //   item message           -> {role, content}
-    //   item function_call     -> assistant com tool_calls (id preservado!)
-    //   item function_call_output -> role "tool" ligado ao call_id
-    // ---------------------------------------------------------------------
-    /// <summary>Converte input/instructions Responses em messages do chat.</summary>
-    /// <param name="input">Itens Responses.</param>
-    /// <param name="instructions">Sistema.</param>
-    /// <param name="profileClient">Model com sufixo de perfil (tubo puro, sem formula)?</param>
-    /// <returns>Messages.</returns>
-    internal static JsonArray InputToMessages(JsonNode? input, JsonNode? instructions, bool profileClient = false)
-    {
-        var messages = new JsonArray();
 
-// "instructions" + todo system/developer do meio viram UM system inicial
-        // (o template exige system primeiro; resumo de compactacao chega no meio).
-        var sysText = new StringBuilder();
-        if (instructions is JsonValue instructionNode && instructionNode.TryGetValue<string>(out string? systemText) && !string.IsNullOrWhiteSpace(systemText))
-            sysText.Append(systemText.Trim());
 
-        if (input is JsonValue stringValue && stringValue.TryGetValue<string>(out string? directText))
-        {
-            // input pode ser uma string pura em vez de lista
-            if (!string.IsNullOrWhiteSpace(directText))
-                messages.Add(new JsonObject { ["role"] = "user", ["content"] = directText });
-            // Sem este insert o "instructions" era perdido quando input vinha como
-            // string (caminho usado pelo /api/translate e por clientes simples).
-            if (sysText.Length > 0)
-                messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = sysText.ToString() });
-            return messages;
-        }
-
-        if (input is not JsonArray list) return messages;
-
-        foreach (var entryNode in list)
-        {
-            if (entryNode is null) continue;
-
-            // input as vezes chega como string simples
-            if (entryNode is JsonValue textValue && textValue.TryGetValue<string>(out string? s))
-            {
-                if (!string.IsNullOrWhiteSpace(s))
-                    messages.Add(new JsonObject { ["role"] = "user", ["content"] = s });
-                continue;
-            }
-            if (entryNode is not JsonObject entry) continue;
-
-            string type = entry["type"]?.GetValue<string>() ?? "message";
-
-if (type == "message")
-            {
-                string role = entry["role"]?.GetValue<string>() ?? "user";
-                string content = ExtractText(entry["content"]);
-                if (string.IsNullOrWhiteSpace(content)) continue;
-                if (role is ("system" or "developer"))
-                {
-                    if (sysText.Length > 0) sysText.Append("\n\n");
-                    sysText.Append(content.Trim());
-                    continue;
-                }
-                if (role is not ("user" or "assistant")) role = "user";
-                // O opencode reenvia a tool call TAMBEM como texto
-                // ("[Assistant tool call]: nome({...})"). Mantido no historico, o
-                // modelo copia esse formato em vez de emitir a chamada nativa; a
-                // chamada estruturada (function_call) continua logo abaixo.
-                if (role == "assistant" && !profileClient && LegacyHarness) content = StripNarratedCalls(content);
-                if (string.IsNullOrWhiteSpace(content)) continue;
-                messages.Add(new JsonObject { ["role"] = role, ["content"] = content });
-            }
-            else if (type == "function_call")
-            {
-                // O opencode reenvia a tool call que ele EXECUTOU: preservamos o
-                // call_id original para o role="tool" abaixo casar com ele.
-                string callId = entry["call_id"]?.GetValue<string>() ?? entry["id"]?.GetValue<string>() ?? ("call_" + NewId());
-                string name = entry["name"]?.GetValue<string>() ?? "";
-                string arguments = JsonToString(entry["arguments"]);
-                var call = new JsonObject
-                {
-                    ["id"] = callId, ["type"] = "function",
-                    ["function"] = new JsonObject { ["name"] = name, ["arguments"] = arguments }
-                };
-                // Chamadas consecutivas sao UM turno do assistente (N tool_calls
-                // no mesmo item). Sem o merge o template upstream ve N turnos de
-                // 1 call e o modelo perde a conta de "ja chamei isto na rodada".
-                if (messages.Count > 0 && messages[^1] is JsonObject prevMsg
-                    && prevMsg["role"]?.GetValue<string>() == "assistant"
-                    && prevMsg["content"] is null
-                    && prevMsg["tool_calls"] is JsonArray prevCalls)
-                    prevCalls.Add(call);
-                else
-                    messages.Add(new JsonObject
-                    {
-                        ["role"] = "assistant",
-                        ["content"] = null,
-                        ["tool_calls"] = new JsonArray(call)
-                    });
-            }
-            else if (type is "function_call_output" or "custom_tool_call_output" or "shell_call_output"
-                     or "computer_call_output" or "local_shell_call_output" or "apply_patch_call_output")
-            {
-                string callId = entry["call_id"]?.GetValue<string>() ?? entry["id"]?.GetValue<string>() ?? "";
-                string resultText = ExtractText(entry["output"] ?? entry["result"] ?? entry["content"]);
-                if (ToolOutputLimit > 0 && resultText.Length > ToolOutputLimit) resultText = resultText[..ToolOutputLimit];
-                messages.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = callId, ["content"] = resultText });
-            }
-// Outros tipos (reasoning, item_reference, calls ainda nao executados)
-            // sao ignorados de proposito: nao fazem falta no fluxo chat.
-        }
-        // Respostas as perguntas de risco do turno anterior viram instrucao no
-        // historico do MODELO (nao texto de prosa): e o que o reemite a chamada.
-        foreach (string notice in RiskScanAnswers(input))
-            messages.Add(new JsonObject { ["role"] = "user", ["content"] = notice });
-
-        if (sysText.Length > 0)
-            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = LegacyHarness ? WithSystemGuardrail(sysText.ToString()) : sysText.ToString() });
-        return messages;
-    }
-
-    // Extrai texto de content/output seja string, lista de partes ou objeto.
-    /// <summary>Extrai texto de no string, lista de partes ou objeto.</summary>
-    /// <param name="node">No qualquer.</param>
-    /// <returns>Texto puro.</returns>
-    static string ExtractText(JsonNode? node)
-    {
-        if (node is null) return "";
-        if (node is JsonValue value)
-            return value.TryGetValue<string>(out string? s) ? s : value.ToJsonString(SerOpts);
-        if (node is JsonArray parts)
-        {
-            var builder = new StringBuilder();
-            foreach (var part in parts)
-            {
-                if (part is JsonValue partValue && partValue.TryGetValue<string>(out string? partText)) { builder.Append(partText); continue; }
-                if (part is JsonObject partObj && partObj["text"] is JsonValue textNode && textNode.TryGetValue<string>(out string? nestedText))
-                    builder.Append(nestedText);
-            }
-            return builder.ToString();
-        }
-        if (node is JsonObject obj && obj["text"] is JsonValue text && text.TryGetValue<string>(out string? objText))
-            return objText;
-        return node.ToJsonString(SerOpts);
-    }
-
-    /// <summary>Serializa no; string passa direto, nulo vira {}.</summary>
-    /// <param name="node">No qualquer.</param>
-    /// <returns>JSON textual.</returns>
-    static string JsonToString(JsonNode? node) =>
-        node is null ? "{}"
-        : node is JsonValue value && value.TryGetValue<string>(out string? s) ? s
-        : node.ToJsonString(SerOpts);
 
     // Um JsonNode so pode ter UM pai: reaproveitar no do request na arvore
     // nova lanca "The node already has a parent". Por isso clonamos.
@@ -5254,9 +4931,6 @@ if (type == "message")
         catch { /* sonda nunca derruba o pedido */ }
     }
 
-    /// <summary>Id aleatorio hex de 16 chars.</summary>
-    /// <returns>Id.</returns>
-    static string NewId() => Guid.NewGuid().ToString("N")[..16];
 
     /// <summary>Compila um padrao de risco; padrao invalido nao derruba a bridge.</summary>
     static bool TryRegex(string pattern, out Regex rx)

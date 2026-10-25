@@ -1,12 +1,12 @@
 using System.Text.Json.Nodes;
 
-namespace Rochas.OpenCodeBridge;
+namespace Rochas.OpenCodeBridge.Core;
 
 // Modo QwenStandard (--qwen-standard): harness mínimo no estilo ACP/Alibaba.
 // ModelPrompt sintetizado + system do agente, sem o guardrail legado
 // (o texto anti-repeat vive só aqui, uma vez). Nomes de tools traduzidos
 // OpenAI ⇄ Alibaba nos dois sentidos; desconhecidas passam intactas.
-static class QwenStandard
+public static class QwenStandard
 {
     // Síntese do system Qwen Code (38k → ~2,5k): identidade, workflow,
     // uso de tools e 1 exemplo. Sem segurança, memória ou delegação.
