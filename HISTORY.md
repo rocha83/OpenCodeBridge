@@ -1,5 +1,62 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## DRY no harness: anti-repeat unico, tools tail como complemento, scope managed (2026-10-25, sessao 18c)
+
+**Merge do trabalho paralelo.** `origin/main` trouxe `8a20554` ("consome anti-repeat do Core
+e aplica MainHarness no caminho Web"): `ChatterGuard` e `RepeatLoop` saíram da Web
+(o `RepeatLoop` era **cópia verbatim** de `ContentAntiRepeat.TailRepeats` — mesmos 128,
+0.85 e blocos 24..128), o `ChatController` passou a usar o Core, o catálogo Web
+perdeu `execute` (11 tools) e o caminho Web passou a montar o system com
+`MainHarness.BuildSystem` (chat **e** `instructions` do Responses). Conflito só em
+`HISTORY.md`, resolvido com as duas entradas da sessão 21.
+
+**Correções sobre o merge (DRY, sem dualidade).**
+
+- `ContentAntiRepeat.DefaultWindow` era **128** (literal copiado da Web) e a bridge
+  roda **256** por default — virou **256**, com `WindowMin/WindowMax` (64..2048) e
+  as três checagens do host (config, CLI, validação) derivando do Core.
+- Avisos do retry unificados no Core: `Notice` (forte, Web) e `SoftNotice` (brando,
+  bridge); `Program.AntiRepeatNotice` só aponta para o `SoftNotice`.
+- `/api/status` agora publica `anti_repeat_window`; a **Web** resolve a janela
+  efetiva por esse endpoint (`AntiRepeatWindowProvider`, cache 60 s, fallback no
+  default do Core) — o número é do deployment, não um literal web.
+- **Tools tail virou complemento** (`2625 → 1001` chars): ficou só a mecânica
+  (shell/glob/git com dir explícito/`rev-parse`/config local, `dotnet --project` no
+  arquivo, F#); saíram as cópias do main (caminhos/`ls -la`, edit/write, binário,
+  rede, `sudo`, "nunca simule", "não invente", tool por role, fases, aceite).
+  `MainHarness.Text` (9117) **não** foi tocado: main define comportamento, tail
+  define mecânica.
+- Launchers: `--tail-scope all` → **`managed`** (o opencode usa o harness próprio;
+  tail ali é opcional e normalmente desligada). Units/`_comment` acompanharam.
+
+**Falhas medidas e o que era.** O `git log` do `E-tools-full` quebrava porque um
+`git init` sem diretório criou um **`.git` espúrio** em
+`/usr/src/opencodebridge/.../bin/Release/net9.0` (o cwd da bridge) — o repo passou a
+responder "branch master does not have any commits yet". Removido; o teste agora
+cria repo **isolado** em `/tmp/opencode/toolsfull/git-<pid>` e o `git-cycle`
+usa `config` local em vez de `-c` inline. `U-git-write-hint` passou a checar
+`role 'plan'` negando e `role build` gravando; `U-translate-temp-respeita-tunel`
+deriva a expectativa de `tail_scope` (não do literal `all`).
+
+**Placar parcial desta sessão (Q4 `:4124`, PROD `af40e3e`).** Bateria
+`20261025-185656` — L1 **8/9** PASS (`units`, `devpipe`, `belts-build`,
+`belts-orch`, `units/devpipe/belts-build/belts-orch-opencode`, 755 s e 253 s nos
+belts opencode), único vermelho `webui-integracao-topicos` (84 s); L2 com
+`belts-build-roxa` 102 s e `belts-orch-roxa` 130 s verdes e `tools-full`/
+`tools-dual`/`mission` presos ao `.git` espúrio (acima). Bateria interrompida de
+propósito: binário e flags mudariam em seguida.
+
+**Deploy.** PROD recebeu `8a20554` + `b462315` + `b3c99bf` por remote local
+(`/tmp/opencode/deploy-net9`, `merge --ff-only`), build Release **0/0** `net9.0`
+(parando as units porque o PDB em uso travava a cópia) e restart de
+`bridge-gpu`/`bridge-gpu2`/`bridge-web` → **`1018ffa`**. Provas: `:4124`/`:4125`
+`window=512`, `scope=managed`, ctx 131072/57344; `/api/harness` `tools_chars=1001`;
+`glob` absoluto ok, `grep` em arquivo ok, `git init` build ok / plan negado; Web 302.
+
+**Bateria nova.** `20261025-195625` (L1+L2) com o binário e as flags finais; units
+locais 97 PASS/0 FAIL e Web.Test 177/177 antes do disparo.
+
+
 ## Acesso local e SSH: só `mint` no LightDM; `dev-agent` cai no TUI (2026-10-25, sessão 21)
 
 **Revisão do ambiente.** O login gráfico expõe só `mint`: `dev-agent` e `moe-agent`

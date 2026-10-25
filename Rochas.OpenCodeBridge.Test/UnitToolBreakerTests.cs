@@ -258,6 +258,11 @@ internal static class UnitToolBreakerTests
         await RequireNewBridge();
         var harness = await TestContext.GetObj(TestContext.Bridge + "/api/harness");
         bool tailsEnabled = harness["harness_tails"]?.GetValue<bool>() ?? true;
+        string scope = harness["tail_scope"]?.GetValue<string>() ?? "";
+        int tailChars = (harness["behavior_chars"]?.GetValue<int>() ?? 0) + (harness["tools_chars"]?.GetValue<int>() ?? 0);
+        // Caminho opencode (model com sufixo de role): a cauda e OPCIONAL e so
+        // entra com tail-scope=all; em "managed"/"off" o harness do cliente manda.
+        bool expectTails = tailsEnabled && scope == "all" && tailChars > 0;
         string model = (TestContext.ServedModel.Length > 0 ? TestContext.ServedModel : "qualquer") + "-build";
 
         // 1) cliente informa temperatura: passa intacta (quem manda e o tunel)
@@ -282,10 +287,8 @@ internal static class UnitToolBreakerTests
         string s2 = semTemp["temperature_source"]?.GetValue<string>() ?? "";
         TestContext.Check(Math.Abs(t2 - 0.1) < 0.0001, $"sem temperatura vale o perfil build 0.1 (veio {t2})");
         TestContext.Check(s2.StartsWith("profile"), $"procedencia profile (veio '{s2}')");
-        TestContext.Check(semTemp["tails_on"]?.GetValue<bool>() == tailsEnabled,
-            tailsEnabled
-                ? "cauda ligada no caminho opencode (tail-scope all)"
-                : "cauda desligada respeita --harness-tails 0");
+        TestContext.Check(semTemp["tails_on"]?.GetValue<bool>() == expectTails,
+            $"cauda no caminho opencode segue o deployment (scope={scope}, tails={tailsEnabled})");
     }
 
     public static async Task TranslateBreakerVerdicts()

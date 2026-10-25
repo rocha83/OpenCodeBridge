@@ -1341,11 +1341,14 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
   Correção: atualizar o `start-bridge-*.sh` e rodar `--defaults`.
 ## Estado final do ambiente (2026-10-25, redeploy: Q4 + Q3 + Web `:4130`, prod `2ea54fd`)
 
-- **Produção** `/usr/src/opencodebridge` em **`af40e3e`** — `2ea54fd` + cherry-pick do
+- **Produção** `/usr/src/opencodebridge` em **`1018ffa`** — `2ea54fd` + cherry-pick dos
   fix de tools (`6310790`), deploy por **remote local** (`/tmp/opencode/deploy-net9`)
   porque o host não tem credencial de push; `git merge --ff-only` + `dotnet build
   Rochas.OpenCodeBridge.slnx -c Release` = **0 avisos / 0 erros** (`net9.0`) e restart
   de `bridge-gpu`/`bridge-gpu2`/`bridge-web`. O `.NET 10` **não** foi para o PROD.
+  Estado de 2026-10-25 19:56: `tail_scope=managed`, `anti_repeat_window=512`,
+  `behavior_chars=1275`, `tools_chars=1001` (cauda virou complemento do main),
+  Web `:4130` 302, Q4 `131072` / Q3 `57344`.
 - **Persistente (dev)** em **`1f635a6`** (migração `.NET 10` local, **2 commits à frente**
   do `origin/main` `2ea54fd` — ainda não enviados). Rollback do PROD continua sendo o
   `bin/Release/net9.0` atual.
@@ -1394,4 +1397,5 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
 - **Tails**: `HarnessTails.DefaultTools` inclui `GIT-RAIZ` e `COMANDO INVALIDO`
   (política e dicas das tools: `docs/AGENTS-PROMPTS.md` § mapa real de tools).
   Prova de que o restart carregou o texto novo: `tools_chars` no `/api/harness`
-  (**2291** antes do fix de 2026-10-25, **2625** depois).
+  (**2291** → **2625** com as dicas de tool → **1001** depois do corte de
+  duplicacao de 2026-10-25; detalhe e regra de ouro em `docs/AGENTS-PROMPTS.md`).

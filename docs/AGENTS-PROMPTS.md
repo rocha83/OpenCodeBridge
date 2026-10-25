@@ -108,12 +108,51 @@ O **role** decide o que a tool pode fazer; sem `role`, resolve-se pelo sufixo do
   `include` filtra por glob; teto de 100 matches, 1 MB/arquivo, sem `bin/obj`.
 - **`shell`**: um comando por chamada, `ShellInspector` nega `rm/kill/pkill/mv`
   e redirecionamentos perigosos; `cd` não persiste entre chamadas.
-- **Dica na tools tail** (instrução de uso, não muleta): `dotnet run/build
-  --project <pasta>` é ambíguo com mais de um projeto (“contains more than one
-  project file”) → apontar o **arquivo** (`<dir>/<nome>.fsproj|.csproj`); em F# o
-  entrypoint é `module Program` em `Program.fs` e o assembly é o nome do
-  `.fsproj` (namespace/módulo não é classe como em C#). Tail de tools:
-  **2291 → 2625** chars em 2026-10-25.
+
+### Anti-repeat: fonte única e quem manda no número
+
+- **Janela** (`ContentAntiRepeat.DefaultWindow = 256`): a **bridge manda**. O
+  deployment usa `--anti-repeat-window` (aqui **512**) / `antiRepeatWindow` no
+  appsettings, faixa `WindowMin..WindowMax` = **64..2048** — as três checagens
+  (config, CLI e validação) leem as constantes do Core. A bridge publica o valor
+  em `/api/status` (`anti_repeat_window`); a **Web** resolve a janela efetiva por
+  esse endpoint (`AntiRepeatWindowProvider`, cache de 60 s) e cai no default do
+  Core se a bridge não responder.
+- **Avisos** no retry, também no Core (fim das cópias): `Notice` (forte, caminho
+  Web — “encerre em silêncio”) e `SoftNotice` (brando, bridge — “reformule ou
+  continue se for intencional”); `--anti-repeat-notice` só sobrescreve o texto.
+- **Texto único**: `RepeatLoop` (Web) foi apagado; a Web usa
+  `ContentAntiRepeat.TailRepeats/Normalize/Notice` e o `ChatterGuard` mora no
+  Core. Nada de duas implementações do mesmo detector.
+
+### Tools tail é COMPLEMENTO ao main harness (não duplica)
+
+`HarnessTails.DefaultTools` (**1001 chars**, era 2627) carrega só a mecânica que
+o `MainHarness.Text` (9117 chars, primordial e intocado) **não** tem:
+
+- `SHELL`: um comando por chamada, sem escape de quebra de linha, script =
+  `write` + `bash <arquivo>`, `cd` não persiste (`cd <dir> && <cmd>`);
+- `GLOB`: sem alternância/regex (`**/*.{cs,js,ts,json}` ou duas chamadas);
+- `GIT`: `git init <dir>` **sempre** com diretório explícito (nunca no cwd — um
+  `git init` no root da workspace envenena `git log` de todo mundo), raiz
+  confirmada por `rev-parse --show-toplevel`, identidade local (`--global`
+  proibido), `unknown option`/`usage:` não se repete;
+- `DOTNET`/`F#`: `--project` aponta o **arquivo** (`<dir>/<nome>.fsproj|.csproj`)
+  e o entrypoint é `module Program` (assembly = nome do `.fsproj`).
+
+Ficou **fora** de propósito, porque já está no main: caminhos/`ls -la`,
+`edit`/`write`, binário via `shell+python3`, rede via `webfetch`, `sudo`/PROD,
+“nunca simule execução”, “não invente comando”, tool bloqueada por role, fases e
+aceite. Regra de ouro: **main define comportamento, tail define mecânica de tool**.
+
+### Escopo das tails (`--tail-scope`)
+
+O deployment roda **`--tail-scope managed`**: a tail entra no cliente direto/Web
+(caminho gerido) e **não** entra no opencode (modelo com sufixo de role), que usa
+o harness próprio — tail ali é opcional e normalmente desligada. `all` liga nos
+dois caminhos; `off` desliga geral. `/api/harness` reporta `tail_scope`, e o unit
+`U-translate-temp-respeita-tunel` deriva a expectativa do valor reportado (não de
+um literal).
 
 ## Subagente (`SubagentToolHandler.cs`, temp 0.1 fixa, tools write/edit/shell)
 
