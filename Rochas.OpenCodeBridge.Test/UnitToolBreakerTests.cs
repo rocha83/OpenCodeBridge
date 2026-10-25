@@ -210,6 +210,8 @@ internal static class UnitToolBreakerTests
         TestContext.Check(tail.Contains("sudo"), "cauda proibe sudo sem ordem");
         TestContext.Check(tail.Contains("heredoc"), "cauda proibe heredoc");
         TestContext.Check(tail.Contains("git init"), "cauda lembra git init");
+        TestContext.Check(tail.Contains("rev-parse --show-toplevel"), "cauda exige confirmar a raiz do repo");
+        TestContext.Check(tail.Contains("unknown option"), "cauda proibe repetir comando invalido");
         return Task.CompletedTask;
     }
 

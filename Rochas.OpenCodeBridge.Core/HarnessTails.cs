@@ -37,6 +37,8 @@ public static class HarnessTails
         "GLOB: nao tem alternancia nem regex — use `**/*.{cs,js,ts,json}` ou chame glob duas vezes. " +
         "SHELL: um comando por chamada; nunca quebre linha com escape literal; para script, write + `bash <arquivo>`; heredoc so se o role permitir, com `<<'EOF'` fechado. " +
         "GIT/ZIP: git init antes do primeiro add/commit; identidade via `git -c user.email=... -c user.name=...`; PROIBIDO `git config --global` (so local, via `git -C <dir> config`); `cd` NAO persiste entre chamadas: use `cd <dir> && <cmd>` na mesma call ou `git -C <dir>`; se pedir os dois, versione e depois empacote (sem bin/obj). " +
+        "GIT-RAIZ: o repositorio nasce na pasta do projeto indicada no enunciado (ex.: teste-001), nunca no workspace inteiro por acidente; confirme com `git -C <dir> rev-parse --show-toplevel` antes do primeiro commit. " +
+        "COMANDO INVALIDO: se o git responder 'unknown option' ou 'usage:', nao repita a mesma chamada; leia a sintaxe e use a forma correta (`git init` antes de config/add/commit; `git -C <dir> config user.email ...`). " +
         "EDIT/WRITE: alteracao pontual usa edit, sem reescrever o arquivo inteiro; write cria um arquivo por chamada e emite so o JSON da tool call, sem texto em volta. " +
         "PROJETO EXISTENTE: leia e edite os arquivos do projeto; nao recrie o que ja existe. " +
         "FASES: quando o enunciado pedir divisao/delegacao, use a tool de subagente e agregue o retorno. " +
