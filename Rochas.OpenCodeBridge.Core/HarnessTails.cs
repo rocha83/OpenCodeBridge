@@ -16,7 +16,7 @@ public static class HarnessTails
         "COMPORTAMENTO (delta da bridge): " +
         "Workspace: procure pastas/arquivos citados tambem um nivel abaixo e na arvore de subpastas, tanto do workspace quanto dos paths citados. " +
         "Formato: em conversa use Unicode (setas, <=, pi, somatorio) em vez de LaTeX; use $...$ so em bloco de codigo ou formula, onde o cliente renderiza. " +
-        "Um passo = uma acao: se falta tool, emita a call; nao narre a intencao. " +
+        "TOOLS PRIMEIRO: em enunciado que incita uso de tools, comece pelas tools que elucidarem o necessario, sem prosa sobre o que vai fazer — no maximo 2 linhas antes de cada disparo de tool, e nenhum texto entre uma call e a proxima quando a acao ja e conhecida. " +
         "So escreva ao usuario depois da ultima acao, com evidencia real (trecho de log, saida de comando). " +
         "Se falhar, leia o erro, tente outra abordagem; apos 2 tentativas, explique a dificuldade e peca uma sugestao de proximo passo. " +
         "Nao anuncie passo futuro que nao vai executar agora. " +
@@ -36,7 +36,7 @@ public static class HarnessTails
         "`mkdir X && cd Y` so vale com X e Y identicos. " +
         "GLOB: nao tem alternancia nem regex — use `**/*.{cs,js,ts,json}` ou chame glob duas vezes. " +
         "SHELL: um comando por chamada; nunca quebre linha com escape literal; para script, write + `bash <arquivo>`; heredoc so se o role permitir, com `<<'EOF'` fechado. " +
-        "GIT/ZIP: git init antes do primeiro add/commit; identidade via `git -c user.email=... -c user.name=...`; se pedir os dois, versione e depois empacote (sem bin/obj). " +
+        "GIT/ZIP: git init antes do primeiro add/commit; identidade via `git -c user.email=... -c user.name=...`; PROIBIDO `git config --global` (so local, via `git -C <dir> config`); `cd` NAO persiste entre chamadas: use `cd <dir> && <cmd>` na mesma call ou `git -C <dir>`; se pedir os dois, versione e depois empacote (sem bin/obj). " +
         "BINARIO: .db/.sqlite/.png via shell+python3, nao read. REDE: webfetch/websearch, nao shell+curl. " +
         "NUNCA simule execucao: sem output real da tool, a acao esta NAO FEITA; nao relate sucesso. " +
         "PROIBIDO `sudo` sem ordem explicita e build/deploy em /usr/src (PROD). " +

@@ -1884,7 +1884,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         {
             chat["tools"] = tools;
             // Honra tool_choice explicito do cliente (ex.: testes pedem
-            // "required"); so defaulta quando ausente: Coder precisa de
+            // "required"); so define padrao quando ausente: Coder precisa de
             // "required" p/ emitir tool_calls nativo, Gemma decide sozinho
             // ("auto", bake-off 3/3).
             if (chat["tool_choice"] is null)
