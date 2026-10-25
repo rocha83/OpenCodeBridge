@@ -8,7 +8,7 @@
 #   bench.sh status      # pid + /api/status resumido de cada porta
 #
 # Regras (para nao se auto-atropelar):
-#   - binario SEMPRE o build Release do repo persistente, cwd = bin/Release/net9.0
+#   - binario SEMPRE o build Release do repo persistente, cwd = bin/Release/net10.0
 #   - modo declarado (--mode bridge), nao um amontoado de flags de harness
 #   - PID/log por porta em /tmp/opencode/bench/
 #   - restart bloqueado enquanto o lock de runner (war.lock) estiver tomado
@@ -16,7 +16,7 @@
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${REPO:-$(cd "$HERE/../.." && pwd)}"
-DLLDIR="$ROOT/Rochas.OpenCodeBridge/bin/Release/net9.0"
+DLLDIR="$ROOT/Rochas.OpenCodeBridge/bin/Release/net10.0"
 DLL="$DLLDIR/Rochas.OpenCodeBridge.dll"
 RUNDIR="${BENCH_RUN_DIR:-/tmp/opencode/bench}"
 LOCK="${WAR_LOCK:-/tmp/opencode/war.lock}"

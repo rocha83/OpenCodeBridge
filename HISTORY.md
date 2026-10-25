@@ -1,5 +1,29 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Migração para .NET 10 LTS (2026-10-25, sessão 21)
+
+**Todos os seis projetos da solution passaram de `net9.0` para `net10.0`:**
+`Core`, host, `Runner`, `Test`, `Web` e `Web.Test`. O pacote NuGet subiu para
+`2.0.0` porque a migração remove o suporte a `net9.0`. O host foi exercitado no
+runtime `Microsoft.NETCore.App 10.0.13` em porta isolada (`4199`) e respondeu
+`/api/status` com `version=2.1`.
+
+**Paths de runtime acompanharam a TFM.** `WarTemplate`, `E2EFlagProofTests`,
+`FlowController`, `scripts/war/` e docs operacionais agora apontam para
+`bin/Release/net10.0`. `HISTORY.md` e prompts E2E históricos mantêm referências
+a `net9.0`/`.NET 9` de propósito: são registro e cenário de geração, não TFM do
+projeto.
+
+**Auditoria NuGet zerada.** O grafo transitivo do `Web` trazia
+`System.Security.Cryptography.Pkcs 9.0.18` com NU1902/NU1903; a referência
+direta `10.0.14` no projeto Web removeu os 8 avisos. Build Release final:
+**0 avisos, 0 erros**.
+
+**Validação.** `--only U- --skip-e2e --api-key guest@123` contra o Q4 atual:
+**97 PASS / 0 FAIL / 6 SKIP**. O Q4 de produção não foi reiniciado; ele segue no
+binário `net9.0` até deploy autorizado. A WAR em execução continua no release
+`net9.0`; a próxima execução deve usar o release `net10.0`.
+
 ## Driver C# portável da WAR: `TestCircuitDriver` → `WarTemplate` → `Execution` (2026-10-25, sessão 20)
 
 **Orquestração saiu dos scripts shell.** A WAR agora roda dentro da solução

@@ -178,7 +178,7 @@ segmenta → Scripter → Exec); o runner só passou a executá-las **nesta orde
 
 ```bash
 # bridge própria (para testar o build do repo, não o binário de produção)
-cd Rochas.OpenCodeBridge/bin/Release/net9.0
+cd Rochas.OpenCodeBridge/bin/Release/net10.0
 dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4100 \
   --model Gemma4-E4B-Q4 --thinking events --temperature 0.3 --max-tokens 16384 \
   --context-guard 1 --context-tokens 131072 --api-key guest@123 \
@@ -252,7 +252,7 @@ Exige **harness ligado** na bridge; o runner consulta `/api/harness` e loga avis
 `main_harness` não estiver `true`:
 
 ```bash
-cd Rochas.OpenCodeBridge/bin/Release/net9.0
+cd Rochas.OpenCodeBridge/bin/Release/net10.0
 dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4100 \
   --model Gemma4-E4B-Q4 --thinking events --temperature 0.3 --max-tokens 16384 \
   --context-guard 1 --context-tokens 131072 --api-key guest@123 \

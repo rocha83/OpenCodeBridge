@@ -1,5 +1,5 @@
 > **Espelho sincronizado do repositório AI.Manager.**
-> Fonte canônica: `AI.Manager/docs/ai-manager/AI-MANAGER-NEXT-STEPS.md`, commit `f13bc2f` (2026-10-25).
+> Fonte canônica: `AI.Manager/docs/ai-manager/AI-MANAGER-NEXT-STEPS.md`, commit `a7f6572` (2026-10-25).
 > Este arquivo é somente leitura no OpenCodeBridge; alterações de plano devem ser feitas no AI.Manager e sincronizadas por commit.
 
 # AI.Manager Next Steps — fusão por contrato com o OpenCodeBridge
@@ -764,7 +764,7 @@ Como a UI passa a direcionar execução, ela vira um plano de controle sensível
 | Divergência entre manifesto e WAR | testes de paridade + shadow runs + gate Q4 |
 | UI virar shell remoto | allowlist, aprovação, assinatura, workspace guard |
 | Duas fontes de verdade | manifesto imutável; OpenCodeBridge é dono do gate; AI.Manager não recalcula |
-| Acoplamento de releases | contratos SemVer/net9 + cliente desacoplado |
+| Acoplamento de releases | contratos SemVer/net10 + cliente desacoplado |
 | Testes longos/flaky | pause/resume, retry policy, artefatos, sem auto-PASS |
 | SQLite lock | runner nunca lê DB; API only; WAL/índices |
 | Perda de evidência | armazenamento persistente + hash + backup |

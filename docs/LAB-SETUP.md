@@ -729,9 +729,11 @@ Regras de precedência:
    mudar perfil no código **exige** alinhar o `appsettings.json` e reiniciar,
    senão o runtime continua no valor antigo.
 
-No deploy atual, o `appsettings.json` do runtime
-(`/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net9.0`) está com
-`profiles.plan.temperature = 0.3`, `profiles.orch.temperature = 0.3`,
+No deploy atual (pré-migração .NET 10), o `appsettings.json` do runtime fica em
+`/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net9.0`; depois do
+deploy do release `2.0.0`, o caminho passa a ser
+`/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0`. Os valores
+atuais são `profiles.plan.temperature = 0.3`, `profiles.orch.temperature = 0.3`,
 `build/scripter/exec = 0.1` e `moe = 0.5`; a unit passa `--temperature 0.5`
 como base. As bridges foram reiniciadas depois do ajuste.
 
@@ -895,11 +897,12 @@ antes do build** (lock de PDB) e rode com `--no-build`.
   `start-bridge-gpu.sh`/`start-bridge-gpu2.sh`/`start-bridge-cpu-forced.sh`;
   `Bridge Web UI` → `start-bridge-web.sh`; `draw.io` → `/opt/drawio/drawio`
   (ferramenta oficial de diagramas, ver 4.6).
-- Os scripts das bridges chamam `dotnet Rochas.OpenCodeBridge.dll` no
-  `bin/Release/net9.0`; o da Web chama `Rochas.OpenCodeBridge.Web.dll`.
-  Caminhos conferidos; a Web UI sobe na `:4130`. `start-bridge-web.sh` não
-  precisou de ajuste (já aponta para o DLL da Web e usa `bridge-web`/processo
-  direto).
+- A partir do release `2.0.0`, os scripts das bridges chamam
+  `dotnet Rochas.OpenCodeBridge.dll` no `bin/Release/net10.0`; o da Web chama
+  `Rochas.OpenCodeBridge.Web.dll`. Até o deploy, o PROD continua no
+  `bin/Release/net9.0` (rollback imediato). A Web UI sobe na `:4130`;
+  `start-bridge-web.sh` não precisou de ajuste (já aponta para o DLL da Web e
+  usa `bridge-web`/processo direto).
 
 ### 8.5 Observações
 

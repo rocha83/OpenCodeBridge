@@ -90,7 +90,7 @@ public sealed class FlowController(
     private static string BridgeAppSettings(string cwd)
     {
         var dir = string.IsNullOrEmpty(cwd)
-            ? "/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net9.0"
+            ? "/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0"
             : cwd;
         return System.IO.Path.Combine(dir, "appsettings.json");
     }

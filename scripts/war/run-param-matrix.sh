@@ -4,7 +4,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="${REPO:-$(cd "$HERE/../.." && pwd)}"
-DLL="$REPO/Rochas.OpenCodeBridge/bin/Release/net9.0/Rochas.OpenCodeBridge.dll"
+DLL="$REPO/Rochas.OpenCodeBridge/bin/Release/net10.0/Rochas.OpenCodeBridge.dll"
 
 [ -f "$DLL" ] || dotnet build -c Release "$REPO/Rochas.OpenCodeBridge.slnx"
 

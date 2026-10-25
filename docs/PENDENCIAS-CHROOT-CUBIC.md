@@ -215,7 +215,7 @@ cd /usr/src/opencodebridge
 dotnet build -c Release Rochas.OpenCodeBridge.slnx 2>&1 | tail -3     # 0 Aviso(s) / 0 Erro(s)
 python3 - <<'PY'
 import sqlite3
-c = sqlite3.connect('/usr/src/opencodebridge/Rochas.OpenCodeBridge.Web/bin/Release/net9.0/web.db')
+c = sqlite3.connect('/usr/src/opencodebridge/Rochas.OpenCodeBridge.Web/bin/Release/net10.0/web.db')
 rows = list(c.execute("select name, tools from agents order by id"))
 for n, t in rows: print(f"{n[:44]:44} | {t}")
 print("total", len(rows),

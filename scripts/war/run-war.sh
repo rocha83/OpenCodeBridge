@@ -123,7 +123,7 @@ if [ "$ACTION" = "--list" ]; then
 fi
 
 # ---------------------------------------------------------------- infra
-DLL="$ROOT/Rochas.OpenCodeBridge/bin/Release/net9.0/Rochas.OpenCodeBridge.dll"
+DLL="$ROOT/Rochas.OpenCodeBridge/bin/Release/net10.0/Rochas.OpenCodeBridge.dll"
 [ -f "$DLL" ] || die "bridge nao buildada: dotnet build -c Release Rochas.OpenCodeBridge.slnx"
 
 bridge_port() { case "$1" in q4) echo 4134;; q3a) echo 4135;; q3b) echo 4136;; esac; }
@@ -141,7 +141,7 @@ start_lane_bridge() {
   port=$(bridge_port "$lane"); up=$(bridge_up "$lane")
   model=$(bridge_model "$lane"); ctx=$(bridge_ctx "$lane")
   local log="$LOGSDIR/bridge-$lane.log"
-  ( cd "$ROOT/Rochas.OpenCodeBridge/bin/Release/net9.0" && exec /usr/share/dotnet/dotnet "$DLL" \
+  ( cd "$ROOT/Rochas.OpenCodeBridge/bin/Release/net10.0" && exec /usr/share/dotnet/dotnet "$DLL" \
       --listen 127.0.0.1 --port "$port" --upstream "http://127.0.0.1:$up" \
       --model "$model" --thinking events --temperature 0.5 --max-tokens 16384 \
       --context-guard 1 --context-tokens "$ctx" --api-key guest@123 \

@@ -6,7 +6,7 @@
     passam BridgeOptions diretamente nos métodos (sem args de CLI nem porta de bridge).
   -->
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Rochas.OpenCodeBridge.Core</RootNamespace>

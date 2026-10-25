@@ -3,12 +3,12 @@
   <!--
     Rochas.OpenCodeBridge.Runner — console executor p/ linha CPU (sem opencode no
     circuito): loop chat -> extrai fence -> valida allowlist -> executa -> devolve.
-    Console .NET 9, sem pacotes NuGet externos (só BCL: HttpClient + Process).
+    Console .NET 10, sem pacotes NuGet externos (só BCL: HttpClient + Process).
     Uso: Runner exec "tarefa" com flags bridge, model, repo, max-turns, timeout, log.
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Rochas.OpenCodeBridge.Runner</RootNamespace>

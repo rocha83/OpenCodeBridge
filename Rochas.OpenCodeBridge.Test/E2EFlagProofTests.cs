@@ -111,7 +111,7 @@ internal static class E2EFlagProofTests
         var probe = new DirectoryInfo(AppContext.BaseDirectory);
         while (probe is not null)
         {
-            string p = Path.Combine(probe.FullName, "Rochas.OpenCodeBridge", "bin", "Release", "net9.0", "Rochas.OpenCodeBridge.dll");
+            string p = Path.Combine(probe.FullName, "Rochas.OpenCodeBridge", "bin", "Release", "net10.0", "Rochas.OpenCodeBridge.dll");
             if (File.Exists(p)) return p;
             probe = probe.Parent;
         }

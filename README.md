@@ -1,6 +1,6 @@
 # OpenCodeBridge (+ Web)
 
-Bridge C# (.NET 9) entre o OpenCode (`POST /v1/responses`) e backends
+Bridge C# (.NET 10) entre o OpenCode (`POST /v1/responses`) e backends
 OpenAI-compatíveis (llama.cpp, `POST /v1/chat/completions`), com UI web MVC e
 harness agentivo próprio. Sem SDKs no núcleo da bridge (só BCL): a bridge
 traduz Responses ⇄ chat, cuida de thinking + tool calling, casa **perfil por

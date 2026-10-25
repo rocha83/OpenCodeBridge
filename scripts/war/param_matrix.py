@@ -36,7 +36,7 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.environ.get("LEVEL_ROOT") or os.environ.get("REPO") or os.path.dirname(os.path.dirname(HERE))
-DLL = os.path.join(REPO, "Rochas.OpenCodeBridge", "bin", "Release", "net9.0", "Rochas.OpenCodeBridge.dll")
+DLL = os.path.join(REPO, "Rochas.OpenCodeBridge", "bin", "Release", "net10.0", "Rochas.OpenCodeBridge.dll")
 KEY = os.environ.get("LEVEL_API_KEY", "guest@123")
 TESTDATA = os.path.join(REPO, "Rochas.OpenCodeBridge.Test", "TestData")
 

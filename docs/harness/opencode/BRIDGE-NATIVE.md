@@ -91,7 +91,7 @@ curl -s localhost:4124/api/status | grep tool_strategy
 grep -o '"event":"\(tool-strip\|harness-strip\|tool-unwrap\|tool-guide\)"[^}]*' /tmp/bridge-gpu.log | tail
 
 # belt headless (sem UI)
-dotnet Rochas.OpenCodeBridge.Web.Test/bin/Release/net9.0/Rochas.OpenCodeBridge.Web.Test.dll \
+dotnet Rochas.OpenCodeBridge.Web.Test/bin/Release/net10.0/Rochas.OpenCodeBridge.Web.Test.dll \
   --opencode-run --belts tools-dev-pipe --workdir /tmp/opencode/belts
 ```
 
