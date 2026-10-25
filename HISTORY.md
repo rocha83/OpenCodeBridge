@@ -1,5 +1,33 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Tails no opencode, TOOLS PRIMEIRO e limpeza de commits de teste (2026-10-24, sessão 19)
+
+**Um `if` de modo estava desligando as caudas em produção.** `BridgeMode.Opencode` trazia
+`Tails=false` e `ApplyMode()` fazia `if (!m.Tails) TailsEnabled = false;` — logo
+`--mode opencode` (as 3 units) matava `--harness-tails` antes de qualquer request. Resultado:
+`/api/harness` reportava `tails_opencode=false` e o `tail_scope=all` era inerte. Agora
+`Opencode.Tails=true` e o switch real é só `--harness-tails` + `--tail-scope`; `ValidateConfig`
+avisa quando `--harness-tails 1` fica com `--tail-scope managed` no modo opencode (cauda inerte
+no caminho com sufixo de role).
+
+**TOOLS PRIMEIRO na behavior tail.** Saiu "Um passo = uma acao: se falta tool, emita a call;
+nao narre a intencao." Entrou: em enunciado que incita uso de tools, começar pelas tools que
+elucidarem o necessário, sem prosa, no máximo 2 linhas antes de cada disparo e nenhum texto
+entre calls quando a ação já é conhecida. A `toolsTail` ganhou os dois guards que a sessão Q3
+provou necessários: proibido `git config --global` (só `git -C <dir> config`) e `cd` não
+persiste entre chamadas (`cd <dir> && <cmd>` ou `git -C <dir>`).
+
+**Sessão Q3 (`Gemma4-E4B-UD-Q3-build`) reinitializou o repo real.** Prompt pedia "trabalhe no
+seu workspace"; o modelo fez `mkdir -p /tmp/workspace && cd /tmp/workspace` (o `cd` morre com o
+processo), rodou `git init` dentro de `OpenCodeBridge/`, `git config --global` (sobrescreveu
+`~/.gitconfig`) e criou 4 commits `Dev <dev@dev.com>` no `main` — e respondeu `GIT-CYCLE-OK`.
+Commits resetados (`reset --mixed ecf8ab4`), `dados.txt`/`historico.log` removidos, identidade
+global restaurada. Lição: o texto final do modelo nunca é evidência; o teste `GitCycle` já
+confere disco, a sessão manual não.
+
+**Units.** As 3 bridges rodam `--main-harness 0 --harness-tails 1 --tail-scope all`;
+`/api/harness` em `:4124`/`:4125`/`:4126` → `tails_managed=true`, `tails_opencode=true`.
+
 ## Temperatura do tunel manda; trilhas bridge/opencode; tool call volta a executar no teste (2026-10-24, sessao 18)
 
 **Temperatura: um `if`, sem classe.** `appsettings.json` trazia `temperature: 0.5` +

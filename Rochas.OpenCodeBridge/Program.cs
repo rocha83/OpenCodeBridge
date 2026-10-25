@@ -806,6 +806,8 @@ internal static partial class Program
             warns.Add($"--coerced-max-tokens {CpuMaxTokens} inerte: use --upstream-parser none ou --coerce-text-tools 1");
         if (!TailsEnabled && (BehaviorTailCustom || ToolsTailCustom) && TailScope == "managed")
             warns.Add("cauda de harness declarada com --harness-tails 0: inerte (use --harness-tails 1 para ativar)");
+        if (TailsEnabled && TailScope == "managed" && Mode?.Name == "opencode")
+            warns.Add("--harness-tails 1 com --tail-scope managed: o caminho opencode (modelo com sufixo de role) fica SEM cauda — use --tail-scope all");
         if (TailScope == "all" && !TailsAtivas())
             warns.Add("--tail-scope all com caudas vazias: nada a injetar");
         if (BreakerHard > 0 && BreakerSoft > BreakerHard)
