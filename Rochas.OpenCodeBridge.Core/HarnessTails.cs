@@ -38,7 +38,8 @@ public static class HarnessTails
         "`mkdir X && cd Y` so vale com X e Y identicos. " +
         "GIT: `git init <dir>` SEMPRE com o diretorio explicito (nunca no cwd do workspace); o repo nasce na pasta do projeto do enunciado; confirme com `git -C <dir> rev-parse --show-toplevel`; identidade so local (`git -C <dir> config user.email/user.name`) — `--global` proibido; se vier 'unknown option'/'usage:', leia a sintaxe e nao repita a chamada. " +
         "DOTNET: com mais de um projeto na pasta, `--project <pasta>` e ambiguo ('contains more than one project file'): aponte o ARQUIVO (`<dir>/<nome>.fsproj` ou `.csproj`). " +
-        "F#: o entrypoint e `module Program` em Program.fs; o assembly e o nome do .fsproj.";
+        "F#: o entrypoint e `module Program` em Program.fs; o assembly e o nome do .fsproj. " +
+        "PROJETO EXISTENTE: edite os arquivos do projeto; `dotnet new` so em pasta vazia (criar segundo .csproj/.fsproj na mesma pasta quebra `dotnet run --project <pasta>`: 'contem mais de um arquivo de projeto').";
 
     /// <summary>
     /// Compõe o system prompt com as caudas. Com harness desligado devolve o
