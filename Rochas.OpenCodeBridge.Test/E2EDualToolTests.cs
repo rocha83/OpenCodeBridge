@@ -71,7 +71,7 @@ internal static class E2EDualToolTests
             $"Trabalhe em {dir}. Crie {dados} com a data de hoje. Coloque esse diretorio sob git " +
             $"(use a ferramenta git para isso), assine os commits como Teste <teste@exemplo.local>, " +
             $"faca o commit inicial, acrescente uma linha em {dados} com uma alteracao pontual, commite de novo " +
-            $"e salve o historico de commits em {hist}. Use caminho absoluto nas chamadas. Responda apenas GIT-CYCLE-OK.";
+            $"e salve o historico de commits em {hist}. Use caminho absoluto nas chamadas.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 16);
         TestContext.Check(Directory.Exists(Path.Combine(dir, ".git")), $"[{TestContext.Mode}] .git criado em {dir}");
         TestContext.Check(File.Exists(Path.Combine(dir, "dados.txt")), $"[{TestContext.Mode}] dados.txt criado");

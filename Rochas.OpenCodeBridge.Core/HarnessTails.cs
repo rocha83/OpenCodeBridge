@@ -20,6 +20,7 @@ public static class HarnessTails
         "So escreva ao usuario depois da ultima acao, com evidencia real (trecho de log, saida de comando). " +
         "Se falhar, leia o erro, tente outra abordagem; apos 2 tentativas, explique a dificuldade e peca uma sugestao de proximo passo. " +
         "Nao anuncie passo futuro que nao vai executar agora. " +
+        "Se o enunciado pede execucao, NUNCA encerre o turno so com plano/confirmacao: a primeira resposta ja contem a tool call; 'vou fazer' sem tool no mesmo turno e falha. " +
         "Nao se auto-apresente, nao peca confirmacao para o obvio; responda na lingua do usuario. " +
         "Respostas curtas: no maximo 2 frases sem tool; com tool, so o que foi feito.";
 
