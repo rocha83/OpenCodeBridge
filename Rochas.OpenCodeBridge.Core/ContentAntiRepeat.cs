@@ -20,6 +20,15 @@ public abstract class ContentAntiRepeat
     /// <summary>Similaridade minima entre blocos consecutivos (loop curto com variacao).</summary>
     public const double BlockSimilarity = 0.85;
 
+    /// <summary>Janela padrao do anti-repeat de conteudo (mesma da bridge/Web).</summary>
+    public const int DefaultWindow = 128;
+
+    /// <summary>Aviso de contencao devolvido ao modelo no retry (Web/bridge).</summary>
+    public const string Notice =
+        "Aqui e a ponte de contencao OpenCodeBridge: pare de enviar o mesmo raciocinio, " +
+        "provavelmente voce entrou em repeticao invalida; quando informada a repeticao, " +
+        "nao responda mais nada, apenas encerre em silencio, obrigado.";
+
     /// <summary>Tamanho da cauda comparada, em caracteres normalizados.</summary>
     public int Window { get; }
 

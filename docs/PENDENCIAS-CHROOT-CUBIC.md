@@ -49,11 +49,34 @@ echo "rc=$?"
 sudo /usr/local/bin/zenity --info --title="TESTE ROOT" --text="Tema escuro?" --timeout=5
 ```
 
-- [ ] LightDM — **mesclar** `hidden-users` (não sobrescrever o arquivo inteiro):
+- [x] LightDM — `hidden-users` mesclado (não sobrescrever o arquivo inteiro):
+      `dev-agent` e `moe-agent` fora da lista; só `mint` aparece.
 
 ```bash
 sed -i 's/^hidden-users=.*/hidden-users=nobody nobody4 noaccess moe-agent dev-agent/' /etc/lightdm/users.conf
 grep '^hidden-users' /etc/lightdm/users.conf
+```
+
+- [x] PAM — nega login local dos agentes (gráfico e console), mantendo o SSH do
+      `dev-agent` (o `ForceCommand` do sshd não passa por estes stacks):
+
+```bash
+for f in /etc/pam.d/lightdm /etc/pam.d/lightdm-autologin /etc/pam.d/login; do
+  grep -q 'pam_succeed_if.so user != dev-agent' "$f" || \
+    sed -i '/pam_nologin.so/a auth requisite pam_succeed_if.so user != dev-agent\nauth requisite pam_succeed_if.so user != moe-agent' "$f"
+done
+grep -n 'pam_succeed_if.so user !=' /etc/pam.d/lightdm /etc/pam.d/login
+```
+
+- [x] AccountsService (defesa em profundidade; o daemon não está instalado hoje, então
+      `users.conf` é a fonte): `SystemAccount=true` para os dois.
+
+```bash
+install -d -m 755 /var/lib/AccountsService/users
+for u in dev-agent moe-agent; do
+  printf '[User]\nSystemAccount=true\n' > /var/lib/AccountsService/users/$u
+  chmod 600 /var/lib/AccountsService/users/$u
+done
 ```
 
 - [ ] Caddy — o ícone (`start-caddy.sh`) **reescreve** o Caddyfile inteiro, então os blocos
@@ -117,6 +140,25 @@ usermod -p "$(openssl passwd -6 'Developer.PCSS@LVP006')" dev-agent
 id moe-agent; id dev-agent          # nenhum grupo sudo/docker/adm
 stat -c '%a %U %n' /home/moe-agent /home/dev-agent      # 750
 getent passwd moe-agent dev-agent    # 1001 / 1002
+```
+
+**ACEITE P2.1 — login local e SSH**
+
+```bash
+# 1) login grafico: so mint na lista; agentes barrados no PAM (nem login manual)
+grep '^hidden-users' /etc/lightdm/users.conf
+grep -n 'pam_succeed_if.so user !=' /etc/pam.d/lightdm /etc/pam.d/login
+
+# 2) dev-agent: SSH cai direto no TUI, sem shell livre e sem forwarding
+grep -E 'DenyUsers|Match User dev-agent|ForceCommand' /etc/ssh/sshd_config.d/60-ocagents.conf
+sshd -T -C user=dev-agent,host=localhost,addr=127.0.0.1 | \
+  grep -E 'forcecommand|allowtcpforwarding|x11forwarding|permittunnel'
+# esperado: forcecommand /usr/local/bin/start-ocagent-tui.sh; tudo no/off
+
+# 3) moe-agent: Web-only (SSH negado + shell nologin)
+sshd -T -C user=moe-agent,host=localhost,addr=127.0.0.1 | grep denyusers
+getent passwd dev-agent moe-agent | cut -d: -f1,3,7
+# esperado: dev-agent 1002 /bin/bash; moe-agent 1001 /usr/sbin/nologin
 ```
 
 ---

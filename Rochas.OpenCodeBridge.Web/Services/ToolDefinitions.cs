@@ -15,7 +15,11 @@ public static class ToolDefinitions
     {
         var tools = new JsonArray();
         foreach (var def in Catalog)
+        {
+            // Code Mode (`execute`) e estrategia legada; a Web usa tools diretas.
+            if (string.Equals(def.Name, "execute", StringComparison.OrdinalIgnoreCase)) continue;
             tools.Add(BuildTool(def));
+        }
         return tools;
     }
 

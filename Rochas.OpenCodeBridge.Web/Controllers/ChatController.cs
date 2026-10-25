@@ -47,7 +47,8 @@ public sealed class ChatController(
             Temperature = temperature ?? a.Temperature,
             MaxTokens = maxTokens ?? 16384,
             EnableThinking = thinking ?? (a.Thinking != "off"),
-            Harness = true,
+            // MainHarness (Core) e a fonte no caminho Web; tails legadas off.
+            Harness = false,
             LegacyHarness = false,
             CoerceTextTools = false,
             CoerceNarrated = false,
@@ -978,7 +979,7 @@ public sealed class ChatController(
         bool giroAbort = false;
         // Corta-espiral de prosa (loop boa-noite/encerrando): turnos curtos
         // sem tools, ou texto igual 2x, encerram com nota honesta.
-        var chatter = new Services.ChatterGuard();
+        var chatter = new ChatterGuard();
         bool chatterAbort = false;
         // Flag mestra na bridge (fonte unica): sem ela, tubo puro.
         bool harness = true;
@@ -1003,6 +1004,21 @@ public sealed class ChatController(
             if (m?["role"]?.GetValue<string>() == "user"
                 && m?["content"]?.GetValue<string>() is string u && u.Length > originalTask.Length)
                 originalTask = u;
+
+        // Main harness (Core) no caminho Web: o system do agente entra como
+        // INSTRUCOES DO CLIENTE; as tails legadas ficam desligadas.
+        string agentSystem = agent.SystemPrompt ?? "";
+        try
+        {
+            var tail = await promptControls.GetAsync("system_tail");
+            if (!string.IsNullOrWhiteSpace(tail)) agentSystem = (agentSystem.Trim() + "\n\n" + tail.Trim()).Trim();
+        }
+        catch { }
+        string harnessSystem = MainHarness.BuildSystem(agentSystem);
+        if (messages.Count > 0 && messages[0] is JsonObject sys0 && sys0["role"]?.GetValue<string>() == "system")
+            sys0["content"] = harnessSystem;
+        else
+            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = harnessSystem });
 
         // Helper to build fresh messages array from values (avoids JsonNode parent issues)
         JsonArray BuildMessages(JsonArray src)
@@ -1057,6 +1073,9 @@ public sealed class ChatController(
         {
         while (!ct.IsCancellationRequested)
         {
+            // Opções do turno: no caminho Web o main harness vem do Core e as
+            // estratégias legadas (coerção texto->tool) ficam desligadas.
+            var bridgeOptions = BridgeOptionsFor(agent);
             // Build executa todas as tools e NÃO delega subagente; plan delega e não executa escrita.
             bool plan = string.Equals(agent.Mode, "plan", StringComparison.OrdinalIgnoreCase);
             var tools = new JsonArray();
@@ -1092,7 +1111,7 @@ public sealed class ChatController(
 
             // Repasse ao vivo (sem buffer total): ResponseHeadersRead ou o PostAsync
             // espera o corpo inteiro antes de entregar qualquer linha.
-            using var res = await BridgeProxy.SendChatAsync(BridgeOptionsFor(agent), body, stream: true, ct);
+            using var res = await BridgeProxy.SendChatAsync(bridgeOptions, body, stream: true, ct);
 
             if (!res.IsSuccessStatusCode)
             {
@@ -1220,7 +1239,8 @@ public sealed class ChatController(
             // Modelo sem tool_calls estruturadas escreve a chamada no texto
             // (hermes/plural/fence/tokens). Coage para o fluxo normal de
             // execução, sem mudar prompts. So atua se o texto parsear.
-            if ((toolCallAccum.Count == 0 || finishReason != "tool_calls")
+            if (bridgeOptions.CoerceTextTools
+                && (toolCallAccum.Count == 0 || finishReason != "tool_calls")
                 && tools.Count > 0)
             {
                 var coerced = ToolsCoercion.Coerce(agent.Model,
@@ -1243,7 +1263,7 @@ public sealed class ChatController(
                 // Modelo em prosa (vê as tools mas discursa): cutucada mecânica
                 // em Hermes (<tool_call> — lingua franca do Qwen/DeepSeek/Coder),
                 // máx 2, sem tocar prompts — linha anti-giro. Inibivel (harness).
-                if (harness && tools.Count > 0
+                if (harness && bridgeOptions.CoerceTextTools && tools.Count > 0
                     && dsqNudges < 2 && assistantContent.Length > 0)
                 {
                     dsqNudges++;
@@ -1281,7 +1301,7 @@ public sealed class ChatController(
                 t.Name is "read" or "grep" or "glob" or "fetch" or "git" or "shell");
             string turnTxt0 = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
             if (!hasSubCall && readOnlyCall && turnTxt0.Length == 0) idleTurns++; else idleTurns = 0;
-            string sig = string.Join(";", toolCalls.Select(t => t.Name + ":" + t.Args));
+            string sig = string.Join(";", toolCalls.Select(t => ToolSig.Of(t.Name, t.Args)));
             if (sig == lastToolSig) repeatSig++; else { repeatSig = 1; lastToolSig = sig; }
             // Anti-giro inibivel (harness): sem ele, o loop segue puro.
             if (harness && (idleTurns >= 3 || repeatSig >= 3))
@@ -1529,7 +1549,7 @@ public sealed class ChatController(
         if (chatterAbort)
         {
             assistantContent.Clear();
-            assistantContent.Append(Services.ChatterGuard.StopNote);
+            assistantContent.Append(ChatterGuard.StopNote);
             assistantThinking.Clear();
         }
         string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
@@ -1698,7 +1718,9 @@ public sealed class ChatController(
             // Calda global do Fluxo (prompt_controls.system_tail): vale p/ todo agente.
             var tail = await promptControls.GetAsync("system_tail");
             if (!string.IsNullOrWhiteSpace(tail)) instructions = (instructions.Trim() + "\n\n" + tail.Trim()).Trim();
-            if (!string.IsNullOrWhiteSpace(instructions)) body["instructions"] = instructions;
+            // Main harness (Core) tambem no caminho Responses: o system do
+            // agente entra como INSTRUCOES DO CLIENTE.
+            body["instructions"] = MainHarness.BuildSystem(instructions);
             if (respTools.Count > 0) body["tools"] = respTools.DeepClone();
 
             using var res = await BridgeProxy.SendResponsesAsync(BridgeOptionsFor(agent), body, stream: true, ct);
@@ -1777,7 +1799,7 @@ public sealed class ChatController(
                 var t = Services.ResponsesBypass.TranslateData(data, assistantContent, assistantThinking,
                     ref promptTokens, ref completionTokens, accum);
                 if (!turnTripped && assistantContent.Length - turnStartLen >= 72
-                    && Services.RepeatLoop.Trips(assistantContent.ToString()))
+                    && ContentAntiRepeat.TailRepeats(assistantContent.ToString(), ContentAntiRepeat.DefaultWindow))
                 {
                     turnTripped = true;
                     LoopTrace("anti-repeat", session?.Id, turn, $"chars={assistantContent.Length} suprimido");
@@ -1806,7 +1828,9 @@ public sealed class ChatController(
                             || assistantThinking.Length - thinkStartLen >= 72)
                         {
                             evaluated = true;
-                            if (Services.RepeatLoop.Trips(assistantContent.ToString() + "\n" + assistantThinking.ToString()))
+                            if (ContentAntiRepeat.TailRepeats(
+                                assistantContent.ToString() + "\n" + assistantThinking.ToString(),
+                                ContentAntiRepeat.DefaultWindow))
                             {
                                 turnTripped = true;
                                 pending.Clear();
@@ -1842,7 +1866,8 @@ public sealed class ChatController(
                 // de contenção no input + retry do turno (o veneno sai da bolha).
                 // Sem isso o modelo esquece a própria resposta e repete sempre.
                 // Inibivel (harness): sem ele, a prosa segue pura.
-                if (harness && repeatFixes < 2 && Services.RepeatLoop.Trips(assistantContent.ToString()))
+                if (harness && repeatFixes < 2
+                    && ContentAntiRepeat.TailRepeats(assistantContent.ToString(), ContentAntiRepeat.DefaultWindow))
                 {
                     repeatFixes++;
                     LoopTrace("anti-repeat", session?.Id, turn, $"chars={assistantContent.Length} fix={repeatFixes}");
@@ -1851,7 +1876,7 @@ public sealed class ChatController(
                     input.Add(new JsonObject
                     {
                         ["type"] = "message", ["role"] = "user",
-                        ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = Services.RepeatLoop.Notice }),
+                        ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = ContentAntiRepeat.Notice }),
                     });
                     continue;
                 }
@@ -2082,7 +2107,7 @@ public sealed class ChatController(
         if (chatterAbort)
         {
             assistantContent.Clear();
-            assistantContent.Append(Services.ChatterGuard.StopNote);
+            assistantContent.Append(ChatterGuard.StopNote);
             assistantThinking.Clear();
         }
         string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
