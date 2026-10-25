@@ -47,7 +47,7 @@ internal static class E2EDevPipeTests
             ["messages"] = new JsonArray(new JsonObject
             {
                 ["role"] = "user",
-                ["content"] = $"Liste via tool glob os .md em {dir} e depois leia via tool read o primeiro. Responda SOMENTE com a primeira linha dele."
+                ["content"] = $"Liste os .md em {dir} com o glob e leia o primeiro. Responda SOMENTE com a primeira linha dele."
             }),
             ["tools"] = DevTools(),
         };

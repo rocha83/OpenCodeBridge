@@ -65,7 +65,7 @@ internal static class E2EMissionTests
 
         var sys = new JsonObject { ["role"] = "system", ["content"] = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls, sem prosa." };
         var history = new JsonArray(sys);
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) write no caminho ABSOLUTO {ws}/mcs/Program.cs (o projeto ja existe em {ws}/mcs; nao recrie, nao use echo/heredoc): programa que calcula Simpson de Math.Sin em [0,pi] (n=100 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. (2) rode o projeto e confira a saida; se falhar, leia o erro, corrija Program.cs e rode de novo ate imprimir 2.000000 e 5.000000." });
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Em {ws}/mcs, implemente em Program.cs o calculo de Simpson de Math.Sin em [0,pi] (n=100) e a media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. Rode o projeto e ajuste ate a saida ser 2.000000 e 5.000000." });
 
         string fcode = "", final = "";
         string logPath = Path.Combine(ws, "_mission.log");
@@ -130,7 +130,7 @@ internal static class E2EMissionTests
                 history.Add(new JsonObject { ["role"] = "user", ["content"] =
                     $"Sem prosa: o erro e FS0588 (o bloco `let` terminou com outro `let`). Corrija {ws}/mfs/Program.fs: a ultima linha do bloco `let simpson =` deve ser a expressao `(h / 3.0) * soma`; rode `dotnet run --project {ws}/mfs` e confira 2.000000/5.000000." });
             }
-            history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) write no caminho ABSOLUTO {ws}/mfs/Program.fs (o projeto ja existe em {ws}/mfs; nao recrie o projeto). Escreva F# que imprima 3 numeros com 6 casas via printfn \"%.6f\" valor: (a) Simpson de sin em [0,pi] com n=100 -> 2.000000; (b) media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> 5.000000; (c) desvio padrao da mesma lista. OBRIGATORIO em F# (siga a risca): use acumulador mutavel e um for - `let mutable soma = 0.0` e `for i in 0 .. n do` com atribuicao `soma <- soma + ...`; NAO use Seq/List.map/List.fold/comprehension para a integral. Integral: h = pi / float n; para i de 1 a (n-1): soma <- soma + peso * sin(float i * h), com peso 4.0 se i for impar e 2.0 se par; resultado = h / 3.0 * soma. Desvio padrao: sqrt (List.average (List.map (fun v -> (v - media) ** 2.0) data)). (2) rode `dotnet run --project {ws}/mfs` e corrija ate imprimir 2.000000 e 5.000000. O bloco `let simpson =` deve terminar com a expressao `(h / 3.0) * soma`; se terminar com outro `let`, o compilador falha com FS0588." });
+            history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Em {ws}/mfs, implemente em Program.fs um programa F# que imprima com 6 casas: (a) Simpson de sin em [0,pi] com n=100 (2.000000), (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] (5.000000) e (c) o desvio padrao dessa lista. Rode `dotnet run --project {ws}/mfs` e ajuste ate os dois primeiros valores baterem." });
         for (int turn = 0; turn < 22; turn++)
         {
             var rf = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());

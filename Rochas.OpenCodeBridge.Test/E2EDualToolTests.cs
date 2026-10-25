@@ -29,8 +29,8 @@ internal static class E2EDualToolTests
         string dir = Fresh("write-read-edit");
         string target = Path.Combine(dir, "nota.md");
         string prompt =
-            $"No diretorio {dir}: crie o arquivo {target} com o texto 'versao 1'; leia {target} para conferir; " +
-            "troque 'versao 1' por 'versao 2' com a tool edit; responda apenas WRITE-READ-EDIT-OK.";
+            $"No diretorio {dir}: crie o arquivo {target} com o texto 'versao 1', leia para conferir e depois " +
+            "troque 'versao 1' por 'versao 2' sem reescrever o arquivo inteiro; responda apenas WRITE-READ-EDIT-OK.";
         var (text, calls) = await TestContext.ToolAgent(prompt);
         string body = ReadFile(target);
         TestContext.Check(body.Contains("versao 2"),
@@ -48,8 +48,8 @@ internal static class E2EDualToolTests
         File.WriteAllText(Path.Combine(dir, "alfa.cs"), "class Alfa { }");
         File.WriteAllText(Path.Combine(dir, "beta.txt"), "beta texto");
         string prompt =
-            $"No diretorio {dir}: liste os arquivos .cs com glob no caminho {dir} (padrao simples, sem usar | ) e diga o nome do arquivo; " +
-            "confirme com grep que ele contem 'class Alfa'; responda apenas GLOB-GREP-OK e o nome do arquivo.";
+            $"No diretorio {dir} ha arquivos .cs e .txt. Use o glob para listar os .cs e confirme com grep " +
+            "que o arquivo declara 'class Alfa'; responda apenas GLOB-GREP-OK e o nome do arquivo.";
         var (text, calls) = await TestContext.ToolAgent(prompt);
         TestContext.Check(text.Contains("alfa", StringComparison.OrdinalIgnoreCase),
             $"[{TestContext.Mode}] resposta nomeia alfa.cs (texto='{text[..Math.Min(120, text.Length)]}')");
@@ -68,11 +68,10 @@ internal static class E2EDualToolTests
         string dados = Path.Combine(dir, "dados.txt");
         string hist = Path.Combine(dir, "historico.log");
         string prompt =
-            $"Trabalhe em {dir}. (1) Crie {dados} com a data atual usando a tool write (nao use shell/echo). " +
-            $"(2) Inicialize o repositorio com `git -C {dir} init`, configure a identidade local " +
-            $"(`git -C {dir} config user.email teste@exemplo.local` e `git -C {dir} config user.name Teste`), faça o primeiro commit, " +
-            $"altere {dados} acrescentando uma linha com a tool edit, faça o segundo commit e salve o log em {hist}. " +
-            "Use caminho absoluto em todas as chamadas. Responda apenas GIT-CYCLE-OK.";
+            $"Trabalhe em {dir}. Crie {dados} com a data de hoje. Coloque esse diretorio sob git " +
+            $"(use a ferramenta git para isso), assine os commits como Teste <teste@exemplo.local>, " +
+            $"faca o commit inicial, acrescente uma linha em {dados} com uma alteracao pontual, commite de novo " +
+            $"e salve o historico de commits em {hist}. Use caminho absoluto nas chamadas. Responda apenas GIT-CYCLE-OK.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 16);
         TestContext.Check(Directory.Exists(Path.Combine(dir, ".git")), $"[{TestContext.Mode}] .git criado em {dir}");
         TestContext.Check(File.Exists(Path.Combine(dir, "dados.txt")), $"[{TestContext.Mode}] dados.txt criado");
@@ -95,8 +94,8 @@ internal static class E2EDualToolTests
         string real = Path.Combine(dir, "relatorio-final.txt");
         File.WriteAllText(real, "conteudo-real-42");
         string prompt =
-            $"Existe um arquivo cujo nome termina em 'final.txt' dentro de {dir}, mas nao sei o nome exato. " +
-            $"Descubra com ls (ou glob) no caminho {dir} e leia o arquivo; responda apenas PROBE-OK seguido do conteudo lido.";
+            $"Em {dir} existe um arquivo cujo nome termina em 'final.txt', mas nao sei o nome exato. " +
+            "Descubra qual e (use ls ou glob), leia o arquivo e responda apenas PROBE-OK seguido do conteudo lido.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 8);
         TestContext.Check(text.Contains("conteudo-real-42"),
             $"[{TestContext.Mode}] achou o alvo por probe (texto='{text[..Math.Min(160, text.Length)]}')");
@@ -116,9 +115,8 @@ internal static class E2EDualToolTests
         string script = Path.Combine(dir, "quebrado.sh");
         File.WriteAllText(script, "#!/bin/bash\nif [ 1 -eq 1 ]; then\n  echo faltou fechar\necho depois\n");
         string prompt =
-            $"Valide a sintaxe do script {script} com 'bash -n' e execute-o com 'bash'. " +
-            "Relate APENAS o que a tool devolveu (erro ou saida). Se o script falhar, diga que falhou; nunca afirme sucesso sem saida real. " +
-            "Responda apenas NO-SIMULATION-OK.";
+            $"Rode bash -n no script {script} e depois execute. Me relate apenas o que aconteceu de verdade " +
+            "(erro ou saida); se falhar, diga que falhou e nao invente sucesso. Responda apenas NO-SIMULATION-OK.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 6);
         string all = text + "\n" + string.Join("\n", calls);
         bool reportedError = all.Contains("erro de sintaxe", StringComparison.OrdinalIgnoreCase)
@@ -139,8 +137,8 @@ internal static class E2EDualToolTests
         string dir = Fresh("sqlite");
         string db = Path.Combine(dir, "probe.db");
         string prompt =
-            $"Crie um banco SQLite em {db} com a tabela itens(id INTEGER, nome TEXT), insira ('alfa') e ('beta') " +
-            "e devolva a contagem. Nao use heredoc: escreva um script .py com a tool write e rode com bash/python3. " +
+            $"Crie um banco SQLite em {db} com a tabela itens(id INTEGER, nome TEXT), insira 'alfa' e 'beta' " +
+            "e me diga a contagem. Nao use heredoc; se precisar de script, grave um .py e rode com python3. " +
             "Responda apenas SQLITE-OK e a contagem.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 10);
         TestContext.Check(File.Exists(db), $"[{TestContext.Mode}] banco criado em {db}");

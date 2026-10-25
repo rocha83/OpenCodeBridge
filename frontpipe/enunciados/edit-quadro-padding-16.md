@@ -1,12 +1,7 @@
-# ENUNCIADO (EDIT 3 - role exec - E2B CPU)
+# ENUNCIADO (EDIT 3 - role exec)
 
-O espacamento interno do quadro (`#quadro`) esta definido em `app/wwwroot/css/app.css`
-na propriedade `padding`.
+O espacamento interno do `#quadro` esta em `app/wwwroot/css/app.css`, na propriedade `padding`.
 
-Ajuste: deixe o `padding` do `#quadro` com EXATAMENTE 16px (nos quatro lados).
-
-Como fazer: use a tool `read_file` para ler `app/wwwroot/css/app.css`, ache o `padding`
-do seletor `#quadro` e use a tool `edit_file` para trocar so esse valor por `16px`.
-Nao mude a largura (`width`), a altura (`height`), a borda nem o `#titulo`.
+Deixe o `padding` do `#quadro` com exatamente 16px nos quatro lados e nao altere mais nada.
 
 Ao terminar, responda SOMENTE: OK
