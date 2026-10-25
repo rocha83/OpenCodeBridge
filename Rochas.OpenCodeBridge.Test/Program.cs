@@ -12,6 +12,11 @@ internal static class Program
 {
     static int Main(string[] args)
     {
+        // O driver WAR tem CLI propria e nao roda a suite; despacha antes do
+        // parse normal para nao misturar --war-* com --bridge/--only.
+        if (args.Any(a => a.StartsWith("--war", StringComparison.Ordinal)))
+            return WarTemplate.RunMain(args);
+
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--bridge" && i + 1 < args.Length) TestContext.Bridge = args[++i].TrimEnd('/');
@@ -141,6 +146,23 @@ internal static class Program
         TestContext.Run("U-shell-python-node-payload", UnitShellInspectorTests.PythonAndNodePayloadDenied);
         TestContext.Run("U-shell-pipe-to-shell", UnitShellInspectorTests.PipeToShellDenied);
         TestContext.Run("U-shell-mv-rmdir", UnitShellInspectorTests.MoveAndRmdirDenied);
+        // Circuito generico: steps, gate, pausa, retry/restart, build e lock.
+        TestContext.Run("U-circuit-step-gate", UnitCircuitTests.StepAndGate);
+        TestContext.Run("U-circuit-fail-gate", UnitCircuitTests.FailGate);
+        TestContext.Run("U-circuit-resume-done", UnitCircuitTests.ResumeSkipsDone);
+        TestContext.Run("U-circuit-restart", UnitCircuitTests.RestartRetries);
+        TestContext.Run("U-circuit-pause", UnitCircuitTests.PauseResumes);
+        TestContext.Run("U-circuit-lock", UnitCircuitTests.LockExclusive);
+        TestContext.Run("U-circuit-build", UnitCircuitTests.BuildIncremental);
+        TestContext.Run("U-circuit-deploy", UnitCircuitTests.DeployNotConfigured);
+        TestContext.Run("U-circuit-deploy-health", UnitCircuitTests.DeployHealth);
+        TestContext.Run("U-circuit-template", UnitCircuitTests.TemplateRunsSteps);
+        TestContext.Run("U-circuit-conditional", UnitCircuitTests.ConditionalSteps);
+        TestContext.Run("U-circuit-dag", UnitCircuitTests.DependencyOrder);
+        TestContext.Run("U-circuit-parallel", UnitCircuitTests.ParallelSteps);
+        TestContext.Run("U-circuit-next", UnitCircuitTests.DynamicNextSteps);
+        TestContext.Run("U-circuit-gate-policy", UnitCircuitTests.CustomGatePolicy);
+        TestContext.Run("U-circuit-multi", UnitCircuitTests.MultiBuildAndDeploy);
         TestContext.Run("U-metrics-deny-counters", UnitMetricsTests.CountersIncrement);
         TestContext.Run("U-metrics-ring3-shell", UnitMetricsTests.ShellDenyIsRing3);
         TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);

@@ -1,5 +1,25 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Driver C# portável da WAR: `TestCircuitDriver` → `WarTemplate` → `Execution` (2026-10-25, sessão 20)
+
+**Orquestração saiu dos scripts shell.** A WAR agora roda dentro da solução
+`.slnx`: `TestCircuitDriver` é o núcleo genérico e portável (lock
+`FileShare.None`, pausa por marcador, steps com timeout/retry/restart,
+recompilação incremental, redeploy com health check, `summary.tsv`/`events.jsonl`
+e gate); `WarTemplate` é a receita WAR (levels 1–3, preflight de llama/bridge,
+parser PASS/FAIL/STALE e CLI `--war-*`); `Execution` é a única camada que cria
+processo (`ProcessStartInfo`, sem shell, timeout e kill de árvore).
+
+**Sem dependência Linux.** Saíram `flock(2)` via P/Invoke, leitura de `/proc`,
+`nvidia-smi` obrigatório, `bash` e paths fixos. Órfãos usam
+`Process.GetProcesses()`; disco usa `DriveInfo`; HTTP usa `HttpClient`; o blog
+default é `TMP/bridge-gpu.log`. `scripts/war/` fica como referência legada de
+semântica, não como caminho de execução. Documento completo: `TEST-DRIVER.md`.
+
+**Validação.** `dotnet build Rochas.OpenCodeBridge.slnx -c Release` = 0 avisos /
+0 erros; `--only U-circuit --skip-e2e` = 10 PASS; `--war-gate-only` do L1
+baseline = rc 0 (9 PASS) e do L2 baseline = rc 1 (7 PASS/7 FAIL, como esperado).
+
 ## Tails no opencode, TOOLS PRIMEIRO e limpeza de commits de teste (2026-10-24, sessão 19)
 
 **Um `if` de modo estava desligando as caudas em produção.** `BridgeMode.Opencode` trazia

@@ -78,6 +78,9 @@
   teste é artefato e não justifica saída baixa. Alinhar sem afrouxar o aceite.
 - Referência operacional completa: `docs/LAB-SETUP.md` §4.5. Registro
   cronológico: `HISTORY.md`.
+- Driver C# canônico (lock, pausa, steps, build, redeploy, restart e gate):
+  `TEST-DRIVER.md` (`TestCircuitDriver` → `WarTemplate` → `Execution`).
+  `scripts/war/` é referência legada; não é o caminho de execução.
 
 ## Regra: fluxo persistente -> PROD
 - Edição de fonte só na pasta persistente (`/media/.../OpenCodeBridge`).
