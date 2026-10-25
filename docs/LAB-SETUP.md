@@ -9,7 +9,7 @@ expresso (componente, cenário de teste e harness) fica no `README.md`.
 | linha | modelo | ctx | VRAM |
 |---|---|---|---|
 | GPU1 `:4100` | `Gemma4-E4B-Q4` — Gemma4 E4B **base original** `Q4_K_M` + mmproj **Q8_0** | `-c 131072 -np 1` = **1×128k** | (medir no host; chroot sem CUDA) |
-| GPU2 `:4110` | `Gemma4-E4B-UD-Q3` — Huihui Gemma4 E4B **abliterated** `IQ3_XXS`, **text-only** | `-c 131072 -np 2` = **2×64k** | (medir no host; chroot sem CUDA) |
+| GPU2 `:4110` | `Gemma4-E4B-UD-Q3` — Huihui Gemma4 E4B **abliterated** `IQ3_XXS`, **text-only** | `-c 114688 -np 2` = **2×56k** | (medir no host; chroot sem CUDA) |
 | CPU `:4120` | `Gemma4-E4B-Q4` — mesmo E4B base, **CPU puro** (`-ngl 0`) | `-c 131072 -np 1` = **1×128k** | 0 (RAM) |
 
 Temperatura: CLI base **0.5**; perfis do runtime (`appsettings.json`) **plan 0.3 / build 0.1 / orch 0.3 / moe 0.5 / scripter 0.1 / exec 0.1** (escala baixa **0.1**, média **0.3**, alta **0.5**); o `temperature` do modelo no `opencode.json` segue a mesma escala.
@@ -107,7 +107,7 @@ Pontos que **quebram** a linha se ficarem errados:
   Sem isso o cliente entrega prompts de saída maiores do que o
   llama serve e o `Decode error (200 POST /v1/responses)` reaparece.
 - `limit.context` é **por requisição/slot**, não a soma dos slots. **GPU1** roda
-  `-np 1`: **131072 (1×128k)**; **GPU2** roda `-np 2`: **131072 (2×64k, 65536 por slot)**.
+  `-np 1`: **131072 (1×128k)**; **GPU2** roda `-np 2`: **114688 (2×56k, 57344 por slot)**.
 - A bridge `:4126` (`bridge-cpu-forced.service` / `llama-cpu-forced.service`,
   `-ngl 0`) é o caminho CPU puro e **não** entra no par 16k: continua com
   `--max-tokens 8192` e `-c 131072`.
@@ -173,8 +173,8 @@ genérico `llama/Gemma4-E4B-UD-Q3` cai no `--thinking events` da unit e abre rea
 |---|---|---|
 | `-m` | `/opt/models/gemma4-e4b-base/…` (GPU1) / `/opt/models/huihui-gemma4-e4b-abliterated/…` (GPU2) | GGUF do modelo |
 | `--mmproj` | `mmproj-gemma-4-E4B-it-Q8_0.gguf` | projetor de visão — **só na GPU1 (E4B base)**; o GPU2 é text-only |
-| `-c` | 131072 (GPU1, 1×128k) / 131072 (GPU2, 2×64k) | contexto **total** do servidor |
-| `-np` | 1 (GPU1) / 2 (GPU2) | GPU1 slot único; GPU2 dois slots de 65536 |
+| `-c` | 131072 (GPU1, 1×128k) / 114688 (GPU2, 2×56k) | contexto **total** do servidor |
+| `-np` | 1 (GPU1) / 2 (GPU2) | GPU1 slot único; GPU2 dois slots de 57344 |
 | `-ngl 99` | 99 | **100% GPU** (sem offload para CPU) |
 | `-fa on` | on | Flash Attention |
 | `--no-host` | — | sem buffer host; pesos e KV ficam na VRAM (GPU1/GPU2) |
@@ -192,7 +192,7 @@ genérico `llama/Gemma4-E4B-UD-Q3` cai no `--thinking events` da unit e abre rea
 
 > **Form do ícone (`ask_llama_config`).** `-c` e `-np` não são mais fixos no script: a
 > janela pede Porta, Usuário, Senha, **Ctx** e **Slots** (labels curtos para telas
-> baixas). Defaults: GPU1 `131072/1`, GPU2 `131072/2` (2×64k), CPU `131072/1`;
+> baixas). Defaults: GPU1 `131072/1`, GPU2 `114688/2` (2×56k), CPU `131072/1`;
 > `--defaults` mantém esses valores e o subtítulo mostra o `ctx/slots` por slot.
 
 > **CPU puro (`:4120`, `llama-cpu-forced.service`).** Mantém `-ngl 0`, `-t 4 -tb 4`,
@@ -249,7 +249,7 @@ Environment=HOME=/root
 Environment=TURBO_AUTO_ASYMMETRIC=0
 ExecStart=/usr/local/bin/llama-server --alias Gemma4-E4B-UD-Q3 --host 127.0.0.1 --port 4110 \
   -m /opt/models/huihui-gemma4-e4b-abliterated/Huihui-gemma-4-E4B-it-qat-q4_0-unquantized-abliterated.i1-IQ3_XXS.gguf \
-  -c 131072 -np 1 -ngl 99 -fa on -t 4 -tb 4 \
+  -c 114688 -np 2 -ngl 99 -fa on -t 4 -tb 4 \
   --cache-type-k turbo3 --cache-type-v turbo3 --no-host --load-mode none --op-offload \
   -ot "^per_layer_token_embd\\..*=CUDA_Host,^token_embd\\..*=CUDA_Host,^blk\\..*=CUDA0,^output\\..*=CUDA0,^output_norm\\..*=CUDA0,^per_layer_model_proj\\..*=CUDA0,^per_layer_proj_norm\\..*=CUDA0" \
   --prio 1 --prio-batch 1 \
@@ -258,11 +258,11 @@ Restart=on-failure
 TimeoutStartSec=300
 ```
 
-Aceite do startup: `n_slots = 1, n_ctx_slot = 131072` → `model loaded` →
-`listening on http://127.0.0.1:4110` (**131072** total).
+Aceite do startup: `n_slots = 2, n_ctx_slot = 57344` → `model loaded` →
+`listening on http://127.0.0.1:4110` (**114688** total = 2×56k).
 
-> A config atual é **slot único** (`-np 1 -c 131072` = 1×128k) e
-> `limit.context = 131072` no OpenCode.
+> A config atual é **2 slots** (`-np 2 -c 114688` = 2×56k) e
+> `limit.context = 57344` no OpenCode (provider `llama`).
 
 ### 2.4 TurboQuant é obrigatório nos dois
 
@@ -308,14 +308,14 @@ journalctl -u llama-gpu -u llama-gpu2 --no-pager | grep -Ei "fit params"
 ### 2.6 VRAM medida (12 GB, ambos em `turbo3`)
 
 > **Histórico (linha 12B/E2B).** A tabela abaixo é da configuração anterior.
-> Para a linha E4B atual (**Q4_K_M 1×128k** na GPU1 e **IQ3_XXS 2×64k** na GPU2 —
+> Para a linha E4B atual (**Q4_K_M 1×128k** na GPU1 e **IQ3_XXS 2×56k** na GPU2 —
 > esta última com os lookups na RAM, ver §8.6, ambos com
 > `--no-host --load-mode none --op-offload`) a VRAM ainda não foi medida neste
 > chroot (sem CUDA); medir no host com `nvidia-smi` após o boot.
 
 | configuração | GPU1 | GPU2 | total usado | livre |
 |---|---|---|---|---|
-| E4B Q4 1×128k + E4B IQ3_XXS 2×64k (**atual**) | (a medir) | (a medir) | (a medir) | (a medir) |
+| E4B Q4 1×128k + E4B IQ3_XXS 2×56k (**atual**) | (a medir) | (a medir) | (a medir) | (a medir) |
 | 12B 2×96k + E2B 1×112k, E2B sem mmproj (histórico) | 8712 | 2082 | **11168** | **868** |
 | 12B 2×112k + E2B 1×112k | 9014 | 2072 | 11476 | 560 |
 | 12B 2×112k + E2B 1×140k | 9014 | 2190 | 11593 | 443 |
@@ -337,8 +337,9 @@ Regras aprendidas com as medições:
 ## 3. Cenários de teste (12 GB + TurboQuant ativo nos dois)
 
 > **Histórico (12B/E2B).** Os cenários abaixo são da configuração anterior; a
-> config atual é **slot único `-c 131072`** nas duas linhas E4B (GPU1/GPU2) e
-> `limit.context = 131072` no OpenCode. Mantidos para referência de medição.
+> config atual é **GPU1 `-np 1 -c 131072` (1×128k)** e **GPU2 `-np 2 -c 114688`
+> (2×56k)**, com `limit.context = 57344` no provider `llama` do OpenCode.
+> Mantidos para referência de medição.
 
 ### Cenário A — padrão: ambos residentes (o do E2E)
 
@@ -547,7 +548,7 @@ para flag aceita mas inerte (`--coerced-max-tokens` sem coerção, tail com
 | linha | serviço | modelo | ctx / slots | VRAM |
 |---|---|---|---|---|
 | GPU1 `:4100` | `llama-gpu.service` | Gemma4 E4B base `Q4_K_M` + mmproj Q8_0 | `-c 131072` (1×128k) | (medir no host) |
-| GPU2 `:4110` | `llama-gpu2.service` | Huihui Gemma4 E4B abliterated `IQ3_XXS`, text-only | `-c 131072 -np 2` (2×64k) | (medir no host) |
+| GPU2 `:4110` | `llama-gpu2.service` | Huihui Gemma4 E4B abliterated `IQ3_XXS`, text-only | `-c 114688 -np 2` (2×56k) | (medir no host) |
 | CPU `:4120` | `llama-cpu-forced.service` | Gemma4 E4B base `Q4_K_M` + mmproj Q8_0, `-ngl 0` | `-c 131072` (1×128k) | 0 (RAM) |
 | — | DRY | `--dry-multiplier 0.0` (**off**), `--dry-penalty-last-n 1024` | — | — |
 | — | repeat-penalty | `--repeat-penalty 1.08` (os dois), janela 64 | — | — |
@@ -762,7 +763,7 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 | linha | pesos | KV | buffers / offload | ctx |
 |---|---|---|---|---|
 | **GPU1 `:4100`** `Gemma4-E4B-Q4` | **100% VRAM**: `-ot .*=CUDA0` | VRAM (`turbo3`, `-fa on`) | `--no-host` + `--op-offload` (ops na GPU), `--mmproj-offload` | `-c 131072 -np 1` = **1×128k** |
-| **GPU2 `:4110`** `Gemma4-E4B-UD-Q3` | blocos/output na CUDA0; **lookups na RAM** (`CUDA_Host`): `token_embd`, `per_layer_token_embd` | VRAM (`turbo3`, `-fa on`) | `--no-host` + `--op-offload`, **nunca CPU offload** de camada (`-ngl 99` sempre) | `-c 131072 -np 2` = **2×64k (65536/slot)** |
+| **GPU2 `:4110`** `Gemma4-E4B-UD-Q3` | blocos/output na CUDA0; **lookups na RAM** (`CUDA_Host`): `token_embd`, `per_layer_token_embd` | VRAM (`turbo3`, `-fa on`) | `--no-host` + `--op-offload`, **nunca CPU offload** de camada (`-ngl 99` sempre) | `-c 114688 -np 2` = **2×56k (57344/slot)** |
 | CPU `:4120` `Gemma4-E4B-Q4` | `-ngl 0` (RAM) | RAM | sem `-ot` | `-c 131072 -np 1` = 1×128k |
 
 Regras que não se mexem:
@@ -775,7 +776,7 @@ Regras que não se mexem:
    (`--op-offload`). `-t 4 -tb 4` só dimensiona o lado host desses buffers.
 3. **`-ot` não mexe no KV**; o KV continua em `CUDA0` nas duas linhas.
 4. **`--context-tokens` da bridge acompanha o slot, não o total**: GPU1
-   `131072` (1 slot), GPU2 **`65536`** (2 slots de 64k). Trocar o `-np` da GPU2
+   `131072` (1 slot), GPU2 **`57344`** (2 slots de 56k). Trocar o `-np` da GPU2
    exige trocar esse valor na bridge (`:4125`) junto.
 
 Medição histórica (commit `addade2`): com `-ot ".*=CUDA0"` nos dois, `--mmproj`
@@ -868,10 +869,9 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
 
 ### 9.5 OpenCode (`~/.config/opencode/opencode.json`)
 
-- provider `openai` → `:4124` e provider `llama` → `:4125`, **ambos**
-  `limit.context = 131072` e `limit.output = 16384` (bate com `-c 131072` do
-  llama e `--max-tokens 16384` da bridge; antes estava 131072 com llama em
-  40960/81920 e o upstream devolvia `exceed_context_size_error`).
+- provider `openai` → `:4124` (**Q4 1×128k**, `limit.context = 131072`) e
+  provider `llama` → `:4125` (**Q3 2×56k**, `limit.context = 57344`);
+  `limit.output = 16384` nos dois (bate com `--max-tokens 16384` da bridge).
 - Nomes de exibição da linha Q3 usam **GPU2** (não "CPU").
 - `providers.llama` e `providers.cpu` exigem
   `"package": "@ai-sdk/openai-compatible"` (v2). Após editar:
@@ -959,11 +959,11 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
 - Bridges continuam em `0.0.0.0` com ApiKey (consumo direto sem UI); o Caddy publica só as
   portas do OpenCode Web, com basicauth por conta.
 
-## 0.2 Atualização do chroot (2026-10-23) — GPU2 2×64k e smoke CPU
+## 0.2 Atualização do chroot (2026-10-23) — GPU2 2×56k e smoke CPU
 
-- A linha **GPU2** usa `llama-gpu2` com `-c 131072 -np 2` = **2×64k**; a bridge
-  `bridge-gpu2` usa `SVC_CTX=65536` / `--context-tokens 65536` e o `opencode.json`
-  (`llama`) usa `limit.context: 65536`. Menções históricas a "GPU2 1×128k"
+- A linha **GPU2** usa `llama-gpu2` com `-c 114688 -np 2` = **2×56k**; a bridge
+  `bridge-gpu2` usa `SVC_CTX=57344` / `--context-tokens 57344` e o `opencode.json`
+  (`llama`) usa `limit.context: 57344`. Menções históricas a "GPU2 1×128k"
   (cenários das seções 2.x/9.x) descrevem a configuração anterior.
 - Portas públicas do Caddy por conta: `4230` (mint), `4240` (dev-agent), `4250`
   (moe-agent). A lista do firewall é a de `setup-ufw-remaster.sh` — fonte única, **não**

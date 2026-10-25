@@ -3399,3 +3399,18 @@ de `azul,verde,roxa,marrom,preta` para `marrom,preta` (steps renomeados
 - Estado validado: `:4124`, `:4125` e `:4126` `active`, `/api/status` `ok`,
   `main_harness=false`, `harness_tails=false`, ctx `131072/65536/131072`;
   `:4130` (`bridge-web`) `active` (302 no `/`).
+
+### Queda do Q3 por OOM de CUDA graph (2026-10-25 12:18) — ctx 112k
+
+- `llama-gpu2` abortou (`code=dumped, status=6/ABRT`) com
+  `CUDA error: out of memory` em `ggml_cuda_graph_evaluate_and_capture`
+  (`ggml-cuda.cu:5838`); o systemd reiniciou (restart counter 1). No momento do
+  crash a VRAM estava em ~10.8 GiB (Q4 7.8 + Q3 2.8 + CPU forced 0.9).
+- A pedido do lab, **só o Q3** desceu: `-c 131072 -np 2` (2×64k) ->
+  **`-c 114688 -np 2` (2×56k)**; `bridge-gpu2 --context-tokens 57344` e
+  `opencode.json` (`llama`) `limit.context 57344`. O **Q4 permanece**
+  `-c 131072 -np 1` (1×128k) com bridge `--context-tokens 131072`.
+- Aceite: `/v1/models` do `:4110` -> `n_slots=2`, `n_ctx_slot=57344`;
+  smoke `chat/completions` em `:4125` respondeu `OK`; VRAM 11825/12288
+  (463 MiB livres). Se o OOM de graph repetir sob carga, a válvula é desligar
+  o CPU forced (`:4120`, 906 MiB) durante a bateria ou reduzir para 1 slot.
