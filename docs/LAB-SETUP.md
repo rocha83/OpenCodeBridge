@@ -1368,23 +1368,7 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
   tools — ele só repassa o stream. O loop do dev-agent (`--add --config=true`
   repetido) aconteceu nesse caminho; lá a contenção é enunciado + tails. Guarda
   de tools no passthrough chat fica como próximo passo (não aplicar com WAR ativa).
-- **Tails**: `HarnessTails.DefaultTools` inclui `GIT-RAIZ` (repo nasce na pasta do
-  projeto; conferir `git -C <dir> rev-parse --show-toplevel`), `COMANDO INVALIDO`
-  (`unknown option`/`usage:` não repete a mesma chamada) e `DOTNET RUN/BUILD`
-  (com mais de um projeto na pasta, `--project <pasta>` é ambíguo: apontar o
-  **arquivo** `<dir>/<nome>.fsproj|.csproj`; em F# o entrypoint é `module Program`
-  e o assembly é o nome do `.fsproj`). A tail de tools foi de **2291 → 2625** chars
-  em 2026-10-25 — o `tools_chars` do `/api/harness` é a prova de que o restart
-  carregou o texto novo.
-- **Tools por role** (`POST /api/tools/execute` aceita `role` ou `model`):
-  - leitura liberada para todos: `status`, `log`, `diff`, `show`, `branch`,
-    `ls-files`, `rev-parse`;
-  - escrita de git **só** para `build` e `exec`: `init`, `add`, `commit`, `rm`,
-    `mv`, `tag`;
-  - `plan` (e role omitido/desconhecido) é **somente leitura** — é o contrato do
-    Plan, que planeja e não grava;
-  - sempre negados: `push`, `reset`, `clean`, `rebase`, `merge`, `checkout`,
-    `filter-branch`, `--force`; `-c` só aceita `user.name`/`user.email`.
-- **`glob`/`grep` com caminho absoluto**: `glob` aceita padrão absoluto
-  (`/tmp/x/*.cs`, `/tmp/x/**/*.cs`) e o `grep` aceita `path` de **arquivo** ou
-  diretório — antes o modelo concluía “glob/grep não funcionam” e entrava em loop.
+- **Tails**: `HarnessTails.DefaultTools` inclui `GIT-RAIZ` e `COMANDO INVALIDO`
+  (política e dicas das tools: `docs/AGENTS-PROMPTS.md` § mapa real de tools).
+  Prova de que o restart carregou o texto novo: `tools_chars` no `/api/harness`
+  (**2291** antes do fix de 2026-10-25, **2625** depois).

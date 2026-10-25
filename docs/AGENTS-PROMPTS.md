@@ -87,6 +87,34 @@ Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga, comp
   o Mode do banco. Gate de escopo (`SubagentScopeGate`): recusa prompt que
   repassa o enunciado integral (máx 2) com corretivo ao contexto.
 
+## Tools na bridge (`POST /api/tools/execute`) — role e caminhos
+
+A bridge expõe as mesmas tools do caminho Web para os testes e para clientes que
+não trazem executor próprio. Corpo: `{name, arguments, timeout?, role|model}`.
+O **role** decide o que a tool pode fazer; sem `role`, resolve-se pelo sufixo do
+`model` (`RoleProfiles`) e, sem sufixo, vale a política conservadora (Plan).
+
+- **`git` por role** (política de 2026-10-25): leitura (`status`, `log`, `diff`,
+  `show`, `branch`, `ls-files`, `rev-parse`) para **qualquer** role; escrita
+  (`init`, `add`, `commit`, `rm`, `mv`, `tag`) **só para `build` e `exec`** —
+  `plan` planeja e não grava. Sempre negados: `push`, `reset`, `clean`, `rebase`,
+  `merge`, `checkout`, `filter-branch`, `--force`; `-c` aceita apenas
+  `user.name`/`user.email` (identidade do commit).
+- **`glob`**: aceita padrão absoluto (`/tmp/x/*.cs`, `/tmp/x/**/*.cs`) — o
+  diretório é separado do nome antes do matcher; sem isso o .NET recusa
+  (“Second path fragment must not be a drive or UNC name”). `**` é recursivo;
+  resultado relativo ao workspace ou absoluto quando fora dele.
+- **`grep`**: `path` aceita **arquivo ou diretório** (antes só diretório);
+  `include` filtra por glob; teto de 100 matches, 1 MB/arquivo, sem `bin/obj`.
+- **`shell`**: um comando por chamada, `ShellInspector` nega `rm/kill/pkill/mv`
+  e redirecionamentos perigosos; `cd` não persiste entre chamadas.
+- **Dica na tools tail** (instrução de uso, não muleta): `dotnet run/build
+  --project <pasta>` é ambíguo com mais de um projeto (“contains more than one
+  project file”) → apontar o **arquivo** (`<dir>/<nome>.fsproj|.csproj`); em F# o
+  entrypoint é `module Program` em `Program.fs` e o assembly é o nome do
+  `.fsproj` (namespace/módulo não é classe como em C#). Tail de tools:
+  **2291 → 2625** chars em 2026-10-25.
+
 ## Subagente (`SubagentToolHandler.cs`, temp 0.1 fixa, tools write/edit/shell)
 
 ```text
