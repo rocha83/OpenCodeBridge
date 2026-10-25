@@ -139,8 +139,20 @@ internal static class E2EBeltsTests
                         new JsonObject { ["role"]="user", ["content"]=taskPrompt });
                     for (int turn = 0; turn < 6; turn++)
                     {
-                        var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                            new JsonObject { ["model"]=scripterModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
+                        JsonObject r;
+                        try
+                        {
+                            r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
+                                new JsonObject { ["model"]=scripterModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
+                        }
+                        catch (Exception ex)
+                        {
+                            // 500 do llama no parse da tool call (JSON invalido/truncado)
+                            // nao pode derrubar a belt inteira: devolve o erro e tenta de novo.
+                            Log($"  [belt:{key}] post scripter falhou: {ex.Message.Split('\n')[0]}");
+                            sh.Add(new JsonObject { ["role"]="user", ["content"]="O turno anterior falhou no parser de tool call (JSON invalido/truncado). Reenvie com UM write_file de JSON valido; script com no maximo 60 linhas, sem C#/SQL solto e sem quebrar strings." });
+                            continue;
+                        }
                         var msg = r["choices"]?[0]?["message"]?.AsObject();
                         var calls = msg?["tool_calls"]?.AsArray();
                         if (calls is null || calls.Count == 0) break;
@@ -226,8 +238,18 @@ internal static class E2EBeltsTests
                         sh.Add(new JsonObject { ["role"] = "user", ["content"] = "O script falhou em `bash -n`:\n" + err + "\nReescreva o arquivo " + System.IO.Path.GetFileName(produced) + " via write_file corrigindo a sintaxe. Bash puro; nunca C#/SQL solto. Responda SCRIPTER-OK." });
                         for (int turn = 0; turn < 4; turn++)
                         {
-                            var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                                new JsonObject { ["model"]=scripterModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
+                            JsonObject r;
+                            try
+                            {
+                                r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
+                                    new JsonObject { ["model"]=scripterModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
+                            }
+                            catch (Exception ex)
+                            {
+                                Log($"  [belt:{key}] post scripter (gate) falhou: {ex.Message.Split('\n')[0]}");
+                                sh.Add(new JsonObject { ["role"]="user", ["content"]="O turno anterior falhou no parser de tool call (JSON invalido/truncado). Reenvie com UM write_file de JSON valido; script com no maximo 60 linhas, sem C#/SQL solto e sem quebrar strings." });
+                                continue;
+                            }
                             var msg = r["choices"]?[0]?["message"]?.AsObject();
                             var calls = msg?["tool_calls"]?.AsArray();
                             if (calls is null || calls.Count == 0) break;

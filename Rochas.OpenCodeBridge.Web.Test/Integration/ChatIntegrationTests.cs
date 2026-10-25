@@ -211,26 +211,36 @@ internal static class ChatIntegrationTests
         using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
         if (!resp.IsSuccessStatusCode) return false;
 
+        // O corpo SSE pode ficar aberto sem emitir [DONE]; sem teto o teste
+        // trava para sempre (medido: 3600s no Level 1). Teto de 120s.
+        using var sseCts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         using var stream = await resp.Content.ReadAsStreamAsync();
         using var reader = new System.IO.StreamReader(stream);
         string? line;
         // so o que o helper realmente verifica: conteudo, [DONE] e as duas mensagens.
         bool gotContent = false, gotDone = false;
-        while ((line = await reader.ReadLineAsync()) != null)
+        try
         {
-            if (line.StartsWith("data: "))
+            while ((line = await reader.ReadLineAsync(sseCts.Token)) != null)
             {
-                var data = line[6..].Trim();
-                if (data == "[DONE]") { gotDone = true; break; }
-                try
+                if (line.StartsWith("data: "))
                 {
-                    var chunk = JsonNode.Parse(data);
-                    var delta = chunk?["choices"]?[0]?["delta"];
+                    var data = line[6..].Trim();
+                    if (data == "[DONE]") { gotDone = true; break; }
+                    try
+                    {
+                        var chunk = JsonNode.Parse(data);
+                        var delta = chunk?["choices"]?[0]?["delta"];
 
-                    if (delta?["content"] != null) gotContent = true;
+                        if (delta?["content"] != null) gotContent = true;
+                    }
+                    catch { }
                 }
-                catch { }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine("  [sse] timeout de 120s sem [DONE] — stream abortado pelo teste");
         }
 
         // Verify user message persisted

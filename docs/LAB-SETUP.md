@@ -181,7 +181,7 @@ genérico `llama/Gemma4-E4B-UD-Q3` cai no `--thinking events` da unit e abre rea
 | `--load-mode none` | `none` | substitui o obsoleto `--no-mmap`: sem mmap, carga direta |
 | `--op-offload` | — | operações no device (CUDA) |
 | `--mmproj-offload` | — | **só GPU1**: projetor de visão na GPU |
-| `--repeat-penalty` | 1.1 | anti-loop (os dois) |
+| `--repeat-penalty` | **1.08** | anti-loop leve (os dois); valor recomendado pela comunidade llama.cpp — reduz repetição sem penalizar identificadores copiados verbatim (nomes, paths, dígitos) |
 | `--dry-multiplier` / `--dry-penalty-last-n` | **0.0** / 1024 | DRY **desligado** nos dois: medido como causa da mutação de nomes/paths (ver §10) |
 | `--cache-type-k` / `--cache-type-v` | `turbo3` | KV em TurboQuant nos dois |
 | `--prio` / `--prio-batch` | 2/2 (GPU1) / 1/1 (GPU2) | prioridade da GPU (orquestrador ganha) |
@@ -225,7 +225,7 @@ ExecStart=/usr/local/bin/llama-server --alias Gemma4-E4B-Q4 --host 127.0.0.1 --p
   -c 131072 -np 1 -ngl 99 -fa on \
   --cache-type-k turbo3 --cache-type-v turbo3 --mmproj-offload --no-host --load-mode none --op-offload \
   -ot ".*=CUDA0" --prio 2 --prio-batch 2 \
-  --repeat-penalty 1.1 --dry-multiplier 0.0 --dry-penalty-last-n 1024 --api-key guest@123
+  --repeat-penalty 1.08 --dry-multiplier 0.0 --dry-penalty-last-n 1024 --api-key guest@123
 Restart=on-failure
 TimeoutStartSec=300
 ```
@@ -253,7 +253,7 @@ ExecStart=/usr/local/bin/llama-server --alias Gemma4-E4B-UD-Q3 --host 127.0.0.1 
   --cache-type-k turbo3 --cache-type-v turbo3 --no-host --load-mode none --op-offload \
   -ot "^per_layer_token_embd\\..*=CUDA_Host,^token_embd\\..*=CUDA_Host,^blk\\..*=CUDA0,^output\\..*=CUDA0,^output_norm\\..*=CUDA0,^per_layer_model_proj\\..*=CUDA0,^per_layer_proj_norm\\..*=CUDA0" \
   --prio 1 --prio-batch 1 \
-  --repeat-penalty 1.1 --dry-multiplier 0.0 --dry-penalty-last-n 1024 --api-key guest@123
+  --repeat-penalty 1.08 --dry-multiplier 0.0 --dry-penalty-last-n 1024 --api-key guest@123
 Restart=on-failure
 TimeoutStartSec=300
 ```
@@ -550,7 +550,7 @@ para flag aceita mas inerte (`--coerced-max-tokens` sem coerção, tail com
 | GPU2 `:4110` | `llama-gpu2.service` | Huihui Gemma4 E4B abliterated `IQ3_XXS`, text-only | `-c 131072 -np 2` (2×64k) | (medir no host) |
 | CPU `:4120` | `llama-cpu-forced.service` | Gemma4 E4B base `Q4_K_M` + mmproj Q8_0, `-ngl 0` | `-c 131072` (1×128k) | 0 (RAM) |
 | — | DRY | `--dry-multiplier 0.0` (**off**), `--dry-penalty-last-n 1024` | — | — |
-| — | repeat-penalty | `--repeat-penalty 1.1` (os dois), janela 64 | — | — |
+| — | repeat-penalty | `--repeat-penalty 1.08` (os dois), janela 64 | — | — |
 
 Total: **não medido neste chroot (sem CUDA)**; medir no host (RTX 3060, 12288 MiB).
 
@@ -1013,8 +1013,11 @@ caminho `chat`, que não recebe tail nenhuma.
 
 - Script idempotente (faz backup `.bak-<stamp>` e `daemon-reload`):
   `scripts/lab/llama-dry-fix.sh --dry 0.0` (reverter: `--restore`).
-- `--repeat-penalty 1.1` **mantido** (não teve efeito na medição; segue como
-  anti-loop leve). O anti-repeat textual da bridge continua como última linha.
+- `--repeat-penalty` ajustado de **1.1 → 1.08** (2026-10-25): valor recomendado
+  pela comunidade llama.cpp para reduzir repetição sem penalizar nomes, paths e
+  dígitos copiados verbatim em tool calls. Aplicado nas três linhas (`:4100`,
+  `:4110`, `:4120`) e nos geradores do Desktop; o anti-repeat textual da bridge
+  continua como última linha.
 - Verificação: `pgrep -af llama-server` mostra `--dry-multiplier 0.0` nas três
   instâncias (`:4100`, `:4110`, `:4120`); `/health` 200.
 
@@ -1079,7 +1082,7 @@ curl -s -m3 -o /dev/null -w '%{http_code}\n' http://<IP-LAN>:4200/
 ### DRY do llama
 
 Os três units (e os três processos vivos) estão com `--dry-multiplier 0.0` — o
-sintoma de mutação de nomes/paths era o sampler (§10). `--repeat-penalty 1.1`
+sintoma de mutação de nomes/paths era o sampler (§10). `--repeat-penalty 1.08`
 permanece.
 
 ```bash
@@ -1135,7 +1138,7 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
 |---|---|
 | bridges `:4124` / `:4125` / `:4126` | `--main-harness 0 --harness-tails 0 --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 --passthrough-responses true`; request com **`parallel_tool_calls: false`** (comportamento do código, não flag — §11) |
 | Web UI `:4130` | `Core` in-process: `mainHarness`, `harnessTails` e `antiRepeat` nos defaults (ligados) — o `BridgeUrl` do agente só dimensiona contexto |
-| llama `:4100` / `:4110` / `:4120` | `--dry-multiplier 0.0`, `--repeat-penalty 1.1` (§10) |
+| llama `:4100` / `:4110` / `:4120` | `--dry-multiplier 0.0`, `--repeat-penalty 1.08` (§10) |
 
 - O alias **`--harness`** não existe mais: o binário atual recusa no boot. Os
   `start-bridge-*.sh` reescrevem a unit do zero — já emitindo

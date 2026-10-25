@@ -3269,3 +3269,91 @@ continuam sendo um delta independente no `appsettings.json`.
   puro 97. Evento de diagnóstico do gerido: `main-harness`.
 - Pendência: reiniciar `bridge-gpu.service`/`bridge-gpu2.service` para carregar o
   binário novo (exige root).
+
+## Retomada: subida das stacks e Level 1 com Q4 (2026-10-25)
+
+- Stacks subidas: `llama-gpu` (:4100 Gemma4-E4B-Q4) e `llama-gpu2` (:4110 Gemma4-E4B-UD-Q3) ativas (health ok); bridges :4124/:4125 já ativas.
+- Build Release: 0 warnings/0 errors.
+- Level 1 iniciado em background: `scripts/war/run-levels.sh --level 1` (PID 19102), saída `/tmp/opencode/level1.out`, artefatos `logs/levels/L1-20261025-014853/`.
+- Preflight ok. Primeiros steps: `units-bridge` PASS; `devpipe-bridge` FAIL em `E-devpipe-vision-tool` (assert: visao+tool path exato, causa=bridge). Demais steps em andamento.
+- Monitorar via `tail -f /tmp/opencode/level1.out` e `logs/levels/.../summary.tsv`.
+
+### DRY zerado nos units e scripts de boot (2026-10-25)
+
+- Sintoma: `pgrep -af llama-server` ainda mostrava `--dry-multiplier 0.8`, apesar do
+  `docs/LAB-SETUP.md` §10 declarar 0.0 (mutação de nomes/paths).
+- Corrigido em `/etc/systemd/system/llama-{gpu,gpu2,cpu-forced}.service` e nos
+  geradores do Desktop (`artefatos/bin/start-llama-{gpu,gpu2,cpu-forced}.sh`,
+  `artefatos/systemd/llama-gpu2.service`): `--dry-multiplier 0.8` -> `0.0`.
+- `daemon-reload` + restart: `:4100` e `:4110` agora com `--dry-multiplier 0.0`
+  e `--repeat-penalty 1.08` (confirmado em `/proc/<pid>/cmdline`).
+- `--repeat-penalty` ajustado de **1.1 → 1.08** (recomendação da comunidade
+  llama.cpp) nos três units e nos geradores do Desktop; documentado em
+  `docs/LAB-SETUP.md` (§8/§10/§12).
+- Level 1 retomado no mesmo OUT (`logs/levels/L1-20261025-014853`), com
+  `devpipe-bridge.done` removido para retestar `E-devpipe-vision-tool`; diretório
+  duplicado `L1-L1-20261025-014853` removido.
+
+### Trilha única de levels e limpeza dos logs (2026-10-25)
+
+- `scripts/war/run-all-levels.sh` (novo): roda Level 1 -> 2 -> 3 em sequência e
+  para no primeiro gate vermelho. Antes, `run-levels.sh` executava **um** nível
+  por chamada e nada encadeava 2/3 após o verde do 1.
+- `logs/levels` limpo por completo; Level 1 reiniciado do zero
+  (`L1-20261025-070439-l1`), com `bridge-web.service` ativa em `:4130`.
+- Console consolidado: `logs/levels/all-levels-<stamp>.console.log` e
+  `logs/levels/driver-console.out`.
+
+### Trilha resiliente: não para no vermelho + teto de SSE (2026-10-25)
+
+- `scripts/war/run-all-levels.sh`: em vermelho agora **registra e segue** para o
+  próximo nível (antes abortava). Adiciona `driver-summary-<stamp>.tsv` e
+  `--resume-stamp/--resume-level` para retomar um run existente.
+- `Rochas.OpenCodeBridge.Web.Test/Integration/ChatIntegrationTests.cs`:
+  `StreamSseWithSession` ganhou teto de **120s** no corpo SSE (antes travava
+  indefinidamente; medido 3600s no Level 1 no teste `I-chat-stream-sse`).
+- L1 retomado só nos 3 steps vermelhos (`belts-orch-bridge`,
+  `belts-orch-opencode`, `webui-integracao-topicos`) no OUT
+  `L1-20261025-070439-l1`; L2 e L3 engatilhados na mesma trilha.
+- Causas registradas: belt azul orch = scripts do Scripter com sintaxe inválida e
+  Exec com 0 execuções; webui = stream SSE sem `[DONE]` (agora falha em 120s).
+
+### Web UI de teste na :4130 com o binário do repo dev (2026-10-25)
+
+- Causa do `I-chat-stream-sse` travado: a unit `bridge-web` serve o binário de
+  **produção** (`/usr/src/opencodebridge`, build de 23/10, git bf30043), enquanto
+  o teste roda o `Web.Test` do repo dev (25/10). Binários divergentes.
+- Ação: backup do `web.db` de produção e `bridge-web.service` parada; subiu o
+  Web do repo dev na `:4130` com `BRIDGE_WEB_DB_DIR` apontando para o banco de
+  produção (mesmos agentes/usuário `teste@e2e.local`). HTTP 302 confirmado.
+- Restaurar depois: `sudo systemctl start bridge-web.service` (a unit de produção
+  volta a ocupar a `:4130`).
+- Belt azul orch: o Scripter emitiu tool call com JSON inválido
+  (`Failed to parse tool call arguments as JSON`) e path vazio — causa de
+  geração/modelo, não de infra; o driver registra e segue.
+
+### SSE e belts orch verdes (2026-10-25, rodada de correção)
+
+- `ChatController.StreamResponsesBypass`: teto de **4 turnos de prosa sem tool**
+  (`prosaTurns`) + nota honesta (`ChatterGuard.StopNote`) e `[DONE]`. Antes, com
+  `MaxTurns<=0`, o modelo Q4 entrava em espiral "Entendido..." e o stream ficava
+  aberto (o teste `I-chat-stream-sse` estourava 120s/3600s).
+- `E2EBeltsTests`: `PostObj` do Scripter (turno principal e gate) agora captura
+  500 de tool-call JSON inválido/truncado, devolve erro ao modelo e segue — não
+  derruba mais a belt inteira. Com isso o azul passou a escrever scripts válidos.
+- Verificação isolada (com a Web do repo dev na :4130 e bridges :4124/:4125):
+  - `Web.Test` completo: **351 PASS / 0 FAIL**, `I-chat-stream-sse` PASS (10/10 chat).
+  - `E-belts-direct --mode bridge`: **2/2 PASS** (azul 5 scripts/4 exec; verde 3/1).
+  - `E-belts-direct --mode opencode`: **2/2 PASS** (azul 3/3; verde 3/2).
+- Próximo: relançar a trilha completa L1→L2→L3 do zero (`run-all-levels.sh`).
+
+### Distribuição das faixas de belt por level (2026-10-25)
+
+Sem repetição entre níveis:
+- **L1**: azul, verde (build e orch; bridge e opencode).
+- **L2**: roxa (build e orch; bridge e opencode) + tools/science + webui.
+- **L3**: marrom, preta (build e orch; bridge e opencode).
+
+`run-levels.sh`: L2 ganhou `belts-build-roxa-*`/`belts-orch-roxa-*`; L3 passou
+de `azul,verde,roxa,marrom,preta` para `marrom,preta` (steps renomeados
+`belts-build-final-*`/`belts-orch-final-*`). `bash -n` OK.

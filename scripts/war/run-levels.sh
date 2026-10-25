@@ -309,7 +309,7 @@ case "$LEVEL" in
     step_webtest
     ;;
   2)
-    STEPS_DESC="tools-full; tools-dual; mission-tools; responses-tools; science-gpu; science-cpu(Q3)"
+    STEPS_DESC="tools-full; tools-dual; mission-tools; responses-tools; science-gpu; science-cpu(Q3); belts roxa build/orch (bridge+opencode); webui movida p/ fim do L3"
     if [ "$LIST" = "1" ]; then
       echo "Level 2 -> $STEPS_DESC"; exit 0
     fi
@@ -328,11 +328,14 @@ case "$LEVEL" in
       else
         log "SKIP science-cpu-$mode (LEVEL_CPU=0)"
       fi
+      # Faixa roxa: distribuida aqui; azul/verde ficam no L1 e marrom/preta no L3.
+      step_bridge "belts-build-roxa-$mode" --only E-belts-build-direct --belts roxa --mode "$mode"
+      step_bridge "belts-orch-roxa-$mode" --only E-belts-direct --belts roxa --mode "$mode"
     done
-    step_webtest
+    # Web UI saiu do L2: roda no fim da fila do L3.
     ;;
   3)
-    STEPS_DESC="belts azul->preta: trilha build + trilha orch, modos bridge e opencode (harness on)"
+    STEPS_DESC="belts marrom,preta: trilha build + trilha orch, modos bridge e opencode (harness on); webui no fim"
     if [ "$LIST" = "1" ]; then
       echo "Level 3 -> $STEPS_DESC"; exit 0
     fi
@@ -345,9 +348,11 @@ case "$LEVEL" in
     echo "$HSTATUS" | grep -q '"main_harness":true' \
       || log "AVISO: main_harness nao esta true — Level 3 pede harness ligado (--main-harness 1 --harness-tails 1)"
     for mode in bridge opencode; do
-      step_bridge "belts-build-all-$mode" --only E-belts-build-direct --belts azul,verde,roxa,marrom,preta --mode "$mode"
-      step_bridge "belts-orch-all-$mode" --only E-belts-direct --belts azul,verde,roxa,marrom,preta --mode "$mode"
+      step_bridge "belts-build-final-$mode" --only E-belts-build-direct --belts marrom,preta --mode "$mode"
+      step_bridge "belts-orch-final-$mode" --only E-belts-direct --belts marrom,preta --mode "$mode"
     done
+    # Web UI no fim da fila do L3 (saiu do L2).
+    step_webtest
     ;;
   *)
     echo "Level $LEVEL ainda nao definido (implementado: 1, 2, 3)"; exit 2 ;;

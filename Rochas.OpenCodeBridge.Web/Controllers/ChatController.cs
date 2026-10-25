@@ -1653,6 +1653,11 @@ public sealed class ChatController(
         bool toolLoopAbort = false;
         // Flag mestra na bridge (fonte unica): sem ela, tubo puro.
         bool harness = true;
+        // Teto de prosa sem tool no bypass: sem isto o loop fica sem teto
+        // (MaxTurns<=0) e o stream nunca fecha quando o modelo entra em
+        // espiral de conversa (medido: I-chat-stream-sse preso >120s).
+        int prosaTurns = 0;
+        bool chatterAbort = false;
         // Fechamento com nota quando tools rodaram mas o modelo não devolveu
         // texto (sem isto a sessão termina sem bolha: "fez mas não falou nada").
         bool anyToolRan = false;
@@ -1829,6 +1834,7 @@ public sealed class ChatController(
 
             if (accum.Calls.Count == 0)
             {
+                prosaTurns++;
                 // Sem corte de prosa: o sufixo pede declaração verbosa por ação;
                 // o loop segue até o teto de turnos (prosa conversa ou declara).
                 LoopTrace("turno-prosa", session?.Id, turn, "");
@@ -1872,8 +1878,19 @@ public sealed class ChatController(
                             ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = CutForContext(turnText) }),
                         });
                 }
+                // Teto de prosa: 4 turnos seguidos sem tool e sem progresso
+                // encerram com nota honesta (o modelo Q4 entrava em espiral
+                // "Entendido..." e o stream ficava aberto indefinidamente).
+                if (harness && prosaTurns >= 4)
+                {
+                    chatterAbort = true;
+                    LoopTrace("prosa-abort", session?.Id, turn, $"prosaTurns={prosaTurns}");
+                    break;
+                }
                 continue;
             }
+            // Tool executou: conversa saudável, zera o teto de prosa.
+            prosaTurns = 0;
             // Executa cada call e devolve outputs no próximo turno (a API exige
             // function_call_output p/ toda call; sem isso o modelo trava).
             foreach (var call in accum.Calls)
@@ -2062,6 +2079,12 @@ public sealed class ChatController(
             return;
         }
 
+        if (chatterAbort)
+        {
+            assistantContent.Clear();
+            assistantContent.Append(Services.ChatterGuard.StopNote);
+            assistantThinking.Clear();
+        }
         string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
         // Retorno silencioso (inibivel): sem harness, sem nota — mostra o real.
         if (harness && finalText.Length == 0 && assistantThinking.Length == 0 && anyToolRan)
@@ -2099,7 +2122,7 @@ public sealed class ChatController(
         }
         try
         {
-            if (silentClose)
+            if (silentClose || chatterAbort)
             {
                 // Fechamento silencioso também digita na bolha ao vivo.
                 var fb = new JsonObject
