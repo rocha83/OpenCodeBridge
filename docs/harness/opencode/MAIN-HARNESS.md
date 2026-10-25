@@ -15,10 +15,15 @@ O texto é o **main harness**; as tails são um **delta separado**
 | Main harness | `--main-harness` | `mainHarness` | `true` | troca o system no caminho gerido |
 | Harness tails | `--harness-tails` | `harnessTails` | `true` | injeta behavior/tools tails conforme `tailScope` |
 
-`--harness-tails 0` desliga as tails, mas **não** desliga o
-main harness. Para o tubo puro, use `--main-harness 0 --harness-tails 0`. O
-serviço em produção usa `--harness-tails 0`, então mantém o main harness ativo
-e as tails inertes — exatamente o desenho pedido.
+`--harness-tails 0` desliga as tails, mas **não** desliga o main harness. Para o
+tubo puro, use `--main-harness 0 --harness-tails 0`. As 3 bridges de produção
+rodam `--main-harness 0 --harness-tails 1 --tail-scope all`: master do cliente
+intacto e tails aditivas nos **dois** caminhos (`tails_managed` e
+`tails_opencode` = true no `/api/harness`).
+
+O modo `opencode` também permite tails (`BridgeMode.Opencode.Tails = true`); o
+switch real é `--harness-tails` + `--tail-scope`. Com `--tail-scope managed` o
+caminho com sufixo de role fica **sem** cauda — use `all` para cobrir ambos.
 
 ## Por que existe
 

@@ -562,7 +562,7 @@ Total: **não medido neste chroot (sem CUDA)**; medir no host (RTX 3060, 12288 M
 | runner `max_tokens` (chat) | `16384` | `/tmp/opencode/run-belts-direct.sh` e `E2EBeltsBuildTests.cs:70` |
 | runner `max_tokens` (review) | `4096` | `E2EBeltsBuildTests.cs:116` |
 | `--anti-repeat` / `--anti-repeat-retry` | `1` | ambas as bridges |
-| `--main-harness` / `--harness-tails` / `--legacy-harness` | `1` / `0` / `0` | ambas (main harness ativo; tails e legado desligados) |
+| `--main-harness` / `--harness-tails` / `--tail-scope` / `--legacy-harness` | `0` / `1` / `all` / `0` | todas (master do cliente intacto; tails nos dois caminhos) |
 | `--diagnostic` | `0` | ambas (sonda desligada) |
 | `--thinking` | `events` | ambas (formato de repasse; o thinking efetivo vem do perfil) |
 | `--coerce-text-tools` / `--coerce-narrated` / `--tool-strategy` | `0` | ambas (upstream com parser nativo) |
@@ -620,7 +620,7 @@ Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `MAIN_HARNESS=0` e
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4124 --upstream http://127.0.0.1:4100 --model Gemma4-E4B-Q4 \
   --thinking events --temperature 0.5 --max-tokens 16384 --api-key guest@123 \
-  --passthrough-responses true --harness-tails 0 --legacy-harness 0 \
+  --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 \
   --anti-repeat 1 --anti-repeat-retry 1 \
   --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 \
   --anti-repeat-window 512 --log /tmp/bridge-gpu.log
@@ -629,14 +629,14 @@ ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4125 --upstream http://127.0.0.1:4110 --model Gemma4-E4B-UD-Q3 \
   --thinking events --temperature 0.5 --max-tokens 16384 --api-key guest@123 \
-  --passthrough-responses true --harness-tails 0 --legacy-harness 0 \
+  --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 \
   --anti-repeat 1 --anti-repeat-retry 1 \
   --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 \
   --anti-repeat-window 512 --log /tmp/bridge-cpu.log
 ```
 
-A `bridge-cpu-forced.service` (`:4126`, `-ngl 0`) permanece **intocada**:
-`--max-tokens 8192`, `--context-tokens 131072`, sem `--harness-tails`/`--anti-repeat-retry`.
+A `bridge-cpu-forced.service` (`:4126`, `-ngl 0`) também roda
+`--main-harness 0 --harness-tails 1 --tail-scope all --anti-repeat-retry 1`.
 
 Atalhos de desktop: `OpenCode Bridge GPU/CPU` reiniciam as units e mostram
 saúde; `Llama GPU`/`Llama CPU` regeneram e reiniciam os servidores;
@@ -715,8 +715,8 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 - Pull `origin/main` + rebuild do DLL
   (`dotnet build Rochas.OpenCodeBridge/Rochas.OpenCodeBridge.csproj -c Release`);
   smoke test em instância descartável OK.
-- `:4124`/`:4125` com args canônicos: `--max-tokens 16384`, `--harness-tails 0
-  --legacy-harness 0`, `--anti-repeat 1 --anti-repeat-retry 1`,
+- `:4124`/`:4125` com args canônicos: `--max-tokens 16384`, `--main-harness 0
+  --harness-tails 1 --tail-scope all`, `--legacy-harness 0`, `--anti-repeat 1 --anti-repeat-retry 1`,
   `--coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0`,
   `--anti-repeat-window 512`, `--passthrough-responses true` e sem
   `--diagnostic`/`--context-guard`/`--tool-blacklist`/`--thinking-off-roles`.
