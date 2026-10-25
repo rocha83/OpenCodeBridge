@@ -587,6 +587,11 @@ Subcomando: `Rochas.OpenCodeBridge.dll gate <repo> "<prompt>" [texto ...] [--rev
 
 ### 4.5 Princípios dos testes WAR — a bridge é fixa, o teste se adapta (2026-10-25)
 
+**Driver canônico em C#.** A orquestração (lock, pausa, steps, build, redeploy,
+restart e gate) vive na solução `.slnx`, em `TestCircuitDriver` → `WarTemplate`
+→ `Execution`; a CLI é `--war-*` no projeto de testes. `scripts/war/` é
+referência legada. Documento completo: `TEST-DRIVER.md`.
+
 **Regra de ouro.** A bridge tem uma única estratégia estável, a mesma usada por
 OpenCode, Web UI e produção: flags, ctx, `max_tokens`, harness e tails. A esteira
 WAR mede o modelo **dentro** dessa estratégia. O teste se adapta à bridge; a
@@ -762,6 +767,38 @@ Atalhos de desktop: `OpenCode Bridge GPU/CPU` reiniciam as units e mostram
 saúde; `Llama GPU`/`Llama CPU` regeneram e reiniciam os servidores;
 `Llama GPU2-CPU Toggle` alterna `-ngl 99` ⇄ `-ngl 0` (benchmark CPU puro).
 
+### 4.6 Ferramentas de bancada oficiais — draw.io
+
+O **draw.io desktop** é ferramenta oficial do ambiente de trabalho para os C4,
+fluxos de contrato e diagramas do AI.Manager/OpenCodeBridge. Instalação validada
+nesta máquina (LMDE 7, x86_64):
+
+```bash
+# pacote oficial (GitHub jgraph/drawio-desktop), versão 32.6.1
+cd /tmp/opencode
+curl -L --fail -o drawio-amd64-32.6.1.deb \
+  https://github.com/jgraph/drawio-desktop/releases/download/v32.6.1/drawio-amd64-32.6.1.deb
+sudo dpkg -i drawio-amd64-32.6.1.deb
+sudo apt-get install -f -y
+drawio --version        # 32.6.1
+```
+
+- Binário: `/opt/drawio/drawio`, alternativa `/usr/bin/drawio`.
+- Desktop: `~/Desktop/drawio.desktop` (`chmod +x`, dono `mint`), ícone
+  `com.jgraph.drawio.desktop`.
+- Export headless/CLI (usa o `DISPLAY` da sessão; sem X, instalar `xvfb`):
+
+```bash
+drawio -x -f png --size page -s 2.5 \
+  -o docs/ai-manager/diagrams/ai-manager-next-steps-c4.png \
+  docs/ai-manager/diagrams/ai-manager-next-steps-c4.drawio
+```
+
+- Diagramas oficiais ficam em `docs/ai-manager/diagrams/`; o PNG é derivado do
+  `.drawio` e ambos entram no commit.
+- Não versionar o `.deb` nem o binário. O pacote e o atalho fazem parte da
+  imagem/remaster (ver checklist 9.8).
+
 ---
 
 ## 5. Build, testes e pipeline
@@ -856,7 +893,8 @@ antes do build** (lock de PDB) e rode com `--no-build`.
   `Llama CPU Forced` → `start-llama-cpu-forced.sh`;
   `OpenCode Bridge GPU`/`GPU2`/`CPU Forced` →
   `start-bridge-gpu.sh`/`start-bridge-gpu2.sh`/`start-bridge-cpu-forced.sh`;
-  `Bridge Web UI` → `start-bridge-web.sh`.
+  `Bridge Web UI` → `start-bridge-web.sh`; `draw.io` → `/opt/drawio/drawio`
+  (ferramenta oficial de diagramas, ver 4.6).
 - Os scripts das bridges chamam `dotnet Rochas.OpenCodeBridge.dll` no
   `bin/Release/net9.0`; o da Web chama `Rochas.OpenCodeBridge.Web.dll`.
   Caminhos conferidos; a Web UI sobe na `:4130`. `start-bridge-web.sh` não
@@ -947,6 +985,7 @@ sem estar na imagem.
 `OpenCode Bridge GPU.desktop` (4124) · `OpenCode Bridge GPU2.desktop` (4125) ·
 `Llama CPU Forced.desktop` (4120) · `OpenCode Bridge CPU Forced.desktop` (4126) ·
 `Llama GPU2 + Bridge GPU2 (padrao).desktop` (launcher sem diálogo) ·
+`draw.io.desktop` (ferramenta oficial de diagramas C4, ver 4.6) ·
 `Compartilhar-Samba.desktop` (ver 9.6).
 
 ### 9.4 Bridges — args canônicos e o que realmente está ativo
@@ -1048,8 +1087,11 @@ Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
 2. Units geradas: `llama-gpu`, `llama-gpu2`, `llama-cpu-forced`, `bridge-gpu`,
    `bridge-gpu2`, `bridge-cpu-forced` (+ `systemctl enable` se quiser boot
    automático; hoje estão `disabled` e sobem pelos ícones/launcher).
-3. Ícones `.desktop` em `/home/mint/Desktop` com `chmod +x` e dono `mint`.
+3. Ícones `.desktop` em `/home/mint/Desktop` com `chmod +x` e dono `mint`,
+   incluindo `draw.io.desktop` → `/opt/drawio/drawio`.
 4. `~/.config/opencode/opencode.json` com `131072/16384` nos dois providers.
+   draw.io desktop 32.6.1 instalado (`.deb` oficial) e ícone
+   `com.jgraph.drawio.desktop` disponível.
 5. `/etc/samba/share-zenity.conf` + a linha `include` no `smb.conf` (se já
    houver shares configurados).
 6. **Não** gravar: `llama-cpu.service`, `bridge-cpu.service`,
