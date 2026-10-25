@@ -1,5 +1,5 @@
 > **Espelho sincronizado do repositório AI.Manager.**
-> Fonte canônica: `AI.Manager/docs/ai-manager/AI-MANAGER-NEXT-STEPS.md`, commit `3b8b0bc` (2026-10-25).
+> Fonte canônica: `AI.Manager/docs/ai-manager/AI-MANAGER-NEXT-STEPS.md`, commit `f13bc2f` (2026-10-25).
 > Este arquivo é somente leitura no OpenCodeBridge; alterações de plano devem ser feitas no AI.Manager e sincronizadas por commit.
 
 # AI.Manager Next Steps — fusão por contrato com o OpenCodeBridge
@@ -571,7 +571,8 @@ O AI.Manager usa esse cliente em `Infrastructure`; `Application` define a porta 
 ### 8.5 Persistência
 
 - Tabelas novas; sem alterar destrutivamente as existentes.
-- Dapper + `IUnitOfWork` para run + evidência.
+- Dapper pelo padrão atual: `IGenericRepository<T>` + `IPersistenceRepository<T>` (`Rochas.DapperRepository`), registrados por entidade nos dois `Program.cs`.
+- `AppDb.Init` continua o ponto de schema (`CREATE TABLE IF NOT EXISTS`) e recebe as migrações idempotentes novas.
 - Índices em `created_at`, `status`, `experiment_version_id`, `runner_id`.
 - `manifest_json` snapshot na versão aprovada; tabelas normalizadas para edição.
 - Export/import JSON para backup, CI e revisão.
@@ -834,3 +835,185 @@ Implementar a **fatia vertical 1**:
 5. Espelho Q3 do mesmo `manifestHash` após Q4 verde, com `MirrorRun` e workflow de divergência.
 
 Essa fatia já entrega o guia do circuito e o enunciado versionado na UI **sem tocar no gate**. A troca do legado pelo manifesto só acontece depois de paridade verde e três execuções Q4 consecutivas verdes. O Q3 acompanha na sequência como espelho; divergência é tratada no workflow, não no gate.
+
+---
+
+## Apêndice A — Inventário do AI.Manager e fatiamento de implementação
+
+### A.1 Forma atual do repositório
+
+- Solution `Rochas.AI.Manager.slnx`, `net10.0`, projetos: `Api`, `Application`, `Bridge`, `Core`, `Domain`, `Infrastructure`, `TrainingEngine`, `Web` e `Tests`.
+- **Não existe** hoje um bounded context de teste. `Experiment` é de treino; `HarnessRun` e `BridgeCapture` são o registro atual do proxy.
+- Persistência: `Rochas.DapperRepository` com `IGenericRepository<T>` (leitura) e `IPersistenceRepository<T>` (escrita), registrados entidade por entidade em `Api/Program.cs` e `Web/Program.cs`.
+- Schema: `Infrastructure/Data/AppDb.cs` centraliza `CREATE TABLE IF NOT EXISTS` e migrações idempotentes (`ALTER TABLE ... ADD COLUMN`, com catch de coluna existente).
+- API e Web duplicam o bloco de DI; qualquer repositório/serviço novo precisa ser registrado nos **dois** `Program.cs`.
+- UI: MVC com uma pasta de controller/view por feature (`Experiments`, `Harness`, `HarnessRuns`, `ModelBindings`, etc.); o menu vive em `Views/Shared/_Layout.cshtml`.
+- Testes: xUnit em `tests/Rochas.AI.Manager.Tests`, com testes de serviço, bridge e helpers.
+
+### A.2 Arquivos a criar na Fase 2
+
+```text
+src/Rochas.AI.Manager.Domain/Testing/
+  TestExperiment.cs
+  TestExperimentVersion.cs
+  CircuitStage.cs
+  CircuitStep.cs
+  TestScenario.cs
+  ScenarioPipeline.cs
+  AssertionSpec.cs
+  TestRun.cs
+  StageRun.cs
+  StepRun.cs
+  ScenarioRun.cs
+  MirrorRun.cs
+  MirrorDivergence.cs
+  Evidence.cs
+  RunnerProfile.cs
+  RunnerRegistration.cs
+
+src/Rochas.AI.Manager.Application/Testing/
+  ITestExperimentService.cs
+  TestExperimentService.cs
+  IManifestBuilder.cs
+  ManifestBuilder.cs
+  IManifestValidator.cs
+  ManifestValidator.cs
+  IAcceptanceService.cs
+  AcceptanceService.cs
+  IWarBaselineSeeder.cs
+  WarBaselineSeeder.cs
+  IMirrorWorkflowService.cs
+  MirrorWorkflowService.cs
+
+src/Rochas.AI.Manager.Infrastructure/Testing/
+  ManifestCanonicalizer.cs       (JSON canônico + SHA-256)
+  WarBaselineReader.cs           (lê Data/Seeds/war-baseline.json)
+
+src/Rochas.AI.Manager.Api/Controllers/
+  TestExperimentsController.cs
+  TestRunsController.cs
+  TestRunnersController.cs
+  MirrorDivergencesController.cs
+
+src/Rochas.AI.Manager.Web/Controllers/
+  TestBenchController.cs
+
+src/Rochas.AI.Manager.Web/Views/TestBench/
+  Index.cshtml
+  Edit.cshtml
+  Circuit.cshtml
+  Runs.cshtml
+  RunDetails.cshtml
+  Mirror.cshtml
+
+src/Rochas.AI.Manager.Web/Views/Shared/_TestBenchNav.cshtml
+
+Data/Seeds/war-baseline.json
+
+tests/Rochas.AI.Manager.Tests/Testing/
+  TestExperimentVersionTests.cs
+  ManifestBuilderTests.cs
+  ManifestValidatorTests.cs
+  WarBaselineSeederTests.cs
+  AcceptanceServiceTests.cs
+  MirrorWorkflowTests.cs
+```
+
+### A.3 Tabelas iniciais
+
+```text
+test_experiments
+  id, code, name, hypothesis, status, owner_login, created_at, updated_at
+
+test_experiment_versions
+  id, experiment_id, version, status, model_binding_id, harness_profile_version_id,
+  runner_profile_id, manifest_json, manifest_hash, schema_version, approved_by,
+  approved_at, created_at
+
+test_circuit_stages
+  id, version_id, key, title, sort_order, max_parallel_steps, gate_policy, on_failure
+
+test_circuit_steps
+  id, stage_id, key, kind, command, args_json, env_json, timeout_sec,
+  retry_json, depends_on_json, when_json, next_steps_json, selector_json
+
+test_scenarios
+  id, version_id, key, title, prompt, system_prompt, workspace_json,
+  model_role, temperature, thinking, max_tokens, tools_json, loop_json,
+  assertions_json, tags, weight
+
+test_runs
+  id, experiment_version_id, runner_id, manifest_hash, status,
+  started_at, finished_at, gate_json, environment_json, created_at
+
+test_stage_runs / test_step_runs / test_scenario_runs
+  ids, parent run, key, status, duration_ms, cause, metrics_json, artifact_root
+
+test_mirror_runs
+  id, gate_run_id, mirror_run_id, manifest_hash, status, created_at
+
+test_mirror_divergences
+  id, mirror_run_id, step_key, kind, q4_value, q3_value, classification,
+  owner, action, status, created_at, updated_at
+
+test_evidence
+  id, run_id, scenario_run_id, kind, path, sha256, size_bytes, created_at
+
+runner_profiles
+  id, key, name, is_gate, is_mirror, bridge_url, upstream_url,
+  model_binding_id, context_window, max_tokens, capabilities_json
+
+runner_registrations
+  id, profile_id, host, version, contract_version, status,
+  last_heartbeat, capabilities_json
+```
+
+Índices mínimos:
+
+```text
+test_experiment_versions(experiment_id, version) UNIQUE
+test_runs(experiment_version_id, created_at)
+test_runs(manifest_hash)
+test_runs(runner_id, status)
+test_mirror_runs(gate_run_id) UNIQUE
+test_mirror_divergences(mirror_run_id, status)
+test_evidence(run_id, kind)
+```
+
+### A.4 Contratos de aplicação
+
+- `ITestExperimentService`: CRUD, clone, diff, validate, approve, deprecate.
+- `IManifestBuilder`: resolve versão aprovada + runner profile + harness + model binding em `manifest_json`; calcula `manifest_hash`; nunca consulta `WarTemplate`.
+- `IManifestValidator`: schema, capabilities do runner, step kinds, assertions, placeholders e limites.
+- `IAcceptanceService`: lê o gate do OpenCodeBridge, aplica política (Q4 apenas, 3 verdes, sem regressão) e aceita/rejeita.
+- `IWarBaselineSeeder`: importa `Data/Seeds/war-baseline.json` de forma idempotente por `sourceCommit + manifestHash`; cria `Draft`; nunca sobrescreve `Approved`.
+- `IMirrorWorkflowService`: cria `MirrorRun` apenas após Q4 verde; compara Q4×Q3; abre/fecha `MirrorDivergence`.
+
+### A.5 Rotas e UI
+
+- API: `/api/test-experiments`, `/versions`, `/validate`, `/approve`, `/manifest`, `/runs`, `/mirror`, `/mirror-divergences`.
+- Web: `/TestBench` (catálogo), `/TestBench/Edit/{id}`, `/TestBench/Circuit/{versionId}`, `/TestBench/Runs`, `/TestBench/RunDetails/{id}`, `/TestBench/Mirror/{runId}`.
+- Menu: nova entrada **Test Bench** em `_Layout.cshtml`; não misturar com **Experimentos** de treino.
+- O editor de circuito usa o mapa de stages/steps e o builder de assertions; o modo JSON avançado é somente para inspeção/importação, não para injetar C#.
+- O console de run mostra Q4 e Q3 em abas separadas; a aba Q3 fica desabilitada até o gate Q4 verde.
+
+### A.6 Ordem de implementação segura
+
+1. Entidades + tabelas + repositórios + DI nos dois `Program.cs`.
+2. `ManifestBuilder` + `ManifestCanonicalizer` + testes de hash.
+3. `WarBaselineSeeder` + `Data/Seeds/war-baseline.json` + teste de idempotência.
+4. API de experimentos/versões/manifesto (sem executar).
+5. UI read-only do catálogo e do mapa do circuito.
+6. Editor de cenário/assertions + validação.
+7. Run offline + ingestão de resultado.
+8. `MirrorRun`/`MirrorDivergence` + workflow.
+9. Remoção de `Rochas.AI.Manager.Bridge` e cutover do runner.
+
+### A.7 O que não fazer
+
+- Não adicionar motor de protocolo no AI.Manager; o SDK é cliente HTTP/SSE.
+- Não referenciar `WarTemplate` em runtime do AI.Manager; o seed é JSON versionado.
+- Não colocar lógica de C# no banco/UI; step kind novo exige release do OpenCodeBridge.
+- Não deixar Q3 influenciar aceitação, gate ou status do experimento.
+- Não criar tabela/consulta que o runner precise ler; o contrato é o manifesto.
+- Não commitar `EVOLUTION.md`, `HISTORY.md` ou `Properties/launchSettings.json` como parte desta frente sem revisão explícita.
