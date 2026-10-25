@@ -1,9 +1,9 @@
 // Corta-espiral de prosa curta sem tools (loop "boa noite/encerrando").
 // O anti-giro só pega turnos de LEITURA; este pega turnos de CONVERSA:
-// prosa curta repetida sem nenhuma tool executar. Uso no loop do
-// ChatController: a cada fim de turno, Note(texto, nCalls); true = encerrar
-// com nota honesta em vez de chamar o modelo de novo.
-namespace Rochas.OpenCodeBridge.Web.Services;
+// prosa curta repetida sem nenhuma tool executar. Mora no Core (fonte única)
+// e a Web UI apenas consome: Note(texto, nCalls); true = encerrar com nota
+// honesta em vez de chamar o modelo de novo.
+namespace Rochas.OpenCodeBridge.Core;
 
 public sealed class ChatterGuard
 {

@@ -71,6 +71,7 @@ internal static class Program
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ToolsCoercionTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ConfirmGateTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.ChatterGuardTests.Run();
+            Failures += Rochas.OpenCodeBridge.Web.Test.Unit.AntiRepeatCoreTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.CalibrationProbeTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.TopicsSweepTests.Run();
             Failures += Rochas.OpenCodeBridge.Web.Test.Unit.DiagnosticsTests.Run();

@@ -1,6 +1,7 @@
 // Simula o delírio ao iniciar sessão: o modelo repete boa-noite/encerrando e
 // só sossega após o ping-pong corretivo. Execução:
 // dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --units-only
+using Rochas.OpenCodeBridge.Core;
 using Rochas.OpenCodeBridge.Web.Services;
 
 namespace Rochas.OpenCodeBridge.Web.Test.Unit;

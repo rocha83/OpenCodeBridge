@@ -18,8 +18,10 @@
 | 49376 / 49377 | serviço gerenciado OpenCode (dev/moe) | 127.0.0.1 | interno |
 
 **Bridges intactas:** seguem em `0.0.0.0` + `--api-key`. Elas **não** fazem Basic auth
-(respondem 401 mesmo com `-u`). Quem autentica usuário é o host: LightDM (desktop), SSH
-(chave/senha) e Caddy (basicauth) para o Web.
+(respondem 401 mesmo com `-u`). Quem autentica usuário é o host: LightDM (desktop; só
+`mint` aparece — `dev-agent`/`moe-agent` são `hidden-users` e barrados no PAM), SSH
+(chave/senha; `dev-agent` cai direto no TUI via `ForceCommand`, `moe-agent` é
+`DenyUsers`) e Caddy (basicauth) para o Web.
 
 ### 4.1.1 Ícones das bridges (canônicos)
 

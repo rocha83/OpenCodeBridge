@@ -1113,11 +1113,34 @@ Args gravados nas units (as três, `bridge-gpu`, `bridge-gpu2` e `bridge-cpu-for
 
 | conta | uid | shell | acesso | workspace | porta |
 |---|---|---|---|---|---|
-| `moe-agent` | 1001 | `/usr/sbin/nologin` | só Web (chat-only) | `/home/moe-agent/workspace` | `:4220` (Caddy `4250`) |
-| `dev-agent` | 1002 | `/bin/bash` | TUI via SSH:22 + Web | `/home/dev-agent/workspace` | `:4210` (Caddy `4240`) |
-| `mint` | 1000 | `/bin/bash` | TUI/Web completo | livre | `:4200` (Caddy `4230`) |
+| `moe-agent` | 1001 | `/usr/sbin/nologin` | só Web (chat-only); sem SSH e sem login local | `/home/moe-agent/workspace` | `:4220` (Caddy `4250`) |
+| `dev-agent` | 1002 | `/bin/bash` | TUI **somente via SSH:22** (ForceCommand → bwrap) + Web; sem login local | `/home/dev-agent/workspace` | `:4210` (Caddy `4240`) |
+| `mint` | 1000 | `/bin/bash` | único login local (LightDM) + TUI/Web completo | livre | `:4200` (Caddy `4230`) |
 
-- Nenhuma tem sudo/docker; homes `750`; `hidden-users` no LightDM.
+- Nenhuma tem sudo/docker; homes `750`.
+- **Login local (LightDM):** só `mint` aparece. `dev-agent` e `moe-agent` estão em
+  `hidden-users` e são negados pelo PAM (`/etc/pam.d/lightdm`, `lightdm-autologin` e
+  `login`) via `pam_succeed_if.so user != ...`; nem o login manual
+  (`greeter-show-manual-login=true`) abre sessão para eles. `moe-agent` ainda tem shell
+  `nologin` e `DenyUsers` no sshd. Se o `accounts-daemon` for instalado, os arquivos
+  `/var/lib/AccountsService/users/{dev-agent,moe-agent}` com `SystemAccount=true` mantêm
+  os dois fora da lista.
+- **dev-agent (SSH → TUI):** `Match User dev-agent` em
+  `/etc/ssh/sshd_config.d/60-ocagents.conf` aplica
+  `ForceCommand /usr/local/bin/start-ocagent-tui.sh` e desliga forwarding/X11/tunnel. O
+  script executa o `opencode` dentro do `ocagent-sandbox.sh` (bwrap), com
+  `HOME=/home/dev-agent` e `cwd=/home/dev-agent/workspace`; não há shell livre.
+- **moe-agent (Web-only):** sem SSH (`DenyUsers moe-agent`) e sem TUI; acesso só pela Web
+  `:4220` / Caddy `4250`.
+- Verificação:
+```bash
+grep '^hidden-users' /etc/lightdm/users.conf
+grep -n 'pam_succeed_if.so user !=' /etc/pam.d/lightdm /etc/pam.d/login
+grep -E 'DenyUsers|Match User dev-agent|ForceCommand' /etc/ssh/sshd_config.d/60-ocagents.conf
+sshd -T -C user=dev-agent,host=localhost,addr=127.0.0.1 | \
+  grep -E 'forcecommand|allowtcpforwarding|x11forwarding|permittunnel'
+getent passwd dev-agent moe-agent | cut -d: -f1,3,7
+```
 - Sandbox: `bwrap` via `/usr/local/bin/ocagent-sandbox.sh` (home tmpfs + bind do próprio home;
   `/media`, `/mnt`, `/opt`, `/root`, `/srv` vazios; `--share-net` para `127.0.0.1:4125`).
 - Serviço gerenciado do OpenCode por conta: `service.json` com `49376` (dev) e `49377` (moe).

@@ -1,5 +1,24 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Acesso local e SSH: só `mint` no LightDM; `dev-agent` cai no TUI (2026-10-25, sessão 21)
+
+**Revisão do ambiente.** O login gráfico expõe só `mint`: `dev-agent` e `moe-agent`
+seguem em `hidden-users` e foram negados no PAM do LightDM/login
+(`pam_succeed_if.so user != ...`), então nem o login manual abre sessão. Para o caso de
+o `accounts-daemon` ser instalado, `/var/lib/AccountsService/users/{dev-agent,moe-agent}`
+ficou com `SystemAccount=true`; hoje o daemon não está instalado e `users.conf` é a fonte.
+`moe-agent` continua `nologin` e ganhou `DenyUsers` no sshd (Web-only). `dev-agent` não
+tem shell livre: `Match User dev-agent` aplica
+`ForceCommand /usr/local/bin/start-ocagent-tui.sh` e desliga forwarding/X11/tunnel; o
+script executa o `opencode` dentro do `ocagent-sandbox.sh` (bwrap) no workspace.
+
+**Verificação.** `sshd -t` OK; `sshd -T -C user=dev-agent,...` →
+`forcecommand /usr/local/bin/start-ocagent-tui.sh`, `allowtcpforwarding no`,
+`x11forwarding no`, `permittunnel no`; `denyusers moe-agent` global. `getent passwd`:
+dev 1002 `/bin/bash`, moe 1001 `/usr/sbin/nologin`, mint 1000 `/bin/bash`.
+Documentado em `docs/LAB-SETUP.md` §0.1, `docs/04-rede-e-exposicao.md` §4.1 e
+`docs/PENDENCIAS-CHROOT-CUBIC.md` (ACEITE P2.1).
+
 ## Migração para .NET 10 LTS (2026-10-25, sessão 21)
 
 **Todos os seis projetos da solution passaram de `net9.0` para `net10.0`:**

@@ -1,7 +1,7 @@
 // Testes unitários do corta-espiral de prosa (loop boa-noite/encerrando).
 // Execução: dotnet run -c Release --project Rochas.OpenCodeBridge.Web.Test -- --units-only
 
-using Rochas.OpenCodeBridge.Web.Services;
+using Rochas.OpenCodeBridge.Core;
 
 namespace Rochas.OpenCodeBridge.Web.Test.Unit;
 
