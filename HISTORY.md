@@ -3383,3 +3383,19 @@ de `azul,verde,roxa,marrom,preta` para `marrom,preta` (steps renomeados
   no FS0588. Assertivas inalteradas.
 - Nao rebuildar durante o run: `stale_check` marca o step como STALE se o binario
   mudar. O build e o reteste dos steps FAIL ficam para depois do driver.
+
+### Reboot do live (2026-10-25 12:0x): sampler e redeploy das 3 bridges
+
+- Depois da reinicialização, os processos `llama-server` voltaram com
+  `--dry-multiplier 0.8 --repeat-penalty 1.1` (valor do gerador/unit, não o
+  documentado). `E-devpipe-vision-tool` reproduziu a mutação `placa.png` ->
+  `placa.ng`. Corrigido nas 3 units e nos 3 `start-llama-*.sh` para
+  `--dry-multiplier 0.0 --repeat-penalty 1.08` + `daemon-reload` + restart.
+- Produção `/usr/src/opencodebridge`: `git reset --hard origin/main` (**b5dc76c**),
+  `dotnet build -c Release` = **0 avisos / 0 erros**.
+- As units das bridges ainda emitiam o alias antigo `--harness 0`, que o binário
+  novo recusa no boot; trocado por `--main-harness 0 --harness-tails 0` nas 3
+  units e nos 3 `start-bridge-*.sh` (fonte e unit andam em par).
+- Estado validado: `:4124`, `:4125` e `:4126` `active`, `/api/status` `ok`,
+  `main_harness=false`, `harness_tails=false`, ctx `131072/65536/131072`;
+  `:4130` (`bridge-web`) `active` (302 no `/`).

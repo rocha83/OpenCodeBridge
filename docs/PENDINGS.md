@@ -40,8 +40,8 @@ vem dos parâmetros de amostragem do `llama-server`.
 
 | camada | Q4 `:4100` | Q3 `:4110` | onde |
 |---|---|---|---|
-| `--repeat-penalty` | 1.1 | 1.1 | unit do llama |
-| DRY (`--dry-multiplier`) | 0.8 (`--dry-penalty-last-n 1024`) | 0.8 (`1024`) | unit do llama |
+| `--repeat-penalty` | **1.08** | **1.08** | unit do llama (atual) |
+| DRY (`--dry-multiplier`) | **0.0** (`--dry-penalty-last-n 1024`) | **0.0** (`1024`) | unit do llama (atual) |
 | anti-repeat textual da bridge | on, janela 512, com retry | idem | `--anti-repeat*` |
 | breaker de loop de tool | soft 3 / hard 6 | idem | `appsettings.json` |
 
