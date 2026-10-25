@@ -63,7 +63,7 @@ internal static class E2EMissionTests
         TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
         TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
 
-        var sys = new JsonObject { ["role"] = "system", ["content"] = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls (uma por vez), sem prosa." };
+        var sys = new JsonObject { ["role"] = "system", ["content"] = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls, sem prosa." };
         var history = new JsonArray(sys);
         history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) write no caminho ABSOLUTO {ws}/mcs/Program.cs (o projeto ja existe em {ws}/mcs; nao recrie, nao use echo/heredoc): programa que calcula Simpson de Math.Sin em [0,pi] (n=100 subintervalos) e media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. (2) rode o projeto e confira a saida; se falhar, leia o erro, corrija Program.cs e rode de novo ate imprimir 2.000000 e 5.000000." });
 
