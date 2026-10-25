@@ -3500,3 +3500,63 @@ de `azul,verde,roxa,marrom,preta` para `marrom,preta` (steps renomeados
   A correção mantém o aceite e valida no gate Q4 (Q3 = diagnóstico).
 - L3 (marrom/preta) não rodou: lock stale em `/tmp/opencode/war.lock` (rc=3).
   Sem diretório `L3-*`; pendente limpar lock e decidir instância/tail do gate.
+
+## Lift do ambiente e retomada da WAR (2026-10-25, sessão 18)
+
+**Contexto.** Retomada após a sessão 17 (revisão da fusão AI.Manager × OpenCodeBridge).
+O ambiente pós-reboot estava divergente do `LAB-SETUP` e as três bridges estavam paradas.
+
+**Achados (auditoria do host):**
+
+- PROD `/usr/src/opencodebridge` em `bf30043` (23/10), sem `TestCircuitDriver` e sem
+  `--main-harness`/`--harness-tails`; docs locais antigas (patch em `/tmp/opencode`).
+- Units `bridge-gpu`, `bridge-gpu2` e `bridge-cpu-forced` com `--harness 0` (flag morta:
+  o binário recusa no boot) → nenhuma bridge subia.
+- `llama-gpu2` com `-c 131072 -np 2` (2×64k) em vez de `114688` (2×56k = 112k).
+- Sampler dos três llama com `--repeat-penalty 1.1 --dry-multiplier 0.8` (valor que a
+  §10 mediu como causa de mutação de paths em tool calls).
+- `opencode.json` (mint) com `limit.context 65536` no provider `llama`.
+- **draw.io ausente** (a §4.6 pressupunha 32.6.1 instalado; o ícone do Desktop também
+  não existia).
+
+**Ações:**
+
+1. PROD: `git pull --ff-only` (root) → **`2ea54fd`**; `dotnet build Rochas.OpenCodeBridge.slnx
+   -c Release` = **0 warnings / 0 errors** (net9.0, 28,4 s). Persistente segue em
+   `1f635a6` (.NET 10 local, 2 commits à frente do origin/main — não enviados).
+2. Launchers `/usr/local/bin/start-llama-*.sh`: `--repeat-penalty 1.08 --dry-multiplier 0.0`;
+   `start-llama-gpu2.sh` com `SVC_CTX=114688` e `SVC_SLOTS=2`.
+3. Launchers `/usr/local/bin/start-bridge-*.sh`: `--harness 0` → `--main-harness 0
+   --harness-tails 1 --tail-scope all`; `start-bridge-gpu2.sh` com `SVC_CTX=57344`.
+   `bash -n` OK nos seis scripts.
+4. Units regeneradas por `--defaults` e restart na ordem GPU1 → GPU2:
+   `n_slots=1 / n_ctx_slot=131072` (`:4100`) e `n_slots=2 / n_ctx_slot=57344` (`:4110`,
+   112k total). A linha CPU (`:4120`/`:4126`) subiu para smoke, foi validada e em seguida
+   **parada e desabilitada** — não há teste dedicado na linha CPU nesta fase; as units
+   ficam preservadas para quando houver.
+5. Bridges ativas: `:4124` ctx 131072 e `:4125` ctx 57344; ambas
+   `main_harness=false`, `harness_tails=true`, `tail_scope=all`
+   (behavior **1275** / tools **2289** chars), `anti_repeat=true`, `max_tokens=16384`.
+   Web UI `:4130` **online** (`bridge-web.service`, `GET /` → 302).
+6. `opencode.json` (mint): provider `llama` com `limit.context 57344` nos 6 modelos.
+7. VRAM medida com GPU1+GPU2: **10677 / 12288 MiB**.
+8. Smoke de tool call (`/v1/chat/completions`, `tool_choice=required`, tool `write`):
+   `:4124`, `:4125` e `:4126` (este antes de desativar) devolveram
+   `finish_reason=tool_calls` com `arguments` no path exato — confirma DRY off e path
+   verbatim no caminho real.
+9. draw.io 32.6.1 reinstalado (`.deb` oficial) + `~/Desktop/drawio.desktop`
+   (`chmod +x`, dono `mint`).
+
+**Docs.** `AI-MANAGER-NEXT-STEPS.md` v2 (absorção) concluído no AI.Manager
+(commit **`e85d34b`**): título/escopo/premissa, `Experiment` + `ExperimentPlan` (sem
+`TestExperiment`), endpoints `/api/experiments?kind=test`, decisões fechadas
+(runner in-process, `Bridge.Contracts`/`Client` no 1º corte), riscos de transição e
+apêndices A.4–A.7. C4 v2 regenerado por `docs/ai-manager/diagrams/gen-c4.py` e
+exportado pela CLI do draw.io (4002×2402). Espelho atualizado neste repo.
+
+**WAR.** Bateria anterior (stamp `20261025-161359`) parou no L3 depois do `build-slnx`;
+o `belts-build-final-bridge` chegou a iniciar às 17:25 e foi interrompido (sem lock e sem
+órfão). L1 7 PASS/2 FAIL e L2 7 PASS/7 FAIL/2 SKIP foram medidos **antes** da correção do
+sampler (DRY 0.8) e das units — resultado não vale como gate. Nova bateria completa no Q4
+iniciada às 18:03 com stamp **`20261025-180305`** (`--war-all`, lock único, L1→L3),
+sem alterar enunciados, aceite, ctx ou `max_tokens`.

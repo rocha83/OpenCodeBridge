@@ -84,7 +84,7 @@ atrás de duas bridges:
           "name": "Huihui Gemma4 E4B abliterated IQ3_XXS GPU2",
           "tool_call": true,
           "compatibility": { "reasoningField": "reasoning_content" },
-          "limit": { "context": 131072, "output": 16384 },
+          "limit": { "context": 57344, "output": 16384 },
           "temperature": 0.3
         }
       }
@@ -800,6 +800,10 @@ drawio -x -f png --size page -s 2.5 \
   `.drawio` e ambos entram no commit.
 - Não versionar o `.deb` nem o binário. O pacote e o atalho fazem parte da
   imagem/remaster (ver checklist 9.8).
+- **Lacuna de remaster medida em 2026-10-25:** o ambiente voltou sem o draw.io
+  (nem `/opt/drawio`, nem ícone). Reinstalado pelo `.deb` oficial e o ícone
+  `~/Desktop/drawio.desktop` recriado. O checklist 9.8 passa a exigir conferir
+  `drawio --version` no boot pós-remaster, não só o pacote na ISO.
 
 ---
 
@@ -993,12 +997,12 @@ sem estar na imagem.
 
 ### 9.4 Bridges — args canônicos e o que realmente está ativo
 
-Args gravados nas duas units (`bridge-gpu` e `bridge-gpu2`):
+Args gravados nas units (as três, `bridge-gpu`, `bridge-gpu2` e `bridge-cpu-forced`):
 
 ```
 --thinking events --temperature 0.5 --max-tokens 16384
---context-guard 1 --context-tokens 131072
---passthrough-responses true --harness-tails 0 --legacy-harness 0
+--context-guard 1 --context-tokens 131072   (Q3 :4125 usa 57344 = 1 slot de 56k)
+--passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0
 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512
 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0
 --upstream-parser native
@@ -1301,27 +1305,59 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
 | serviço | flags-chave |
 |---|---|
 | bridges `:4124` / `:4125` | `--main-harness 0 --harness-tails 1 --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 --passthrough-responses true`; request com **`parallel_tool_calls: false`** (comportamento do código, não flag — §11) |
-| bridge `:4126` (CPU forced) | **parada e desabilitada** (o usuário não ligou a linha CPU); unit preservada com `--harness-tails 1` para quando for ativada |
+| bridge `:4126` (CPU forced) | **inativa e desabilitada** (não há testes na linha CPU); unit preservada com `--harness-tails 1 --tail-scope all --main-harness 0` e upstream `:4120` (`-ngl 0`) para quando for ligada |
 | Web UI `:4130` | `Core` in-process: `mainHarness`, `harnessTails` e `antiRepeat` nos defaults (ligados) — o `BridgeUrl` do agente só dimensiona contexto |
 | llama `:4100` / `:4110` / `:4120` | `--dry-multiplier 0.0`, `--repeat-penalty 1.08` (§10) |
 
 - O alias **`--harness`** não existe mais: o binário atual recusa no boot. Os
   `start-bridge-*.sh` reescrevem a unit do zero — já emitindo
-  `--main-harness 0 --harness-tails 0`; se um pacote antigo voltar, o clique no ícone
-  recria a unit quebrada (mesmo padrão do `4200` acima).
-## Estado final do ambiente (2026-10-25, pós-deploy)
+  `--main-harness 0 --harness-tails 1 --tail-scope all`; se um pacote antigo voltar,
+  o clique no ícone recria a unit quebrada (mesmo padrão do `4200` acima).
+- Unit com `--harness 0` (gerador antigo) **não sobe**: o processo sai no boot e a
+  porta fica fechada. Sintoma no `journalctl`: `argumento desconhecido: --harness`.
+  Correção: atualizar o `start-bridge-*.sh` e rodar `--defaults`.
+## Estado final do ambiente (2026-10-25, redeploy: Q4 + Q3 + Web `:4130`, prod `2ea54fd`)
 
-- **Produção** `/usr/src/opencodebridge` em **`6e49fd3`** (`git reset --hard origin/main`,
-  `dotnet build -c Release` 0 avisos/0 erros). Persistente no mesmo commit.
-- **GPU1 `:4124`** — `Gemma4-E4B-Q4`, `-c 131072 -np 1` (1×128k), bridge
-  `--context-tokens 131072`, **tails ON** (`tail_scope=all`), `anti_repeat=true`,
-  breaker `soft=3/hard=6`, `passthrough_responses=true`.
-- **GPU2 `:4125`** — `Gemma4-E4B-UD-Q3`, `-c 114688 -np 2` (2×57344), bridge
-  `--context-tokens 57344`, **tails ON** (`tail_scope=all`), 100% GPU, `anti_repeat=true`.
-- **CPU Forced `:4120/:4126`** — **parada e desabilitada**; VRAM liberada (~906 MiB).
-- **Logs**: `:4124` → `/tmp/bridge-gpu.log`; `:4125` → `/tmp/bridge-gpu2.log`
-  (o antigo `/tmp/bridge-cpu.log` não é mais escrito); `:4126` →
-  `/tmp/bridge-cpu-forced.log` (quando ativa).
+- **Produção** `/usr/src/opencodebridge` em **`2ea54fd`** (`git pull --ff-only origin main`
+  como root; docs locais antigas descartadas com patch salvo em
+  `/tmp/opencode/prod-local-*.patch`; `dotnet build Rochas.OpenCodeBridge.slnx -c Release`
+  = **0 avisos / 0 erros**, saída `net9.0`).
+- **Persistente (dev)** em **`1f635a6`** (migração `.NET 10` local, **2 commits à frente**
+  do `origin/main` `2ea54fd` — ainda não enviados). Rollback do PROD continua sendo o
+  `bin/Release/net9.0` atual.
+- **llama GPU1 `:4100`** — `Gemma4-E4B-Q4` `Q4_K_M` + mmproj, `-c 131072 -np 1`,
+  `--repeat-penalty 1.08 --dry-multiplier 0.0`, `/health` ok, `n_ctx=131072`.
+- **llama GPU2 `:4110`** — `Gemma4-E4B-UD-Q3` `IQ3_XXS`, `-c 114688 -np 2`
+  = **2×57344 (112k total)**, `--repeat-penalty 1.08 --dry-multiplier 0.0`,
+  `n_ctx=57344` por slot (confirmado em `/v1/models` e em `n_ctx_slot` no journal).
+- **CPU Forced `:4120`/`:4126`** — **inativa e desabilitada**: a linha CPU não é usada
+  nesta fase. `llama-cpu-forced` e `bridge-cpu-forced` foram parados e `disable`ados
+  depois do lift; as units ficam preservadas (geradas por `start-llama-cpu-forced.sh` e
+  `start-bridge-cpu-forced.sh`) para quando houver teste dedicado. Portas fechadas.
+- **Web UI `:4130`** — **online** (`bridge-web.service`, `start-bridge-web.sh --defaults`;
+  `GET /` responde `302` para o login).
+- **Bridges (as ativas, units regeneradas pelos `start-bridge-*.sh`)**:
+  `:4124` `ctx=131072`, `:4125` `ctx=57344`; ambas com
+  `main_harness=false`, `harness_tails=true`, `tail_scope=all`
+  (behavior **1275** / tools **2289** chars), `passthrough_responses=true`,
+  `anti_repeat=true`, `max_tokens=16384`, `context_guard=1`.
+- **VRAM medida** com GPU1+GPU2 residentes: **10677 / 12288 MiB** (~1,6 GiB livres).
+  A linha CPU forced parada (`-ngl 0`) não consumia VRAM; libera ~5,5 GiB de RAM.
+- **OpenCode** (`mint`): provider `openai` `:4124` `limit.context=131072`; provider
+  `llama` `:4125` `limit.context=**57344**` nos 6 modelos (era 65536);
+  `limit.output=16384` nos dois.
+- **Smoke de tool call** (`/v1/chat/completions`, `tool_choice=required`, tool `write`):
+  **4124** e **4125** devolveram `finish_reason=tool_calls` com `arguments` contendo o
+  path exato (`/tmp/opencode/smoke*.txt`); o **4126** foi testado ainda no lift e depois
+  desativado — confirma DRY off e rp 1.08 no caminho real.
+- **draw.io 32.6.1**: estava **ausente** neste ambiente (a §4.6 pressupunha instalado);
+  reinstalado nesta rodada pelo `.deb` oficial, com export do C4 v2
+  (`drawio -x -f png --size page -s 2.5` → 4002×2402). Ícone `~/Desktop/drawio.desktop`
+  recriado (`chmod +x`, dono `mint`).
+- **WAR**: bateria completa no Q4 relançada neste ambiente (stamp
+  **`20261025-180305`**, `--war-all`, lock único L1→L3, sem mexer em enunciado, aceite,
+  ctx ou `max_tokens`). O redeploy não altera o gate: quem mede continua `:4124`.
+- **Cloudflare**: `code/dev/moe/home` inalterados.
 - **Anti-repeat de tools**: vale no caminho **`/v1/responses`** (OpenCode/provider
   `openai`, WAR e agentes GPU1). A assinatura agora canonicaliza JSON
   (`{"a": 1}` == `{"a":1}`), então chamada idêntica reemitida é bloqueada e vira
@@ -1334,6 +1370,3 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
 - **Tails**: `HarnessTails.DefaultTools` inclui `GIT-RAIZ` (repo nasce na pasta do
   projeto; conferir `git -C <dir> rev-parse --show-toplevel`) e `COMANDO INVALIDO`
   (`unknown option`/`usage:` não repete a mesma chamada).
-- **WAR**: reiniciada do começo em Q4 (`run-all-levels.sh`), stamp
-  **`L1-20261025-130450-l1`**, driver em `logs/levels/driver-console.out`.
-- **Cloudflare**: `code/dev/moe/home` respondendo 200 (inalterado).
