@@ -221,23 +221,36 @@ internal static class UnitToolBreakerTests
         if (st["tail_scope"] is null) TestContext.Skip("bridge sem --tail-scope (binario antigo)");
     }
 
-    public static async Task TranslateProfileTempWins()
+    public static async Task TranslateTempRespeitaTunel()
     {
         await RequireNewBridge();
         var harness = await TestContext.GetObj(TestContext.Bridge + "/api/harness");
         bool tailsEnabled = harness["harness_tails"]?.GetValue<bool>() ?? true;
-        var body = new JsonObject
+        string model = (TestContext.ServedModel.Length > 0 ? TestContext.ServedModel : "qualquer") + "-build";
+
+        // 1) cliente informa temperatura: passa intacta (quem manda e o tunel)
+        var comTemp = await TestContext.PostObj(TestContext.Bridge + "/api/translate", new JsonObject
         {
-            ["model"] = TestContext.ServedModel.Length > 0 ? TestContext.ServedModel + "-build" : "qualquer-build",
+            ["model"] = model,
             ["temperature"] = 0.5,
             ["input"] = "oi"
-        };
-        var obj = await TestContext.PostObj(TestContext.Bridge + "/api/translate", body);
-        double temp = obj["temperature"]?.GetValue<double>() ?? -1;
-        string src = obj["temperature_source"]?.GetValue<string>() ?? "";
-        TestContext.Check(Math.Abs(temp - 0.1) < 0.0001, $"perfil build = 0.1 (veio {temp})");
-        TestContext.Check(src.StartsWith("profile"), $"procedencia profile (veio '{src}')");
-        TestContext.Check(obj["tails_on"]?.GetValue<bool>() == tailsEnabled,
+        });
+        double t1 = comTemp["temperature"]?.GetValue<double>() ?? -1;
+        string s1 = comTemp["temperature_source"]?.GetValue<string>() ?? "";
+        TestContext.Check(Math.Abs(t1 - 0.5) < 0.0001, $"temperatura do cliente preservada (veio {t1})");
+        TestContext.Check(s1 == "request", $"procedencia request (veio '{s1}')");
+
+        // 2) cliente omite: vale o perfil do role (-build = 0.1)
+        var semTemp = await TestContext.PostObj(TestContext.Bridge + "/api/translate", new JsonObject
+        {
+            ["model"] = model,
+            ["input"] = "oi"
+        });
+        double t2 = semTemp["temperature"]?.GetValue<double>() ?? -1;
+        string s2 = semTemp["temperature_source"]?.GetValue<string>() ?? "";
+        TestContext.Check(Math.Abs(t2 - 0.1) < 0.0001, $"sem temperatura vale o perfil build 0.1 (veio {t2})");
+        TestContext.Check(s2.StartsWith("profile"), $"procedencia profile (veio '{s2}')");
+        TestContext.Check(semTemp["tails_on"]?.GetValue<bool>() == tailsEnabled,
             tailsEnabled
                 ? "cauda ligada no caminho opencode (tail-scope all)"
                 : "cauda desligada respeita --harness-tails 0");

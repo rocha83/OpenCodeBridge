@@ -1,7 +1,7 @@
 // ===========================================================================
 //  Rochas.OpenCodeBridge.Test — suite unit + e2e da bridge (BCL only, sem NuGet)
 //  Runner console: exit 0 = tudo PASS, 1 = algum FAIL.
-//  Uso: dotnet run -c Release -- [--bridge URL] [--vllm URL] [--skip-e2e]
+//  Uso: dotnet run -c Release -- [--bridge URL] [--llama URL] [--skip-e2e]
 //  Unit = traduz/converte via HTTP na bridge (sem modelo). E2E = modelo vivo.
 // ===========================================================================
 
@@ -31,7 +31,17 @@ internal static class Program
             else if (args[i] == "--standalone-provider" && i + 1 < args.Length) TestContext.StandaloneProvider = args[++i];
             else if (args[i] == "--dual") TestContext.Dual = true;
             else if (args[i] == "--mode" && i + 1 < args.Length)
-                TestContext.Mode = args[++i] is "pure" ? "bridge" : args[i];
+            {
+                // Dois caminhos, sem alias: bridge (harness main/tails na bridge) e
+                // opencode (o cliente traz o master). Qualquer outro valor e erro.
+                string m = args[++i];
+                if (m is not ("bridge" or "opencode"))
+                {
+                    Console.WriteLine($"FAIL --mode invalido: {m} (use bridge|opencode)");
+                    return 2;
+                }
+                TestContext.Mode = m;
+            }
             else if (args[i] == "--tool-agent-steps" && i + 1 < args.Length) TestContext.ToolAgentSteps = int.Parse(args[++i]);
             else if (args[i] == "--skip-unit") TestContext.SkipUnit = true;
             else if (args[i] == "--front-webdriver" || args[i] == "--webdriver") TestContext.WebDriver = true;
@@ -121,7 +131,7 @@ internal static class Program
         TestContext.Run("U-tools-antireply-helpers", UnitToolBreakerTests.ToolScopeUsesHelperSubclasses);
         TestContext.Run("U-toolargs-literal-newline", UnitToolBreakerTests.FixesLiteralNewlineEscape);
         TestContext.Run("U-tails-path-simulation-rules", UnitToolBreakerTests.ToolsTailCarriesPathAndSimulationRules);
-        TestContext.Run("U-translate-profile-temp-wins", UnitToolBreakerTests.TranslateProfileTempWins);
+        TestContext.Run("U-translate-temp-respeita-tunel", UnitToolBreakerTests.TranslateTempRespeitaTunel);
         TestContext.Run("U-translate-breaker-verdicts", UnitToolBreakerTests.TranslateBreakerVerdicts);
         TestContext.Run("U-shell-sed-inplace", UnitShellInspectorTests.SedInPlaceDenied);
         TestContext.Run("U-shell-sed-readonly", UnitShellInspectorTests.SedReadOnlyAllowed);

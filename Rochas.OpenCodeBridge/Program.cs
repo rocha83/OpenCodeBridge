@@ -1301,7 +1301,8 @@ WriteJson(ctx, 200, new JsonObject
                     MaxTokens = maxTokens;
                 if (req["cpu_max_tokens"]?.GetValue<int>() is int cpuMax && cpuMax >= 0)
                     CpuMaxTokens = cpuMax;
-                Log(new JsonObject { ["event"] = "config", ["thinking"] = Thinking, ["temperature"] = Temperature, ["max_tokens"] = MaxTokens, ["cpu_max_tokens"] = CpuMaxTokens, ["sampling_passthrough"] = SamplingPassthrough });
+                Log(new JsonObject { ["event"] = "config", ["thinking"] = Thinking, ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
+["cpu_max_tokens"] = CpuMaxTokens, ["sampling_passthrough"] = SamplingPassthrough });
                 WriteJson(ctx, 200, BuildStatus());
                 return;
             }
@@ -1406,6 +1407,7 @@ WriteJson(ctx, 200, new JsonObject
         ["listen"] = Listen, ["port"] = Port,
         ["upstream"] = Upstream, ["model"] = Model, ["thinking"] = Thinking,
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
+["context_tokens"] = ContextTokens, ["context_guard"] = ContextGuard,
 ["profile_temp_wins"] = ProfileTempWins, ["tail_scope"] = TailScope,
 ["main_harness"] = MainHarnessOn, ["main_harness_scope"] = "managed-only", ["main_harness_opencode"] = false, ["harness_tails"] = TailsEnabled, ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",

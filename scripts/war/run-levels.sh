@@ -1,16 +1,26 @@
 #!/bin/bash
 # ============================================================================
 # Arena de testes por LEVELS (antes da subida para producao).
-# Level 1: units (U-*), devpipe (E-devpipe-*), belts azul+verde e a suite web
-# (integracao + topicos no Web.Test). Cada bloco da bridge roda em DOIS passes:
-# --mode bridge e --mode opencode. Por step: log, delta do log da bridge, tempo,
-# PASS/FAIL e checkpoint em state/ (retomada por LEVEL_STAMP).
+#
+# Duas trilhas, sem ambiguidade:
+#   --mode bridge   = caminho com bridge harness main/tails (HTTP /v1/responses
+#                     + tools por /api/tools/execute; a bridge monta o turno).
+#   --mode opencode = caminho livre para o opencode (o cliente traz o master).
+#
+# Cada run grava FATOS em events.jsonl (uma linha JSON por decisao):
+#   run_start, preflight, step_start, step_stale, step_end, gate, run_end.
+# summary.tsv / summary.txt sao derivados desses eventos.
+#
+# Pre-requisitos: o nivel so comeca se o preflight passar; senao o veredito e
+# BLOCKED (exit 3) — nao FAIL. Step cujo binario mudou no meio vira STALE.
+# Gate final: FAIL/BLOCKED/STALE derrubam o exit code (LEVEL_REQUIRE_GREEN=0
+# desliga), para a sequencia nao encadear um nivel vermelho no proximo.
 #
 # Uso:
-#   run-levels.sh --level 1                 # executa (retoma pelo stamp atual)
+#   run-levels.sh --level 1                      # executa (retoma pelo stamp)
 #   LEVEL_STAMP=fixed run-levels.sh --level 1
 #   run-levels.sh --level 1 --list
-# Levels futuros entram no case abaixo (2 = belts maiores + frontpipe, etc.).
+#   run-levels.sh --level 2 --gate-only          # so recalcula o gate do run
 # ============================================================================
 set -u
 # Raiz do repo: derivada da localizacao do script (scripts/war/ -> raiz) ou LEVEL_ROOT.
@@ -18,11 +28,16 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${LEVEL_ROOT:-${REPO:-$(cd "$HERE/../.." && pwd)}}"
 LEVEL=1
 LIST=0
+GATE_ONLY=0
+REQUIRE_GREEN="${LEVEL_REQUIRE_GREEN:-1}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --level) LEVEL="${2:-1}"; shift 2 ;;
     --level=*) LEVEL="${1#*=}"; shift ;;
     --list) LIST=1; shift ;;
+    --gate-only) GATE_ONLY=1; shift ;;
+    --require-green) REQUIRE_GREEN=1; shift ;;
+    --no-require-green) REQUIRE_GREEN=0; shift ;;
     *) echo "arg desconhecido: $1"; exit 2 ;;
   esac
 done
@@ -43,15 +58,138 @@ export WAR_NO_VISION="$NO_VISION"
 if [ -n "${LEVEL_BRIDGE_Q3:-}" ]; then export WAR_CPU_BRIDGE="$LEVEL_BRIDGE_Q3"; fi
 BLOG="${LEVEL_BLOG:-/tmp/bridge-gpu.log}"
 TESTPROJ="$ROOT/Rochas.OpenCodeBridge.Test"
+BRIDGEDLL="$ROOT/Rochas.OpenCodeBridge/bin/Release/net9.0/Rochas.OpenCodeBridge.dll"
+TESTDLL="$ROOT/Rochas.OpenCodeBridge.Test/bin/Release/net9.0/Rochas.OpenCodeBridge.Test.dll"
 WEBTEST="$ROOT/Rochas.OpenCodeBridge.Web.Test/bin/Release/net9.0/Rochas.OpenCodeBridge.Web.Test.dll"
 SUMMARY="$OUT/summary.tsv"
-[ -f "$SUMMARY" ] || printf 'step\tverdict\tsecs\trc\n' > "$SUMMARY"
+EVENTS="$OUT/events.jsonl"
+[ -f "$SUMMARY" ] || printf 'step\tverdict\tsecs\trc\tcause\n' > "$SUMMARY"
+
+# --- fatos em JSONL ---------------------------------------------------------
+jesc() { printf '%s' "$1" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+emit() { printf '%s\n' "$1" >> "$EVENTS"; }
+h() { sha256sum "$1" 2>/dev/null | cut -c1-16; }
+
+HASH_GIT="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo sem-git)"
+HASH_BRIDGE="$(h "$BRIDGEDLL")"
+HASH_WEB="$(h "$WEBTEST")"
+INIT_HASH_TEST="$(h "$TESTDLL")"
+HASH_TEST="$INIT_HASH_TEST"
 
 log() { echo "$*" | tee -a "$OUT/summary.txt"; }
 
+# Causa objetiva da falha, antes de qualquer ajuste de modelo/prompt.
+classify() { # logfile rc -> infra|executor|bridge|fixture|timeout|undetermined
+  local logf="$1" rc="$2"
+  [ "$rc" = "124" ] || [ "$rc" = "137" ] && { echo "timeout"; return; }
+  grep -qE "Connection refused|No route to host|Name or service not known|corpo vazio apos retry" "$logf" 2>/dev/null \
+    && { echo "infra"; return; }
+  # assert com lista de calls vazia: a bridge/v1/responses entregou call e o
+  # executor do teste nao rodou -> defeito do executor, nao do modelo.
+  grep -q "calls=)" "$logf" 2>/dev/null && { echo "executor"; return; }
+  grep -qE "ERRO: .*|ok=false|permission|negad" "$logf" 2>/dev/null && { echo "bridge"; return; }
+  grep -q "artefato .*conteudo=''" "$logf" 2>/dev/null && { echo "fixture"; return; }
+  echo "undetermined"
+}
+
+# Binario trocado no meio do run invalida o veredito (nao e PASS nem FAIL).
+stale_check() { # -> ecoa "1" se o binario mudou desde o run_start
+  local now; now="$(h "$TESTDLL")"
+  [ "$now" != "$INIT_HASH_TEST" ] && { echo 1; return; }
+  echo 0
+}
+
+# --- preflight --------------------------------------------------------------
+PF_FAIL=""
+pf() { # check ok evidence-json
+  local check="$1" ok="$2" ev="$3"
+  emit "{\"t\":\"preflight\",\"check\":\"$check\",\"ok\":$ok,\"evidence\":$ev}"
+  [ "$ok" = "true" ] || PF_FAIL="${PF_FAIL}${PF_FAIL:+,}$check"
+}
+json_get() { grep -o "\"$2\":[^,}]*" <<<"$1" 2>/dev/null | head -1 | sed "s/\"$2\"://; s/\"//g"; }
+
+preflight() {
+  log "=== preflight ==="
+  # 1) llama do upstream (health + ctx por slot)
+  local up_port; up_port=$(sed -E 's#.*:([0-9]+).*#\1#' <<<"$WAR_UPSTREAM")
+  local health props nctx slots alias
+  health=$(curl -s -m 5 "http://127.0.0.1:$up_port/health" 2>/dev/null)
+  props=$(curl -s -m 8 -H "Authorization: Bearer $API" "http://127.0.0.1:$up_port/props" 2>/dev/null)
+  nctx=$(grep -o '"n_ctx":[0-9]*' <<<"$props" | head -1 | cut -d: -f2)
+  slots=$(grep -o '"total_slots":[0-9]*' <<<"$props" | head -1 | cut -d: -f2)
+  alias=$(grep -o '"model_path":"[^"]*"' <<<"$props" | head -1 | sed 's/.*\///; s/"//g')
+  if grep -q '"ok"' <<<"$health"; then
+    pf "llama_$up_port" true "{\"port\":$up_port,\"n_ctx\":${nctx:-0},\"slots\":${slots:-0},\"model_path\":\"$(jesc "$alias")\"}"
+  else
+    pf "llama_$up_port" false "{\"port\":$up_port,\"health\":\"$(jesc "$health")\"}"
+  fi
+  # 2) bridge alvo: params efetivos (o que o teste realmente recebe)
+  local st bmodel bup btemp bpw bmain btails bctx
+  st=$(curl -s -m 8 -H "Authorization: Bearer $API" "$BRIDGE/api/status" 2>/dev/null)
+  bmodel=$(json_get "$st" model); bup=$(json_get "$st" upstream)
+  btemp=$(json_get "$st" temperature); bpw=$(json_get "$st" profile_temp_wins)
+  bmain=$(json_get "$st" main_harness); btails=$(json_get "$st" harness_tails)
+  bctx=$(json_get "$st" context_tokens)
+  if [ -n "$bmodel" ]; then
+    pf "bridge_status" true "{\"bridge\":\"$(jesc "$BRIDGE")\",\"model\":\"$(jesc "$bmodel")\",\"upstream\":\"$(jesc "$bup")\",\"temperature\":$( [ -n "$btemp" ] && echo "$btemp" || echo 0 ),\"profile_temp_wins\":${bpw:-null},\"main_harness\":${bmain:-null},\"harness_tails\":${btails:-null},\"context_tokens\":${bctx:-0}}"
+  else
+    pf "bridge_status" false "{\"bridge\":\"$(jesc "$BRIDGE")\"}"
+  fi
+  # 3) coerencia bridge <-> upstream (modelo e ctx do slot)
+  if [ -n "$bup" ] && [ "$bup" != "$WAR_UPSTREAM" ]; then
+    pf "bridge_upstream" false "{\"bridge_upstream\":\"$(jesc "$bup")\",\"esperado\":\"$(jesc "$WAR_UPSTREAM")\"}"
+  else
+    pf "bridge_upstream" true "{\"bridge_upstream\":\"$(jesc "${bup:-$WAR_UPSTREAM}")\"}"
+  fi
+  if [ -n "$nctx" ] && [ -n "$bctx" ] && [ "$bctx" != "$nctx" ]; then
+    pf "bridge_context_tokens" false "{\"context_tokens\":$bctx,\"n_ctx_slot\":$nctx}"
+  else
+    pf "bridge_context_tokens" true "{\"context_tokens\":${bctx:-0},\"n_ctx_slot\":${nctx:-0}}"
+  fi
+  # 4) binarios dos testes
+  [ -f "$TESTDLL" ] && pf "test_binario" true "{\"sha\":\"$INIT_HASH_TEST\"}" \
+    || pf "test_binario" false "{\"erro\":\"Test.dll ausente\"}"
+  [ -f "$WEBTEST" ] && pf "webtest_binario" true "{\"sha\":\"$HASH_WEB\"}" \
+    || pf "webtest_binario" false "{\"erro\":\"Web.Test.dll ausente\"}"
+  # 5) opencode (as trilhas do nivel usam --mode opencode)
+  if command -v opencode >/dev/null 2>&1; then
+    pf "opencode_cli" true "{\"versao\":\"$(jesc "$(opencode --version 2>/dev/null | head -1)")\"}"
+  else
+    pf "opencode_cli" false "{\"erro\":\"opencode ausente no PATH\"}"
+  fi
+  # 6) infra: run orfao, disco, GPU
+  if pgrep -f "Rochas[.]OpenCodeBridge[.]Test[.]dll" >/dev/null 2>&1; then
+    pf "sem_run_orfao" false "{\"pids\":\"$(pgrep -f 'Rochas[.]OpenCodeBridge[.]Test[.]dll' | tr '\n' ' ')\"}"
+  else
+    pf "sem_run_orfao" true "{}"
+  fi
+  local free_mb
+  free_mb=$(df -Pm "$OUT" | awk 'NR==2{print $4}')
+  if [ "${free_mb:-0}" -ge 2048 ]; then
+    pf "disco" true "{\"livre_mb\":$free_mb}"
+  else
+    pf "disco" false "{\"livre_mb\":${free_mb:-0}}"
+  fi
+  local gpu
+  gpu=$(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader 2>/dev/null | head -1)
+  pf "gpu" true "{\"uso\":\"$(jesc "$gpu")\"}"
+  if [ -n "$PF_FAIL" ]; then
+    emit "{\"t\":\"preflight_fail\",\"checks\":\"$(jesc "$PF_FAIL")\"}"
+    log "preflight FALHOU: $PF_FAIL (veredito BLOCKED)"
+    return 1
+  fi
+  log "preflight ok"
+  return 0
+}
+
+# --- steps ------------------------------------------------------------------
 step_bridge() { # nome + args do runner
   local name="$1"; shift
   [ -f "$STATE/$name.done" ] && { log "SKIP $name (done)"; return 0; }
+  local mode="?" prev=""
+  for a in "$@"; do [ "$prev" = "--mode" ] && mode="$a"; prev="$a"; done
+  local attempt; attempt=$(( $(cat "$STATE/$name.attempt" 2>/dev/null || echo 0) + 1 )); echo "$attempt" > "$STATE/$name.attempt"
+  emit "{\"t\":\"step_start\",\"step\":\"$name\",\"mode\":\"$mode\",\"attempt\":$attempt,\"run\":\"$HASH_GIT\"}"
   local b0=0 a0=0
   [ -f "$BLOG" ] && b0=$(wc -l < "$BLOG")
   local t0; t0=$(date +%s)
@@ -62,34 +200,82 @@ step_bridge() { # nome + args do runner
   local secs=$(( $(date +%s) - t0 ))
   [ -f "$BLOG" ] && a0=$(wc -l < "$BLOG")
   tail -n +"$((b0 + 1))" "$BLOG" 2>/dev/null | head -n "$((a0 - b0))" > "$STEPS/$name.bridge.log"
-  local verdict=SKIP
+  local verdict=SKIP cause=""
   grep -q '^FAIL ' "$STEPS/$name.test.log" && verdict=FAIL
   grep -q '^PASS ' "$STEPS/$name.test.log" && [ "$verdict" = SKIP ] && verdict=PASS
   [ "$rc" -ne 0 ] && [ "$verdict" = PASS ] && verdict=FAIL
+  [ "$verdict" = FAIL ] && cause=$(classify "$STEPS/$name.test.log" "$rc")
+  # Binario trocado durante o run: resultado nao vale como veredito.
+  if [ "$(stale_check)" = "1" ]; then
+    verdict=STALE; cause="binario mudou durante o run"
+    emit "{\"t\":\"step_stale\",\"step\":\"$name\",\"test_sha_inicio\":\"$INIT_HASH_TEST\",\"test_sha_agora\":\"$(h "$TESTDLL")\"}"
+    rm -f "$STATE/$name.done"
+    HASH_TEST="$(h "$TESTDLL")"; INIT_HASH_TEST="$HASH_TEST"
+  else
+    echo "$rc $verdict $secs" > "$STATE/$name.done"
+  fi
   grep -E '^PASS |^FAIL ' "$STEPS/$name.test.log" | tail -8 | sed 's/^/    /' | tee -a "$OUT/summary.txt"
-  printf '%s\t%s\t%s\t%s\n' "$name" "$verdict" "$secs" "$rc" >> "$SUMMARY"
-  echo "$rc $verdict $secs" > "$STATE/$name.done"
-  log "    -> $verdict (${secs}s, rc=$rc)"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$verdict" "$secs" "$rc" "$cause" >> "$SUMMARY"
+  emit "{\"t\":\"step_end\",\"step\":\"$name\",\"mode\":\"$mode\",\"attempt\":$attempt,\"verdict\":\"$verdict\",\"cause\":\"$(jesc "$cause")\",\"secs\":$secs,\"rc\":$rc,\"log\":\"steps/$name.test.log\"}"
+  log "    -> $verdict (${secs}s, rc=$rc${cause:+, causa=$cause})"
 }
 
 step_webtest() { # integracao + topicos (suite web; TopicsSweep roda no bloco unit dela)
   local name="webui-integracao-topicos"
   [ -f "$STATE/$name.done" ] && { log "SKIP $name (done)"; return 0; }
   [ -f "$WEBTEST" ] || { log "ERRO: Web.Test nao buildado"; return 1; }
+  local attempt; attempt=$(( $(cat "$STATE/$name.attempt" 2>/dev/null || echo 0) + 1 )); echo "$attempt" > "$STATE/$name.attempt"
+  emit "{\"t\":\"step_start\",\"step\":\"$name\",\"mode\":\"web\",\"attempt\":$attempt,\"run\":\"$HASH_GIT\"}"
   local t0; t0=$(date +%s)
   log "=== $name :: Web.Test (integracao + topicos)"
   timeout "${LEVEL_STEP_TIMEOUT:-3600}" dotnet exec "$WEBTEST" > "$STEPS/$name.test.log" 2>&1
   local rc=$?
   local secs=$(( $(date +%s) - t0 ))
-  local verdict=SKIP
+  local verdict=SKIP cause=""
   grep -q '^FAIL ' "$STEPS/$name.test.log" && verdict=FAIL
   grep -q '^PASS ' "$STEPS/$name.test.log" && [ "$verdict" = SKIP ] && verdict=PASS
   [ "$rc" -ne 0 ] && [ "$verdict" = PASS ] && verdict=FAIL
+  [ "$verdict" = FAIL ] && cause=$(classify "$STEPS/$name.test.log" "$rc")
+  if [ "$(h "$WEBTEST")" != "$HASH_WEB" ]; then
+    verdict=STALE; cause="binario web mudou durante o run"
+    emit "{\"t\":\"step_stale\",\"step\":\"$name\",\"web_sha_inicio\":\"$HASH_WEB\",\"web_sha_agora\":\"$(h "$WEBTEST")\"}"
+    rm -f "$STATE/$name.done"; HASH_WEB="$(h "$WEBTEST")"
+  else
+    echo "$rc $verdict $secs" > "$STATE/$name.done"
+  fi
   grep -E '^PASS |^FAIL ' "$STEPS/$name.test.log" | tail -8 | sed 's/^/    /' | tee -a "$OUT/summary.txt"
-  printf '%s\t%s\t%s\t%s\n' "$name" "$verdict" "$secs" "$rc" >> "$SUMMARY"
-  echo "$rc $verdict $secs" > "$STATE/$name.done"
-  log "    -> $verdict (${secs}s, rc=$rc)"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$verdict" "$secs" "$rc" "$cause" >> "$SUMMARY"
+  emit "{\"t\":\"step_end\",\"step\":\"$name\",\"mode\":\"web\",\"attempt\":$attempt,\"verdict\":\"$verdict\",\"cause\":\"$(jesc "$cause")\",\"secs\":$secs,\"rc\":$rc,\"log\":\"steps/$name.test.log\"}"
+  log "    -> $verdict (${secs}s, rc=$rc${cause:+, causa=$cause})"
 }
+
+# --- gate -------------------------------------------------------------------
+gate() { # recalcula pelo summary.tsv e decide o exit code
+  local n p f s t st
+  read -r n p f s t st < <(awk -F'\t' 'NR>1{n++; p+=($2=="PASS"); f+=($2=="FAIL"); s+=($2=="SKIP"); t+=$3; st+=($2=="STALE")}
+    END{printf "%d %d %d %d %d %d\n", n, p, f, s, t, st}' "$SUMMARY")
+  log ""
+  log "=== resumo LEVEL $LEVEL ==="
+  log "$n steps: PASS=$p FAIL=$f SKIP=$s STALE=$st (${t}s)"
+  log ""
+  log "=== falhas ==="
+  awk -F'\t' 'NR>1 && ($2=="FAIL"||$2=="STALE"){printf "  %s (%s, rc=%s, causa=%s)\n", $1, $2, $4, ($5==""?"-":$5)}' "$SUMMARY" | tee -a "$OUT/summary.txt"
+  local blocking="${f}${st}"
+  local green=false
+  [ "$p" -gt 0 ] && [ "$f" -eq 0 ] && [ "$st" -eq 0 ] && green=true
+  emit "{\"t\":\"gate\",\"level\":$LEVEL,\"pass\":$p,\"fail\":$f,\"skip\":$s,\"stale\":$st,\"green\":$green,\"require_green\":$([ "$REQUIRE_GREEN" = "1" ] && echo true || echo false)}"
+  emit "{\"t\":\"run_end\",\"level\":$LEVEL,\"stamp\":\"$STAMP\",\"pass\":$p,\"fail\":$f,\"skip\":$s,\"stale\":$st,\"green\":$green}"
+  log "artefatos: $OUT (events.jsonl + summary.tsv)"
+  if [ "$REQUIRE_GREEN" = "1" ] && [ "$green" != "true" ]; then
+    log "GATE VERMELHO: FAIL=$f STALE=$st (PASS=$p)"
+    return 1
+  fi
+  return 0
+}
+
+if [ "$GATE_ONLY" = "1" ]; then
+  gate; exit $?
+fi
 
 case "$LEVEL" in
   1)
@@ -97,7 +283,9 @@ case "$LEVEL" in
     if [ "$LIST" = "1" ]; then
       echo "Level 1 -> $STEPS_DESC"; exit 0
     fi
+    emit "{\"t\":\"run_start\",\"level\":1,\"stamp\":\"$STAMP\",\"git\":\"$(jesc "$HASH_GIT")\",\"dlls\":{\"bridge\":\"$HASH_BRIDGE\",\"test\":\"$INIT_HASH_TEST\",\"web\":\"$HASH_WEB\"},\"bridge\":\"$(jesc "$BRIDGE")\",\"upstream\":\"$(jesc "$WAR_UPSTREAM")\",\"no_vision\":$([ "$NO_VISION" = "1" ] && echo true || echo false)}"
     log "=== LEVEL 1 ($OUT) ==="
+    preflight || { log "BLOCKED: preflight reprovado"; gate; exit 3; }
     for mode in bridge opencode; do
       step_bridge "units-$mode" --only U- --mode "$mode"
       step_bridge "devpipe-$mode" --only E-devpipe --mode "$mode"
@@ -108,21 +296,20 @@ case "$LEVEL" in
     step_webtest
     ;;
   2)
-    # Level 2: bateria de TOOLS no atacado (full, dual, mission, responses) +
-    # cientifico nas duas linhas (Q4 :4144 e Q3 CPU :4125).
     STEPS_DESC="tools-full; tools-dual; mission-tools; responses-tools; science-gpu; science-cpu(Q3)"
     if [ "$LIST" = "1" ]; then
       echo "Level 2 -> $STEPS_DESC"; exit 0
     fi
+    emit "{\"t\":\"run_start\",\"level\":2,\"stamp\":\"$STAMP\",\"git\":\"$(jesc "$HASH_GIT")\",\"dlls\":{\"bridge\":\"$HASH_BRIDGE\",\"test\":\"$INIT_HASH_TEST\",\"web\":\"$HASH_WEB\"},\"bridge\":\"$(jesc "$BRIDGE")\",\"upstream\":\"$(jesc "$WAR_UPSTREAM")\",\"q3_bridge\":\"$(jesc "${LEVEL_BRIDGE_Q3:-}")\"}"
     log "=== LEVEL 2 ($OUT) ==="
+    preflight || { log "BLOCKED: preflight reprovado"; gate; exit 3; }
     for mode in bridge opencode; do
       step_bridge "tools-full-$mode" --only E-tools-full --mode "$mode"
       step_bridge "tools-dual-$mode" --only E-dual-tools --mode "$mode"
       step_bridge "mission-tools-$mode" --only E-mission-tools --mode "$mode"
       step_bridge "responses-tools-$mode" --only E-responses-tools --mode "$mode"
       step_bridge "science-gpu-$mode" --only E-science-gpu --mode "$mode"
-      # Cientifico na linha CPU/Q3 (bridge de producao :4125 por padrao).
-      # LEVEL_CPU=0 pula (ex.: quando a :4125 esta em uso por sessao real).
+      # Cientifico na linha Q3 (bridge de bancada via LEVEL_BRIDGE_Q3).
       if [ "${LEVEL_CPU:-1}" = "1" ]; then
         step_bridge "science-cpu-$mode" --only E-science-cpu --mode "$mode"
       else
@@ -132,16 +319,15 @@ case "$LEVEL" in
     step_webtest
     ;;
   3)
-    # Level 3: pacote completo de belts (azul -> preta) nas DUAS trilhas da
-    # suite — Build (implementa direto) e Orch (segmenta -> Scripter -> Exec) —
-    # em --mode bridge e --mode opencode, com HARNESS LIGADO na bridge.
     STEPS_DESC="belts azul->preta: trilha build + trilha orch, modos bridge e opencode (harness on)"
     if [ "$LIST" = "1" ]; then
       echo "Level 3 -> $STEPS_DESC"; exit 0
     fi
+    emit "{\"t\":\"run_start\",\"level\":3,\"stamp\":\"$STAMP\",\"git\":\"$(jesc "$HASH_GIT")\",\"dlls\":{\"bridge\":\"$HASH_BRIDGE\",\"test\":\"$INIT_HASH_TEST\",\"web\":\"$HASH_WEB\"},\"bridge\":\"$(jesc "$BRIDGE")\",\"upstream\":\"$(jesc "$WAR_UPSTREAM")\"}"
     log "=== LEVEL 3 ($OUT) ==="
-    HSTATUS=$(curl -s -m 5 -H "Authorization: Bearer $API" "$BRIDGE/api/harness" 2>/dev/null)
-    [ -n "$HSTATUS" ] || HSTATUS=$(curl -s -m 5 -H "Authorization: Bearer $API" "$BRIDGE/api/status" 2>/dev/null)
+    preflight || { log "BLOCKED: preflight reprovado"; gate; exit 3; }
+    HSTATUS="$(curl -s -m 5 -H "Authorization: Bearer $API" "$BRIDGE/api/harness" 2>/dev/null)"
+    [ -n "$HSTATUS" ] || HSTATUS="$(curl -s -m 5 -H "Authorization: Bearer $API" "$BRIDGE/api/status" 2>/dev/null)"
     log "harness na bridge $BRIDGE: $(echo "$HSTATUS" | head -c 300)"
     echo "$HSTATUS" | grep -q '"main_harness":true' \
       || log "AVISO: main_harness nao esta true — Level 3 pede harness ligado (--main-harness 1 --harness-tails 1)"
@@ -154,11 +340,4 @@ case "$LEVEL" in
     echo "Level $LEVEL ainda nao definido (implementado: 1, 2, 3)"; exit 2 ;;
 esac
 
-log ""
-log "=== resumo LEVEL $LEVEL ==="
-awk -F'\t' 'NR>1{n++; p+=($2=="PASS"); f+=($2=="FAIL"); s+=($2=="SKIP"); t+=$3}
- END{printf "%d steps: PASS=%d FAIL=%d SKIP=%d (%ds)\n", n, p, f, s, t}' "$SUMMARY" | tee -a "$OUT/summary.txt"
-log ""
-log "=== falhas ==="
-awk -F'\t' 'NR>1 && $2=="FAIL"{print $1" (rc="$4", "$3"s)"}' "$SUMMARY" | tee -a "$OUT/summary.txt"
-log "artefatos: $OUT"
+gate; exit $?
