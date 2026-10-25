@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace Rochas.OpenCodeBridge.Core;
 
@@ -247,4 +248,22 @@ public static class ToolArgsParser
         ["skill"] = new[] { "id" },
         ["question"] = new[] { "questions" },
     };
+
+    /// <summary>Argumentos de tool a partir do texto: JSON valido, JSON reparado
+    /// ou o caso <c>{"command": "..."}</c> com aspas internas soltas (shell narrado).</summary>
+    /// <param name="raw">Texto dos argumentos.</param>
+    /// <param name="args">Objeto resultante.</param>
+    /// <returns>True quando reconhece os argumentos.</returns>
+    public static bool TryParseArgs(string raw, out JsonObject args)
+    {
+        args = new JsonObject();
+        if (TextGrammar.TryParseJson(raw) is JsonObject parsed) { args = parsed; return true; }
+        var match = Regex.Match(raw, "^\\{\\s*\"command\"\\s*:\\s*\"([\\s\\S]*)\"\\s*\\}$");
+        if (!match.Success) return false;
+        string command = match.Groups[1].Value
+            .Replace("\\\"", "\"")     // \" do JSON -> aspas reais
+            .Replace("\\\\", "\\");    // \\ do JSON -> barra real
+        args = new JsonObject { ["command"] = command };
+        return true;
+    }
 }

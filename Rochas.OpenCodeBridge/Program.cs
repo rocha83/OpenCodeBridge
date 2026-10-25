@@ -39,6 +39,7 @@ using static Rochas.OpenCodeBridge.Core.ResponsesTranslation;
 using static Rochas.OpenCodeBridge.Core.TextGrammar;
 using static Rochas.OpenCodeBridge.Core.ResponseBody;
 using static Rochas.OpenCodeBridge.Core.ToolArgsParser;
+using static Rochas.OpenCodeBridge.Core.ToolCoercion;
 
 namespace Rochas.OpenCodeBridge;
 
@@ -550,15 +551,6 @@ internal static partial class Program
     // Marcadores de template que as vezes escapam para o texto final.
     static readonly Regex ReTemplate = new(@"<\|im_(start|end)\|>", RegexOptions.Compiled);
 
-    // Coerção: fenced ```json{"name":..}, tags <tool_call>..</tool_call> e
-    // o formato cru do 3B na CPU: <{"name": ..}}> (sem fences/tags).
-    static readonly Regex ReFencedCall = new(@"```(?:json)?\s*(\{\s*""name""\s*:[\s\S]*?\})\s*```", RegexOptions.Compiled);
-    static readonly Regex ReToolTag = new(@"<tool_call>([\s\S]*?)</tool_call(?:\|>)?", RegexOptions.Compiled);
-    // Coder/Hermes via llama: embrulha no plural <tools> (template poe as
-    // assinaturas em <tools> e o modelo ecoa o wrapper no lugar de <tool_call>).
-    static readonly Regex ReToolsTag = new(@"<tools>([\s\S]*?)</tools>", RegexOptions.Compiled);
-    // Coder com tool_choice required: <function>{...}</function> + flood de \n.
-    static readonly Regex ReFunctionTag = new(@"<function>([\s\S]*?)</function>", RegexOptions.Compiled);
 
 
     // Catálogo real de tools (+ apelidos shell -> shell): só estes nomes
@@ -566,148 +558,16 @@ internal static partial class Program
     static readonly HashSet<string> RealTools = new(StringComparer.OrdinalIgnoreCase)
         { "shell", "read", "grep", "glob", "fetch", "webfetch", "websearch", "git", "subagent", "write", "edit", "question", "skill" };
 
-    /// <summary>Nomes de tools anunciadas no pedido (chat ou responses).</summary>
-    static List<string> AnnouncedTools(JsonArray? tools)
-    {
-        var names = new List<string>();
-        if (tools is null) return names;
-        foreach (var t in tools)
-        {
-            var o = t?.AsObject();
-            string? n = o?["function"]?.AsObject()?["name"]?.GetValue<string>()
-                ?? o?["name"]?.GetValue<string>();
-            if (!string.IsNullOrWhiteSpace(n)) names.Add(n!);
-        }
-        return names;
-    }
-
-    static List<string> AnnouncedTools(string bodyJson)
-    {
-        try { return AnnouncedTools(JsonNode.Parse(bodyJson)?.AsObject()?["tools"]?.AsArray()); }
-        catch { return new List<string>(); }
-    }
-
-    /// <summary>Extrai tool calls de texto (fenced JSON ou tags) p/ coercão.</summary>
-    static List<(string Name, string Arguments)> ExtractTextToolCalls(string content, List<string>? known = null)
-    {
-        var list = new List<(string, string)>();
-        if (string.IsNullOrEmpty(content)) return list;
-        foreach (Match m in ReToolTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
-        if (list.Count == 0)
-            foreach (Match m in ReToolsTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
-        if (list.Count == 0)
-            foreach (Match m in ReFunctionTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
-        if (list.Count == 0)
-            foreach (Match m in ReFencedCall.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
-        if (list.Count == 0)
-            foreach (string json in ExtractAngleCalls(content, false)) TryAddTextCall(json, list, known);
-        if (list.Count == 0)
-            ExtractAssistantToolCalls(content, list, known);
-        if (list.Count == 0)
-        {
-            // Ultimo recurso: resposta INTEIRA e um objeto {"name":..} cru
-            // (3B alterna formatos entre runs). Exige "arguments" p/ nao
-            // confundir com codigo que mencione "name".
-            string t = content.TrimStart();
-            if (t.StartsWith("{\"name\"", StringComparison.Ordinal) && t.Contains("\"arguments\""))
-                foreach (string json in ExtractAngleCalls(t, true)) TryAddTextCall(json, list, known);
-        }
-        return list;
-    }
-
-    /// <summary>Extrai chamadas no formato cru do 3B <c>&lt;{"name":..}&gt;</c> (ou objeto cru no inicio), com chaves balanceadas.</summary>
-    /// <summary>Extrai chamadas no formato cru do 3B: <c>&lt;{"name":..}&gt;</c> em qualquer posicao, ou objeto cru SOMENTE no inicio.</summary>
-    static List<string> ExtractAngleCalls(string content, bool bareStartOnly)
-    {
-        var out_ = new List<string>();
-        // Objeto cru: tenta uma vez na posicao 0 (conteudo ja vem trimado).
-        if (bareStartOnly)
-        {
-            if (content.Length > 0 && content[0] == '{' && TryBalanced(content, 0, out string one) && one.Contains("\"name\""))
-                out_.Add(one);
-            return out_;
-        }
-        int i = 0;
-        while (i < content.Length)
-        {
-            int lt = content.IndexOf('<', i);
-            if (lt < 0 || lt + 1 >= content.Length) break;
-            int j = lt + 1;
-            if (content[j] != '{') { i = j; continue; }
-            if (TryBalanced(content, j, out string one) && one.Contains("\"name\""))
-            { out_.Add(one); i = j + one.Length; }
-            else i = j + 1;
-        }
-        return out_;
-    }
-
-
-    /// <summary>Formato "[Assistant tool call]: nome({...})" -> tool call de verdade.</summary>
-    /// <remarks>Reconstroi o envelope {"name","arguments"} a partir do nome do regex e dos <see cref="TryAddTextCall"/>,
-    /// que aplica a allowlist. Le ate o fechamento balanceado do objeto de argumentos, entao
-    /// nao depende de chaves balanceadas no texto todo.</remarks>
-    static void ExtractAssistantToolCalls(string content, List<(string Name, string Arguments)> list, List<string>? known)
-    {
-        foreach (Match m in ReAssistantToolCall.Matches(content))
-        {
-            int i = m.Index + m.Length;              // logo apos o '(' do nome
-            if (i >= content.Length || content[i] != '{') continue;
-            if (!TryBalanced(content, i, out string obj)) continue;
-            try
-            {
-                // TryBalanced devolve o que esta entre as chaves do nome: sao os ARGUMENTOS,
-                // nao um envelope {"name","arguments"}. O nome vem do grupo do regex.
-                if (!TryParseArgs(obj, out JsonObject argObj)) continue;
-                var envelope = new JsonObject { ["name"] = m.Groups[1].Value, ["arguments"] = argObj };
-                TryAddTextCall(envelope.ToJsonString(SerOpts), list, known);
-            }
-            catch { /* prosa que nao e JSON: segue como texto */ }
-        }
-    }
 
 
 
-    /// <summary>Argumentos de tool a partir do texto: JSON valido, JSON reparado
-    /// ou o caso <c>{"command": "..."}</c> com aspas internas soltas (shell narrado:
-    /// <c>find . -name "*evolution*.md"</c> sem escape).</summary>
-    static bool TryParseArgs(string raw, out JsonObject args)
-    {
-        args = new JsonObject();
-        if (TryParseJson(raw) is JsonObject parsed) { args = parsed; return true; }
-        var match = Regex.Match(raw, "^\\{\\s*\"command\"\\s*:\\s*\"([\\s\\S]*)\"\\s*\\}$");
-        if (!match.Success) return false;
-        string command = match.Groups[1].Value
-            .Replace("\\\"", "\"")     // \" do JSON -> aspas reais
-            .Replace("\\\\", "\\");    // \\ do JSON -> barra real
-        args = new JsonObject { ["command"] = command };
-        return true;
-    }
 
 
-    static void TryAddTextCall(string json, List<(string Name, string Arguments)> list, List<string>? known = null)
-    {
-        try
-        {
-            var o = TryParseJson(json.Trim())?.AsObject();
-            if (o is null) return;
-            string name = o["name"]?.GetValue<string>() ?? "";
-            if (name.Length == 0) return;
-            // Prefixo alucinado do harness (default.shell): o registro usa
-            // nomes simples; "default." nunca e tool valida — remove sem risco.
-            if (name.StartsWith("default.", StringComparison.OrdinalIgnoreCase))
-                name = name["default.".Length..];
-            // Sem allowlist: uso geral de tools. Com lista anunciada, casa o apelido
-            // (shell -> shell); sem lista, usa o nome como veio. O limite de escrita/
-            // execucao por role e feito na emissao (ToolBlacklist), nao aqui.
-            string canon = CanonToolAlias(name);
-            string emit = known is { Count: > 0 }
-                ? known.FirstOrDefault(k => CanonToolAlias(k) == canon) ?? canon
-                : canon;
-            if (emit.Length == 0) return;
-            list.Add((emit, JsonToString(o["arguments"])));
-        }
-        catch { /* texto que parece call mas nao parseia: ignora */ }
-    }
+
+
+
+
+
 
     /// <summary>Ponto de entrada: le CLI, sobe o HttpListener e atende em loop.</summary>
     /// <param name="cliArgs">Argumentos --chave valor.</param>
@@ -1752,35 +1612,6 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         ctx.Response.Close();
     }
 
-    /// <summary>Coage pseudo-calls do texto em tool_calls nativas (ToolsCoercion); 0 = nada a fazer.</summary>
-    /// <param name="root">Completion chat (mutado no lugar).</param>
-    /// <param name="known">Tools anunciadas no pedido (allowlist; vazio = catálogo).</param>
-    /// <returns>No. de calls sintetizadas.</returns>
-    static int CoerceChatCalls(JsonObject root, List<string>? known = null)
-    {
-        try
-        {
-            var msg = root?["choices"]?.AsArray().FirstOrDefault()?["message"]?.AsObject();
-            if (msg is null || msg["tool_calls"] is not null) return 0;
-            string content = msg["content"]?.GetValue<string>() ?? "";
-            var calls = ExtractTextToolCalls(content, known);
-            if (calls.Count == 0) return 0;
-            var arr = new JsonArray();
-            foreach (var (Name, Arguments) in calls)
-                arr.Add(new JsonObject
-                {
-                    ["index"] = arr.Count,
-                    ["id"] = "call_" + Guid.NewGuid().ToString("N")[..8],
-                    ["type"] = "function",
-                    ["function"] = new JsonObject { ["name"] = Name, ["arguments"] = Arguments }
-                });
-            msg["tool_calls"] = arr;
-            if (root!["choices"]!.AsArray()[0]?.AsObject() is JsonObject first)
-                first["finish_reason"] = "tool_calls";
-            return calls.Count;
-        }
-        catch { return 0; }
-    }
 
     /// <summary>Resposta chat sem parser server-side: coage texto em tool_calls e devolve JSON ou SSE sintetizado.</summary>
     static void CoercedChatResponse(HttpListenerContext ctx, HttpResponseMessage upstreamResponse, bool wantStream, bool headersSent = false, List<string>? known = null, DateTime startedAt = default)
@@ -2788,6 +2619,21 @@ var shape = new StringBuilder();
         Rochas.OpenCodeBridge.Core.ContextGuard.Tripped(json,
             new ContextGuardSettings(ContextGuardEnabled(), ContextThreshold, ContextTokens),
             out promptTokens, out fraction);
+
+    /// <summary>Remove tags de controle e registra a sonda (host: o log fica aqui).</summary>
+    /// <param name="s">Texto.</param>
+    /// <param name="where">Ponto de observacao.</param>
+    /// <returns>Texto limpo.</returns>
+    static string StripControlTags(string s, string where)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        var removed = new List<string>();
+        string clean = ToolCoercion.StripControlTags(s, removed);
+        if (Diagnostic)
+            foreach (string tag in removed)
+                Log(new JsonObject { ["event"] = "reasoning-tag", ["where"] = where, ["tag"] = tag });
+        return clean;
+    }
 
     /// <summary>Detector com sonda: avalia e registra o probe Serilog (trip=Warning, resto=Debug).</summary>
     /// <param name="accumulated">Texto acumulado ate aqui.</param>
@@ -4260,79 +4106,16 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
     // texto (Gemma 4: <|channel>thought ... <channel|>; Qwen: </thought>).
     // Nao sao conteudo: se chegam ao reasoning, a UI mostra a tag crua no bloco
     // de pensamento. Removidas com sonda (evento reasoning-tag).
-    static readonly string[] ControlTags =
-        { "<|channel>", "<channel|>", "<|channel|>", "<thought>", "</thought>", "<thinking>", "</thinking>" };
 
-    /// <summary>Tamanho do maior sufixo de <paramref name="s"/> que e prefixo de <paramref name="tag"/>.</summary>
-    static int PartialTagPrefixLen(string s, string tag)
-    {
-        int best = 0;
-        int max = Math.Min(tag.Length - 1, s.Length);
-        for (int k = max; k > best; k--)
-            if (s.EndsWith(tag[..k], StringComparison.OrdinalIgnoreCase)) { best = k; break; }
-        return best;
-    }
 
     // Marcadores TEXTUAIS de tool call: o opencode serializa a tool no historico
     // como "[Assistant tool call]: nome({...})" e o modelo copia esse formato.
     // No stream o texto a partir deles fica retido; quem decide (descartar como
     // chamada ou devolver como prosa) e o fecho.
-    static readonly string[] TextToolMarkers =
-        { "[Assistant tool call]", "<tool_call>", "<tools>", "<function>" };
 
-    /// <summary>Posicao do primeiro marcador de tool call no texto (-1 = prosa).</summary>
-    static int TextToolMarkerIndex(string s)
-    {
-        if (string.IsNullOrEmpty(s)) return -1;
-        int best = -1;
-        foreach (string marker in TextToolMarkers)
-        {
-            int at = s.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-            if (at >= 0 && (best < 0 || at < best)) best = at;
-        }
-        return best;
-    }
 
-    /// <summary>Quanto segurar da cauda: tag partida ou inicio de marcador de call.</summary>
-    static int ContentHoldBack(string carry)
-    {
-        int hold = PartialTagPrefixLen(carry, " thinking");
-        foreach (string marker in TextToolMarkers)
-        {
-            int at = carry.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-            int k = at >= 0 ? carry.Length - at : PartialTagPrefixLen(carry, marker);
-            if (k > hold) hold = k;
-        }
-        return hold;
-    }
 
-    /// <summary>Tamanho do maior sufixo de <paramref name="s"/> que e prefixo de uma tag de controle.</summary>
-    /// <remarks>Serve para segurar so o pedaco ambiguo entre chunks; sem isso o
-    /// raciocinio inteiro atrasaria N chars e o hold-back sairia fora de ordem.</remarks>
-    static int PartialTagLen(string s)
-    {
-        int best = 0;
-        foreach (var tag in ControlTags)
-        {
-            int max = Math.Min(tag.Length - 1, s.Length);
-            for (int k = max; k > best; k--)
-                if (s.EndsWith(tag[..k], StringComparison.OrdinalIgnoreCase)) { best = k; break; }
-        }
-        return best;
-    }
 
-    /// <summary>Remove tags de controle do texto de reasoning, registrando o achado.</summary>
-    static string StripControlTags(string s, string where)
-    {
-        if (string.IsNullOrEmpty(s)) return s;
-        foreach (var tag in ControlTags)
-        {
-            if (s.IndexOf(tag, StringComparison.OrdinalIgnoreCase) < 0) continue;
-            s = s.Replace(tag, "", StringComparison.OrdinalIgnoreCase);
-            if (Diagnostic) Log(new JsonObject { ["event"] = "reasoning-tag", ["where"] = where, ["tag"] = tag });
-        }
-        return s;
-    }
 
     /// <summary>Separa o bloco &lt;think&gt; do texto final.</summary>
     /// <param name="text">Conteudo bruto.</param>
