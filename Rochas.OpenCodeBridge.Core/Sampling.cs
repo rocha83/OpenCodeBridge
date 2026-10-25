@@ -1,8 +1,9 @@
 namespace Rochas.OpenCodeBridge.Core;
 
 /// <summary>
-/// Regra de temperatura do tunel, num if: <b>cliente manda</b> &gt; perfil do role
-/// &gt; global. <c>profileWins</c> (--profile-temp-wins) inverte o primeiro par.
+/// Regra de temperatura do tunel, num if: <b>o cliente manda</b> &gt; perfil do
+/// role &gt; global 0.3. Nao existe inversao: quem esta no tunel define o valor;
+/// o perfil so preenche quando o corpo nao traz temperatura.
 /// </summary>
 public static class Sampling
 {
@@ -11,15 +12,12 @@ public static class Sampling
     /// <param name="hasProfile">Model id carrega sufixo de role.</param>
     /// <param name="profileTemp">Temperatura do perfil (NaN = perfil sem temperatura).</param>
     /// <param name="globalTemp">Temperatura base da instancia.</param>
-    /// <param name="profileWins">Perfil sobrepoe o cliente (--profile-temp-wins).</param>
-    /// <returns>Valor e procedencia ("request" | "profile" | "profile(override)" | "global").</returns>
+    /// <returns>Valor e procedencia ("request" | "profile" | "global").</returns>
     public static (double Value, string Source) Temperature(
-        double? requestTemp, bool hasProfile, double profileTemp, double globalTemp, bool profileWins)
+        double? requestTemp, bool hasProfile, double profileTemp, double globalTemp)
     {
-        if (requestTemp.HasValue && !(profileWins && hasProfile && !double.IsNaN(profileTemp)))
-            return (requestTemp.Value, "request");
-        if (hasProfile && !double.IsNaN(profileTemp))
-            return (profileTemp, profileWins && requestTemp.HasValue ? "profile(override)" : "profile");
+        if (requestTemp.HasValue) return (requestTemp.Value, "request");
+        if (hasProfile && !double.IsNaN(profileTemp)) return (profileTemp, "profile");
         return (globalTemp, "global");
     }
 }

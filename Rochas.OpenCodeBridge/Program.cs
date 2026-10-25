@@ -144,15 +144,11 @@ internal static partial class Program
     // tails nesse caminho. Opencode (sufixo) segue com o system do cliente; para
     // ele, o main harness nao troca o Code Mode do protocolo.
     static bool MainHarnessOn = true;
-    // Temperatura: perfil do role (-build = 0.1) vence a temperatura que o
-    // cliente manda? O opencode repete o valor do json para o modelo base
-    // (0.3/0.5) e o role ficava com a temperatura errada. Default: perfil vence
-    // quando o model id tem sufixo de role; --request-temp-wins 1 restaura o
-    // comportamento antigo.
-    // Precedencia: temperatura do CLIENTE (tunel) > perfil do role > global 0.3.
-    // O modo antigo (perfil sempre acima do cliente) ficou opt-in: em sessao
-    // real o cliente reenviava 0.5 e o role rodava quente sem ninguem ver.
-    static bool ProfileTempWins = false;
+    // Modo de operacao (Core/BridgeMode): bridge = fixes+anti-repeat+harness+tails;
+    // opencode = fixes+anti-repeat (master do cliente). null = auto (heuristica).
+    static BridgeMode? Mode;
+    // Precedencia da temperatura: CLIENTE (tunel) > perfil do role > global 0.3.
+    // Sem inversao e sem flag: a regra e unica e mora no Core (Sampling).
     // Breaker de loop agentico (falhas consecutivas no mesmo alvo).
     static int BreakerSoft = 3;                                  // falhas que injetam o aviso
     static int BreakerHard = 6;                                  // falhas que encerram o turno
@@ -447,12 +443,12 @@ internal static partial class Program
             // Dois switches separados: mainHarness (texto base) e harnessTails
             // (delta). Nao ha chave alias: so estes dois nomes valem.
             if (cfg["harnessTails"]?.GetValue<bool>() is bool ht) TailsEnabled = ht;
+            if (cfg["mode"]?.GetValue<string>() is string md && BridgeMode.TryParse(md, out BridgeMode mcfg)) Mode = mcfg;
             if (cfg["mainHarness"]?.GetValue<bool>() is bool mh) MainHarnessOn = mh;
             // Caudas ajustaveis no appsettings (string vazia desliga a peca).
             if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham) { HarnessToolsTail = ham; ToolsTailCustom = true; }
             if (cfg["harnessBehaviorTail"]?.GetValue<string>() is string bt) { HarnessBehaviorTail = bt; BehaviorTailCustom = true; }
             if (cfg["tailScope"]?.GetValue<string>() is string tsp && tsp is "managed" or "all" or "off") TailScope = tsp;
-            if (cfg["profileTempWins"]?.GetValue<bool>() is bool ptw) ProfileTempWins = ptw;
             if (cfg["breakerSoft"]?.GetValue<int>() is int bsoft && bsoft >= 0) BreakerSoft = bsoft;
             if (cfg["breakerHard"]?.GetValue<int>() is int bhard && bhard >= 0) BreakerHard = bhard;
             if (cfg["antiRepeatRetry"]?.GetValue<bool>() is bool arr) AntiRepeatRetry = arr;
@@ -841,6 +837,7 @@ internal static partial class Program
 
         LoadAppSettings();                                       // 1.1 arquivo (CLI vence)
         ParseArgs(cliArgs);                                        // 1.2 parse CLI
+        ApplyMode();                                               // 1.2b modo manda no harness/tails
         if (!ValidateConfig()) return 2;                           // 1.3 coerencia de flags
         // Sonda Serilog: probe do AntiRepeat, SO com DIAGNOSTIC ligado
         // (--diagnostic / appsettings diagnostic / env DIAGNOSTIC=1).
@@ -942,8 +939,10 @@ internal static partial class Program
                     if (cliArgs[i + 1] is "managed" or "all" or "off") TailScope = cliArgs[i + 1];
                     break;
                 case "--main-harness": MainHarnessOn = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--profile-temp-wins": ProfileTempWins = cliArgs[i + 1] is not "false" and not "0"; break;
-                case "--request-temp-wins": ProfileTempWins = cliArgs[i + 1] is "false" or "0"; break;
+                case "--mode":
+                    if (BridgeMode.TryParse(cliArgs[i + 1], out BridgeMode mmode)) Mode = mmode;
+                    else { Console.Error.WriteLine($"--mode '{cliArgs[i + 1]}' invalido (bridge|opencode)"); Environment.Exit(2); }
+                    break;
                 case "--breaker-soft": if (int.TryParse(cliArgs[i + 1], out int bs) && bs >= 0) BreakerSoft = bs; break;
                 case "--breaker-hard": if (int.TryParse(cliArgs[i + 1], out int bh) && bh >= 0) BreakerHard = bh; break;
 
@@ -1020,6 +1019,18 @@ internal static partial class Program
                 case "--legacy-harness": LegacyHarness = cliArgs[i + 1] is not "false" and not "0"; break;
             }
         }
+    }
+
+    /// <summary>
+    /// Aplica a matriz do modo (Core/BridgeMode): opencode desliga main harness e
+    /// tails e mantem fixes + anti-repeat; bridge mantem tudo que as flags ligaram.
+    /// </summary>
+    static void ApplyMode()
+    {
+        if (Mode is not { } m) return;
+        if (!m.MainHarness) MainHarnessOn = false;
+        if (!m.Tails) TailsEnabled = false;
+        if (m.AntiRepeat) AntiRepeat = true;
     }
 
     /// <summary>Coerencia entre flags — roda ANTES de subir o listener.</summary>
@@ -1408,7 +1419,7 @@ WriteJson(ctx, 200, new JsonObject
         ["upstream"] = Upstream, ["model"] = Model, ["thinking"] = Thinking,
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
 ["context_tokens"] = ContextTokens, ["context_guard"] = ContextGuard,
-["profile_temp_wins"] = ProfileTempWins, ["tail_scope"] = TailScope,
+["mode"] = Mode?.Name ?? "auto", ["tail_scope"] = TailScope,
 ["main_harness"] = MainHarnessOn, ["main_harness_scope"] = "managed-only", ["main_harness_opencode"] = false, ["harness_tails"] = TailsEnabled, ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
         ["passthrough_responses"] = PassthroughResponses,
@@ -1530,12 +1541,9 @@ WriteJson(ctx, 200, new JsonObject
                 double? reqT2 = node["temperature"]?.GetValue<double>();
                 double profT2 = double.NaN;
                 bool hasProf2 = node["model"]?.GetValue<string>() is string tmid2 && TryProfile(tmid2, out profT2, out _);
-                bool profileUsable = hasProf2 && !double.IsNaN(profT2);
-                if (reqT2 is null || (ProfileTempWins && profileUsable))
+                if (reqT2 is null)
                 {
-                    bool useProfile = ProfileTempWins && profileUsable;
-                    double effTemp = useProfile ? profT2 : reqT2 ?? (profileUsable ? profT2 : Temperature);
-                    string src = useProfile ? "profile" : reqT2.HasValue ? "request" : profileUsable ? "profile" : "global";
+                    (double effTemp, string src) = Sampling.Temperature(reqT2, hasProf2, profT2, Temperature);
                     node["temperature"] = effTemp;
                     outBody = node.ToJsonString(SerOpts);
                     if (Diagnostic) Log(new JsonObject
@@ -2014,7 +2022,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         double? reqTemp = req["temperature"]?.GetValue<double>();
         // Mesma regra do /v1/chat, em if: o cliente manda; sem ele, o perfil do
         // role; sem perfil, o global 0.3. --profile-temp-wins inverte o 1o par.
-        (temperature, tempSource) = Sampling.Temperature(reqTemp, hasProfile, profTemp, Temperature, ProfileTempWins);
+        (temperature, tempSource) = Sampling.Temperature(reqTemp, hasProfile, profTemp, Temperature);
 
         // Converte a conversa Responses -> messages do formato chat
         var messages = InputToMessages(req["input"], req["instructions"], hasProfile);
@@ -2352,16 +2360,11 @@ string outBody = body;
             // Temperatura efetiva no bypass: perfil do role vence (mesma regra do
             // caminho traduzido); sem perfil vale o global. Sem isto o llama usava
             // o --temp da unit e o numero do perfil nunca valia no /v1/responses.
-            if (req["temperature"] is null
-                || (ProfileTempWins && req["model"]?.GetValue<string>() is string pm
-                    && TryProfile(pm, out double ppt, out _) && !double.IsNaN(ppt)))
+            if (req["temperature"] is null)
             {
-                double effTemp = Temperature;
-                string src = "global";
-                if (req["model"]?.GetValue<string>() is string tmid
-                    && TryProfile(tmid, out double pt, out _) && !double.IsNaN(pt))
-                { effTemp = pt; src = "profile"; }
-                else if (req["temperature"]?.GetValue<double>() is double rt) { effTemp = rt; src = "request"; }
+                double profT = double.NaN;
+                bool hasProf = req["model"]?.GetValue<string>() is string tmid && TryProfile(tmid, out profT, out _);
+                (double effTemp, string src) = Sampling.Temperature(null, hasProf, profT, Temperature);
                 req["temperature"] = effTemp;
                 if (Diagnostic) Log(new JsonObject
                 {
