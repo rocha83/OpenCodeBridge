@@ -173,7 +173,7 @@ internal static class UnitToolStrategyTests
     public static Task StripExecuteFromChatTools()
     {
         var tools = JsonNode.Parse("""[{"type":"function","function":{"name":"execute","parameters":{}}},{"type":"function","function":{"name":"shell","parameters":{}}}]""")!.AsArray();
-        int removed = global::Rochas.OpenCodeBridge.Program.StripExecuteTools(tools, "chat");
+        int removed = global::Rochas.OpenCodeBridge.Core.ToolSanitizer.StripExecuteTools(tools, true, "chat");
         TestContext.Check(removed == 1 && tools.Count == 1, "execute sai do catalogo chat (shell fica)");
         TestContext.Check(tools[0]!["function"]!["name"]!.GetValue<string>() == "shell", "shell preservada no catalogo");
         return Task.CompletedTask;
@@ -182,7 +182,7 @@ internal static class UnitToolStrategyTests
     public static Task StripExecuteFromResponsesTools()
     {
         var tools = JsonNode.Parse("""[{"type":"function","name":"execute","parameters":{}},{"type":"function","name":"write","parameters":{}}]""")!.AsArray();
-        int removed = global::Rochas.OpenCodeBridge.Program.StripExecuteTools(tools, "responses");
+        int removed = global::Rochas.OpenCodeBridge.Core.ToolSanitizer.StripExecuteTools(tools, true, "responses");
         TestContext.Check(removed == 1 && tools.Count == 1, "execute sai do catalogo responses (write fica)");
         TestContext.Check(tools[0]!["name"]!.GetValue<string>() == "write", "write preservada no catalogo");
         return Task.CompletedTask;
@@ -201,7 +201,7 @@ internal static class UnitToolStrategyTests
                               "# Instrucoes globais do agente\nregras"
             })
         };
-        int hits = global::Rochas.OpenCodeBridge.Program.NeutralizeCodeMode(chat);
+        int hits = global::Rochas.OpenCodeBridge.Core.ToolSanitizer.NeutralizeCodeMode(chat, true);
         string text = chat["messages"]![0]!["content"]!.GetValue<string>();
         TestContext.Check(hits == 1, "bloco Code Mode detectado e reescrito");
         TestContext.Check(!text.Contains("Use the `execute` tool"), "instrucao do execute removida");

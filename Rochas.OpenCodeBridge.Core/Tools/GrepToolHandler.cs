@@ -1,7 +1,7 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Handler da tool "grep": busca regex em arquivos (sem shell).
 public sealed class GrepToolHandler : IToolHandler

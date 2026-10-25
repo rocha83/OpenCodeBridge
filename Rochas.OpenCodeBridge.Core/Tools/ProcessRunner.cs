@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Execução de processos com timeout e morte da árvore (infra compartilhada).
 internal static class ProcessRunner

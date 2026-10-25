@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Handler da tool "glob": lista caminhos por padrão glob (sem shell).
 public sealed class GlobToolHandler : IToolHandler

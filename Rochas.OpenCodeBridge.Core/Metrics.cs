@@ -15,17 +15,17 @@ using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 
-namespace Rochas.OpenCodeBridge;
+namespace Rochas.OpenCodeBridge.Core;
 
-static class Metrics
+public static class Metrics
 {
     const int Cap = 8192;
     static readonly ConcurrentQueue<JsonObject> Ring = new();
     static int _dropped;
 
-    internal static bool Active = false;
-    internal static int Count => Ring.Count;
-    internal static int Dropped => _dropped;
+    public static bool Active = false;
+    public static int Count => Ring.Count;
+    public static int Dropped => _dropped;
 
     // Contadores por anel: sempre ativos (mesmo sem --diagnostic), porque o
     // desenho "catalogo cheio, deny so no risco" tem que ser medido, nao
@@ -34,17 +34,17 @@ static class Metrics
     // recusada antes de executar e pedida de novo com o JSON completo).
     static long _ring2Deny, _ring3Deny, _nudgeArgs;
     static long _breakerNudge, _breakerTrip;
-    internal static long Ring2Deny => System.Threading.Interlocked.Read(ref _ring2Deny);
-    internal static long Ring3Deny => System.Threading.Interlocked.Read(ref _ring3Deny);
-    internal static long NudgeArgs => System.Threading.Interlocked.Read(ref _nudgeArgs);
-    internal static long BreakerNudge => System.Threading.Interlocked.Read(ref _breakerNudge);
-    internal static long BreakerTripCount => System.Threading.Interlocked.Read(ref _breakerTrip);
+    public static long Ring2Deny => System.Threading.Interlocked.Read(ref _ring2Deny);
+    public static long Ring3Deny => System.Threading.Interlocked.Read(ref _ring3Deny);
+    public static long NudgeArgs => System.Threading.Interlocked.Read(ref _nudgeArgs);
+    public static long BreakerNudge => System.Threading.Interlocked.Read(ref _breakerNudge);
+    public static long BreakerTripCount => System.Threading.Interlocked.Read(ref _breakerTrip);
 
     /// <summary>Conta uma recusa no anel e (se diagnostic ligado) grava o evento.</summary>
     /// <param name="ring">"ring2", "ring3" ou "nudge".</param>
     /// <param name="tool">Tool alvo da recusa.</param>
     /// <param name="why">Motivo objetivo (vai para o anel/SQLite).</param>
-    internal static void Deny(string ring, string tool, string why)
+    public static void Deny(string ring, string tool, string why)
     {
         switch (ring)
         {
@@ -57,7 +57,7 @@ static class Metrics
     }
 
     /// <summary>Instantaneo dos contadores por anel (para /api/metrics e testes).</summary>
-    internal static JsonObject DenyCounters() => new()
+    public static JsonObject DenyCounters() => new()
     {
         ["ring2_deny"] = Ring2Deny,
         ["ring3_deny"] = Ring3Deny,
@@ -68,7 +68,7 @@ static class Metrics
 
     /// <summary>Conta um veredito do breaker de loop agentico (nudge|trip).</summary>
     /// <param name="verdict">"nudge" ou "trip".</param>
-    internal static void BreakerTrip(string verdict)
+    public static void BreakerTrip(string verdict)
     {
         if (string.Equals(verdict, "trip", StringComparison.OrdinalIgnoreCase))
             System.Threading.Interlocked.Increment(ref _breakerTrip);
@@ -79,13 +79,13 @@ static class Metrics
     }
 
     /// <summary>Instantaneo dos contadores do breaker (para /api/metrics e testes).</summary>
-    internal static JsonObject BreakerCounters() => new()
+    public static JsonObject BreakerCounters() => new()
     {
         ["breaker_nudge"] = BreakerNudge,
         ["breaker_trip"] = BreakerTripCount,
     };
 
-    internal static void Record(string kind, JsonObject fields)
+    public static void Record(string kind, JsonObject fields)
     {        if (!Active) return;
         try
         {
@@ -98,14 +98,14 @@ static class Metrics
         catch { /* metrica nunca derruba o pedido */ }
     }
 
-    internal static List<JsonObject> Snapshot()
+    public static List<JsonObject> Snapshot()
     {
         var list = new List<JsonObject>();
         foreach (var e in Ring) list.Add((JsonObject)e.DeepClone());
         return list;
     }
 
-    internal static void Clear()
+    public static void Clear()
     {
         while (Ring.TryDequeue(out _)) { }
         System.Threading.Interlocked.Exchange(ref _dropped, 0);
@@ -117,7 +117,7 @@ static class Metrics
     }
 
     // Amostrador de GPU em background (5s; best-effort, sem nvidia-smi = mudo).
-    internal static void StartGpuSampler()
+    public static void StartGpuSampler()
     {
         if (!Active) return;
         var t = new Thread(() =>
@@ -151,7 +151,7 @@ static class Metrics
     }
 
     // Dump no layout do Serilog.Sinks.SQLite (tabela logs). Retorna linhas.
-    internal static int DumpSqlite(string path)
+    public static int DumpSqlite(string path)
     {
         var rows = Snapshot();
         using var conn = new SqliteConnection($"Data Source={path}");

@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Handler da tool "shell": comandos de console com allowlist (lógica do Runner).
 public sealed class ShellToolHandler : IToolHandler
@@ -43,7 +43,7 @@ public sealed class ShellToolHandler : IToolHandler
             // Anel 3: argv barrado. Contador sempre ativo + evento no log da
             // bridge (a bateria conta o evento dentro da janela da faixa).
             Metrics.Deny("ring3", "shell", whyInsp);
-            Program.Log(new JsonObject { ["event"] = "tool-deny", ["tool"] = "shell", ["reason"] = whyInsp });
+            context.Log?.Invoke(new JsonObject { ["event"] = "tool-deny", ["tool"] = "shell", ["reason"] = whyInsp });
             return ToolResult.Fail(whyInsp);
         }
         var parts = SplitChain(command);

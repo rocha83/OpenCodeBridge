@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Handler da tool "fetch": GET HTTP somente-leitura (tipo curl).
 // Sem escrita, sem execução: devolve o corpo como texto.

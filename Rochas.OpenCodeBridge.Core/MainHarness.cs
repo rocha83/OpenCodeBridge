@@ -125,4 +125,81 @@ FORMATO
 - Tool calls completas; ao editar, mostre o diff.
 - Se o cliente trouxer skills (`<available_skills>`) ou ambiente (`<env>`), use os valores reais; não invente.
 """;
+
+    /// <summary>System do opencode (master Code Mode/AGENTS.md) nao e substituido.</summary>
+    /// <param name="clientSystem">System enviado pelo cliente.</param>
+    /// <returns>True quando o cliente ja traz o harness proprio do opencode.</returns>
+    public static bool LooksLikeOpencodeMaster(string? clientSystem)
+    {
+        if (string.IsNullOrWhiteSpace(clientSystem)) return false;
+        string t = clientSystem.Trim();
+        return t.Length > 6000
+            || t.Contains("# Code Mode", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("Instructions from:", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("You are opencode", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Substitui o system do cliente pelo main harness (caminho gerido).
+    /// Preserva <env>, <available_skills>, data e instrucoes pequenas do agente.
+    /// </summary>
+    /// <param name="messages">Mensagens ja convertidas (chat).</param>
+    /// <param name="hasProfile">Model com sufixo de role (opencode): nao troca.</param>
+    /// <param name="enabled">Flag --main-harness/appsettings.</param>
+    /// <returns>true se substituiu o system.</returns>
+    public static bool Apply(System.Text.Json.Nodes.JsonArray messages, bool hasProfile, bool enabled)
+    {
+        if (!enabled || hasProfile) return false;
+        string? clientSystem = null;
+        if (messages.Count > 0 && messages[0] is System.Text.Json.Nodes.JsonObject first
+            && first["role"]?.GetValue<string>() == "system")
+            clientSystem = first["content"]?.GetValue<string>();
+        if (LooksLikeOpencodeMaster(clientSystem)) return false;
+
+        string text = BuildSystem(clientSystem);
+        if (messages.Count > 0 && messages[0] is System.Text.Json.Nodes.JsonObject sys
+            && sys["role"]?.GetValue<string>() == "system")
+            sys["content"] = text;
+        else
+            messages.Insert(0, new System.Text.Json.Nodes.JsonObject { ["role"] = "system", ["content"] = text });
+        return true;
+    }
+
+    /// <summary>Monta o system do harness preservando o que e dinamico no cliente.</summary>
+    /// <param name="clientSystem">System original do cliente (pode ser null).</param>
+    /// <returns>System efetivo.</returns>
+    public static string BuildSystem(string? clientSystem)
+    {
+        var sb = new System.Text.StringBuilder(Text);
+        string? env = ExtractBlock(clientSystem, "<env>", "</env>");
+        if (env is not null) sb.Append("\n\nAMBIENTE REAL (cliente)\n").Append(env);
+        string? skills = ExtractBlock(clientSystem, "<available_skills>", "</available_skills>");
+        if (skills is not null) sb.Append("\n\nSKILLS DISPONIVEIS (cliente)\n").Append(skills);
+        string? date = ExtractLine(clientSystem, "Today's date:");
+        if (date is not null) sb.Append("\n\n").Append(date);
+
+        string trimmed = clientSystem?.Trim() ?? "";
+        if (!LooksLikeOpencodeMaster(trimmed) && trimmed.Length > 0)
+            sb.Append("\n\nINSTRUCOES DO CLIENTE\n").Append(trimmed);
+        return sb.ToString();
+    }
+
+    static string? ExtractBlock(string? text, string open, string close)
+    {
+        if (string.IsNullOrEmpty(text)) return null;
+        int start = text.IndexOf(open, StringComparison.OrdinalIgnoreCase);
+        if (start < 0) return null;
+        int end = text.IndexOf(close, start + open.Length, StringComparison.OrdinalIgnoreCase);
+        if (end < 0) return null;
+        return text[start..(end + close.Length)];
+    }
+
+    static string? ExtractLine(string? text, string prefix)
+    {
+        if (string.IsNullOrEmpty(text)) return null;
+        foreach (string line in text.Split('\n'))
+            if (line.TrimStart().StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return line.Trim();
+        return null;
+    }
 }

@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Inspetor pré-execução do shell: negação uniforme (comando direto, cadeia
 // &&/;, payload bash -c — caminho que pulava as checagens do handler) +

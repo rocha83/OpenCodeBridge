@@ -59,7 +59,7 @@ internal static class UnitMainHarnessTests
             ["role"] = "system",
             ["content"] = "Voce e um backend senior. Respostas curtas."
         });
-        bool applied = global::Rochas.OpenCodeBridge.Program.ApplyMainHarness(messages, hasProfile: false, enabled: true);
+        bool applied = global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(messages, hasProfile: false, enabled: true);
         TestContext.Check(applied, "aplica no caminho gerido");
         string? content = messages[0]?["content"]?.GetValue<string>();
         TestContext.Check(content?.StartsWith(global::Rochas.OpenCodeBridge.Core.MainHarness.Text) == true,
@@ -71,7 +71,7 @@ internal static class UnitMainHarnessTests
     public static Task KeepsProfileSystem()
     {
         var messages = new JsonArray(new JsonObject { ["role"] = "system", ["content"] = "cliente" });
-        bool applied = global::Rochas.OpenCodeBridge.Program.ApplyMainHarness(messages, hasProfile: true, enabled: true);
+        bool applied = global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(messages, hasProfile: true, enabled: true);
         TestContext.Check(!applied, "nao aplica no opencode");
         TestContext.Check(messages[0]?["content"]?.GetValue<string>() == "cliente", "system do opencode intacto");
         return Task.CompletedTask;
@@ -84,7 +84,7 @@ internal static class UnitMainHarnessTests
             ["role"] = "system",
             ["content"] = "# Code Mode\nUse the execute tool."
         });
-        bool applied = global::Rochas.OpenCodeBridge.Program.ApplyMainHarness(messages, hasProfile: false, enabled: true);
+        bool applied = global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(messages, hasProfile: false, enabled: true);
         TestContext.Check(!applied, "nao aplica no master opencode sem sufixo");
         TestContext.Check(messages[0]?["content"]?.GetValue<string>()?.Contains("# Code Mode") == true,
             "system do opencode intacto");
@@ -94,7 +94,7 @@ internal static class UnitMainHarnessTests
     public static Task PreservesDynamicBlocks()
     {
         string client = "Today's date: Sat Oct 24 2026\n<env>\n  Working directory: /tmp/x\n</env>\n<available_skills>\n  <skill><id>opencode</id></skill>\n</available_skills>";
-        string built = global::Rochas.OpenCodeBridge.Program.BuildMainHarnessSystem(client);
+        string built = global::Rochas.OpenCodeBridge.Core.MainHarness.BuildSystem(client);
         TestContext.Check(built.Contains("Working directory: /tmp/x"), "preserva env");
         TestContext.Check(built.Contains("<available_skills>"), "preserva skills");
         TestContext.Check(built.Contains("Today's date:"), "preserva data");
@@ -105,7 +105,7 @@ internal static class UnitMainHarnessTests
     public static Task DropsMasterButKeepsEnv()
     {
         string master = "# Code Mode\nUse the execute tool.\n<env>\n  Working directory: /tmp/x\n</env>\n<available_skills>\n  <skill><id>opencode</id></skill>\n</available_skills>";
-        string built = global::Rochas.OpenCodeBridge.Program.BuildMainHarnessSystem(master);
+        string built = global::Rochas.OpenCodeBridge.Core.MainHarness.BuildSystem(master);
         TestContext.Check(!built.Contains("# Code Mode"), "nao copia Code Mode");
         TestContext.Check(built.Contains("Working directory: /tmp/x"), "preserva env do master");
         TestContext.Check(!built.Contains("INSTRUCOES DO CLIENTE"), "nao copia master como instrucao");

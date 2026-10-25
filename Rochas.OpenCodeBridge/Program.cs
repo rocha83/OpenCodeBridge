@@ -1316,7 +1316,7 @@ WriteJson(ctx, 200, new JsonObject
                 string args = req["arguments"]?.ToJsonString() ?? "{}";
                 int timeout = req["timeout"]?.GetValue<int>() ?? 300;
                 string root = WorkspaceRoot.Length > 0 ? WorkspaceRoot : Environment.CurrentDirectory;
-                var executor = new Tools.BridgeToolExecutor(root, Upstream, ApiKey);
+                var executor = new Core.Tools.BridgeToolExecutor(root, Upstream, ApiKey, Log);
                 var result = executor.Execute(name, args, Math.Clamp(timeout, 1, 600));
                 string output = result.Success ? result.Output : "";
                 if (ToolOutputLimit > 0 && output.Length > ToolOutputLimit) output = output[..ToolOutputLimit];
@@ -1602,8 +1602,8 @@ WriteJson(ctx, 200, new JsonObject
                 ApplyPatternException(toolsArr, "chat");
                 // Code Mode do opencode: sem sandbox JS na bridge, `execute` sai
                 // do catalogo (o modelo so pode escolher tools diretas).
-                StripExecuteTools(toolsArr, "chat");
-                NeutralizeCodeMode(node);
+                ToolSanitizer.StripExecuteTools(toolsArr, ToolStrategy, "chat", Log);
+                ToolSanitizer.NeutralizeCodeMode(node, ToolStrategy, Log);
                 if (toolsArr.ToJsonString(SerOpts) != beforeStrip)
                     outBody = node.ToJsonString(SerOpts);
             }
@@ -2014,28 +2014,14 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         double? reqTemp = req["temperature"]?.GetValue<double>();
         // Mesma regra do /v1/chat, em if: o cliente manda; sem ele, o perfil do
         // role; sem perfil, o global 0.3. --profile-temp-wins inverte o 1o par.
-        if (reqTemp.HasValue && !(ProfileTempWins && hasProfile && !double.IsNaN(profTemp)))
-        {
-            temperature = reqTemp.Value;
-            tempSource = "request";
-        }
-        else if (hasProfile && !double.IsNaN(profTemp))
-        {
-            temperature = profTemp;
-            tempSource = ProfileTempWins && reqTemp.HasValue ? "profile(override)" : "profile";
-        }
-        else
-        {
-            temperature = Temperature;
-            tempSource = "global";
-        }
+        (temperature, tempSource) = Sampling.Temperature(reqTemp, hasProfile, profTemp, Temperature, ProfileTempWins);
 
         // Converte a conversa Responses -> messages do formato chat
         var messages = InputToMessages(req["input"], req["instructions"], hasProfile);
         // Main harness: no caminho gerido ele substitui o system do cliente e
         // dispensa as tails (a essencia ja esta no texto unico). Preserva
         // env/skills/data do cliente e instrucoes pequenas de agente.
-        bool mainHarness = ApplyMainHarness(messages, hasProfile, MainHarnessOn);
+        bool mainHarness = MainHarness.Apply(messages, hasProfile, MainHarnessOn);
         if (Diagnostic && mainHarness)
             Log(new JsonObject
             {
@@ -2130,7 +2116,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         ChatToResponsesAnnounced = AnnouncedTools(req["tools"] as JsonArray);
         // Exceção permanente do pattern (sempre ligada, só este caso).
         ApplyPatternException(tools, "responses");
-        StripExecuteTools(tools, "responses");
+        ToolSanitizer.StripExecuteTools(tools, ToolStrategy, "responses", Log);
         toolCount = tools?.Count ?? 0;
 
         // Monta o body do /v1/chat/completions
@@ -2182,7 +2168,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             // single-call; explicitamos. Referencia: llama.cpp#21375.
             chat["parallel_tool_calls"] = false;
         }
-        NeutralizeCodeMode(chat);
+        ToolSanitizer.NeutralizeCodeMode(chat, ToolStrategy, Log);
         // Stop sequences: repasse opcional (string ou array). ATENCAO: com
         // tools ativas, stop pode truncar o JSON da tool call no meio.
         if (req["stop"] is JsonNode stop)
@@ -2601,36 +2587,6 @@ var shape = new StringBuilder();
     }
 
     /// <summary>Remove chaves "pattern" nao-ancoradas dos schemas das tools (recursivo).</summary>
-    /// <remarks>Compat qwen3/qwen3.5: o template do 14B gera parser gramatical e
-    /// rejeita pattern sem ^...$ (400); o do 9B ignorava. Remover equivale ao
-    /// comportamento do 9B (geracao livre, description continua guiando).</remarks>
-    /// <param name="node">Tools ou sub-schema (mutado no lugar).</param>
-    /// <param name="path">Caminho do schema (usado no log da remocao).</param>
-    /// <param name="hits">Acumulador dos caminhos removidos.</param>
-    /// <returns>Quantas chaves removidas.</returns>
-    static int StripUnanchoredPatterns(JsonNode? node, string path = "$", List<string>? hits = null)
-    {
-        int dropped = 0;
-        if (node is JsonObject obj)
-        {
-            if (obj["pattern"] is JsonValue pv && pv.TryGetValue<string>(out string? pat)
-                && !string.IsNullOrEmpty(pat) && !(pat.StartsWith('^') && pat.EndsWith('$')))
-            {
-                obj.Remove("pattern");
-                hits?.Add(path + ".pattern");
-                dropped++;
-            }
-            foreach (var kv in obj)
-                dropped += StripUnanchoredPatterns(kv.Value, path + "." + kv.Key, hits);
-        }
-        else if (node is JsonArray arr)
-        {
-            for (int i = 0; i < arr.Count; i++)
-                dropped += StripUnanchoredPatterns(arr[i], $"{path}[{i}]", hits);
-        }
-        return dropped;
-    }
-
     // ---------------------------------------------------------------------
     // 3.9) Estrategia de tools (ToolStrategy)
     //   O opencode expoe a tool "execute" (Code Mode) cujo sandbox so contem
@@ -2663,56 +2619,6 @@ var shape = new StringBuilder();
     const string GuideCommand =
         "printf '%s\\n' 'ERRO: execute e um sandbox de namespaces do catalogo - NAO existe require/fs. " +
         "Nao repita o mesmo codigo: reemita a MESMA acao com as tools diretas (shell p/ comandos, write p/ arquivos, edit, read, grep, glob).'";
-
-    /// <summary>Nota que substitui o bloco Code Mode do opencode (sandbox JS inexistente aqui).</summary>
-    const string CodeModeNote =
-        "# Tools (harness da bridge)\n" +
-        "As tools do catalogo (shell, write, read, edit, grep, glob, webfetch, websearch, ...) sao chamadas DIRETAS. " +
-        "Esta bridge NAO oferece `execute` nem sandbox JavaScript: Code Mode nao existe aqui. " +
-        "Nao empacote varias acoes em um script; emita uma tool call por acao (paralelas quando independentes).\n";
-
-    /// <summary>Remove a tool `execute` (Code Mode do opencode) do catalogo enviado ao modelo.</summary>
-    /// <param name="tools">Array de tools (formato chat ou responses).</param>
-    /// <param name="mode">Rotulo do caminho, so para log.</param>
-    /// <returns>Quantidade removida.</returns>
-    internal static int StripExecuteTools(JsonNode? tools, string mode)
-    {
-        if (!ToolStrategy || tools is not JsonArray arr) return 0;
-        int removed = 0;
-        for (int i = arr.Count - 1; i >= 0; i--)
-        {
-            string? name = arr[i]?["function"]?["name"]?.GetValue<string>() ?? arr[i]?["name"]?.GetValue<string>();
-            if (!string.Equals(name, "execute", StringComparison.Ordinal)) continue;
-            arr.RemoveAt(i);
-            removed++;
-        }
-        if (removed > 0)
-            Log(new JsonObject { ["event"] = "tool-strip", ["mode"] = mode, ["tool"] = "execute", ["removed"] = removed, ["left"] = arr.Count });
-        return removed;
-    }
-
-    /// <summary>Troca o bloco nativo Code Mode (opencode) pela nota de tools diretas.</summary>
-    /// <param name="node">Request chat (usa "messages").</param>
-    /// <returns>Quantidade de mensagens reescritas.</returns>
-    internal static int NeutralizeCodeMode(JsonNode? node)
-    {
-        if (!ToolStrategy || node?["messages"] is not JsonArray msgs) return 0;
-        int hits = 0;
-        foreach (var m in msgs)
-        {
-            if (m is not JsonObject mo || mo["content"] is not JsonValue cv || !cv.TryGetValue<string>(out string? text)) continue;
-            int start = text.IndexOf("# Code Mode", StringComparison.Ordinal);
-            if (start < 0) continue;
-            // Preserva o catalogo de skills (vem logo apos a secao nativa).
-            int end = text.IndexOf("Skills provide specialized instructions", start + 1, StringComparison.Ordinal);
-            if (end < 0) end = text.IndexOf("\n# ", start + 1, StringComparison.Ordinal);
-            string tail = end >= 0 ? text[end..] : "";
-            mo["content"] = text[..start] + CodeModeNote + tail;
-            hits++;
-        }
-        if (hits > 0) Log(new JsonObject { ["event"] = "harness-strip", ["mode"] = "code-mode", ["hits"] = hits });
-        return hits;
-    }
 
     /// <summary>Tokens de controle que o template vaza para dentro dos argumentos.</summary>
     static readonly Regex ReLeakedTemplate = new(@"<\|?[A-Za-z_]{2,20}\|?>", RegexOptions.Compiled);
@@ -3241,7 +3147,7 @@ var shape = new StringBuilder();
     static void ApplyPatternException(JsonNode? tools, string mode)
     {
         var hits = new List<string>();
-        int dropped = StripUnanchoredPatterns(tools, "$", hits);
+        int dropped = ToolSanitizer.StripUnanchoredPatterns(tools, "$", hits);
         if (dropped > 0)
         {
             var where = new JsonArray();
@@ -4591,92 +4497,6 @@ if (type == "message")
         if (sysText.Length > 0)
             messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = LegacyHarness ? WithSystemGuardrail(sysText.ToString()) : sysText.ToString() });
         return messages;
-    }
-
-    /// <summary>
-    /// Aplica o main harness no caminho gerido (model sem sufixo de role).
-    /// Preserva os blocos dinamicos do cliente (env, skills, data) e, se o system
-    /// for pequeno, tambem as instrucoes especificas do agente.
-    /// </summary>
-    /// <param name="messages">Mensagens ja convertidas.</param>
-    /// <param name="hasProfile">Model com sufixo de role (opencode): nao troca.</param>
-    /// <param name="enabled">Flag --main-harness/appsettings.</param>
-    /// <returns>true se substituiu o system.</returns>
-    internal static bool ApplyMainHarness(JsonArray messages, bool hasProfile, bool enabled)
-    {
-        if (!enabled || hasProfile) return false;
-        string? clientSystem = null;
-        if (messages.Count > 0 && messages[0] is JsonObject first
-            && first["role"]?.GetValue<string>() == "system")
-            clientSystem = first["content"]?.GetValue<string>();
-        // opencode manda o master dele (Code Mode/AGENTS.md) e nao quer o
-        // nosso no lugar, mesmo quando usa o model base sem sufixo de role.
-        if (LooksLikeOpencodeMaster(clientSystem)) return false;
-
-        string text = BuildMainHarnessSystem(clientSystem);
-        if (messages.Count > 0 && messages[0] is JsonObject sys
-            && sys["role"]?.GetValue<string>() == "system")
-            sys["content"] = text;
-        else
-            messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = text });
-        return true;
-    }
-
-    /// <summary>System do opencode (master Code Mode/AGENTS.md) nao e substituido.</summary>
-    /// <param name="clientSystem">System enviado pelo cliente.</param>
-    /// <returns>True quando o cliente ja traz o harness proprio do opencode.</returns>
-    internal static bool LooksLikeOpencodeMaster(string? clientSystem)
-    {
-        if (string.IsNullOrWhiteSpace(clientSystem)) return false;
-        string t = clientSystem.Trim();
-        return t.Length > 6000
-            || t.Contains("# Code Mode", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("Instructions from:", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("You are opencode", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Monta o system do main harness preservando o que e dinamico no cliente:
-    /// bloco &lt;env&gt;, &lt;available_skills&gt;, data e instrucoes pequenas.
-    /// O master grande do opencode (Code Mode/AGENTS.md) nao e copiado.
-    /// </summary>
-    internal static string BuildMainHarnessSystem(string? clientSystem)
-    {
-        var sb = new StringBuilder(MainHarness.Text);
-        string? env = ExtractBlock(clientSystem, "<env>", "</env>");
-        if (env is not null) sb.Append("\n\nAMBIENTE REAL (cliente)\n").Append(env);
-        string? skills = ExtractBlock(clientSystem, "<available_skills>", "</available_skills>");
-        if (skills is not null) sb.Append("\n\nSKILLS DISPONIVEIS (cliente)\n").Append(skills);
-        string? date = ExtractLine(clientSystem, "Today's date:");
-        if (date is not null) sb.Append("\n\n").Append(date);
-
-        // O master do opencode e grande e traz o Code Mode/AGENTS.md que o
-        // main harness ja substitui; um system pequeno pode ser instrucao
-        // especifica do agente e vale preservar.
-        string trimmed = clientSystem?.Trim() ?? "";
-        bool isMaster = LooksLikeOpencodeMaster(trimmed);
-        if (!isMaster && trimmed.Length > 0)
-            sb.Append("\n\nINSTRUCOES DO CLIENTE\n").Append(trimmed);
-        return sb.ToString();
-    }
-
-    static string? ExtractBlock(string? text, string open, string close)
-    {
-        if (string.IsNullOrEmpty(text)) return null;
-        int start = text.IndexOf(open, StringComparison.OrdinalIgnoreCase);
-        if (start < 0) return null;
-        int end = text.IndexOf(close, start + open.Length, StringComparison.OrdinalIgnoreCase);
-        if (end < 0) return null;
-        return text[start..(end + close.Length)];
-    }
-
-    static string? ExtractLine(string? text, string prefix)
-    {
-        if (string.IsNullOrEmpty(text)) return null;
-        foreach (string line in text.Split('\n'))
-            if (line.TrimStart().StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                return line.Trim();
-        return null;
     }
 
     // Extrai texto de content/output seja string, lista de partes ou objeto.

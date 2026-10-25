@@ -1,3 +1,5 @@
+using Rochas.OpenCodeBridge.Core;
+
 namespace Rochas.OpenCodeBridge.Test;
 
 // Unit dos contadores por anel. O desenho "catalogo sempre cheio, deny so no
@@ -29,7 +31,7 @@ internal static class UnitMetricsTests
         Directory.CreateDirectory(dir);
         try
         {
-            var exec = new global::Rochas.OpenCodeBridge.Tools.BridgeToolExecutor(dir);
+            var exec = new global::Rochas.OpenCodeBridge.Core.Tools.BridgeToolExecutor(dir);
             var mv = exec.Execute("shell", "{\"command\":\"mv a.cs b.cs\"}", 10);
             TestContext.Check(!mv.Success && Metrics.Ring3Deny == 1, "mv negado conta no anel 3");
             var sed = exec.Execute("shell", "{\"command\":\"sed -i 's/a/b/' a.cs\"}", 10);

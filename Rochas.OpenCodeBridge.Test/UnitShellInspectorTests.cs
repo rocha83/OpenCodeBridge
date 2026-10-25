@@ -7,7 +7,7 @@ namespace Rochas.OpenCodeBridge.Test;
 //   - pipe para interpretador (curl ... | sh).
 internal static class UnitShellInspectorTests
 {
-    static string? V(string cmd) => global::Rochas.OpenCodeBridge.Tools.ShellInspector.Validate(cmd);
+    static string? V(string cmd) => global::Rochas.OpenCodeBridge.Core.Tools.ShellInspector.Validate(cmd);
 
     public static Task SedInPlaceDenied()
     {

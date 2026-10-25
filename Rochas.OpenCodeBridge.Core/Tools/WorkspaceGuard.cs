@@ -1,4 +1,4 @@
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Trava de workspace: resolve caminho e garante que fica dentro da raiz.
 internal static class WorkspaceGuard

@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Handler da tool "git": somente leitura (status/log/diff/show).
 // Sem commit/push/checkout: nada que escreva no repo.

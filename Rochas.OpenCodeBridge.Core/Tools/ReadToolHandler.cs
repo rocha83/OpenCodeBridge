@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Handler da tool "read": lê arquivo de texto, imagem ou PDF do workspace.
 // Imagens e PDFs são retornados no formato multimodal OpenAI (base64 data URL).

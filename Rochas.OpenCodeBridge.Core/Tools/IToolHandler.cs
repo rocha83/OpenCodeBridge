@@ -1,4 +1,4 @@
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Contrato de um handler de tool (uma implementação por tool anunciada).
 public interface IToolHandler

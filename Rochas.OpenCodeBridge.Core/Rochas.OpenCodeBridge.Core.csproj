@@ -15,4 +15,8 @@
     <Description>Núcleo da OpenCodeBridge: caudas de harness e proxy in-process para o llama.cpp (chat + responses).</Description>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+  </ItemGroup>
+
 </Project>

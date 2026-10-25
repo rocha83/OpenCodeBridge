@@ -1,4 +1,4 @@
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Resultado de uma execução de tool (objeto de valor do domínio).
 public sealed class ToolResult

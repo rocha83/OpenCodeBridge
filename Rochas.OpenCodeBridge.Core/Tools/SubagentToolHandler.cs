@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Handler da tool "subagent"/"task": delega um prompt a um modelo (upstream)
 // e executa o loop agéntico (tools reais) até obter a resposta final.

@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace Rochas.OpenCodeBridge.Tools;
+namespace Rochas.OpenCodeBridge.Core.Tools;
 
 // Handler da tool "write": escreve arquivo (cria diretórios pais).
 public sealed class WriteToolHandler : IToolHandler
