@@ -180,9 +180,9 @@ segmenta → Scripter → Exec); o runner só passou a executá-las **nesta orde
 # bridge própria (para testar o build do repo, não o binário de produção)
 cd Rochas.OpenCodeBridge/bin/Release/net9.0
 dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4100 \
-  --model Gemma4-E4B-Q4 --thinking events --temperature 0.5 --max-tokens 16384 \
+  --model Gemma4-E4B-Q4 --thinking events --temperature 0.3 --max-tokens 16384 \
   --context-guard 1 --context-tokens 131072 --api-key guest@123 \
-  --passthrough-responses true --main-harness 0 --harness-tails 0 \
+  --passthrough-responses true --main-harness 1 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
   --log logs/bridge-q4-level1.log &
 
@@ -203,15 +203,27 @@ ambiente, sem tocar no catálogo:
 ```bash
 # bridge Q3 dedicada (harness off, mesmo perfil da :4125)
 dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4110 \
-  --model Gemma4-E4B-UD-Q3 --thinking events --temperature 0.5 --max-tokens 16384 \
+  --model Gemma4-E4B-UD-Q3 --thinking events --temperature 0.3 --max-tokens 16384 \
   --context-guard 1 --context-tokens 65536 --api-key guest@123 \
-  --passthrough-responses true --main-harness 0 --harness-tails 0 \
+  --passthrough-responses true --main-harness 1 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
   --log logs/bridge-q3-level1.log &
 
 LEVEL_BRIDGE=http://127.0.0.1:$PORT LEVEL_UPSTREAM=http://127.0.0.1:4110 \
 LEVEL_BLOG=logs/bridge-q3-level1.log ./scripts/war/run-levels.sh --level 1
 ```
+
+**Os dois caminhos de teste** (o rótulo `pure` foi aposentado por ambíguo):
+
+- **`--mode bridge`** = caminho com **bridge harness main/tails**: o cliente fala HTTP
+  (`/v1/responses`) e executa as tools por `/api/tools/execute`; quem monta o turno é a
+  bridge (`main-harness` + `harness-tails` ligados, como no caminho gerido e na Web
+  in-process). É o caminho que serve para medir o produto.
+- **`--mode opencode`** = caminho **livre para o opencode**: o cliente entra com o próprio
+  master/harness (`opencode run --standalone`) e a bridge só transporta.
+
+Bridge sem harness e sem opencode plugado não é cenário de uso: não mede nada e só gera
+mitigação de granularidade. `--mode pure` continua aceito como **alias** de `bridge`.
 
 Duas variáveis mandam na raia: **`LEVEL_UPSTREAM`** vira `WAR_UPSTREAM` (o assert
 `U-status` compara o `upstream` do `/api/status` com esse valor, em vez do `:4100` fixo) e
@@ -223,7 +235,7 @@ imagem. Sem essas variáveis o comportamento é o de antes (`:4100`, visão liga
 
 `LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 2`
 
-Roda, em `--mode pure` e `--mode opencode`: `E-tools-full`, `E-dual-tools`,
+Roda, em `--mode bridge` e `--mode opencode`: `E-tools-full`, `E-dual-tools`,
 `E-mission-tools`, `E-responses-tools`, `E-science-gpu` (Q4, bridge do level) e
 `E-science-cpu` (linha Q3, `WAR_CPU_BRIDGE` ou `:4125`), fechando com a suíte web.
 `LEVEL_CPU=0` pula o científico da linha Q3 (útil quando a `:4125` está em uso por
@@ -242,7 +254,7 @@ Exige **harness ligado** na bridge; o runner consulta `/api/harness` e loga avis
 ```bash
 cd Rochas.OpenCodeBridge/bin/Release/net9.0
 dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4100 \
-  --model Gemma4-E4B-Q4 --thinking events --temperature 0.5 --max-tokens 16384 \
+  --model Gemma4-E4B-Q4 --thinking events --temperature 0.3 --max-tokens 16384 \
   --context-guard 1 --context-tokens 131072 --api-key guest@123 \
   --passthrough-responses true --main-harness 1 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \

@@ -3,7 +3,7 @@
 # Arena de testes por LEVELS (antes da subida para producao).
 # Level 1: units (U-*), devpipe (E-devpipe-*), belts azul+verde e a suite web
 # (integracao + topicos no Web.Test). Cada bloco da bridge roda em DOIS passes:
-# --mode pure e --mode opencode. Por step: log, delta do log da bridge, tempo,
+# --mode bridge e --mode opencode. Por step: log, delta do log da bridge, tempo,
 # PASS/FAIL e checkpoint em state/ (retomada por LEVEL_STAMP).
 #
 # Uso:
@@ -38,6 +38,9 @@ export WAR_UPSTREAM="${LEVEL_UPSTREAM:-http://127.0.0.1:4100}"
 NO_VISION="${LEVEL_NO_VISION:-}"
 if [ -z "$NO_VISION" ]; then case "${LEVEL_UPSTREAM:-}" in *":4110"*) NO_VISION=1 ;; *) NO_VISION=0 ;; esac; fi
 export WAR_NO_VISION="$NO_VISION"
+# Linha Q3 dos testes (E-tools-full / E-science-cpu): bench bridge da raia Q3,
+# nunca a de producao — a de producao atende sessao real e pode estar sem harness.
+if [ -n "${LEVEL_BRIDGE_Q3:-}" ]; then export WAR_CPU_BRIDGE="$LEVEL_BRIDGE_Q3"; fi
 BLOG="${LEVEL_BLOG:-/tmp/bridge-gpu.log}"
 TESTPROJ="$ROOT/Rochas.OpenCodeBridge.Test"
 WEBTEST="$ROOT/Rochas.OpenCodeBridge.Web.Test/bin/Release/net9.0/Rochas.OpenCodeBridge.Web.Test.dll"
@@ -90,12 +93,12 @@ step_webtest() { # integracao + topicos (suite web; TopicsSweep roda no bloco un
 
 case "$LEVEL" in
   1)
-    STEPS_DESC="units pure/opencode; devpipe pure/opencode; belts build (azul,verde) pure/opencode; belts orch (azul,verde) pure/opencode; webui integracao+topicos"
+    STEPS_DESC="units bridge/opencode; devpipe bridge/opencode; belts build (azul,verde) bridge/opencode; belts orch (azul,verde) bridge/opencode; webui integracao+topicos"
     if [ "$LIST" = "1" ]; then
       echo "Level 1 -> $STEPS_DESC"; exit 0
     fi
     log "=== LEVEL 1 ($OUT) ==="
-    for mode in pure opencode; do
+    for mode in bridge opencode; do
       step_bridge "units-$mode" --only U- --mode "$mode"
       step_bridge "devpipe-$mode" --only E-devpipe --mode "$mode"
       # Ordem: trilha Build primeiro, trilha Orch depois (duas trilhas da suite).
@@ -112,7 +115,7 @@ case "$LEVEL" in
       echo "Level 2 -> $STEPS_DESC"; exit 0
     fi
     log "=== LEVEL 2 ($OUT) ==="
-    for mode in pure opencode; do
+    for mode in bridge opencode; do
       step_bridge "tools-full-$mode" --only E-tools-full --mode "$mode"
       step_bridge "tools-dual-$mode" --only E-dual-tools --mode "$mode"
       step_bridge "mission-tools-$mode" --only E-mission-tools --mode "$mode"
@@ -131,8 +134,8 @@ case "$LEVEL" in
   3)
     # Level 3: pacote completo de belts (azul -> preta) nas DUAS trilhas da
     # suite — Build (implementa direto) e Orch (segmenta -> Scripter -> Exec) —
-    # em --mode pure e --mode opencode, com HARNESS LIGADO na bridge.
-    STEPS_DESC="belts azul->preta: trilha build + trilha orch, modos pure e opencode (harness on)"
+    # em --mode bridge e --mode opencode, com HARNESS LIGADO na bridge.
+    STEPS_DESC="belts azul->preta: trilha build + trilha orch, modos bridge e opencode (harness on)"
     if [ "$LIST" = "1" ]; then
       echo "Level 3 -> $STEPS_DESC"; exit 0
     fi
@@ -142,7 +145,7 @@ case "$LEVEL" in
     log "harness na bridge $BRIDGE: $(echo "$HSTATUS" | head -c 300)"
     echo "$HSTATUS" | grep -q '"main_harness":true' \
       || log "AVISO: main_harness nao esta true — Level 3 pede harness ligado (--main-harness 1 --harness-tails 1)"
-    for mode in pure opencode; do
+    for mode in bridge opencode; do
       step_bridge "belts-build-all-$mode" --only E-belts-build-direct --belts azul,verde,roxa,marrom,preta --mode "$mode"
       step_bridge "belts-orch-all-$mode" --only E-belts-direct --belts azul,verde,roxa,marrom,preta --mode "$mode"
     done

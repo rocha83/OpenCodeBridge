@@ -169,23 +169,12 @@ public sealed class ChatController(
         if (agent is null || !agent.Active) return NotFound();
         var history = new JsonArray();
         var rates = new List<double>();
-        string? prev = null;
-        int attempts = 0;
-        bool Healthy(string t)
+        // Política única em CalibrationProbe (delírio, repetição, corretivos e
+        // reforço): aqui só o transporte para a bridge. O "prev" do probe é o
+        // turno anterior de verdade — comparar com o próprio turno nunca cede.
+        var probe = new CalibrationProbe(openingPrompt: "boa noite");
+        var verdict = await probe.CalibrateToEquilibriumAsync(async (prompt, token) =>
         {
-            t = (t ?? "").Trim();
-            if (t.Length > 120) return true;
-            if (t.Length == 0) return false;
-            if (prev is not null && string.Equals(prev, t, StringComparison.Ordinal)) return false;
-            if (t.Contains("Como posso ajudar", StringComparison.OrdinalIgnoreCase)
-                || t.Contains("Encerrarei agora em silêncio", StringComparison.OrdinalIgnoreCase)
-                || t.Contains("Encerrando a conversa", StringComparison.OrdinalIgnoreCase)
-                || t.Contains("Boa noite", StringComparison.OrdinalIgnoreCase)) return false;
-            return true;
-        }
-        async Task<string> Ask(string prompt)
-        {
-            attempts++;
             history.Add(new JsonObject { ["role"] = "user", ["content"] = prompt });
             try
             {
@@ -199,9 +188,9 @@ public sealed class ChatController(
                     ["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = false },
                 };
                 using var res = await BridgeProxy.SendChatAsync(
-                    BridgeOptionsFor(agent, maxTokens: 256, thinking: false), body, stream: false, ct);
+                    BridgeOptionsFor(agent, maxTokens: 256, thinking: false), body, stream: false, token);
                 res.EnsureSuccessStatusCode();
-                var json = System.Text.Json.Nodes.JsonNode.Parse(await res.Content.ReadAsStringAsync(ct));
+                var json = System.Text.Json.Nodes.JsonNode.Parse(await res.Content.ReadAsStringAsync(token));
                 string text = json?["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
                 try
                 {
@@ -210,31 +199,16 @@ public sealed class ChatController(
                 }
                 catch { }
                 history.Add(new JsonObject { ["role"] = "assistant", ["content"] = text });
-                prev = text.Trim();
-                return prev;
+                return (text, 0);
             }
             catch
             {
                 history.Add(new JsonObject { ["role"] = "assistant", ["content"] = "" });
-                return "";
+                return ("", 0);
             }
-        }
-        string[] fixes =
-        [
-            "não repita. Responda só com ok.",
-            "não repita, mude de abordagem: você está repetindo saudação. Responda só com ok.",
-            "não repita. Pare de saudar/despedir, não explique, responda só com ok.",
-        ];
-        string t = await Ask("boa noite");
-        int f = 0;
-        while (!Healthy(t) && f < fixes.Length)
-            t = await Ask(fixes[f++]);
-        bool ceded = Healthy(t);
-        bool balanced = false;
-        if (ceded)
-            balanced = Healthy(await Ask("muito bem, você sossegou e está melhorando. Esse é o ritmo correto, busque o equilíbrio e responda só com ok-1."));
+        }, ct);
         string decode = rates.Count > 0 ? $"{rates.Average():F1} tok/s" : "";
-        return Json(new { ceded, balanced, attempts, decode });
+        return Json(new { ceded = verdict.Ceded, balanced = verdict.Balanced, attempts = verdict.Attempts, decode });
     }
 
     // ---- Sessions CRUD ----
@@ -989,6 +963,9 @@ public sealed class ChatController(
         var outputStream = Response.Body;
         var assistantContent = new System.Text.StringBuilder();
         var assistantThinking = new System.Text.StringBuilder();
+        // Contrato "o que persiste foi transmitido": marca se algum delta de
+        // content saiu para o cliente neste request (fallback/nota remenda).
+        bool anyContentDelta = false;
         int? promptTokens = null;
         int? completionTokens = null;
         // Fechamento silencioso: turno final vazio após tools ganha nota de conclusão.
@@ -1015,6 +992,8 @@ public sealed class ChatController(
         // Cutucadas DeepSeek em prosa (máx 2, contador próprio p/ não
         // interferir no anti-giro).
         int dsqNudges = 0;
+        // Turno só-raciocínio (sem content e sem tool): 1 cutucada por resposta.
+        int emptyNudges = 0;
         // Gate de escopo do subagent (máx 2 recusas; depois delega do jeito
         // que veio p/ não travar o run).
         int subScopeRejects = 0;
@@ -1190,7 +1169,10 @@ public sealed class ChatController(
                             if (delta?["reasoning_content"]?.GetValue<string>() is string rc)
                                 assistantThinking.Append(rc);
                             if (delta?["content"]?.GetValue<string>() is string cc)
+                            {
                                 assistantContent.Append(cc);
+                                if (cc.Length > 0) anyContentDelta = true;
+                            }
 
                             // Captura tool_calls
                             if (delta?["tool_calls"] is JsonArray tcArr)
@@ -1347,6 +1329,23 @@ public sealed class ChatController(
                 messages.Add(assistantTurn);
             }
 
+            // Turno só-raciocínio (sem texto e sem tool): o usuário não veria
+            // nada e o loop encerraria em silêncio. Cutuca uma vez por resposta;
+            // se repetir, o epílogo fecha com nota honesta (nunca bolha vazia).
+            if (harness && turnContent.Trim().Length == 0 && toolCalls.Count == 0 && emptyNudges < 1)
+            {
+                emptyNudges++;
+                messages.Add(new JsonObject
+                {
+                    ["role"] = "user",
+                    ["content"] = "[harness] responda em texto agora: o raciocínio não é exibido ao usuário.",
+                });
+                assistantContent.Clear();
+                assistantThinking.Clear();
+                continue;
+            }
+            if (turnContent.Trim().Length > 0) emptyNudges = 0;
+
             // Persiste o texto do turno ao fechar (o que a bolha já exibiu),
             // sem esperar o fim do loop com as tools. Turno só-com-espaço e sem
             // thinking não grava (evita bolhas vazias no reload).
@@ -1488,12 +1487,7 @@ public sealed class ChatController(
                 await WriteProgressAsync(outputStream, "tool_done", name, result.Success, ct, contentFull, sw.ElapsedMilliseconds, "", args ?? "");
                 // Devolve o output truncado no par tool_call_id: o modelo enxerga
                 // o resultado real (antes só via o texto do subagente).
-                messages.Add(new JsonObject
-                {
-                    ["role"] = "tool",
-                    ["tool_call_id"] = id,
-                    ["content"] = CutForContext(contentFull),
-                });
+                messages.Add(ToolLoopContext.ChatTool(id, contentFull));
                 if (subText is not null)
                 {
                     // Resumo curto p/ contexto: o texto integral (com as linhas
@@ -1554,6 +1548,16 @@ public sealed class ChatController(
                 : "As ferramentas solicitadas foram executadas, verifique.";
             silentClose = true;
         }
+        if (finalText.Length == 0 && assistantThinking.Length == 0)
+        {
+            // Sem texto, sem tool e sem raciocínio: nunca fecha em silêncio (o
+            // reload mostraria bolha vazia e o cliente ficaria sem resposta).
+            finalText = "Sem resposta nesta rodada: o modelo encerrou sem texto nem tool call. Reenvie ou ajuste o enunciado.";
+            silentClose = true;
+        }
+        // Texto final que não saiu por delta (fallback de thinking ou nota de
+        // fechamento) é transmitido agora: histórico e bolha contam a mesma história.
+        bool replayText = !anyContentDelta && finalText.Length > 0;
         if (session is not null && session.Id.HasValue && (finalText.Length > 0 || assistantThinking.Length > 0))
         {
             long streamMs = streamSw.ElapsedMilliseconds;
@@ -1574,7 +1578,7 @@ public sealed class ChatController(
         // Sempre tenta entregar (cliente abortado só ignora).
         try
         {
-            if (silentClose || giroAbort || chatterAbort)
+            if (silentClose || giroAbort || chatterAbort || replayText)
             {
                 // Fechamento silencioso também digita na bolha ao vivo.
                 var fb = new JsonObject
@@ -2018,10 +2022,7 @@ public sealed class ChatController(
                     ["type"] = "function_call", ["id"] = id, ["call_id"] = id,
                     ["name"] = name, ["arguments"] = args ?? "",
                 });
-                input.Add(new JsonObject
-                {
-                    ["type"] = "function_call_output", ["call_id"] = id, ["output"] = CutForContext(contentFull),
-                });
+                input.Add(ToolLoopContext.ResponsesOutput(id, contentFull));
                 if (subText is not null)
                 {
                     var sm = new JsonObject
@@ -2117,8 +2118,10 @@ public sealed class ChatController(
 
     // Retorno integral vai p/ banco/UI; p/ o contexto do loop, corta
     // (sem isto o 4B estourava os 16k com outputs longos encadeados).
-    private static string CutForContext(string s, int max = 6000) =>
-        string.IsNullOrEmpty(s) || s.Length <= max ? s ?? "" : s[..max] + $"\n[...cortado: {s.Length} chars no contexto; integral no histórico]";
+    // Orcamento do output de tool no contexto: fonte unica em ToolLoopContext
+    // (mesmo corte/marcador para Web, Responses e harnesses de teste).
+    private static string CutForContext(string s, int max = ToolLoopContext.DefaultBudget) =>
+        ToolLoopContext.Cut(s, max);
 
     // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.
 

@@ -11,6 +11,8 @@ internal static class CalibrationProbeTests
     internal static int Run()
     {
         CedeAposCorretivo().GetAwaiter().GetResult();
+        CedeNoSegundoTextoDiferente().GetAwaiter().GetResult();
+        OpeningPromptCustomizado().GetAwaiter().GetResult();
         DesisteSeNuncaCeder().GetAwaiter().GetResult();
         ContrasteChatterAbortaDelirio();
         EquilibrioAposPrimeiroDone().GetAwaiter().GetResult();
@@ -41,6 +43,44 @@ internal static class CalibrationProbeTests
         Check(verdict.Ceded && verdict.Attempts == 3, "U-calib-cede-3");
         Check(seenPrompts.Count == 3 && seenPrompts[1].Contains("não repita"), "U-calib-corretivo-invisivel");
         Check(verdict.Correctives.Count == 2, "U-calib-2-fixes");
+    }
+
+    // Regressão da classe "compara o turno com ele mesmo": o modelo entrega um
+    // texto curto DIFERENTE no 2º turno e a sonda tem de ceder ali (prev = turno
+    // anterior, nunca o atual). Com o bug antigo isto nunca cedia.
+    private static async Task CedeNoSegundoTextoDiferente()
+    {
+        var probe = new CalibrationProbe();
+        int calls = 0;
+        var verdict = await probe.CalibrateAsync((prompt, ct) =>
+        {
+            calls++;
+            return Task.FromResult((calls == 1 ? "Boa noite! Como posso ajudar você hoje?" : "ok", 0));
+        });
+        Check(verdict.Ceded && verdict.Attempts == 2, "U-calib-cede-turno2");
+        Check(verdict.Correctives.Count == 1, "U-calib-cede-turno2-1-fix");
+    }
+
+    // O enunciado de abertura é parâmetro (a Web abre com o histórico real);
+    // o default "ping" continua valendo para as sondas diretas.
+    private static async Task OpeningPromptCustomizado()
+    {
+        var probe = new CalibrationProbe(openingPrompt: "boa noite");
+        var seen = new List<string>();
+        await probe.CalibrateAsync((prompt, ct) =>
+        {
+            seen.Add(prompt);
+            return Task.FromResult(("ok", 0));
+        });
+        Check(seen.Count == 1 && seen[0] == "boa noite", "U-calib-opening-prompt");
+        var dflt = new CalibrationProbe();
+        var seen2 = new List<string>();
+        await dflt.CalibrateAsync((prompt, ct) =>
+        {
+            seen2.Add(prompt);
+            return Task.FromResult(("ok", 0));
+        });
+        Check(seen2.Count == 1 && seen2[0] == "ping", "U-calib-opening-prompt-default");
     }
 
     // Modelo nunca cede: veredito negativo após o teto, sem loop infinito.

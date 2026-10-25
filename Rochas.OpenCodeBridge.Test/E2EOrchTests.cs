@@ -2,8 +2,8 @@ using System.Text.Json.Nodes;
 
 namespace Rochas.OpenCodeBridge.Test;
 
-// E2E Orch (12B role orch): segmenta um enunciado complexo em tarefas atomicas
-// (JSON array) para leitura/execucao pelos Scripters (12B) e Exec (E2B).
+// E2E Orch (E4B role orch): segmenta um enunciado complexo em tarefas atomicas
+// (JSON array) para leitura/execucao pelos Scripters (E4B) e Exec (E4B).
 // Nao ha endpoint de decomposicao: a segmentacao ocorre via system prompt do Orch.
 internal static class E2EOrchTests
 {
@@ -15,7 +15,7 @@ internal static class E2EOrchTests
         Console.WriteLine($"[orch:segment] modelo {model} (bridge {TestContext.Bridge})");
 
         var history = new JsonArray(
-            new JsonObject { ["role"]="system", ["content"]="Voce e o Orch (role orch, 12B). Segmenta o enunciado do usuario em tarefas atomicas (max 5) e responde SOMENTE com um JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada, apenas segmente." },
+            new JsonObject { ["role"]="system", ["content"]="Voce e o Orch (role orch, E4B). Segmenta o enunciado do usuario em tarefas atomicas (max 5) e responde SOMENTE com um JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada, apenas segmente." },
             new JsonObject { ["role"]="user", ["content"]="Dominio backend C# de reembolsos corporativos: entidades, regras de aprovacao por faixa de valor, banco SQL (DDL, indices, constraints), repositorios Dapper e servicos de aplicacao. Divida em tarefas por escopo." });
 
         var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",

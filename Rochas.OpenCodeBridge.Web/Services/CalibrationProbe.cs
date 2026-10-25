@@ -8,10 +8,12 @@ public sealed class CalibrationProbe
 {
     private readonly int _shortLimit;
     private readonly int _maxAttempts;
-    public CalibrationProbe(int shortLimit = 120, int maxAttempts = 4)
+    private readonly string _openingPrompt;
+    public CalibrationProbe(int shortLimit = 120, int maxAttempts = 4, string openingPrompt = "ping")
     {
         _shortLimit = shortLimit;
         _maxAttempts = maxAttempts;
+        _openingPrompt = openingPrompt;
     }
 
     public sealed record Verdict(bool Ceded, int Attempts, string? FinalText, IReadOnlyList<string> Correctives);
@@ -22,7 +24,7 @@ public sealed class CalibrationProbe
     {
         var correctives = new List<string>();
         string? prev = null;
-        string prompt = "ping";
+        string prompt = _openingPrompt;
         for (int attempt = 1; attempt <= _maxAttempts; attempt++)
         {
             var (text, tools) = await chat(prompt, ct);

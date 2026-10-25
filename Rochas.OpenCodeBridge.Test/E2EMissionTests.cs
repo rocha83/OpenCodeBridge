@@ -117,15 +117,18 @@ internal static class E2EMissionTests
         Console.WriteLine($"  [mission] C# ok:\n{runOut.Trim()}");
 
         // Fase 2: portabilidade para F# (mesma matematica, System.Math qualificado).
-        int historyBeforeFs = history.Count;
         string fsOut = "";
+        string lastErr = "";
         for (int attempt = 1; attempt <= 3; attempt++)
         {
             if (attempt > 1)
             {
-                // Flake do modelo (o F# as vezes sai com erro de sintaxe): refaz a fase limpa.
-                while (history.Count > historyBeforeFs) history.RemoveAt(history.Count - 1);
-                LogT($"[F#] retry {attempt}: F# anterior nao compilou/rodou");
+                // Nada de injetar o erro no prompt: o retorno da tool ja voltou ao
+                // contexto no turno anterior (item role=tool). O fio continua
+                // intacto — o modelo reenxerga o erro e se corrige sozinho.
+                LogT($"[F#] retry {attempt}: sem sucesso; contexto (tool outputs) preservado ({lastErr.Split('\n')[0]})");
+                history.Add(new JsonObject { ["role"] = "user", ["content"] =
+                    $"Sem prosa: rode `dotnet run --project {ws}/mfs`, leia o erro que voltou no output da tool e corrija o Program.fs." });
             }
             history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Use tools, uma por turno. (1) write no caminho ABSOLUTO {ws}/mfs/Program.fs (o projeto ja existe em {ws}/mfs; nao recrie o projeto). Escreva F# que imprima 3 numeros com 6 casas via printfn \"%.6f\" valor: (a) Simpson de sin em [0,pi] com n=100 -> 2.000000; (b) media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> 5.000000; (c) desvio padrao da mesma lista. OBRIGATORIO em F# (siga a risca): use acumulador mutavel e um for - `let mutable soma = 0.0` e `for i in 0 .. n do` com atribuicao `soma <- soma + ...`; NAO use Seq/List.map/List.fold/comprehension para a integral. Integral: h = pi / float n; para i de 1 a (n-1): soma <- soma + peso * sin(float i * h), com peso 4.0 se i for impar e 2.0 se par; resultado = h / 3.0 * soma. Desvio padrao: sqrt (List.average (List.map (fun v -> (v - media) ** 2.0) data)). (2) rode `dotnet run --project {ws}/mfs` e corrija ate imprimir 2.000000 e 5.000000." });
         for (int turn = 0; turn < 22; turn++)
@@ -166,6 +169,7 @@ internal static class E2EMissionTests
             string fsFile = Path.Combine(ws, "mfs", "Program.fs");
             string fsSrc = File.Exists(fsFile) ? File.ReadAllText(fsFile) : "";
             fsOut = Run("dotnet", "run --project mfs -c Release", ws, 240);
+            lastErr = fsOut;
             LogT($"[F#] RUN -> {fsOut[..Math.Min(220, fsOut.Length)]}");
             bool ok = fsSrc.Contains("Math") && fcode.Contains("Math")
                 && (fsOut.Contains("2,000000") || fsOut.Contains("2.000000"))

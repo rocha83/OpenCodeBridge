@@ -30,7 +30,8 @@ internal static class Program
             else if (args[i] == "--standalone-timeout" && i + 1 < args.Length) TestContext.StandaloneTimeoutSec = int.Parse(args[++i]);
             else if (args[i] == "--standalone-provider" && i + 1 < args.Length) TestContext.StandaloneProvider = args[++i];
             else if (args[i] == "--dual") TestContext.Dual = true;
-            else if (args[i] == "--mode" && i + 1 < args.Length) TestContext.Mode = args[++i];
+            else if (args[i] == "--mode" && i + 1 < args.Length)
+                TestContext.Mode = args[++i] is "pure" ? "bridge" : args[i];
             else if (args[i] == "--tool-agent-steps" && i + 1 < args.Length) TestContext.ToolAgentSteps = int.Parse(args[++i]);
             else if (args[i] == "--skip-unit") TestContext.SkipUnit = true;
             else if (args[i] == "--front-webdriver" || args[i] == "--webdriver") TestContext.WebDriver = true;
@@ -57,6 +58,7 @@ internal static class Program
         // ---- unit (bridge, sem modelo)
         if (!TestContext.SkipUnit)
         {
+        TestContext.Run("U-tool-loop-context", UnitToolLoopContextTests.Run);
         TestContext.Run("U-status", UnitStatusTests.Status);
         TestContext.Run("U-metrics", UnitStatusTests.Metrics);
         TestContext.Run("U-models-passthrough", UnitStatusTests.ModelsPassthrough);
@@ -184,7 +186,7 @@ internal static class Program
             TestContext.Run("E-responses-simple", E2EToolTests.SimpleResponses);
             TestContext.Run("E-responses-tools", E2EToolTests.ToolResponses);
             TestContext.Run("E-devpipe-tools", E2EDevPipeTests.DevPipeTools);
-            // Teste de tools completo nos 2 modelos (GPU1 12B + GPU2 E2B) em paralelo.
+            // Teste de tools completo nos 2 modelos (GPU1 E4B-Q4 + GPU2 E4B-Q3) em paralelo.
             TestContext.Run("E-tools-full", E2EToolsFullTests.FullTools);
             TestContext.Run("E-devpipe-infra", E2EDevPipeTests.DevPipeInfra);
             if (TestContext.NoVision)

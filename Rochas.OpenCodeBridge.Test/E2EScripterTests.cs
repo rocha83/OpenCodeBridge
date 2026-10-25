@@ -2,11 +2,11 @@ using System.Text.Json.Nodes;
 
 namespace Rochas.OpenCodeBridge.Test;
 
-// E2E Scripter (12B compoe + valida sintaxe) -> Scripter E2B (gera companion .md)
+// E2E Scripter (E4B compoe + valida sintaxe) -> Scripter E4B-Q3 (gera companion .md)
 // -> Exec (futuro le companion .md e executa os scripts):
-//   1) 12B (role scripter) COMPÕE um script bash que executa a tarefa e o SALVA
+//   1) E4B-Q4 (role scripter) COMPÕE um script bash que executa a tarefa e o SALVA
 //      (write_file); valida sintaxe com bash -n.
-//   2) E2B (role scripter) LÊ o script e gera o companion .md descrevendo o que
+//   2) E4B-Q3 (role scripter) LÊ o script e gera o companion .md descrevendo o que
 //      o script faz (para o Exec ler antes de executar).
 //   3) Exec (role exec) — backlog: le o companion .md e EXECUTA os scripts.
 internal static class E2EScripterTests
@@ -40,7 +40,7 @@ internal static class E2EScripterTests
                 ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
         };
         var history = new JsonArray(
-            new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, 12B). Componha um script bash que cria um arquivo /tmp/scratchpad/ok.txt com o texto OK e imprime OK. Salve o script em tarefa.sh com shebang #!/usr/bin/env bash. Use write_file. Ao terminar responda apenas SCRIPTER-OK." },
+            new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, E4B). Componha um script bash que cria um arquivo /tmp/scratchpad/ok.txt com o texto OK e imprime OK. Salve o script em tarefa.sh com shebang #!/usr/bin/env bash. Use write_file. Ao terminar responda apenas SCRIPTER-OK." },
             new JsonObject { ["role"]="user", ["content"]="Componha o script bash." });
         for (int t = 0; t < 8; t++)
         {
@@ -73,7 +73,7 @@ internal static class E2EScripterTests
 
     public static async Task CompanionGen()
     {
-        // E2B (role scripter) le o script e gera o companion .md.
+        // E4B-Q3 (role scripter) le o script e gera o companion .md.
         string model = "gemma-4-e2b-scripter";
         try
         {
@@ -94,7 +94,7 @@ internal static class E2EScripterTests
                 ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
         };
         var history = new JsonArray(
-            new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, E2B). Leia o script bash fornecido e gere um companion .md (tarefa.md) descrevendo o que o script faz, seus passos e como o Exec deve executa-lo. Salve com write_file em tarefa.md. Ao terminar responda apenas COMPANION-OK." },
+            new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, E4B). Leia o script bash fornecido e gere um companion .md (tarefa.md) descrevendo o que o script faz, seus passos e como o Exec deve executa-lo. Salve com write_file em tarefa.md. Ao terminar responda apenas COMPANION-OK." },
             new JsonObject { ["role"]="user", ["content"]="SCRIPT:\n" + script + "\n\nGere o companion tarefa.md." });
         for (int t = 0; t < 8; t++)
         {

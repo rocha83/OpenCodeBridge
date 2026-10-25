@@ -149,7 +149,10 @@ internal static partial class Program
     // (0.3/0.5) e o role ficava com a temperatura errada. Default: perfil vence
     // quando o model id tem sufixo de role; --request-temp-wins 1 restaura o
     // comportamento antigo.
-    static bool ProfileTempWins = true;
+    // Precedencia: temperatura do CLIENTE (tunel) > perfil do role > global 0.3.
+    // O modo antigo (perfil sempre acima do cliente) ficou opt-in: em sessao
+    // real o cliente reenviava 0.5 e o role rodava quente sem ninguem ver.
+    static bool ProfileTempWins = false;
     // Breaker de loop agentico (falhas consecutivas no mesmo alvo).
     static int BreakerSoft = 3;                                  // falhas que injetam o aviso
     static int BreakerHard = 6;                                  // falhas que encerram o turno
@@ -1515,30 +1518,32 @@ WriteJson(ctx, 200, new JsonObject
                     outBody = node.ToJsonString(SerOpts);
                 }
             }
-            // Temperatura efetiva no repasse: perfil do role vence (mesma regra do
-            // caminho Responses); sem perfil vale o global ou o que o cliente
-            // mandou. Sem isto o llama usava o --temp da unit e o numero do
-            // perfil nunca valia no /v1/chat.
-            if (node is not null
-                && (node["temperature"] is null
-                    || (ProfileTempWins && node["model"]?.GetValue<string>() is string pm
-                        && TryProfile(pm, out double ppt, out _) && !double.IsNaN(ppt))))
+            // Temperatura no repasse: quem esta conectado manda. Se o corpo ja
+            // traz temperature, passa reto (o numero do cliente, do role que ele
+            // configura, chega intacto); so injetamos quando falta — ai vale o
+            // perfil do role e, sem perfil, o global 0.3. --profile-temp-wins
+            // forca o perfil por cima do cliente (opt-in).
+            if (node is not null)
             {
-                double effTemp = Temperature;
-                string src = "global";
-                if (node["model"]?.GetValue<string>() is string tmid2
-                    && TryProfile(tmid2, out double pt2, out _) && !double.IsNaN(pt2))
-                { effTemp = pt2; src = "profile"; }
-                else if (node["temperature"]?.GetValue<double>() is double rtemp) { effTemp = rtemp; src = "request"; }
-                node["temperature"] = effTemp;
-                outBody = node.ToJsonString(SerOpts);
-                if (Diagnostic) Log(new JsonObject
+                double? reqT2 = node["temperature"]?.GetValue<double>();
+                double profT2 = double.NaN;
+                bool hasProf2 = node["model"]?.GetValue<string>() is string tmid2 && TryProfile(tmid2, out profT2, out _);
+                bool profileUsable = hasProf2 && !double.IsNaN(profT2);
+                if (reqT2 is null || (ProfileTempWins && profileUsable))
                 {
-                    ["event"] = "temp-inject",
-                    ["temp"] = effTemp,
-                    ["source"] = src,
-                    ["model"] = node["model"]?.GetValue<string>() ?? Model
-                });
+                    bool useProfile = ProfileTempWins && profileUsable;
+                    double effTemp = useProfile ? profT2 : reqT2 ?? (profileUsable ? profT2 : Temperature);
+                    string src = useProfile ? "profile" : reqT2.HasValue ? "request" : profileUsable ? "profile" : "global";
+                    node["temperature"] = effTemp;
+                    outBody = node.ToJsonString(SerOpts);
+                    if (Diagnostic) Log(new JsonObject
+                    {
+                        ["event"] = "temp-inject",
+                        ["temp"] = effTemp,
+                        ["source"] = src,
+                        ["model"] = node["model"]?.GetValue<string>() ?? Model
+                    });
+                }
             }
             // Formula por caminho (--tail-scope): "all" injeta tambem no opencode.
             // Sem switch mestre: cada cauda se aplica por estar configurada
@@ -2005,12 +2010,9 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // identificadores corrompidos da sessao de 2026-10-23. --request-temp-wins
         // restaura a prioridade do cliente.
         double? reqTemp = req["temperature"]?.GetValue<double>();
-        if (hasProfile && ProfileTempWins && !double.IsNaN(profTemp))
-        {
-            temperature = profTemp;
-            tempSource = reqTemp.HasValue && Math.Abs(reqTemp.Value - profTemp) > 0.0001 ? "profile(override)" : "profile";
-        }
-        else if (reqTemp.HasValue)
+        // Mesma regra do /v1/chat, em if: o cliente manda; sem ele, o perfil do
+        // role; sem perfil, o global 0.3. --profile-temp-wins inverte o 1o par.
+        if (reqTemp.HasValue && !(ProfileTempWins && hasProfile && !double.IsNaN(profTemp)))
         {
             temperature = reqTemp.Value;
             tempSource = "request";
@@ -2018,7 +2020,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         else if (hasProfile && !double.IsNaN(profTemp))
         {
             temperature = profTemp;
-            tempSource = "profile";
+            tempSource = ProfileTempWins && reqTemp.HasValue ? "profile(override)" : "profile";
         }
         else
         {
@@ -4481,7 +4483,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
     /// <param name="instructions">Sistema.</param>
     /// <param name="profileClient">Model com sufixo de perfil (tubo puro, sem formula)?</param>
     /// <returns>Messages.</returns>
-    static JsonArray InputToMessages(JsonNode? input, JsonNode? instructions, bool profileClient = false)
+    internal static JsonArray InputToMessages(JsonNode? input, JsonNode? instructions, bool profileClient = false)
     {
         var messages = new JsonArray();
 
@@ -4547,16 +4549,26 @@ if (type == "message")
                 string callId = entry["call_id"]?.GetValue<string>() ?? entry["id"]?.GetValue<string>() ?? ("call_" + NewId());
                 string name = entry["name"]?.GetValue<string>() ?? "";
                 string arguments = JsonToString(entry["arguments"]);
-                messages.Add(new JsonObject
+                var call = new JsonObject
                 {
-                    ["role"] = "assistant",
-                    ["content"] = null,
-                    ["tool_calls"] = new JsonArray(new JsonObject
+                    ["id"] = callId, ["type"] = "function",
+                    ["function"] = new JsonObject { ["name"] = name, ["arguments"] = arguments }
+                };
+                // Chamadas consecutivas sao UM turno do assistente (N tool_calls
+                // no mesmo item). Sem o merge o template upstream ve N turnos de
+                // 1 call e o modelo perde a conta de "ja chamei isto na rodada".
+                if (messages.Count > 0 && messages[^1] is JsonObject prevMsg
+                    && prevMsg["role"]?.GetValue<string>() == "assistant"
+                    && prevMsg["content"] is null
+                    && prevMsg["tool_calls"] is JsonArray prevCalls)
+                    prevCalls.Add(call);
+                else
+                    messages.Add(new JsonObject
                     {
-                        ["id"] = callId, ["type"] = "function",
-                        ["function"] = new JsonObject { ["name"] = name, ["arguments"] = arguments }
-                    })
-                });
+                        ["role"] = "assistant",
+                        ["content"] = null,
+                        ["tool_calls"] = new JsonArray(call)
+                    });
             }
             else if (type is "function_call_output" or "custom_tool_call_output" or "shell_call_output"
                      or "computer_call_output" or "local_shell_call_output" or "apply_patch_call_output")

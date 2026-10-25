@@ -25,13 +25,14 @@ em **TurboQuant** (`turbo3` no KV), convivendo em **12 GB de VRAM** (RTX 3060).
 |---|---|---|---|
 | **GPU1** | `Gemma4-E4B-Q4` (`Q4_K_M` + mmproj Q8_0) | `:4100` | `:4124` |
 | **GPU2** | `Gemma4-E4B-UD-Q3` (`IQ3_XXS`, text-only) | `:4110` | `:4125` |
+| **CPU Forced** | `Gemma4-E4B-Q4` (`Q4_K_M`, `-ngl 0`) | `:4120` | `:4126` |
 
-> **Nota CPU/GPU2.** O sufixo **CPU** em nomes históricos
-> (`llama-cpu.service`, `bridge-cpu.service`, `--cpu-max-tokens`, provider
-> `llama`) **não** significa que o E4B UD-Q3 roda em CPU: a **GPU2** roda na GPU com
-> `-ngl 99`. O caminho CPU existe como **cenário de teste** para **tarefas
-> granulares de execução de scripts** (`Llama GPU2-CPU Toggle`, `-ngl 0`),
-> permitindo validar o executor de scripts sem disputar VRAM com a GPU1.
+> **Nota CPU Forced.** A **GPU2** (`Gemma4-E4B-UD-Q3`) roda **100% em GPU**
+> (`-ngl 99`), sem offload. A linha **CPU** é explícita e separada:
+> `llama-cpu-forced.service` (`:4120`, `-ngl 0 -t 4 -tb 4`) +
+> `bridge-cpu-forced.service` (`:4126`). Ela existe como **cenário de teste**
+> para **tarefas granulares de execução de scripts**, validando o executor de
+> scripts sem disputar VRAM com a GPU1.
 
 ## Cenário de testes (resumo)
 
@@ -55,9 +56,10 @@ read/write/edit/glob/grep/mkdir/git/`bash -n`/exec nos **dois** modelos em
 paralelo.
 
 Detalhe de contextos, units, VRAM, cenários A–E e como cortar VRAM:
-**`docs/LAB-SETUP.md`**. Para rodar a GPU2 (E4B UD-Q3) em **CPU** com `-ngl 0` (toggle
-`llama-gpu2-cpu-toggle.sh`, drop-in do `llama-cpu.service` e exemplos de devpipe
-`--only E-devpipe`), veja **`docs/LAB-SETUP.md` — Cenário E**.
+**`docs/LAB-SETUP.md`**. A linha **CPU Forced** (`llama-cpu-forced` `:4120` +
+`bridge-cpu-forced` `:4126`, `-ngl 0`) e o **Cenário E** — o cenário de teste do
+executor de scripts, com exemplos `--only E-devpipe` — estão em
+**`docs/LAB-SETUP.md`**.
 
 ## Harness — main harness e caudas
 
@@ -181,6 +183,8 @@ Keep on with Gemma: `--passthrough-responses true`, `--legacy-harness 0`,
 `--coerce-narrated 0 --coerce-text-tools 0 --tool-strategy 0`, plus the
 behavior tail (tools tail is the code default). Legacy Qwen3/Qwen3.5
 compatibility remains available via `--qwen-standard 1` and `--legacy-harness 1`;
-other legacy families use `--coerce-text-tools 1` as needed. Any "CPU" reference
-to the E4B UD-Q3 is historical: the model runs on **GPU2**; the CPU path is only the
-test mode for granular script-execution tasks. Infra detail in `LAB-SETUP.md`.
+other legacy families use `--coerce-text-tools 1` as needed. The **CPU** line is
+explicit, not a fallback: `llama-cpu-forced` (`:4120`, `-ngl 0`) +
+`bridge-cpu-forced` (`:4126`) is the test scenario for granular
+script-execution tasks. GPU2 itself is fully on GPU (`-ngl 99`). Infra detail in
+`LAB-SETUP.md`.

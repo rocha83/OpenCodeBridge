@@ -1,5 +1,61 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Temperatura do tunel manda; trilhas bridge/opencode; tool call volta a executar no teste (2026-10-24, sessao 18)
+
+**Temperatura: um `if`, sem classe.** `appsettings.json` trazia `temperature: 0.5` +
+`profileTempWins: true`, o que sobrepunha o default do codigo (0.3) e fazia o perfil do role
+vencer a temperatura do cliente — o `:4125` respondia `temperature: 0.5` mesmo com
+`--temperature 0.3` na unit. Regra agora, nos dois caminhos (`/v1/responses` e `/v1/chat`):
+
+1. corpo do request manda (é a config de quem está conectado no stream — na Web vem de
+   `BridgeOptions.Temperature`, no opencode do perfil do agente);
+2. sem temperatura no corpo, vale o perfil do role (`-build` 0.1, `-plan`/`-orch` 0.3, `-moe` 0.5);
+3. sem perfil, o global **0.3**.
+
+`profileTempWins: false` no `appsettings.json` (opt-in `--profile-temp-wins` reverso). Uma
+classe `TemperaturePolicy` chegou a ser criada e foi **removida**: a regra é um `if/else` de
+três ramos, e a árvore/histórico mostram que nunca existiu classe para isso (a única policy
+removida foi `ToolLoopBreaker`, dobrada em `ToolsAntiRepeat` no `0c7ba13`).
+`--temp 0.3` fixado nas units `llama-gpu`/`llama-gpu2`/`llama-cpu-forced` (llama.cpp rodava no
+default 0.8) e `--temperature 0.3` em `bridge-gpu`/`bridge-gpu2`/`bridge-cpu-forced`
+(incluindo o drop-in `bridge-gpu2.service.d/diagnostic.conf`). Verificado por `/api/status`:
+`:4124`, `:4125`, `:4126` = `temp 0.3`, `profile_temp_wins false`.
+
+**Duas trilhas, sem "pure".** O rótulo `--mode pure` era ambíguo e significava "bridge sem
+harness e sem opencode plugado" — cenário que não existe em uso. Virou:
+
+| antes | agora | o que é |
+|---|---|---|
+| `--mode pure` (`tools-full-pure`) | `--mode bridge` (`tools-full-bridge`) | caminho com **bridge harness main/tails**: HTTP `/v1/responses` + tools por `/api/tools/execute`, turno montado pela bridge |
+| `--mode opencode` | igual | caminho **livre para o opencode**: cliente entra com o master/harness dele, bridge só transporta |
+
+`--mode pure` segue aceito como alias. `docs/BENCHTESTS.md` ganhou o parágrafo dos dois
+caminhos e os exemplos de launch passaram a `--main-harness 1 --harness-tails 1 --temperature 0.3`.
+Bridges de bancada reerguidas com harness ligado: `:4144` (L2), `:4146` (L3), `:4147` (Q3).
+`scripts/war/run-levels.sh` ganhou `LEVEL_BRIDGE_Q3` → `WAR_CPU_BRIDGE`, para a linha Q3 dos
+testes usar a bridge de bancada e nunca a de produção.
+
+**Defeito real no harness de teste: a tool call nunca era executada.** `TestContext.ToolAgent`
+tinha *dangling else* — sem chaves, o `else if (type == "function_call")` grudava no `if`
+interno do `foreach` de `content`. Resultado: `[item] type=function_call` aparecia, o
+`/api/tools/execute` não era chamado, o artefato ficava vazio e o veredito era FAIL por
+silêncio (o modelo, sem resultado, reemitia a mesma call). Corrigido com chaves explícitas.
+Junto: `ToolCatalog()` (chat-style) passou a ser convertido para a forma da Responses API
+antes de postar (clientes Responses não mandam `function: {...}` aninhado), e turno vazio
+ganhou **uma** cutucada ("emita a tool call") em vez de encerrar o loop.
+`E-dual-tools` agora reporta as calls no assert.
+
+Diagnóstico gated por `TCTX_DUMP=1` (`[dump]`, `[item]`, `[exec]`) foi o que localizou o
+dangling else: 3 requests, 2 tok + 38 tok + 38 tok, `has_tool_call: true` na bridge e
+`calls=` vazio no teste.
+
+**Rótulos.** `GPU1-12B` → `GPU1-E4B-Q4` e `GPU2-E2B` → `GPU2-E4B-Q3` nos testes; menções a
+`12B`/`E2B` como modelo atual corrigidas para `E4B` (as tabelas históricas do `LAB-SETUP.md`
+seguem marcadas como histórico, só os títulos ficaram neutros).
+
+`dotnet build -c Release` (bridge + Core + Test): 0 avisos, 0 erros.
+
+
 ## Mutação de nomes era o sampler DRY — desligado nos três llama (2026-10-24, sessão 17)
 
 **Sintoma real (sessão vizinha `ses_e9033b492ffelmhnkKZMJGQ8MY`, Q3 `:4125`):** o

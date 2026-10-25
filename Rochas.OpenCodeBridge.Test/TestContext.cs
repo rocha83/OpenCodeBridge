@@ -218,9 +218,9 @@ internal static class TestContext
         }
     }
 
-    // --dual: roda cada teste de tools duas vezes, no modo "pure" (HTTP direto na
+    // --dual: roda cada teste de tools duas vezes: modo "bridge" (HTTP na bridge,
     // bridge, com a bridge executando as tools) e no modo "opencode" (opencode CLI
-    // executando as tools). Sem --dual roda so "pure", como antes.
+    // executando as tools) e modo "opencode" (cliente traz o master dele).
     public static bool Dual;
 
     /// <summary>Pula o bloco unit (bateria E2E com log de bridge limpo por step).</summary>
@@ -234,12 +234,12 @@ internal static class TestContext
 
     /// <summary>Roda os testes explicitos de CPU/Q3 (--skip-cpu desliga).</summary>
     public static bool RunCpu = true;
-    public static string Mode = "pure";
+    public static string Mode = "bridge";
     public static int ToolAgentSteps = 8;
 
     /// <summary>
     /// Roda o mesmo teste nos dois modos quando --dual esta ligado
-    /// (sufixo -pure / -opencode no nome do caso).
+    /// (sufixo -bridge / -opencode no nome do caso).
     /// </summary>
     /// <param name="name">Nome do caso.</param>
     /// <param name="fn">Corpo do teste (le TestContext.Mode).</param>
@@ -249,7 +249,7 @@ internal static class TestContext
         string prev = Mode;
         try
         {
-            foreach (string mode in new[] { "pure", "opencode" })
+            foreach (string mode in new[] { "bridge", "opencode" })
             {
                 Mode = mode;
                 Run(name + "-" + mode, fn);
@@ -315,7 +315,7 @@ internal static class TestContext
     /// <summary>
     /// Executa um enunciado agentico no modo corrente e devolve o texto final +
     /// histórico das tools executadas.
-    /// pure     = loop HTTP na bridge (/v1/responses + /api/tools/execute);
+    /// bridge   = caminho bridge (main/tails na bridge): loop HTTP /v1/responses + /api/tools/execute;
     /// opencode = opencode run --standalone (o cliente executa as tools).
     /// </summary>
     /// <param name="prompt">Enunciado.</param>
@@ -328,24 +328,49 @@ internal static class TestContext
         var input = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = prompt });
         var calls = new List<string>();
         string text = "";
+        bool nudged = false;
         for (int step = 0; step < max; step++)
         {
+            // /v1/responses espera a forma Responses ({type,name,description,parameters});
+            // ToolCatalog() e chat-style ({type,function:{...}}). Sem esta conversao a
+            // bridge nao reconhece a call de volta e o turno volta vazio (2 tok).
+            var respTools = new JsonArray();
+            foreach (var t in ToolCatalog())
+            {
+                if (t?["function"] is JsonObject fnObj)
+                    respTools.Add(new JsonObject
+                    {
+                        ["type"] = "function",
+                        ["name"] = fnObj["name"]?.DeepClone(),
+                        ["description"] = fnObj["description"]?.DeepClone(),
+                        ["parameters"] = fnObj["parameters"]?.DeepClone()
+                    });
+                else if (t is not null) respTools.Add(t.DeepClone());
+            }
             var res = await PostObj(Bridge + "/v1/responses", new JsonObject
             {
                 ["model"] = SuiteModel,
                 ["input"] = input.DeepClone(),
-                ["tools"] = ToolCatalog(),
+                ["tools"] = respTools,
                 ["stream"] = false
             });
             text = "";
+            if (Environment.GetEnvironmentVariable("TCTX_DUMP") == "1")
+                Console.WriteLine($"  [dump] {res.ToJsonString()[..Math.Min(700, res.ToJsonString().Length)]}");
             if (res["output"] is JsonArray output)
             {
                 foreach (var item in output)
                 {
                     string type = item?["type"]?.GetValue<string>() ?? "";
+                    if (Environment.GetEnvironmentVariable("TCTX_DUMP") == "1")
+                        Console.WriteLine($"  [item] type={type} name={item?["name"]} args={(item?["arguments"]?.GetValue<string>() ?? "")[..Math.Min(120, item?["arguments"]?.GetValue<string>()?.Length ?? 0)]}");
                     if (type == "message")
+                    {
+                        // Chaves obrigatorias: sem elas o "else if" gruda no if interno
+                        // (dangling else) e a tool call deixa de ser executada.
                         foreach (var c in item?["content"]?.AsArray() ?? new JsonArray())
                             if (c?["type"]?.GetValue<string>() == "output_text") text += c?["text"]?.GetValue<string>() ?? "";
+                    }
                     else if (type == "function_call")
                     {
                         string callId = item?["call_id"]?.GetValue<string>() ?? item?["id"]?.GetValue<string>() ?? "";
@@ -367,6 +392,8 @@ internal static class TestContext
                             ? (exec["output"]?.GetValue<string>() ?? "")
                             : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
                         calls.Add($"{name}({args}) -> {(exec["ok"]?.GetValue<bool>() == true ? "ok" : "fail")}");
+                        if (Environment.GetEnvironmentVariable("TCTX_DUMP") == "1")
+                            Console.WriteLine($"  [exec] {name} ok={exec["ok"]} out={(exec["output"]?.GetValue<string>() ?? exec["error"]?.GetValue<string>() ?? "")[..Math.Min(160, (exec["output"]?.GetValue<string>() ?? exec["error"]?.GetValue<string>() ?? "").Length)]}");
                         input.Add(new JsonObject
                         {
                             ["type"] = "function_call_output", ["call_id"] = callId, ["output"] = outText
@@ -375,7 +402,20 @@ internal static class TestContext
                 }
             }
             bool hasCall = input.Count > 0 && input[input.Count - 1]!["type"]?.GetValue<string>() == "function_call_output";
-            if (!hasCall) break;
+            if (!hasCall)
+            {
+                // Turno vazio (2 tok, nenhuma tool): o modelo nao executou nada.
+                // Uma cutucada explicita e o loop segue; sem isso o caso morre
+                // sem artefato e o veredito vira FAIL por silencio do modelo.
+                if (text.Trim().Length > 0 || nudged) break;
+                nudged = true;
+                input.Add(new JsonObject
+                {
+                    ["role"] = "user",
+                    ["content"] = "Voce nao emitiu nenhuma tool call. Execute a tarefa agora com as tools (write/edit/read); nao responda em prosa."
+                });
+                continue;
+            }
         }
         return (text, calls);
     }

@@ -1,7 +1,7 @@
 // ===========================================================================
 //  Frontpipe E2E (front MVC + React + Bootstrap + Tailwind pelos modelos):
-//    12B (bridge GPU) GERA os 3 artefatos no workspace;
-//    E2B (bridge CPU, role exec) AJUSTA pelos enunciados (frontpipe/enunciados/*.md);
+//    E4B-Q4 (bridge GPU) GERA os 3 artefatos no workspace;
+//    E4B-Q3 (bridge GPU2, role exec) AJUSTA pelos enunciados (frontpipe/enunciados/*.md);
 //    a suite AVALIA os artefatos direto (Razor/TSX/CSS) por padrao: sonda estatica
 //    que parseia o CSS e computa os mesmos estilos do getComputedStyle, sem webdriver.
 //    O caminho de navegador (Playwright C# via Rochas.OpenCodeBridge.Web.Test
@@ -864,7 +864,7 @@ internal static class E2EFrontPipeTests
             Verdict(id, "integridade da pagina", (a["console_errors"]?.AsArray().Count ?? 1) == 0, $"erros de console={a["console_errors"]?.AsArray().Count ?? -1}");
         }
 
-        // Metricas t/s dos dois modelos (gen 12B + edit E2B) no relatorio.
+        // Metricas t/s dos dois modelos (gen E4B-Q4 + edit E4B-Q3) no relatorio.
         var metrics = new JsonArray();
         foreach (var label in new[] { Path.Combine(Ws, "gen", "transcript.json") }
             .Concat(edits.Select(e => Path.Combine(Ws, "edit", e!["id"]!.GetValue<string>(), "transcript.json"))))
@@ -886,7 +886,7 @@ internal static class E2EFrontPipeTests
         File.WriteAllText(Path.Combine(reports, "verdicts.json"), report.ToJsonString(Indented));
 
         var md = new StringBuilder();
-        md.AppendLine("# Frontpipe - relatorio (12B gera, E2B ajusta, Playwright confere)");
+        md.AppendLine("# Frontpipe - relatorio (E4B-Q4 gera, E4B-Q3 ajusta, Playwright confere)");
         md.AppendLine($"\nGerado: {DateTime.Now:yyyy-MM-dd HH:mm:ss} | resultado: **{(failed == 0 ? "PASS" : $"FAIL ({failed})")}**\n");
         md.AppendLine("| passo | verificacao | resultado | detalhe |");
         md.AppendLine("|---|---|---|---|");

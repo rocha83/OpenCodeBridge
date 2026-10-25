@@ -2,7 +2,7 @@ using System.Text.Json.Nodes;
 
 namespace Rochas.OpenCodeBridge.Test;
 
-// Belts (azul->preta) Trilha BUILD: 12B (role build) implementa DIRETAMENTE os
+// Belts (azul->preta) Trilha BUILD: E4B (role build) implementa DIRETAMENTE os
 // artefatos do enunciado usando tools reais (write) em loop de turnos, delegando
 // sub-tarefas quando fizer sentido. Asserts rigorosos: >=3 arquivos criados,
 // conteudo substancial (>2000 chars somados), e execucao real (arquivos existem
@@ -133,7 +133,7 @@ internal static class E2EBeltsBuildTests
                     lastFiles = filesCreated;
                     if (stall >= 2) { Log($"  [belt-build:{key}] stall detectado, encerrando"); break; }
                 }
-                // Fase de revisao: 12B le os arquivos criados e revisa.
+                // Fase de revisao: E4B le os arquivos criados e revisa.
                 if (filesCreated >= 3)
                 {
                     var readTools = new JsonArray

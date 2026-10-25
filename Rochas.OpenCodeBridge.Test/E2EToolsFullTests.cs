@@ -4,7 +4,7 @@ namespace Rochas.OpenCodeBridge.Test;
 
 // Teste de tools COMPLETO: read, write, edit(sed), glob, grep, navegacao em
 // pastas, git (init/add/commit/log), compilacao C# (dotnet new/build/run),
-// validacao e execucao de script. Roda nos 2 modelos (GPU1 12B e GPU2 E2B)
+// validacao e execucao de script. Roda nos 2 modelos (GPU1 E4B-Q4 e GPU2 E4B-Q3)
 // em paralelo via bridge pura. Deve passar antes da bateria belts.
 internal static class E2EToolsFullTests
 {
@@ -76,8 +76,8 @@ internal static class E2EToolsFullTests
     public static async Task FullTools()
     {
         await Task.WhenAll(
-            RunOnBridge("http://127.0.0.1:4124", "GPU1-12B"),
-            RunOnBridge(Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125", "GPU2-E2B"));
+            RunOnBridge("http://127.0.0.1:4124", "GPU1-E4B-Q4"),
+            RunOnBridge(Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125", "GPU2-E4B-Q3"));
         Console.WriteLine("[toolsfull] 2/2 modelos PASS");
     }
 }

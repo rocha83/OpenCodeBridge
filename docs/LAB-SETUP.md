@@ -28,17 +28,17 @@ lá; só `git pull --ff-only origin main` e redeploy (`dotnet build -c Release`
 |---|---|---|
 | **GPU1** | `Gemma4-E4B-Q4` (E4B base original, `Q4_K_M`) — 100% GPU | llama `:4100` / bridge `:4124` |
 | **GPU2** | `Gemma4-E4B-UD-Q3` (E4B abliterated, `IQ3_XXS`) — 100% GPU | llama `:4110` / bridge `:4125` |
+| **CPU Forced** | `Gemma4-E4B-Q4` (`Q4_K_M`) — `-ngl 0` (CPU puro) | llama `:4120` / bridge `:4126` |
 
-Os dois rodam em **GPU full** (`-ngl 99`) e **TurboQuant** (`turbo3` no KV),
-convivendo em 12 GB de VRAM (RTX 3060, 12288 MiB).
+Os dois primeiros rodam em **GPU full** (`-ngl 99`) e **TurboQuant** (`turbo3` no
+KV), convivendo em 12 GB de VRAM (RTX 3060, 12288 MiB).
 
-> **Nota CPU/GPU2.** O sufixo **CPU** que aparece em nomes históricos —
-> `llama-cpu.service`, `bridge-cpu.service`, `--cpu-max-tokens`, provider
-> `llama` — **não** significa que o E4B UD-Q3 roda em CPU. O E4B UD-Q3 é **GPU2**: roda na
-> GPU com `-ngl 99`. O caminho CPU existe apenas como **cenário de teste** para
-> tarefas granulares de execução de scripts (`Llama GPU2-CPU Toggle`, `-ngl 0`,
-> `-t/-tb`), para medir/validar o executor de scripts sem disputar VRAM com a
-> GPU1. Os nomes foram mantidos por compatibilidade.
+> **Nota CPU Forced.** A **GPU2** (`Gemma4-E4B-UD-Q3`) roda **100% em GPU**
+> (`-ngl 99`), sem offload. A linha **CPU** é explícita e separada:
+> `llama-cpu-forced.service` (`:4120`, `-ngl 0 -t 4 -tb 4`) +
+> `bridge-cpu-forced.service` (`:4126`). Ela existe como **cenário de teste**
+> para **tarefas granulares de execução de scripts** (`-ngl 0`, `-t/-tb`), para
+> medir/validar o executor de scripts sem disputar VRAM com a GPU1.
 
 ---
 
@@ -235,7 +235,7 @@ Aceite do startup: `n_slots = 1, n_ctx_slot = 131072` → `model loaded` →
 
 ### 2.3 Unit da GPU2 (E4B abliterated `:4110`, text-only)
 
-O unit chama-se `llama-gpu2` (renomeado em 2026-10-23; antes `llama-cpu`) e
+O unit chama-se `llama-gpu2` e
 roda **100% GPU** (`-ngl 99`), sem offload para CPU. CPU puro é **outro**
 serviço: `llama-cpu-forced.service` (`:4120`, `-ngl 0`). `-t/-tb` é inerte em
 GPU full e só importa no teste CPU.
@@ -275,7 +275,8 @@ W llama_kv_cache: auto-asymmetric: GQA ratio 8:1 — upgrading K from turbo3 to
 q8_0 to prevent quality degradation. Disable with TURBO_AUTO_ASYMMETRIC=0
 ```
 
-Consequência (medição histórica da linha E2B): o `q8_0` gasta mais VRAM por
+Consequência (medição histórica da linha E2B, modelo aposentado — hoje as duas
+linhas são E4B): o `q8_0` gasta mais VRAM por
 token que o `turbo3` (GPU2 a 80k/1 com K `q8_0` = 2602 MiB contra 2022 MiB a
 96k/1 com `turbo3`). Na dupla E4B atual a VRAM ainda não foi medida neste
 chroot (sem CUDA); medir no host.
@@ -283,10 +284,10 @@ chroot (sem CUDA); medir no host.
 **Verificação de startup = ausência da linha `auto-asymmetric` no journal:**
 
 ```bash
-journalctl -u llama-gpu -u llama-cpu --no-pager | grep -Ei "auto-asymmetric"
+journalctl -u llama-gpu -u llama-gpu2 --no-pager | grep -Ei "auto-asymmetric"
 # não deve imprimir nada (auto-asymmetric = K rebaixado para q8_0; não usar)
 
-journalctl -u llama-gpu -u llama-cpu --no-pager | grep -Ei "fit params"
+journalctl -u llama-gpu -u llama-gpu2 --no-pager | grep -Ei "fit params"
 # GPU2: um warning "failed to fit params ... n_gpu_layers already set to 99, abort"
 # é esperado com -ngl 99 e não impede o load; o que não pode é crash de CUDA graph
 # (OOM). Com a dupla E4B atual (Q4_K_M + IQ3_XXS), medir a VRAM no host.
@@ -307,13 +308,14 @@ journalctl -u llama-gpu -u llama-cpu --no-pager | grep -Ei "fit params"
 ### 2.6 VRAM medida (12 GB, ambos em `turbo3`)
 
 > **Histórico (linha 12B/E2B).** A tabela abaixo é da configuração anterior.
-> Para a linha E4B atual (Q4_K_M 1×128k + IQ3_XXS 1×128k, ambos com
+> Para a linha E4B atual (**Q4_K_M 1×128k** na GPU1 e **IQ3_XXS 2×64k** na GPU2 —
+> esta última com os lookups na RAM, ver §8.6, ambos com
 > `--no-host --load-mode none --op-offload`) a VRAM ainda não foi medida neste
 > chroot (sem CUDA); medir no host com `nvidia-smi` após o boot.
 
-| configuração | GPU1 (12B Q4_K_M) | GPU2 (E2B coder Q4) | total usado | livre |
+| configuração | GPU1 | GPU2 | total usado | livre |
 |---|---|---|---|---|
-| E4B Q4 1×128k + E4B IQ3_XXS 1×128k (**atual**) | (a medir) | (a medir) | (a medir) | (a medir) |
+| E4B Q4 1×128k + E4B IQ3_XXS 2×64k (**atual**) | (a medir) | (a medir) | (a medir) | (a medir) |
 | 12B 2×96k + E2B 1×112k, E2B sem mmproj (histórico) | 8712 | 2082 | **11168** | **868** |
 | 12B 2×112k + E2B 1×112k | 9014 | 2072 | 11476 | 560 |
 | 12B 2×112k + E2B 1×140k | 9014 | 2190 | 11593 | 443 |
@@ -381,54 +383,49 @@ Ordem de corte, pelos deltas medidos:
 Se o warning for `fit params` na **GPU2**, corte na GPU2; se for na **GPU1**
 (que aborta), corte na GPU1 — e sempre suba a GPU1 antes (§2.5).
 
-### Cenário E — GPU2 em CPU (teste de execução granular de scripts)
+### Cenário E — CPU Forced (teste de execução granular de scripts)
 
-O teste CPU da GPU2 usa a **mesma unit** `llama-cpu.service`, trocando só o
-offload: **`-ngl 0`** (= `--n-gpu-layers 0`). Atenção: `-np` é o número de
-**slots** — **não** é o interruptor de CPU; quem desliga a GPU é o `-ngl 0`.
-Mantêm-se `-t 4 -tb 4` e o KV `turbo3`. Serve para testar o papel de **execução
-de scripts granulares** (Scripter/Exec) sem disputar VRAM; não é o regime de
-produção, e a bridge expõe `--cpu-max-tokens` para conter divagação em decode
-lento (~5 tok/s).
+A linha CPU é **explícita e sempre ativa**: `llama-cpu-forced.service` (`:4120`)
++ `bridge-cpu-forced.service` (`:4126`, bind `0.0.0.0`). O modelo é o
+`Gemma4-E4B-Q4` com **`-ngl 0`** (= `--n-gpu-layers 0`), `-t 4 -tb 4`, KV
+`turbo3`, `-c 131072 -np 1`. Atenção: `-np` é o número de **slots** — **não** é
+o interruptor de CPU; quem desliga a GPU é o `-ngl 0`.
 
-Na config atual o CPU puro dedicado é `llama-cpu-forced.service` (`:4120`,
-`-ngl 0`), que fica **intocado**; o toggle em `llama-cpu.service` é o cenário de
-teste histórico.
-
-Toggle pronto (reescreve `-ngl` no unit + template, `daemon-reload` + restart):
+Serve para testar o papel de **execução de scripts granulares** (Scripter/Exec)
+sem disputar VRAM com a GPU1; não é o regime de produção, e a bridge expõe
+`--cpu-max-tokens` para conter divagação em decode lento (~5 tok/s). A **GPU2**
+(`:4110`/`:4125`) roda 100% em GPU (`-ngl 99`) no cenário normal.
 
 ```bash
-llama-gpu2-cpu-toggle.sh        # ou o atalho "Llama GPU2-CPU Toggle"
-# -ngl 99 (GPU full) <-> -ngl 0 (CPU puro); rodar de novo devolve para GPU
+sudo systemctl status llama-cpu-forced bridge-cpu-forced --no-pager
+curl -s http://127.0.0.1:4126/api/status | head -c 200
 ```
 
-Manual via drop-in (não edita o unit original):
+Se precisar forçar a **GPU2** em CPU (teste de bancada), o unit é
+`llama-gpu2.service`: drop-in trocando só o offload (`-ngl 99` → `-ngl 0`), sem
+editar o unit original.
 
 ```bash
-sudo systemctl edit llama-cpu.service
+sudo systemctl edit llama-gpu2.service
 # [Service]
 # ExecStart=
-# ExecStart=/usr/local/bin/llama-server --alias Gemma4-E4B-Q4 --host 127.0.0.1 --port 4120 \
-#   -m /opt/models/gemma4-e4b-base/google_gemma-4-E4B-it-Q4_K_M.gguf \
-#   --mmproj /opt/models/gemma4-e4b-base/mmproj-gemma-4-E4B-it-Q8_0.gguf \
-#   -c 131072 -np 1 -ngl 0 -fa on -t 4 -tb 4 \
-#   --cache-type-k turbo3 --cache-type-v turbo3 --prio 1 --prio-batch 1 --repeat-penalty 1.1 \
-#   --dry-multiplier 0.0 --dry-penalty-last-n 1024 --api-key guest@123
-sudo systemctl daemon-reload && sudo systemctl restart llama-cpu
-journalctl -u llama-cpu --no-pager | grep -E "n_ctx_slot|offloaded" | tail -3
-# esperado: n_ctx_slot = 131072 e "offloaded 0/N layers to GPU"
+# ExecStart=<mesma linha do unit atual, com -ngl 0 no lugar de -ngl 99>
+sudo systemctl daemon-reload && sudo systemctl restart llama-gpu2
+journalctl -u llama-gpu2 --no-pager | grep -E "n_ctx_slot|offloaded" | tail -3
+# esperado: "offloaded 0/N layers to GPU"
 ```
 
-Exemplo — devpipe (o filtro `--only` é "contém": `E-devpipe` roda os 5 casos):
+Exemplo — devpipe na linha **CPU Forced** (`:4126`; o filtro `--only` é "contém":
+`E-devpipe` roda os 5 casos):
 
 ```bash
-# GPU2 em CPU (-ngl 0), HTTP direto na bridge :4125, role exec
+# CPU puro (-ngl 0), HTTP direto na bridge :4126, role exec
 dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
-  --only E-devpipe --api-key guest@123 --bridge http://127.0.0.1:4125 --role exec
+  --only E-devpipe --api-key guest@123 --bridge http://127.0.0.1:4126 --role exec
 
 # um caso só (ferramentas de dev: read/write/edit/glob/grep/git/bash)
 dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
-  --only E-devpipe-tools --api-key guest@123 --bridge http://127.0.0.1:4125
+  --only E-devpipe-tools --api-key guest@123 --bridge http://127.0.0.1:4126
 
 # devpipe pelo opencode real (agente exec -> provider llama/ = GPU2)
 dotnet run -c Release --project Rochas.OpenCodeBridge.Test --no-build -- \
@@ -550,7 +547,7 @@ para flag aceita mas inerte (`--coerced-max-tokens` sem coerção, tail com
 | linha | serviço | modelo | ctx / slots | VRAM |
 |---|---|---|---|---|
 | GPU1 `:4100` | `llama-gpu.service` | Gemma4 E4B base `Q4_K_M` + mmproj Q8_0 | `-c 131072` (1×128k) | (medir no host) |
-| GPU2 `:4110` | `llama-cpu.service` | Huihui Gemma4 E4B abliterated `IQ3_XXS`, text-only | `-c 131072` (1×128k) | (medir no host) |
+| GPU2 `:4110` | `llama-gpu2.service` | Huihui Gemma4 E4B abliterated `IQ3_XXS`, text-only | `-c 131072 -np 2` (2×64k) | (medir no host) |
 | CPU `:4120` | `llama-cpu-forced.service` | Gemma4 E4B base `Q4_K_M` + mmproj Q8_0, `-ngl 0` | `-c 131072` (1×128k) | 0 (RAM) |
 | — | DRY | `--dry-multiplier 0.0` (**off**), `--dry-penalty-last-n 1024` | — | — |
 | — | repeat-penalty | `--repeat-penalty 1.1` (os dois), janela 64 | — | — |
@@ -701,7 +698,7 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 - `:4100` (`llama-gpu.service`): E4B base `Q4_K_M` + mmproj `Q8_0`,
   `-c 131072 -np 1`, `-ngl 99`, KV `turbo3`, `--mmproj-offload --no-host
   --load-mode none --op-offload`, `-ot ".*=CUDA0" --prio 2 --prio-batch 2`.
-- `:4110` (`llama-gpu2.service`, nome antigo `llama-cpu.service`): Huihui E4B abliterated `i1-IQ3_XXS`
+- `:4110` (`llama-gpu2.service`): Huihui E4B abliterated `i1-IQ3_XXS`
   (`3 982 841 536` bytes, SHA256
   `9043e0b94e6a4f18fa498c5e5fd7e1d86a82dcfe440e1a6587f71882be76cf48`),
   `-c 131072 -np 1`, `-ngl 99`, KV `turbo3`, `--no-host --load-mode none
@@ -733,10 +730,12 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 
 ### 8.4 Ícones de desktop
 
-- Root: `Llama GPU` → `start-llama-gpu.sh`; `Llama GPU2-CPU` →
-  `start-llama-cpu.sh`; `Bridge Web UI` → `start-bridge-web.sh`.
-- Mint: `Llama GPU`/`Llama CPU` → `start-llama-gpu.sh`/`start-llama-cpu.sh`;
-  `OpenCode Bridge GPU`/`CPU` → `start-bridge-gpu.sh`/`start-bridge-cpu.sh`;
+- Root: `Llama GPU` → `start-llama-gpu.sh`; `Llama GPU2` →
+  `start-llama-gpu2.sh`; `Bridge Web UI` → `start-bridge-web.sh`.
+- Mint: `Llama GPU`/`Llama GPU2` → `start-llama-gpu.sh`/`start-llama-gpu2.sh`;
+  `Llama CPU Forced` → `start-llama-cpu-forced.sh`;
+  `OpenCode Bridge GPU`/`GPU2`/`CPU Forced` →
+  `start-bridge-gpu.sh`/`start-bridge-gpu2.sh`/`start-bridge-cpu-forced.sh`;
   `Bridge Web UI` → `start-bridge-web.sh`.
 - Os scripts das bridges chamam `dotnet Rochas.OpenCodeBridge.dll` no
   `bin/Release/net9.0`; o da Web chama `Rochas.OpenCodeBridge.Web.dll`.
@@ -754,27 +753,36 @@ antes do build** (lock de PDB) e rode com `--no-build`.
   (o `appsettings.json` mantém `harnessBehaviorTail`, mas `--harness-tails 0` não
   injeta prompt).
 
-### 8.6 `-ot` por tensor e estado atual (2026-10-23)
+### 8.6 Alocação por tensor: GPU1 full-VRAM × GPU2 lookups na RAM
 
-`-ngl 99` sozinho offloada as camadas, mas embeddings/per-layer-input/output
-do Gemma4 podem continuar no host (`CUDA_Host model buffer`). Os units usam
-`--override-tensor` (`-ot`) para escolher onde cada tensor fica:
+`-ngl 99` sozinho offloada as camadas, mas os *lookups* do Gemma4
+(`token_embd` e `per_layer_token_embd`) ainda podem ocupar VRAM. Os units usam
+`--override-tensor` (`-ot`) para escolher **onde cada tensor mora** — e só isso:
 
-| linha | `-ot` | ctx | mmproj |
-|---|---|---|---|
-| GPU1 `:4100` `Gemma4-E4B-Q4` | `.*=CUDA0` | 131072 (1×128k) | Q8_0 presente |
-| GPU2 `:4110` `Gemma4-E4B-UD-Q3` | embd/per-layer no host; blocos/output na CUDA0 | 131072 (1×128k) | text-only |
-| CPU `:4120` `Gemma4-E4B-Q4` | sem `-ot` (`-ngl 0`) | 131072 (1×128k) | Q8_0 presente |
+| linha | pesos | KV | buffers / offload | ctx |
+|---|---|---|---|---|
+| **GPU1 `:4100`** `Gemma4-E4B-Q4` | **100% VRAM**: `-ot .*=CUDA0` | VRAM (`turbo3`, `-fa on`) | `--no-host` + `--op-offload` (ops na GPU), `--mmproj-offload` | `-c 131072 -np 1` = **1×128k** |
+| **GPU2 `:4110`** `Gemma4-E4B-UD-Q3` | blocos/output na CUDA0; **lookups na RAM** (`CUDA_Host`): `token_embd`, `per_layer_token_embd` | VRAM (`turbo3`, `-fa on`) | `--no-host` + `--op-offload`, **nunca CPU offload** de camada (`-ngl 99` sempre) | `-c 131072 -np 2` = **2×64k (65536/slot)** |
+| CPU `:4120` `Gemma4-E4B-Q4` | `-ngl 0` (RAM) | RAM | sem `-ot` | `-c 131072 -np 1` = 1×128k |
+
+Regras que não se mexem:
+
+1. **GPU1 é full-VRAM.** `.*=CUDA0` cobre pesos, buffers e KV; offload de ops
+   ligado (`--op-offload`), mmproj na GPU (`--mmproj-offload`). 1 slot de 128k.
+2. **GPU2 usa a RAM apenas para os lookups** (embedding de token e per-layer
+   input) para **caber** e **liberar VRAM** para o KV dos **2 slots**. Não é
+   CPU offload: as camadas seguem `-ngl 99` e as operações seguem na GPU
+   (`--op-offload`). `-t 4 -tb 4` só dimensiona o lado host desses buffers.
+3. **`-ot` não mexe no KV**; o KV continua em `CUDA0` nas duas linhas.
+4. **`--context-tokens` da bridge acompanha o slot, não o total**: GPU1
+   `131072` (1 slot), GPU2 **`65536`** (2 slots de 64k). Trocar o `-np` da GPU2
+   exige trocar esse valor na bridge (`:4125`) junto.
 
 Medição histórica (commit `addade2`): com `-ot ".*=CUDA0"` nos dois, `--mmproj`
 removido da GPU1 e ctx **81920/32768**, o boot mediu 6581 MiB (GPU1) + 4685 MiB
 (GPU2) = **11623 / 413 MiB**. Essa configuração foi substituída pela atual
 (128k nas duas linhas e mmproj de volta na GPU1); a VRAM atual ainda não foi
 medida neste chroot (sem CUDA) — medir no host com `nvidia-smi`.
-
-`-ot ".*=CUDA0"` não altera o KV (continua em `CUDA0`); ele só move os tensores
-de modelo que estavam em `CUDA_Host`. Se a visão da GPU1 for necessária, é
-preciso reduzir ctx/quant ou aceitar o host buffer.
 
 ## 9. Ambiente dos ícones, ponte para o OpenCode e checklist de remaster (2026-10-23)
 

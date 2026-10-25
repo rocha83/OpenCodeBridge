@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 namespace Rochas.OpenCodeBridge.Test;
 
 // Mesmos enunciados de tools nos DOIS transportes:
-//   pure     = HTTP na bridge (/v1/responses) + tools executadas por /api/tools/execute;
+//   bridge   = caminho bridge (main/tails na bridge): HTTP /v1/responses + /api/tools/execute;
 //   opencode = opencode run --standalone (o cliente executa as tools).
 // Cada caso valida ARTEFATO em disco (o que o modelo diz nao conta) e, quando o
 // transporte devolve o historico, tambem a chamada. Cobre os defeitos medidos nas
@@ -33,9 +33,10 @@ internal static class E2EDualToolTests
             "troque 'versao 1' por 'versao 2' com a tool edit; responda apenas WRITE-READ-EDIT-OK.";
         var (text, calls) = await TestContext.ToolAgent(prompt);
         string body = ReadFile(target);
-        TestContext.Check(body.Contains("versao 2"), $"[{TestContext.Mode}] artefato editado em disco (conteudo='{body.Trim()}')");
+        TestContext.Check(body.Contains("versao 2"),
+            $"[{TestContext.Mode}] artefato editado em disco (conteudo='{body.Trim()}', calls={string.Join(";", calls)})");
         TestContext.Check(body.Contains("nota") || body.Contains("versao"), $"[{TestContext.Mode}] arquivo nao esta vazio");
-        if (TestContext.Mode == "pure")
+        if (TestContext.Mode == "bridge")
             TestContext.Check(calls.Any(c => c.StartsWith("edit(")), $"[{TestContext.Mode}] edit chamado (calls={string.Join(";", calls)})");
         Console.WriteLine($"  [dual:{TestContext.Mode}] write-read-edit ok ({calls.Count} calls, texto={text.Length} chars)");
     }
@@ -52,7 +53,7 @@ internal static class E2EDualToolTests
         var (text, calls) = await TestContext.ToolAgent(prompt);
         TestContext.Check(text.Contains("alfa", StringComparison.OrdinalIgnoreCase),
             $"[{TestContext.Mode}] resposta nomeia alfa.cs (texto='{text[..Math.Min(120, text.Length)]}')");
-        if (TestContext.Mode == "pure")
+        if (TestContext.Mode == "bridge")
         {
             TestContext.Check(calls.Any(c => c.StartsWith("glob(")), $"[{TestContext.Mode}] glob chamado");
             TestContext.Check(calls.All(c => !c.Contains("|")), $"[{TestContext.Mode}] nenhum glob com alternancia");
@@ -74,7 +75,7 @@ internal static class E2EDualToolTests
         TestContext.Check(File.Exists(Path.Combine(dir, "dados.txt")), $"[{TestContext.Mode}] dados.txt criado");
         string log = ReadFile(Path.Combine(dir, "historico.log"));
         TestContext.Check(log.Contains("commit"), $"[{TestContext.Mode}] historico.log com commits (len={log.Length})");
-        if (TestContext.Mode != "pure")
+        if (TestContext.Mode != "bridge")
         {
             // No modo opencode o commit e feito pelo cliente: confere direto no repo.
             var (code, outp) = Run("git", dir, 30, "log", "--oneline");
@@ -96,7 +97,7 @@ internal static class E2EDualToolTests
         var (text, calls) = await TestContext.ToolAgent(prompt, 8);
         TestContext.Check(text.Contains("conteudo-real-42"),
             $"[{TestContext.Mode}] achou o alvo por probe (texto='{text[..Math.Min(160, text.Length)]}')");
-        if (TestContext.Mode == "pure")
+        if (TestContext.Mode == "bridge")
         {
             bool probed = calls.Any(c => c.StartsWith("shell(") && (c.Contains("ls") || c.Contains("find")))
                           || calls.Any(c => c.StartsWith("glob("));
@@ -123,7 +124,7 @@ internal static class E2EDualToolTests
                              || all.Contains("failed", StringComparison.OrdinalIgnoreCase)
                              || all.Contains("unexpected", StringComparison.OrdinalIgnoreCase);
         TestContext.Check(reportedError, $"[{TestContext.Mode}] relatou a falha do script (texto='{text[..Math.Min(200, text.Length)]}')");
-        if (TestContext.Mode == "pure")
+        if (TestContext.Mode == "bridge")
             TestContext.Check(calls.Any(c => c.Contains("bash -n") || c.Contains("quebrado.sh")),
                 $"[{TestContext.Mode}] validou/executou o script de verdade");
         Console.WriteLine($"  [dual:{TestContext.Mode}] no-simulation ok ({calls.Count} calls)");

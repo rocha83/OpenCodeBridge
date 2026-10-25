@@ -87,10 +87,10 @@ internal static class E2EBeltsTests
             Log($"  [belt:{key}] START ws={ws}"); 
             try
             {
-                // 1) Orch (12B) segmenta o enunciado em tarefas atomicas.
+                // 1) Orch (E4B) segmenta o enunciado em tarefas atomicas.
                 Log($"  [belt:{key}] 1/4 Orch segmentando...");
                 var orchHistory = new JsonArray(
-                    new JsonObject { ["role"]="system", ["content"]="Voce e o Orch (role orch, 12B). Segmenta o enunciado em tarefas atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada." },
+                    new JsonObject { ["role"]="system", ["content"]="Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada." },
                     new JsonObject { ["role"]="user", ["content"]=prompt });
                 var orchR = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
                     new JsonObject { ["model"]=orchModel, ["temperature"]=0.3, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
@@ -117,7 +117,7 @@ internal static class E2EBeltsTests
                 ground.AppendLine("- O script e bash puro: C#/SQL so via heredoc ou arquivo separado, NUNCA solto no .sh.");
                 string grounded = ground.ToString();
 
-                // 2) Scripter (12B) compoe script bash + companion .md para cada tarefa.
+                // 2) Scripter (E4B) compoe script bash + companion .md para cada tarefa.
                 Log($"  [belt:{key}] 2/4 Scripter compondo scripts...");
                 int scriptsOk = 0;
                 foreach (var t in tasks)
@@ -135,7 +135,7 @@ internal static class E2EBeltsTests
                         new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write_file", ["description"]="escreve arquivo", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
                     };
                     var sh = new JsonArray(
-                        new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, 12B). Componha um script bash que executa a tarefa e o salve em " + safeTitle + ".sh com shebang. Tambem gere companion " + safeTitle + ".md descrevendo o que o script faz. Mantenha o script com no maximo 80 linhas e o companion com no maximo 20 linhas (saida curta cabe no teto de tokens). Use write_file. Ao terminar responda apenas SCRIPTER-OK.\n\n" + grounded + "REGRA: bash puro; nunca escreva C#/SQL dentro do .sh (use heredoc ou arquivo separado)." },
+                        new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, E4B). Componha um script bash que executa a tarefa e o salve em " + safeTitle + ".sh com shebang. Tambem gere companion " + safeTitle + ".md descrevendo o que o script faz. Mantenha o script com no maximo 80 linhas e o companion com no maximo 20 linhas (saida curta cabe no teto de tokens). Use write_file. Ao terminar responda apenas SCRIPTER-OK.\n\n" + grounded + "REGRA: bash puro; nunca escreva C#/SQL dentro do .sh (use heredoc ou arquivo separado)." },
                         new JsonObject { ["role"]="user", ["content"]=taskPrompt });
                     for (int turn = 0; turn < 6; turn++)
                     {
@@ -259,7 +259,7 @@ internal static class E2EBeltsTests
                     }
                 }
 
-                // 3) Exec (E2B) le companion .md + script e executa (bash script.sh).
+                // 3) Exec (E4B) le companion .md + script e executa (bash script.sh).
                 Log($"  [belt:{key}] 3/4 Exec lendo e executando scripts...");
                 int execOk = 0;
                 foreach (var f in System.IO.Directory.GetFiles(ws, "*.sh"))
@@ -283,7 +283,7 @@ internal static class E2EBeltsTests
                         string md = System.IO.File.ReadAllText(meta);
                         string sh = System.IO.File.ReadAllText(f);
                         var execHistory = new JsonArray(
-                            new JsonObject { ["role"]="system", ["content"]="Voce e o Exec (role exec, E2B). Leia o companion .md e o script. Responda apenas EXEC-READ-OK." },
+                            new JsonObject { ["role"]="system", ["content"]="Voce e o Exec (role exec, E4B). Leia o companion .md e o script. Responda apenas EXEC-READ-OK." },
                             new JsonObject { ["role"]="user", ["content"]="COMPANION:\n" + md + "\n\nSCRIPT:\n" + sh });
                         var execR = await TestContext.PostObj((Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125") + "/v1/chat/completions",
                             new JsonObject { ["model"]=execModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=execHistory.DeepClone() });
