@@ -17,7 +17,7 @@
       "title": "Fluxo principal",
       "type": "text",
       "gridPos": {
-        "h": 4,
+        "h": 3,
         "w": 24,
         "x": 0,
         "y": 0
@@ -35,7 +35,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 4
+        "y": 24
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -75,7 +75,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 4
+        "y": 24
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -115,7 +115,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 4
+        "y": 24
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -155,7 +155,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 28
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -204,8 +204,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 8
+        "x": 0,
+        "y": 36
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -434,10 +434,10 @@
       "title": "Tools calls por step (sonda 2s, acumulado)",
       "type": "bargauge",
       "gridPos": {
-        "h": 8,
+        "h": 6,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 10
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -500,7 +500,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 4
+        "y": 24
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -539,8 +539,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 32
+        "x": 12,
+        "y": 28
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -585,7 +585,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 32
+        "y": 36
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -652,10 +652,10 @@
       "title": "Enunciado do teste em execucao",
       "type": "table",
       "gridPos": {
-        "h": 8,
+        "h": 7,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 3
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
