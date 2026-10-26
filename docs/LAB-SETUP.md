@@ -12,7 +12,7 @@ expresso (componente, cenário de teste e harness) fica no `README.md`.
 | GPU2 `:4110` | `Gemma4-E4B-UD-Q3` — Huihui Gemma4 E4B **abliterated** `IQ3_XXS`, **text-only** | `-c 114688 -np 2` = **2×56k** | (medir no host; chroot sem CUDA) |
 | CPU `:4120` | `Gemma4-E4B-Q4` — mesmo E4B base, **CPU puro** (`-ngl 0`) | `-c 131072 -np 1` = **1×128k** | 0 (RAM) |
 
-Temperatura: CLI base **0.5**; perfis do runtime (`appsettings.json`) **plan 0.4 / build 0.2 / orch 0.4 / moe 0.7 / scripter 0.2 / exec 0.2** (escala baixa **0.2**, média **0.4**, alta **0.7**); o `temperature` do modelo no `opencode.json` segue a mesma escala.
+Temperatura: CLI base **0.2**; perfis do runtime (`appsettings.json`) **plan 0.4 / build 0.2 / orch 0.4 / moe 0.7 / scripter 0.2 / exec 0.2** (escala baixa **0.2**, média **0.4**, alta **0.7**); o `temperature` do modelo no `opencode.json` segue a mesma escala.
 Detalhes de remaster em `/media/mint/Linux/remaster-update6.md`.
 
 **Dev × produção.** O desenvolvimento acontece em
@@ -136,7 +136,7 @@ unit (`--temperature`/`--thinking`); id com sufixo **vence**.
 | `Gemma4-E4B-UD-Q3-exec` | 0.2 | off | valida **e executa** scripts |
 
 Escala de temperatura: **0.2 baixa (execução) / 0.4 média (planejamento) / 0.7 alta (exploração)**;
-o global da unit é **0.5**. O `temperature` do `opencode.json` (0.4/0.2/0.4/0.7/0.2)
+o global da unit é **0.2**. O `temperature` do `opencode.json` (0.4/0.2/0.4/0.7/0.2)
 segue a mesma escala.
 O thinking off vem do perfil (build/scripter/exec); as units atuais não usam
 `--thinking-off-roles`.
@@ -843,7 +843,7 @@ No deploy atual (pré-migração .NET 10), o `appsettings.json` do runtime fica 
 deploy do release `2.0.0`, o caminho passa a ser
 `/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0`. Os valores
 atuais são `profiles.plan.temperature = 0.4`, `profiles.orch.temperature = 0.4`,
-`build/scripter/exec = 0.2` e `moe = 0.7`; a unit passa `--temperature 0.5`
+`build/scripter/exec = 0.2` e `moe = 0.7`; a unit passa `--temperature 0.2`
 como base. As bridges foram reiniciadas depois do ajuste.
 
 Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `MAIN_HARNESS=0` e
@@ -855,7 +855,7 @@ Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `MAIN_HARNESS=0` e
 # bridge-gpu.service  (GPU1 / E4B base) — linha única no unit
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4124 --upstream http://127.0.0.1:4100 --model Gemma4-E4B-Q4 \
-  --thinking events --temperature 0.5 --max-tokens 16384 --api-key guest@123 \
+  --thinking events --temperature 0.2 --max-tokens 16384 --api-key guest@123 \
   --passthrough-responses true --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0 \
   --anti-repeat 1 --anti-repeat-retry 1 \
   --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 \
@@ -864,7 +864,7 @@ ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
 # bridge-cpu.service  (GPU2 / E4B abliterated)
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4125 --upstream http://127.0.0.1:4110 --model Gemma4-E4B-UD-Q3 \
-  --thinking events --temperature 0.5 --max-tokens 16384 --api-key guest@123 \
+  --thinking events --temperature 0.2 --max-tokens 16384 --api-key guest@123 \
   --passthrough-responses true --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0 \
   --anti-repeat 1 --anti-repeat-retry 1 \
   --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 \
@@ -1109,7 +1109,7 @@ sem estar na imagem.
 Args gravados nas units (as três, `bridge-gpu`, `bridge-gpu2` e `bridge-cpu-forced`):
 
 ```
---thinking events --temperature 0.5 --max-tokens 16384
+--thinking events --temperature 0.2 --max-tokens 16384
 --context-guard 1 --context-tokens 131072   (Q3 :4125 usa 57344 = 1 slot de 56k)
 --passthrough-responses true --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0
 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512

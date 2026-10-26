@@ -53,7 +53,7 @@ internal static partial class Program
     static string CfgBridge = "http://127.0.0.1:4125";
     static string CfgModel = "Gemma4-E4B-UD-Q3";
     static string CfgLog = "/tmp/runner-exec.log";
-    static string CfgTemp = "0.5";
+    static string CfgTemp = "0.2";
     static string CfgVerbosity = "normal";
     static int CfgMaxTurns = 5;
     static int CfgTimeoutS = 120;
@@ -179,7 +179,7 @@ internal static partial class Program
             {
                 ["model"] = model,
                 ["messages"] = messages.DeepClone(),
-                ["temperature"] = double.TryParse(temp, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double t) ? t : 0.5,
+                ["temperature"] = double.TryParse(temp, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double t) ? t : 0.2,
                 ["max_tokens"] = 512,
                 ["stream"] = false,
             }.ToJsonString(), Encoding.UTF8, "application/json"));

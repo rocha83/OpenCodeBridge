@@ -145,7 +145,7 @@ start_lane_bridge() {
   local log="$LOGSDIR/bridge-$lane.log"
   ( cd "$ROOT/Rochas.OpenCodeBridge/bin/Release/net10.0" && exec /usr/share/dotnet/dotnet "$DLL" \
       --listen 127.0.0.1 --port "$port" --upstream "http://127.0.0.1:$up" \
-      --model "$model" --thinking events --temperature 0.5 --max-tokens 16384 \
+      --model "$model" --thinking events --temperature 0.2 --max-tokens 16384 \
       --context-guard 1 --context-tokens "$ctx" --api-key guest@123 \
       --passthrough-responses true --main-harness 0 --harness-tails 0 --legacy-harness 0 \
       --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 \

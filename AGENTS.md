@@ -14,7 +14,7 @@
   `curl /api/status` nas portas antes de rodar.
 
 ## Tuning aplicado (diálogo enxuto, tools intactas)
-- `temperature`: agentes Plan 0.5–0.8, Build 0.5; bridges com default 0.4.
+- `temperature`: agentes Plan 0.5–0.8, Build 0.2; bridges com default 0.2.
 - System prompts dos agentes: fonte versionada em `AGENTS-PROMPTS.md` +
   seed em `Rochas.OpenCodeBridge.Web/Data/AgentSeeder.cs` (9B cita ctx
   moderado 160k; 4B cita ctx limitado 16k).
