@@ -124,7 +124,8 @@ internal static class E2EToolsFullTests
             "e anote no arquivo. Salve o arquivo, versione no git com add e commit (primeiro commit: somente a data, sem " +
             "EDITADO), liste os arquivos e faca uma busca neles para encontrar o arquivo criado. Acrescente a marca " +
             "EDITADO ao mesmo arquivo (preserve a data exata: o arquivo final deve conter a data e a palavra EDITADO) " +
-            "e realize o segundo commit. Verifique o historico git e grave no arquivo historico_git.log.";
+            "e realize o segundo commit. Verifique o historico git e grave no arquivo historico_git.log (sem commitar " +
+            "esse arquivo de historico).";
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
 
@@ -150,10 +151,15 @@ internal static class E2EToolsFullTests
         var (lgCode, lgOut) = Run("git", repo, 30, "-c", "safe.directory=" + repo, "log", "--oneline");
         string[] commits = lgCode == 0 ? lgOut.Split('\n', StringSplitOptions.RemoveEmptyEntries) : Array.Empty<string>();
         TestContext.Check(commits.Length >= 2, $"[toolsfull:agent] 2 commits no repo (git log: {lgOut.Trim()}; calls={string.Join(";", calls)})");
-        string tip = commits.Length > 0 ? commits[0].Split(' ')[0] : "";
         string histBody = File.Exists(hist) ? File.ReadAllText(hist) : "";
-        TestContext.Check(tip.Length >= 7 && histBody.Contains(tip),
-            $"[toolsfull:agent] historico_git.log com o commit real ({tip})");
+        // O log pode citar qualquer commit real do repo (o tip muda se o proprio
+        // historico for commitado; nesse caso o hash dele nao pode estar dentro
+        // do arquivo que o gerou). Exigir um hash real evita auto-referencia.
+        string realCommit = commits
+            .Select(c => c.Split(' ')[0])
+            .FirstOrDefault(h => h.Length >= 7 && histBody.Contains(h)) ?? "";
+        TestContext.Check(realCommit.Length >= 7,
+            $"[toolsfull:agent] historico_git.log com um commit real ({realCommit}; git log: {lgOut.Trim()})");
 
         // O artefato prova o fluxo nos dois modos. No bridge as calls tambem
         // provam tools; no opencode as tools sao do CLI e nao entram nesse log.
