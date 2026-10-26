@@ -540,6 +540,10 @@ internal static partial class Program
     static readonly object EnunciadoLock = new();
     static readonly ConcurrentQueue<JsonObject> EnunciadoHistory = new();
     const int EnunciadoHistoryCap = 64;
+    // Persiste o ultimo enunciado para o painel nao sumir no restart da bridge.
+    static readonly string EnunciadoStatePath =
+        Path.Combine(Path.GetTempPath(), "opencode", "bridge-enunciado.json");
+    static bool EnunciadoStateLoaded;
     // Arquivos distintos pedidos em write pelo modelo (conta no painel).
     static readonly ConcurrentDictionary<string, byte> GeneratedFiles = new();
     // Respostas do agente (painel a direita do enunciado): ultimas 6.
@@ -593,12 +597,59 @@ internal static partial class Program
             while (EnunciadoHistory.Count > EnunciadoHistoryCap) EnunciadoHistory.TryDequeue(out _);
             LastEnunciado = text;
             LastEnunciadoMs = row["ts"]!.GetValue<long>();
+            SaveEnunciadoStateLocked();
         }
+    }
+
+    /// <summary>Restaura o ultimo enunciado do disco (sobrevive ao restart da bridge).</summary>
+    static void LoadEnunciadoState()
+    {
+        lock (EnunciadoLock)
+        {
+            if (EnunciadoStateLoaded) return;
+            EnunciadoStateLoaded = true;
+            try
+            {
+                if (!File.Exists(EnunciadoStatePath)) return;
+                var root = JsonNode.Parse(File.ReadAllText(EnunciadoStatePath))?.AsObject();
+                if (root is null) return;
+                LastEnunciadoStep = root["step"]?.GetValue<string>() ?? "n/d";
+                LastEnunciado = root["prompt"]?.GetValue<string>() ?? "";
+                LastEnunciadoMs = root["ms"]?.GetValue<long>() ?? 0;
+                while (EnunciadoHistory.TryDequeue(out _)) { }
+                if (root["messages"] is JsonArray arr)
+                    foreach (var node in arr)
+                        if (node is JsonObject row) EnunciadoHistory.Enqueue(row.DeepClone().AsObject());
+            }
+            catch { /* estado corrompido nao derruba a bridge */ }
+        }
+    }
+
+    /// <summary>Grava o estado do enunciado; chamado sob EnunciadoLock.</summary>
+    static void SaveEnunciadoStateLocked()
+    {
+        try
+        {
+            string? dir = Path.GetDirectoryName(EnunciadoStatePath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            var root = new JsonObject
+            {
+                ["step"] = LastEnunciadoStep,
+                ["prompt"] = LastEnunciado,
+                ["ms"] = LastEnunciadoMs
+            };
+            var arr = new JsonArray();
+            foreach (var row in EnunciadoHistory) arr.Add(row.DeepClone());
+            root["messages"] = arr;
+            File.WriteAllText(EnunciadoStatePath, root.ToJsonString());
+        }
+        catch { /* painel nunca derruba o pedido */ }
     }
 
     /// <summary>Runner publicou o enunciado; troca de step limpa o historico.</summary>
     static void SetEnunciado(string step, string prompt)
     {
+        LoadEnunciadoState();
         lock (EnunciadoLock)
         {
             if (step != LastEnunciadoStep)
@@ -608,6 +659,7 @@ internal static partial class Program
             }
             LastEnunciado = prompt;
             LastEnunciadoMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            SaveEnunciadoStateLocked();
         }
         if (prompt.Length > 0) AddEnunciadoMessage("enunciado", prompt);
     }
@@ -615,6 +667,7 @@ internal static partial class Program
     /// <summary>Snapshot do enunciado: step, ultimo prompt e lista de mensagens.</summary>
     static (string Step, string Prompt, long Ms, JsonArray Messages) SnapshotEnunciado()
     {
+        LoadEnunciadoState();
         var messages = new JsonArray();
         var latest = ProbeSamples
             .OrderByDescending(x => x["ts"]?.GetValue<long>() ?? 0)

@@ -42,6 +42,18 @@ while :; do
   rc=$?
   echo "=== tentativa $attempt rc=$rc log=$log ==="
 
+  # Corrida do dotnet run: o filho do teste pode sobreviver alguns segundos
+  # depois do rc. Se o proximo attempt subir nesse intervalo, o preflight
+  # "sem_run_orfao" bloqueia a WAR inteira. Espera (e limpa) antes de seguir.
+  for _ in $(seq 1 30); do
+    pgrep -f 'Rochas[.]OpenCodeBridge[.]Test' >/dev/null 2>&1 || break
+    sleep 1
+  done
+  if pgrep -f 'Rochas[.]OpenCodeBridge[.]Test' >/dev/null 2>&1; then
+    pkill -TERM -f '[R]ochas[.]OpenCodeBridge[.]Test' || true
+    sleep 2
+  fi
+
   if [ "$rc" -eq 0 ]; then
     echo "[war-retry] WAR VERDE na tentativa $attempt"
     exit 0
