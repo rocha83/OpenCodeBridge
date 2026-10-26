@@ -15,6 +15,7 @@ internal static class TestContext
     public static string Llama = Environment.GetEnvironmentVariable("WAR_UPSTREAM") is { Length: > 0 } warUp
         ? warUp : "http://127.0.0.1:4100";
     public static bool SkipE2E;
+    public static bool SkipPreflight;
     public static string Only = "";
     // Upstream sem mmproj (ex.: Q3 :4110 nao carrega visao): pula os testes de imagem.
     public static bool NoVision = Environment.GetEnvironmentVariable("WAR_NO_VISION") is "1" or "true" or "True";

@@ -5,6 +5,8 @@
 //  Unit = traduz/converte via HTTP na bridge (sem modelo). E2E = modelo vivo.
 // ===========================================================================
 
+using Rochas.OpenCodeBridge.Core;
+
 namespace Rochas.OpenCodeBridge.Test;
 
 /// <summary>Orquestração da suite (1 classe: Program; cenários vivem nas *Tests).</summary>
@@ -22,6 +24,7 @@ internal static class Program
             if (args[i] == "--bridge" && i + 1 < args.Length) TestContext.Bridge = args[++i].TrimEnd('/');
             else if (args[i] is "--vllm" or "--llama" && i + 1 < args.Length) TestContext.Llama = args[++i].TrimEnd('/');
             else if (args[i] == "--skip-e2e") TestContext.SkipE2E = true;
+            else if (args[i] == "--no-preflight") TestContext.SkipPreflight = true;
             else if (args[i] == "--only" && i + 1 < args.Length) TestContext.Only = args[++i];
             else if (args[i] == "--belts" && i + 1 < args.Length) TestContext.BeltsFilter = args[++i];
 
@@ -58,6 +61,30 @@ internal static class Program
         Console.WriteLine($"[test] dual={TestContext.Dual} mode={TestContext.Mode} role={TestContext.Role}");
         string? cred = TestContext.Jwt ?? TestContext.ApiKey;
         if (cred is not null) TestContext.Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
+
+        // Preflight do stack ANTES de qualquer teste: porta, modelo, upstream,
+        // lock e VRAM. O driver WAR marca os filhos com BRIDGE_UNDER_DRIVER=1
+        // (o lock e dele); fora do driver, runner concorrente e NO-GO.
+        if (!TestContext.SkipPreflight)
+        {
+            string q3 = Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE")
+                        ?? "http://127.0.0.1:4125";
+            var preflight = StackPreflight.Run(new StackPreflightOptions
+            {
+                BridgeUrl = TestContext.Bridge,
+                LlamaUrl = TestContext.Llama,
+                Q3BridgeUrl = q3,
+                Q3LlamaUrl = Environment.GetEnvironmentVariable("WAR_UPSTREAM_Q3")
+                             ?? "http://127.0.0.1:4110",
+                ApiKey = cred,
+                RequireQ3 = TestContext.RunCpu
+                            && !string.Equals(q3, TestContext.Bridge, StringComparison.OrdinalIgnoreCase),
+                ProbeModel = true,
+                CheckLock = Environment.GetEnvironmentVariable("BRIDGE_UNDER_DRIVER") != "1"
+            });
+            if (!preflight.Print())
+                return 3;
+        }
 
         // Descobre o modelo servido p/ ajustar as expectativas (gemma|coder).
         try
@@ -150,6 +177,8 @@ internal static class Program
         TestContext.Run("U-circuit-step-gate", UnitCircuitTests.StepAndGate);
         TestContext.Run("U-circuit-fail-gate", UnitCircuitTests.FailGate);
         TestContext.Run("U-circuit-resume-done", UnitCircuitTests.ResumeSkipsDone);
+        TestContext.Run("U-circuit-battery-stop", UnitCircuitTests.BatteryStopsOnFail);
+        TestContext.Run("U-circuit-battery-resume", UnitCircuitTests.BatteryResumesAfterFail);
         TestContext.Run("U-circuit-restart", UnitCircuitTests.RestartRetries);
         TestContext.Run("U-circuit-pause", UnitCircuitTests.PauseResumes);
         TestContext.Run("U-circuit-lock", UnitCircuitTests.LockExclusive);

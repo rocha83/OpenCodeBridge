@@ -748,6 +748,33 @@ internal sealed class WarTemplate : CircuitTemplate
             string.IsNullOrEmpty(nctx) || string.IsNullOrEmpty(bctx) || nctx == bctx,
             new JsonObject { ["context_tokens"] = bctx, ["n_ctx_slot"] = nctx });
 
+        // Q3 (espelho) e exigida pelos belts-orch/scripter/frontpipe, que chamam
+        // :4125 por default (WAR_CPU_BRIDGE). Antes faltava este check e o belt
+        // morria com causa=infra depois de ~30 min.
+        string q3Bridge = (_p.BridgeQ3 ?? "http://127.0.0.1:4125").TrimEnd('/');
+        if (!string.Equals(q3Bridge, _p.Bridge.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+        {
+            var q3status = HttpGet($"{q3Bridge}/api/status", _p.Api);
+            var q3j = q3status.Code == 200 ? TryJson(q3status.Body) : null;
+            string q3model = Str(q3j, "model");
+            string q3up = Str(q3j, "upstream");
+            Pf(driver, "bridge_q3_status", !string.IsNullOrEmpty(q3model), new JsonObject
+            {
+                ["bridge"] = q3Bridge,
+                ["http"] = q3status.Code,
+                ["model"] = q3model,
+                ["upstream"] = q3up
+            });
+            if (!string.IsNullOrEmpty(q3up))
+            {
+                int q3Port = PortOf(q3up, 4110);
+                var q3health = HttpGet($"http://127.0.0.1:{q3Port}/health", null);
+                Pf(driver, "llama_q3", q3health.Code == 200
+                    && q3health.Body.Contains("\"ok\"", StringComparison.Ordinal),
+                    new JsonObject { ["port"] = q3Port, ["health"] = q3health.Body.Trim() });
+            }
+        }
+
         Pf(driver, "test_binario", File.Exists(_p.TestDll),
             new JsonObject { ["sha"] = _initHashTest, ["path"] = _p.TestDll });
         Pf(driver, "webtest_binario", File.Exists(_p.WebTestDll),
@@ -860,7 +887,10 @@ internal sealed class WarTemplate : CircuitTemplate
         var env = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["WAR_UPSTREAM"] = _p.Upstream,
-            ["WAR_NO_VISION"] = _p.NoVision ? "1" : "0"
+            ["WAR_NO_VISION"] = _p.NoVision ? "1" : "0",
+            // Filhos do driver rodam sob o lock dele: o preflight da suite nao
+            // deve tratar o lock do proprio driver como runner concorrente.
+            ["BRIDGE_UNDER_DRIVER"] = "1"
         };
         if (!string.IsNullOrWhiteSpace(_p.BridgeQ3)) env["WAR_CPU_BRIDGE"] = _p.BridgeQ3!;
         return env;

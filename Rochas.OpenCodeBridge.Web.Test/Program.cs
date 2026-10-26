@@ -61,6 +61,38 @@ internal static class Program
             return Ui.FrontMeasure.RunAsync(furi, fout).GetAwaiter().GetResult();
         }
 
+        // Preflight do stack ANTES de qualquer teste que toque a Web/modelo.
+        // Unit puro (--units-only / --skip-integration sem --ui) roda offline e
+        // nao exige stack. Filhos do driver WAR chegam com BRIDGE_UNDER_DRIVER=1
+        // (o lock e do driver); fora dele, runner concorrente e NO-GO.
+        bool stackNeeded = (!unitsOnly && !skipIntegration) || ui;
+        if (stackNeeded && !args.Contains("--no-preflight"))
+        {
+            var preflight = Rochas.OpenCodeBridge.Core.StackPreflight.Run(
+                new Rochas.OpenCodeBridge.Core.StackPreflightOptions
+                {
+                    BridgeUrl = Environment.GetEnvironmentVariable("BRIDGE_URL")
+                                 ?? "http://127.0.0.1:4124",
+                    LlamaUrl = Environment.GetEnvironmentVariable("BRIDGE_LLAMA")
+                               ?? Environment.GetEnvironmentVariable("WAR_UPSTREAM")
+                               ?? "http://127.0.0.1:4100",
+                    Q3BridgeUrl = Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE")
+                                  ?? "http://127.0.0.1:4125",
+                    Q3LlamaUrl = "http://127.0.0.1:4110",
+                    WebUrl = web,
+                    ApiKey = Environment.GetEnvironmentVariable("BRIDGE_API_KEY") ?? "guest@123",
+                    RequireQ3 = ui,
+                    RequireWeb = true,
+                    ProbeModel = true,
+                    CheckLock = Environment.GetEnvironmentVariable("BRIDGE_UNDER_DRIVER") != "1",
+                    WebEmail = Environment.GetEnvironmentVariable("BRIDGE_WEB_EMAIL")
+                               ?? "admin@bridge.pcss.com.br",
+                    WebPassword = Environment.GetEnvironmentVariable("BRIDGE_WEB_PASSWORD") ?? "123"
+                });
+            if (!preflight.Print())
+                return 3;
+        }
+
         if (!integrationOnly && !skipUnits)
         {
             UnitHash();

@@ -148,6 +148,95 @@ internal static class UnitCircuitTests
         }
     }
 
+    /// <summary>
+    /// Bateria real de 3 steps: falha no meio PARA tudo (o 3o nao executa),
+    /// FAIL nao vira .done e o proximo run refaz do ponto que parou.
+    /// </summary>
+    public static Task BatteryStopsOnFail()
+    {
+        string root = NewRoot();
+        try
+        {
+            using var circuit = NewDriver(root);
+            var results = circuit.RunStepsAsync(new[]
+            {
+                Step("b1-ok", "--version"),
+                Step("b2-fail", "--definitely-invalid-flag"),
+                Step("b3-depois", "--version")
+            }).GetAwaiter().GetResult();
+
+            TestContext.Check(results.Count == 3, $"results={results.Count}");
+            TestContext.Check(results[0].Verdict == CircuitVerdict.Pass, $"b1={results[0].Verdict}");
+            TestContext.Check(results[1].Verdict == CircuitVerdict.Fail, $"b2={results[1].Verdict}");
+            TestContext.Check(results[2].Skipped && results[2].Verdict == CircuitVerdict.Skip,
+                $"b3={results[2].Verdict} skipped={results[2].Skipped}");
+            TestContext.Check(results[2].Cause.Contains("nao executado", StringComparison.Ordinal),
+                $"causa b3='{results[2].Cause}'");
+
+            string state = Path.Combine(circuit.RunDirectory, "state");
+            TestContext.Check(File.Exists(Path.Combine(state, "b1-ok.done")),
+                "PASS deveria gravar .done");
+            TestContext.Check(!File.Exists(Path.Combine(state, "b2-fail.done")),
+                "FAIL nao pode gravar .done (senao o resume pula a falha)");
+            TestContext.Check(!File.Exists(Path.Combine(state, "b3-depois.done")),
+                "step nao executado nao pode ter .done");
+
+            var gate = circuit.Gate();
+            TestContext.Check(gate.Fail == 1 && gate.Skip >= 1 && !gate.Green,
+                $"gate fail={gate.Fail} skip={gate.Skip} green={gate.Green}");
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
+    /// <summary>
+    /// Segundo run no MESMO run dir (como --war-resume-stamp): PASS anterior e
+    /// pulado, o step que falhou reexecuta e a bateria segue ate o fim.
+    /// </summary>
+    public static Task BatteryResumesAfterFail()
+    {
+        string root = NewRoot();
+        try
+        {
+            using (var first = NewDriver(root))
+            {
+                var r = first.RunStepsAsync(new[]
+                {
+                    Step("r1", "--version"),
+                    Step("r2", "--definitely-invalid-flag"),
+                    Step("r3", "--version")
+                }).GetAwaiter().GetResult();
+                TestContext.Check(r[0].Verdict == CircuitVerdict.Pass, $"1a={r[0].Verdict}");
+                TestContext.Check(r[1].Verdict == CircuitVerdict.Fail, $"1b={r[1].Verdict}");
+                TestContext.Check(r[2].Skipped, "1c deveria ser SKIP (parou na falha)");
+            }
+
+            using (var second = NewDriver(root))
+            {
+                var r = second.RunStepsAsync(new[]
+                {
+                    Step("r1", "--version"),
+                    Step("r2", "--version"),
+                    Step("r3", "--version")
+                }).GetAwaiter().GetResult();
+                TestContext.Check(r[0].Skipped, "r1 deveria ser SKIP (PASS do run anterior)");
+                TestContext.Check(r[1].Verdict == CircuitVerdict.Pass, $"2b={r[1].Verdict}");
+                TestContext.Check(r[2].Verdict == CircuitVerdict.Pass, $"2c={r[2].Verdict}");
+                var gate = second.Gate();
+                TestContext.Check(gate.Green && gate.Pass == 3 && gate.Fail == 0,
+                    $"gate pass={gate.Pass} fail={gate.Fail} green={gate.Green}");
+            }
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
     public static Task RestartRetries()
     {
         string root = NewRoot();

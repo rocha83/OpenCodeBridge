@@ -146,7 +146,8 @@ internal sealed record CircuitOptions(
     bool RequireGreen = true,
     bool AcquireLock = true,
     Action<string>? LogSink = null,
-    int MaxParallelSteps = 1);
+    int MaxParallelSteps = 1,
+    bool StopOnFirstFailure = true);
 
 internal sealed record CircuitGateResult(
     int Steps,
@@ -433,7 +434,7 @@ internal sealed class TestCircuitDriver : IDisposable
         CircuitStepSpec step, CancellationToken ct = default)
     {
         string donePath = Path.Combine(_stateDir, step.Name + ".done");
-        if (File.Exists(donePath))
+        if (File.Exists(donePath) && DoneIsSkip(donePath))
         {
             Log($"SKIP {step.Name} (done)");
             return new CircuitStepResult(step.Name, CircuitVerdict.Skip, 0, 0, "", 0,
@@ -558,11 +559,9 @@ internal sealed class TestCircuitDriver : IDisposable
         }
 
         // STALE invalida o resultado: nao marca done para o step poder rodar de novo.
-        if (result.Verdict == CircuitVerdict.Stale)
-        {
-            TryDelete(donePath);
-        }
-        else
+        // FAIL/BLOCKED tambem NAO viram done: retomar de onde parou significa
+        // refazer o step que falhou, nunca pular ele no proximo run.
+        if (result.Verdict is CircuitVerdict.Pass or CircuitVerdict.Skip)
         {
             try
             {
@@ -570,6 +569,10 @@ internal sealed class TestCircuitDriver : IDisposable
                     $"{result.ExitCode} {VerdictText(result.Verdict)} {totalSeconds}");
             }
             catch (Exception ex) { Log($"ERRO ao gravar {donePath}: {ex.Message}"); }
+        }
+        else
+        {
+            TryDelete(donePath);
         }
 
         AppendSummary(result, totalSeconds);
@@ -652,6 +655,42 @@ internal sealed class TestCircuitDriver : IDisposable
                 ordered.Add(result);
                 Add(_template.NextSteps(this, result));
             }
+
+            // Politica do laboratorio: erro interrompe a bateria. Os steps que
+            // nao rodaram entram como SKIP com causa (nao somem do summary) e o
+            // proximo run retoma daqui: PASS/SKIP ficam .done, o que falhou roda.
+            if (_o.StopOnFirstFailure)
+            {
+                var breaker = batch.FirstOrDefault(r =>
+                    r.Verdict is CircuitVerdict.Fail or CircuitVerdict.Stale or CircuitVerdict.Blocked);
+                if (breaker is not null)
+                {
+                    var notRun = pending.ToArray();
+                    pending.Clear();
+                    foreach (var step in notRun)
+                    {
+                        var stopped = new CircuitStepResult(
+                            step.Name, CircuitVerdict.Skip, 0, -1,
+                            $"nao executado: {breaker.Name} falhou", 0,
+                            Path.Combine(_stepsDir, step.Name + ".test.log"), Skipped: true);
+                        results[step.Name] = stopped;
+                        ordered.Add(stopped);
+                        AppendSummary(stopped, 0);
+                        Publish(new JsonObject
+                        {
+                            ["t"] = "step_end",
+                            ["step"] = step.Name,
+                            ["verdict"] = "SKIP",
+                            ["cause"] = stopped.Cause
+                        });
+                    }
+
+                    Log($"PARADA: {breaker.Name} falhou"
+                        + (string.IsNullOrEmpty(breaker.Cause) ? "" : $" (causa={breaker.Cause})")
+                        + $"; {notRun.Length} step(s) nao executado(s)");
+                    break;
+                }
+            }
         }
 
         return ordered;
@@ -685,6 +724,31 @@ internal sealed class TestCircuitDriver : IDisposable
             catch (Exception ex) { Log($"ERRO ao gravar {path}: {ex.Message}"); }
         }
         return attempt;
+    }
+
+    /// <summary>
+    /// .done so autoriza pular o step quando o veredito gravado foi PASS/SKIP.
+    /// Estado legado (ou FAIL/STALE) e apagado para o step reexecutar: resume
+    /// depois de correcao nunca pode pular justamente o que falhou.
+    /// </summary>
+    private bool DoneIsSkip(string donePath)
+    {
+        try
+        {
+            string[] parts = File.ReadAllText(donePath)
+                .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2) return false;
+            string verdict = parts[1].ToUpperInvariant();
+            if (verdict is "PASS" or "SKIP") return true;
+            Log($"STATE {Path.GetFileNameWithoutExtension(donePath)}={verdict} "
+                + "invalido; step sera reexecutado");
+            TryDelete(donePath);
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void AppendSummary(CircuitStepResult result, long seconds)
@@ -927,7 +991,12 @@ internal sealed class TestCircuitDriver : IDisposable
     // ------------------------------------------------------------------
     public CircuitGateResult Gate()
     {
-        var rows = ReadSummary();
+        // Resume reexecuta o que falhou no mesmo run dir: o gate vale o ULTIMO
+        // veredito de cada step (summary.tsv segue append-only como auditoria).
+        var rows = ReadSummary()
+            .GroupBy(r => r.Name, StringComparer.Ordinal)
+            .Select(g => g.Last())
+            .ToList();
         int n = rows.Count;
         int p = rows.Count(r => r.Verdict == "PASS");
         int f = rows.Count(r => r.Verdict == "FAIL");
