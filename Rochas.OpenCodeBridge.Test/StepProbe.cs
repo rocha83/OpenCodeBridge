@@ -25,13 +25,16 @@ internal sealed class StepProbe : IDisposable
     private readonly string _probeUrl;
     private readonly string _apiKey;
     private readonly IReadOnlyList<string> _logPaths;
+    private readonly string _journeyDir;
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(4) };
     private readonly DateTime _started = DateTime.UtcNow;
     private readonly Dictionary<string, long> _offsets = new();
+    private readonly Dictionary<string, string> _journeySeen = new(StringComparer.Ordinal);
 
     public static StepProbe Start(
         string runDir, string step, string mode,
-        string? probeUrl, string? apiKey, IEnumerable<string>? logPaths)
+        string? probeUrl, string? apiKey, IEnumerable<string>? logPaths,
+        string? journeyDir = null)
     {
         string probeDir = Path.Combine(runDir, "probes");
         Directory.CreateDirectory(probeDir);
@@ -51,12 +54,13 @@ internal sealed class StepProbe : IDisposable
                 outputTemplate: "{@t:O} [{@l:u3}] {@m} {Properties:j}{NewLine}")
             .CreateLogger();
 
-        return new StepProbe(probeDir, step, mode, probeUrl ?? "", apiKey ?? "", logPaths ?? Array.Empty<string>(), logger);
+        return new StepProbe(probeDir, step, mode, probeUrl ?? "", apiKey ?? "",
+            logPaths ?? Array.Empty<string>(), journeyDir ?? "", logger);
     }
 
     private StepProbe(
         string probeDir, string step, string mode, string probeUrl, string apiKey,
-        IEnumerable<string> logPaths, ILogger logger)
+        IEnumerable<string> logPaths, string journeyDir, ILogger logger)
     {
         _probeDir = probeDir;
         _step = step;
@@ -64,6 +68,7 @@ internal sealed class StepProbe : IDisposable
         _probeUrl = probeUrl;
         _apiKey = apiKey;
         _logPaths = logPaths.ToArray();
+        _journeyDir = journeyDir;
         _logger = logger;
 
         _logger.Information("probe start step={Step} mode={Mode} url={ProbeUrl}", step, mode, probeUrl);
@@ -110,6 +115,81 @@ internal sealed class StepProbe : IDisposable
 
         foreach (string logPath in _logPaths)
             TailLog(logPath);
+
+        await AnalyzeJourneyIfChangedAsync("tick");
+    }
+
+    /// <summary>
+    /// Analisa o stream history do step (opencode raw + bridge normalizado) e
+    /// publica histogramas. Roda no tick e no dispose, mas so relê quando o
+    /// arquivo muda (o export opencode so aparece no fim do processo).
+    /// </summary>
+    private async Task AnalyzeJourneyIfChangedAsync(string phase)
+    {
+        if (string.IsNullOrWhiteSpace(_journeyDir) || !Directory.Exists(_journeyDir)) return;
+        string safe = Sanitize(_step);
+        string opencode = Path.Combine(_journeyDir, safe + ".opencode.raw.json");
+        string bridge = Path.Combine(_journeyDir, safe + ".bridge.json");
+        if (!File.Exists(opencode) && !File.Exists(bridge)) return;
+        string stamp = Stamp(opencode) + "|" + Stamp(bridge);
+        if (_journeySeen.TryGetValue(safe, out string? previous) && previous == stamp) return;
+
+        var combined = new JsonObject
+        {
+            ["step"] = _step,
+            ["mode"] = _mode,
+            ["phase"] = phase,
+            ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+        };
+        if (File.Exists(opencode)) combined["opencode"] = CodingJourney.AnalyzeOpencode(opencode);
+        if (File.Exists(bridge)) combined["bridge"] = CodingJourney.AnalyzeBridge(bridge);
+        if (combined["opencode"] is JsonObject oc && combined["bridge"] is JsonObject br)
+            combined["contrast"] = CodingJourney.Contrast(oc, br);
+
+        _journeySeen[safe] = stamp;
+        string outPath = Path.Combine(_probeDir, safe + ".journey.json");
+        try { File.WriteAllText(outPath, combined.ToJsonString()); }
+        catch (Exception ex) { _logger.Warning("journey escrita erro: {Error}", ex.Message); }
+        // O bundle de stream history tambem guarda os histogramas, para a
+        // analise ficar junto do raw/meta/resume (sem depender de probes/).
+        try { File.WriteAllText(Path.Combine(_journeyDir, safe + ".histograms.json"), combined.ToJsonString()); }
+        catch (Exception ex) { _logger.Debug("journey hist escrito erro: {Error}", ex.Message); }
+        _logger.Information("probe journey {@Journey}", combined);
+        await PublishJourneyAsync(combined);
+    }
+
+    private static string Stamp(string path)
+    {
+        try
+        {
+            var file = new FileInfo(path);
+            return file.Exists ? file.Length.ToString() + ":" + file.LastWriteTimeUtc.Ticks.ToString() : "0:0";
+        }
+        catch { return "0:0"; }
+    }
+
+    private async Task PublishJourneyAsync(JsonObject journey)
+    {
+        if (string.IsNullOrWhiteSpace(_probeUrl)) return;
+        var sample = new JsonObject
+        {
+            ["step"] = _step,
+            ["mode"] = _mode,
+            ["kind"] = "journey",
+            ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            ["journey"] = journey.DeepClone()
+        };
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, _probeUrl + "/api/test/probe");
+            if (!string.IsNullOrWhiteSpace(_apiKey))
+                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
+            req.Content = new StringContent(sample.ToJsonString(), Encoding.UTF8, "application/json");
+            using var res = await _http.SendAsync(req);
+            if (!res.IsSuccessStatusCode)
+                _logger.Debug("journey publish http={Status} step={Step}", (int)res.StatusCode, _step);
+        }
+        catch (Exception ex) { _logger.Debug("journey publish erro: {Error}", ex.Message); }
     }
 
     private async Task PublishSampleAsync(double elapsed, string gpu, string statusJson, string metricsJson, long diskFree)
@@ -268,6 +348,8 @@ internal sealed class StepProbe : IDisposable
     {
         _cts.Cancel();
         try { _loop.Wait(3000); } catch { }
+        try { AnalyzeJourneyIfChangedAsync("final").GetAwaiter().GetResult(); }
+        catch (Exception ex) { _logger.Warning("journey final erro: {Error}", ex.Message); }
         _logger.Information("probe end step={Step} elapsed_s={Elapsed:F1}", _step, (DateTime.UtcNow - _started).TotalSeconds);
         (_logger as IDisposable)?.Dispose();
         _cts.Dispose();

@@ -921,6 +921,9 @@ internal sealed class WarTemplate : CircuitTemplate
         {
             ["WAR_UPSTREAM"] = _p.Upstream,
             ["WAR_NO_VISION"] = _p.NoVision ? "1" : "0",
+            // Stream history por step: o TestContext exporta a sessao opencode
+            // e grava a jornada bridge; a sonda (StepProbe) le e publica histogramas.
+            ["WAR_JOURNEY_DIR"] = Path.Combine(_out, "journey"),
             // Filhos do driver rodam sob o lock dele: o preflight da suite nao
             // deve tratar o lock do proprio driver como runner concorrente.
             ["BRIDGE_UNDER_DRIVER"] = "1"

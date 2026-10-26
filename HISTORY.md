@@ -1,5 +1,32 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Stream history / coding journey na sonda (2026-10-26, sessão atual)
+
+**Pedido:** a sonda do WAR deve analisar a jornada de codificação do opencode e
+a nossa (bridge), produzindo histogramas para buscar adaptatividade
+comportamental dos modelos locais; documentar o requisito em `docs/BENCHTESTS.md`.
+
+**Implementação:**
+- `TestContext.OpencodeRunDetailed` exporta a sessão com
+  `opencode session export --standalone <id>` **antes** de
+  `OpencodeSessionsCleanup`, grava o raw completo, copia o harness primordial
+  (`docs/harness/opencode/`) e gera `<step>.resume.sh` (import + `run --session`).
+- `TestContext.ToolAgent` grava a jornada normalizada do caminho bridge
+  (calls com `round`, `args`, `ok`, `output`, `ms`).
+- `CodingJourney` (Test) lê os dois formatos e devolve o mesmo contrato:
+  `tool_histogram`, `status_histogram`, `sequence_histogram`,
+  `turn_tools_histogram`, buckets de texto/reasoning, `file_histogram`,
+  `validation_histogram`, `metrics` e `errors`.
+- `StepProbe` recebe `journeyDir`, relê só quando o arquivo muda, grava
+  `<run>/probes/<step>.journey.json` e publica `kind=journey` em
+  `/api/test/probe`. `WarTemplate` injeta `WAR_JOURNEY_DIR=<run>/journey`.
+- O caminho do probe foi corrigido para `<run>/probes` (antes o driver passava
+  `probes` e o `Start` anexava outro `probes`).
+
+**Aceite:** build Release `0 avisos / 0 erros`; `U-coding-journey` e
+`U-coding-journey-probe` PASS; export real de 5,3 MB analisado (676 turnos,
+689 tools: 558 shell, 120 edit, 31 dotnet-build, 18 git-commit; failure 0,006).
+
 ## URGENTE / GRAVÍSSIMO — bridge gerido sem MainHarness (2026-10-26)
 
 **Regra:** caminho **bridge** (WAR) e **Web UI** exigem `--main-harness 1`.

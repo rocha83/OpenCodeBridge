@@ -530,8 +530,9 @@ internal sealed class TestCircuitDriver : IDisposable
         long totalSeconds = 0;
 
         using var probe = StepProbe.Start(
-            Path.Combine(_o.RunDirectory, "probes"),
-            step.Name, step.Mode, step.ProbeUrl, step.ProbeApiKey, step.ProbeLogs);
+            _o.RunDirectory,
+            step.Name, step.Mode, step.ProbeUrl, step.ProbeApiKey, step.ProbeLogs,
+            Path.Combine(_o.RunDirectory, "journey"));
 
         for (int i = 0; i < maxAttempts; i++)
         {

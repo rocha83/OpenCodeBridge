@@ -150,6 +150,8 @@ internal static class Program
         TestContext.Run("U-main-harness-opencode-master", UnitMainHarnessTests.KeepsOpencodeMasterWithoutProfile);
         TestContext.Run("U-main-harness-dynamic", UnitMainHarnessTests.PreservesDynamicBlocks);
         TestContext.Run("U-main-harness-master", UnitMainHarnessTests.DropsMasterButKeepsEnv);
+        TestContext.Run("U-coding-journey", UnitCodingJourneyTests.AnalyzesBothModes);
+        TestContext.Run("U-coding-journey-probe", UnitCodingJourneyTests.StepProbeWritesJourney);
         TestContext.Run("U-sampling-passthrough", UnitSamplingTests.CopiesKnownNumericKeys);
         TestContext.Run("U-sampling-ignores-junk", UnitSamplingTests.IgnoresUnknownAndNonNumeric);
         TestContext.Run("U-sampling-whitelist", UnitSamplingTests.WhitelistHasSamplingOnly);

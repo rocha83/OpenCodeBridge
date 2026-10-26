@@ -23,6 +23,20 @@ internal static class TestContext
 
     public static string? ApiKey;
 
+    // Stream history: o driver injeta WAR_JOURNEY_DIR por step. Sem a variavel
+    // (unit/manual) nada e gravado, para nao poluir o disco nem o repo.
+    static string? JourneyDir => Environment.GetEnvironmentVariable("WAR_JOURNEY_DIR") is { Length: > 0 } dir
+        ? dir : null;
+    static string JourneyStep
+    {
+        get
+        {
+            string raw = Environment.GetEnvironmentVariable("WAR_STEP") ?? "manual-" + Mode;
+            foreach (char c in Path.GetInvalidFileNameChars()) raw = raw.Replace(c, '_');
+            return raw.Replace('/', '_').Replace('\\', '_');
+        }
+    }
+
     public static string? Jwt;
     // 20 min: os E2E enterprise (crud-*/garnet/worker) geram muito e, sob carga da suite
     // inteira, passavam de 600s (visto 16/10); isolados ficam em ~110-215s.
@@ -160,11 +174,16 @@ internal static class TestContext
     }
 
     /// <summary>Roda o mesmo enunciado pelo opencode real (standalone) e devolve stdout+stderr.</summary>
-    /// <param name="prompt">Enunciado.</param>
-    /// <param name="cwd">Diretorio da tarefa (default: /tmp/opencode/standalone).</param>
-    /// <param name="agent">Agent opencode (default: StandaloneAgent); ex. "orch".</param>
-    /// <param name="model">Modelo provider/model (default: derivado do agent).</param>
     public static string OpencodeRun(string prompt, string? cwd = null, string? agent = null, string? model = null)
+        => OpencodeRunDetailed(prompt, cwd, agent, model).Text;
+
+    /// <summary>
+    /// Roda o opencode real e devolve texto + calls do stream exportado. O export
+    /// completo (`opencode session export`) vira stream history antes da limpeza
+    /// da sessao; sem WAR_JOURNEY_DIR (unit/manual) nada e gravado.
+    /// </summary>
+    public static (string Text, List<string> Calls) OpencodeRunDetailed(
+        string prompt, string? cwd = null, string? agent = null, string? model = null)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         // cwd = diretorio da tarefa: e o uso real do CLI (abre no projeto). Com cwd
@@ -209,11 +228,146 @@ internal static class TestContext
             outp = so.Result;
             errp = se.Result;
         }
+        var calls = new List<string>();
+        var newIds = OpencodeSessionIds(psi.WorkingDirectory)
+            .Except(before, StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        if (JourneyDir is { Length: > 0 } journeyDir && newIds.Length > 0)
+            RecordOpencodeJourney(journeyDir, psi.WorkingDirectory, newIds, useAgent, useModel,
+                prompt, outp + errp, sw.ElapsedMilliseconds, calls);
         OpencodeSessionsCleanup(psi.WorkingDirectory, before);
         // Tempo por chamada no log: cenario lento no opencode = loop do cliente.
-        Console.WriteLine($"  [opencode] {sw.Elapsed.TotalSeconds:0.0}s agent={useAgent} model={useModel}");
-        return outp + errp;
+        Console.WriteLine($"  [opencode] {sw.Elapsed.TotalSeconds:0.0}s agent={useAgent} model={useModel} calls={calls.Count}");
+        return (outp + errp, calls);
     }
+
+    /// <summary>Exporta a sessao antes da limpeza e grava raw + meta + harness + resume.</summary>
+    static void RecordOpencodeJourney(
+        string journeyDir, string cwd, string[] ids, string agent, string model,
+        string prompt, string output, long elapsedMs, List<string> calls)
+    {
+        try
+        {
+            Directory.CreateDirectory(journeyDir);
+            string id = ids[^1];
+            string raw = ExportOpencodeSession(cwd, id);
+            var sessions = new JsonArray();
+            foreach (string session in ids) sessions.Add(session);
+            var meta = new JsonObject
+            {
+                ["step"] = JourneyStep,
+                ["mode"] = "opencode",
+                ["agent"] = agent,
+                ["model"] = model,
+                ["cwd"] = cwd,
+                ["prompt"] = Cut(prompt, 8000),
+                ["sessions"] = sessions,
+                ["stdout"] = Cut(output, 12000),
+                ["elapsed_ms"] = elapsedMs,
+                ["export_ok"] = raw.Length > 0
+            };
+            if (raw.Length > 0)
+            {
+                // Preserva o raw por sessao (retries/script loop nao se perdem) e
+                // mantem o alias .raw.json que a sonda le como "ultimo stream".
+                string fullPath = Path.Combine(journeyDir, JourneyStep + ".opencode." + id + ".raw.json");
+                File.WriteAllText(fullPath, raw);
+                string rawPath = Path.Combine(journeyDir, JourneyStep + ".opencode.raw.json");
+                File.Copy(fullPath, rawPath, overwrite: true);
+                calls.AddRange(CodingJourney.CallsFromOpencode(rawPath));
+                meta["export"] = rawPath;
+                meta["export_full"] = fullPath;
+                meta["resume"] = Path.Combine(journeyDir, JourneyStep + ".resume.sh");
+                SnapshotHarness(journeyDir);
+                WriteResumeScript(journeyDir, cwd, id, agent, model, rawPath);
+            }
+            WriteJourneyFile("opencode.meta", meta);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  [journey] export opencode falhou: {ex.Message}");
+        }
+    }
+
+    /// <summary>`opencode session export --standalone <id>`; vazio em falha.</summary>
+    static string ExportOpencodeSession(string cwd, string id)
+    {
+        try
+        {
+            var psi = OpencodePsi(cwd);
+            psi.ArgumentList.Add("session"); psi.ArgumentList.Add("export");
+            psi.ArgumentList.Add("--standalone"); psi.ArgumentList.Add(id);
+            using var p = Process.Start(psi);
+            if (p is null) return "";
+            var so = p.StandardOutput.ReadToEndAsync();
+            var se = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(60000)) { try { p.Kill(true); } catch { } return ""; }
+            _ = se.Result;
+            return p.ExitCode == 0 ? so.Result : "";
+        }
+        catch { return ""; }
+    }
+
+    /// <summary>Grava um diario normalizado no diretorio de stream history do step.</summary>
+    static void WriteJourneyFile(string suffix, JsonNode body)
+    {
+        if (JourneyDir is not { Length: > 0 } dir) return;
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, JourneyStep + "." + suffix + ".json"), body.ToJsonString());
+        }
+        catch (Exception ex) { Console.WriteLine($"  [journey] escrita falhou: {ex.Message}"); }
+    }
+
+    /// <summary>Copia o harness primordial capturado (docs/harness/opencode) para o bundle.</summary>
+    static void SnapshotHarness(string journeyDir)
+    {
+        string? src = FindHarnessDir();
+        if (src is null) return;
+        string dst = Path.Combine(journeyDir, "harness");
+        try
+        {
+            Directory.CreateDirectory(dst);
+            foreach (string file in Directory.GetFiles(src))
+                File.Copy(file, Path.Combine(dst, Path.GetFileName(file)), overwrite: true);
+        }
+        catch (Exception ex) { Console.WriteLine($"  [journey] harness copy falhou: {ex.Message}"); }
+    }
+
+    static string? FindHarnessDir()
+    {
+        string? dir = Directory.GetCurrentDirectory();
+        while (dir is not null)
+        {
+            string candidate = Path.Combine(dir, "docs", "harness", "opencode");
+            if (Directory.Exists(candidate)) return candidate;
+            dir = Directory.GetParent(dir)?.FullName;
+        }
+        return null;
+    }
+
+    /// <summary>Script de retomada: importa o export e continua a sessao pelo CLI.</summary>
+    static void WriteResumeScript(string journeyDir, string cwd, string id, string agent, string model, string rawPath)
+    {
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("#!/usr/bin/env bash");
+            sb.AppendLine("set -euo pipefail");
+            sb.AppendLine("cd " + Sh(cwd));
+            sb.AppendLine("# stream completo: " + rawPath);
+            sb.AppendLine("opencode session import --standalone --directory " + Sh(cwd) + " " + Sh(rawPath) + " || true");
+            sb.AppendLine("opencode run --standalone --auto --agent " + Sh(agent)
+                + " --model " + Sh(model) + " --session " + Sh(id) + " \"$@\"");
+            File.WriteAllText(Path.Combine(journeyDir, JourneyStep + ".resume.sh"), sb.ToString());
+        }
+        catch (Exception ex) { Console.WriteLine($"  [journey] resume falhou: {ex.Message}"); }
+    }
+
+    static string Sh(string value) => "'" + value.Replace("'", "'\\''") + "'";
+    static string Cut(string value, int max) => value.Length <= max ? value : value[..max] + "...";
 
     /// <summary>IDs de sessao opencode do projeto (dir), lidos via `session list --format json`.</summary>
     static HashSet<string> OpencodeSessionIds(string dir)
@@ -387,10 +541,12 @@ internal static class TestContext
         string enunciadoStep = Environment.GetEnvironmentVariable("WAR_STEP")
             ?? "E-tools-full/agent/" + Mode;
         await PublishEnunciado(enunciadoStep, prompt);
-        if (Mode == "opencode") return (OpencodeRun(prompt, cwd), new List<string>());
+        if (Mode == "opencode") return OpencodeRunDetailed(prompt, cwd);
         int max = steps > 0 ? steps : ToolAgentSteps;
         var input = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = prompt });
         var calls = new List<string>();
+        var journeyCalls = new JsonArray();
+        var journeySw = Stopwatch.StartNew();
         string text = "";
         bool nudged = false;
         for (int step = 0; step < max; step++)
@@ -446,6 +602,7 @@ internal static class TestContext
                             ["name"] = name, ["arguments"] = args
                         });
                         JsonObject exec;
+                        var callSw = Stopwatch.StartNew();
                         try
                         {
                             var execBody = new JsonObject
@@ -460,10 +617,23 @@ internal static class TestContext
                             exec = await PostObj(Bridge + "/api/tools/execute", execBody);
                         }
                         catch (Exception ex) { exec = new JsonObject { ["ok"] = false, ["error"] = ex.Message }; }
+                        callSw.Stop();
                         string outText = exec["ok"]?.GetValue<bool>() == true
                             ? (exec["output"]?.GetValue<string>() ?? "")
                             : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
-                        calls.Add($"{name}({args}) -> {(exec["ok"]?.GetValue<bool>() == true ? "ok" : "fail")}");
+                        bool callOk = exec["ok"]?.GetValue<bool>() == true;
+                        calls.Add($"{name}({args}) -> {(callOk ? "ok" : "fail")}");
+                        JsonNode? callArgs = null;
+                        try { callArgs = JsonNode.Parse(args); } catch { }
+                        journeyCalls.Add(new JsonObject
+                        {
+                            ["round"] = step,
+                            ["name"] = name,
+                            ["args"] = callArgs?.DeepClone() ?? new JsonObject { ["raw"] = Cut(args, 4000) },
+                            ["ok"] = callOk,
+                            ["output"] = Cut(outText, 4000),
+                            ["ms"] = callSw.ElapsedMilliseconds
+                        });
                         if (Environment.GetEnvironmentVariable("TCTX_DUMP") == "1")
                             Console.WriteLine($"  [exec] {name} ok={exec["ok"]} out={(exec["output"]?.GetValue<string>() ?? exec["error"]?.GetValue<string>() ?? "")[..Math.Min(160, (exec["output"]?.GetValue<string>() ?? exec["error"]?.GetValue<string>() ?? "").Length)]}");
                         input.Add(new JsonObject
@@ -489,6 +659,20 @@ internal static class TestContext
                 continue;
             }
         }
+        journeySw.Stop();
+        if (JourneyDir is { Length: > 0 })
+            WriteJourneyFile("bridge", new JsonObject
+            {
+                ["step"] = JourneyStep,
+                ["mode"] = "bridge",
+                ["model"] = SuiteModel,
+                ["agent"] = Role,
+                ["prompt"] = Cut(prompt, 8000),
+                ["text"] = Cut(text, 12000),
+                ["calls"] = journeyCalls,
+                ["rounds"] = max,
+                ["elapsed_ms"] = journeySw.ElapsedMilliseconds
+            });
         return (text, calls);
     }
 

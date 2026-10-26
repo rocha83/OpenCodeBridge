@@ -300,3 +300,110 @@ dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
 # fila completa por nível
 LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 2
 ```
+
+## 12. Coding journey / stream history (2026-10-26)
+
+Objetivo: registrar a **jornada completa de codificação** de cada step, nos dois
+transportes, para comparar o comportamento do modelo local (bridge) com o do
+opencode e alimentar histogramas de adaptatividade. O número de calls do opencode
+não aparecia no log porque o CLI executa as tools fora da bridge; o export nativo
+resolve isso sem inventar métrica.
+
+### 12.1 Contrato e artefatos
+
+O driver exporta `WAR_JOURNEY_DIR=<run>/journey` para o processo do teste. A sonda
+(`StepProbe`) recebe o mesmo diretório e publica a análise no fim do step (e no
+tick quando o arquivo muda).
+
+| Artefato | Quem grava | Conteúdo |
+|---|---|---|
+| `<run>/journey/<step>.opencode.raw.json` | `TestContext.OpencodeRunDetailed` | alias do último `opencode session export`; é o que a sonda lê. |
+| `<run>/journey/<step>.opencode.<session>.raw.json` | idem | export completo por sessão (retries/loop não se perdem): info da sessão (modelo/agent/tokens/custo), 100% das mensagens, reasoning, tool calls, inputs e resultados. |
+| `<run>/journey/<step>.opencode.meta.json` | idem | step, agent, model, cwd, prompt, sessões criadas, stdout/stderr, `elapsed_ms`, caminho do export/resume. |
+| `<run>/journey/<step>.resume.sh` | idem | importa o export e retoma com `opencode run --session <id> --agent <agent> --model <model>`. |
+| `<run>/journey/harness/` | idem | cópia do harness primordial (`docs/harness/opencode/system.md`, `tools.json`, `req-chat.json`, `MAIN-HARNESS.md`). |
+| `<run>/journey/<step>.bridge.json` | `TestContext.ToolAgent` | jornada normalizada do caminho bridge: prompt, texto final, calls com `round`, `args`, `ok`, `output`, `ms`. |
+| `<run>/probes/<step>.journey.json` | `StepProbe` | histogramas e métricas de cada raia + `contrast` quando as duas rodam no mesmo step (`--dual`). |
+| `<run>/journey/<step>.histograms.json` | `StepProbe` | cópia dos histogramas dentro do bundle de stream history (raw/meta/resume/harness). |
+| `POST /api/test/probe` | `StepProbe` | amostra `{kind:"journey", journey:{...}}`; o painel/API já lê a série. |
+
+O export opencode é feito **antes** de `OpencodeSessionsCleanup`: a sessão pode
+ser apagada do storage sem perder o stream. O bundle é local; não versionar raw
+(sem `WAR_JOURNEY_DIR`, unit/manual não grava nada).
+
+### 12.2 Histogramas e métricas
+
+Os dois analisadores (`CodingJourney.AnalyzeOpencode` e `AnalyzeBridge`) produzem
+o mesmo formato, para comparação direta:
+
+- `tool_histogram` — chamadas por tool (`shell`, `edit`, `write`, `read`, `grep`,
+  `glob`, `git`, ...).
+- `status_histogram` — `ok` x `fail`.
+- `sequence_histogram` — pares consecutivos (`read>edit`, `edit>shell`,
+  `shell>shell`, ...); revela o “caminho” de codificação.
+- `turn_tools_histogram` — tools por turno/round (`0`, `1`, `2`, `3`, `4+`).
+- `text_chars_histogram` / `reasoning_chars_histogram` — tamanho do texto e do
+  raciocínio por turno (buckets `0`, `1-200`, `201-1k`, `1k-4k`, `4k-12k`, `12k+`).
+- `file_histogram` — arquivos mais tocados.
+- `validation_histogram` — `bash-n`, `dotnet-build`, `dotnet-test`, `git-diff`,
+  `git-status`, `git-log`, `git-commit`, `npm-test`, `tsc`, `eslint`, ...
+- `metrics` — `avg_tools_per_turn`, `tool_diversity`, `edit_ratio`,
+  `validation_per_edit`, `failure_rate`, `reasoning_ratio`.
+- `tokens` e `elapsed_ms` — custo/velocidade do stream (quando disponíveis).
+
+### 12.3 Baseline opencode (sessão real de 2026-10-26)
+
+Export de 5,3 MB / 828 mensagens / 676 turnos do assistente, analisado pelo
+próprio `CodingJourney.AnalyzeOpencode` (não por script externo):
+
+| Métrica | Valor |
+|---|---|
+| tools total | 689 |
+| `shell` | 558 |
+| `edit` | 120 |
+| `read` / `write` | 2 / 2 |
+| `grep` | 1 |
+| `websearch` / `webfetch` | 3 / 3 |
+| validações | 31 `dotnet-build`, 18 `git-commit`, 16 `git-status`, 13 `git-log`, 9 `git-diff`, 2 `bash-n` |
+| `avg_tools_per_turn` | 1,02 |
+| `tool_diversity` | 7 |
+| `edit_ratio` | 0,984 |
+| `validation_per_edit` | 0,74 |
+| `failure_rate` | 0,006 |
+| `reasoning_ratio` | 33,02 |
+
+Leitura: o opencode desta sessão é **shell-first** (81% shell), edita muito e
+lê pouco (`edit_ratio` 0,984 com só 2 `read`), valida o build com frequência
+(31 `dotnet-build`), mas usa `bash -n` raramente (2). É exatamente o tipo de
+desvio que o comparativo com a bridge deve expor: se o modelo local gasta
+turnos em `read`/`write` ou não valida, o histograma mostra; a correção é no
+enunciado/tail, não no assert.
+
+### 12.4 Leitura e uso na adaptação
+
+```bash
+# último journey de um step
+jq . /path/to/run/probes/tools-full-opencode.journey.json
+
+# comparar as duas raias no mesmo run (--dual)
+jq '{oc:.opencode.metrics, br:.bridge.metrics, delta:.contrast.tool_delta}' \
+  /path/to/run/probes/<step>.journey.json
+
+# top tools e sequências de um export opencode
+jq '{tools:.tool_histogram, seq:.sequence_histogram, files:.file_histogram}' \
+  /path/to/run/probes/<step>.journey.json
+```
+
+Ciclo de adaptação: rodar o step nos dois modos → comparar histogramas →
+identificar desvio (ex.: local faz `write` onde o opencode faz `read>edit`; local
+não valida com `bash -n`/`dotnet build`; local repete `shell>shell` sem progresso)
+→ ajustar **enunciado/tail/harness** no ponto exato → repetir e medir o delta.
+O aceite continua sendo o artefato/build/teste do step; histograma é diagnóstico,
+nunca PASS.
+
+### 12.5 Retenção e privacidade
+
+O raw contém código e caminhos do workspace. Guardar só em `/tmp`/disco local,
+nunca commitar; o bundle é recriado a cada WAR. Para auditoria longa, copiar
+apenas `*.journey.json` e `*.opencode.meta.json` (sem raw) ou usar
+`opencode session export --sanitize`.
