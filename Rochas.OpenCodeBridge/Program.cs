@@ -995,11 +995,32 @@ internal static partial class Program
                     LastEnunciado = body["prompt"]?.GetValue<string>() ?? "";
                     LastEnunciadoMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 }
+                string shownStep = LastEnunciadoStep;
+                string shownPrompt = LastEnunciado;
+                long shownMs = LastEnunciadoMs;
+                if (ctx.Request.HttpMethod != "POST")
+                {
+                    // Fallback honesto: steps sem prompt proprio (devpipe, belts,
+                    // units) mostram o step atual da sonda; tools-full mostra o
+                    // enunciado real publicado pelo runner.
+                    var latest = ProbeSamples
+                        .OrderByDescending(x => x["ts"]?.GetValue<long>() ?? 0)
+                        .FirstOrDefault();
+                    string latestStep = latest?["step"]?.GetValue<string>() ?? "";
+                    if (latestStep.Length > 0 && latestStep != shownStep)
+                    {
+                        string latestMode = latest?["mode"]?.GetValue<string>() ?? "";
+                        shownStep = latestStep;
+                        shownPrompt = "Step em execucao: " + latestStep
+                            + (latestMode.Length > 0 ? $" (modo {latestMode})" : "");
+                        shownMs = latest?["ts"]?.GetValue<long>() ?? shownMs;
+                    }
+                }
                 WriteJson(ctx, 200, new JsonObject
                 {
-                    ["step"] = LastEnunciadoStep,
-                    ["prompt"] = LastEnunciado,
-                    ["updated_ms"] = LastEnunciadoMs
+                    ["step"] = shownStep,
+                    ["prompt"] = shownPrompt,
+                    ["updated_ms"] = shownMs
                 });
                 return;
             }

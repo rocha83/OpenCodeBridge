@@ -560,10 +560,12 @@ internal sealed class WarTemplate : CircuitTemplate
             args.Add(mode);
         }
 
+        var env = ChildEnv();
+        env["WAR_STEP"] = name;
         return new CircuitStepSpec(
             Name: name,
             Command: new CircuitCommand(
-                Execution.Resolve("dotnet"), args, _p.Root, ChildEnv()),
+                Execution.Resolve("dotnet"), args, _p.Root, env),
             TimeoutSeconds: _p.StepTimeout,
             Mode: mode,
             RunTag: _hashGit,

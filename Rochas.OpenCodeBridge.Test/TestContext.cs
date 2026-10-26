@@ -372,7 +372,9 @@ internal static class TestContext
 
     public static async Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps, string? cwd)
     {
-        await PublishEnunciado("E-tools-full/agent/" + Mode, prompt);
+        string enunciadoStep = Environment.GetEnvironmentVariable("WAR_STEP")
+            ?? "E-tools-full/agent/" + Mode;
+        await PublishEnunciado(enunciadoStep, prompt);
         if (Mode == "opencode") return (OpencodeRun(prompt, cwd), new List<string>());
         int max = steps > 0 ? steps : ToolAgentSteps;
         var input = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = prompt });
