@@ -488,8 +488,40 @@ internal static class TestContext
         return JsonNode.Parse(body)?.AsObject() ?? throw new Exception("GET resposta nao-JSON");
     }
 
+    static string ExtractPrompt(JsonNode body)
+    {
+        if (body is not JsonObject obj) return "";
+        JsonNode? input = obj["input"] ?? obj["messages"];
+        if (input is JsonValue v && v.TryGetValue<string>(out string? s)) return s;
+        if (input is not JsonArray arr) return "";
+        for (int i = arr.Count - 1; i >= 0; i--)
+        {
+            if (arr[i] is not JsonObject m) continue;
+            string role = m["role"]?.GetValue<string>() ?? "";
+            if (role.Length > 0 && role != "user") continue;
+            JsonNode? content = m["content"];
+            if (content is JsonValue cv && cv.TryGetValue<string>(out string? cs)) return cs;
+            if (content is JsonArray parts)
+            {
+                string joined = string.Join("\n", parts.OfType<JsonObject>()
+                    .Select(p => p["text"]?.GetValue<string>() ?? "")
+                    .Where(t => t.Length > 0));
+                if (joined.Length > 0) return joined;
+            }
+        }
+        return "";
+    }
+
     public static async Task<JsonObject> PostObj(string url, JsonNode body)
     {
+        // Todo prompt de modelo publicado vira o enunciado do painel (inclusive
+        // belts/mission, que nao passam por ToolAgent).
+        if (url.Contains("/v1/", StringComparison.Ordinal))
+        {
+            string prompt = ExtractPrompt(body);
+            if (prompt.Length > 0)
+                await PublishEnunciado(Environment.GetEnvironmentVariable("WAR_STEP") ?? "model", prompt);
+        }
         var t0 = DateTime.UtcNow;
         for (int attempt = 0; ; attempt++)
         {

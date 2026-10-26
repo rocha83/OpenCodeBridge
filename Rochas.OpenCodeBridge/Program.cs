@@ -1009,10 +1009,11 @@ internal static partial class Program
                     string latestStep = latest?["step"]?.GetValue<string>() ?? "";
                     if (latestStep.Length > 0 && latestStep != shownStep)
                     {
-                        string latestMode = latest?["mode"]?.GetValue<string>() ?? "";
+                        // Step sem prompt proprio (units): limpa o anterior em vez
+                        // de inventar "Step em execucao". O runner publica o
+                        // enunciado real de todo prompt de modelo.
                         shownStep = latestStep;
-                        shownPrompt = "Step em execucao: " + latestStep
-                            + (latestMode.Length > 0 ? $" (modo {latestMode})" : "");
+                        shownPrompt = "";
                         shownMs = latest?["ts"]?.GetValue<long>() ?? shownMs;
                     }
                 }
