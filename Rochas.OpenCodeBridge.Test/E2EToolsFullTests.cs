@@ -83,9 +83,13 @@ internal static class E2EToolsFullTests
 
     public static async Task FullTools()
     {
-        await Task.WhenAll(
-            RunOnBridge("http://127.0.0.1:4124", "GPU1-E4B-Q4"),
-            RunOnBridge(Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125", "GPU2-E4B-Q3"));
+        // As duas lanes usam o MESMO cwd (o workspace e do processo da bridge) e os
+        // MESMOS nomes de arquivo (a.cs, sub/b.cs). Em paralelo uma lane reescrevia
+        // o arquivo da outra e o edit falhava por oldString ausente (medido:
+        // "GPU2-E4B-Q3 edit ok" FAIL com a.cs = int X = 42). Sequencial preserva
+        // o aceite sem afrouxar assertiva.
+        await RunOnBridge("http://127.0.0.1:4124", "GPU1-E4B-Q4");
+        await RunOnBridge(Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125", "GPU2-E4B-Q3");
         Console.WriteLine("[toolsfull] 2/2 modelos PASS");
     }
 }

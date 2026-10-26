@@ -51,6 +51,8 @@ public sealed class ShellToolHandler : IToolHandler
         {
             if (!TryBuildArgv(argumentsJson, out string[] argv, out string why))
                 return ToolResult.Fail(why);
+            if (ProjectScaffoldBlocked(argv, context.WorkspaceRoot) is string blockedSingle)
+                return ToolResult.Fail(blockedSingle);
             return ProcessRunner.Run(argv[0], argv[1..], context.WorkspaceRoot, context.TimeoutSeconds);
         }
         // Cadeia com semântica set -e: roda em sequência, para no 1º erro, cd persiste.
@@ -73,6 +75,8 @@ public sealed class ShellToolHandler : IToolHandler
             }
             if (!TryBuildArgvFromCommand(p, out string[] argv, out string why))
                 return ToolResult.Fail(sb.Length > 0 ? sb.ToString() + "\n" + why : why);
+            if (ProjectScaffoldBlocked(argv, dir) is string blockedStep)
+                return ToolResult.Fail(sb.Length > 0 ? sb.ToString() + "\n" + blockedStep : blockedStep);
             var r = ProcessRunner.Run(argv[0], argv[1..], dir, context.TimeoutSeconds);
             if (!string.IsNullOrWhiteSpace(r.Output)) sb.AppendLine(r.Output.TrimEnd());
             if (!r.Success)
@@ -180,7 +184,7 @@ public sealed class ShellToolHandler : IToolHandler
         foreach (char c in new[] { ';', '&', '<', '$', '`', '!', '\r', '\n' })
             if (bare.Contains(c))
             {
-                why = $"metacaractere '{c}' negado";
+                why = $"metacaractere '{c}' negado" + HintFor(c);
                 return false;
             }
         foreach (string bad in DeniedTokens)
@@ -195,6 +199,43 @@ public sealed class ShellToolHandler : IToolHandler
 
         argv = new[] { name }.Concat(ExpandGlobs(rest)).ToArray();
         return true;
+    }
+
+    // O modelo precisa da alternativa NA MESMA resposta: sem isso ele repete o
+    // comando negado (medido no E-dual: dois denies iguais, depois 8 turnos de
+    // anti-repeat sem artefato). '>' e '|' sao liberados pelo inspetor.
+    static string HintFor(char c) => c switch
+    {
+        '$' or '`' => " — sem substituicao de comando: rode o comando e capture com 'cmd > arquivo' ou grave o texto com a tool write",
+        '<' => " — sem entrada por arquivo: leia com a tool read e passe o conteudo como argumento",
+        '!' => " — sem expansao de historico",
+        _ => " — um comando por chamada; use && so entre passos independentes"
+    };
+
+    // `dotnet new` em pasta que JA tem projeto cria um segundo .csproj (medido:
+    // mcs.csproj do scaffold + MCS.csproj do modelo; Linux e case-sensitive) e
+    // `dotnet run --project <pasta>` passa a recusar a pasta. O guard devolve a
+    // alternativa em vez de deixar o modelo queimar turnos.
+    static string? ProjectScaffoldBlocked(string[] argv, string dir)
+    {
+        if (argv.Length < 2) return null;
+        if (Path.GetFileName(argv[0]) != "dotnet" || argv[1] != "new") return null;
+        string? output = null, name = null;
+        for (int i = 2; i < argv.Length - 1; i++)
+        {
+            if (argv[i] is "-o" or "--output") output = argv[i + 1];
+            else if (argv[i] is "-n" or "--name") name = argv[i + 1];
+        }
+        string target = output is not null ? Path.Combine(dir, output)
+            : name is not null ? Path.Combine(dir, name)
+            : dir;
+        if (!Directory.Exists(target)) return null;
+        string? proj = Directory.EnumerateFiles(target, "*.*proj").Select(Path.GetFileName).FirstOrDefault();
+        if (proj is null) return null;
+        string full = Path.IsPathRooted(target) ? target : Path.Combine(dir, target);
+        return $"'{target}' ja tem projeto ({proj}): nao crie outro. Edite o fonte existente e rode " +
+               $"`dotnet build --project {full}` ou `dotnet run --project {full}` " +
+               $"(com mais de um .csproj, passe o arquivo: --project {Path.Combine(full, proj)}).";
     }
 
     // Devolve só o fora-de-aspas (para checagem de metacaracteres; o citado vai literal).
