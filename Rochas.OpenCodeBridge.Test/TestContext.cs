@@ -356,8 +356,19 @@ internal static class TestContext
     public static Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps = 0)
         => ToolAgent(prompt, steps, null);
 
+    public static async Task PublishEnunciado(string step, string prompt)
+    {
+        try
+        {
+            await PostObj(Bridge + "/api/test/enunciado",
+                new JsonObject { ["step"] = step, ["prompt"] = prompt });
+        }
+        catch (Exception ex) { Console.WriteLine($"  [enunciado] publish falhou: {ex.Message}"); }
+    }
+
     public static async Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps, string? cwd)
     {
+        await PublishEnunciado("E-tools-full/agent/" + Mode, prompt);
         if (Mode == "opencode") return (OpencodeRun(prompt, cwd), new List<string>());
         int max = steps > 0 ? steps : ToolAgentSteps;
         var input = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = prompt });

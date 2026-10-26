@@ -514,6 +514,17 @@ internal static partial class Program
     static DateTime StartedAt = DateTime.UtcNow;
     static long TotalRequests;
     static long FailedRequests;
+    // Cliente do ultimo request de modelo: "opencode" (User-Agent do CLI) ou
+    // "bridge" (qualquer outro cliente). Serve ao painel para nao confundir
+    // main_harness global (caminho gerido) com o harness do opencode.
+    static long RequestsOpencode;
+    static long RequestsBridge;
+    static string LastClient = "n/d";
+    static long LastRequestMs;
+    // Enunciado do teste em execucao (publicado pelo runner; lido pelo painel).
+    static string LastEnunciadoStep = "n/d";
+    static string LastEnunciado = "";
+    static long LastEnunciadoMs;
 
     // Acumuladores p/ /api/metrics (tokens/s). Lock porque streams concorrem.
     static long TotalInputTokens;
@@ -880,6 +891,17 @@ internal static partial class Program
         {
             Interlocked.Increment(ref TotalRequests);
 
+            // Conta o modo do cliente apenas em request de modelo; health,
+            // metrics e dashboard nao poluem a leitura do painel.
+            if (ctx.Request.HttpMethod == "POST" && path.StartsWith("/v1/", StringComparison.Ordinal))
+            {
+                bool opencode = OpencodeClient.Value;
+                if (opencode) Interlocked.Increment(ref RequestsOpencode);
+                else Interlocked.Increment(ref RequestsBridge);
+                LastClient = opencode ? "opencode" : "bridge";
+                LastRequestMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            }
+
             // ---- Documentacao Swagger (pagina black autocontida + OpenAPI JSON)
             if (ctx.Request.HttpMethod == "GET" && (path == "/swagger" || path == "/swagger/" || path == "/docs"))
             {
@@ -936,6 +958,8 @@ internal static partial class Program
                 WriteJson(ctx, 200, new JsonObject
                 {
                     ["requests"] = TotalRequests, ["failed_requests"] = FailedRequests,
+                    ["requests_opencode"] = RequestsOpencode, ["requests_bridge"] = RequestsBridge,
+                    ["last_client"] = LastClient, ["last_request_ms"] = LastRequestMs,
                     ["input_tokens"] = inTok, ["output_tokens"] = outTok,
                     ["elapsed_seconds"] = Math.Round(elapsed, 2),
                     ["tps_output"] = Math.Round(tpsOut, 2),
@@ -944,6 +968,27 @@ internal static partial class Program
                     ["ring2_deny"] = Metrics.Ring2Deny,
                     ["ring3_deny"] = Metrics.Ring3Deny,
                     ["nudge_args"] = Metrics.NudgeArgs
+                });
+                return;
+            }
+
+            // Enunciado do teste em execucao: o runner publica antes de rodar o
+            // cenario e o painel Infinity le. GET sem corpo devolve o ultimo.
+            if (path == "/api/test/enunciado")
+            {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
+                if (ctx.Request.HttpMethod == "POST")
+                {
+                    var body = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
+                    LastEnunciadoStep = body["step"]?.GetValue<string>() ?? "n/d";
+                    LastEnunciado = body["prompt"]?.GetValue<string>() ?? "";
+                    LastEnunciadoMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                }
+                WriteJson(ctx, 200, new JsonObject
+                {
+                    ["step"] = LastEnunciadoStep,
+                    ["prompt"] = LastEnunciado,
+                    ["updated_ms"] = LastEnunciadoMs
                 });
                 return;
             }
@@ -1197,7 +1242,9 @@ WriteJson(ctx, 200, new JsonObject
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
 ["context_tokens"] = ContextTokens, ["context_guard"] = ContextGuard,
 ["mode"] = Mode?.Name ?? "auto", ["tail_scope"] = TailScope,
-["main_harness"] = MainHarnessOn, ["main_harness_scope"] = "managed-only", ["main_harness_opencode"] = false, ["harness_tails"] = TailsEnabled, ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
+["main_harness"] = MainHarnessOn, ["main_harness_scope"] = "managed-only", ["main_harness_opencode"] = false, ["harness_tails"] = TailsEnabled, ["tails_managed"] = TailsEnabled, ["tails_opencode"] = TailsEnabled && TailScope == "all", ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
+        ["last_client"] = LastClient, ["last_request_ms"] = LastRequestMs,
+        ["last_enunciado_step"] = LastEnunciadoStep, ["last_enunciado_ms"] = LastEnunciadoMs,
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
         ["passthrough_responses"] = PassthroughResponses,
         ["tool_strategy"] = ToolStrategy,

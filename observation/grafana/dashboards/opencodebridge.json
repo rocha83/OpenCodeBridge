@@ -2,7 +2,11 @@
   "id": null,
   "uid": "opencodebridge",
   "title": "OpenCodeBridge Observation",
-  "tags": ["opencodebridge", "bridge", "probes"],
+  "tags": [
+    "opencodebridge",
+    "bridge",
+    "probes"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 2,
@@ -12,27 +16,54 @@
       "id": 1,
       "title": "Fluxo principal",
       "type": "text",
-      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "options": {
         "mode": "markdown",
-        "content": "### OpenCodeBridge — acompanhamento em tempo real\nFluxo: cliente -> bridge -> modelo -> tools/gates -> resposta. Metricas abaixo vêm de `/api/metrics` e `/api/status` (Infinity) e das sondas Serilog por step (TestData in-memory)."
+        "content": "### OpenCodeBridge — acompanhamento em tempo real\nFluxo: cliente -> bridge -> modelo -> tools/gates -> resposta. `last_client` mostra o modo do último request de modelo: **opencode** (CLI, harness próprio) ou **bridge** (MainHarness no caminho gerido). `main_harness=true` vale só para o caminho gerido (`main_harness_scope=managed-only`); no opencode `main_harness_opencode=false`."
       }
     },
     {
       "id": 2,
       "title": "Requests totais",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
-      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opencodebridge-infinity" },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
       "targets": [
         {
           "refId": "A",
           "type": "json",
           "source": "url",
           "url": "http://127.0.0.1:4124/api/metrics",
-          "url_options": { "method": "GET", "headers": [ { "key": "Authorization", "value": "Bearer guest@123" } ] },
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
           "root_selector": "",
-          "columns": [ { "selector": "requests", "text": "requests", "type": "number" } ]
+          "columns": [
+            {
+              "selector": "requests",
+              "text": "requests",
+              "type": "number"
+            }
+          ]
         }
       ]
     },
@@ -40,17 +71,39 @@
       "id": 3,
       "title": "Falhas",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 4 },
-      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opencodebridge-infinity" },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 4
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
       "targets": [
         {
           "refId": "A",
           "type": "json",
           "source": "url",
           "url": "http://127.0.0.1:4124/api/metrics",
-          "url_options": { "method": "GET", "headers": [ { "key": "Authorization", "value": "Bearer guest@123" } ] },
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
           "root_selector": "",
-          "columns": [ { "selector": "failed_requests", "text": "failed", "type": "number" } ]
+          "columns": [
+            {
+              "selector": "failed_requests",
+              "text": "failed",
+              "type": "number"
+            }
+          ]
         }
       ]
     },
@@ -58,17 +111,39 @@
       "id": 4,
       "title": "Tokens/s saida",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
-      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opencodebridge-infinity" },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 4
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
       "targets": [
         {
           "refId": "A",
           "type": "json",
           "source": "url",
           "url": "http://127.0.0.1:4124/api/metrics",
-          "url_options": { "method": "GET", "headers": [ { "key": "Authorization", "value": "Bearer guest@123" } ] },
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
           "root_selector": "",
-          "columns": [ { "selector": "tps_output", "text": "tps", "type": "number" } ]
+          "columns": [
+            {
+              "selector": "tps_output",
+              "text": "tps",
+              "type": "number"
+            }
+          ]
         }
       ]
     },
@@ -76,20 +151,48 @@
       "id": 5,
       "title": "Gates anti-repeat (conteudo/tools)",
       "type": "bargauge",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opencodebridge-infinity" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
       "targets": [
         {
           "refId": "A",
           "type": "json",
           "source": "url",
           "url": "http://127.0.0.1:4124/api/metrics",
-          "url_options": { "method": "GET", "headers": [ { "key": "Authorization", "value": "Bearer guest@123" } ] },
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
           "root_selector": "",
           "columns": [
-            { "selector": "ring2_deny", "text": "ring2 (conteudo)", "type": "number" },
-            { "selector": "ring3_deny", "text": "ring3 (tools)", "type": "number" },
-            { "selector": "nudge_args", "text": "nudge args", "type": "number" }
+            {
+              "selector": "ring2_deny",
+              "text": "ring2 (conteudo)",
+              "type": "number"
+            },
+            {
+              "selector": "ring3_deny",
+              "text": "ring3 (tools)",
+              "type": "number"
+            },
+            {
+              "selector": "nudge_args",
+              "text": "nudge args",
+              "type": "number"
+            }
           ]
         }
       ]
@@ -98,23 +201,93 @@
       "id": 6,
       "title": "Status da bridge",
       "type": "table",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opencodebridge-infinity" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
       "targets": [
         {
           "refId": "A",
           "type": "json",
           "source": "url",
           "url": "http://127.0.0.1:4124/api/status",
-          "url_options": { "method": "GET", "headers": [ { "key": "Authorization", "value": "Bearer guest@123" } ] },
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
           "root_selector": "",
           "columns": [
-            { "selector": "model", "text": "model", "type": "string" },
-            { "selector": "temperature", "text": "temp", "type": "number" },
-            { "selector": "context_tokens", "text": "ctx", "type": "number" },
-            { "selector": "main_harness", "text": "main_harness", "type": "string" },
-            { "selector": "harness_tails", "text": "tails", "type": "string" },
-            { "selector": "uptime_seconds", "text": "uptime_s", "type": "number" }
+            {
+              "selector": "model",
+              "text": "model",
+              "type": "string"
+            },
+            {
+              "selector": "temperature",
+              "text": "temp",
+              "type": "number"
+            },
+            {
+              "selector": "context_tokens",
+              "text": "ctx",
+              "type": "number"
+            },
+            {
+              "selector": "mode",
+              "text": "mode",
+              "type": "string"
+            },
+            {
+              "selector": "last_client",
+              "text": "last_client",
+              "type": "string"
+            },
+            {
+              "selector": "main_harness",
+              "text": "main_harness",
+              "type": "string"
+            },
+            {
+              "selector": "main_harness_scope",
+              "text": "main_harness_scope",
+              "type": "string"
+            },
+            {
+              "selector": "main_harness_opencode",
+              "text": "main_harness_opencode",
+              "type": "string"
+            },
+            {
+              "selector": "harness_tails",
+              "text": "tails",
+              "type": "string"
+            },
+            {
+              "selector": "tails_managed",
+              "text": "tails_managed",
+              "type": "string"
+            },
+            {
+              "selector": "tails_opencode",
+              "text": "tails_opencode",
+              "type": "string"
+            },
+            {
+              "selector": "uptime_seconds",
+              "text": "uptime_s",
+              "type": "number"
+            }
           ]
         }
       ]
@@ -123,25 +296,287 @@
       "id": 7,
       "title": "Throughput in-memory (por step)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
-      "datasource": { "type": "testdata", "uid": "testdata" },
-      "targets": [ { "refId": "A", "scenarioId": "random_walk", "alias": "t/s" } ]
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "testdata",
+        "uid": "testdata"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "scenarioId": "random_walk",
+          "alias": "t/s"
+        }
+      ]
     },
     {
       "id": 8,
       "title": "VRAM/consumo in-memory (por step)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
-      "datasource": { "type": "testdata", "uid": "testdata" },
-      "targets": [ { "refId": "A", "scenarioId": "random", "alias": "vram" } ]
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "datasource": {
+        "type": "testdata",
+        "uid": "testdata"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "scenarioId": "random",
+          "alias": "vram"
+        }
+      ]
     },
     {
       "id": 9,
       "title": "Janela de atualizacao (5s) - tools calls in-memory",
       "type": "bargauge",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
-      "datasource": { "type": "testdata", "uid": "testdata" },
-      "targets": [ { "refId": "A", "scenarioId": "datapoints", "alias": "tools" } ]
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "testdata",
+        "uid": "testdata"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "scenarioId": "datapoints",
+          "alias": "tools"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Modo do ultimo request",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 4
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/status",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "last_client",
+              "text": "last_client",
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Requests por modo (acumulado)",
+      "type": "bargauge",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/metrics",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "requests_opencode",
+              "text": "opencode",
+              "type": "number"
+            },
+            {
+              "selector": "requests_bridge",
+              "text": "bridge",
+              "type": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Harness efetivo por caminho",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/status",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "main_harness",
+              "text": "main_harness",
+              "type": "string"
+            },
+            {
+              "selector": "main_harness_scope",
+              "text": "scope",
+              "type": "string"
+            },
+            {
+              "selector": "main_harness_opencode",
+              "text": "main_harness_opencode",
+              "type": "string"
+            },
+            {
+              "selector": "harness_tails",
+              "text": "tails",
+              "type": "string"
+            },
+            {
+              "selector": "tails_managed",
+              "text": "tails_managed",
+              "type": "string"
+            },
+            {
+              "selector": "tails_opencode",
+              "text": "tails_opencode",
+              "type": "string"
+            },
+            {
+              "selector": "tail_scope",
+              "text": "tail_scope",
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Leitura do modo",
+      "type": "text",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Como ler:** `last_client=opencode` -> CLI do OpenCode, harness do CLI; `last_client=bridge` -> caminho gerido, MainHarness ativo. `main_harness=true` é global e não significa que o request em curso é bridge."
+      }
+    },
+    {
+      "id": 14,
+      "title": "Enunciado do teste em execucao",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/test/enunciado",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "step",
+              "text": "step",
+              "type": "string"
+            },
+            {
+              "selector": "prompt",
+              "text": "enunciado",
+              "type": "string"
+            },
+            {
+              "selector": "updated_ms",
+              "text": "updated_ms",
+              "type": "number"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
