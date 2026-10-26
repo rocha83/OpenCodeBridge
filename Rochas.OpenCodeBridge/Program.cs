@@ -656,6 +656,11 @@ internal static partial class Program
             {
                 while (EnunciadoHistory.TryDequeue(out _)) { }
                 LastEnunciadoStep = step;
+                // O painel "Respostas do agente" tambem reinicia no novo step.
+                lock (AgentActivityLock)
+                {
+                    while (AgentActivity.TryDequeue(out _)) { }
+                }
             }
             LastEnunciado = prompt;
             LastEnunciadoMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -669,30 +674,18 @@ internal static partial class Program
     {
         LoadEnunciadoState();
         var messages = new JsonArray();
-        var latest = ProbeSamples
-            .OrderByDescending(x => x["ts"]?.GetValue<long>() ?? 0)
-            .FirstOrDefault();
-        string latestStep = latest?["step"]?.GetValue<string>() ?? "";
         string step, prompt;
         long ms;
         lock (EnunciadoLock)
         {
+            // Mantem o ultimo enunciado publicado mesmo entre steps/sem prompt
+            // (units) e apos restart: o painel nao pode "sumir" enquanto o run
+            // ainda esta em andamento. A troca real limpa em SetEnunciado.
             step = LastEnunciadoStep;
             prompt = LastEnunciado;
             ms = LastEnunciadoMs;
-            // Step sem prompt proprio (units): nao herda o historico do step
-            // anterior; a lista fica vazia ate o runner publicar.
-            if (latestStep.Length > 0 && latestStep != step)
-            {
-                step = latestStep;
-                prompt = "";
-                ms = latest?["ts"]?.GetValue<long>() ?? ms;
-            }
-            else
-            {
-                foreach (var row in EnunciadoHistory)
-                    messages.Add(row.DeepClone());
-            }
+            foreach (var row in EnunciadoHistory)
+                messages.Add(row.DeepClone());
         }
         return (step, prompt, ms, messages);
     }
