@@ -528,6 +528,9 @@ internal static partial class Program
     // memoria para o painel ler throughput/VRAM/tools sem depender de arquivo.
     static readonly ConcurrentQueue<JsonObject> ProbeSamples = new();
     const int ProbeCap = 4096;
+    // Resultado dos steps concluidos (driver -> POST /api/test/step). O painel
+    // lista os passados com veredito e tempo; o atual fica no enunciado.
+    static readonly ConcurrentDictionary<string, JsonObject> TestSteps = new();
     // Enunciado do teste em execucao (publicado pelo runner; lido pelo painel).
     static string LastEnunciadoStep = "n/d";
     static string LastEnunciado = "";
@@ -1037,6 +1040,31 @@ internal static partial class Program
                 var series = new JsonArray();
                 foreach (var x in slice) series.Add(x.DeepClone());
                 WriteJson(ctx, 200, series);
+                return;
+            }
+
+            // Steps concluidos: o driver publica step_end; o painel lista os
+            // passados (veredito + tempo) e mantem o atual no enunciado.
+            if (path == "/api/test/step" || path == "/api/test/steps")
+            {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
+                if (ctx.Request.HttpMethod == "POST" && path == "/api/test/step")
+                {
+                    var body = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
+                    string stepName = body["step"]?.GetValue<string>() ?? "";
+                    if (stepName.Length == 0) { WriteJson(ctx, 400, new JsonObject { ["error"] = "step obrigatorio" }); return; }
+                    var row = body.DeepClone().AsObject();
+                    row["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    TestSteps[stepName] = row;
+                    WriteJson(ctx, 200, new JsonObject { ["ok"] = true, ["steps"] = TestSteps.Count });
+                    return;
+                }
+                var list = TestSteps.Values
+                    .OrderBy(x => x["ts"]?.GetValue<long>() ?? 0)
+                    .ToArray();
+                var arr = new JsonArray();
+                foreach (var x in list) arr.Add(x.DeepClone());
+                WriteJson(ctx, 200, arr);
                 return;
             }
 

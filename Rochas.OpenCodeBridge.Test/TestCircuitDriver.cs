@@ -375,6 +375,28 @@ internal sealed class TestCircuitDriver : IDisposable
         {
             // Evento e diagnostico: falha de disco nao pode parar o circuito.
         }
+        PostStepEvent(ev);
+    }
+
+    static readonly System.Net.Http.HttpClient EventHttp = new() { Timeout = TimeSpan.FromSeconds(3) };
+
+    // step_end tambem vai para a bridge (painel Grafana). Best-effort: sem
+    // WAR_EVENT_URL ou bridge fora, o circuito segue normalmente.
+    static void PostStepEvent(JsonObject ev)
+    {
+        try
+        {
+            if ((ev["t"]?.GetValue<string>() ?? "") != "step_end") return;
+            string url = Environment.GetEnvironmentVariable("WAR_EVENT_URL") ?? "";
+            if (url.Length == 0) return;
+            using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
+            string key = Environment.GetEnvironmentVariable("WAR_EVENT_KEY") ?? "";
+            if (key.Length > 0)
+                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
+            req.Content = new System.Net.Http.StringContent(ev.ToJsonString(), Encoding.UTF8, "application/json");
+            using var _ = EventHttp.Send(req);
+        }
+        catch { }
     }
 
     // ------------------------------------------------------------------

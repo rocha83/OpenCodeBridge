@@ -374,6 +374,9 @@ internal sealed class WarTemplate : CircuitTemplate
         _hashWeb = Hash(_p.WebTestDll);
         _initHashTest = Hash(_p.TestDll);
         _sha512 = BinaryGuard.ForWar(_p.BridgeDll, _p.TestDll, _p.WebTestDll).Sha512;
+        // step_end -> bridge (painel); o driver nao conhece a bridge.
+        Environment.SetEnvironmentVariable("WAR_EVENT_URL", _p.Bridge + "/api/test/step");
+        Environment.SetEnvironmentVariable("WAR_EVENT_KEY", _p.Api);
 
         driver.Publish(new JsonObject
         {
