@@ -154,10 +154,11 @@ internal static class E2EToolsFullTests
         TestContext.Check(tip.Length >= 7 && histBody.Contains(tip),
             $"[toolsfull:agent] historico_git.log com o commit real ({tip})");
 
-        // O artefato prova o fluxo; as calls provam que houve tools de verdade.
-        TestContext.Check(calls.Count > 0, $"[toolsfull:agent] tools executadas (calls={calls.Count})");
+        // O artefato prova o fluxo nos dois modos. No bridge as calls tambem
+        // provam tools; no opencode as tools sao do CLI e nao entram nesse log.
         if (TestContext.Mode == "bridge")
         {
+            TestContext.Check(calls.Count > 0, $"[toolsfull:agent] tools executadas (calls={calls.Count})");
             bool used(string p) => calls.Any(c => c.StartsWith(p));
             TestContext.Check(used("write(") || used("edit(") || used("shell("),
                 $"[toolsfull:agent] escrita/edicao por tool (calls={string.Join(";", calls)})");

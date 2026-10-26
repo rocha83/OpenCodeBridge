@@ -26,7 +26,7 @@ public sealed class ChatController(
     Services.IDiagnosticTelemetry telemetry,
     Microsoft.Extensions.Logging.ILogger<ChatController> log,
     Services.PromptControlService promptControls,
-    Microsoft.Extensions.Options.IOptions<Services.OrchestrationOptions> orchOptions) : Controller
+    Microsoft.Extensions.Options.IOptions<Services.ChatOptions> chatOptions) : Controller
 {
     private int CurrentUserId => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
 
@@ -82,7 +82,7 @@ public sealed class ChatController(
 
     // GET /Chat/Config - flags de UX (aprovacao direta, telemetria p/ o tracer).
     [HttpGet("/Chat/Config")]
-    public IActionResult Config() => Json(new { directApprove = orchOptions.Value.DirectApprove, telemetry = telemetry.Enabled });
+    public IActionResult Config() => Json(new { directApprove = chatOptions.Value.DirectApprove, telemetry = telemetry.Enabled });
 
     // POST /Chat/ClientLog - lote do tracer do front p/ a tabela Serilog (sempre 200).
     public sealed class ClientEvent
@@ -793,32 +793,6 @@ public sealed class ChatController(
         return Json(new { tps = agent.MeasuredTps });
     }
 
-    public sealed class OrchestrateRequest
-    {
-        public int SessionId { get; set; }
-        public string Text { get; set; } = "";
-    }
-
-    public sealed class OrchestrateApprovedRequest
-    {
-        public int SessionId { get; set; }
-        public List<ApprovedTask> Tasks { get; set; } = new();
-        public bool Synthesize { get; set; } = true;
-    }
-
-    public sealed class SynthesizeRequest
-    {
-        public int SessionId { get; set; }
-    }
-
-    public sealed class ApprovedTask
-    {
-        public string Title { get; set; } = "";
-        public string Prompt { get; set; } = "";
-        public double EtaMin { get; set; }
-        public bool NeedsTools { get; set; }
-    }
-
     public sealed class CreateSessionRequest
     {
         public int AgentId { get; set; }
@@ -953,10 +927,10 @@ public sealed class ChatController(
     {
         // Cronômetro do stream inteiro: duração da bolha final do agente.
         var streamSw = System.Diagnostics.Stopwatch.StartNew();
-        // Bypass padrão (flag Orchestration:UseResponsesBypass): turno único via
+        // Bypass padrão (flag Chat:UseResponsesBypass): turno único via
         // /v1/responses com passthrough da bridge — SEM ToolExecutor, só o
         // sanitize leve (system-first + drop de reasoning) do lado da bridge.
-        if (orchOptions.Value.UseResponsesBypass)
+        if (chatOptions.Value.UseResponsesBypass)
         {
             await StreamResponsesBypass(agent, messages, session, ct);
             return;
@@ -1701,7 +1675,7 @@ public sealed class ChatController(
         // fora nao derruba o detector — cai no default.
         int antiRepeatWindow = await Services.AntiRepeatWindowProvider.ResolveAsync(
             agent.BridgeUrl, cfg["Llama:ApiKey"] ?? "guest@123", ct);
-        int maxTurns = orchOptions.Value.MaxTurns; // <=0 = sem teto (era do ctx 32k do 8B; freios: anti-giro/repeat)
+        int maxTurns = chatOptions.Value.MaxTurns; // <=0 = sem teto (era do ctx 32k do 8B; freios: anti-giro/repeat)
         for (int turn = 0; (maxTurns <= 0 || turn < maxTurns) && !ct.IsCancellationRequested; turn++)
         {
             LoopTrace("turno", session?.Id, turn, $"input={input.Count}");

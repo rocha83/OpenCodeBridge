@@ -136,6 +136,28 @@ internal static class TestContext
         return provider + BaseModel + "-" + role;
     }
 
+    /// <summary>Processo opencode isolado do agente pai (PWD/sessao herdados ancoram no repo).</summary>
+    static ProcessStartInfo OpencodePsi(string dir)
+    {
+        var psi = new ProcessStartInfo("opencode")
+        {
+            WorkingDirectory = dir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        psi.Environment["PWD"] = Path.GetFullPath(dir);
+        psi.Environment.Remove("OPENCODE_SESSION_ID");
+        psi.Environment.Remove("OPENCODE_TERMINAL");
+        psi.Environment.Remove("OPENCODE");
+        // Sandbox de teste: identidade git previsivel; o aceite continua
+        // exigindo init/add/commit reais do agente.
+        psi.Environment["GIT_AUTHOR_NAME"] = "WAR";
+        psi.Environment["GIT_AUTHOR_EMAIL"] = "war@local";
+        psi.Environment["GIT_COMMITTER_NAME"] = "WAR";
+        psi.Environment["GIT_COMMITTER_EMAIL"] = "war@local";
+        return psi;
+    }
+
     /// <summary>Roda o mesmo enunciado pelo opencode real (standalone) e devolve stdout+stderr.</summary>
     public static string OpencodeRun(string prompt, string? cwd = null)
     {
@@ -143,15 +165,13 @@ internal static class TestContext
         // cwd = diretorio da tarefa: e o uso real do CLI (abre no projeto). Com cwd
         // fixo em standalone o alvo nunca esta no cwd e o modelo e forcado a
         // caminho absoluto — artefato do teste, nao do harness.
-        var psi = new ProcessStartInfo("opencode")
-        {
-            WorkingDirectory = cwd is { Length: > 0 } ? cwd : Path.Combine(Path.GetTempPath(), "opencode", "standalone"),
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
+        string dir = cwd is { Length: > 0 } ? cwd : Path.Combine(Path.GetTempPath(), "opencode", "standalone");
+        Directory.CreateDirectory(dir);
+        var psi = OpencodePsi(dir);
         string model = StandaloneModel.Length > 0 ? StandaloneModel : AutoStandaloneModel();
         psi.ArgumentList.Add("run");
         psi.ArgumentList.Add("--standalone");   // servidor privado: nao depende do background service (evita "Timed out waiting for the background service to start")
+        psi.ArgumentList.Add("--auto");         // headless: tool sem prompt de permissao (mesmo contrato do bridge)
         psi.ArgumentList.Add("--agent"); psi.ArgumentList.Add(StandaloneAgent);
         psi.ArgumentList.Add("--model"); psi.ArgumentList.Add(model);
         psi.ArgumentList.Add(prompt);
@@ -185,7 +205,7 @@ internal static class TestContext
         var ids = new HashSet<string>(StringComparer.Ordinal);
         try
         {
-            var psi = new ProcessStartInfo("opencode") { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
+            var psi = OpencodePsi(dir);
             psi.ArgumentList.Add("session"); psi.ArgumentList.Add("list");
             psi.ArgumentList.Add("--standalone"); psi.ArgumentList.Add("--format"); psi.ArgumentList.Add("json");
             psi.ArgumentList.Add("-n"); psi.ArgumentList.Add("200");
@@ -213,7 +233,7 @@ internal static class TestContext
         {
             try
             {
-                var psi = new ProcessStartInfo("opencode") { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
+                var psi = OpencodePsi(dir);
                 psi.ArgumentList.Add("session"); psi.ArgumentList.Add("delete"); psi.ArgumentList.Add("--standalone"); psi.ArgumentList.Add(id);
                 using var p = Process.Start(psi);
                 if (p is null) continue;

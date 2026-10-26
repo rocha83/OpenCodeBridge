@@ -51,7 +51,8 @@ builder.Services.AddTransient<BridgeAuthHandler>();
 builder.Services.AddHttpClient("bridge").AddHttpMessageHandler<BridgeAuthHandler>();
 builder.Services.Configure<MockBridgeOptions>(builder.Configuration.GetSection("MockBridge"));
 builder.Services.Configure<DiagnosticOptions>(builder.Configuration.GetSection("Diagnostics"));
-builder.Services.Configure<OrchestrationOptions>(builder.Configuration.GetSection("Orchestration"));
+builder.Services.Configure<ChatOptions>(builder.Configuration.GetSection("Chat"));
+builder.Services.Configure<ExecutorOptions>(builder.Configuration.GetSection("Executor"));
 builder.Services.Configure<ContextWindowOptions>(builder.Configuration.GetSection("ContextWindow"));
 // Aplica o orçamento de contexto (CPU 16k slot único por padrão) ao estático.
 var ctxOpts = builder.Configuration.GetSection("ContextWindow").Get<ContextWindowOptions>() ?? new ContextWindowOptions();

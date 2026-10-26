@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace Rochas.OpenCodeBridge.Web.Services;
 
-// Caminho bypass da UI web (flag Orchestration:UseResponsesBypass, padrao ligado):
+// Caminho bypass da UI web (flag Chat:UseResponsesBypass, padrao ligado):
 // turno unico contra {bridge}/v1/responses, SEM ToolExecutor. O sanitize leve
 // (NormalizeSystemFirst + StripReasoningItems) mora na bridge com passthrough;
 // aqui só traduzimos o SSE Responses -> chat SSE que a UI já entende.
