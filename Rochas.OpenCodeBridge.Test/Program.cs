@@ -99,6 +99,7 @@ internal static class Program
 
         var runnerBins = BinaryGuard.ForRunner();
         Console.WriteLine($"[test] binaries_sha512={runnerBins.Sha512}");
+        Console.WriteLine($"[test] binaries_paths={runnerBins.Paths.Replace("\n", " | ")}");
         var rerun = BinaryGuard.Check(runnerBins, BinaryGuard.DefaultStatePath());
         if (!rerun.Allowed)
         {
