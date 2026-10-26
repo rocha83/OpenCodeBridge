@@ -78,7 +78,15 @@ internal static class E2EDualToolTests
         TestContext.Check(Directory.Exists(Path.Combine(dir, ".git")), $"[{TestContext.Mode}] .git criado em {dir}");
         TestContext.Check(File.Exists(Path.Combine(dir, "dados.txt")), $"[{TestContext.Mode}] dados.txt criado");
         string log = ReadFile(Path.Combine(dir, "historico.log"));
-        TestContext.Check(log.Contains("commit"), $"[{TestContext.Mode}] historico.log com commits (len={log.Length})");
+        // Artefato tem que ser o historico DESTE repo: casa o SHA do commit de topo
+        // (lido por git log independente) em vez da palavra "commit" — que reprovava
+        // "Commit inicial" (caixa) e aprovava o log de outro repositorio.
+        var (lgCode, lgOut) = Run("git", dir, 30, "log", "--oneline");
+        string tip = lgCode == 0
+            ? ((lgOut.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "").Split(' ')[0])
+            : "";
+        TestContext.Check(tip.Length >= 7 && log.Contains(tip),
+            $"[{TestContext.Mode}] historico.log com o commit real ({tip}, len={log.Length})");
         if (TestContext.Mode != "bridge")
         {
             // No modo opencode o commit e feito pelo cliente: confere direto no repo.
@@ -97,7 +105,8 @@ internal static class E2EDualToolTests
         File.WriteAllText(real, "conteudo-real-42");
         string prompt =
             $"Em {dir} existe um arquivo cujo nome termina em 'final.txt', mas nao sei o nome exato. " +
-            "Descubra qual e (use ls ou glob), leia o arquivo e responda apenas PROBE-OK seguido do conteudo lido.";
+            $"Descubra qual e com `ls -la {dir}` (caminho ABSOLUTO: o cwd do cliente nao e esse diretorio), " +
+            "leia o arquivo e responda apenas PROBE-OK seguido do conteudo lido.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 8);
         TestContext.Check(text.Contains("conteudo-real-42"),
             $"[{TestContext.Mode}] achou o alvo por probe (texto='{text[..Math.Min(160, text.Length)]}')");

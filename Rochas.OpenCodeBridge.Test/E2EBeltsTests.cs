@@ -163,7 +163,20 @@ internal static class E2EBeltsTests
                         }
                         var msg = r["choices"]?[0]?["message"]?.AsObject();
                         var calls = msg?["tool_calls"]?.AsArray();
-                        if (calls is null || calls.Count == 0) break;
+                        if (calls is null || calls.Count == 0)
+                        {
+                            // Prosa sem tool_call no primeiro turno acontece (medido em
+                            // belts-orch roxa 19:56: 0 scripts em 26s). Nudge 2x antes de
+                            // desistir; o aceite continua exigindo .sh valido + execucao.
+                            if (turn < 2)
+                            {
+                                Log($"  [belt:{key}] scripter sem tool (chars={Str(msg?["content"]).Length}) — nudge {turn + 1}");
+                                sh.Add(new JsonObject { ["role"]="assistant", ["content"]=Str(msg?["content"]) });
+                                sh.Add(new JsonObject { ["role"]="user", ["content"]="Voce nao chamou nenhuma tool. Use write_file AGORA para gravar " + safeTitle + ".sh (bash puro, no maximo 80 linhas) e responda apenas SCRIPTER-OK." });
+                                continue;
+                            }
+                            break;
+                        }
                         var echo = new JsonArray();
                         foreach (var c in calls) echo.Add(new JsonObject { ["id"]=Str(c?["id"]), ["type"]="function", ["function"]=new JsonObject { ["name"]=Str(c?["function"]?["name"]), ["arguments"]=Str(c?["function"]?["arguments"], "{}") } });
                         sh.Add(new JsonObject { ["role"]="assistant", ["content"]=Str(msg?["content"]), ["tool_calls"]=echo });

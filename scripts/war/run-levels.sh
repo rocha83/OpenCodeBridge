@@ -238,7 +238,15 @@ _step_bridge() { # nome + args do runner
     rm -f "$STATE/$name.done"
     HASH_TEST="$(h "$TESTDLL")"; INIT_HASH_TEST="$HASH_TEST"
   else
-    echo "$rc $verdict $secs" > "$STATE/$name.done"
+    # So sucesso fica em .done. Passo vermelho grava .failed: retomar com o mesmo
+    # stamp deve REEXECUTAR o passo corrigido, nao pular com o veredito velho.
+    if [ "$verdict" = "PASS" ] || [ "$verdict" = "SKIP" ]; then
+      echo "$rc $verdict $secs" > "$STATE/$name.done"
+      rm -f "$STATE/$name.failed"
+    else
+      echo "$rc $verdict $secs" > "$STATE/$name.failed"
+      rm -f "$STATE/$name.done"
+    fi
   fi
   grep -E '^PASS |^FAIL ' "$STEPS/$name.test.log" | tail -8 | sed 's/^/    /' | tee -a "$OUT/summary.txt"
   printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$verdict" "$secs" "$rc" "$cause" >> "$SUMMARY"

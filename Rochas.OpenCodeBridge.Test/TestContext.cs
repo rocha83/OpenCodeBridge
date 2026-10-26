@@ -138,6 +138,7 @@ internal static class TestContext
     /// <summary>Roda o mesmo enunciado pelo opencode real (standalone) e devolve stdout+stderr.</summary>
     public static string OpencodeRun(string prompt)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         var psi = new ProcessStartInfo("opencode")
         {
             WorkingDirectory = Path.Combine(Path.GetTempPath(), "opencode", "standalone"),
@@ -169,6 +170,8 @@ internal static class TestContext
             errp = se.Result;
         }
         OpencodeSessionsCleanup(psi.WorkingDirectory, before);
+        // Tempo por chamada no log: cenario lento no opencode = loop do cliente.
+        Console.WriteLine($"  [opencode] {sw.Elapsed.TotalSeconds:0.0}s model={model}");
         return outp + errp;
     }
 
