@@ -538,8 +538,8 @@ internal static partial class Program
     // Historico do enunciado do step: inicial + mensagens adicionais
     // (nudges do runner e avisos do gate anti-repeat).
     static readonly object EnunciadoLock = new();
-    static readonly ConcurrentQueue<JsonObject> EnunciadoHistory = new();
-    const int EnunciadoHistoryCap = 64;
+    static readonly ConcurrentQueue<JsonObject> TestStatementHistory = new();
+    const int TestStatementHistoryCap = 64;
     // Persiste o ultimo enunciado para o painel nao sumir no restart da bridge.
     static readonly string EnunciadoStatePath =
         Path.Combine(Path.GetTempPath(), "opencode", "bridge-enunciado.json");
@@ -575,13 +575,13 @@ internal static partial class Program
         if (text.Length == 0) return;
         lock (EnunciadoLock)
         {
-            var last = EnunciadoHistory.LastOrDefault();
+            var last = TestStatementHistory.LastOrDefault();
             if (last?["text"]?.GetValue<string>() == text) return;
-            if (kind == "enunciado" && EnunciadoHistory.Count > 0)
+            if (kind == "enunciado" && TestStatementHistory.Count > 0)
             {
                 // O prompt inicial e publicado a cada request (PostObj); nao
                 // repete a primeira linha quando o anti-repeat injeta um aviso.
-                var first = EnunciadoHistory.FirstOrDefault();
+                var first = TestStatementHistory.FirstOrDefault();
                 if (first?["text"]?.GetValue<string>() == text) return;
                 kind = "adicional";
             }
@@ -593,8 +593,8 @@ internal static partial class Program
                 ["kind"] = kind,
                 ["text"] = text
             };
-            EnunciadoHistory.Enqueue(row);
-            while (EnunciadoHistory.Count > EnunciadoHistoryCap) EnunciadoHistory.TryDequeue(out _);
+            TestStatementHistory.Enqueue(row);
+            while (TestStatementHistory.Count > TestStatementHistoryCap) TestStatementHistory.TryDequeue(out _);
             LastEnunciado = text;
             LastEnunciadoMs = row["ts"]!.GetValue<long>();
             SaveEnunciadoStateLocked();
@@ -616,10 +616,10 @@ internal static partial class Program
                 LastEnunciadoStep = root["step"]?.GetValue<string>() ?? "n/d";
                 LastEnunciado = root["prompt"]?.GetValue<string>() ?? "";
                 LastEnunciadoMs = root["ms"]?.GetValue<long>() ?? 0;
-                while (EnunciadoHistory.TryDequeue(out _)) { }
+                while (TestStatementHistory.TryDequeue(out _)) { }
                 if (root["messages"] is JsonArray arr)
                     foreach (var node in arr)
-                        if (node is JsonObject row) EnunciadoHistory.Enqueue(row.DeepClone().AsObject());
+                        if (node is JsonObject row) TestStatementHistory.Enqueue(row.DeepClone().AsObject());
             }
             catch { /* estado corrompido nao derruba a bridge */ }
         }
@@ -639,7 +639,7 @@ internal static partial class Program
                 ["ms"] = LastEnunciadoMs
             };
             var arr = new JsonArray();
-            foreach (var row in EnunciadoHistory) arr.Add(row.DeepClone());
+            foreach (var row in TestStatementHistory) arr.Add(row.DeepClone());
             root["messages"] = arr;
             File.WriteAllText(EnunciadoStatePath, root.ToJsonString());
         }
@@ -654,7 +654,7 @@ internal static partial class Program
         {
             if (step != LastEnunciadoStep)
             {
-                while (EnunciadoHistory.TryDequeue(out _)) { }
+                while (TestStatementHistory.TryDequeue(out _)) { }
                 LastEnunciadoStep = step;
                 // O painel "Respostas do agente" tambem reinicia no novo step.
                 lock (AgentActivityLock)
@@ -684,7 +684,7 @@ internal static partial class Program
             step = LastEnunciadoStep;
             prompt = LastEnunciado;
             ms = LastEnunciadoMs;
-            foreach (var row in EnunciadoHistory)
+            foreach (var row in TestStatementHistory)
                 messages.Add(row.DeepClone());
         }
         return (step, prompt, ms, messages);
