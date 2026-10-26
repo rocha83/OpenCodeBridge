@@ -756,6 +756,14 @@ Medição de 2026-10-25 (antes → depois):
 | `agents/*.md` (12) | 3.115 tok no total, até 528 tok cada | **~500 tok no total**, 26–50 tok cada (1 frase) |
 | tails | 2.482 chars ≈ 620 tok | inalteradas (único incremento) |
 
+**Estado das units (2026-10-25, `c115d19`):** `bridge-gpu` e `bridge-gpu2` rodam com
+`--main-harness 1 --harness-tails 1 --tail-scope managed`. Antes rodavam com
+`--main-harness 0` (só tails) e o `MainHarness.Apply` bloqueava por **sufixo do
+modelo** (`hasProfile`): o WAR usa `<modelo>-build`, então a base nunca aplicava.
+Agora o discriminador é o **cliente** (`User-Agent`), o mesmo das tails; base e
+tails coexistem (as tails eram dispensadas quando a base ligava — o inverso do
+fluxo).
+
 Saiu do `MainHarness`: descrição tool-por-tool (o schema vai no request), MoE,
 roles/pipeline, princípios longos e escrita extensa. Ficou: disciplina de chamada,
 nomes/caminhos, erros/limites, operações, delegação (micro-enunciado + ACEITE),

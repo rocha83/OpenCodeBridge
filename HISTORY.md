@@ -1,5 +1,39 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Harness DRY: base no bridge, perfil de 1 frase no opencode (2026-10-25, sessao 18f)
+
+**Causa raiz encontrada.** As units subiam com `--main-harness 0`: em produção só
+as tails atuavam. Pior, `MainHarness.Apply` bloqueava por sufixo de modelo
+(`hasProfile`) — o WAR usa `<modelo>-build`, então a base jamais aplicaria — e
+`tails = TailsOn(...) && !mainHarness` dispensava as tails quando a base ligava.
+Ou seja: o desenho "base + incremento" estava invertido no código e na unit.
+
+**Fluxo final (uma base, um incremento).**
+
+| modo | system prompt | injeta |
+|---|---|---|
+| `bridge` | `MainHarness` (base) + tails `behavior`/`tools` | bridge |
+| `opencode` | `AGENTS.md` (7 regras de tool + escrita) + 1 frase de papel do agente | CLI |
+
+**Números (antes → depois):** `MainHarness` 9.117 → 3.444 chars (~2.279 → 861 tok);
+`AGENTS.md` 6.681 → 1.253 (~1.670 → 313 tok); 12 `agents/*.md` 3.115 → ~500 tok
+(26–50 tok cada, uma frase); behavior tail 1.275 → 888 (perdeu o que a base já
+diz: auto-apresentação, 2 tentativas, resposta curta, "um nível abaixo"); tools
+tail 1.207 (intacta). Total do system no bridge: 11.597 → **5.539 chars (~1.385 tok,
+−52%)**.
+
+**Onde cada coisa mora.** Schema de tool: no request (a base não descreve tool por
+tool). Disciplina de chamada, caminhos, erros, segurança: base. Shell/glob/git/
+dotnet/F#: tail de tools. Tool-first/persistência/Unicode: tail de behavior.
+MoE/roles/pipeline/temperaturas: `LAB-SETUP` 4.6 (papel do agente, não harness).
+
+**Aceite.** Units 97 PASS / 0 FAIL / 6 SKIP; `U-main-harness-*` 10/10 (core-tools,
+no-roles, enxuto 2k–6k, role-suffix aplica, managed/master); `opencode run
+--agent build` responde OK e a tool `read` lê arquivo real; `E-tools-full --mode
+bridge` PASS 11,8 s (2/2 modelos); `/api/harness`: `main_harness=true`,
+`main_harness_chars=3444`, `behavior_chars=888`, `tools_chars=1207`; UA
+`opencode/1.0.0 → tails_on=false`, `dotnet-war/1.0 → true`.
+
 ## L2 no Q4: tail-scope por cliente, fail-fast e guardas de tool (2026-10-25, sessao 18e)
 
 **Contexto.** A L1 estava 9/9 na bateria `20261025-195625` (net9), mas a L2 dava
