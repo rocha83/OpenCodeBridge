@@ -122,9 +122,9 @@ internal static class E2EToolsFullTests
             "Trabalhe na pasta atual. Siga a ordem: " +
             "1) Crie um arquivo .txt com nome aleatorio contendo a data de hoje (formato AAAA-MM-DD) e o clima de " +
             "Sao Paulo se conseguir acessar a internet. " +
-            "2) Rode git init. Faca git add e o primeiro commit com a mensagem 'data'. O primeiro commit nao pode " +
+            "2) Rode git init. Faca git add . e o primeiro commit com a mensagem 'data'. O primeiro commit nao pode " +
             "ter a palavra EDITADO. Rode git log --oneline e confirme 1 commit. " +
-            "3) Acrescente a palavra EDITADO ao mesmo .txt, mantendo a data. Faca git add e o segundo commit com a " +
+            "3) Acrescente a palavra EDITADO ao mesmo .txt, mantendo a data. Faca git add . e o segundo commit com a " +
             "mensagem 'EDITADO'. Rode git log --oneline e confirme 2 commits. " +
             "4) Liste os arquivos, busque o .txt com glob/grep, leia o arquivo e grave o historico do git (hashes e " +
             "mensagens) em historico_git.log. Nao commite o historico_git.log.";
