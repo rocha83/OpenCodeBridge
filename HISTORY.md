@@ -3837,3 +3837,40 @@ build: negado → `ok`; `git init` role plan: negado (correto); `git status` rol
 **WAR.** Nova bateria **L1+L2** (L3 fica para o fim, por decisão do autor) com stamp
 **`20261025-185656`**, `--war-levels 1,2`, binários atuais, sem tocar em aceite, ctx
 ou `max_tokens`.
+
+**Driver WAR — parada no primeiro FAIL e resume honesto (2026-10-26).**
+Sintoma: a bateria seguia depois de FAIL e o step vermelho ganhava `.done`, então o
+próximo run pulava justamente o que falhou. Correção em `TestCircuitDriver`:
+`CircuitOptions.StopOnFirstFailure` (default true) encerra o plano no primeiro
+FAIL/STALE/BLOCKED, marca os restantes `SKIP causa="nao executado: <step> falhou"`;
+`.done` só para PASS/SKIP (`DoneIsSkip` valida o veredito gravado); gate deduplica
+por nome (último veredito vence, `summary.tsv` segue append-only como auditoria).
+Provas: `U-circuit-battery-stop` (`PARADA: b2-fail falhou ... 1 step(s) nao
+executados`, PASS=1 FAIL=1 SKIP=1) e `U-circuit-battery-resume` (segundo run no
+mesmo dir: `r1 SKIP`, `r2 PASS`, `r3 PASS`, gate verde). Inventário completo em
+`docs/DRIVER-FIXES.md` (9 itens, sintoma/causa/prova).
+
+**Preflight em C# (antes era script decorativo).**
+`Rochas.OpenCodeBridge.Core/StackPreflight.cs` roda por padrão antes de todo teste
+que toca o stack: lock, bridge/llama, modelo (`finish=stop`), VRAM e Web (login
+antiforgery + `/Chat/Ping`), com `--no-preflight` como escape e
+`BRIDGE_UNDER_DRIVER=1` nos filhos do driver (o lock é dele). Q3 saiu do gate do Q4:
+`RequireQ3=false` nas duas suítes e o check do driver virou aviso. Liveness do
+modelo passou a 180s (20s davam NO-GO falso com slot ocupado). `scripts/war/preflight-l1.sh`
+removido (duplicava mecanismo). Provas: `[preflight] ok ... GO` no log de
+`units-bridge`; 6 casos C# com HTTP falso (`U-preflight-*`).
+
+**belts-orch simplificado (escopo do autor).** `E-belts-direct` não executa mais:
+Orch (segmenta) → Scripter (compõe `.sh` + companion) → integridade (shebang, sem
+tool/markdown, `bash -n`). Script inválido sai do workspace e fica no log; aceite
+exige ≥1 `.sh` íntegro. Prova isolada: `E-belts-direct PASS 198.9s — 5 scripts,
+5 íntegros, 0 descartados`. Exec fica para teste posterior.
+
+**L1 volta a 8 steps.** `webui` sai do L1 e fica só no L3 (como o HISTORY anterior
+já registrava); `TEST-DRIVER.md` alinhado. Run limpo `L1-20261026-054513` (commit
+`c4bd133`): `units-bridge` 97 PASS (6s), `devpipe-bridge` 5/5 (11s),
+`belts-build-bridge` em curso.
+
+**Push.** Tentado a cada commit; host segue sem credencial GitHub (`fatal: could not
+read Username for 'https://github.com'`, sem `gh`/SSH/token) — commits locais
+preservados, push pendente.
