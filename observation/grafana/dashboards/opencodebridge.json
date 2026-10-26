@@ -5,48 +5,143 @@
   "tags": ["opencodebridge", "bridge", "probes"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5s",
   "panels": [
     {
       "id": 1,
-      "title": "Requests (in-memory)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "datasource": { "type": "testdata", "uid": "testdata" },
-      "targets": [
-        { "refId": "A", "scenarioId": "random_walk", "alias": "requests" }
-      ]
+      "title": "Fluxo principal",
+      "type": "text",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "### OpenCodeBridge — acompanhamento em tempo real\nFluxo: cliente -> bridge -> modelo -> tools/gates -> resposta. Metricas abaixo vêm de `/api/metrics` e `/api/status` (Infinity) e das sondas Serilog por step (TestData in-memory)."
+      }
     },
     {
       "id": 2,
-      "title": "Latencia (in-memory)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "datasource": { "type": "testdata", "uid": "testdata" },
+      "title": "Requests totais",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opencodebridge-infinity" },
       "targets": [
-        { "refId": "A", "scenarioId": "random", "alias": "latencia_ms" }
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/metrics",
+          "url_options": { "method": "GET", "headers": [ { "key": "Authorization", "value": "Bearer guest@123" } ] },
+          "root_selector": "",
+          "columns": [ { "selector": "requests", "text": "requests", "type": "number" } ]
+        }
       ]
     },
     {
       "id": 3,
-      "title": "Cauda longa (in-memory)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "datasource": { "type": "testdata", "uid": "testdata" },
+      "title": "Falhas",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 4 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opencodebridge-infinity" },
       "targets": [
-        { "refId": "A", "scenarioId": "slow_query", "alias": "slow" }
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/metrics",
+          "url_options": { "method": "GET", "headers": [ { "key": "Authorization", "value": "Bearer guest@123" } ] },
+          "root_selector": "",
+          "columns": [ { "selector": "failed_requests", "text": "failed", "type": "number" } ]
+        }
       ]
     },
     {
       "id": 4,
-      "title": "Contadores de tools (in-memory)",
-      "type": "bargauge",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "datasource": { "type": "testdata", "uid": "testdata" },
+      "title": "Tokens/s saida",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opencodebridge-infinity" },
       "targets": [
-        { "refId": "A", "scenarioId": "datapoints", "alias": "tools" }
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/metrics",
+          "url_options": { "method": "GET", "headers": [ { "key": "Authorization", "value": "Bearer guest@123" } ] },
+          "root_selector": "",
+          "columns": [ { "selector": "tps_output", "text": "tps", "type": "number" } ]
+        }
       ]
+    },
+    {
+      "id": 5,
+      "title": "Gates anti-repeat (conteudo/tools)",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opencodebridge-infinity" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/metrics",
+          "url_options": { "method": "GET", "headers": [ { "key": "Authorization", "value": "Bearer guest@123" } ] },
+          "root_selector": "",
+          "columns": [
+            { "selector": "ring2_deny", "text": "ring2 (conteudo)", "type": "number" },
+            { "selector": "ring3_deny", "text": "ring3 (tools)", "type": "number" },
+            { "selector": "nudge_args", "text": "nudge args", "type": "number" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Status da bridge",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "opencodebridge-infinity" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/status",
+          "url_options": { "method": "GET", "headers": [ { "key": "Authorization", "value": "Bearer guest@123" } ] },
+          "root_selector": "",
+          "columns": [
+            { "selector": "model", "text": "model", "type": "string" },
+            { "selector": "temperature", "text": "temp", "type": "number" },
+            { "selector": "context_tokens", "text": "ctx", "type": "number" },
+            { "selector": "main_harness", "text": "main_harness", "type": "string" },
+            { "selector": "harness_tails", "text": "tails", "type": "string" },
+            { "selector": "uptime_seconds", "text": "uptime_s", "type": "number" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Throughput in-memory (por step)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "testdata", "uid": "testdata" },
+      "targets": [ { "refId": "A", "scenarioId": "random_walk", "alias": "t/s" } ]
+    },
+    {
+      "id": 8,
+      "title": "VRAM/consumo in-memory (por step)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "testdata", "uid": "testdata" },
+      "targets": [ { "refId": "A", "scenarioId": "random", "alias": "vram" } ]
+    },
+    {
+      "id": 9,
+      "title": "Janela de atualizacao (5s) - tools calls in-memory",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "testdata", "uid": "testdata" },
+      "targets": [ { "refId": "A", "scenarioId": "datapoints", "alias": "tools" } ]
     }
   ]
 }
