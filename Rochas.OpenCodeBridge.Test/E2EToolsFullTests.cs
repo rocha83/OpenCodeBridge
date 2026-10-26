@@ -125,7 +125,8 @@ internal static class E2EToolsFullTests
             "Se tiver acesso a internet, busque o clima da cidade de Sao Paulo hoje e anote no arquivo. " +
             "Salve o arquivo, versione no git com add e commit, liste os arquivos e faca uma busca neles para encontrar o arquivo criado. " +
             "Edite o arquivo ACRESCENTANDO a marca EDITADO, mantendo a data que ja esta nele, e realize outro commit. " +
-            "Verifique o historico git e grave em `projeto_teste/historico_git.log`.";
+            "Grave o historico real com a tool shell: `git -C projeto_teste log --oneline > projeto_teste/historico_git.log`; " +
+            "depois use read para confirmar que o hash do ultimo commit aparece no arquivo.";
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
 
