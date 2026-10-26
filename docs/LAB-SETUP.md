@@ -1509,3 +1509,14 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
   idempotente) nos catálogos e nos caminhos Responses/chat. `tools_chars` no
   `/api/harness` mede só a tail; o help não entra nesse número. Detalhe e regra
   de ouro em `docs/AGENTS-PROMPTS.md`.
+
+
+## Dependência Grafana — painel Observation
+
+- Plugin **`yesoreyeram-infinity-datasource`** é obrigatório para o dashboard `opencodebridge`
+  (panels consultam `http://127.0.0.1:4124/api/metrics` e `/api/status` via Infinity).
+  Instalar: `sudo grafana-cli --homepath /usr/share/grafana plugins install yesoreyeram-infinity-datasource`
+  e reiniciar `grafana-server`.
+- Panels `TestData` (sondas Serilog) funcionam nativamente sem plugin.
+- Provisionamento versionado em `observation/grafana/` (dashboard JSON + YAMLs), copiado para
+  `/var/lib/grafana/dashboards` e `/etc/grafana/provisioning` pelo `OpenCodeBridge.Observation`.
