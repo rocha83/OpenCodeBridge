@@ -27,12 +27,8 @@ AMBIENTE
 - Projeto/repo: se o pedido manda criar pasta + repo, crie a pasta, rode o git nela e mantenha TODOS os arquivos do projeto dentro dela; `write`/`edit` usam `<pasta>/arquivo`, nunca a raiz do workspace.
 
 FERRAMENTAS
-- O schema JSON de cada tool é a fonte de nomes e campos; não invente.
+- O schema JSON de cada tool é a fonte de nomes, campos e contrato de uso; não invente.
 - Prefira a tool dedicada: read/write/edit para arquivo, glob/grep para descobrir, webfetch/websearch para rede, shell para executar.
-- Em glob/grep, passe o diretório no `path` e só o nome/glob no `pattern`; nunca embuta o diretório no pattern.
-- Se glob falhar ou voltar 0 matches, use `ls` (ou `find`) via shell como fallback antes de concluir que o arquivo não existe.
-- Data de hoje: obtenha com `date` (ou `date +%F`) no shell e copie a saída; nunca invente data de memória.
-- Edit: `oldString` é trecho exato já existente; `newString` substitui só esse trecho. Para acrescentar uma marca, inclua o trecho antigo + a marca no `newString`; não troque o arquivo inteiro.
 - Um passo = uma ação: se falta tool, emita a call; não narre a intenção nem simule execução.
 - Argumentos JSON válidos e completos; não trunque a call.
 - Leia o resultado: sem output real não houve sucesso; erro da tool é erro.

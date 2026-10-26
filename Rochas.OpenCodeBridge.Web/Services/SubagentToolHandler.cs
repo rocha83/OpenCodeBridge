@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Nodes;
+using Rochas.OpenCodeBridge.Core;
 
 namespace Rochas.OpenCodeBridge.Web.Services;
 
@@ -73,7 +74,7 @@ public sealed class SubagentToolHandler : IToolHandler
                 },
             };
         }
-        return new JsonArray
+        return ToolHelp.Apply(new JsonArray
         {
             Tool("write", "Escreve arquivo no workspace (pasta atual).",
                 Param("path", "string", "Nome do arquivo (ex.: 'fase1.sh').", true),
@@ -84,7 +85,7 @@ public sealed class SubagentToolHandler : IToolHandler
                 Param("newString", "string", "Substituto.", true)),
             Tool("shell", "SÓ validação ('bash -n <arquivo>'), compactação (zip/unzip) ou navegação (ls/cat/pwd). NÃO executa scripts.",
                 Param("command", "string", "Comando (ex.: 'bash -n fase1.sh').", true)),
-        };
+        });
     }
 
     private ToolResult HandleInner(string argumentsJson, ToolContext context)

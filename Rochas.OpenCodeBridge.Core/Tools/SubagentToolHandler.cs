@@ -12,17 +12,17 @@ public sealed class SubagentToolHandler : IToolHandler
 {
     public string ToolName => "subagent";
 
-    static readonly JsonArray ToolDefs = new()
+    static readonly JsonArray ToolDefs = ToolHelp.Apply(new()
     {
         new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="shell", ["description"]="executa comando shell", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["command"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("command") } } },
-        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="read", ["description"]="le arquivo", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path") } } },
+        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="read", ["description"]="le arquivo", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["offset"]=new JsonObject{["type"]="integer"}, ["limit"]=new JsonObject{["type"]="integer"} }, ["required"]=new JsonArray("path") } } },
         new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write", ["description"]="grava/cria arquivo", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } },
-        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="edit", ["description"]="substitui trecho exato", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["old"]=new JsonObject{["type"]="string"}, ["new"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","old","new") } } },
-        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="glob", ["description"]="lista arquivos por padrao", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["pattern"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("pattern") } } },
-        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="grep", ["description"]="busca regex", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["pattern"]=new JsonObject{["type"]="string"}, ["path"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("pattern") } } },
+        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="edit", ["description"]="substitui trecho exato", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["oldString"]=new JsonObject{["type"]="string"}, ["newString"]=new JsonObject{["type"]="string"}, ["replaceAll"]=new JsonObject{["type"]="boolean"} }, ["required"]=new JsonArray("path","oldString","newString") } } },
+        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="glob", ["description"]="lista arquivos por padrao", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["pattern"]=new JsonObject{["type"]="string"}, ["path"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("pattern") } } },
+        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="grep", ["description"]="busca regex", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["pattern"]=new JsonObject{["type"]="string"}, ["path"]=new JsonObject{["type"]="string"}, ["include"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("pattern") } } },
         new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="fetch", ["description"]="GET http", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["url"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("url") } } },
-        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="git", ["description"]="git somente-leitura", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["command"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("command") } } },
-    };
+        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="git", ["description"]="git somente-leitura", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["command"]=new JsonObject{["type"]="string"}, ["path"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("command") } } },
+    });
 
     public ToolResult Handle(string argumentsJson, ToolContext context)
     {

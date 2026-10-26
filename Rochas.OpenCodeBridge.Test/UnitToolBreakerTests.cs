@@ -218,12 +218,13 @@ internal static class UnitToolBreakerTests
         // tem. Regra de comportamento continua no main (fonte unica) e este
         // teste garante que ninguem a duplique na cauda.
         string tail = global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools;
-        TestContext.Check(tail.Contains("GLOB: nao tem alternancia"), "cauda proibe | no glob");
-        TestContext.Check(tail.Contains("git init <dir>"), "cauda exige git init com diretorio explicito");
-        TestContext.Check(tail.Contains("rev-parse --show-toplevel"), "cauda exige confirmar a raiz do repo");
-        TestContext.Check(tail.Contains("unknown option"), "cauda proibe repetir comando invalido");
+        TestContext.Check(tail.Contains("contrato de cada tool vai no schema"), "cauda aponta o schema como fonte");
+        TestContext.Check(tail.Contains("bloqueio de role"), "cauda mantem bloqueio de role");
         TestContext.Check(tail.Contains("--project"), "cauda aponta o arquivo do projeto no dotnet");
         TestContext.Check(tail.Contains("module Program"), "cauda explica o entrypoint de F#");
+        TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
+        TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
+        TestContext.Check(!tail.Contains("CONCATENACAO DE COMANDOS"), "cauda nao duplica doc de shell");
         TestContext.Check(!tail.Contains("NUNCA simule execucao") && !tail.Contains("sudo"),
             "cauda nao duplica regra de comportamento (moram no main)");
 

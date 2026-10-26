@@ -130,30 +130,26 @@ O **role** decide o que a tool pode fazer; sem `role`, resolve-se pelo sufixo do
   `ContentAntiRepeat.TailRepeats/Normalize/Notice` e o `ChatterGuard` mora no
   Core. Nada de duas implementações do mesmo detector.
 
-### Tools tail é COMPLEMENTO ao main harness (não duplica)
+### Help por tool no schema + tail transversal
 
-`HarnessTails.DefaultTools` (**1001 chars**, era 2627) carrega só a mecânica que
-o `MainHarness.Text` (9117 chars, primordial e intocado) **não** tem:
+`Core/ToolHelp.cs` guarda o help curado por tool (quando usar, restrição e um
+exemplo mínimo). Ele é anexado à `description` do schema no último ponto antes do
+envio — catálogos `ToolCatalog`/subagente da Web, `ToolsToChat` (Responses→chat) e
+passthrough chat — com o marcador `[uso-bridge]` para ser idempotente. O texto é
+curto de propósito e **não** é o `--help` bruto do CLI: cobre só o subconjunto
+suportado pela bridge.
 
-- `SHELL`: um comando por chamada, sem escape de quebra de linha, script =
-  `write` + `bash <arquivo>`, `cd` não persiste (`cd <dir> && <cmd>`);
-- `GLOB`: sem alternância/regex (`**/*.{cs,js,ts,json}` ou duas chamadas);
-  se falhar ou voltar 0 matches, `ls`/`find` via shell como fallback;
-- `DATA`: pedido de "hoje" → rodar `date`/`date +%F` e copiar a saída, nunca
-  inventar data de memória;
-- `EDIT`: `oldString` exato; `newString` substitui só o trecho (para acrescentar
-  marca, repetir o trecho antigo + marca; não trocar o arquivo inteiro);
-- `GIT`: `git init <dir>` **sempre** com diretório explícito (nunca no cwd — um
-  `git init` no root da workspace envenena `git log` de todo mundo), raiz
-  confirmada por `rev-parse --show-toplevel`, identidade local (`--global`
-  proibido), `unknown option`/`usage:` não se repete;
-- `DOTNET`/`F#`: `--project` aponta o **arquivo** (`<dir>/<nome>.fsproj|.csproj`)
-  e o entrypoint é `module Program` (assembly = nome do `.fsproj`).
+`HarnessTails.DefaultTools` (**881 chars**) fica só com o que é transversal e não
+cabe no schema: tool dedicada, uma ação por passo, JSON completo, leitura do
+resultado, independência/dependência, anti-repeat, `execute` sem sandbox,
+bloqueio de role e as regras de projeto `DOTNET`/`F#`/projeto existente.
 
-Ficou **fora** de propósito, porque já está no main: caminhos/`ls -la`,
-`edit`/`write`, binário via `shell+python3`, rede via `webfetch`, `sudo`/PROD,
-“nunca simule execução”, “não invente comando”, tool bloqueada por role, fases e
-aceite. Regra de ouro: **main define comportamento, tail define mecânica de tool**.
+As regras de mecânica por tool saíram da tail e moram no `ToolHelp`: `SHELL`
+(`cd` não persiste, script = `write` + `bash`), `GLOB` (sem regex/alternância,
+fallback `ls`/`find`), `READ` (offset/limit), `EDIT` (`oldString`/`newString`),
+`GIT` (`path`, `init` explícito, identidade), além de `subagent`, `question`,
+`skill`, `webfetch`, `websearch` e `execute`. Regra de ouro: **main define
+comportamento, schema define contrato da tool, tail só o transversal**.
 
 ### Escopo das tails (`--tail-scope`)
 

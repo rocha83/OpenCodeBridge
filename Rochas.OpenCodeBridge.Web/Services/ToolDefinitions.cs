@@ -1,11 +1,12 @@
 using System.Text.Json.Nodes;
+using Rochas.OpenCodeBridge.Core;
 
 namespace Rochas.OpenCodeBridge.Web.Services;
 
 // Tool definitions for the bridge (chat/completions format).
-// Enxutas de propósito: cada request carrega o array (~400 tokens); descrições
-// curtas bastam para o modelo acertar as chamadas. Retorna instância nova por
-// chamada (JsonNode tem um só pai — cache estático quebraria o loop).
+// Descrições próprias curtas + help curado do Core (ToolHelp); cada request
+// carrega o array e o help viaja junto para reduzir erro de uso. Retorna
+// instância nova por chamada (JsonNode tem um só pai — cache estático quebraria o loop).
 public static class ToolDefinitions
 {
     // Harness anunciável: escrita (write/edit) inclusa — o filtro é o CSV do
@@ -20,7 +21,7 @@ public static class ToolDefinitions
             if (string.Equals(def.Name, "execute", StringComparison.OrdinalIgnoreCase)) continue;
             tools.Add(BuildTool(def));
         }
-        return tools;
+        return ToolHelp.Apply(tools);
     }
 
     // Harness por agente: catálogo CHEIO por padrão; o CSV é DENYLIST.

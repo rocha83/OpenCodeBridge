@@ -37,6 +37,7 @@ public static class BridgeProxy
             clone["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = options.EnableThinking.Value };
         clone["stream"] = stream;
         ApplyTailsToChat(clone, options);
+        ToolHelp.ApplyTo(clone["tools"]);
         return PostAsync(options, "/v1/chat/completions", clone, ct);
     }
 
@@ -58,6 +59,7 @@ public static class BridgeProxy
         if (!string.IsNullOrWhiteSpace(composed)) clone["instructions"] = composed;
         else clone.Remove("instructions");
         clone["stream"] = stream;
+        ToolHelp.ApplyTo(clone["tools"]);
         return PostAsync(options, "/v1/responses", clone, ct);
     }
 

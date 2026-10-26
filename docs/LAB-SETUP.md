@@ -1503,8 +1503,9 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
   tools — ele só repassa o stream. O loop do dev-agent (`--add --config=true`
   repetido) aconteceu nesse caminho; lá a contenção é enunciado + tails. Guarda
   de tools no passthrough chat fica como próximo passo (não aplicar com WAR ativa).
-- **Tails**: `HarnessTails.DefaultTools` inclui `GIT-RAIZ` e `COMANDO INVALIDO`
-  (política e dicas das tools: `docs/AGENTS-PROMPTS.md` § mapa real de tools).
-  Prova de que o restart carregou o texto novo: `tools_chars` no `/api/harness`
-  (**2291** → **2625** com as dicas de tool → **1001** depois do corte de
-  duplicacao de 2026-10-25; detalhe e regra de ouro em `docs/AGENTS-PROMPTS.md`).
+- **Tails + ToolHelp**: `HarnessTails.DefaultTools` (**881 chars**) carrega só
+  regras transversais e de projeto; o help curado por tool mora em
+  `Core/ToolHelp.cs` e é injetado na `description` do schema (`[uso-bridge]`,
+  idempotente) nos catálogos e nos caminhos Responses/chat. `tools_chars` no
+  `/api/harness` mede só a tail; o help não entra nesse número. Detalhe e regra
+  de ouro em `docs/AGENTS-PROMPTS.md`.

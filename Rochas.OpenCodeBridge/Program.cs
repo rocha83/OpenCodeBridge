@@ -1390,6 +1390,7 @@ WriteJson(ctx, 200, new JsonObject
                 // do catalogo (o modelo so pode escolher tools diretas).
                 ToolSanitizer.StripExecuteTools(toolsArr, ToolStrategy, "chat", Log);
                 ToolSanitizer.NeutralizeCodeMode(node, ToolStrategy, Log);
+                ToolHelp.ApplyTo(toolsArr);
                 if (toolsArr.ToJsonString(SerOpts) != beforeStrip)
                     outBody = node.ToJsonString(SerOpts);
             }
@@ -3929,7 +3930,8 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                 ["result_null"] = converted.Count == 0
             });
         }
-        return converted.Count > 0 ? converted : null;
+        if (converted.Count == 0) return null;
+        return ToolHelp.Apply(converted);
     }
 
     // ---------------------------------------------------------------------

@@ -117,6 +117,7 @@ internal static class Program
         TestContext.Run("U-convert-coerced-narrated-find", UnitConvertTests.ConvertCoercedNarratedFindExec);
         TestContext.Run("U-convert-coerced-narrated-loose", UnitConvertTests.ConvertCoercedNarratedLooseQuotes);
         TestContext.Run("U-tools-execute", UnitToolsExecuteTests.ToolsExecute);
+        TestContext.Run("U-tool-help", UnitToolHelpTests.Run);
         TestContext.Run("U-git-tool-cycle", UnitToolsExecuteTests.GitToolCycle);
         TestContext.Run("U-toolstrategy-execute-shell", UnitToolStrategyTests.ExecuteToShell);
         TestContext.Run("U-toolstrategy-execute-write", UnitToolStrategyTests.ExecuteToWriteSingleQuotes);

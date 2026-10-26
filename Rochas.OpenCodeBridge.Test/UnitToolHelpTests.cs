@@ -1,0 +1,59 @@
+using System.Text.Json.Nodes;
+using Rochas.OpenCodeBridge.Core;
+
+namespace Rochas.OpenCodeBridge.Test;
+
+// Unit do help curado por tool: o texto viaja na descricao do schema
+// (chat, Responses flat e namespace), preserva a descricao original e e
+// idempotente quando o mesmo array passa por mais de uma camada.
+internal static class UnitToolHelpTests
+{
+    public static Task Run()
+    {
+        var chat = JsonNode.Parse("""
+        [
+          {"type":"function","function":{"name":"shell","description":"executa","parameters":{"type":"object","properties":{"command":{"type":"string"}}}}},
+          {"type":"function","function":{"name":"desconhecida","description":"original"}}
+        ]
+        """)!.AsArray();
+
+        ToolHelp.Apply(chat);
+        string shell = chat[0]!["function"]!["description"]!.GetValue<string>();
+        TestContext.Check(shell.StartsWith("executa", StringComparison.Ordinal), "descricao original preservada");
+        TestContext.Check(shell.Contains(ToolHelp.Marker, StringComparison.Ordinal), "help marcado no schema chat");
+        TestContext.Check(shell.Contains("cd dir && cmd", StringComparison.Ordinal), "help de shell cobre cd");
+        TestContext.Check(chat[1]!["function"]!["description"]!.GetValue<string>() == "original",
+            "tool sem help nao e alterada");
+        TestContext.Check(chat[0]!["function"]!["parameters"]!["properties"]!["command"] is not null,
+            "schema nao e alterado");
+
+        string once = shell;
+        ToolHelp.Apply(chat);
+        TestContext.Check(chat[0]!["function"]!["description"]!.GetValue<string>() == once,
+            "segunda aplicacao e idempotente");
+        TestContext.Check(once.Split(ToolHelp.Marker).Length - 1 == 1, "marcador aparece uma vez");
+
+        var responses = JsonNode.Parse("""
+        [
+          {"type":"function","name":"edit","description":"edita"},
+          {"type":"namespace","name":"mcp","tools":[{"type":"function","name":"read","description":"le"}]}
+        ]
+        """)!.AsArray();
+
+        ToolHelp.ApplyTo(responses);
+        string edit = responses[0]!["description"]!.GetValue<string>();
+        string read = responses[1]!["tools"]![0]!["description"]!.GetValue<string>();
+        TestContext.Check(edit.Contains("oldString", StringComparison.Ordinal)
+            && edit.Contains(ToolHelp.Marker, StringComparison.Ordinal), "help no shape Responses flat");
+        TestContext.Check(read.Contains("offset/limit", StringComparison.Ordinal)
+            && read.Contains(ToolHelp.Marker, StringComparison.Ordinal), "help em namespace aninhado");
+
+        var catalog = global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat();
+        string catalogShell = catalog[0]!["function"]!["description"]!.GetValue<string>();
+        TestContext.Check(catalogShell.Contains(ToolHelp.Marker, StringComparison.Ordinal),
+            "catalogo proprio ja nasce com help");
+        TestContext.Check(catalogShell.Contains("um comando", StringComparison.Ordinal),
+            "help do catalogo cobre shell");
+        return Task.CompletedTask;
+    }
+}

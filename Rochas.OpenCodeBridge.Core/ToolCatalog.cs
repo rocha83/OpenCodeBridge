@@ -21,36 +21,46 @@ public static class ToolCatalog
 {
     /// <summary>Tools no shape <c>chat/completions</c>.</summary>
     /// <returns>Array de tools (6).</returns>
-    public static JsonArray Chat() => new()
+    public static JsonArray Chat()
     {
-        Fn("shell", "Executa um comando de console. Um comando por chamada; sem heredoc.", new JsonObject
+        var tools = new JsonArray
         {
-            ["command"] = new JsonObject { ["type"] = "string" }
-        }, "command"),
-        Fn("write", "Cria/sobrescreve um arquivo de texto.", new JsonObject
-        {
-            ["path"] = new JsonObject { ["type"] = "string" },
-            ["content"] = new JsonObject { ["type"] = "string" }
-        }, "path", "content"),
-        Fn("read", "Le um arquivo de texto.", new JsonObject
-        {
-            ["path"] = new JsonObject { ["type"] = "string" }
-        }, "path"),
-        Fn("edit", "Substitui um trecho exato de um arquivo.", new JsonObject
-        {
-            ["path"] = new JsonObject { ["type"] = "string" },
-            ["oldString"] = new JsonObject { ["type"] = "string" },
-            ["newString"] = new JsonObject { ["type"] = "string" }
-        }, "path", "oldString", "newString"),
-        Fn("glob", "Lista arquivos por padrao. Nao aceita alternancia com |.", new JsonObject
-        {
-            ["pattern"] = new JsonObject { ["type"] = "string" }
-        }, "pattern"),
-        Fn("grep", "Busca expressao regular no conteudo dos arquivos.", new JsonObject
-        {
-            ["pattern"] = new JsonObject { ["type"] = "string" }
-        }, "pattern")
-    };
+            Fn("shell", "Executa um comando de console. Um comando por chamada; sem heredoc.", new JsonObject
+            {
+                ["command"] = new JsonObject { ["type"] = "string" }
+            }, "command"),
+            Fn("write", "Cria/sobrescreve um arquivo de texto.", new JsonObject
+            {
+                ["path"] = new JsonObject { ["type"] = "string" },
+                ["content"] = new JsonObject { ["type"] = "string" }
+            }, "path", "content"),
+            Fn("read", "Le um arquivo de texto.", new JsonObject
+            {
+                ["path"] = new JsonObject { ["type"] = "string" },
+                ["offset"] = new JsonObject { ["type"] = "integer" },
+                ["limit"] = new JsonObject { ["type"] = "integer" }
+            }, "path"),
+            Fn("edit", "Substitui um trecho exato de um arquivo.", new JsonObject
+            {
+                ["path"] = new JsonObject { ["type"] = "string" },
+                ["oldString"] = new JsonObject { ["type"] = "string" },
+                ["newString"] = new JsonObject { ["type"] = "string" },
+                ["replaceAll"] = new JsonObject { ["type"] = "boolean" }
+            }, "path", "oldString", "newString"),
+            Fn("glob", "Lista arquivos por padrao. Nao aceita alternancia com |.", new JsonObject
+            {
+                ["pattern"] = new JsonObject { ["type"] = "string" },
+                ["path"] = new JsonObject { ["type"] = "string" }
+            }, "pattern"),
+            Fn("grep", "Busca expressao regular no conteudo dos arquivos.", new JsonObject
+            {
+                ["pattern"] = new JsonObject { ["type"] = "string" },
+                ["path"] = new JsonObject { ["type"] = "string" },
+                ["include"] = new JsonObject { ["type"] = "string" }
+            }, "pattern")
+        };
+        return ToolHelp.Apply(tools);
+    }
 
     /// <summary>Tools no shape <c>/v1/responses</c> (a partir de <see cref="Chat"/>).</summary>
     /// <returns>Array de tools no formato flat.</returns>
