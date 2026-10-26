@@ -24,7 +24,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### OpenCodeBridge — acompanhamento em tempo real\nFluxo: cliente -> bridge -> modelo -> tools/gates -> resposta. `last_client` mostra o modo do último request de modelo: **opencode** (CLI, harness próprio) ou **bridge** (MainHarness no caminho gerido). `main_harness=true` vale só para o caminho gerido (`main_harness_scope=managed-only`); no opencode `main_harness_opencode=false`."
+        "content": "NOTA: Modo Bridge (Main Harness ON), Modo OpenCode (Main Harness OFF)"
       }
     },
     {
@@ -646,21 +646,6 @@
           ]
         }
       ]
-    },
-    {
-      "id": 13,
-      "title": "Leitura do modo",
-      "type": "text",
-      "gridPos": {
-        "h": 4,
-        "w": 24,
-        "x": 0,
-        "y": 40
-      },
-      "options": {
-        "mode": "markdown",
-        "content": "**Como ler:** `last_client=opencode` -> CLI do OpenCode, harness do CLI; `last_client=bridge` -> caminho gerido, MainHarness ativo. `main_harness=true` é global e não significa que o request em curso é bridge."
-      }
     },
     {
       "id": 14,
