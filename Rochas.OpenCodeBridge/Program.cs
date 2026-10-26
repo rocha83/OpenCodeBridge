@@ -165,19 +165,20 @@ internal static partial class Program
     // erro que tirava a cauda do WAR em modo bridge.
     static readonly AsyncLocal<bool> OpencodeClient = new();
 
+    // Caminho de harness bridge DESTE request. O teste WAR declara o modo pelo
+    // header X-Bridge-Mode (bridge/opencode); o CLI do opencode continua sendo
+    // identificado pelo User-Agent. Em opencode o cliente se auto-gerencia:
+    // nao recebe mainHarness nem tails da bridge.
+    static readonly AsyncLocal<bool?> BridgeLane = new();
+
     static bool IsOpencodeClient(HttpListenerContext? ctx) =>
         (ctx?.Request.Headers["User-Agent"] ?? "").Contains("opencode", StringComparison.OrdinalIgnoreCase);
 
     // Cauda vale NESTE pedido? --harness-tails e o switch das tails; tailScope
-    // decide o caminho: "all" = todos; "managed" = todos menos o CLI do opencode.
+    // decide o caminho. Exclusivo do caminho bridge: em opencode o cliente se
+    // auto-gerencia (master/AGENTS.md proprio) e nao recebe tail da bridge.
     static bool TailsOn(string? modelId) =>
-        TailsEnabled && (TailScope switch
-        {
-            "off" => false,
-            "all" => TailsAtivas(),
-            "managed" => !OpencodeClient.Value && TailsAtivas(),
-            _ => false
-        });
+        TailsEnabled && TailScope != "off" && (BridgeLane.Value ?? true) && TailsAtivas();
     static int AntiRepeatWindow = ContentAntiRepeat.DefaultWindow; // janela (chars) da cauda comparada com o historico (64..2048); default unico no Core
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
     // devolve 413 pedindo compactacao em vez da resposta. Parametrizavel
@@ -1142,7 +1143,21 @@ internal static partial class Program
         var path = ctx.Request.Url?.AbsolutePath ?? "/";
         // Quem e o cliente DESTE pedido (uma vez por requisicao): o tail-scope
         // "managed" decide por cliente e nao pelo sufixo do modelo.
-        OpencodeClient.Value = IsOpencodeClient(ctx);
+        bool opencodeClient = IsOpencodeClient(ctx);
+        // O harness de teste declara o modo por header; o CLI do opencode nao
+        // manda header e continua sendo reconhecido pelo User-Agent. Assim a
+        // raia bridge e a raia opencode nao se cruzam nem por sufixo de modelo.
+        string? modeHdr = ctx.Request.Headers["X-Bridge-Mode"];
+        if (!string.IsNullOrWhiteSpace(modeHdr))
+        {
+            if (modeHdr.Equals("opencode", StringComparison.OrdinalIgnoreCase)) opencodeClient = true;
+            else if (modeHdr.Equals("bridge", StringComparison.OrdinalIgnoreCase)) opencodeClient = false;
+        }
+        OpencodeClient.Value = opencodeClient;
+        // MainHarness + tails so no caminho bridge. Em opencode o cliente se
+        // auto-gerencia; mesmo um request direto com header opencode nao recebe
+        // o harness da bridge. Mode=opencode no processo tambem desliga a raia.
+        BridgeLane.Value = !opencodeClient && (Mode is null || Mode.MainHarness);
         try
         {
             Interlocked.Increment(ref TotalRequests);
@@ -1676,8 +1691,12 @@ WriteJson(ctx, 200, new JsonObject
         try
         {
             var node = JsonNode.Parse(body)?.AsObject();
+            // Modelo/role originais ANTES do rewrite; o main harness usa o role
+            // para preservar o system do subagente e sugerir segmentacao.
+            string reqModel = node?["model"]?.GetValue<string>() ?? "";
+            string reqRole = RoleOfModel(reqModel);
             // Marca opencode ANTES do rewrite (model com sufixo = tubo puro).
-            bool opencodeIn = node is not null && IsOpencodeModel(node["model"]?.GetValue<string>());
+            bool opencodeIn = node is not null && IsOpencodeModel(reqModel);
             string profThinkMid = "";
             if (node is not null && node["model"]?.GetValue<string>() is string mid && mid != Model)
             {
@@ -1712,6 +1731,27 @@ WriteJson(ctx, 200, new JsonObject
                     if (node["stop"] is null && CoerceFor())
                         node["stop"] = new JsonArray("[END_OF_TEXT]");
                     outBody = node.ToJsonString(SerOpts);
+                }
+            }
+            // Main harness no caminho chat (o WAR usa /v1/chat/completions
+            // direto). So na raia bridge; opencode se auto-gerencia. O array
+            // `tools` NAO e tocado: o schema continua sendo a fonte do request.
+            if (node is not null && node["messages"] is JsonArray chatHarness
+                && MainHarnessOn && BridgeLane.Value == true)
+            {
+                bool applied = MainHarness.Apply(chatHarness, true, reqRole);
+                if (applied)
+                {
+                    outBody = node.ToJsonString(SerOpts);
+                    if (Diagnostic) Log(new JsonObject
+                    {
+                        ["event"] = "main-harness",
+                        ["path"] = "chat",
+                        ["model"] = reqModel,
+                        ["role"] = reqRole,
+                        ["chars"] = MainHarness.Text.Length,
+                        ["tools"] = node["tools"] is JsonArray ta ? ta.Count : 0
+                    });
                 }
             }
             // Temperatura no repasse: quem esta conectado manda. Se o corpo ja
@@ -2187,12 +2227,14 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // Main harness: BASE do caminho gerido (cliente != CLI do opencode).
         // O discriminador e o CLIENTE (igual as tails), nunca o sufixo do modelo:
         // o WAR usa <modelo>-build e ficaria sem base.
-        bool mainHarness = MainHarness.Apply(messages, MainHarnessOn && !OpencodeClient.Value);
+        bool mainHarness = MainHarness.Apply(messages, MainHarnessOn && BridgeLane.Value == true, RoleOfModel(requestedModel));
         if (Diagnostic && mainHarness)
             Log(new JsonObject
             {
                 ["event"] = "main-harness",
+                ["path"] = "responses",
                 ["model"] = requestedModel,
+                ["role"] = RoleOfModel(requestedModel),
                 ["chars"] = MainHarness.Text.Length,
                 ["tails"] = TailsOn(requestedModel)
             });

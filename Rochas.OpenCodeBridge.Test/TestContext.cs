@@ -537,7 +537,12 @@ internal static class TestContext
         var t0 = DateTime.UtcNow;
         for (int attempt = 0; ; attempt++)
         {
-            using var res = await Http.PostAsync(url, new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"));
+            using var httpReq = new HttpRequestMessage(HttpMethod.Post, url);
+            httpReq.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+            // Declara a raia do teste: bridge recebe mainHarness+tails; opencode
+            // se auto-gerencia. O CLI do opencode nao usa este caminho.
+            httpReq.Headers.TryAddWithoutValidation("X-Bridge-Mode", Mode);
+            using var res = await Http.SendAsync(httpReq);
             string text = await res.Content.ReadAsStringAsync();
             // Corpo vazio com 200 sob rajada (keep-alive): 1 retry após 2s.
             if (res.IsSuccessStatusCode && string.IsNullOrWhiteSpace(text) && attempt == 0)

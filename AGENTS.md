@@ -113,3 +113,15 @@ conveniência manual, nunca fonte de verdade.
 7. **Sem duplicação de mecanismo**: quando o check migra para C#, o script
    equivalente é removido (ou vira atalho documentado que chama o C#).
 
+## Regra: harness de subagente só na raia bridge
+- No caminho bridge (`/v1/chat/completions` e `/v1/responses`), o system do
+  subagente recebe `MainHarness` + tails; o system do role é preservado como
+  `SYSTEM DO ROLE (...)`.
+- O array `tools` do request é a fonte do schema; não duplicar schema no texto.
+- `X-Bridge-Mode: opencode` (ou UA `opencode`) = opencode se auto-gerencia:
+  sem `MainHarness` nem tails da bridge. `X-Bridge-Mode: bridge` = raia bridge.
+- Segmentação em blocos menores é papel do enunciado/teste; a base não
+  codifica hints por role.
+- Evidência mínima: evento `main-harness` com `path=chat`, `role` e `tools=N`;
+  `U-main-harness` verde.
+

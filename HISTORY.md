@@ -3987,3 +3987,19 @@ tentativas de uso sem progresso, rodar o comando com `--help`/`-h` (ou
 `man <comando>`) e ler a sintaxe; so se ainda falhar, explicar a dificuldade e
 pedir sugestao. Vale para clientes com main harness ligado; no WAR
 (`--main-harness 0`) a regra equivalente deve morar nas tails.
+
+**Bridge lane: mainHarness+tails tambem no /v1/chat/completions (2026-10-26).**
+O WAR e os subagentes usam chat/completions direto; o caminho `Passthrough`
+nao aplicava `MainHarness`. Agora, na raia bridge, aplica a base antes das
+tails e preserva o system do role como `SYSTEM DO ROLE (...)`; o array `tools`
+do request nao e tocado (o schema continua sendo a fonte). `X-Bridge-Mode:
+bridge|opencode` declara a raia no harness de teste; `opencode` (e o UA do CLI)
+nao recebe mainHarness nem tails, porque o opencode se auto-gerencia. Logo,
+`--tail-scope all` deixou de injetar no opencode. A segmentacao em blocos
+continua nos enunciados/testes, nao na base. Revisao da tools tail:
+`HarnessTails.DefaultTools` ganhou a regra `SUBAGENTE: schema no array tools;
+nao troque schema por prosa` (sem duplicar schema no texto).
+Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
+`{"event":"main-harness","path":"chat","role":"Scripter","tools":1}`,
+`prompt_tokens=1782`, resposta com `write_file`; mesmo request com header
+`opencode` -> sem evento, `prompt_tokens=40`; `U-main-harness` PASS=10 FAIL=0.

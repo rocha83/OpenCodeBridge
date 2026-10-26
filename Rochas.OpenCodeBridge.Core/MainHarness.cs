@@ -82,12 +82,15 @@ SEGURANÇA E FORMATO
 
     /// <summary>
     /// Substitui o system do cliente pelo main harness (caminho gerido).
-    /// Preserva <env>, <available_skills>, data e instrucoes pequenas do agente.
+    /// Preserva <env>, <available_skills>, data e o system do role/subagente.
+    /// O schema de tools continua no array `tools` do request; nao e duplicado
+    /// no texto. A segmentacao e papel do enunciado do teste/role, nao da base.
     /// </summary>
     /// <param name="messages">Mensagens ja convertidas (chat).</param>
     /// <param name="enabled">Flag --main-harness/appsettings ja filtrada por CLIENTE.</param>
+    /// <param name="role">Role do subagente (ex.: Scripter); null = cliente generico.</param>
     /// <returns>true se substituiu o system.</returns>
-    public static bool Apply(System.Text.Json.Nodes.JsonArray messages, bool enabled)
+    public static bool Apply(System.Text.Json.Nodes.JsonArray messages, bool enabled, string? role = null)
     {
         if (!enabled) return false;
         string? clientSystem = null;
@@ -96,7 +99,7 @@ SEGURANÇA E FORMATO
             clientSystem = first["content"]?.GetValue<string>();
         if (LooksLikeOpencodeMaster(clientSystem)) return false;
 
-        string text = BuildSystem(clientSystem);
+        string text = BuildSystem(clientSystem, role);
         if (messages.Count > 0 && messages[0] is System.Text.Json.Nodes.JsonObject sys
             && sys["role"]?.GetValue<string>() == "system")
             sys["content"] = text;
@@ -107,8 +110,9 @@ SEGURANÇA E FORMATO
 
     /// <summary>Monta o system do harness preservando o que e dinamico no cliente.</summary>
     /// <param name="clientSystem">System original do cliente (pode ser null).</param>
+    /// <param name="role">Role do subagente; null = cliente generico.</param>
     /// <returns>System efetivo.</returns>
-    public static string BuildSystem(string? clientSystem)
+    public static string BuildSystem(string? clientSystem, string? role = null)
     {
         var sb = new System.Text.StringBuilder(Text);
         string? env = ExtractBlock(clientSystem, "<env>", "</env>");
@@ -120,7 +124,12 @@ SEGURANÇA E FORMATO
 
         string trimmed = clientSystem?.Trim() ?? "";
         if (!LooksLikeOpencodeMaster(trimmed) && trimmed.Length > 0)
-            sb.Append("\n\nINSTRUCOES DO CLIENTE\n").Append(trimmed);
+        {
+            string label = string.IsNullOrWhiteSpace(role)
+                ? "INSTRUCOES DO CLIENTE"
+                : "SYSTEM DO ROLE (" + role.Trim() + ")";
+            sb.Append("\n\n").Append(label).Append("\n").Append(trimmed);
+        }
         return sb.ToString();
     }
 

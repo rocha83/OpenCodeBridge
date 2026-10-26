@@ -72,6 +72,72 @@ internal static class E2EBeltsTests
         return best;
     }
 
+    /// <summary>Scripter via opencode real: o CLI executa a tool write e entrega .sh/.md no workspace.</summary>
+    /// <returns>true se o .sh existe e passa em bash -n.</returns>
+    static bool ScriptViaOpencode(string key, string ws, string safeTitle, string taskPrompt, string grounded)
+    {
+        string scriptName = safeTitle + ".sh";
+        string prompt =
+            "Voce e o Scripter (role scripter, E4B). Componha UM script bash que executa a tarefa e grave no cwd " + ws + " o arquivo " + scriptName + " com shebang. " +
+            "Gere tambem o companion " + safeTitle + ".md descrevendo o script. Use a tool write UMA vez por arquivo; script com no maximo 80 linhas, companion com no maximo 20. " +
+            "Bash puro; nunca escreva C#/SQL solto no .sh (use heredoc ou arquivo separado). Ao terminar responda apenas SCRIPTER-OK.\n\n" +
+            grounded + "\nTAREFA:\n" + taskPrompt;
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            Log($"  [belt:{key}] scripter via opencode (agent=scripter) tentativa {attempt + 1}/3...");
+            try
+            {
+                TestContext.OpencodeRun(prompt, ws, agent: "scripter");
+            }
+            catch (Exception ex)
+            {
+                Log($"  [belt:{key}] scripter opencode falhou: {ex.Message.Split('\n')[0]}");
+                prompt = "O turno anterior falhou. Reenvie com UMA tool write de JSON valido; script com no maximo 60 linhas, sem C#/SQL solto e sem quebrar strings.\n\nTAREFA:\n" + taskPrompt;
+                continue;
+            }
+            string? produced = ResolveScript(ws, safeTitle, scriptName);
+            if (produced is null)
+            {
+                Log($"  [belt:{key}] scripter opencode nao gerou .sh");
+                prompt = "Voce nao gravou o arquivo " + scriptName + ". Use a tool write AGORA para criar " + scriptName + " (bash puro, no maximo 80 linhas) e responda apenas SCRIPTER-OK.\n\nTAREFA:\n" + taskPrompt;
+                continue;
+            }
+            string? err = ValidateScript(ws, produced);
+            if (err is null)
+            {
+                string body = System.IO.File.ReadAllText(produced);
+                Log($"  [belt:{key}] script OK: {System.IO.Path.GetFileName(produced)} ({body.Length} bytes)");
+                return true;
+            }
+            Log($"  [belt:{key}] script SYNTAX FAIL: {System.IO.Path.GetFileName(produced)}: {err.Split('\n')[0]}");
+            prompt = "O script " + System.IO.Path.GetFileName(produced) + " falhou em `bash -n`:\n" + err +
+                "\nReescreva o arquivo via tool write corrigindo a sintaxe. Bash puro; nunca C#/SQL solto. Responda SCRIPTER-OK.\n\nTAREFA:\n" + taskPrompt;
+        }
+        return false;
+    }
+
+    static string? ResolveScript(string ws, string safeTitle, string scriptName)
+    {
+        string exact = System.IO.Path.Combine(ws, scriptName);
+        if (System.IO.File.Exists(exact)) return exact;
+        var byTitle = FindByTitle(ws, safeTitle);
+        if (byTitle is not null) return byTitle;
+        return System.IO.Directory.GetFiles(ws, "*.sh")
+            .OrderByDescending(System.IO.File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+    }
+
+    static string? ValidateScript(string ws, string full)
+    {
+        string body = System.IO.File.ReadAllText(full);
+        if (body.Length == 0 || !body.StartsWith("#!", StringComparison.Ordinal))
+            return "sem shebang";
+        if (body.Contains("write_file{") || body.Contains("\"path\":") || body.Contains("```"))
+            return "conteudo do .sh tem chamada de tool colada (write_file{...}) ou bloco markdown";
+        var (code, outp) = Run("bash", ws, 60, "-n", System.IO.Path.GetFileName(full));
+        return code == 0 ? null : outp.Trim();
+    }
+
     static string? FindByTitle(string ws, string safeTitle)
     {
         string want = NormName(safeTitle);
@@ -187,6 +253,13 @@ internal static class E2EBeltsTests
                     string title = Str(t?["title"], "tarefa");
                     string taskPrompt = Str(t?["prompt"], prompt).Replace("{ws}", ws);
                     string safeTitle = title.Replace(" ", "_").ToLowerInvariant();
+                    // No modo opencode o Scripter tambem roda pelo CLI real (agent=scripter),
+                    // com as tools de escrita do proprio opencode; nada de PostObj direto.
+                    if (TestContext.Mode == "opencode")
+                    {
+                        if (ScriptViaOpencode(key, ws, safeTitle, taskPrompt, grounded)) scriptsOk++;
+                        continue;
+                    }
                     string scriptPath = System.IO.Path.Combine(ws, safeTitle + ".sh");
                     string metaPath = System.IO.Path.Combine(ws, safeTitle + ".md");
                     var beforeFiles = new HashSet<string>(System.IO.Directory.GetFiles(ws, "*.sh"));
