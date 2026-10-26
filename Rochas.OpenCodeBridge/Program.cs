@@ -969,7 +969,7 @@ internal static partial class Program
                     ["main_harness_opencode"] = false,
                     ["main_harness_chars"] = MainHarness.Text.Length,
                     ["harness_tails"] = TailsEnabled,
-                    ["tails_managed"] = TailsAtivas() && TailScope is "all" or "managed" && !MainHarnessOn,
+                    ["tails_managed"] = TailsAtivas() && TailScope is "all" or "managed",
                     ["tails_opencode"] = TailsAtivas() && TailScope == "all",
                     ["behavior_chars"] = HarnessBehaviorTail.Length,
                     ["tools_chars"] = HarnessToolsTail.Length
@@ -1762,23 +1762,24 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // Converte a conversa Responses -> messages do formato chat
         var messages = InputToMessages(req["input"], req["instructions"], hasProfile,
             new TranslationOptions(LegacyHarness, QwenStd, ToolOutputLimit, RiskScanAnswers));
-        // Main harness: no caminho gerido ele substitui o system do cliente e
-        // dispensa as tails (a essencia ja esta no texto unico). Preserva
-        // env/skills/data do cliente e instrucoes pequenas de agente.
-        bool mainHarness = MainHarness.Apply(messages, hasProfile, MainHarnessOn);
+        // Main harness: BASE do caminho gerido (cliente != CLI do opencode).
+        // O discriminador e o CLIENTE (igual as tails), nunca o sufixo do modelo:
+        // o WAR usa <modelo>-build e ficaria sem base.
+        bool mainHarness = MainHarness.Apply(messages, MainHarnessOn && !OpencodeClient.Value);
         if (Diagnostic && mainHarness)
             Log(new JsonObject
             {
                 ["event"] = "main-harness",
                 ["model"] = requestedModel,
                 ["chars"] = MainHarness.Text.Length,
-                ["tails"] = false
+                ["tails"] = TailsOn(requestedModel)
             });
         // Caudas por peca, penduradas no system que InputToMessages ja consolida
         // (instructions + os system do meio). O gate decide por caminho
         // (--tail-scope): "all" injeta tambem no opencode, "managed" so no
         // cliente direto/Web. Sem system nao ha onde pendurar: nao inventamos.
-        bool tails = TailsOn(requestedModel) && !mainHarness;
+        // Tails: UNICO incremento sobre a base (podem coexistir com ela).
+        bool tails = TailsOn(requestedModel);
         if (tails && messages.Count > 0 && messages[0] is JsonObject sys0
             && sys0["role"]?.GetValue<string>() == "system"
             && sys0["content"] is JsonValue sysv && sysv.TryGetValue<string>(out string? syst))

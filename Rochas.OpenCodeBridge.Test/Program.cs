@@ -103,12 +103,12 @@ internal static class Program
         TestContext.Run("U-harness-code-mode-note", UnitToolStrategyTests.NeutralizeCodeModeWritesDirectToolsNote);
         TestContext.Run("U-harness-quality-core", UnitToolStrategyTests.HarnessTailCarriesQualityCore);
         TestContext.Run("U-main-harness-no-sandbox", UnitMainHarnessTests.NoSandboxInstructions);
-        TestContext.Run("U-main-harness-tools", UnitMainHarnessTests.CompleteToolUsage);
+        TestContext.Run("U-main-harness-core-tools", UnitMainHarnessTests.CoreToolsOnly);
         TestContext.Run("U-main-harness-skills-env", UnitMainHarnessTests.KeepsSkillsAndEnv);
-        TestContext.Run("U-main-harness-moe", UnitMainHarnessTests.HasMoeSection);
+        TestContext.Run("U-main-harness-no-roles", UnitMainHarnessTests.BaseHasNoRoleSections);
         TestContext.Run("U-main-harness-compact", UnitMainHarnessTests.IsCompact);
         TestContext.Run("U-main-harness-managed", UnitMainHarnessTests.ReplacesManagedSystem);
-        TestContext.Run("U-main-harness-profile", UnitMainHarnessTests.KeepsProfileSystem);
+        TestContext.Run("U-main-harness-role-suffix", UnitMainHarnessTests.AppliesEvenWithRoleSuffix);
         TestContext.Run("U-main-harness-opencode-master", UnitMainHarnessTests.KeepsOpencodeMasterWithoutProfile);
         TestContext.Run("U-main-harness-dynamic", UnitMainHarnessTests.PreservesDynamicBlocks);
         TestContext.Run("U-main-harness-master", UnitMainHarnessTests.DropsMasterButKeepsEnv);

@@ -63,7 +63,7 @@ DELEGAÇÃO
 SEGURANÇA E FORMATO
 - Sem sudo nem deploy em `/usr/src` sem ordem; não exponha segredos; não desabilite auth para "fazer passar".
 - O role do cliente define foco e limites: não execute o que o role não permite.
-- Responda no idioma do usuário, tool calls completas; use skills/`<env>` reais quando vierem.
+- Responda no idioma do usuário, tool calls completas; quando o cliente trouxer `<available_skills>` ou `<env>`, use os valores reais.
 """;
 
     /// <summary>System do opencode (master Code Mode/AGENTS.md) nao e substituido.</summary>
@@ -84,12 +84,11 @@ SEGURANÇA E FORMATO
     /// Preserva <env>, <available_skills>, data e instrucoes pequenas do agente.
     /// </summary>
     /// <param name="messages">Mensagens ja convertidas (chat).</param>
-    /// <param name="hasProfile">Model com sufixo de role (opencode): nao troca.</param>
-    /// <param name="enabled">Flag --main-harness/appsettings.</param>
+    /// <param name="enabled">Flag --main-harness/appsettings ja filtrada por CLIENTE.</param>
     /// <returns>true se substituiu o system.</returns>
-    public static bool Apply(System.Text.Json.Nodes.JsonArray messages, bool hasProfile, bool enabled)
+    public static bool Apply(System.Text.Json.Nodes.JsonArray messages, bool enabled)
     {
-        if (!enabled || hasProfile) return false;
+        if (!enabled) return false;
         string? clientSystem = null;
         if (messages.Count > 0 && messages[0] is System.Text.Json.Nodes.JsonObject first
             && first["role"]?.GetValue<string>() == "system")

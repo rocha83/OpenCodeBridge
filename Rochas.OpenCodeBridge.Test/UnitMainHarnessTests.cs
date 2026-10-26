@@ -18,14 +18,14 @@ internal static class UnitMainHarnessTests
         return Task.CompletedTask;
     }
 
-    public static Task CompleteToolUsage()
+    public static Task CoreToolsOnly()
     {
-        foreach (string tool in new[]
-                 {
-                     "read", "write", "edit", "glob", "grep", "shell", "skill",
-                     "subagent", "webfetch", "websearch", "question"
-                 })
-            TestContext.Check(Text.Contains(tool, StringComparison.OrdinalIgnoreCase), "main harness cita " + tool);
+        // O schema de cada tool vai no request: a base NAO descreve tool por tool,
+        // so fixa as operacionais e declara o schema como fonte.
+        TestContext.Check(Text.Contains("schema JSON de cada tool", StringComparison.OrdinalIgnoreCase),
+            "base declara o schema como fonte");
+        foreach (string tool in new[] { "read", "write", "edit", "glob", "grep", "shell" })
+            TestContext.Check(Text.Contains(tool, StringComparison.OrdinalIgnoreCase), "base cita " + tool);
         return Task.CompletedTask;
     }
 
@@ -37,18 +37,19 @@ internal static class UnitMainHarnessTests
         return Task.CompletedTask;
     }
 
-    public static Task HasMoeSection()
+    public static Task BaseHasNoRoleSections()
     {
-        TestContext.Check(Text.Contains("MULTI-SEGMENTO", StringComparison.OrdinalIgnoreCase), "main harness tem secao MoE");
-        foreach (string area in new[] { "filosófico", "científico", "médico", "jurídico", "consultor" })
-            TestContext.Check(Text.Contains(area, StringComparison.OrdinalIgnoreCase), "MoE cobre " + area);
+        // MoE, roles e pipeline sao papel do agente + politica (LAB-SETUP 4.6);
+        // nao voltam para a base (evita atuacao espalhada).
+        TestContext.Check(!Text.Contains("MULTI-SEGMENTO", StringComparison.OrdinalIgnoreCase), "base sem MoE");
+        TestContext.Check(!Text.Contains("ROLES E PIPELINE", StringComparison.OrdinalIgnoreCase), "base sem roles/pipeline");
         return Task.CompletedTask;
     }
 
     public static Task IsCompact()
     {
         int n = Text.Length;
-        TestContext.Check(n is > 2500 and < 12500, "main harness compacto (" + n + " chars)");
+        TestContext.Check(n is > 2000 and < 6000, "main harness enxuto (" + n + " chars)");
         return Task.CompletedTask;
     }
 
@@ -59,7 +60,7 @@ internal static class UnitMainHarnessTests
             ["role"] = "system",
             ["content"] = "Voce e um backend senior. Respostas curtas."
         });
-        bool applied = global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(messages, hasProfile: false, enabled: true);
+        bool applied = global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(messages, enabled: true);
         TestContext.Check(applied, "aplica no caminho gerido");
         string? content = messages[0]?["content"]?.GetValue<string>();
         TestContext.Check(content?.StartsWith(global::Rochas.OpenCodeBridge.Core.MainHarness.Text) == true,
@@ -68,12 +69,15 @@ internal static class UnitMainHarnessTests
         return Task.CompletedTask;
     }
 
-    public static Task KeepsProfileSystem()
+    public static Task AppliesEvenWithRoleSuffix()
     {
-        var messages = new JsonArray(new JsonObject { ["role"] = "system", ["content"] = "cliente" });
-        bool applied = global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(messages, hasProfile: true, enabled: true);
-        TestContext.Check(!applied, "nao aplica no opencode");
-        TestContext.Check(messages[0]?["content"]?.GetValue<string>() == "cliente", "system do opencode intacto");
+        // Discriminador e o CLIENTE, nao o sufixo do modelo: o WAR usa
+        // <modelo>-build e antes ficava sem base (hasProfile bloqueava).
+        var messages = new JsonArray(new JsonObject { ["role"] = "system", ["content"] = "Voce e build." });
+        bool applied = global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(messages, enabled: true);
+        TestContext.Check(applied, "aplica mesmo com modelo de role (cliente gerido)");
+        TestContext.Check(messages[0]?["content"]?.GetValue<string>()?.StartsWith(Text) == true,
+            "system substituido pela base");
         return Task.CompletedTask;
     }
 
@@ -84,7 +88,7 @@ internal static class UnitMainHarnessTests
             ["role"] = "system",
             ["content"] = "# Code Mode\nUse the execute tool."
         });
-        bool applied = global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(messages, hasProfile: false, enabled: true);
+        bool applied = global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(messages, enabled: true);
         TestContext.Check(!applied, "nao aplica no master opencode sem sufixo");
         TestContext.Check(messages[0]?["content"]?.GetValue<string>()?.Contains("# Code Mode") == true,
             "system do opencode intacto");
