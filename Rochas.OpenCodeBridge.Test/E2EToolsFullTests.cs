@@ -119,13 +119,15 @@ internal static class E2EToolsFullTests
         // Enunciado de TAREFA, nao de harness: sem path, sem nome de tool e sem
         // coringa de coordenada. O modelo flui; o harness resolve o cwd.
         const string prompt =
-            "Inicie um repositorio git na pasta atual (nao crie subpasta). Crie nela um arquivo .txt com nome aleatorio " +
-            "contendo a data do sistema de hoje. Se tiver acesso a internet, busque o clima da cidade de Sao Paulo hoje " +
-            "e anote no arquivo. Salve o arquivo, versione no git com add e commit (primeiro commit: somente a data, sem " +
-            "EDITADO), liste os arquivos e faca uma busca neles para encontrar o arquivo criado. Acrescente a marca " +
-            "EDITADO ao mesmo arquivo (preserve a data exata: o arquivo final deve conter a data e a palavra EDITADO) " +
-            "e realize o segundo commit. Verifique o historico git e grave no arquivo historico_git.log (sem commitar " +
-            "esse arquivo de historico).";
+            "Trabalhe na pasta atual. Siga a ordem: " +
+            "1) Crie um arquivo .txt com nome aleatorio contendo a data de hoje (formato AAAA-MM-DD) e o clima de " +
+            "Sao Paulo se conseguir acessar a internet. " +
+            "2) Rode git init. Faca git add e o primeiro commit com a mensagem 'data'. O primeiro commit nao pode " +
+            "ter a palavra EDITADO. Rode git log --oneline e confirme 1 commit. " +
+            "3) Acrescente a palavra EDITADO ao mesmo .txt, mantendo a data. Faca git add e o segundo commit com a " +
+            "mensagem 'EDITADO'. Rode git log --oneline e confirme 2 commits. " +
+            "4) Liste os arquivos, busque o .txt com glob/grep, leia o arquivo e grave o historico do git (hashes e " +
+            "mensagens) em historico_git.log. Nao commite o historico_git.log.";
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
 
