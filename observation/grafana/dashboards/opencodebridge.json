@@ -480,18 +480,13 @@
           "root_selector": "",
           "columns": [
             {
-              "selector": "ring2_deny",
-              "text": "ring2 (conteudo)",
+              "selector": "anti_repeat_content",
+              "text": "conteudo",
               "type": "number"
             },
             {
-              "selector": "ring3_deny",
-              "text": "ring3 (tools)",
-              "type": "number"
-            },
-            {
-              "selector": "nudge_args",
-              "text": "nudge args",
+              "selector": "anti_repeat_tools",
+              "text": "tools",
               "type": "number"
             }
           ]

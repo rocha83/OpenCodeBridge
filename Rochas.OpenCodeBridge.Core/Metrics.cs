@@ -34,11 +34,14 @@ public static class Metrics
     // recusada antes de executar e pedida de novo com o JSON completo).
     static long _ring2Deny, _ring3Deny, _nudgeArgs;
     static long _breakerNudge, _breakerTrip;
+    static long _antiRepeatContent, _antiRepeatTools;
     public static long Ring2Deny => System.Threading.Interlocked.Read(ref _ring2Deny);
     public static long Ring3Deny => System.Threading.Interlocked.Read(ref _ring3Deny);
     public static long NudgeArgs => System.Threading.Interlocked.Read(ref _nudgeArgs);
     public static long BreakerNudge => System.Threading.Interlocked.Read(ref _breakerNudge);
     public static long BreakerTripCount => System.Threading.Interlocked.Read(ref _breakerTrip);
+    public static long AntiRepeatContent => System.Threading.Interlocked.Read(ref _antiRepeatContent);
+    public static long AntiRepeatTools => System.Threading.Interlocked.Read(ref _antiRepeatTools);
 
     /// <summary>Conta uma recusa no anel e (se diagnostic ligado) grava o evento.</summary>
     /// <param name="ring">"ring2", "ring3" ou "nudge".</param>
@@ -64,7 +67,19 @@ public static class Metrics
         ["nudge_args"] = NudgeArgs,
         ["breaker_nudge"] = BreakerNudge,
         ["breaker_trip"] = BreakerTripCount,
+        ["anti_repeat_content"] = AntiRepeatContent,
+        ["anti_repeat_tools"] = AntiRepeatTools,
     };
+
+    /// <summary>Conta um disparo do gate anti-repeat (conteudo ou tools).</summary>
+    /// <param name="tools">true = args/loop de tool; false = conteudo/thinking/stream.</param>
+    public static void AntiRepeatGate(bool tools)
+    {
+        if (tools) System.Threading.Interlocked.Increment(ref _antiRepeatTools);
+        else System.Threading.Interlocked.Increment(ref _antiRepeatContent);
+        if (!Active) return;
+        Record("anti-repeat-gate", new JsonObject { ["gate"] = tools ? "tools" : "content" });
+    }
 
     /// <summary>Conta um veredito do breaker de loop agentico (nudge|trip).</summary>
     /// <param name="verdict">"nudge" ou "trip".</param>
@@ -114,6 +129,8 @@ public static class Metrics
         System.Threading.Interlocked.Exchange(ref _nudgeArgs, 0);
         System.Threading.Interlocked.Exchange(ref _breakerNudge, 0);
         System.Threading.Interlocked.Exchange(ref _breakerTrip, 0);
+        System.Threading.Interlocked.Exchange(ref _antiRepeatContent, 0);
+        System.Threading.Interlocked.Exchange(ref _antiRepeatTools, 0);
     }
 
     // Amostrador de GPU em background (5s; best-effort, sem nvidia-smi = mudo).

@@ -1224,6 +1224,8 @@ internal static partial class Program
                     ["ring2_deny"] = Metrics.Ring2Deny,
                     ["ring3_deny"] = Metrics.Ring3Deny,
                     ["nudge_args"] = Metrics.NudgeArgs,
+                    ["anti_repeat_content"] = Metrics.AntiRepeatContent,
+                    ["anti_repeat_tools"] = Metrics.AntiRepeatTools,
                     ["tools_calls"] = ToolsCalls,
                     ["files_generated"] = GeneratedFiles.Count
                 });
@@ -4799,9 +4801,18 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         {
             obj["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             // O gate anti-repeat vira mensagem adicional no historico do
-            // enunciado (o mesmo aviso que a bridge injeta no modelo).
-            if (obj["event"]?.GetValue<string>() == "anti-repeat")
+            // enunciado (o mesmo aviso que a bridge injeta no modelo) e conta
+            // no painel de gates: conteudo vs tools.
+            string eventName = obj["event"]?.GetValue<string>() ?? "";
+            if (eventName == "anti-repeat")
+            {
                 AddEnunciadoMessage("anti-repeat", AntiRepeatNotice);
+                Metrics.AntiRepeatGate(false);
+            }
+            else if (eventName == "anti-repeat-args" || eventName == "anti-repeat-loop" || eventName == "anti-repeat-salvage")
+            {
+                Metrics.AntiRepeatGate(true);
+            }
             // --diagnostic-level metrics: mede sem guardar os corpos (o dump
             // integral passava de 280 MB numa rodada de belt, so de req/res).
             if (DiagnosticLevel == "metrics") { obj.Remove("req"); obj.Remove("res"); }
