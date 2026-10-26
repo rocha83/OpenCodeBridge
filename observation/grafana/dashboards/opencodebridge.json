@@ -35,7 +35,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 16
+        "y": 8
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -75,7 +75,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 16
+        "y": 8
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -115,7 +115,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 16
+        "y": 8
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -155,7 +155,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 12
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -437,7 +437,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 20
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -511,7 +511,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 16
+        "y": 8
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -551,7 +551,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 20
+        "y": 12
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -729,7 +729,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 26
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
