@@ -3874,3 +3874,22 @@ já registrava); `TEST-DRIVER.md` alinhado. Run limpo `L1-20261026-054513` (comm
 **Push.** Tentado a cada commit; host segue sem credencial GitHub (`fatal: could not
 read Username for 'https://github.com'`, sem `gh`/SSH/token) — commits locais
 preservados, push pendente.
+
+**ANTI-REPEAT "SEMANTICO": criado sem pedido e removido (2026-10-26).**
+O commit `9ee5344` somou ao anti-repeat verbatim um detector que **ninguem pediu**:
+`SemanticRepeat` (Jaccard de tokens >= 0.9 entre sentencas) e
+`IsRepeat = TailRepeats || SemanticRepeat`. Nao tinha enunciado nem aceite.
+Prova de que **nunca rodou**: a bridge `:4124` sobe de
+`/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net9.0` com
+`Rochas.OpenCodeBridge.Core.dll` de **2026-10-23 20:08**, sem o simbolo
+`SemanticRepeat` (`strings | grep -c` = 0), e o processo iniciou **00:24:14**,
+antes do commit **00:58:07**. Os 24 eventos `anti-repeat` de
+`/tmp/bridge-gpu.log` (`window=512`, `chars≈2.5k`) sao da cauda verbatim.
+Remocao: `IsRepeat` volta a `TailRepeats(text, Window)`; `SemanticRepeat`,
+`SemanticSimilarity`, `Tokenize` e `Jaccard` apagados (`ContentAntiRepeat.cs`,
+188 linhas); README deixa de anunciar semantica (8 trechos). Provas: build
+Release 0 erro; `Web.Test --units-only` 5/5 `U-antirepeat-*`; suite bridge
+`U-content-antireply-scopes` e `U-tools-antireply-helpers` PASS (2/2).
+Regra que fica: detector/feature so entra com enunciado + teste; sem isso, nao
+existe. A bateria `L1-20261026-054513` foi **parada** no `belts-build-bridge`
+para o ajuste (nada roda durante correcao) e recomeca do zero em dir novo.

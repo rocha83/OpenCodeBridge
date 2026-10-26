@@ -132,7 +132,7 @@ Every flag lives in exactly one group. Boolean flags accept `true/false` and
 
 | Flag | Default | Effect | Example |
 |---|---|---|---|
-| `--anti-repeat` | `true` | Watch `thinking`/`content`/tool-args for verbatim **and semantic** loops. | `--anti-repeat 0` |
+| `--anti-repeat` | `true` | Watch `thinking`/`content`/tool-args for verbatim loops. | `--anti-repeat 0` |
 | `--anti-repeat-abort` | `true` | Abort the upstream stream as soon as the detector trips. | `--anti-repeat-abort 0` |
 | `--anti-repeat-retry` | `true` | One retry with the soft notice, discarding the repeated window. | `--anti-repeat-retry 0` |
 | `--anti-repeat-window` | `256` | Compared tail size in normalized chars (`64..2048`). | `--anti-repeat-window 512` |
@@ -237,13 +237,12 @@ string system = HarnessTails.Compose(
 
 ```csharp
 var detector = new StreamAntiRepeatReply(window: 512);
-bool loop = detector.IsRepeat(accumulatedText); // verbatim + semantic
+bool loop = detector.IsRepeat(accumulatedText); // verbatim tail
 
 // Static helpers
 string norm = ContentAntiRepeat.Normalize("  Hello   WORLD ");
 double ratio = ContentAntiRepeat.Similarity("abc", "abd");       // 0.66
 bool tail = ContentAntiRepeat.TailRepeats(text, window: 512);
-bool idea = ContentAntiRepeat.SemanticRepeat(text, window: 512); // reformulated sentence
 int at = ContentAntiRepeat.TailDuplicateAt(text, window: 512);   // -1 when absent
 ```
 
@@ -426,7 +425,7 @@ Flags booleanas aceitam `true/false` e `1/0`.
 
 | Argumento | Default | Efeito | Exemplo |
 |---|---|---|---|
-| `--anti-repeat` | `true` | Observa `thinking`/`content`/tool-args para loop verbatim **e semântico**. | `--anti-repeat 0` |
+| `--anti-repeat` | `true` | Observa `thinking`/`content`/tool-args para loop verbatim. | `--anti-repeat 0` |
 | `--anti-repeat-abort` | `true` | Aborta o stream upstream assim que o detector dispara. | `--anti-repeat-abort 0` |
 | `--anti-repeat-retry` | `true` | Um retry com o aviso brando, descartando a janela repetida. | `--anti-repeat-retry 0` |
 | `--anti-repeat-window` | `256` | Janela comparada em chars normalizados (`64..2048`). | `--anti-repeat-window 512` |
@@ -528,12 +527,11 @@ string system = HarnessTails.Compose(
 
 ```csharp
 var detector = new StreamAntiRepeatReply(window: 512);
-bool loop = detector.IsRepeat(textoAcumulado); // verbatim + semântico
+bool loop = detector.IsRepeat(textoAcumulado); // cauda verbatim
 
 string norm = ContentAntiRepeat.Normalize("  Olá   MUNDO ");
 double ratio = ContentAntiRepeat.Similarity("abc", "abd");       // 0.66
 bool tail = ContentAntiRepeat.TailRepeats(texto, window: 512);
-bool idea = ContentAntiRepeat.SemanticRepeat(texto, window: 512); // frase reformulada
 int at = ContentAntiRepeat.TailDuplicateAt(texto, window: 512);   // -1 se ausente
 ```
 
@@ -736,7 +734,7 @@ beide Suiten sind Konsolen-Runner (Exit 0/1).
 > ferramentas que tornaram esta bridge possível, e à **DeepSeek**, por conceder
 > modelos de alta precisão que conduziram todo o ciclo de desenvolvimento da
 > propriedade intelectual deste componente — do desenho do protocolo à tradução
-> Responses ⇄ chat, do anti-repeat semântico ao harness e aos testes de aceite.
+> Responses ⇄ chat, do anti-repeat verbatim ao harness e aos testes de aceite.
 >
 > **This is the final cycle of this component as a standalone project.** The
 > `Rochas.OpenCodeBridge` bridge and web UI will be merged into **`AI.Manager`**,
@@ -747,4 +745,4 @@ beide Suiten sind Konsolen-Runner (Exit 0/1).
 > made this bridge possible, and to **DeepSeek** for granting high-precision
 > models that drove the entire development cycle of this component's
 > intellectual property — from the protocol design to the Responses ⇄ chat
-> translation, from semantic anti-repeat to the harness and acceptance tests.
+> translation, from verbatim anti-repeat to the harness and acceptance tests.
