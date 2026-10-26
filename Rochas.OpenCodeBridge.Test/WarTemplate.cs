@@ -464,11 +464,11 @@ internal sealed class WarTemplate : CircuitTemplate
             case 1:
                 // L1 canônico: opencode primeiro (sem MainHarness; tails +
                 // anti-repeat) e bridge depois (MainHarness + tails + anti-repeat).
-                // Sem raia de tails OFF: a bridge de produção é a única alvo do gate.
+                // Unidades por ultimo: o teste U-metrics-ring3-shell incrementa
+                // ring3 de proposito; rodar isso primeiro faria o painel mostrar
+                // ring3 subindo antes de qualquer cenario real.
                 foreach (string mode in new[] { "opencode", "bridge" })
                 {
-                    yield return StepBridge(driver, $"units-{mode}", mode,
-                        new[] { "--only", "U-" });
                     yield return StepBridge(driver, $"devpipe-{mode}", mode,
                         new[] { "--only", "E-devpipe" });
                     // Tools completas ja incluem o ciclo do antigo dual (pasta, git,
@@ -479,6 +479,8 @@ internal sealed class WarTemplate : CircuitTemplate
                         new[] { "--only", "E-belts-build-direct", "--belts", "azul,verde" });
                     yield return StepBridge(driver, $"belts-orch-{mode}", mode,
                         new[] { "--only", "E-belts-direct", "--belts", "azul,verde" });
+                    yield return StepBridge(driver, $"units-{mode}", mode,
+                        new[] { "--only", "U-" });
                 }
                 break;
 

@@ -177,6 +177,10 @@ internal static class TestContext
         psi.ArgumentList.Add(prompt);
         Directory.CreateDirectory(psi.WorkingDirectory);
 
+        // Raia OpenCode limpa: cada teste comeca sem sessoes do mesmo cwd (o
+        // servico global nao e tocado; o `run --standalone` e sempre novo).
+        OpencodeSessionsCleanup(psi.WorkingDirectory, new HashSet<string>(StringComparer.Ordinal));
+
         // A sessao e criada pelo `opencode run`; a unit de teste e dona dela e
         // precisa remover o que criou (senao o opencode acumula sessoes orfas).
         var before = OpencodeSessionIds(psi.WorkingDirectory);
