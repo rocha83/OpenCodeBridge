@@ -470,7 +470,6 @@ internal sealed class WarTemplate : CircuitTemplate
                     yield return StepBridge(driver, $"belts-orch-{mode}", mode,
                         new[] { "--only", "E-belts-direct", "--belts", "azul,verde" });
                 }
-                yield return StepWeb(driver);
                 break;
 
             case 2:
