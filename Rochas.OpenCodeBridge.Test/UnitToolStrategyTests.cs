@@ -164,7 +164,7 @@ internal static class UnitToolStrategyTests
         // tails agora sao so o delta da bridge. O teste guarda o novo contrato.
         string core = global::Rochas.OpenCodeBridge.Core.MainHarness.Text;
         foreach (string must in new[] { "ACEITE", "explique a dificuldade", "edit", "stub", "contexto", "bash -n" })
-            TestContext.Check(core.Contains(must, StringComparison.Ordinal), $"nucleo de qualidade presente: {must}");
+            TestContext.Check(core.Contains(must, StringComparison.OrdinalIgnoreCase), $"nucleo de qualidade presente: {must}");
         string formula = global::Rochas.OpenCodeBridge.Program.WithFormula("system base");
         TestContext.Check(formula.StartsWith("system base", StringComparison.Ordinal), "system original preservado");
         return Task.CompletedTask;

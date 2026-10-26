@@ -49,6 +49,7 @@ NOMES E CAMINHOS
 
 ERROS, OPERAÇÕES E QUALIDADE
 - Leia o erro e identifique a causa antes de repetir; build/teste vermelho = tarefa não concluída.
+- Nunca simule execução (echo fake, sleep ou texto que finja saída); só relate o que a tool devolveu.
 - Git: init antes do primeiro add/commit; identidade via `git -c user.name=... -c user.email=...`.
 - Binário (.db/.sqlite/.png) via shell+python3, não read. Rede via webfetch/websearch, não curl.
 - Artefatos completos (sem stub/TODO); correção por edit/sed no trecho; write só para arquivo novo.
