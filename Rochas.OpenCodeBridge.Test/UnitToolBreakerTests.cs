@@ -278,7 +278,7 @@ internal static class UnitToolBreakerTests
         TestContext.Check(Math.Abs(t1 - 0.5) < 0.0001, $"temperatura do cliente preservada (veio {t1})");
         TestContext.Check(s1 == "request", $"procedencia request (veio '{s1}')");
 
-        // 2) cliente omite: vale o perfil do role (-build = 0.1)
+        // 2) cliente omite: vale o perfil do role (-build = 0.2)
         var semTemp = await TestContext.PostObj(TestContext.Bridge + "/api/translate", new JsonObject
         {
             ["model"] = model,
@@ -286,7 +286,7 @@ internal static class UnitToolBreakerTests
         });
         double t2 = semTemp["temperature"]?.GetValue<double>() ?? -1;
         string s2 = semTemp["temperature_source"]?.GetValue<string>() ?? "";
-        TestContext.Check(Math.Abs(t2 - 0.1) < 0.0001, $"sem temperatura vale o perfil build 0.1 (veio {t2})");
+        TestContext.Check(Math.Abs(t2 - 0.2) < 0.0001, $"sem temperatura vale o perfil build 0.2 (veio {t2})");
         TestContext.Check(s2.StartsWith("profile"), $"procedencia profile (veio '{s2}')");
         TestContext.Check(semTemp["tails_on"]?.GetValue<bool>() == expectTails,
             $"cauda no caminho opencode segue o deployment (scope={scope}, tails={tailsEnabled})");
