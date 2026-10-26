@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=OpenCode Bridge Observation
+Comment=Inicia Grafana e abre o painel OpenCodeBridge
+Exec=bash -c "cd /media/mint/78AA0831AA07EB08/Projetos/Git/OpenCodeBridge && dotnet run --project observation/OpenCodeBridge.Observation.csproj"
+Icon=/usr/share/icons/Mint-Y/apps/48/gnome-system-monitor.png
+Terminal=true
+Categories=Development;System;
+StartupNotify=true

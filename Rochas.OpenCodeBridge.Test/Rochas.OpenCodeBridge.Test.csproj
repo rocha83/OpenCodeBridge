@@ -20,6 +20,13 @@
     <ProjectReference Include="..\Rochas.OpenCodeBridge\Rochas.OpenCodeBridge.csproj" />
   </ItemGroup>
 
+  <!-- Sonda estruturada (Serilog) para persistencia/acompanhamento em tempo real. -->
+  <ItemGroup>
+    <PackageReference Include="Serilog" Version="4.3.1" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+
   <!-- Dados de visão (placa.png/doc.png) vão para o output: Img64 lê de BaseDirectory. -->
   <ItemGroup>
     <None Update="TestData/**/*" CopyToOutputDirectory="PreserveNewest" />

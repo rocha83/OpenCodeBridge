@@ -159,6 +159,7 @@ internal sealed class WarTemplate : CircuitTemplate
     private string _hashBridge = "";
     private string _hashWeb = "";
     private string _initHashTest = "";
+    private string _sha512 = "";
     private readonly List<string> _pfFail = new();
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(8) };
@@ -372,6 +373,7 @@ internal sealed class WarTemplate : CircuitTemplate
         _hashBridge = Hash(_p.BridgeDll);
         _hashWeb = Hash(_p.WebTestDll);
         _initHashTest = Hash(_p.TestDll);
+        _sha512 = BinaryGuard.ForWar(_p.BridgeDll, _p.TestDll, _p.WebTestDll).Sha512;
 
         driver.Publish(new JsonObject
         {
@@ -379,6 +381,7 @@ internal sealed class WarTemplate : CircuitTemplate
             ["level"] = _level,
             ["stamp"] = StampOf(_out),
             ["git"] = _hashGit,
+            ["sha512"] = _sha512,
             ["dlls"] = new JsonObject
             {
                 ["bridge"] = _hashBridge,
@@ -518,6 +521,8 @@ internal sealed class WarTemplate : CircuitTemplate
 
     public override void OnRunEnd(TestCircuitDriver driver, CircuitGateResult gate)
     {
+        if (gate.Green)
+            BinaryGuard.Clear(Path.Combine(_p.Root, "logs", ".rerun-guard.json"));
         driver.Publish(new JsonObject
         {
             ["t"] = "run_end",
@@ -559,6 +564,9 @@ internal sealed class WarTemplate : CircuitTemplate
             RunTag: _hashGit,
             FollowLogPath: _p.Blog,
             FollowLogOutputPath: Path.Combine(driver.StepsDirectory, name + ".bridge.log"),
+            ProbeUrl: _p.Bridge,
+            ProbeApiKey: _p.Api,
+            ProbeLogs: new[] { _p.Blog },
             Restart: RestartPolicy(),
             Verdict: run => VerdictForTest(driver, run));
     }
@@ -607,6 +615,11 @@ internal sealed class WarTemplate : CircuitTemplate
             _initHashTest = now;
             return CircuitStepOutcome.Stale("binario mudou durante o run");
         }
+        if (outcome.Verdict == CircuitVerdict.Fail)
+            BinaryGuard.RecordFailure(
+                new BinaryGuard.Binaries(_sha512, _p.BridgeDll + "\n" + _p.TestDll + "\n" + _p.WebTestDll),
+                $"step {run.Name} FAIL: {outcome.Cause}",
+                Path.Combine(_p.Root, "logs", ".rerun-guard.json"));
         return outcome;
     }
 
@@ -627,6 +640,11 @@ internal sealed class WarTemplate : CircuitTemplate
             _hashWeb = now;
             return CircuitStepOutcome.Stale("binario web mudou durante o run");
         }
+        if (outcome.Verdict == CircuitVerdict.Fail)
+            BinaryGuard.RecordFailure(
+                new BinaryGuard.Binaries(_sha512, _p.BridgeDll + "\n" + _p.TestDll + "\n" + _p.WebTestDll),
+                $"step {run.Name} FAIL: {outcome.Cause}",
+                Path.Combine(_p.Root, "logs", ".rerun-guard.json"));
         return outcome;
     }
 
@@ -778,6 +796,15 @@ internal sealed class WarTemplate : CircuitTemplate
             new JsonObject { ["sha"] = _initHashTest, ["path"] = _p.TestDll });
         Pf(driver, "webtest_binario", File.Exists(_p.WebTestDll),
             new JsonObject { ["sha"] = _hashWeb, ["path"] = _p.WebTestDll });
+
+        var rerunGuard = BinaryGuard.Check(
+            new BinaryGuard.Binaries(_sha512, _p.BridgeDll + "\n" + _p.TestDll + "\n" + _p.WebTestDll),
+            Path.Combine(_p.Root, "logs", ".rerun-guard.json"));
+        Pf(driver, "rerun_sha512", rerunGuard.Allowed, new JsonObject
+        {
+            ["sha512"] = _sha512.Length >= 16 ? _sha512[..16] : _sha512,
+            ["motivo"] = rerunGuard.Reason
+        });
 
         string? opencode = Execution.FindOnPath("opencode");
         string version = "";

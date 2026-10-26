@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: 'OpenCodeBridge'
+    orgId: 1
+    folder: 'OpenCodeBridge'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /media/mint/78AA0831AA07EB08/Projetos/Git/OpenCodeBridge/observation/grafana/dashboards

@@ -71,6 +71,9 @@ internal sealed record CircuitStepSpec(
     string? RunTag = null,
     string? FollowLogPath = null,
     string? FollowLogOutputPath = null,
+    string? ProbeUrl = null,
+    string? ProbeApiKey = null,
+    IReadOnlyList<string>? ProbeLogs = null,
     CircuitRestartPolicy? Restart = null,
     Func<CircuitStepRun, CircuitStepOutcome>? Verdict = null,
     IReadOnlyList<string>? DependsOn = null,
@@ -503,6 +506,10 @@ internal sealed class TestCircuitDriver : IDisposable
         int timeout = step.TimeoutSeconds > 0 ? step.TimeoutSeconds : _o.DefaultTimeoutSeconds;
         CircuitStepResult result = default!;
         long totalSeconds = 0;
+
+        using var probe = StepProbe.Start(
+            Path.Combine(_o.RunDirectory, "probes"),
+            step.Name, step.Mode, step.ProbeUrl, step.ProbeApiKey, step.ProbeLogs);
 
         for (int i = 0; i < maxAttempts; i++)
         {

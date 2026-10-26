@@ -1,0 +1,52 @@
+{
+  "id": null,
+  "uid": "opencodebridge",
+  "title": "OpenCodeBridge Observation",
+  "tags": ["opencodebridge", "bridge", "probes"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Requests (in-memory)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "testdata", "uid": "testdata" },
+      "targets": [
+        { "refId": "A", "scenarioId": "random_walk", "alias": "requests" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Latencia (in-memory)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "testdata", "uid": "testdata" },
+      "targets": [
+        { "refId": "A", "scenarioId": "random", "alias": "latencia_ms" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Cauda longa (in-memory)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "testdata", "uid": "testdata" },
+      "targets": [
+        { "refId": "A", "scenarioId": "slow_query", "alias": "slow" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Contadores de tools (in-memory)",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "testdata", "uid": "testdata" },
+      "targets": [
+        { "refId": "A", "scenarioId": "datapoints", "alias": "tools" }
+      ]
+    }
+  ]
+}

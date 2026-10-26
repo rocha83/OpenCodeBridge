@@ -97,6 +97,15 @@ internal static class Program
         }
         catch (Exception ex) { Console.WriteLine($"[test] sem status: {ex.Message}"); }
 
+        var runnerBins = BinaryGuard.ForRunner();
+        Console.WriteLine($"[test] binaries_sha512={runnerBins.Sha512}");
+        var rerun = BinaryGuard.Check(runnerBins, BinaryGuard.DefaultStatePath());
+        if (!rerun.Allowed)
+        {
+            Console.WriteLine($"FAIL rerun-guard: {rerun.Reason}");
+            return 4;
+        }
+
         // ---- unit (bridge, sem modelo)
         if (!TestContext.SkipUnit)
         {
@@ -304,6 +313,9 @@ internal static class Program
             TestContext.RunDual("E-dual-tools", E2EDualToolTests.All);
         }
 
-        return TestContext.Summary();
+        int rc = TestContext.Summary();
+        if (rc != 0) BinaryGuard.RecordFailure(runnerBins, $"suite FAIL={rc}", BinaryGuard.DefaultStatePath());
+        else BinaryGuard.Clear(BinaryGuard.DefaultStatePath());
+        return rc;
     }
 }
