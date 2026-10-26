@@ -28,6 +28,202 @@
       }
     },
     {
+      "id": 14,
+      "title": "Enunciado do teste em execucao",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 3
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/test/enunciado/messages",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "format": "table",
+          "columns": [
+            {
+              "selector": "time",
+              "text": "hora",
+              "type": "string"
+            },
+            {
+              "selector": "kind",
+              "text": "tipo",
+              "type": "string"
+            },
+            {
+              "selector": "text",
+              "text": "mensagem",
+              "type": "string"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [],
+        "enablePagination": false
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto",
+              "wrapText": true
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hora"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "tipo"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 17,
+      "title": "Respostas do agente",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 3
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/test/activity?limit=6",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "format": "table",
+          "columns": [
+            {
+              "selector": "time",
+              "text": "hora",
+              "type": "string"
+            },
+            {
+              "selector": "kind",
+              "text": "tipo",
+              "type": "string"
+            },
+            {
+              "selector": "text",
+              "text": "resposta",
+              "type": "string"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [],
+        "enablePagination": false
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto",
+              "wrapText": true
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hora"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "tipo"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "id": 2,
       "title": "Requests totais",
       "type": "stat",
@@ -35,7 +231,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 8
+        "y": 11
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -68,46 +264,6 @@
       ]
     },
     {
-      "id": 3,
-      "title": "Falhas",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 8
-      },
-      "datasource": {
-        "type": "yesoreyeram-infinity-datasource",
-        "uid": "opencodebridge-infinity"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "json",
-          "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
-          "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
-          },
-          "root_selector": "",
-          "columns": [
-            {
-              "selector": "failed_requests",
-              "text": "failed",
-              "type": "number"
-            }
-          ]
-        }
-      ]
-    },
-    {
       "id": 4,
       "title": "Tokens/s saida",
       "type": "stat",
@@ -115,7 +271,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 8
+        "y": 11
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -148,14 +304,159 @@
       ]
     },
     {
+      "id": 18,
+      "title": "Arquivos gerados",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 11
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/metrics",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "files_generated",
+              "text": "arquivos",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Falhas",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 11
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/metrics",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "failed_requests",
+              "text": "failed",
+              "type": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Requests por modo (acumulado)",
+      "type": "bargauge",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/metrics",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "requests_opencode",
+              "text": "opencode",
+              "type": "number"
+            },
+            {
+              "selector": "requests_bridge",
+              "text": "bridge",
+              "type": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": 5,
       "title": "Gates anti-repeat (conteudo/tools)",
       "type": "bargauge",
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 12
+        "x": 12,
+        "y": 15
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -198,310 +499,6 @@
       ]
     },
     {
-      "id": 6,
-      "title": "Status da bridge",
-      "type": "table",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 42
-      },
-      "datasource": {
-        "type": "yesoreyeram-infinity-datasource",
-        "uid": "opencodebridge-infinity"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "json",
-          "source": "url",
-          "url": "http://127.0.0.1:4124/api/status",
-          "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
-          },
-          "root_selector": "",
-          "columns": [
-            {
-              "selector": "model",
-              "text": "model",
-              "type": "string"
-            },
-            {
-              "selector": "temperature",
-              "text": "temp",
-              "type": "number"
-            },
-            {
-              "selector": "context_tokens",
-              "text": "ctx",
-              "type": "number"
-            },
-            {
-              "selector": "mode",
-              "text": "mode",
-              "type": "string"
-            },
-            {
-              "selector": "last_client",
-              "text": "last_client",
-              "type": "string"
-            },
-            {
-              "selector": "main_harness",
-              "text": "main_harness",
-              "type": "string"
-            },
-            {
-              "selector": "main_harness_scope",
-              "text": "main_harness_scope",
-              "type": "string"
-            },
-            {
-              "selector": "main_harness_opencode",
-              "text": "main_harness_opencode",
-              "type": "string"
-            },
-            {
-              "selector": "harness_tails",
-              "text": "tails",
-              "type": "string"
-            },
-            {
-              "selector": "tails_managed",
-              "text": "tails_managed",
-              "type": "string"
-            },
-            {
-              "selector": "tails_opencode",
-              "text": "tails_opencode",
-              "type": "string"
-            },
-            {
-              "selector": "uptime_seconds",
-              "text": "uptime_s",
-              "type": "number"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": 7,
-      "title": "Throughput por step (sonda 2s)",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 34
-      },
-      "datasource": {
-        "type": "yesoreyeram-infinity-datasource",
-        "uid": "opencodebridge-infinity"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "json",
-          "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
-          "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
-          },
-          "root_selector": "",
-          "format": "timeseries",
-          "columns": [
-            {
-              "selector": "ts",
-              "text": "time",
-              "type": "timestamp_epoch"
-            },
-            {
-              "selector": "tps_output",
-              "text": "t/s saida",
-              "type": "number"
-            },
-            {
-              "selector": "tps_total",
-              "text": "t/s total",
-              "type": "number"
-            }
-          ]
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "bars",
-            "barAlignment": 0,
-            "lineWidth": 1,
-            "fillOpacity": 100,
-            "gradientMode": "none",
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisPlacement": "auto"
-          },
-          "unit": "short",
-          "min": 0
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "t/s total"
-            },
-            "properties": [
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      }
-    },
-    {
-      "id": 8,
-      "title": "VRAM/GPU por step (sonda 2s)",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 34
-      },
-      "datasource": {
-        "type": "yesoreyeram-infinity-datasource",
-        "uid": "opencodebridge-infinity"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "json",
-          "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
-          "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
-          },
-          "root_selector": "",
-          "format": "timeseries",
-          "columns": [
-            {
-              "selector": "ts",
-              "text": "time",
-              "type": "timestamp_epoch"
-            },
-            {
-              "selector": "vram_used_mb",
-              "text": "VRAM usada MB",
-              "type": "number"
-            },
-            {
-              "selector": "vram_total_mb",
-              "text": "VRAM total MB",
-              "type": "number"
-            },
-            {
-              "selector": "gpu_util",
-              "text": "GPU %",
-              "type": "number"
-            }
-          ]
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "bars",
-            "barAlignment": 0,
-            "lineWidth": 1,
-            "fillOpacity": 100,
-            "gradientMode": "none",
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisPlacement": "auto"
-          },
-          "unit": "decmbytes",
-          "min": 0
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "GPU %"
-            },
-            "properties": [
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "unit",
-                "value": "percent"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "VRAM total MB"
-            },
-            "properties": [
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 1
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      }
-    },
-    {
       "id": 9,
       "title": "Tools calls por step (todos os steps)",
       "type": "barchart",
@@ -509,7 +506,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 23
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -576,224 +573,6 @@
       }
     },
     {
-      "id": 10,
-      "title": "Modo do ultimo request",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 8
-      },
-      "datasource": {
-        "type": "yesoreyeram-infinity-datasource",
-        "uid": "opencodebridge-infinity"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "json",
-          "source": "url",
-          "url": "http://127.0.0.1:4124/api/status",
-          "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
-          },
-          "root_selector": "",
-          "columns": [
-            {
-              "selector": "last_client",
-              "text": "last_client",
-              "type": "string"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": 11,
-      "title": "Requests por modo (acumulado)",
-      "type": "bargauge",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 12
-      },
-      "datasource": {
-        "type": "yesoreyeram-infinity-datasource",
-        "uid": "opencodebridge-infinity"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "json",
-          "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
-          "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
-          },
-          "root_selector": "",
-          "columns": [
-            {
-              "selector": "requests_opencode",
-              "text": "opencode",
-              "type": "number"
-            },
-            {
-              "selector": "requests_bridge",
-              "text": "bridge",
-              "type": "number"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": 12,
-      "title": "Harness efetivo por caminho",
-      "type": "table",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 42
-      },
-      "datasource": {
-        "type": "yesoreyeram-infinity-datasource",
-        "uid": "opencodebridge-infinity"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "json",
-          "source": "url",
-          "url": "http://127.0.0.1:4124/api/status",
-          "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
-          },
-          "root_selector": "",
-          "columns": [
-            {
-              "selector": "main_harness",
-              "text": "main_harness",
-              "type": "string"
-            },
-            {
-              "selector": "main_harness_scope",
-              "text": "scope",
-              "type": "string"
-            },
-            {
-              "selector": "main_harness_opencode",
-              "text": "main_harness_opencode",
-              "type": "string"
-            },
-            {
-              "selector": "harness_tails",
-              "text": "tails",
-              "type": "string"
-            },
-            {
-              "selector": "tails_managed",
-              "text": "tails_managed",
-              "type": "string"
-            },
-            {
-              "selector": "tails_opencode",
-              "text": "tails_opencode",
-              "type": "string"
-            },
-            {
-              "selector": "tail_scope",
-              "text": "tail_scope",
-              "type": "string"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": 14,
-      "title": "Enunciado do teste em execucao",
-      "type": "table",
-      "gridPos": {
-        "h": 5,
-        "w": 24,
-        "x": 0,
-        "y": 3
-      },
-      "datasource": {
-        "type": "yesoreyeram-infinity-datasource",
-        "uid": "opencodebridge-infinity"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "json",
-          "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/enunciado",
-          "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
-          },
-          "root_selector": "",
-          "format": "table",
-          "columns": [
-            {
-              "selector": "prompt",
-              "text": "Enunciado do teste em execucao",
-              "type": "string"
-            }
-          ]
-        }
-      ],
-      "options": {
-        "showHeader": false,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false
-        },
-        "sortBy": [],
-        "enablePagination": false
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "left",
-            "cellOptions": {
-              "type": "auto",
-              "wrapText": true
-            },
-            "inspect": false
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
       "id": 16,
       "title": "Steps concluidos",
       "type": "table",
@@ -801,7 +580,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 29
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -930,6 +709,380 @@
           }
         ]
       }
+    },
+    {
+      "id": 7,
+      "title": "Throughput por step (sonda 2s)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 37
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "format": "timeseries",
+          "columns": [
+            {
+              "selector": "ts",
+              "text": "time",
+              "type": "timestamp_epoch"
+            },
+            {
+              "selector": "tps_output",
+              "text": "t/s saida",
+              "type": "number"
+            },
+            {
+              "selector": "tps_total",
+              "text": "t/s total",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": 0,
+            "lineWidth": 1,
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisPlacement": "auto"
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "t/s total"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "VRAM/GPU por step (sonda 2s)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 37
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "format": "timeseries",
+          "columns": [
+            {
+              "selector": "ts",
+              "text": "time",
+              "type": "timestamp_epoch"
+            },
+            {
+              "selector": "vram_used_mb",
+              "text": "VRAM usada MB",
+              "type": "number"
+            },
+            {
+              "selector": "vram_total_mb",
+              "text": "VRAM total MB",
+              "type": "number"
+            },
+            {
+              "selector": "gpu_util",
+              "text": "GPU %",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": 0,
+            "lineWidth": 1,
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisPlacement": "auto"
+          },
+          "unit": "decmbytes",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GPU %"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VRAM total MB"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Status da bridge",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 45
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/status",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "model",
+              "text": "model",
+              "type": "string"
+            },
+            {
+              "selector": "temperature",
+              "text": "temp",
+              "type": "number"
+            },
+            {
+              "selector": "context_tokens",
+              "text": "ctx",
+              "type": "number"
+            },
+            {
+              "selector": "mode",
+              "text": "mode",
+              "type": "string"
+            },
+            {
+              "selector": "last_client",
+              "text": "last_client",
+              "type": "string"
+            },
+            {
+              "selector": "main_harness",
+              "text": "main_harness",
+              "type": "string"
+            },
+            {
+              "selector": "main_harness_scope",
+              "text": "main_harness_scope",
+              "type": "string"
+            },
+            {
+              "selector": "main_harness_opencode",
+              "text": "main_harness_opencode",
+              "type": "string"
+            },
+            {
+              "selector": "harness_tails",
+              "text": "tails",
+              "type": "string"
+            },
+            {
+              "selector": "tails_managed",
+              "text": "tails_managed",
+              "type": "string"
+            },
+            {
+              "selector": "tails_opencode",
+              "text": "tails_opencode",
+              "type": "string"
+            },
+            {
+              "selector": "uptime_seconds",
+              "text": "uptime_s",
+              "type": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Harness efetivo por caminho",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 45
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/status",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "main_harness",
+              "text": "main_harness",
+              "type": "string"
+            },
+            {
+              "selector": "main_harness_scope",
+              "text": "scope",
+              "type": "string"
+            },
+            {
+              "selector": "main_harness_opencode",
+              "text": "main_harness_opencode",
+              "type": "string"
+            },
+            {
+              "selector": "harness_tails",
+              "text": "tails",
+              "type": "string"
+            },
+            {
+              "selector": "tails_managed",
+              "text": "tails_managed",
+              "type": "string"
+            },
+            {
+              "selector": "tails_opencode",
+              "text": "tails_opencode",
+              "type": "string"
+            },
+            {
+              "selector": "tail_scope",
+              "text": "tail_scope",
+              "type": "string"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

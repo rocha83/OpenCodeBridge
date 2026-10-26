@@ -535,6 +535,17 @@ internal static partial class Program
     static string LastEnunciadoStep = "n/d";
     static string LastEnunciado = "";
     static long LastEnunciadoMs;
+    // Historico do enunciado do step: inicial + mensagens adicionais
+    // (nudges do runner e avisos do gate anti-repeat).
+    static readonly object EnunciadoLock = new();
+    static readonly ConcurrentQueue<JsonObject> EnunciadoHistory = new();
+    const int EnunciadoHistoryCap = 64;
+    // Arquivos distintos pedidos em write pelo modelo (conta no painel).
+    static readonly ConcurrentDictionary<string, byte> GeneratedFiles = new();
+    // Respostas do agente (painel a direita do enunciado): ultimas 6.
+    static readonly object AgentActivityLock = new();
+    static readonly ConcurrentQueue<JsonObject> AgentActivity = new();
+    const int AgentActivityCap = 64;
 
     // Acumuladores p/ /api/metrics (tokens/s). Lock porque streams concorrem.
     static long TotalInputTokens;
@@ -551,6 +562,194 @@ internal static partial class Program
             TotalOutputTokens += outputTokens;
             TotalElapsedSecs += elapsedSecs;
         }
+    }
+
+    /// <summary>Acrescenta uma mensagem ao historico do enunciado do step.</summary>
+    static void AddEnunciadoMessage(string kind, string text)
+    {
+        text = (text ?? "").Replace("\r", " ").Trim();
+        if (text.Length == 0) return;
+        lock (EnunciadoLock)
+        {
+            var last = EnunciadoHistory.LastOrDefault();
+            if (last?["text"]?.GetValue<string>() == text) return;
+            if (kind == "enunciado" && EnunciadoHistory.Count > 0)
+            {
+                // O prompt inicial e publicado a cada request (PostObj); nao
+                // repete a primeira linha quando o anti-repeat injeta um aviso.
+                var first = EnunciadoHistory.FirstOrDefault();
+                if (first?["text"]?.GetValue<string>() == text) return;
+                kind = "adicional";
+            }
+            var row = new JsonObject
+            {
+                ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                ["time"] = DateTime.Now.ToString("HH:mm:ss"),
+                ["step"] = LastEnunciadoStep,
+                ["kind"] = kind,
+                ["text"] = text
+            };
+            EnunciadoHistory.Enqueue(row);
+            while (EnunciadoHistory.Count > EnunciadoHistoryCap) EnunciadoHistory.TryDequeue(out _);
+            LastEnunciado = text;
+            LastEnunciadoMs = row["ts"]!.GetValue<long>();
+        }
+    }
+
+    /// <summary>Runner publicou o enunciado; troca de step limpa o historico.</summary>
+    static void SetEnunciado(string step, string prompt)
+    {
+        lock (EnunciadoLock)
+        {
+            if (step != LastEnunciadoStep)
+            {
+                while (EnunciadoHistory.TryDequeue(out _)) { }
+                LastEnunciadoStep = step;
+            }
+            LastEnunciado = prompt;
+            LastEnunciadoMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        }
+        if (prompt.Length > 0) AddEnunciadoMessage("enunciado", prompt);
+    }
+
+    /// <summary>Snapshot do enunciado: step, ultimo prompt e lista de mensagens.</summary>
+    static (string Step, string Prompt, long Ms, JsonArray Messages) SnapshotEnunciado()
+    {
+        var messages = new JsonArray();
+        var latest = ProbeSamples
+            .OrderByDescending(x => x["ts"]?.GetValue<long>() ?? 0)
+            .FirstOrDefault();
+        string latestStep = latest?["step"]?.GetValue<string>() ?? "";
+        string step, prompt;
+        long ms;
+        lock (EnunciadoLock)
+        {
+            step = LastEnunciadoStep;
+            prompt = LastEnunciado;
+            ms = LastEnunciadoMs;
+            // Step sem prompt proprio (units): nao herda o historico do step
+            // anterior; a lista fica vazia ate o runner publicar.
+            if (latestStep.Length > 0 && latestStep != step)
+            {
+                step = latestStep;
+                prompt = "";
+                ms = latest?["ts"]?.GetValue<long>() ?? ms;
+            }
+            else
+            {
+                foreach (var row in EnunciadoHistory)
+                    messages.Add(row.DeepClone());
+            }
+        }
+        return (step, prompt, ms, messages);
+    }
+
+    /// <summary>Publica uma resposta/tool do agente no painel ao lado do enunciado.</summary>
+    static void RecordAgentActivity(string kind, string text)
+    {
+        text = (text ?? "").Replace("\r", " ").Trim();
+        if (text.Length == 0) return;
+        if (text.Length > 1200) text = text[..1200] + "…";
+        lock (AgentActivityLock)
+        {
+            var last = AgentActivity.LastOrDefault();
+            if (last?["kind"]?.GetValue<string>() == kind
+                && last?["text"]?.GetValue<string>() == text) return;
+            var row = new JsonObject
+            {
+                ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                ["time"] = DateTime.Now.ToString("HH:mm:ss"),
+                ["step"] = LastEnunciadoStep,
+                ["kind"] = kind,
+                ["text"] = text
+            };
+            AgentActivity.Enqueue(row);
+            while (AgentActivity.Count > AgentActivityCap) AgentActivity.TryDequeue(out _);
+        }
+    }
+
+    /// <summary>Resume uma tool call para o painel (path/comando/pattern).</summary>
+    static string FormatToolCall(string name, string args)
+    {
+        string path = "", cmd = "", pattern = "";
+        try
+        {
+            var a = JsonNode.Parse(args)?.AsObject();
+            path = a?["path"]?.GetValue<string>() ?? "";
+            cmd = a?["command"]?.GetValue<string>() ?? "";
+            pattern = a?["pattern"]?.GetValue<string>() ?? "";
+        }
+        catch { }
+        if (name.Equals("write", StringComparison.OrdinalIgnoreCase) && path.Length > 0) return "write " + path;
+        if (name.Equals("edit", StringComparison.OrdinalIgnoreCase) && path.Length > 0) return "edit " + path;
+        if (cmd.Length > 0) return name + ": " + cmd;
+        if (pattern.Length > 0) return name + ": " + pattern;
+        return name;
+    }
+
+    /// <summary>Registra mensagem/tools de uma resposta chat (OpenAI).</summary>
+    static void RecordChatActivity(string json)
+    {
+        try
+        {
+            var root = JsonNode.Parse(json)?.AsObject();
+            if (root?["choices"]?[0]?["message"] is not JsonObject msg) return;
+            string content = "";
+            if (msg["content"] is JsonValue cv) { try { content = cv.GetValue<string>(); } catch { } }
+            if (content.Length > 0) RecordAgentActivity("assistant", content);
+            if (msg["tool_calls"] is JsonArray calls)
+                foreach (var c in calls)
+                {
+                    string name = c?["function"]?["name"]?.GetValue<string>() ?? "";
+                    string args = c?["function"]?["arguments"]?.GetValue<string>() ?? "{}";
+                    RecordToolCall(name, args);
+                    RecordAgentActivity("tool", FormatToolCall(name, args));
+                }
+        }
+        catch { /* metrica nunca derruba o pedido */ }
+    }
+
+    /// <summary>Registra mensagem/tools de uma resposta Responses.</summary>
+    static void RecordResponsesActivity(JsonObject responseObj)
+    {
+        try
+        {
+            if (responseObj["output"] is not JsonArray output) return;
+            foreach (var node in output)
+            {
+                if (node is not JsonObject item) continue;
+                string type = item["type"]?.GetValue<string>() ?? "";
+                if (type == "message" && item["content"] is JsonArray parts)
+                {
+                    string text = string.Join("\n", parts.OfType<JsonObject>()
+                        .Select(p => p["text"]?.GetValue<string>() ?? "")
+                        .Where(s => s.Length > 0));
+                    if (text.Length > 0) RecordAgentActivity("assistant", text);
+                }
+                else if (type == "function_call")
+                {
+                    string name = item["name"]?.GetValue<string>() ?? "";
+                    string args = item["arguments"]?.GetValue<string>() ?? "{}";
+                    RecordToolCall(name, args);
+                    RecordAgentActivity("tool", FormatToolCall(name, args));
+                }
+            }
+        }
+        catch { /* metrica nunca derruba o pedido */ }
+    }
+
+    /// <summary>Conta arquivos distintos pedidos em write pelo modelo.</summary>
+    static void RecordToolCall(string name, string args)
+    {
+        if (!name.Equals("write", StringComparison.OrdinalIgnoreCase)) return;
+        try
+        {
+            var a = JsonNode.Parse(args)?.AsObject();
+            string path = a?["path"]?.GetValue<string>() ?? "";
+            if (path.Length > 0)
+                GeneratedFiles.TryAdd(LastEnunciadoStep + "|" + path, 0);
+        }
+        catch { }
     }
 
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(30) };
@@ -978,50 +1177,57 @@ internal static partial class Program
                     ["ring2_deny"] = Metrics.Ring2Deny,
                     ["ring3_deny"] = Metrics.Ring3Deny,
                     ["nudge_args"] = Metrics.NudgeArgs,
-                    ["tools_calls"] = ToolsCalls
+                    ["tools_calls"] = ToolsCalls,
+                    ["files_generated"] = GeneratedFiles.Count
                 });
                 return;
             }
 
             // Enunciado do teste em execucao: o runner publica antes de rodar o
             // cenario e o painel Infinity le. GET sem corpo devolve o ultimo.
+            if (ctx.Request.HttpMethod == "GET" && path == "/api/test/enunciado/messages")
+            {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
+                WriteJson(ctx, 200, SnapshotEnunciado().Messages);
+                return;
+            }
+
+            // Respostas do agente (painel a direita): ultimas N do step atual.
+            if (ctx.Request.HttpMethod == "GET" && path == "/api/test/activity")
+            {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
+                int limit = int.TryParse(ctx.Request.QueryString["limit"], out int lim) ? Math.Clamp(lim, 1, 50) : 6;
+                string step = SnapshotEnunciado().Step;
+                var rows = AgentActivity
+                    .Where(x => (x["step"]?.GetValue<string>() ?? "") == step)
+                    .Reverse()
+                    .Take(limit)
+                    .ToArray();
+                var arr = new JsonArray();
+                foreach (var x in rows) arr.Add(x.DeepClone());
+                WriteJson(ctx, 200, arr);
+                return;
+            }
+
             if (path == "/api/test/enunciado")
             {
                 if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
                 if (ctx.Request.HttpMethod == "POST")
                 {
                     var body = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
-                    LastEnunciadoStep = body["step"]?.GetValue<string>() ?? "n/d";
-                    LastEnunciado = body["prompt"]?.GetValue<string>() ?? "";
-                    LastEnunciadoMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    SetEnunciado(
+                        body["step"]?.GetValue<string>() ?? "n/d",
+                        body["prompt"]?.GetValue<string>() ?? "");
+                    WriteJson(ctx, 200, new JsonObject { ["ok"] = true });
+                    return;
                 }
-                string shownStep = LastEnunciadoStep;
-                string shownPrompt = LastEnunciado;
-                long shownMs = LastEnunciadoMs;
-                if (ctx.Request.HttpMethod != "POST")
-                {
-                    // Fallback honesto: steps sem prompt proprio (devpipe, belts,
-                    // units) mostram o step atual da sonda; tools-full mostra o
-                    // enunciado real publicado pelo runner.
-                    var latest = ProbeSamples
-                        .OrderByDescending(x => x["ts"]?.GetValue<long>() ?? 0)
-                        .FirstOrDefault();
-                    string latestStep = latest?["step"]?.GetValue<string>() ?? "";
-                    if (latestStep.Length > 0 && latestStep != shownStep)
-                    {
-                        // Step sem prompt proprio (units): limpa o anterior em vez
-                        // de inventar "Step em execucao". O runner publica o
-                        // enunciado real de todo prompt de modelo.
-                        shownStep = latestStep;
-                        shownPrompt = "";
-                        shownMs = latest?["ts"]?.GetValue<long>() ?? shownMs;
-                    }
-                }
+                var snap = SnapshotEnunciado();
                 WriteJson(ctx, 200, new JsonObject
                 {
-                    ["step"] = shownStep,
-                    ["prompt"] = shownPrompt,
-                    ["updated_ms"] = shownMs
+                    ["step"] = snap.Step,
+                    ["prompt"] = snap.Prompt,
+                    ["updated_ms"] = snap.Ms,
+                    ["messages"] = snap.Messages
                 });
                 return;
             }
@@ -1249,6 +1455,11 @@ WriteJson(ctx, 200, new JsonObject
                     RoleProfiles.TryResolve(req["model"]?.GetValue<string>(), Profiles, out role, out _);
                 var executor = new Core.Tools.BridgeToolExecutor(root, Upstream, ApiKey, Log, role);
                 var result = executor.Execute(name, args, Math.Clamp(timeout, 1, 600));
+                if (result.Success)
+                {
+                    RecordToolCall(name, args);
+                    RecordAgentActivity("tool", FormatToolCall(name, args));
+                }
                 string output = result.Success ? result.Output : "";
                 if (ToolOutputLimit > 0 && output.Length > ToolOutputLimit) output = output[..ToolOutputLimit];
                 string error = result.Success ? "" : result.Error;
@@ -1776,6 +1987,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 }
                 catch { }
             }
+            RecordChatActivity(json);
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
             // Sonda traffic FULL (só com DIAGNOSTICS; chat sem stream: integros).
@@ -2221,6 +2433,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         var chatJson = JsonNode.Parse(responseBody)?.AsObject() ?? new JsonObject();
         if (shimmed) ToolShim.TransformResponse(chatJson);
         var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0, chat["messages"]);
+        RecordResponsesActivity(responseObj);
 
         double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
         int inTok = responseObj["usage"]?["input_tokens"]?.GetValue<int>() ?? 0;
@@ -2387,6 +2600,7 @@ var shape = new StringBuilder();
                 sseTrip = true;
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "bypass-responses-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
             }
+            if (sseText.Length > 0) RecordAgentActivity("assistant", sseText.ToString());
             // Sonda traffic FULL (só com DIAGNOSTICS): pedido e SSE integros.
             if (Diagnostic)
             {
@@ -2416,9 +2630,13 @@ var shape = new StringBuilder();
                     }
                 }
             }
+            try
+            {
+                if (JsonNode.Parse(json) is JsonObject ro) RecordResponsesActivity(ro);
+            }
+            catch { }
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
-            // Sonda traffic FULL (só com DIAGNOSTICS; sem stream: integros).
             if (Diagnostic)
             {
                 var traffic = new JsonObject { ["event"] = "traffic", ["mode"] = "responses", ["model"] = Model, ["req_len"] = outBody.Length, ["req"] = outBody, ["res_len"] = json.Length, ["res"] = json };
@@ -3003,6 +3221,7 @@ var shape = new StringBuilder();
                 }
             };
             string json = outObj.ToJsonString(SerOpts);
+            RecordChatActivity(json);
 
             // No caminho de abort em stream NAO fazemos retry: o retry pos-hoc
             // re-gerava o turno inteiro e degenerava de novo (medido). Ficamos
@@ -3117,6 +3336,7 @@ var shape = new StringBuilder();
             return;
         }
         var transformed = ToolShim.TransformResponse(obj);
+        RecordChatActivity(transformed.ToJsonString(SerOpts));
         string json = transformed.ToJsonString(SerOpts);
         if (!wantStream)
             WriteJson(ctx, 200, transformed);
@@ -3254,6 +3474,7 @@ static bool NormalizeSystemFirst(JsonObject req)
         var chatJson = JsonNode.Parse(responseBody)?.AsObject() ?? new JsonObject();
         ToolShim.TransformResponse(chatJson);
         var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0, chat["messages"]);
+        RecordResponsesActivity(responseObj);
 
         double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
         int inTok = responseObj["usage"]?["input_tokens"]?.GetValue<int>() ?? 0;
@@ -3951,6 +4172,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         };
         var finalObj = ChatToResponses(synthetic, requestedModel, temperature, thinking, ReqHasTools(chat));
         finalObj["id"] = respId;
+        RecordResponsesActivity(finalObj);
         // Ids do completed precisam casar com os itens ja anunciados no stream.
         foreach (var outputNode in finalObj["output"]!.AsArray())
         {
@@ -4528,6 +4750,10 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         try
         {
             obj["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            // O gate anti-repeat vira mensagem adicional no historico do
+            // enunciado (o mesmo aviso que a bridge injeta no modelo).
+            if (obj["event"]?.GetValue<string>() == "anti-repeat")
+                AddEnunciadoMessage("anti-repeat", AntiRepeatNotice);
             // --diagnostic-level metrics: mede sem guardar os corpos (o dump
             // integral passava de 280 MB numa rodada de belt, so de req/res).
             if (DiagnosticLevel == "metrics") { obj.Remove("req"); obj.Remove("res"); }
