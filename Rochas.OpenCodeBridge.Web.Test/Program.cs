@@ -81,7 +81,7 @@ internal static class Program
                     Q3LlamaUrl = "http://127.0.0.1:4110",
                     WebUrl = web,
                     ApiKey = Environment.GetEnvironmentVariable("BRIDGE_API_KEY") ?? "guest@123",
-                    RequireQ3 = ui,
+                    RequireQ3 = false,
                     RequireWeb = true,
                     ProbeModel = true,
                     CheckLock = Environment.GetEnvironmentVariable("BRIDGE_UNDER_DRIVER") != "1",

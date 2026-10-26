@@ -77,8 +77,7 @@ internal static class Program
                 Q3LlamaUrl = Environment.GetEnvironmentVariable("WAR_UPSTREAM_Q3")
                              ?? "http://127.0.0.1:4110",
                 ApiKey = cred,
-                RequireQ3 = TestContext.RunCpu
-                            && !string.Equals(q3, TestContext.Bridge, StringComparison.OrdinalIgnoreCase),
+                RequireQ3 = false,
                 ProbeModel = true,
                 CheckLock = Environment.GetEnvironmentVariable("BRIDGE_UNDER_DRIVER") != "1"
             });

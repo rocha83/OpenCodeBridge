@@ -133,7 +133,7 @@ public static class StackPreflight
         {
             if (q4 is not null)
             {
-                var (ok, detail) = Probe(http, options.BridgeUrl, options.ApiKey, ModelOf(q4));
+                var (ok, detail) = Probe(options.BridgeUrl, options.ApiKey, ModelOf(q4));
                 result.Add("modelo bridge responde", ok, detail);
             }
             if (options.RequireQ3 && !string.IsNullOrWhiteSpace(options.Q3BridgeUrl))
@@ -141,7 +141,7 @@ public static class StackPreflight
                 var q3 = TryGetJson(http, options.Q3BridgeUrl!.TrimEnd('/') + "/api/status", options.ApiKey);
                 if (q3 is not null)
                 {
-                    var (ok, detail) = Probe(http, options.Q3BridgeUrl!, options.ApiKey, ModelOf(q3));
+                    var (ok, detail) = Probe(options.Q3BridgeUrl!, options.ApiKey, ModelOf(q3));
                     result.Add("modelo Q3 responde", ok, detail);
                 }
             }
@@ -192,8 +192,11 @@ public static class StackPreflight
     }
 
     private static (bool Ok, string Detail) Probe(
-        HttpClient http, string bridgeUrl, string? apiKey, string model)
+        string bridgeUrl, string? apiKey, string model)
     {
+        // Liveness do modelo pode esperar fila: se o slot estiver ocupado (run
+        // anterior morto no meio de uma geracao), 20s davam NO-GO falso.
+        using var http = NewClient(TimeSpan.FromSeconds(180));
         var payload = new JsonObject
         {
             ["model"] = model,

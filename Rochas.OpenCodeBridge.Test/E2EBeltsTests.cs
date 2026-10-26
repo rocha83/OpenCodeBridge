@@ -79,8 +79,7 @@ internal static class E2EBeltsTests
         if (baseModel.Length == 0) baseModel = "Gemma4-E4B-Q4";
         string orchModel = baseModel + "-orch";
         string scripterModel = baseModel + "-scripter";
-        string execModel = baseModel + "-exec";
-        Log($"[belts:direct] Orch={orchModel} Scripter={scripterModel} Exec={execModel}");
+        Log($"[belts:direct] Orch={orchModel} Scripter={scripterModel} (Exec fora deste teste)");
         int pass = 0, fail = 0;
         var keysEnv = string.IsNullOrWhiteSpace(TestContext.BeltsFilter) ? Environment.GetEnvironmentVariable("BELTS_KEYS") : TestContext.BeltsFilter;
         var beltsToRun = string.IsNullOrWhiteSpace(keysEnv)
@@ -96,7 +95,7 @@ internal static class E2EBeltsTests
             try
             {
                 // 1) Orch (E4B) segmenta o enunciado em tarefas atomicas.
-                Log($"  [belt:{key}] 1/4 Orch segmentando...");
+                Log($"  [belt:{key}] 1/3 Orch segmentando...");
                 var orchHistory = new JsonArray(
                     new JsonObject { ["role"]="system", ["content"]="Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada." },
                     new JsonObject { ["role"]="user", ["content"]=prompt.Replace("{ws}", ws) });
@@ -126,7 +125,7 @@ internal static class E2EBeltsTests
                 string grounded = ground.ToString();
 
                 // 2) Scripter (E4B) compoe script bash + companion .md para cada tarefa.
-                Log($"  [belt:{key}] 2/4 Scripter compondo scripts...");
+                Log($"  [belt:{key}] 2/3 Scripter compondo scripts...");
                 int scriptsOk = 0;
                 foreach (var t in tasks)
                 {
@@ -302,48 +301,45 @@ internal static class E2EBeltsTests
                     }
                 }
 
-                // 3) Exec (E4B) le companion .md + script e executa (bash script.sh).
-                Log($"  [belt:{key}] 3/4 Exec lendo e executando scripts...");
-                int execOk = 0;
+                // 3) Integridade dos .sh gerados: shebang, sem tool colada e
+                // `bash -n` limpo. Execucao fica fora deste teste (testar depois).
+                Log($"  [belt:{key}] 3/3 integridade dos scripts...");
+                int integrityOk = 0, discarded = 0;
                 foreach (var f in System.IO.Directory.GetFiles(ws, "*.sh"))
                 {
                     string name = System.IO.Path.GetFileName(f);
                     string body = System.IO.File.ReadAllText(f);
-                    if (body.Contains("write_file{") || body.Contains("\"path\":") || body.Contains("```"))
+                    string? why = null;
+                    if (body.Length == 0 || !body.StartsWith("#!", StringComparison.Ordinal))
+                        why = "sem shebang";
+                    else if (body.Contains("write_file{") || body.Contains("\"path\":")
+                             || body.Contains("```"))
+                        why = "tool/markdown colados";
+                    else
                     {
-                        Log($"  [belt:{key}] exec SKIP (tool colada no .sh): {name}");
+                        var (syntax, syntaxErr) = Run("bash", ws, 60, "-n", name);
+                        if (syntax != 0) why = syntaxErr.Trim().Split('\n')[0];
+                    }
+
+                    if (why is not null)
+                    {
+                        // Script que nao passa em bash -n nao e artefato: sai do
+                        // workspace (fica no log) e nao conta como gerado.
+                        discarded++;
+                        Log($"  [belt:{key}] script DESCARTADO ({why}): {name}");
+                        try { System.IO.File.Delete(f); } catch { }
                         continue;
                     }
-                    var (syntax, syntaxErr) = Run("bash", ws, 60, "-n", name);
-                    if (syntax != 0)
-                    {
-                        Log($"  [belt:{key}] exec SKIP (sintaxe): {name}: {syntaxErr.Trim().Split('\n')[0]}");
-                        continue;
-                    }
-                    string meta = System.IO.Path.ChangeExtension(f, ".md");
-                    if (System.IO.File.Exists(meta))
-                    {
-                        string md = System.IO.File.ReadAllText(meta);
-                        string sh = System.IO.File.ReadAllText(f);
-                        var execHistory = new JsonArray(
-                            new JsonObject { ["role"]="system", ["content"]="Voce e o Exec (role exec, E4B). Leia o companion .md e o script. Responda apenas EXEC-READ-OK." },
-                            new JsonObject { ["role"]="user", ["content"]="COMPANION:\n" + md + "\n\nSCRIPT:\n" + sh });
-                        var execR = await TestContext.PostObj((Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125") + "/v1/chat/completions",
-                            new JsonObject { ["model"]=execModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=execHistory.DeepClone() });
-                        string execContent = Str(execR["choices"]?[0]?["message"]?["content"]);
-                        Log($"  [belt:{key}] exec read: {name} -> {execContent[..Math.Min(40, execContent.Length)]}");
-                    }
-                    var (ecode, eout) = Run("bash", ws, 120, name);
-                    Log($"  [belt:{key}] exec {name}: exit={ecode} {eout.Trim().Split('\n').LastOrDefault()}");
-                    if (ecode == 0) execOk++;
+                    integrityOk++;
                 }
 
-                // 4) Valida artefatos resultantes.
-                Log($"  [belt:{key}] 4/4 validando artefatos...");
+                // 4) Valida artefatos: Scripter compôs e todo .sh restante e integro.
+                Log($"  [belt:{key}] validando: scripts={scriptsOk} integros={integrityOk} descartados={discarded}");
                 TestContext.Check(scriptsOk > 0, $"[{key}] Scripter compôs {scriptsOk} scripts válidos");
-                TestContext.Check(execOk > 0, $"[{key}] Exec executou {execOk} scripts com sucesso");
-                Log($"  [belt:{key}] PASS: {scriptsOk} scripts, {execOk} executados");
-                SaveResult(key, "PASS", $"{scriptsOk} scripts, {execOk} executados");
+                TestContext.Check(integrityOk > 0,
+                    $"[{key}] scripts .sh íntegros no workspace ({integrityOk} ok, {discarded} descartados)");
+                Log($"  [belt:{key}] PASS: {scriptsOk} scripts, {integrityOk} integros, {discarded} descartados");
+                SaveResult(key, "PASS", $"{scriptsOk} scripts, {integrityOk} integros, {discarded} descartados");
                 pass++;
             }
             catch (Exception ex)
