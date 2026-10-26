@@ -785,6 +785,14 @@
               {
                 "id": "custom.axisPlacement",
                 "value": "right"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 20
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
               }
             ]
           }
@@ -886,6 +894,10 @@
               {
                 "id": "unit",
                 "value": "percent"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 55
               }
             ]
           },
@@ -897,7 +909,7 @@
             "properties": [
               {
                 "id": "custom.fillOpacity",
-                "value": 0
+                "value": 12
               },
               {
                 "id": "custom.lineWidth",
