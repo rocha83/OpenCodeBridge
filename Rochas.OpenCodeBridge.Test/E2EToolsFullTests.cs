@@ -124,8 +124,9 @@ internal static class E2EToolsFullTests
             "Sao Paulo se conseguir acessar a internet. " +
             "2) Rode git init. Faca git add . e o primeiro commit com a mensagem 'data'. O primeiro commit nao pode " +
             "ter a palavra EDITADO. Rode git log --oneline e confirme 1 commit. " +
-            "3) Acrescente a palavra EDITADO ao mesmo .txt, mantendo a data. Faca git add . e o segundo commit com a " +
-            "mensagem 'EDITADO'. Rode git log --oneline e confirme 2 commits. " +
+            "3) No mesmo .txt, use edit para acrescentar uma nova linha com EDITADO abaixo da data: oldString = a " +
+            "data, newString = a data + quebra de linha + EDITADO. Nao substitua a data por EDITADO. Faca git add . " +
+            "e o segundo commit com a mensagem 'EDITADO'. Rode git log --oneline e confirme 2 commits. " +
             "4) Liste os arquivos, busque o .txt com glob/grep, leia o arquivo e grave o historico do git (hashes e " +
             "mensagens) em historico_git.log. Nao commite o historico_git.log.";
 
@@ -142,8 +143,11 @@ internal static class E2EToolsFullTests
             .Where(f => !Path.GetFileName(f).Equals("historico_git.log", StringComparison.OrdinalIgnoreCase))
             .ToArray();
         TestContext.Check(txts.Length > 0, "[toolsfull:agent] arquivo .txt criado");
-        string body = txts.Length > 0 ? File.ReadAllText(txts[0]) : "";
-        TestContext.Check(body.Contains(DateTime.Now.ToString("yyyy")),
+        string year = DateTime.Now.ToString("yyyy");
+        // Escolhe o .txt da tarefa (com a data), nao um artefato auxiliar.
+        string body = txts.Select(File.ReadAllText).FirstOrDefault(t => t.Contains(year))
+            ?? (txts.Length > 0 ? File.ReadAllText(txts[0]) : "");
+        TestContext.Check(body.Contains(year),
             $"[toolsfull:agent] data do sistema anotada (conteudo='{body[..Math.Min(120, body.Length)]}', calls={string.Join(";", calls)})");
         TestContext.Check(body.Contains("EDITADO"), $"[toolsfull:agent] marca EDITADO no arquivo (calls={string.Join(";", calls)})");
 
