@@ -87,3 +87,27 @@
 - Push sempre do persistente para o `origin/main`.
 - PROD (`/usr/src/opencodebridge`) só faz pull + rebuild + restart (deploy).
 - Em conflito de merge, a prioridade é do persistente (`checkout --ours <arquivo>`).
+
+## Regra: blindagem em C# — teste + evidência, nunca script decorativo
+Vale para gate, preflight, driver, parsing de veredito e qualquer verificação que
+decida PASS/FAIL. O padrão do projeto é C# com teste e evidência; bash é
+conveniência manual, nunca fonte de verdade.
+
+1. **Toda verificação vive em C#** dentro da própria suíte (`Rochas.OpenCodeBridge.Core`,
+   `Rochas.OpenCodeBridge.Test`, `Rochas.OpenCodeBridge.Web.Test`). Script em
+   `scripts/` não pode ser o único lugar de um check: se ele não roda
+   automaticamente antes do teste, é enfeite e não conta.
+2. **Check novo = teste novo no mesmo commit.** Sem teste que prove o
+   comportamento (inclusive o caso de falha), o check não está pronto.
+3. **Driver só muda com teste de bateria real** (`RunStepsAsync` com ≥3 steps):
+   provar parada no primeiro FAIL, `.done` só para PASS/SKIP, resume no mesmo
+   run dir refazendo o que falhou e gate fechando verde depois da correção.
+4. **Evidência no retorno**: trecho do log com `PARADA:`, `[preflight]` e o
+   `[test] PASS=n FAIL=0` colados na resposta. "Deve funcionar" não é entrega.
+5. **Fail fast honesto**: se um check/porta/modelo não existe, falhe com o nome
+   e o detalhe; nunca degrade para aviso silencioso.
+6. **Registro do que não funcionou**: toda correção de mecanismo entra em
+   `docs/DRIVER-FIXES.md` com sintoma, causa e prova — para não reintroduzir.
+7. **Sem duplicação de mecanismo**: quando o check migra para C#, o script
+   equivalente é removido (ou vira atalho documentado que chama o C#).
+
