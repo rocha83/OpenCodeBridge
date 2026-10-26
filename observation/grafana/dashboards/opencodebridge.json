@@ -431,8 +431,8 @@
     },
     {
       "id": 9,
-      "title": "Tools calls por step (sonda 2s, acumulado)",
-      "type": "bargauge",
+      "title": "Tools calls por step (todos os steps)",
+      "type": "barchart",
       "gridPos": {
         "h": 6,
         "w": 24,
@@ -480,16 +480,27 @@
         }
       ],
       "options": {
+        "xField": "step",
         "orientation": "horizontal",
-        "displayMode": "gradient",
-        "showUnfilled": true,
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": true
+        "showValue": "auto",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
         }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "gradientMode": "none"
+          }
+        },
+        "overrides": []
       }
     },
     {
