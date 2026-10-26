@@ -84,7 +84,7 @@ internal static class Program
         if (!unitsOnly && !skipIntegration)
         {
             IntegrationHttp(web).GetAwaiter().GetResult();
-            Integration.ChatIntegrationTests.RunAsync(web).GetAwaiter().GetResult();
+            Failures += Integration.ChatIntegrationTests.RunAsync(web).GetAwaiter().GetResult();
         }
         if (ui)
             Failures += Ui.BeltUiTests.RunAsync(web, belts.ToArray(), mode, phase).GetAwaiter().GetResult();

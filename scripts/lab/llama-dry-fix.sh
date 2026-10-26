@@ -10,12 +10,15 @@
 #
 # Uso:
 #   scripts/lab/llama-dry-fix.sh --dry 0            # aplica (dry-multiplier 0.0)
-#   scripts/lab/llama-dry-fix.sh --dry 0 --dry-only # so mostra o diff
+#   scripts/lab/llama-dry-fix.sh --dry 0 --no-restart # so aplica, sem restart
 #   scripts/lab/llama-dry-fix.sh --restore          # volta o backup
 #   scripts/lab/llama-dry-fix.sh --dry 0 --no-restart
 set -euo pipefail
 UNITS="llama-gpu.service llama-gpu2.service llama-cpu-forced.service"
 DIR="/etc/systemd/system"
+# Os start scripts regeram a unit a cada execucao; sem patch neles o DRY 0.8
+# volta no proximo provisionamento (foi o que aconteceu depois do fix de 24/10).
+SCRIPTS="/usr/local/bin/start-llama-gpu.sh /usr/local/bin/start-llama-gpu2.sh /usr/local/bin/start-llama-cpu-forced.sh"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 DRY="0.0"
 RESTORE=0
@@ -45,6 +48,21 @@ for u in $UNITS; do
   cp -a "$f" "$f.bak-$STAMP"
   sed -i -E "s/--dry-multiplier [^ ]+/--dry-multiplier $DRY/" "$f"
   echo "$u: $before -> --dry-multiplier $DRY"
+  changed=1
+done
+
+for f in $SCRIPTS; do
+  [ -f "$f" ] || { echo "SKIP $f (nao existe)"; continue; }
+  if [ "$RESTORE" = "1" ]; then
+    b=$(ls -1t "$f".bak-* 2>/dev/null | head -1 || true)
+    [ -n "$b" ] || { echo "SKIP $f (sem backup)"; continue; }
+    cp -a "$b" "$f"; echo "restaurado $f <- $b"; changed=1; continue
+  fi
+  before=$(grep -o -- '--dry-multiplier [^ ]*' "$f" | head -1 || true)
+  [ -n "$before" ] || { echo "SKIP $f (sem --dry-multiplier)"; continue; }
+  cp -a "$f" "$f.bak-$STAMP"
+  sed -i -E "s/--dry-multiplier [^ ]+/--dry-multiplier $DRY/g" "$f"
+  echo "$f: $before -> --dry-multiplier $DRY"
   changed=1
 done
 

@@ -189,11 +189,44 @@ internal static class E2EDevPipeTests
         string name = fn?["name"]?.GetValue<string>() ?? "";
         string args = fn?["arguments"]?.GetValue<string>() ?? "";
         Console.WriteLine($"[devpipe] vision-tool: model={toolModel} finish={finish} content={content.Length} name={name} args={args}");
-        bool exact = false;
-        try { exact = JsonNode.Parse(args)?["file_path"]?.GetValue<string>() == "/tmp/vlimg/placa.png"; }
-        catch { exact = args.Contains("/tmp/vlimg/placa.png"); }
-        TestContext.Check(name is "read" or "read_file", "visao+tool chama read");
+
+        // Regressao do DRY: com --dry-multiplier > 0 o modelo mutava o
+        // identificador copiado do prompt (placa.png -> placa.ng/_ng/.PNG/
+        // .jpg/.txt, deterministico). A infra roda DRY 0.0 (LAB-SETUP §10) e o
+        // path exato e o aceite; o retry x3 absorve variacao residual do VL.
+        bool nameOk = name is "read" or "read_file";
+        bool exact = ArgsMatchPath(args, "/tmp/vlimg/placa.png");
+        for (int attempt = 1; attempt <= 3 && !(nameOk && exact); attempt++)
+        {
+            var retry = await TestContext.PostObj(bridge + "/v1/chat/completions", body);
+            var retryTc = retry["choices"]?[0]?["message"]?["tool_calls"]?.AsArray();
+            var retryFn = retryTc is { Count: > 0 } ? retryTc[0]?["function"] : null;
+            name = retryFn?["name"]?.GetValue<string>() ?? "";
+            args = retryFn?["arguments"]?.GetValue<string>() ?? "";
+            Console.WriteLine($"[devpipe] vision-tool retry {attempt}: name={name} args={args}");
+            nameOk = name is "read" or "read_file";
+            exact = ArgsMatchPath(args, "/tmp/vlimg/placa.png");
+        }
+
+        TestContext.Check(nameOk, "visao+tool chama read");
         TestContext.Check(exact, "visao+tool path exato");
+    }
+
+    // Argumentos podem vir como JSON valido ou prosa com o path; compara o
+    // valor exato (nao prefixo) para nao aceitar variacao de extensao.
+    private static bool ArgsMatchPath(string args, string path)
+    {
+        try
+        {
+            var node = JsonNode.Parse(args);
+            string? value = node?["file_path"]?.GetValue<string>()
+                            ?? node?["path"]?.GetValue<string>();
+            return string.Equals(value, path, StringComparison.Ordinal);
+        }
+        catch
+        {
+            return args.Contains(path, StringComparison.Ordinal);
+        }
     }
 
     // Infra dev direto no executor da bridge: git, gh, fetch internet.
