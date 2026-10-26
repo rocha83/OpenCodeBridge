@@ -192,6 +192,12 @@ internal static class Program
         TestContext.Run("U-circuit-next", UnitCircuitTests.DynamicNextSteps);
         TestContext.Run("U-circuit-gate-policy", UnitCircuitTests.CustomGatePolicy);
         TestContext.Run("U-circuit-multi", UnitCircuitTests.MultiBuildAndDeploy);
+        TestContext.Run("U-preflight-go", UnitStackPreflightTests.Go);
+        TestContext.Run("U-preflight-bridge-down", UnitStackPreflightTests.BridgeDown);
+        TestContext.Run("U-preflight-model-fail", UnitStackPreflightTests.ModelFails);
+        TestContext.Run("U-preflight-q3-upstream", UnitStackPreflightTests.Q3UpstreamMismatch);
+        TestContext.Run("U-preflight-lock", UnitStackPreflightTests.LockHeld);
+        TestContext.Run("U-preflight-web-login", UnitStackPreflightTests.WebLogin);
         TestContext.Run("U-metrics-deny-counters", UnitMetricsTests.CountersIncrement);
         TestContext.Run("U-metrics-ring3-shell", UnitMetricsTests.ShellDenyIsRing3);
         TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
