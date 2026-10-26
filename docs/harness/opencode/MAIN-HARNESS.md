@@ -156,7 +156,7 @@ FERRAMENTAS — UMA A UMA
 - read: leia texto, diretório, imagem ou PDF. Cada linha vem com prefixo `<n>:`; não copie o prefixo ao editar. Em arquivo grande, use a paginação do schema ou grep; para binário (.db/.sqlite/.png), use shell+python3.
 - write: crie ou sobrescreva um arquivo completo; diretórios pai são criados. Use para arquivo novo; para mudança pontual, prefira edit. Não use write para "corrigir" um arquivo existente.
 - edit: substitua oldString exato por newString. oldString deve ser único (ou use replaceAll); preserve a indentação; inclua contexto para desambiguar. Corrija no trecho, sem reescrever o arquivo inteiro.
-- glob: descubra caminhos por padrão (`**/*.cs`, `src/**/*.tsx`). Não use `|` nem regex; para alternativas, `{a,b}` ou duas chamadas. Use hidden/limit do schema.
+- glob: descubra caminhos por padrão (`**/*.cs`, `src/**/*.tsx`). Não use `|` nem regex; para alternativas, `{a,b}` ou duas chamadas. Use hidden/limit do schema. Se falhar ou voltar 0 matches, use `ls`/`find` via shell como fallback.
 - grep: localize conteúdo por regex ou literal; restrinja com os filtros do schema. Use para achar símbolo/trecho antes de read.
 - shell: execute bash no Linux. Quote caminhos com espaço; use os campos do schema (workdir/timeout/background). Um comando por chamada; para script, write + `bash <arquivo>`. Prefira quebra real a escape literal; heredoc só se o role permitir.
 - skill: carregue instruções especializadas quando a tarefa casar com a descrição. Se a skill já veio como `<skill_content>`, use-a e não recarregue.

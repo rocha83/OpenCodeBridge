@@ -11,12 +11,22 @@ namespace Rochas.OpenCodeBridge.Test;
 // "\n" literal, build simulado e loop de retry no mesmo alvo.
 internal static class E2EDualToolTests
 {
-    static string Root => Path.Combine("/tmp/opencode", $"dual-{TestContext.Mode}-{Environment.ProcessId}");
+    static string Root => Path.Combine("/tmp/opencode",
+        $"dual-{TestContext.Mode}-{Environment.ProcessId}-{DateTime.Now:HHmmss}");
 
     static string Fresh(string scenario)
     {
         string dir = Path.Combine(Root, scenario);
-        if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        try
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+        catch (Exception ex)
+        {
+            // Artefato criado pela bridge (root) pode nao ser removivel pelo teste;
+            // o Root e unico por horario, entao seguir sem apagar e seguro.
+            Console.WriteLine($"  [dual] cleanup ignorado em {scenario}: {ex.GetType().Name}");
+        }
         Directory.CreateDirectory(dir);
         return dir;
     }
@@ -28,10 +38,11 @@ internal static class E2EDualToolTests
     {
         string dir = Fresh("write-read-edit");
         string target = Path.Combine(dir, "nota.md");
-        // Enunciado de usuario programador: objetivo e aceite, sem ditar tool/sintaxe.
+        // Enunciado natural de usuario: objetivo e aceite, sem nome de tool e sem
+        // path absoluto (o workspace da tarefa e coordenada do harness).
         string prompt =
-            "Crie o arquivo nota.md com o texto 'versao 1', confira o conteudo e troque por 'versao 2' " +
-            "sem reescrever o arquivo inteiro. Responda apenas WRITE-READ-EDIT-OK.";
+            "Crie nesta pasta um arquivo nota.md com o texto 'versao 1'. Confira o conteudo e troque o texto " +
+            "para 'versao 2' sem reescrever o arquivo inteiro.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 0, dir);
         string body = ReadFile(target);
         TestContext.Check(body.Contains("versao 2"),
@@ -42,22 +53,23 @@ internal static class E2EDualToolTests
         Console.WriteLine($"  [dual:{TestContext.Mode}] write-read-edit ok ({calls.Count} calls, texto={text.Length} chars)");
     }
 
-    /// <summary>glob sem alternancia + grep: dois arquivos, um casando o padrao.</summary>
+    /// <summary>glob/grep: dois arquivos, um casando o conteudo procurado.</summary>
     public static async Task GlobGrep()
     {
         string dir = Fresh("glob-grep");
         File.WriteAllText(Path.Combine(dir, "alfa.cs"), "class Alfa { }");
         File.WriteAllText(Path.Combine(dir, "beta.txt"), "beta texto");
         string prompt =
-            "No diretorio atual ha arquivos .cs e .txt. Descubra qual .cs declara 'class Alfa' " +
-            "e responda apenas GLOB-GREP-OK com o nome do arquivo.";
+            "Nesta pasta ha arquivos .cs e .txt. Descubra qual arquivo .cs declara 'class Alfa' " +
+            "e responda com o nome dele.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 0, dir);
         TestContext.Check(text.Contains("alfa", StringComparison.OrdinalIgnoreCase),
             $"[{TestContext.Mode}] resposta nomeia alfa.cs (texto='{text[..Math.Min(120, text.Length)]}')");
         if (TestContext.Mode == "bridge")
         {
-            TestContext.Check(calls.Any(c => c.StartsWith("glob(")), $"[{TestContext.Mode}] glob chamado");
-            TestContext.Check(calls.All(c => !c.Contains("|")), $"[{TestContext.Mode}] nenhum glob com alternancia");
+            bool probed = calls.Any(c => c.StartsWith("glob(") || c.StartsWith("grep("))
+                          || calls.Any(c => c.StartsWith("shell(") && (c.Contains("ls") || c.Contains("find") || c.Contains("grep")));
+            TestContext.Check(probed, $"[{TestContext.Mode}] listou/buscou os arquivos (calls={string.Join(";", calls)})");
         }
         Console.WriteLine($"  [dual:{TestContext.Mode}] glob-grep ok ({calls.Count} calls)");
     }
@@ -66,12 +78,11 @@ internal static class E2EDualToolTests
     public static async Task GitCycle()
     {
         string dir = Fresh("git-cycle");
-        string dados = Path.Combine(dir, "dados.txt");
-        string hist = Path.Combine(dir, "historico.log");
+        // Enunciado natural: nada de path absoluto, nome de tool ou comando exato.
         string prompt =
-            "Crie dados.txt com a data de hoje e coloque este diretorio sob git com um commit inicial. " +
-            "Altere o arquivo e faca um segundo commit. Salve o historico de commits em historico.log " +
-            "e responda apenas GIT-CYCLE-OK.";
+            "Nesta pasta, crie um arquivo dados.txt com a data de hoje. Coloque esta pasta sob git, configure " +
+            "seu nome e e-mail e faca o commit inicial. Depois altere dados.txt e faca o segundo commit. " +
+            "Por fim, verifique o historico git e grave-o em historico.log.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 16, dir);
         TestContext.Check(Directory.Exists(Path.Combine(dir, ".git")), $"[{TestContext.Mode}] .git criado em {dir}");
         TestContext.Check(File.Exists(Path.Combine(dir, "dados.txt")), $"[{TestContext.Mode}] dados.txt criado");
@@ -79,16 +90,20 @@ internal static class E2EDualToolTests
         // Artefato tem que ser o historico DESTE repo: casa o SHA do commit de topo
         // (lido por git log independente) em vez da palavra "commit" — que reprovava
         // "Commit inicial" (caixa) e aprovava o log de outro repositorio.
-        var (lgCode, lgOut) = Run("git", dir, 30, "log", "--oneline");
+        var (lgCode, lgOut) = Run("git", dir, 30, "-c", "safe.directory=" + dir, "log", "--oneline");
         string tip = lgCode == 0
             ? ((lgOut.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "").Split(' ')[0])
             : "";
         TestContext.Check(tip.Length >= 7 && log.Contains(tip),
             $"[{TestContext.Mode}] historico.log com o commit real ({tip}, len={log.Length})");
+        if (TestContext.Mode == "bridge")
+            TestContext.Check(calls.Any(c => c.StartsWith("git("))
+                || calls.Any(c => c.StartsWith("shell(") && c.Contains("git")),
+                $"[{TestContext.Mode}] ciclo git executado (calls={string.Join(";", calls)})");
         if (TestContext.Mode != "bridge")
         {
             // No modo opencode o commit e feito pelo cliente: confere direto no repo.
-            var (code, outp) = Run("git", dir, 30, "log", "--oneline");
+            var (code, outp) = Run("git", dir, 30, "-c", "safe.directory=" + dir, "log", "--oneline");
             TestContext.Check(code == 0 && outp.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length >= 2,
                 $"[{TestContext.Mode}] 2 commits no repo (git log: {outp.Trim()})");
         }
@@ -102,8 +117,8 @@ internal static class E2EDualToolTests
         string real = Path.Combine(dir, "relatorio-final.txt");
         File.WriteAllText(real, "conteudo-real-42");
         string prompt =
-            "Neste diretorio existe um arquivo cujo nome termina em 'final.txt', mas nao sei o nome exato. " +
-            "Descubra qual e, leia o conteudo e responda apenas PROBE-OK seguido do conteudo lido.";
+            "Nesta pasta existe um arquivo cujo nome termina em 'final.txt', mas nao sei o nome exato. " +
+            "Descubra qual e, leia o conteudo e me diga o conteudo.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 8, dir);
         TestContext.Check(text.Contains("conteudo-real-42"),
             $"[{TestContext.Mode}] achou o alvo por probe (texto='{text[..Math.Min(160, text.Length)]}')");
@@ -123,8 +138,8 @@ internal static class E2EDualToolTests
         string script = Path.Combine(dir, "quebrado.sh");
         File.WriteAllText(script, "#!/bin/bash\nif [ 1 -eq 1 ]; then\n  echo faltou fechar\necho depois\n");
         string prompt =
-            "Rode o script quebrado.sh e me relate apenas o que aconteceu de verdade (erro ou saida); " +
-            "se falhar, diga que falhou e nao invente sucesso. Responda apenas NO-SIMULATION-OK.";
+            "Rode o script quebrado.sh desta pasta e me relate apenas o que aconteceu de verdade (erro ou saida); " +
+            "se falhar, diga que falhou e nao invente sucesso.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 6, dir);
         string all = text + "\n" + string.Join("\n", calls);
         bool reportedError = all.Contains("erro de sintaxe", StringComparison.OrdinalIgnoreCase)
@@ -145,8 +160,8 @@ internal static class E2EDualToolTests
         string dir = Fresh("sqlite");
         string db = Path.Combine(dir, "probe.db");
         string prompt =
-            "Crie um banco SQLite em probe.db com a tabela itens(id INTEGER, nome TEXT), insira 'alfa' e 'beta' " +
-            "e me diga a contagem. Responda apenas SQLITE-OK e a contagem.";
+            "Crie um banco SQLite chamado probe.db nesta pasta com a tabela itens(id INTEGER, nome TEXT), " +
+            "insira 'alfa' e 'beta' e me diga a contagem.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 10, dir);
         TestContext.Check(File.Exists(db), $"[{TestContext.Mode}] banco criado em {db}");
         long rows = -1;

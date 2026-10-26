@@ -295,7 +295,12 @@ internal static class TestContext
         Fn("grep", "Busca expressao regular no conteudo dos arquivos.", new JsonObject
         {
             ["pattern"] = new JsonObject { ["type"] = "string" }
-        }, "pattern")
+        }, "pattern"),
+        Fn("git", "Executa um comando git no repositorio. Leitura para todos; init/add/commit/config so para build/exec.", new JsonObject
+        {
+            ["command"] = new JsonObject { ["type"] = "string" },
+            ["path"] = new JsonObject { ["type"] = "string" }
+        }, "command")
     };
 
     static JsonObject Fn(string name, string description, JsonObject props, params string[] required)
@@ -394,14 +399,16 @@ internal static class TestContext
                         JsonObject exec;
                         try
                         {
-                            exec = await PostObj(Bridge + "/api/tools/execute",
-                                new JsonObject
-                                {
-                                    ["name"] = name,
-                                    ["arguments"] = JsonNode.Parse(args) ?? new JsonObject(),
-                                    // Role do agente: a tool git libera escrita só p/ build/exec.
-                                    ["model"] = SuiteModel
-                                });
+                            var execBody = new JsonObject
+                            {
+                                ["name"] = name,
+                                ["arguments"] = JsonNode.Parse(args) ?? new JsonObject(),
+                                // Role do agente: a tool git libera escrita só p/ build/exec.
+                                ["model"] = SuiteModel
+                            };
+                            // Harness resolve o diretorio da tarefa; o enunciado nao carrega path.
+                            if (!string.IsNullOrWhiteSpace(cwd)) execBody["workspace"] = cwd;
+                            exec = await PostObj(Bridge + "/api/tools/execute", execBody);
                         }
                         catch (Exception ex) { exec = new JsonObject { ["ok"] = false, ["error"] = ex.Message }; }
                         string outText = exec["ok"]?.GetValue<bool>() == true

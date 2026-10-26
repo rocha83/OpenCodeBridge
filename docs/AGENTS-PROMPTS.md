@@ -138,6 +138,11 @@ o `MainHarness.Text` (9117 chars, primordial e intocado) **não** tem:
 - `SHELL`: um comando por chamada, sem escape de quebra de linha, script =
   `write` + `bash <arquivo>`, `cd` não persiste (`cd <dir> && <cmd>`);
 - `GLOB`: sem alternância/regex (`**/*.{cs,js,ts,json}` ou duas chamadas);
+  se falhar ou voltar 0 matches, `ls`/`find` via shell como fallback;
+- `DATA`: pedido de "hoje" → rodar `date`/`date +%F` e copiar a saída, nunca
+  inventar data de memória;
+- `EDIT`: `oldString` exato; `newString` substitui só o trecho (para acrescentar
+  marca, repetir o trecho antigo + marca; não trocar o arquivo inteiro);
 - `GIT`: `git init <dir>` **sempre** com diretório explícito (nunca no cwd — um
   `git init` no root da workspace envenena `git log` de todo mundo), raiz
   confirmada por `rev-parse --show-toplevel`, identidade local (`--global`

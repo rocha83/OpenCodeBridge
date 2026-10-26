@@ -465,6 +465,10 @@ internal sealed class WarTemplate : CircuitTemplate
                         new[] { "--only", "U-" });
                     yield return StepBridge(driver, $"devpipe-{mode}", mode,
                         new[] { "--only", "E-devpipe" });
+                    // Tools completas ja incluem o ciclo do antigo dual (pasta, git,
+                    // arquivo, edit, commits e historico_git.log).
+                    yield return StepBridge(driver, $"tools-full-{mode}", mode,
+                        new[] { "--only", "E-tools-full" });
                     yield return StepBridge(driver, $"belts-build-{mode}", mode,
                         new[] { "--only", "E-belts-build-direct", "--belts", "azul,verde" });
                     yield return StepBridge(driver, $"belts-orch-{mode}", mode,
@@ -475,10 +479,6 @@ internal sealed class WarTemplate : CircuitTemplate
             case 2:
                 foreach (string mode in new[] { "bridge", "opencode" })
                 {
-                    yield return StepBridge(driver, $"tools-full-{mode}", mode,
-                        new[] { "--only", "E-tools-full" });
-                    yield return StepBridge(driver, $"tools-dual-{mode}", mode,
-                        new[] { "--only", "E-dual-tools" });
                     yield return StepBridge(driver, $"mission-tools-{mode}", mode,
                         new[] { "--only", "E-mission-tools" });
                     yield return StepBridge(driver, $"responses-tools-{mode}", mode,
@@ -1134,10 +1134,10 @@ internal sealed class WarTemplate : CircuitTemplate
         switch (_level)
         {
             case 1:
-                Console.WriteLine("Level 1 -> units, devpipe, belts build/orch azul+verde (bridge+opencode), webui");
+                Console.WriteLine("Level 1 -> units, devpipe, tools-full (com ciclo git/arquivo), belts build/orch azul+verde (bridge+opencode)");
                 break;
             case 2:
-                Console.WriteLine("Level 2 -> tools-full, tools-dual, mission-tools, responses-tools, science-gpu, science-cpu(Q3), roxa build/orch (bridge+opencode); webui no L3");
+                Console.WriteLine("Level 2 -> mission-tools, responses-tools, science-gpu, science-cpu(Q3), roxa build/orch (bridge+opencode); webui no L3");
                 break;
             case 3:
                 Console.WriteLine("Level 3 -> belts marrom+preta build/orch (bridge+opencode), webui");

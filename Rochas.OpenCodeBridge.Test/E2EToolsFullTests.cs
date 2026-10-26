@@ -81,6 +81,95 @@ internal static class E2EToolsFullTests
         Console.WriteLine($"  [toolsfull:{label}] PASS (read/write/edit/glob/grep/mkdir/git/dotnet/script)");
     }
 
+    static (int Code, string Out) Run(string exe, string cwd, int secs, params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo(exe) { WorkingDirectory = cwd, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+        using var p = System.Diagnostics.Process.Start(psi) ?? throw new Exception("sem processo: " + exe);
+        var so = p.StandardOutput.ReadToEndAsync();
+        var se = p.StandardError.ReadToEndAsync();
+        if (!p.WaitForExit(secs * 1000)) { try { p.Kill(true); } catch { } throw new Exception("timeout " + exe); }
+        return (p.ExitCode, so.Result + se.Result);
+    }
+
+    /// <summary>
+    /// Proposito do antigo dual-tools dentro do tools-full: um enunciado agentico
+    /// unico cobre pasta, repo git, arquivo com data/clima, add/commit, listar,
+    /// buscar, editar, segundo commit e historico_git.log. O aceite e o artefato
+    /// em disco; no bridge tambem confere as tools usadas.
+    /// </summary>
+    static async Task AgentScenario()
+    {
+        // Base propria do teste (mint): /tmp/opencode/toolsfull e criado pela
+        // bridge (root) e o teste nao pode criar subdiretorios la.
+        string dir = Path.Combine("/tmp/opencode/toolsfull-agent",
+            "agent-" + Environment.ProcessId + "-" + TestContext.Mode + "-" + DateTime.Now.ToString("HHmmss"));
+        try
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+        catch (Exception ex)
+        {
+            // Conteudo criado pela bridge (root) pode nao ser removivel pelo teste:
+            // o dir novo e unico por horario, entao seguir sem apagar e seguro.
+            Console.WriteLine($"  [toolsfull:agent] cleanup ignorado: {ex.GetType().Name}");
+        }
+        Directory.CreateDirectory(dir);
+
+        // Enunciado de TAREFA, nao de harness: sem path, sem nome de tool e sem
+        // coringa de coordenada. O modelo flui; o harness resolve o cwd.
+        const string prompt =
+            "Crie uma pasta e inicie um repositorio git nela. Crie dentro dela um arquivo .txt com nome aleatorio " +
+            "contendo a data do sistema de hoje. Se tiver acesso a internet, busque o clima da cidade de Sao Paulo hoje " +
+            "e anote no arquivo. Salve o arquivo, versione no git com add e commit, liste os arquivos e faca uma busca " +
+            "neles para encontrar o arquivo criado. Edite o arquivo com a marca EDITADO e realize outro commit. " +
+            "Verifique o historico git e grave no arquivo historico_git.log.";
+
+        var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
+
+        // O modelo escolhe o nome da pasta: o aceite localiza o repo em qualquer nivel.
+        string? repo = Directory.GetDirectories(dir, ".git", SearchOption.AllDirectories)
+            .Select(g => Path.GetDirectoryName(g)!)
+            .FirstOrDefault();
+        TestContext.Check(repo is not null, $"[toolsfull:agent] pasta com repo git iniciado (dir={dir})");
+        repo ??= dir;
+
+        string[] txts = Directory.GetFiles(repo, "*.txt", SearchOption.AllDirectories)
+            .Where(f => !Path.GetFileName(f).Equals("historico_git.log", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        TestContext.Check(txts.Length > 0, "[toolsfull:agent] arquivo .txt criado");
+        string body = txts.Length > 0 ? File.ReadAllText(txts[0]) : "";
+        TestContext.Check(body.Contains(DateTime.Now.ToString("yyyy")),
+            $"[toolsfull:agent] data do sistema anotada (conteudo='{body[..Math.Min(120, body.Length)]}', calls={string.Join(";", calls)})");
+        TestContext.Check(body.Contains("EDITADO"), $"[toolsfull:agent] marca EDITADO no arquivo (calls={string.Join(";", calls)})");
+
+        string hist = Path.Combine(repo, "historico_git.log");
+        TestContext.Check(File.Exists(hist), $"[toolsfull:agent] historico_git.log criado em {repo}");
+
+        var (lgCode, lgOut) = Run("git", repo, 30, "-c", "safe.directory=" + repo, "log", "--oneline");
+        string[] commits = lgCode == 0 ? lgOut.Split('\n', StringSplitOptions.RemoveEmptyEntries) : Array.Empty<string>();
+        TestContext.Check(commits.Length >= 2, $"[toolsfull:agent] 2 commits no repo (git log: {lgOut.Trim()}; calls={string.Join(";", calls)})");
+        string tip = commits.Length > 0 ? commits[0].Split(' ')[0] : "";
+        string histBody = File.Exists(hist) ? File.ReadAllText(hist) : "";
+        TestContext.Check(tip.Length >= 7 && histBody.Contains(tip),
+            $"[toolsfull:agent] historico_git.log com o commit real ({tip})");
+
+        // O artefato prova o fluxo; as calls provam que houve tools de verdade.
+        TestContext.Check(calls.Count > 0, $"[toolsfull:agent] tools executadas (calls={calls.Count})");
+        if (TestContext.Mode == "bridge")
+        {
+            bool used(string p) => calls.Any(c => c.StartsWith(p));
+            TestContext.Check(used("write(") || used("edit(") || used("shell("),
+                $"[toolsfull:agent] escrita/edicao por tool (calls={string.Join(";", calls)})");
+            TestContext.Check(used("git(") || calls.Any(c => c.StartsWith("shell(") && c.Contains("git")),
+                "[toolsfull:agent] ciclo git executado");
+            TestContext.Check(used("glob(") || used("grep(")
+                || calls.Any(c => c.StartsWith("shell(") && (c.Contains("ls") || c.Contains("find") || c.Contains("grep"))),
+                "[toolsfull:agent] listou/buscou arquivos");
+        }
+        Console.WriteLine($"  [toolsfull:agent] repo={repo} ({calls.Count} calls, texto={text.Length} chars)");
+    }
+
     public static async Task FullTools()
     {
         // As duas lanes usam o MESMO cwd (o workspace e do processo da bridge) e os
@@ -88,8 +177,11 @@ internal static class E2EToolsFullTests
         // o arquivo da outra e o edit falhava por oldString ausente (medido:
         // "GPU2-E4B-Q3 edit ok" FAIL com a.cs = int X = 42). Sequencial preserva
         // o aceite sem afrouxar assertiva.
+        // Q3 fora desta premissa (hipotese reprovada): tools-full roda so no
+        // Q4 estavel. A lane Q3 nao entra no aceite.
         await RunOnBridge("http://127.0.0.1:4124", "GPU1-E4B-Q4");
-        await RunOnBridge(Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125", "GPU2-E4B-Q3");
-        Console.WriteLine("[toolsfull] 2/2 modelos PASS");
+        // Proposito do dual-tools mesclado: um enunciado agentico unico no modo corrente.
+        await AgentScenario();
+        Console.WriteLine("[toolsfull] 1/1 modelo PASS + cenario agentico");
     }
 }

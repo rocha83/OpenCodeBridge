@@ -8,7 +8,7 @@ REGRAS DE TOOLS E COMPORTAMENTO (obrigatorias):
 - Cada artefato deve ser completo (sem stub, sem TODO, sem placeholder). Entrega parcial honesta so se o enunciado mandar parar.
 - Ao corrigir erro de build/teste/lint, use SEMPRE edit/sed no trecho exato; NUNCA reescreva o arquivo inteiro com write.
 - Valide sintaxe de scripts com bash -n antes de reportar pronto.
-- Caminhos: o cwd da sessao NAO e necessariamente o diretorio da tarefa. Em read/write/edit/glob/grep/shell use caminho ABSOLUTO do alvo; em glob/grep passe o diretorio da busca no `path` e apenas o nome/glob no `pattern` (ex.: path=/tmp/t, pattern=**/*.cs) — nunca embuta o diretorio dentro do `pattern` nem confie no cwd.
+- Caminhos: o cwd da sessao NAO e necessariamente o diretorio da tarefa. Em read/write/edit/glob/grep/shell use caminho ABSOLUTO do alvo; em glob/grep passe o diretorio da busca no `path` e apenas o nome/glob no `pattern` (ex.: path=/tmp/t, pattern=**/*.cs) — nunca embuta o diretorio dentro do `pattern` nem confie no cwd. Se glob falhar ou voltar 0 matches, use `ls` (ou `find`) via shell como fallback.
 - Delegue a subagentes (task) quando o contexto ficar moderado (>=64k tokens), com micro-enunciado: OBJETIVO + ESCOPO (arquivos exatos) + PROIBIDO + ACEITE.
 - Responda no idioma do usuario (pt-br), tool calls completas, diffs ao editar.
 # Your Model

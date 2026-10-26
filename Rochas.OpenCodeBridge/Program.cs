@@ -1084,6 +1084,19 @@ WriteJson(ctx, 200, new JsonObject
                 string args = req["arguments"]?.ToJsonString() ?? "{}";
                 int timeout = req["timeout"]?.GetValue<int>() ?? 300;
                 string root = WorkspaceRoot.Length > 0 ? WorkspaceRoot : Environment.CurrentDirectory;
+                // Workspace por chamada (o harness do teste aponta o diretorio da
+                // tarefa; o enunciado fica natural, sem paths de coordenacao).
+                string reqWs = req["workspace"]?.GetValue<string>() ?? "";
+                if (!string.IsNullOrWhiteSpace(reqWs))
+                {
+                    var extra = new[] { "/mnt", "/media", "/tmp" };
+                    if (!Core.Tools.WorkspaceGuard.TryResolve(root, reqWs, out string wsRoot, out string whyWs, extra))
+                    {
+                        WriteJson(ctx, 200, new JsonObject { ["ok"] = false, ["error"] = whyWs });
+                        return;
+                    }
+                    root = wsRoot;
+                }
                 // Role do pedido: 'role' explícito ou sufixo do model id (ex.:
                 // Gemma4-E4B-Q4-build => build). Sem role = política conservadora
                 // (git somente leitura), como o Plan.
@@ -1780,10 +1793,18 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // cliente direto/Web. Sem system nao ha onde pendurar: nao inventamos.
         // Tails: UNICO incremento sobre a base (podem coexistir com ela).
         bool tails = TailsOn(requestedModel);
-        if (tails && messages.Count > 0 && messages[0] is JsonObject sys0
-            && sys0["role"]?.GetValue<string>() == "system"
-            && sys0["content"] is JsonValue sysv && sysv.TryGetValue<string>(out string? syst))
-            sys0["content"] = WithFormula(syst, requestedModel);
+        if (tails)
+        {
+            if (messages.Count > 0 && messages[0] is JsonObject sys0
+                && sys0["role"]?.GetValue<string>() == "system"
+                && sys0["content"] is JsonValue sysv && sysv.TryGetValue<string>(out string? syst))
+                sys0["content"] = WithFormula(syst, requestedModel);
+            else
+                // Cliente sem system/instructions (WAR/SDK): a formula do harness
+                // precisa existir como system; antes a tail era descartada e o
+                // modelo rodava sem DATA/GIT/EDIT/GLOB.
+                messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = WithFormula("", requestedModel) });
+        }
         if (Diagnostic)
             Log(new JsonObject
             {
@@ -2124,6 +2145,17 @@ string outBody = body;
             {
                 req["instructions"] = WithFormula(finst, req["model"]?.GetValue<string>() ?? "");
                 outBody = req.ToJsonString(SerOpts);
+            }
+            else
+            {
+                // Cliente que nao manda `instructions` (WAR/SDK) ainda recebe a
+                // formula do harness; sem isso as tails nao chegavam ao modelo.
+                string formula = WithFormula("", req["model"]?.GetValue<string>() ?? "");
+                if (!string.IsNullOrWhiteSpace(formula))
+                {
+                    req["instructions"] = formula;
+                    outBody = req.ToJsonString(SerOpts);
+                }
             }
         }
         catch { }

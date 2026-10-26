@@ -339,7 +339,7 @@ fi
 
 case "$LEVEL" in
   1)
-    STEPS_DESC="units bridge/opencode; devpipe bridge/opencode; belts build (azul,verde) bridge/opencode; belts orch (azul,verde) bridge/opencode; webui integracao+topicos"
+    STEPS_DESC="units bridge/opencode; devpipe bridge/opencode; tools-full (com ciclo git/arquivo) bridge/opencode; belts build (azul,verde) bridge/opencode; belts orch (azul,verde) bridge/opencode"
     if [ "$LIST" = "1" ]; then
       echo "Level 1 -> $STEPS_DESC"; exit 0
     fi
@@ -349,6 +349,7 @@ case "$LEVEL" in
     for mode in $MODES; do
       step_bridge "units-$mode" --only U- --mode "$mode"
       step_bridge "devpipe-$mode" --only E-devpipe --mode "$mode"
+      step_bridge "tools-full-$mode" --only E-tools-full --mode "$mode"
       # Ordem: trilha Build primeiro, trilha Orch depois (duas trilhas da suite).
       step_bridge "belts-build-$mode" --only E-belts-build-direct --belts azul,verde --mode "$mode"
       step_bridge "belts-orch-$mode" --only E-belts-direct --belts azul,verde --mode "$mode"
@@ -356,7 +357,7 @@ case "$LEVEL" in
     step_webtest
     ;;
   2)
-    STEPS_DESC="tools-full; tools-dual; mission-tools; responses-tools; science-gpu; science-cpu(Q3); belts roxa build/orch (bridge+opencode); webui movida p/ fim do L3"
+    STEPS_DESC="mission-tools; responses-tools; science-gpu; science-cpu(Q3); belts roxa build/orch (bridge+opencode); webui movida p/ fim do L3"
     if [ "$LIST" = "1" ]; then
       echo "Level 2 -> $STEPS_DESC"; exit 0
     fi
@@ -364,8 +365,6 @@ case "$LEVEL" in
     log "=== LEVEL 2 ($OUT) ==="
     preflight || { log "BLOCKED: preflight reprovado"; gate; exit 3; }
     for mode in $MODES; do
-      step_bridge "tools-full-$mode" --only E-tools-full --mode "$mode"
-      step_bridge "tools-dual-$mode" --only E-dual-tools --mode "$mode"
       step_bridge "mission-tools-$mode" --only E-mission-tools --mode "$mode"
       step_bridge "responses-tools-$mode" --only E-responses-tools --mode "$mode"
       step_bridge "science-gpu-$mode" --only E-science-gpu --mode "$mode"

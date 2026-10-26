@@ -3893,3 +3893,60 @@ Release 0 erro; `Web.Test --units-only` 5/5 `U-antirepeat-*`; suite bridge
 Regra que fica: detector/feature so entra com enunciado + teste; sem isso, nao
 existe. A bateria `L1-20261026-054513` foi **parada** no `belts-build-bridge`
 para o ajuste (nada roda durante correcao) e recomeca do zero em dir novo.
+
+**REGRA: enunciado de teste e de TAREFA, nao de harness (2026-10-26).**
+Todo enunciado agentico da suite usa a linguagem que o usuario usaria no
+opencode/Web UI: objetivo + aceite, sem path absoluto, sem nome de tool, sem
+coringa de coordenada (`{ws}`, `{gitStep}`) e sem "responda apenas X". A
+coordenada (cwd/workspace, role, catalogo) e do harness:
+`/api/tools/execute` aceita `workspace` por chamada (resolvido pelo
+`WorkspaceGuard` com as extra roots `/mnt`, `/media`, `/tmp`),
+`TestContext.ToolAgent(prompt, steps, cwd)` envia o cwd, e as tails
+(`MainHarness`/`HarnessTails`) ensinam tool, caminho e fallback (`ls` quando
+glob falhar/0 matches). Proibido ajustar enunciado para empurrar o modelo ao
+GREEN: falhou, refina-se o harness/tail ou corrige-se o artefato. O
+`tools-full` absorve o antigo `tools-dual` num unico cenario natural
+(pasta -> git -> .txt com data/clima -> add/commit -> listar -> buscar ->
+EDITADO -> 2o commit -> `historico_git.log`); `E-dual-*` permanece como caso
+isolado com os mesmos enunciados naturais, sem `P()`/`D()`.
+
+**Git tool: `safe.directory` no repo resolvido.** A bridge roda como root e o
+workspace da tarefa pode ter outro dono; `git config/add/commit/log` falhava
+com "dubious ownership"/"not in a git directory" (medido no
+`U-git-tool-cycle` e no cenario `tools-full`). O `GitToolHandler` injeta
+`-c safe.directory=<repoDir>` em todo comando que nao e `init` (caminho exato,
+nunca `*`); `init` continua puro. O teste independente usa
+`git -c safe.directory=<dir> log`. Fallback `ls`/`find` entrou no
+`MainHarness`, no `HarnessTails` (GLOB) e nos docs versionados
+(`docs/harness/opencode/*`, `docs/AGENTS-PROMPTS.md`).
+
+**Workspace por chamada no `/api/tools/execute`.** O endpoint aceita
+`workspace`; paths relativos de write/read/edit/git passam a resolver no
+diretorio da tarefa. No modo opencode o cwd do processo ja e o workspace.
+Prova de build: Release 0 warning / 0 error nos dois checkouts.
+
+**tools-full agentico: workspace, data e edit (2026-10-26).**
+Tres falhas medidas no `E-tools-full` isolado (bridge), todas corrigidas no
+harness/teste, sem afrouxar aceite:
+1. `Directory.CreateDirectory('/tmp/opencode/toolsfull/...')` negado: a pasta
+   `toolsfull` e criada pela bridge (root) e o teste roda como mint. O cenario
+   agentico passou a usar base propria `/tmp/opencode/toolsfull-agent` (mint),
+   com cleanup tolerante a artefato root de run anterior.
+2. O modelo gravou data inventada (`Data de hoje: 2024-05-16`) mesmo com a tail
+   mandando rodar `date`. O `HarnessTails.Compose` agora injeta
+   `DATA ATUAL DO HOST: yyyy-MM-dd` no system composto (fonte verdadeira para
+   qualquer cliente com tails), alem da regra DATA ja existente.
+3. O `edit` da marca trocou a linha da data por `EDITADO` em vez de acrescentar.
+   A tail EDIT foi endurecida: `newString` DEVE comecar pelo `oldString` e
+   adicionar a marca depois; nunca substituir a linha inteira pela marca.
+Evidencias: `/tmp/opencode/toolsfull-bridge*.log` e os repos em
+`/tmp/opencode/toolsfull-agent/` (primeiro commit com data errada, segundo
+removendo a data). `U-git-tool-cycle` PASS 1/0 apos o redeploy; proximo aceite:
+`E-tools-full` nos dois modos e L1+L2.
+
+**MainHarness: help apos 2 tentativas de uso (2026-10-26).**
+Regra trocada de "apos 2 tentativas sem progresso, peça sugestao" para: apos 2
+tentativas de uso sem progresso, rodar o comando com `--help`/`-h` (ou
+`man <comando>`) e ler a sintaxe; so se ainda falhar, explicar a dificuldade e
+pedir sugestao. Vale para clientes com main harness ligado; no WAR
+(`--main-harness 0`) a regra equivalente deve morar nas tails.

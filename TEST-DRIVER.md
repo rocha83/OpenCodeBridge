@@ -335,8 +335,8 @@ Cada level roda os steps em série (`MaxParallelSteps=1`), nos dois modos
 
 | Level | Steps |
 |---|---|
-| **L1** | `units-{bridge,opencode}` (`U-`), `devpipe-{bridge,opencode}` (`E-devpipe`), `belts-build-{bridge,opencode}` (azul,verde), `belts-orch-{bridge,opencode}` (azul,verde). Web UI fica no L3. |
-| **L2** | `tools-full`, `tools-dual`, `mission-tools`, `responses-tools`, `science-gpu`, `science-cpu` (se CPU ligada), `belts-build-roxa` e `belts-orch-roxa` nos dois modos. Web UI fica no L3. |
+| **L1** | `units-{bridge,opencode}` (`U-`), `devpipe-{bridge,opencode}` (`E-devpipe`), `tools-full-{bridge,opencode}` (`E-tools-full`, com o ciclo git/arquivo do antigo dual), `belts-build-{bridge,opencode}` (azul,verde), `belts-orch-{bridge,opencode}` (azul,verde). Web UI fica no L3. |
+| **L2** | `mission-tools`, `responses-tools`, `science-gpu`, `science-cpu` (se CPU ligada), `belts-build-roxa` e `belts-orch-roxa` nos dois modos. Web UI fica no L3. |
 | **L3** | `belts-build-final` (marrom,preta), `belts-orch-final` (marrom,preta) nos dois modos, `webui-integracao-topicos`. |
 
 Modos:

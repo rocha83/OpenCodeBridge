@@ -197,6 +197,15 @@ public sealed class ShellToolHandler : IToolHandler
             }
         }
 
+        // `>`/`|` só têm semântica via bash: no argv direto o token vira
+        // argumento literal (medido: `git log ... > f` -> "ambiguous argument
+        // '>'" e o modelo repete). O inspetor já validou a string inteira.
+        if (bare.Contains('>') || bare.Contains('|'))
+        {
+            argv = new[] { "bash", "-c", command };
+            return true;
+        }
+
         argv = new[] { name }.Concat(ExpandGlobs(rest)).ToArray();
         return true;
     }
