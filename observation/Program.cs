@@ -32,16 +32,19 @@ internal static class Program
 
         // Provisiona dashboard (copia para o diretorio do Grafana).
         string repo = Environment.CurrentDirectory;
-        string dashSrc = Path.Combine(repo, "grafana", "dashboards", "opencodebridge.json");
+        string dashSrc = Path.Combine(repo, "observation", "grafana", "dashboards", "opencodebridge.json");
         string dashDst = "/var/lib/grafana/dashboards/opencodebridge.json";
-        string provSrc = Path.Combine(repo, "grafana", "provisioning", "dashboards", "opencodebridge.yaml");
+        string provSrc = Path.Combine(repo, "observation", "grafana", "provisioning", "dashboards", "opencodebridge.yaml");
         string provDst = "/etc/grafana/provisioning/dashboards/opencodebridge.yaml";
+        string dsSrc = Path.Combine(repo, "observation", "grafana", "provisioning", "datasources", "opencodebridge.yaml");
+        string dsDst = "/etc/grafana/provisioning/datasources/opencodebridge.yaml";
         if (File.Exists(dashSrc))
         {
             try
             {
                 Run("sudo", $"cp {dashSrc} {dashDst}", 10);
                 Run("sudo", $"cp {provSrc} {provDst}", 10);
+                if (File.Exists(dsSrc)) Run("sudo", $"cp {dsSrc} {dsDst}", 10);
                 Run("sudo", "systemctl restart grafana-server", 30);
                 logger.Information("Dashboard provisionado em {Path}", dashDst);
             }
