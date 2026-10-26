@@ -314,7 +314,7 @@ O que ja esta em `main` (build 0 avisos / 0 erros nos 2 projetos):
 
 **PENDENTE 1 — a pergunta da bridge precisa ser APRESENTADA pela Web**
 (achado depois do commit; patch pronto em `/tmp/opencode/patch_question_present.py`,
-**nao aplicado**): no caminho padrao (`Orchestration:UseResponsesBypass =
+**nao aplicado**): no caminho padrao (`Chat:UseResponsesBypass =
 /v1/responses`), a bridge **ja** emite a tool nativa `question` (com
 `PendingRisks[call_id]`); a Web hoje manda essa chamada ao `ToolExecutor`, que a
 nega ("Sem interacao com o usuario neste fluxo") — ou seja, no caminho padrao a
