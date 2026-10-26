@@ -97,8 +97,10 @@ conveniência manual, nunca fonte de verdade.
    `Rochas.OpenCodeBridge.Test`, `Rochas.OpenCodeBridge.Web.Test`). Script em
    `scripts/` não pode ser o único lugar de um check: se ele não roda
    automaticamente antes do teste, é enfeite e não conta.
-2. **Check novo = teste novo no mesmo commit.** Sem teste que prove o
-   comportamento (inclusive o caso de falha), o check não está pronto.
+2. **Sem recursão de teste-sobre-teste.** O check de verificação é provado pelo
+   próprio run, com evidência no log (`GO`/`NO-GO`, `PARADA`, veredito do step).
+   Teste unitário só quando o check decide PASS/FAIL da bateria, no máximo um
+   caso feliz + um negativo; proibido criar camada de testes para testar o teste.
 3. **Driver só muda com teste de bateria real** (`RunStepsAsync` com ≥3 steps):
    provar parada no primeiro FAIL, `.done` só para PASS/SKIP, resume no mesmo
    run dir refazendo o que falhou e gate fechando verde depois da correção.
