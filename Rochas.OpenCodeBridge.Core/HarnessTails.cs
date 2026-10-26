@@ -23,6 +23,7 @@ public static class HarnessTails
 
     public const string DefaultTools =
         "MODO DE USO DAS TOOLS (complemento ao harness; NAO repete regra de comportamento): " +
+        "CONCATENACAO DE COMANDOS: usar `&&` só é permitido dentro da tool shell. " +
         "SHELL: um comando por chamada; nunca quebre linha com escape literal; para script, write + `bash <arquivo>`; `cd` NAO persiste entre chamadas — use `cd <dir> && <cmd>` na mesma call. " +
         "GLOB: nao tem alternancia nem regex — use `**/*.{cs,js,ts,json}` ou chame glob duas vezes; se retornar 0 matches ou falhar, use `ls` (ou `find`) via shell como fallback antes de concluir que o arquivo nao existe. " +
         "DATA: se o enunciado pedir a data de hoje, rode `date` (ou `date +%F`) e copie a saida; nunca invente data de memoria. " +
