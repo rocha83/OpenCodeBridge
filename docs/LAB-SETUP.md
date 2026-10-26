@@ -692,10 +692,37 @@ de 30% dos diálogos da esteira (ex.: roxa build falhou nos 2 transportes, 2/2)
 não alterar a bridge nem os defaults. A correção mantém o aceite e é validada
 no gate Q4; o Q3 continua diagnóstico.
 
+**Fail-fast e seleção de modo (`scripts/war/run-levels.sh`).** Duas variáveis
+de ambiente mudam a esteira sem tocar em aceite:
+
+| variável | default | efeito |
+|---|---|---|
+| `LEVEL_MODES` | `bridge opencode` | modos rodados, em sequência. `opencode` = harness do **cliente** (tail/main harness da bridge não atuam); `bridge` = harness nosso |
+| `LEVEL_STOP_ON_FAIL` | `1` | **fail-fast**: no primeiro `FAIL`/`STALE` o nível **para** (evento `stop_on_fail` no `events.jsonl`) em vez de rodar os passos seguintes com a mesma causa. `0` mede o placar completo |
+
+Medido em 2026-10-25 (Q4/net10): com `tools-dual` vermelho a bateria seguiu para
+`mission`, `belts` e o par `opencode`, torrando GPU em passos que repetiam a
+mesma causa. Fail-fast é o default; placar completo é opt-in explícito.
+
+```bash
+LEVEL_MODES=opencode scripts/war/run-levels.sh --level 2   # só o caminho do CLI
+LEVEL_MODES=bridge   scripts/war/run-levels.sh --level 2   # só o nosso harness
+LEVEL_STOP_ON_FAIL=0 scripts/war/run-levels.sh --level 2   # placar completo
+```
+
+**`--tail-scope` decide por CLIENTE, não por sufixo de modelo.** `managed` =
+todos menos o CLI do opencode (detectado pelo `User-Agent`), `all` = todos,
+`off` = ninguém. O sufixo de role (`-build`, `-exec`) identifica **perfil de
+modelo**, não cliente: usá-lo como discriminador tirava a cauda do WAR em modo
+bridge — o modelo `Gemma4-E4B-Q4-build` respondia prosa ("especifique o arquivo
+de projeto") em vez de executar tools. Efeito medido em `E-tools-full`/`E-mission`
+(2026-10-25).
+
 **Checklist antes de declarar PASS:**
 
 1. `/api/harness` da instância do gate: `main_harness=false`,
-   `harness_tails=true`, `tail_scope=all`, `coerce=0`; anotar chars das tails.
+   `harness_tails=true`, `tail_scope=managed` (o cliente do teste **não** é o
+   CLI do opencode, logo recebe cauda), `coerce=0`; anotar chars das tails.
 2. `/api/status`: upstream/modelo/ctx esperados; instância = a do gate.
 3. Request do teste: `max_tokens=16384`, `tool_choice=required`, schema `write`
    igual ao de produção.

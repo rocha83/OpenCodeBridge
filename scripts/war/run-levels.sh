@@ -55,6 +55,19 @@ if [ "$GATE_ONLY" != "1" ]; then
   fi
 fi
 
+# Modos da bateria: "bridge opencode" (padrao) | "opencode" | "bridge".
+# Medir um caminho por vez evita alternancia: no opencode o harness e do
+# CLIENTE (a tail/main harness da bridge nao atuam), no bridge e o nosso.
+MODES="${LEVEL_MODES:-bridge opencode}"
+# Fail-fast: com LEVEL_STOP_ON_FAIL=1 (padrao) o nivel PARA no primeiro
+# FAIL/STALE. Rodar os passos seguintes com o mesmo defeito so torra GPU e
+# esconde a causa; para medir o placar completo, LEVEL_STOP_ON_FAIL=0.
+STOP_ON_FAIL="${LEVEL_STOP_ON_FAIL:-1}"
+case "$MODES" in
+  bridge|opencode|"bridge opencode"|"opencode bridge") ;;
+  *) echo "LEVEL_MODES invalido: $MODES (use 'bridge', 'opencode' ou 'bridge opencode')"; exit 2 ;;
+esac
+
 STAMP="${LEVEL_STAMP:-$(date +%Y%m%d-%H%M%S)}"
 # Artefatos em disco NAO volatil (sda3): logs/levels do repo (override por LEVEL_OUT).
 OUT="${LEVEL_OUT:-$ROOT/logs/levels}/L$LEVEL-$STAMP"
@@ -196,7 +209,7 @@ preflight() {
 }
 
 # --- steps ------------------------------------------------------------------
-step_bridge() { # nome + args do runner
+_step_bridge() { # nome + args do runner
   local name="$1"; shift
   [ -f "$STATE/$name.done" ] && { log "SKIP $name (done)"; return 0; }
   local mode="?" prev=""
@@ -233,7 +246,25 @@ step_bridge() { # nome + args do runner
   log "    -> $verdict (${secs}s, rc=$rc${cause:+, causa=$cause})"
 }
 
-step_webtest() { # integracao + topicos (suite web; TopicsSweep roda no bloco unit dela)
+# Fail-fast: le o veredito que acabou de ir para o summary e encerra o nivel.
+stop_check() { # $1 = passo
+  [ "$STOP_ON_FAIL" = "1" ] || return 0
+  local verdict; verdict=$(awk -F'\t' -v n="$1" '$1==n{print $2}' "$SUMMARY" 2>/dev/null | tail -1)
+  case "$verdict" in
+    FAIL|STALE)
+      log "STOP-ON-FAIL: $1 -> $verdict"
+      log "    bateria interrompida aqui (LEVEL_STOP_ON_FAIL=0 mede o placar inteiro)"
+      emit "{\"t\":\"stop_on_fail\",\"step\":\"$1\",\"verdict\":\"$verdict\",\"modes\":\"$(jesc "$MODES")\"}"
+      exit 1
+      ;;
+  esac
+  return 0
+}
+
+step_bridge() { _step_bridge "$@"; stop_check "$1"; }
+step_webtest() { _step_webtest; stop_check "webui-integracao-topicos"; }
+
+_step_webtest() { # integracao + topicos (suite web; TopicsSweep roda no bloco unit dela)
   local name="webui-integracao-topicos"
   [ -f "$STATE/$name.done" ] && { log "SKIP $name (done)"; return 0; }
   [ -f "$WEBTEST" ] || { log "ERRO: Web.Test nao buildado"; return 1; }
@@ -299,7 +330,7 @@ case "$LEVEL" in
     emit "{\"t\":\"run_start\",\"level\":1,\"stamp\":\"$STAMP\",\"git\":\"$(jesc "$HASH_GIT")\",\"dlls\":{\"bridge\":\"$HASH_BRIDGE\",\"test\":\"$INIT_HASH_TEST\",\"web\":\"$HASH_WEB\"},\"bridge\":\"$(jesc "$BRIDGE")\",\"upstream\":\"$(jesc "$WAR_UPSTREAM")\",\"no_vision\":$([ "$NO_VISION" = "1" ] && echo true || echo false)}"
     log "=== LEVEL 1 ($OUT) ==="
     preflight || { log "BLOCKED: preflight reprovado"; gate; exit 3; }
-    for mode in bridge opencode; do
+    for mode in $MODES; do
       step_bridge "units-$mode" --only U- --mode "$mode"
       step_bridge "devpipe-$mode" --only E-devpipe --mode "$mode"
       # Ordem: trilha Build primeiro, trilha Orch depois (duas trilhas da suite).
@@ -313,10 +344,10 @@ case "$LEVEL" in
     if [ "$LIST" = "1" ]; then
       echo "Level 2 -> $STEPS_DESC"; exit 0
     fi
-    emit "{\"t\":\"run_start\",\"level\":2,\"stamp\":\"$STAMP\",\"git\":\"$(jesc "$HASH_GIT")\",\"dlls\":{\"bridge\":\"$HASH_BRIDGE\",\"test\":\"$INIT_HASH_TEST\",\"web\":\"$HASH_WEB\"},\"bridge\":\"$(jesc "$BRIDGE")\",\"upstream\":\"$(jesc "$WAR_UPSTREAM")\",\"q3_bridge\":\"$(jesc "${LEVEL_BRIDGE_Q3:-}")\"}"
+    emit "{\"t\":\"run_start\",\"modes\":\"$(jesc "$MODES")\",\"level\":2,\"stamp\":\"$STAMP\",\"git\":\"$(jesc "$HASH_GIT")\",\"dlls\":{\"bridge\":\"$HASH_BRIDGE\",\"test\":\"$INIT_HASH_TEST\",\"web\":\"$HASH_WEB\"},\"bridge\":\"$(jesc "$BRIDGE")\",\"upstream\":\"$(jesc "$WAR_UPSTREAM")\",\"q3_bridge\":\"$(jesc "${LEVEL_BRIDGE_Q3:-}")\"}"
     log "=== LEVEL 2 ($OUT) ==="
     preflight || { log "BLOCKED: preflight reprovado"; gate; exit 3; }
-    for mode in bridge opencode; do
+    for mode in $MODES; do
       step_bridge "tools-full-$mode" --only E-tools-full --mode "$mode"
       step_bridge "tools-dual-$mode" --only E-dual-tools --mode "$mode"
       step_bridge "mission-tools-$mode" --only E-mission-tools --mode "$mode"
@@ -347,7 +378,7 @@ case "$LEVEL" in
     log "harness na bridge $BRIDGE: $(echo "$HSTATUS" | head -c 300)"
     echo "$HSTATUS" | grep -q '"main_harness":true' \
       || log "AVISO: main_harness nao esta true — Level 3 pede harness ligado (--main-harness 1 --harness-tails 1)"
-    for mode in bridge opencode; do
+    for mode in $MODES; do
       step_bridge "belts-build-final-$mode" --only E-belts-build-direct --belts marrom,preta --mode "$mode"
       step_bridge "belts-orch-final-$mode" --only E-belts-direct --belts marrom,preta --mode "$mode"
     done

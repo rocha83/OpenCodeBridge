@@ -647,3 +647,19 @@ para um adapter remoto futuro, mas ele não existe e não deve ser simulado.
 
 Qualquer mudança nesses pontos é mudança de contrato da WAR, não correção de
 driver.
+
+## 14. Variáveis de ambiente da esteira
+
+| variável | default | efeito |
+|---|---|---|
+| `LEVEL_MODES` | `bridge opencode` | modos rodados, em sequência |
+| `LEVEL_STOP_ON_FAIL` | `1` | para no primeiro `FAIL`/`STALE` (evento `stop_on_fail`, exit 1) |
+| `LEVEL_STAMP` | timestamp | congela/retoma o stamp do run |
+| `LEVEL_BRIDGE` | `http://127.0.0.1:4124` | instância do gate (Q4) |
+| `LEVEL_BRIDGE_Q3` | — | liga `science-cpu` na Q3 (diagnóstico) |
+| `LEVEL_STEP_TIMEOUT` | `7200` | timeout por passo (s) |
+| `LEVEL_REQUIRE_GREEN` | `1` | gate derruba o exit code em FAIL/BLOCKED/STALE |
+
+Com `LEVEL_STOP_ON_FAIL=0` o nível continua e o placar completo aparece no
+`summary.tsv`; o gate final continua valendo. Retomada: passo com `.done` é
+pulado — um passo vermelho **não** é retomado, use stamp novo.

@@ -1,5 +1,57 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## L2 no Q4: tail-scope por cliente, fail-fast e guardas de tool (2026-10-25, sessao 18e)
+
+**Contexto.** A L1 estava 9/9 na bateria `20261025-195625` (net9), mas a L2 dava
+5 PASS / 4 FAIL / 1 SKIP. A hipótese inicial era `--tail-scope managed`; a
+medição mostrou que o discriminador estava errado, não a política.
+
+**Causa 1 — `managed` decidia por sufixo de modelo.** `ManagedFor(modelId)`
+tratava "modelo com sufixo de role" como caminho opencode e cortava a cauda.
+O WAR em **modo bridge** usa exatamente `Gemma4-E4B-Q4-build`; ficou sem cauda e
+o `E-mission-tools` respondeu prosa ("especifique o arquivo de projeto") em vez
+de executar. Correção (`8cf10c1`): o discriminador passou a ser o **cliente**
+(`User-Agent` com `opencode`, via `AsyncLocal` definido 1× por requisição);
+`managed` = todos menos o CLI do opencode. `/api/translate` confirma:
+UA `opencode/1.0.0` → `tails_on=false`; `dotnet-war/1.0` e `curl/8` → `true`.
+
+**Medição L2 no net10 (`533efae`), Q4 `:4124`:**
+
+| passo | veredito | causa isolada |
+|---|---|---|
+| `tools-full` | FAIL 8s | **corrida do teste**: as 2 lanes rodam em `Task.WhenAll` no MESMO cwd da bridge e usam os mesmos nomes (`a.cs`, `sub/b.cs`); uma reescrevia o arquivo da outra (`a.cs` ficou `int X = 42`) |
+| `tools-dual` | FAIL 48s | ciclo git **passou** (2 commits), faltou `historico.log`: 2 `shell ok:false` + 8 `anti-repeat-loop` seguidos, sem progresso |
+| `mission-tools` | FAIL 70s | `mcs` com dois projetos: `mcs.csproj` (scaffold) + `MCS.csproj` (modelo) — Linux é case-sensitive |
+| `responses-tools` | PASS 7s | — |
+| `science-gpu` | PASS 171s | — |
+| `belts-build-roxa` | PASS 107s | — |
+| `tools-full-opencode` | PASS 8s | — |
+| `tools-dual-opencode` | FAIL 58s | `glob` do CLI recebeu caminho absoluto **dentro do `pattern`** → 0 matches (schema é `pattern` + `path`) |
+| `mission-tools-opencode` | C# OK | CLI resolveu `2.000000 / 5.000000` |
+
+**Correções aplicadas (`b1e1084`).**
+1. `E2EToolsFullTests`: lanes **sequenciais** (o cwd é do processo da bridge;
+   paralelo não isola nada e vira flaky).
+2. `ShellToolHandler`: deny de metacaractere agora é **acionável** ("use
+   `cmd > arquivo` ou a tool `write`") — sem isso o modelo repete o comando e
+   morre no anti-repeat sem artefato.
+3. `ShellToolHandler`: guard de `dotnet new` em pasta que já tem
+   `*.csproj`/`*.fsproj` → falha com a instrução `dotnet run --project <pasta>`
+   (ou `--project <arquivo>`) em vez de criar o segundo projeto.
+
+**Fail-fast na esteira.** `scripts/war/run-levels.sh` ganhou
+`LEVEL_MODES` (default `bridge opencode`) e `LEVEL_STOP_ON_FAIL` (default `1`):
+no primeiro `FAIL`/`STALE` o nível para, emite `stop_on_fail` e sai com 1.
+Motivo medido: com um vermelho em `tools-dual` a bateria seguia para `mission`,
+`belts` e o par `opencode`, gastando GPU em passos que repetiam a mesma causa.
+Placar completo vira opt-in (`LEVEL_STOP_ON_FAIL=0`).
+
+**Deploy.** PROD migrado para **.NET 10** (`533efae`): launchers e units de
+`bin/Release/net9.0` para `net10.0`, build 0/0, `bridge-gpu`/`bridge-gpu2`/
+`bridge-web` ativos, `/api/status` com `tail_scope=managed`,
+`anti_repeat_window=512`; `/api/harness` com `tools_chars=1207`,
+`behavior_chars=1275`.
+
 ## Fim das copias de tools: uma implementacao no Core (2026-10-25, sessao 18d)
 
 Depois de matar a duplicacao do anti-repeat, a auditoria de tipos por nome achou
