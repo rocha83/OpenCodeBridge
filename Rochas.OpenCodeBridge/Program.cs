@@ -1383,7 +1383,7 @@ internal static partial class Program
                     ["main_harness_chars"] = MainHarness.Text.Length,
                     ["harness_tails"] = TailsEnabled,
                     ["tails_managed"] = TailsAtivas() && TailScope is "all" or "managed",
-                    ["tails_opencode"] = TailsAtivas() && TailScope == "all",
+                    ["tails_opencode"] = false,
                     ["behavior_chars"] = HarnessBehaviorTail.Length,
                     ["tools_chars"] = HarnessToolsTail.Length
                 });
@@ -1615,7 +1615,7 @@ WriteJson(ctx, 200, new JsonObject
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
 ["context_tokens"] = ContextTokens, ["context_guard"] = ContextGuard,
 ["mode"] = Mode?.Name ?? "auto", ["tail_scope"] = TailScope,
-["main_harness"] = MainHarnessOn, ["main_harness_scope"] = "managed-only", ["main_harness_opencode"] = false, ["harness_tails"] = TailsEnabled, ["tails_managed"] = TailsEnabled, ["tails_opencode"] = TailsEnabled && TailScope == "all", ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
+["main_harness"] = MainHarnessOn, ["main_harness_scope"] = "managed-only", ["main_harness_opencode"] = false, ["harness_tails"] = TailsEnabled, ["tails_managed"] = TailsEnabled, ["tails_opencode"] = false, ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
         ["last_client"] = LastClient, ["last_request_ms"] = LastRequestMs,
         ["last_enunciado_step"] = LastEnunciadoStep, ["last_enunciado_ms"] = LastEnunciadoMs,
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
