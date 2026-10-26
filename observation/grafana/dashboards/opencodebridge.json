@@ -294,7 +294,7 @@
     },
     {
       "id": 7,
-      "title": "Throughput in-memory (por step)",
+      "title": "Throughput por step (sonda 2s)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -303,20 +303,64 @@
         "y": 16
       },
       "datasource": {
-        "type": "testdata",
-        "uid": "testdata"
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
       },
       "targets": [
         {
           "refId": "A",
-          "scenarioId": "random_walk",
-          "alias": "t/s"
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "format": "timeseries",
+          "columns": [
+            {
+              "selector": "time",
+              "text": "time",
+              "type": "time"
+            },
+            {
+              "selector": "step",
+              "text": "step",
+              "type": "string"
+            },
+            {
+              "selector": "tps_output",
+              "text": "t/s saida",
+              "type": "number"
+            },
+            {
+              "selector": "tps_total",
+              "text": "t/s total",
+              "type": "number"
+            }
+          ]
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 8,
-      "title": "VRAM/consumo in-memory (por step)",
+      "title": "VRAM/GPU por step (sonda 2s)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -325,20 +369,69 @@
         "y": 16
       },
       "datasource": {
-        "type": "testdata",
-        "uid": "testdata"
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
       },
       "targets": [
         {
           "refId": "A",
-          "scenarioId": "random",
-          "alias": "vram"
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "format": "timeseries",
+          "columns": [
+            {
+              "selector": "time",
+              "text": "time",
+              "type": "time"
+            },
+            {
+              "selector": "step",
+              "text": "step",
+              "type": "string"
+            },
+            {
+              "selector": "vram_used_mb",
+              "text": "VRAM usada MB",
+              "type": "number"
+            },
+            {
+              "selector": "vram_total_mb",
+              "text": "VRAM total MB",
+              "type": "number"
+            },
+            {
+              "selector": "gpu_util",
+              "text": "GPU %",
+              "type": "number"
+            }
+          ]
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 9,
-      "title": "Janela de atualizacao (5s) - tools calls in-memory",
+      "title": "Tools calls por step (sonda 2s, acumulado)",
       "type": "bargauge",
       "gridPos": {
         "h": 8,
@@ -347,16 +440,57 @@
         "y": 24
       },
       "datasource": {
-        "type": "testdata",
-        "uid": "testdata"
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
       },
       "targets": [
         {
           "refId": "A",
-          "scenarioId": "datapoints",
-          "alias": "tools"
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/test/probe/latest",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "format": "table",
+          "columns": [
+            {
+              "selector": "step",
+              "text": "step",
+              "type": "string"
+            },
+            {
+              "selector": "tools_calls",
+              "text": "tools_calls",
+              "type": "number"
+            },
+            {
+              "selector": "requests",
+              "text": "requests",
+              "type": "number"
+            }
+          ]
         }
-      ]
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        }
+      }
     },
     {
       "id": 10,

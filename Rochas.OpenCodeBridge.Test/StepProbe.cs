@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json.Nodes;
 using Serilog;
 using Serilog.Events;
 
@@ -16,6 +17,7 @@ internal sealed class StepProbe : IDisposable
     private readonly Task _loop;
     private readonly ILogger _logger;
     private readonly string _step;
+    private readonly string _mode;
     private readonly string _probeDir;
     private readonly string _probeUrl;
     private readonly string _apiKey;
@@ -55,6 +57,7 @@ internal sealed class StepProbe : IDisposable
     {
         _probeDir = probeDir;
         _step = step;
+        _mode = mode;
         _probeUrl = probeUrl;
         _apiKey = apiKey;
         _logPaths = logPaths.ToArray();
@@ -85,19 +88,80 @@ internal sealed class StepProbe : IDisposable
             ["gpu"] = gpu
         };
 
+        string statusJson = "";
+        string metricsJson = "";
         if (!string.IsNullOrWhiteSpace(_probeUrl))
         {
-            props["status"] = await TryGetAsync(_probeUrl + "/api/status", _apiKey);
-            props["metrics"] = await TryGetAsync(_probeUrl + "/api/metrics", _apiKey);
+            statusJson = await TryGetAsync(_probeUrl + "/api/status", _apiKey);
+            metricsJson = await TryGetAsync(_probeUrl + "/api/metrics", _apiKey);
+            props["status"] = statusJson;
+            props["metrics"] = metricsJson;
         }
 
         props["processes"] = ProcessSnapshot();
-        props["disk_free_mb"] = DiskFreeMb(_probeDir);
+        long diskFree = DiskFreeMb(_probeDir);
+        props["disk_free_mb"] = diskFree;
 
         _logger.Information("probe tick {@Props}", props);
+        await PublishSampleAsync(elapsed, gpu, statusJson, metricsJson, diskFree);
 
         foreach (string logPath in _logPaths)
             TailLog(logPath);
+    }
+
+    private async Task PublishSampleAsync(double elapsed, string gpu, string statusJson, string metricsJson, long diskFree)
+    {
+        if (string.IsNullOrWhiteSpace(_probeUrl)) return;
+        var (util, usedMb, totalMb, temp) = ParseGpu(gpu);
+        var sample = new JsonObject
+        {
+            ["step"] = _step,
+            ["mode"] = _mode,
+            ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            ["time"] = DateTime.UtcNow.ToString("o"),
+            ["elapsed_s"] = Math.Round(elapsed, 1),
+            ["tps_output"] = Num(metricsJson, "tps_output"),
+            ["tps_total"] = Num(metricsJson, "tps_total"),
+            ["tools_calls"] = Num(metricsJson, "tools_calls"),
+            ["requests"] = Num(metricsJson, "requests"),
+            ["requests_opencode"] = Num(metricsJson, "requests_opencode"),
+            ["requests_bridge"] = Num(metricsJson, "requests_bridge"),
+            ["vram_used_mb"] = usedMb,
+            ["vram_total_mb"] = totalMb,
+            ["gpu_util"] = util,
+            ["gpu_temp"] = temp,
+            ["disk_free_mb"] = diskFree,
+            ["temperature"] = Num(statusJson, "temperature"),
+            ["context_tokens"] = Num(statusJson, "context_tokens")
+        };
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, _probeUrl + "/api/test/probe");
+            if (!string.IsNullOrWhiteSpace(_apiKey))
+                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
+            req.Content = new StringContent(sample.ToJsonString(), Encoding.UTF8, "application/json");
+            using var res = await _http.SendAsync(req);
+            if (!res.IsSuccessStatusCode)
+                _logger.Debug("probe publish http={Status} step={Step}", (int)res.StatusCode, _step);
+        }
+        catch (Exception ex) { _logger.Debug("probe publish erro: {Error}", ex.Message); }
+    }
+
+    private static double Num(string json, string name)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return 0;
+        try { return JsonNode.Parse(json)?[name]?.GetValue<double>() ?? 0; }
+        catch { return 0; }
+    }
+
+    private static (double Util, double UsedMb, double TotalMb, double Temp) ParseGpu(string gpu)
+    {
+        if (string.IsNullOrWhiteSpace(gpu) || gpu is "n/a" or "erro") return (-1, -1, -1, -1);
+        string[] p = gpu.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (p.Length < 3) return (-1, -1, -1, -1);
+        static double D(string s) => double.TryParse(s, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out double v) ? v : -1;
+        return (D(p[0]), D(p[1]), D(p[2]), p.Length > 3 ? D(p[3]) : -1);
     }
 
     private void TailLog(string path)

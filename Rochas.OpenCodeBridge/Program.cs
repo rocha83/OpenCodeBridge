@@ -521,6 +521,13 @@ internal static partial class Program
     static long RequestsBridge;
     static string LastClient = "n/d";
     static long LastRequestMs;
+    // Tools executadas pela bridge (POST /api/tools/execute). No modo opencode
+    // o CLI executa localmente e este contador fica em 0 de proposito.
+    static long ToolsCalls;
+    // Amostras da sonda por step (StepProbe -> POST /api/test/probe). Ring em
+    // memoria para o painel ler throughput/VRAM/tools sem depender de arquivo.
+    static readonly ConcurrentQueue<JsonObject> ProbeSamples = new();
+    const int ProbeCap = 4096;
     // Enunciado do teste em execucao (publicado pelo runner; lido pelo painel).
     static string LastEnunciadoStep = "n/d";
     static string LastEnunciado = "";
@@ -967,7 +974,8 @@ internal static partial class Program
                     // Recusas por anel (sempre contadas, independente do diagnostic).
                     ["ring2_deny"] = Metrics.Ring2Deny,
                     ["ring3_deny"] = Metrics.Ring3Deny,
-                    ["nudge_args"] = Metrics.NudgeArgs
+                    ["nudge_args"] = Metrics.NudgeArgs,
+                    ["tools_calls"] = ToolsCalls
                 });
                 return;
             }
@@ -990,6 +998,45 @@ internal static partial class Program
                     ["prompt"] = LastEnunciado,
                     ["updated_ms"] = LastEnunciadoMs
                 });
+                return;
+            }
+
+            // Sonda por step: o StepProbe publica amostras (tps, VRAM, GPU,
+            // tools) a cada 2s; o painel Infinity le a serie e o ultimo valor.
+            if (path == "/api/test/probe" || path == "/api/test/probe/latest")
+            {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
+                if (ctx.Request.HttpMethod == "POST")
+                {
+                    var body = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
+                    var sample = body.DeepClone().AsObject();
+                    if (sample["ts"] is null)
+                        sample["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    ProbeSamples.Enqueue(sample);
+                    while (ProbeSamples.Count > ProbeCap) ProbeSamples.TryDequeue(out _);
+                    WriteJson(ctx, 200, new JsonObject { ["ok"] = true, ["samples"] = ProbeSamples.Count });
+                    return;
+                }
+                if (path.EndsWith("/latest", StringComparison.Ordinal))
+                {
+                    var latest = ProbeSamples
+                        .GroupBy(x => x["step"]?.GetValue<string>() ?? "n/d")
+                        .Select(g => g.OrderByDescending(x => x["ts"]?.GetValue<long>() ?? 0).First())
+                        .ToArray();
+                    var arr = new JsonArray();
+                    foreach (var x in latest) arr.Add(x.DeepClone());
+                    WriteJson(ctx, 200, arr);
+                    return;
+                }
+                string stepFilter = ctx.Request.QueryString["step"] ?? "";
+                int limit = int.TryParse(ctx.Request.QueryString["limit"], out int lim) ? Math.Clamp(lim, 1, ProbeCap) : 1000;
+                var rows = ProbeSamples
+                    .Where(x => stepFilter.Length == 0 || (x["step"]?.GetValue<string>() ?? "") == stepFilter)
+                    .ToArray();
+                var slice = rows.Skip(Math.Max(0, rows.Length - limit)).ToArray();
+                var series = new JsonArray();
+                foreach (var x in slice) series.Add(x.DeepClone());
+                WriteJson(ctx, 200, series);
                 return;
             }
 
@@ -1125,6 +1172,7 @@ WriteJson(ctx, 200, new JsonObject
             {
                 // Execução de tools na bridge (dono atual: Web delega p/ cá).
                 // Corpo: {name, arguments, timeout?}. Raiz = --workspace ou cwd.
+                Interlocked.Increment(ref ToolsCalls);
                 var req = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
                 string name = req["name"]?.GetValue<string>() ?? "";
                 string args = req["arguments"]?.ToJsonString() ?? "{}";
