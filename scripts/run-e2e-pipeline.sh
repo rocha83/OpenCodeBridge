@@ -14,8 +14,8 @@ REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 CFG_USER="${SUDO_USER:-$(id -un)}"
 CFG_HOME="$(getent passwd "$CFG_USER" | cut -d: -f6)"
 [[ -n "$CFG_HOME" ]] && export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$CFG_HOME/.config}"
-LOG=/tmp/opencode/pipeline.log
-mkdir -p /tmp/opencode
+LOG="$REPO/logs/pipeline.log"
+mkdir -p "$REPO/logs" /tmp/opencode
 exec > >(tee -a "$LOG") 2>&1
 
 echo "=== Pipeline E2E - $(date) - phase=$PHASE ==="
@@ -30,20 +30,21 @@ build_once() {
 }
 
 phase0() {
-  echo "--- Phase 0: health ---"
-  for url in http://127.0.0.1:4100/health http://127.0.0.1:4110/health; do
-    echo -n "$url: "; curl -s -m 5 -H "Authorization: Bearer guest@123" "$url"; echo
-  done
-  for url in http://127.0.0.1:4124/api/status http://127.0.0.1:4125/api/status; do
-    echo -n "$url: "; curl -s -m 5 -H "Authorization: Bearer guest@123" "$url"; echo
-  done
-  nvidia-smi --query-gpu=memory.used,memory.free --format=csv,noheader
+  echo "--- Phase 0: preflight (llama + bridges + web + auth + VRAM) ---"
+  "$REPO/scripts/health-check.sh" || { echo "PREFLIGHT FALHOU — corrija o stack antes das suites"; return 1; }
 }
 
 phase1() {
-  echo "--- Phase 1: unit tests (skip e2e) ---"
+  echo "--- Phase 1: unit tests (bridge + web, sem modelo) ---"
   cd "$REPO"
   dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- --skip-e2e --api-key guest@123 --bridge http://127.0.0.1:4124
+  dotnet run --project Rochas.OpenCodeBridge.Web.Test -c Release --no-build -- --web "http://127.0.0.1:${BRIDGE_WEB_PORT:-4130}" --units-only
+}
+
+phase_web() {
+  echo "--- Phase web: integracao da UI (Web :${BRIDGE_WEB_PORT:-4130} + modelo vivo) ---"
+  cd "$REPO"
+  dotnet run --project Rochas.OpenCodeBridge.Web.Test -c Release --no-build -- --web "http://127.0.0.1:${BRIDGE_WEB_PORT:-4130}" --integration-only
 }
 
 phase2() {
@@ -66,8 +67,9 @@ case "$PHASE" in
   1) build_once; phase1 ;;
   2) build_once; phase2 ;;
   3) build_once; phase3 ;;
-  all) build_once; phase0; phase1; phase2; phase3 ;;
-  *) echo "phase invalida: $PHASE"; exit 1 ;;
+  web) build_once; phase_web ;;
+  all) build_once; phase0; phase1; phase2; phase3; phase_web ;;
+  *) echo "phase invalida: $PHASE (use 0|1|2|3|web|all)"; exit 1 ;;
 esac
 
 echo "=== Pipeline phase=$PHASE done $(date) ==="

@@ -136,12 +136,15 @@ internal static class TestContext
     }
 
     /// <summary>Roda o mesmo enunciado pelo opencode real (standalone) e devolve stdout+stderr.</summary>
-    public static string OpencodeRun(string prompt)
+    public static string OpencodeRun(string prompt, string? cwd = null)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
+        // cwd = diretorio da tarefa: e o uso real do CLI (abre no projeto). Com cwd
+        // fixo em standalone o alvo nunca esta no cwd e o modelo e forcado a
+        // caminho absoluto — artefato do teste, nao do harness.
         var psi = new ProcessStartInfo("opencode")
         {
-            WorkingDirectory = Path.Combine(Path.GetTempPath(), "opencode", "standalone"),
+            WorkingDirectory = cwd is { Length: > 0 } ? cwd : Path.Combine(Path.GetTempPath(), "opencode", "standalone"),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
@@ -324,9 +327,12 @@ internal static class TestContext
     /// <param name="prompt">Enunciado.</param>
     /// <param name="steps">Máximo de rodadas de tool no modo puro.</param>
     /// <returns>Texto final do assistente e as tools executadas.</returns>
-    public static async Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps = 0)
+    public static Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps = 0)
+        => ToolAgent(prompt, steps, null);
+
+    public static async Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps, string? cwd)
     {
-        if (Mode == "opencode") return (OpencodeRun(prompt), new List<string>());
+        if (Mode == "opencode") return (OpencodeRun(prompt, cwd), new List<string>());
         int max = steps > 0 ? steps : ToolAgentSteps;
         var input = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = prompt });
         var calls = new List<string>();

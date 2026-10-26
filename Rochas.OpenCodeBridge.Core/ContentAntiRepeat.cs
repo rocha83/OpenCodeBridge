@@ -66,7 +66,7 @@ public abstract class ContentAntiRepeat
     /// <summary>O texto acumulado entrou em repeticao? (regra unica da classe-mae)</summary>
     /// <param name="text">Texto acumulado ate aqui.</param>
     /// <returns>True = repeticao invalida provavel.</returns>
-    public virtual bool IsRepeat(string? text) => TailRepeats(text, Window);
+    public virtual bool IsRepeat(string? text) => TailRepeats(text, Window) || SemanticRepeat(text, Window);
 
     /// <summary>Normaliza texto para comparacao: minusculo, espacos colapsados e trim.</summary>
     /// <param name="s">Texto cru.</param>
@@ -133,6 +133,73 @@ public abstract class ContentAntiRepeat
             if (Similarity(a, b) >= BlockSimilarity && Similarity(b, c) >= BlockSimilarity) return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Similaridade minima (Jaccard de palavras) entre sentencas para considerar
+    /// repeticao SEMANTICA (mesma pergunta/recomendacao reformulada). Threshold
+    /// alto para evitar falso positivo em reuso legitimo de vocabulario.
+    /// </summary>
+    public const double SemanticSimilarity = 0.9;
+
+    /// <summary>
+    /// Detecta repeticao semantica: a ultima sentenca repete (reformulada) uma
+    /// sentenca anterior nao-adjacente. Cobre casos em que o modelo reformula
+    /// a mesma pergunta/recomendacao sem repetir texto verbatim (loop de ideia).
+    /// </summary>
+    /// <param name="accumulated">Texto acumulado.</param>
+    /// <param name="window">Janela comparada (chars normalizados).</param>
+    /// <returns>True = repeticao semantica detectada.</returns>
+    public static bool SemanticRepeat(string? accumulated, int window)
+    {
+        if (string.IsNullOrEmpty(accumulated) || window < MinWindow) return false;
+        string norm = Normalize(accumulated);
+        if (norm.Length < 2 * MinWindow) return false;
+
+        // Divide em sentencas (pontuacao forte).
+        var sentences = norm
+            .Split(new[] { '.', '!', '?', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
+            .Where(s => s.Length >= 16)
+            .ToList();
+        if (sentences.Count < 3) return false;
+
+        // Ultima sentenca (ou ultimas 2 agregadas) vs anteriores nao-adjacentes.
+        var lastTokens = Tokenize(sentences[^1]);
+        if (lastTokens.Count < 4) return false;
+
+        // Compara tambem com a agregacao das 2 ultimas (loop de paragrafo).
+        var last2 = Tokenize(string.Join(" ", sentences[^2..]));
+        int lastIdx = sentences.Count - 1;
+        for (int i = 0; i < lastIdx - 1; i++)
+        {
+            var prevTokens = Tokenize(sentences[i]);
+            if (prevTokens.Count < 4) continue;
+            if (Jaccard(lastTokens, prevTokens) >= SemanticSimilarity) return true;
+            if (last2.Count >= 6 && Jaccard(last2, Tokenize(string.Join(" ", sentences[i..(i + 2 < sentences.Count ? i + 2 : sentences.Count)]))) >= SemanticSimilarity) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Tokeniza em palavras (>= 3 chars, sem stopwords triviais).</summary>
+    private static HashSet<string> Tokenize(string s)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var w in s.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string t = w.Trim().Trim(',', ';', ':', '(', ')', '"', '\'');
+            if (t.Length >= 3) set.Add(t);
+        }
+        return set;
+    }
+
+    /// <summary>Similaridade de Jaccard entre dois conjuntos de tokens.</summary>
+    private static double Jaccard(HashSet<string> a, HashSet<string> b)
+    {
+        if (a.Count == 0 || b.Count == 0) return 0;
+        int inter = a.Count(x => b.Contains(x));
+        int union = a.Count + b.Count - inter;
+        return union == 0 ? 0 : (double)inter / union;
     }
 
     /// <summary>Posicao (no texto normalizado) onde a cauda repetida comecou, para a sonda.</summary>

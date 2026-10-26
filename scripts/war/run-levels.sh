@@ -183,7 +183,15 @@ preflight() {
   else
     pf "opencode_cli" false "{\"erro\":\"opencode ausente no PATH\"}"
   fi
-  # 6) infra: run orfao, disco, GPU
+  # 6) Web UI (o step webui roda o Web.Test contra esta porta)
+  local web_port="${BRIDGE_WEB_PORT:-4130}" wcode
+  wcode=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$web_port/Account/Login" 2>/dev/null || echo 000)
+  if [ "$wcode" = "200" ]; then
+    pf "web_ui" true "{\"port\":$web_port,\"login\":200}"
+  else
+    pf "web_ui" false "{\"port\":$web_port,\"login\":\"$wcode\"}"
+  fi
+  # 7) infra: run orfao, disco, GPU
   if pgrep -f "Rochas[.]OpenCodeBridge[.]Test[.]dll" >/dev/null 2>&1; then
     pf "sem_run_orfao" false "{\"pids\":\"$(pgrep -f 'Rochas[.]OpenCodeBridge[.]Test[.]dll' | tr '\n' ' ')\"}"
   else

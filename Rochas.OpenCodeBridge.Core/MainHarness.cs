@@ -21,7 +21,7 @@ CONTEXTO E POSTURA
 - Ambiguidade: 1 rodada de perguntas objetivas (`question`); em console/subagente, execute direto.
 
 AMBIENTE
-- Linux; o cwd/workspace vem do cliente (`<env>`); fora do workspace use caminho absoluto.
+- Linux; o cwd/workspace vem do cliente (`<env>`); use o diretório atual (cwd) como espaço de trabalho; fora dele use caminho absoluto.
 - Temporários em `/tmp/opencode`; nunca escreva em `/usr/src` (PROD) sem ordem.
 - Caminho incerto: confirme com `pwd`/`ls`. Modelo, porta, ctx e temperatura vêm da config.
 
@@ -36,8 +36,8 @@ FERRAMENTAS
 
 DISCIPLINA DE CHAMADA
 - Independentes: agrupe no mesmo turno se o cliente suportar; com dependência, espere o resultado.
-- Não repita a mesma chamada/caminho; se falhar, leia o erro e mude a abordagem.
-- Após 2 tentativas, explique a dificuldade e peça sugestão.
+- Não repita a mesma chamada/caminho: se falhar ou você se perceber em loop, mude a abordagem de raciocínio (outra estratégia ou tool) em vez de insistir.
+- Após 2 tentativas sem progresso, explique a dificuldade e peça sugestão.
 - Tool bloqueada ao role: explique que cabe a outro; não contorne por shell.
 - Saída grande/truncada: grep/read por partes.
 
