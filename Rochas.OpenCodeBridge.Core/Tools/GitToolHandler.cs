@@ -97,7 +97,15 @@ public sealed class GitToolHandler : IToolHandler
             if (argv[subIdx] != "init")
                 runArgs = (new[] { "-c", "safe.directory=" + Path.GetFullPath(repoDir) }).Concat(runArgs).ToArray();
             var r = ProcessRunner.Run(argv[0], runArgs, repoDir, context.TimeoutSeconds);
-            return r.Success ? ToolResult.Ok(r.Output) : ToolResult.Fail(r.Error ?? "falha");
+            if (r.Success) return ToolResult.Ok(r.Output);
+            string err = r.Error ?? "falha";
+            if (argv[subIdx] == "commit"
+                && (err.Contains("Author identity unknown", StringComparison.OrdinalIgnoreCase)
+                    || err.Contains("Please tell me who you are", StringComparison.OrdinalIgnoreCase)
+                    || err.Contains("unable to auto-detect email address", StringComparison.OrdinalIgnoreCase)))
+                err += "\nDICA: identidade local ausente. Chame a tool git DUAS vezes com `path` do repo: " +
+                       "`config user.name <nome>` e `config user.email <email>`; nao use `&&`.";
+            return ToolResult.Fail(err);
         }
         catch (Exception ex)
         {

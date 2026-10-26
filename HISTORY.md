@@ -1,5 +1,42 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## URGENTE / GRAVÍSSIMO — bridge gerido sem MainHarness (2026-10-26)
+
+**Regra:** caminho **bridge** (WAR) e **Web UI** exigem `--main-harness 1`.
+Sem a base, a bridge fica **órfã de direção**: só tails (`DATA/GIT/EDIT/GLOB`)
+e o modelo perde a política de chamada, caminhos e erros. `--main-harness 0`
+só é legítimo em **opencode puro / tubo puro** (o CLI tem o harness dele) ou
+em lane explicitamente diagnóstica.
+
+**Origem do erro:** o commit `97fb4e5` (24/10 23:34) trocou os ExecStart
+canônicos da `docs/LAB-SETUP.md` e da `docs/harness/opencode/MAIN-HARNESS.md`
+para `--main-harness 0`; o `3b75a34` registrou “as 3 bridges rodam 0” no
+HISTORY. O `469b302` achou a causa raiz e escreveu que o correto é `1`, mas não
+substituiu os blocos canônicos — o HEAD `e64d3fc` ainda tinha os 0. As units
+systemd (`/etc/systemd/system/bridge-gpu*.service`) não estão no git; foram
+editadas à mão para 0 e ficaram assim por dois dias.
+
+**Correção aplicada:** `bridge-gpu` (:4124) e `bridge-gpu2` (:4125) em
+`--main-harness 1`; `/api/status` confirma `main_harness=true`. Os launchers
+`/usr/local/bin/start-bridge-gpu.sh`, `start-bridge-gpu2.sh` e
+`start-bridge-cpu-forced.sh` também foram corrigidos: eram eles que
+**regeneravam** a unit com 0 a cada clique e reintroduziam o problema. O Web já
+usa `MainHarness.BuildSystem` no `ChatController` e ativa harness/anti-repeat
+direto nas classes C# (`ContentAntiRepeat`, `AntiRepeatWindowProvider`), sem
+depender da flag da bridge; a janela do anti-repeat ainda vem do
+`/api/status` da bridge. O preflight do WAR agora tem gate duro
+`bridge_main_harness` (falha se `main_harness != true`), em vez de aviso só no
+L3. A `bridge-cpu-forced` (:4126) está inativa e foi alinhada para 1.
+
+**Aceite:** `/api/status` true; WAR L1 com preflight verde; `E-tools-full`
+modo bridge com base + tails.
+
+**L1 canônico (2026-10-26):** o WAR L1 roda **bridge** (`MainHarness` + tails +
+anti-repeat de conteúdo/thinking e tool-args) e depois **opencode** (master do
+cliente, sem MainHarness, tails e anti-repeat ligados). A raia experimental de
+tails OFF foi removida: a bridge de produção é o único alvo do gate. Jaleco de
+regressão: preflight `bridge_main_harness` é duro.
+
 ## Harness DRY: base no bridge, perfil de 1 frase no opencode (2026-10-25, sessao 18f)
 
 **Causa raiz encontrada.** As units subiam com `--main-harness 0`: em produção só

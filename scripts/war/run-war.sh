@@ -136,6 +136,8 @@ step_flags() { case "$1" in E-dual-tools) echo "--dual" ;; E-standalone-*) echo 
 step_cpu() { case "$1" in q3a) echo "http://127.0.0.1:4135" ;; q3b) echo "http://127.0.0.1:4136" ;; *) echo "http://127.0.0.1:4125" ;; esac; }
 
 declare -A BPID
+# ATENCAO: as lanes deste script sao opencode/puro (main-harness 0, tails 0).
+# Para bridge/Web UI, use --main-harness 1 (units + driver C#); nao meca bridge aqui.
 start_lane_bridge() {
   local lane="$1" port up model ctx
   port=$(bridge_port "$lane"); up=$(bridge_up "$lane")

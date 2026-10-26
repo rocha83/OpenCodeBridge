@@ -459,6 +459,9 @@ internal sealed class WarTemplate : CircuitTemplate
         switch (_level)
         {
             case 1:
+                // L1 canônico: bridge (MainHarness + tails + anti-repeat) e
+                // opencode (sem MainHarness; tails + anti-repeat). Sem raia de
+                // tails OFF: a bridge de produção é a única alvo do gate.
                 foreach (string mode in new[] { "bridge", "opencode" })
                 {
                     yield return StepBridge(driver, $"units-{mode}", mode,
@@ -732,8 +735,19 @@ internal sealed class WarTemplate : CircuitTemplate
                 ["harness_tails"] = btails,
                 ["context_tokens"] = bctx
             });
-            if (_level >= 3 && string.Equals(bmain, "false", StringComparison.OrdinalIgnoreCase))
-                driver.Log("AVISO: main_harness=false no L3 (apenas aviso; nao bloqueia)");
+            // Gate duro: o WAR sempre roda steps de bridge (L1..L3). Bridge
+            // gerido sem MainHarness = modelo orfao de base, so tails. Nao e
+            // aviso: aborta o preflight com a correcao explicita. O modo
+            // opencode puro (fora do WAR) pode viver sem a base, porque usa o
+            // harness do proprio CLI.
+            Pf(driver, "bridge_main_harness",
+                string.Equals(bmain, "true", StringComparison.OrdinalIgnoreCase),
+                new JsonObject
+                {
+                    ["bridge"] = _p.Bridge,
+                    ["main_harness"] = bmain,
+                    ["fix"] = "ligue --main-harness 1 na unit do bridge (WAR roda steps de bridge)"
+                });
         }
 
         Pf(driver, "bridge_upstream",
@@ -1134,7 +1148,7 @@ internal sealed class WarTemplate : CircuitTemplate
         switch (_level)
         {
             case 1:
-                Console.WriteLine("Level 1 -> units, devpipe, tools-full (com ciclo git/arquivo), belts build/orch azul+verde (bridge+opencode)");
+                Console.WriteLine("Level 1 -> units, devpipe, tools-full (com ciclo git/arquivo), belts build/orch azul+verde (bridge tails ON + opencode)");
                 break;
             case 2:
                 Console.WriteLine("Level 2 -> mission-tools, responses-tools, science-gpu, science-cpu(Q3), roxa build/orch (bridge+opencode); webui no L3");

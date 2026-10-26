@@ -126,6 +126,32 @@ internal static class UnitStackPreflightTests
         return Task.CompletedTask;
     }
 
+    /// <summary>Modo bridge exige main_harness=true; sem a base e NO-GO.</summary>
+    public static Task MainHarnessRequired()
+    {
+        using var llama = new FakeHttp(ctx =>
+            ctx.Request.Url!.AbsolutePath == "/health"
+                ? (200, "{\"ok\":true}")
+                : (404, "{}"));
+        static string Status(string upstream, bool main) =>
+            $"{{\"status\":\"ok\",\"model\":\"fake-model\",\"upstream\":\"{upstream}\",\"main_harness\":{(main ? "true" : "false")}}}";
+
+        using var off = new FakeHttp(ctx => ctx.Request.Url!.AbsolutePath == "/api/status"
+            ? (200, Status(llama.BaseUrl, false))
+            : (404, "{}"));
+        var no = StackPreflight.Run(Options(off.BaseUrl, probe: false) with { RequireMainHarness = true });
+        TestContext.Check(!no.Ok, "main_harness=false deveria ser NO-GO no modo bridge");
+        TestContext.Check(no.Checks.Any(c => c.Name == "main harness bridge" && !c.Ok),
+            "check deveria apontar main harness bridge");
+
+        using var on = new FakeHttp(ctx => ctx.Request.Url!.AbsolutePath == "/api/status"
+            ? (200, Status(llama.BaseUrl, true))
+            : (404, "{}"));
+        var yes = StackPreflight.Run(Options(on.BaseUrl, probe: false) with { RequireMainHarness = true });
+        TestContext.Check(yes.Ok, "main_harness=true deveria ser GO no modo bridge");
+        return Task.CompletedTask;
+    }
+
     /// <summary>Porta fechada = NO-GO imediato com o nome do item.</summary>
     public static Task BridgeDown()
     {

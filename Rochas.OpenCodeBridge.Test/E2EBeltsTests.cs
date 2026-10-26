@@ -144,7 +144,11 @@ internal static class E2EBeltsTests
                     var sh = new JsonArray(
                         new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, E4B). Componha um script bash que executa a tarefa e o salve em " + safeTitle + ".sh com shebang. Tambem gere companion " + safeTitle + ".md descrevendo o que o script faz. Mantenha o script com no maximo 80 linhas e o companion com no maximo 20 linhas (saida curta cabe no teto de tokens). Use write_file. Ao terminar responda apenas SCRIPTER-OK.\n\n" + grounded + "REGRA: bash puro; nunca escreva C#/SQL dentro do .sh (use heredoc ou arquivo separado)." },
                         new JsonObject { ["role"]="user", ["content"]=taskPrompt });
-                    for (int turn = 0; turn < 6; turn++)
+                    // Watchers extras na roxa orch: o Scripter pode abrir com
+                    // prosa e recuperar no turno seguinte; 6 turnos/2 nudges
+                    // eram curtos. Aceite (.sh válido no `bash -n`) inalterado;
+                    // execução fica fora deste teste.
+                    for (int turn = 0; turn < 8; turn++)
                     {
                         JsonObject r;
                         try
@@ -165,9 +169,10 @@ internal static class E2EBeltsTests
                         if (calls is null || calls.Count == 0)
                         {
                             // Prosa sem tool_call no primeiro turno acontece (medido em
-                            // belts-orch roxa 19:56: 0 scripts em 26s). Nudge 2x antes de
-                            // desistir; o aceite continua exigindo .sh valido + execucao.
-                            if (turn < 2)
+                            // belts-orch roxa 19:56: 0 scripts em 26s). Watchers: ate
+                            // 4 nudges; o aceite continua exigindo .sh valido no
+                            // `bash -n` (execucao fica fora deste teste).
+                            if (turn < 4)
                             {
                                 Log($"  [belt:{key}] scripter sem tool (chars={Str(msg?["content"]).Length}) — nudge {turn + 1}");
                                 sh.Add(new JsonObject { ["role"]="assistant", ["content"]=Str(msg?["content"]) });

@@ -112,7 +112,7 @@ Every flag lives in exactly one group. Boolean flags accept `true/false` and
 | `--harness-behavior-tail` | `HarnessTails.DefaultBehavior` | Behavior tail text (how to act/deliver). | `--harness-behavior-tail "Validate scripts with bash -n; answer with evidence."` |
 | `--harness-tools-tail` | `HarnessTails.DefaultTools` | Tools tail text (how to call tools). | `--harness-tools-tail "Use the dedicated tool; never invent fields."` |
 | `--tail-scope` | `managed` | Where tails apply: `managed` (not the opencode CLI), `all`, `off`. | `--tail-scope all` |
-| `--mode` | auto | `bridge` = harness+tails+fixes; `opencode` = fixes+anti-repeat only. | `--mode opencode` |
+| `--mode` | auto | `bridge` = MainHarness+tails+anti-repeat+fixes; `opencode` = client master + tails+anti-repeat+fixes (no MainHarness). | `--mode opencode` |
 | `--breaker-soft` | `3` | Consecutive same-target tool failures that inject a nudge. | `--breaker-soft 2` |
 | `--breaker-hard` | `6` | Consecutive failures that short-circuit the turn. | `--breaker-hard 4` |
 
@@ -405,7 +405,7 @@ Flags booleanas aceitam `true/false` e `1/0`.
 | `--harness-behavior-tail` | `HarnessTails.DefaultBehavior` | Cauda de comportamento (como agir/entregar). | `--harness-behavior-tail "Valide scripts com bash -n; responda com evidência."` |
 | `--harness-tools-tail` | `HarnessTails.DefaultTools` | Cauda de tools (como chamar). | `--harness-tools-tail "Use a tool dedicada; nunca invente campos."` |
 | `--tail-scope` | `managed` | Onde as caudas valem: `managed` (exceto CLI opencode), `all`, `off`. | `--tail-scope all` |
-| `--mode` | auto | `bridge` = harness+tails+fixes; `opencode` = fixes+anti-repeat. | `--mode opencode` |
+| `--mode` | auto | `bridge` = MainHarness+tails+anti-repeat+fixes; `opencode` = client master + tails+anti-repeat+fixes (no MainHarness). | `--mode opencode` |
 | `--breaker-soft` | `3` | Falhas seguidas no mesmo alvo que injetam o aviso. | `--breaker-soft 2` |
 | `--breaker-hard` | `6` | Falhas seguidas que encerram o turno. | `--breaker-hard 4` |
 

@@ -774,8 +774,9 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// Aplica a matriz do modo (Core/BridgeMode): opencode desliga main harness e
-    /// tails e mantem fixes + anti-repeat; bridge mantem tudo que as flags ligaram.
+    /// Aplica a matriz do modo (Core/BridgeMode): opencode desliga só o main
+    /// harness e mantém fixes + anti-repeat + tails (quando as flags deixam);
+    /// bridge mantém base, tails e anti-repeat.
     /// </summary>
     static void ApplyMode()
     {

@@ -3,9 +3,10 @@
 Atualização 2026-10-24. O **main harness** é o system prompt que a bridge usa no
 **caminho gerido** (model sem sufixo de role) quando `mainHarness: true`. Fica
 **hardcoded** em `Rochas.OpenCodeBridge.Core/MainHarness.cs` (regra primária) e
-**substitui** o master grande do opencode; nesse caminho as tails ficam
-dispensadas. No caminho opencode (sufixo `-build`/`-plan`/...), o system do
-cliente continua e as tails — no `appsettings.json` — entram como delta.
+**substitui** o master grande do opencode; nesse caminho as tails continuam
+**aditivas** (MainHarness é a base, tails são o delta). No caminho opencode
+(sufixo `-build`/`-plan`/...), o system do cliente continua, o main harness fica
+**desligado** e as tails — no `appsettings.json` — entram como delta.
 
 O texto é o **main harness**; as tails são um **delta separado**
 (`harness-tails`). São dois switches independentes:
@@ -16,10 +17,10 @@ O texto é o **main harness**; as tails são um **delta separado**
 | Harness tails | `--harness-tails` | `harnessTails` | `true` | injeta behavior/tools tails conforme `tailScope` |
 
 `--harness-tails 0` desliga as tails, mas **não** desliga o main harness. Para o
-tubo puro, use `--main-harness 0 --harness-tails 0`. As 3 bridges de produção
-rodam `--main-harness 0 --harness-tails 1 --tail-scope all`: master do cliente
-intacto e tails aditivas nos **dois** caminhos (`tails_managed` e
-`tails_opencode` = true no `/api/harness`).
+tubo puro, use `--main-harness 0 --harness-tails 0`. **No caminho bridge/Web UI
+o main harness é obrigatório**: `--main-harness 1 --harness-tails 1 --tail-scope all`
+(base + tails; sem isso a bridge fica órfã de direção). `--main-harness 0` só vale
+para **opencode puro / tubo puro**, onde o CLI tem o harness dele.
 
 O modo `opencode` também permite tails (`BridgeMode.Opencode.Tails = true`); o
 switch real é `--harness-tails` + `--tail-scope`. Com `--tail-scope managed` o
@@ -53,8 +54,9 @@ caminho gerido, com as tails reduzidas ao delta real de cada deployment.
 1. `InputToMessages` consolida `instructions` + systems do meio.
 2. `ApplyMainHarness` (só no caminho gerido, `!hasProfile`) troca o system por
    `MainHarness.Text` + blocos dinâmicos quando `mainHarness` está ligado.
-3. `tails = TailsOn(model) && !mainHarness` → no gerido com main harness, tails
-   desligadas; com `mainHarness: false`, as tails voltam (se `harnessTails`).
+3. `tails = TailsOn(model)` (independente do main harness) → no gerido a base
+   `MainHarness` e as tails coexistem; no opencode a base é o master do cliente
+   e as tails entram quando `harnessTails` + `tailScope` permitem.
 4. `BuildMainHarnessSystem` preserva `<env>`, `<available_skills>`,
    `Today's date` e instruções pequenas do cliente; descarta o master grande
    (`# Code Mode` ou > 6000 chars).
@@ -76,14 +78,16 @@ As tails deixaram de ser texto fixo no código:
   `|`, shell sem escape literal, git/zip, binário, rede, não simular, sudo/PROD,
   erro/retry, tool bloqueada, ACEITE).
 - String vazia desliga a peça. O código em `HarnessTails.cs` fica como fallback.
-- `tailScope: all` injeta no opencode; no gerido, `mainHarness: true` já
-  dispensa. `harnessTails: false` (ou `--harness-tails 0`) desliga as tails nos dois
+- `tailScope: all` injeta no opencode e no gerido. `mainHarness: true` **não**
+  dispensa tails: base e delta coexistem. `harnessTails: false` (ou
+  `--harness-tails 0`) desliga as tails nos dois
   caminhos.
 
-`/api/harness` mostra o efetivo (exemplo com `--harness-tails 0`):
+`/api/harness` mostra o efetivo (exemplo de produção:
+`--main-harness 1 --harness-tails 1 --tail-scope all`):
 
 ```json
-{"tail_scope":"all","main_harness":true,"main_harness_chars":9147,"harness_tails":false,"tails_managed":false,"tails_opencode":false,"behavior_chars":833,"tools_chars":1366}
+{"tail_scope":"all","main_harness":true,"main_harness_chars":9147,"harness_tails":true,"tails_managed":true,"tails_opencode":true,"behavior_chars":833,"tools_chars":1366}
 ```
 
 O efetivo é `main_harness || harness_tails`; `tails_managed` e

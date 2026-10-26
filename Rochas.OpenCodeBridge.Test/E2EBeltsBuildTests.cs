@@ -5,8 +5,8 @@ namespace Rochas.OpenCodeBridge.Test;
 // Belts (azul->preta) Trilha BUILD: E4B (role build) implementa DIRETAMENTE os
 // artefatos do enunciado usando tools reais (write) em loop de turnos, delegando
 // sub-tarefas quando fizer sentido. Asserts rigorosos: >=3 arquivos criados,
-// conteudo substancial (>2000 chars somados), e execucao real (arquivos existem
-// em disco no workspace). Sem geracao de scripts sh.
+// conteudo substancial (>2000 chars somados), e artefatos reais (arquivos
+// existem em disco no workspace). Sem execucao de script nesta trilha.
 // Resultados parciais em /tmp/opencode/belts-build/<key>_result.json.
 internal static class E2EBeltsBuildTests
 {
@@ -64,7 +64,10 @@ internal static class E2EBeltsBuildTests
                 int lastFiles = 0;
                 int stall = 0;
                 int nudges = 0;
-                for (int turn = 0; turn < 10 && filesCreated < 8; turn++)
+                // Watchers extras: a roxa alterna prosa e write; 10 turnos/2
+                // nudges cortavam uma recuperação legítima. O aceite continua
+                // >=3 arquivos e >500 chars reais em disco.
+                for (int turn = 0; turn < 14 && filesCreated < 8; turn++)
                 {
                     var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
                         new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["max_tokens"]=16384, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
@@ -76,7 +79,7 @@ internal static class E2EBeltsBuildTests
                     {
                         Log($"  [belt-build:{key}] turno {turn}: sem tools (chars={content.Length}) — nudge {nudges + 1}");
                         history.Add(new JsonObject { ["role"]="assistant", ["content"]=content });
-                        if (nudges >= 2) { Log($"  [belt-build:{key}] sem tools apos 2 nudges, encerrando"); break; }
+                        if (nudges >= 4) { Log($"  [belt-build:{key}] sem tools apos 4 nudges, encerrando"); break; }
                         nudges++;
                         history.Add(new JsonObject { ["role"]="user", ["content"]="Pouca fala, mais construcao: voce respondeu com texto mas NAO chamou a tool write. OBRIGATORIO agora: chame a tool write com path e content para criar o proximo arquivo real (.cs/.sql/.tsx). Nao explique, apenas chame write." });
                         continue;
@@ -104,7 +107,7 @@ internal static class E2EBeltsBuildTests
                     {
                         Log($"  [belt-build:{key}] turno {turn}: tool call com args invalidos/truncados — nudge");
                         nudges++;
-                        if (nudges > 2) { Log($"  [belt-build:{key}] args invalidos apos 2 nudges, encerrando"); break; }
+                        if (nudges > 4) { Log($"  [belt-build:{key}] args invalidos apos 4 nudges, encerrando"); break; }
                         history.Add(new JsonObject { ["role"]="user", ["content"]="Sua ultima tool call veio com JSON invalido ou truncado. Reemita UMA tool call write com JSON completo: path string e content string. Nao inclua texto fora do JSON." });
                         continue;
                     }
@@ -131,7 +134,7 @@ internal static class E2EBeltsBuildTests
                     Log($"  [belt-build:{key}] turno {turn}: {parsed.Count} write(s), total arquivos={filesCreated}");
                     if (filesCreated == lastFiles) stall++; else stall = 0;
                     lastFiles = filesCreated;
-                    if (stall >= 2) { Log($"  [belt-build:{key}] stall detectado, encerrando"); break; }
+                    if (stall >= 3) { Log($"  [belt-build:{key}] stall detectado (3 turnos sem arquivo), encerrando"); break; }
                 }
                 // Fase de revisao: E4B le os arquivos criados e revisa.
                 if (filesCreated >= 3)

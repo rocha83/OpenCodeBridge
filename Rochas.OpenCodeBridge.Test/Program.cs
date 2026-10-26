@@ -78,6 +78,7 @@ internal static class Program
                              ?? "http://127.0.0.1:4110",
                 ApiKey = cred,
                 RequireQ3 = false,
+                RequireMainHarness = TestContext.Mode == "bridge",
                 ProbeModel = true,
                 CheckLock = Environment.GetEnvironmentVariable("BRIDGE_UNDER_DRIVER") != "1"
             });
@@ -193,6 +194,7 @@ internal static class Program
         TestContext.Run("U-circuit-gate-policy", UnitCircuitTests.CustomGatePolicy);
         TestContext.Run("U-circuit-multi", UnitCircuitTests.MultiBuildAndDeploy);
         TestContext.Run("U-preflight-go", UnitStackPreflightTests.Go);
+        TestContext.Run("U-preflight-main-harness", UnitStackPreflightTests.MainHarnessRequired);
         TestContext.Run("U-preflight-bridge-down", UnitStackPreflightTests.BridgeDown);
         TestContext.Run("U-preflight-model-fail", UnitStackPreflightTests.ModelFails);
         TestContext.Run("U-preflight-q3-upstream", UnitStackPreflightTests.Q3UpstreamMismatch);

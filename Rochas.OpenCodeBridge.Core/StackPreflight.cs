@@ -39,6 +39,12 @@ public sealed record StackPreflightOptions
     /// <summary>Falha se outro runner estiver ativo. O driver marca os filhos com BRIDGE_UNDER_DRIVER=1.</summary>
     public bool CheckLock { get; init; } = true;
 
+    /// <summary>
+    /// Exige <c>main_harness=true</c> na bridge (caminho bridge/Web). Sem a base
+    /// o modelo fica orfao de direcao; testes de bridge nao podem passar assim.
+    /// </summary>
+    public bool RequireMainHarness { get; init; }
+
     /// <summary>Arquivo de lock do driver.</summary>
     public string LockPath { get; init; } = Path.Combine(Path.GetTempPath(), "opencode", "circuit.lock");
 
@@ -108,6 +114,13 @@ public static class StackPreflight
         result.Add($"bridge-gpu {options.BridgeUrl}", q4 is not null, q4Detail);
         if (q4 is not null)
         {
+            if (options.RequireMainHarness)
+            {
+                bool mainHarness = q4["main_harness"]?.GetValue<bool>() ?? false;
+                result.Add("main harness bridge", mainHarness,
+                    $"main_harness={(mainHarness ? "true" : "false")} " +
+                    "(modo bridge/Web exige a base; ligue --main-harness 1)");
+            }
             var (ok, detail) = CheckLlama(http, options.BridgeUrl, options.ApiKey);
             result.Add("llama-gpu", ok, detail);
         }
