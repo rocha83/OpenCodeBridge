@@ -649,6 +649,7 @@ internal static partial class Program
     {
         text = (text ?? "").Replace("\r", " ").Trim();
         if (text.Length == 0) return;
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
         if (text.Length > 1200) text = text[..1200] + "…";
         lock (AgentActivityLock)
         {
@@ -1894,6 +1895,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 sseTrip = true;
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = isChat ? "bypass-chat-stream" : "bypass-completions-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
             }
+            if (sseText.Length > 0) RecordAgentActivity("assistant", sseText.ToString());
             // Sonda traffic FULL (só com DIAGNOSTICS; chat stream: integros).
             if (Diagnostic)
             {
