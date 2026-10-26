@@ -119,10 +119,11 @@ internal static class E2EToolsFullTests
         // Enunciado de TAREFA, nao de harness: sem path, sem nome de tool e sem
         // coringa de coordenada. O modelo flui; o harness resolve o cwd.
         const string prompt =
-            "Crie uma pasta e inicie um repositorio git nela. Crie dentro dela um arquivo .txt com nome aleatorio " +
-            "contendo a data do sistema de hoje. Se tiver acesso a internet, busque o clima da cidade de Sao Paulo hoje " +
-            "e anote no arquivo. Salve o arquivo, versione no git com add e commit, liste os arquivos e faca uma busca " +
-            "neles para encontrar o arquivo criado. Acrescente a marca EDITADO ao arquivo (sem apagar a data) e realize outro commit. " +
+            "Crie uma pasta e inicie um repositorio git nela. Trabalhe sempre dentro dessa pasta: nao crie copias fora dela. " +
+            "Crie dentro dela um arquivo .txt com nome aleatorio contendo a data do sistema de hoje. Se tiver acesso a internet, " +
+            "busque o clima da cidade de Sao Paulo hoje e anote no arquivo. Salve o arquivo, versione no git com add e commit, " +
+            "liste os arquivos e faca uma busca neles para encontrar o arquivo criado. Acrescente a marca EDITADO ao mesmo " +
+            "arquivo (preserve a data exata: o arquivo final deve conter a data e a palavra EDITADO) e realize outro commit. " +
             "Verifique o historico git e grave no arquivo historico_git.log.";
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
