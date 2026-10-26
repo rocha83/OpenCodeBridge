@@ -28,6 +28,50 @@ internal static class E2EBeltsTests
         return b.ToString();
     }
 
+    const string OrchSystem = "Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada.";
+
+    /// <summary>Extrai o JSON array de tarefas do texto do Orch (bridge ou opencode com logs).</summary>
+    static JsonArray ExtractTaskArray(string text)
+    {
+        JsonArray best = new();
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (text[i] != '[') continue;
+            int depth = 0, end = -1;
+            bool inStr = false, esc = false;
+            for (int j = i; j < text.Length; j++)
+            {
+                char c = text[j];
+                if (inStr)
+                {
+                    if (esc) esc = false;
+                    else if (c == '\\') esc = true;
+                    else if (c == '"') inStr = false;
+                    continue;
+                }
+                if (c == '"') { inStr = true; continue; }
+                if (c == '[') depth++;
+                else if (c == ']')
+                {
+                    depth--;
+                    if (depth == 0) { end = j; break; }
+                }
+            }
+            if (end < 0) continue;
+            try
+            {
+                var arr = JsonNode.Parse(text[i..(end + 1)])?.AsArray();
+                if (arr is null || arr.Count == 0) continue;
+                bool ok = true;
+                foreach (var t in arr)
+                    if (t is not JsonObject o || o["title"] is null || o["prompt"] is null) { ok = false; break; }
+                if (ok && arr.Count > best.Count) best = arr;
+            }
+            catch { /* fragmento JSON de log: tenta o proximo array */ }
+        }
+        return best;
+    }
+
     static string? FindByTitle(string ws, string safeTitle)
     {
         string want = NormName(safeTitle);
@@ -79,7 +123,7 @@ internal static class E2EBeltsTests
         if (baseModel.Length == 0) baseModel = "Gemma4-E4B-Q4";
         string orchModel = baseModel + "-orch";
         string scripterModel = baseModel + "-scripter";
-        Log($"[belts:direct] Orch={orchModel} Scripter={scripterModel} (Exec fora deste teste)");
+        Log($"[belts:direct] mode={TestContext.Mode} Orch={orchModel} Scripter={scripterModel} (Exec fora deste teste)");
         int pass = 0, fail = 0;
         var keysEnv = string.IsNullOrWhiteSpace(TestContext.BeltsFilter) ? Environment.GetEnvironmentVariable("BELTS_KEYS") : TestContext.BeltsFilter;
         var beltsToRun = string.IsNullOrWhiteSpace(keysEnv)
@@ -95,16 +139,27 @@ internal static class E2EBeltsTests
             try
             {
                 // 1) Orch (E4B) segmenta o enunciado em tarefas atomicas.
-                Log($"  [belt:{key}] 1/3 Orch segmentando...");
-                var orchHistory = new JsonArray(
-                    new JsonObject { ["role"]="system", ["content"]="Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada." },
-                    new JsonObject { ["role"]="user", ["content"]=prompt.Replace("{ws}", ws) });
-                var orchR = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                    new JsonObject { ["model"]=orchModel, ["temperature"]=0.3, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
-                string orchContent = Str(orchR["choices"]?[0]?["message"]?["content"]);
-                int s = orchContent.IndexOf('['), e = orchContent.LastIndexOf(']');
-                TestContext.Check(s >= 0 && e > s, $"[{key}] Orch segmentou em JSON array");
-                var tasks = JsonNode.Parse(orchContent[s..(e+1)])?.AsArray() ?? new JsonArray();
+                // No modo opencode o Orch roda pelo CLI real (agent=orch);
+                // no bridge, chamada direta /v1/chat/completions.
+                string orchContent;
+                if (TestContext.Mode == "opencode")
+                {
+                    Log($"  [belt:{key}] 1/3 Orch via opencode (agent=orch)...");
+                    string orchPrompt = OrchSystem + "\n\nENUNCIADO:\n" + prompt.Replace("{ws}", ws);
+                    orchContent = TestContext.OpencodeRun(orchPrompt, ws, agent: "orch");
+                }
+                else
+                {
+                    Log($"  [belt:{key}] 1/3 Orch via bridge...");
+                    var orchHistory = new JsonArray(
+                        new JsonObject { ["role"]="system", ["content"]=OrchSystem },
+                        new JsonObject { ["role"]="user", ["content"]=prompt.Replace("{ws}", ws) });
+                    var orchR = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
+                        new JsonObject { ["model"]=orchModel, ["temperature"]=0.3, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
+                    orchContent = Str(orchR["choices"]?[0]?["message"]?["content"]);
+                }
+                var tasks = ExtractTaskArray(orchContent);
+                TestContext.Check(tasks.Count > 0, $"[{key}] Orch segmentou em JSON array");
                 Log($"  [belt:{key}] Orch: {tasks.Count} tarefas");
 
                 // Grounding: sem isso o Scripter escreve as cegas e inventa caminhos

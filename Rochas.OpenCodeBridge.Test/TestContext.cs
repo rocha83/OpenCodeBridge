@@ -126,13 +126,14 @@ internal static class TestContext
     }
 
     /// <summary>provider/model derivado do agent standalone (exec -> llama/E2B; demais -> openai/GPU).</summary>
-    static string AutoStandaloneModel()
+    static string AutoStandaloneModel(string? agent = null)
     {
-        string role = StandaloneAgent is "plan" or "build" or "orch" or "moe" or "scripter" or "exec"
-            ? StandaloneAgent : "build";
+        string useAgent = string.IsNullOrWhiteSpace(agent) ? StandaloneAgent : agent;
+        string role = useAgent is "plan" or "build" or "orch" or "moe" or "scripter" or "exec"
+            ? useAgent : "build";
         string provider = StandaloneProvider.Length > 0
             ? StandaloneProvider + "/"
-            : (StandaloneAgent == "exec" ? "llama/" : "openai/");
+            : (useAgent == "exec" ? "llama/" : "openai/");
         return provider + BaseModel + "-" + role;
     }
 
@@ -159,7 +160,11 @@ internal static class TestContext
     }
 
     /// <summary>Roda o mesmo enunciado pelo opencode real (standalone) e devolve stdout+stderr.</summary>
-    public static string OpencodeRun(string prompt, string? cwd = null)
+    /// <param name="prompt">Enunciado.</param>
+    /// <param name="cwd">Diretorio da tarefa (default: /tmp/opencode/standalone).</param>
+    /// <param name="agent">Agent opencode (default: StandaloneAgent); ex. "orch".</param>
+    /// <param name="model">Modelo provider/model (default: derivado do agent).</param>
+    public static string OpencodeRun(string prompt, string? cwd = null, string? agent = null, string? model = null)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         // cwd = diretorio da tarefa: e o uso real do CLI (abre no projeto). Com cwd
@@ -168,12 +173,19 @@ internal static class TestContext
         string dir = cwd is { Length: > 0 } ? cwd : Path.Combine(Path.GetTempPath(), "opencode", "standalone");
         Directory.CreateDirectory(dir);
         var psi = OpencodePsi(dir);
-        string model = StandaloneModel.Length > 0 ? StandaloneModel : AutoStandaloneModel();
+        string useAgent = string.IsNullOrWhiteSpace(agent) ? StandaloneAgent : agent;
+        // Agent explicito pede modelo da role; sem agent explicito, --standalone-model
+        // (quando o teste setou) tem prioridade, como antes.
+        string useModel = !string.IsNullOrWhiteSpace(model)
+            ? model
+            : (!string.IsNullOrWhiteSpace(agent)
+                ? AutoStandaloneModel(useAgent)
+                : (StandaloneModel.Length > 0 ? StandaloneModel : AutoStandaloneModel()));
         psi.ArgumentList.Add("run");
         psi.ArgumentList.Add("--standalone");   // servidor privado: nao depende do background service (evita "Timed out waiting for the background service to start")
         psi.ArgumentList.Add("--auto");         // headless: tool sem prompt de permissao (mesmo contrato do bridge)
-        psi.ArgumentList.Add("--agent"); psi.ArgumentList.Add(StandaloneAgent);
-        psi.ArgumentList.Add("--model"); psi.ArgumentList.Add(model);
+        psi.ArgumentList.Add("--agent"); psi.ArgumentList.Add(useAgent);
+        psi.ArgumentList.Add("--model"); psi.ArgumentList.Add(useModel);
         psi.ArgumentList.Add(prompt);
         Directory.CreateDirectory(psi.WorkingDirectory);
 
@@ -199,7 +211,7 @@ internal static class TestContext
         }
         OpencodeSessionsCleanup(psi.WorkingDirectory, before);
         // Tempo por chamada no log: cenario lento no opencode = loop do cliente.
-        Console.WriteLine($"  [opencode] {sw.Elapsed.TotalSeconds:0.0}s model={model}");
+        Console.WriteLine($"  [opencode] {sw.Elapsed.TotalSeconds:0.0}s agent={useAgent} model={useModel}");
         return outp + errp;
     }
 
