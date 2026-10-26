@@ -122,7 +122,7 @@ internal static class E2EToolsFullTests
             "Crie uma pasta e inicie um repositorio git nela. Crie dentro dela um arquivo .txt com nome aleatorio " +
             "contendo a data do sistema de hoje. Se tiver acesso a internet, busque o clima da cidade de Sao Paulo hoje " +
             "e anote no arquivo. Salve o arquivo, versione no git com add e commit, liste os arquivos e faca uma busca " +
-            "neles para encontrar o arquivo criado. Edite o arquivo com a marca EDITADO e realize outro commit. " +
+            "neles para encontrar o arquivo criado. Acrescente a marca EDITADO ao arquivo (sem apagar a data) e realize outro commit. " +
             "Verifique o historico git e grave no arquivo historico_git.log.";
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
