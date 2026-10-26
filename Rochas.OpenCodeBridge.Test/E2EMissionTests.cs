@@ -65,7 +65,7 @@ internal static class E2EMissionTests
 
         var sys = new JsonObject { ["role"] = "system", ["content"] = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls, sem prosa." };
         var history = new JsonArray(sys);
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Em {ws}/mcs o projeto ja existe em {ws}/mcs/mcs.csproj. Implemente em Program.cs o calculo de Simpson de Math.Sin em [0,pi] (n=100) e a media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. Rode `dotnet run --project {ws}/mcs/mcs.csproj` e ajuste ate a saida ser 2.000000 e 5.000000. Nao crie outro .csproj." });
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Em {ws}/mcs, implemente em Program.cs o calculo de Simpson de Math.Sin em [0,pi] (n=100) e a media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. Rode o projeto e ajuste ate a saida ser 2.000000 e 5.000000." });
 
         string fcode = "", final = "";
         string logPath = Path.Combine(ws, "_mission.log");
@@ -110,7 +110,7 @@ internal static class E2EMissionTests
         string csSrc = File.Exists(csFile) ? File.ReadAllText(csFile) : "";
         TestContext.Check((csSrc.Contains("Sin") || csSrc.Contains("sin")) && csSrc.Length > 60,
             "mcs/Program.cs com Simpson (nao template), veio: " + csSrc[..Math.Min(100, csSrc.Length)]);
-        string runOut = Run("dotnet", "run --project mcs/mcs.csproj -c Release", ws, 240);
+        string runOut = Run("dotnet", "run --project mcs -c Release", ws, 240);
         LogT($"[C#] RUN -> {runOut[..Math.Min(220, runOut.Length)]}");
         TestContext.Check(runOut.Contains("2,000000") || runOut.Contains("2.000000"), "Simpson = 2.0, saiu: " + runOut[..Math.Min(120, runOut.Length)]);
         TestContext.Check(runOut.Contains("5,000000") || runOut.Contains("5.000000"), "media = 5.0");
@@ -130,7 +130,7 @@ internal static class E2EMissionTests
                 history.Add(new JsonObject { ["role"] = "user", ["content"] =
                     $"Sem prosa: o erro e FS0588 (o bloco `let` terminou com outro `let`). Corrija {ws}/mfs/Program.fs: a ultima linha do bloco `let simpson =` deve ser a expressao `(h / 3.0) * soma`; rode `dotnet run --project {ws}/mfs` e confira 2.000000/5.000000." });
             }
-            history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Em {ws}/mfs o projeto ja existe em {ws}/mfs/mfs.fsproj. Implemente em Program.fs um programa F# que imprima com 6 casas: (a) Simpson de sin em [0,pi] com n=100 (2.000000), (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] (5.000000) e (c) o desvio padrao dessa lista. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` e ajuste ate os dois primeiros valores baterem. Nao crie outro .fsproj." });
+            history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Em {ws}/mfs, implemente em Program.fs um programa F# que imprima com 6 casas: (a) Simpson de sin em [0,pi] com n=100 (2.000000), (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] (5.000000) e (c) o desvio padrao dessa lista. Rode `dotnet run --project {ws}/mfs` e ajuste ate os dois primeiros valores baterem." });
         for (int turn = 0; turn < 22; turn++)
         {
             var rf = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());
@@ -168,7 +168,7 @@ internal static class E2EMissionTests
         }
             string fsFile = Path.Combine(ws, "mfs", "Program.fs");
             string fsSrc = File.Exists(fsFile) ? File.ReadAllText(fsFile) : "";
-            fsOut = Run("dotnet", "run --project mfs/mfs.fsproj -c Release", ws, 240);
+            fsOut = Run("dotnet", "run --project mfs -c Release", ws, 240);
             lastErr = fsOut;
             LogT($"[F#] RUN -> {fsOut[..Math.Min(220, fsOut.Length)]}");
             bool ok = fsSrc.Contains("Math") && fcode.Contains("Math")

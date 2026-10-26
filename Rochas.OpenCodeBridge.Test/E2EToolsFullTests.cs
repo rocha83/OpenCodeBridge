@@ -116,17 +116,14 @@ internal static class E2EToolsFullTests
         }
         Directory.CreateDirectory(dir);
 
-        // Enunciado de TAREFA, nao de harness: pasta fixa + paths explicitos para
-        // nao depender do `cd` da shell (que nao persiste entre chamadas).
+        // Enunciado de TAREFA, nao de harness: sem path, sem nome de tool e sem
+        // coringa de coordenada. O modelo flui; o harness resolve o cwd.
         const string prompt =
-            "Crie a pasta `projeto_teste` e rode `git init projeto_teste`. Use SEMPRE o prefixo `projeto_teste/` " +
-            "nos caminhos de write/edit/read e `path=projeto_teste` na tool git; o `cd` da shell nao persiste. " +
-            "Crie dentro dela um arquivo .txt com nome aleatorio contendo a data do sistema de hoje. " +
-            "Se tiver acesso a internet, busque o clima da cidade de Sao Paulo hoje e anote no arquivo. " +
-            "Salve o arquivo, versione no git com add e commit, liste os arquivos e faca uma busca neles para encontrar o arquivo criado. " +
-            "Edite o arquivo ACRESCENTANDO a marca EDITADO, mantendo a data que ja esta nele, e realize outro commit. " +
-            "Grave o historico real com a tool shell: `git -C projeto_teste log --oneline > projeto_teste/historico_git.log`; " +
-            "depois use read para confirmar que o hash do ultimo commit aparece no arquivo.";
+            "Crie uma pasta e inicie um repositorio git nela. Crie dentro dela um arquivo .txt com nome aleatorio " +
+            "contendo a data do sistema de hoje. Se tiver acesso a internet, busque o clima da cidade de Sao Paulo hoje " +
+            "e anote no arquivo. Salve o arquivo, versione no git com add e commit, liste os arquivos e faca uma busca " +
+            "neles para encontrar o arquivo criado. Edite o arquivo com a marca EDITADO e realize outro commit. " +
+            "Verifique o historico git e grave no arquivo historico_git.log.";
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
 
