@@ -13,6 +13,9 @@ namespace Rochas.OpenCodeBridge.Test;
 /// </summary>
 internal sealed class StepProbe : IDisposable
 {
+    // 5s: o tick faz nvidia-smi + /api/status + /api/metrics; a 2s o proprio
+    // monitoramento pesava no t/s do step. Throughput e VRAM usam a mesma sonda.
+    private const int ProbeIntervalMs = 5000;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _loop;
     private readonly ILogger _logger;
@@ -71,7 +74,7 @@ internal sealed class StepProbe : IDisposable
             {
                 try { await TickAsync(); }
                 catch (Exception ex) { _logger.Warning("probe tick erro: {Error}", ex.Message); }
-                try { await Task.Delay(2000, _cts.Token); }
+                try { await Task.Delay(ProbeIntervalMs, _cts.Token); }
                 catch (OperationCanceledException) { break; }
             }
         });

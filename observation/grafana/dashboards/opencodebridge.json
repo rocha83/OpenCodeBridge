@@ -707,7 +707,7 @@
     },
     {
       "id": 7,
-      "title": "Throughput por step (sonda 2s)",
+      "title": "Throughput por step (sonda 5s)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -807,7 +807,7 @@
     },
     {
       "id": 8,
-      "title": "VRAM/GPU por step (sonda 2s)",
+      "title": "VRAM/GPU por step (sonda 5s)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
