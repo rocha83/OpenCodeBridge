@@ -206,7 +206,7 @@ ambiente, sem tocar no catálogo:
 # bridge Q3 dedicada (harness off, mesmo perfil da :4125)
 dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4110 \
   --model Gemma4-E4B-UD-Q3 --thinking events --temperature 0.3 --max-tokens 16384 \
-  --context-guard 1 --context-tokens 65536 --api-key guest@123 \
+  --context-guard 1 --context-tokens 57344 --api-key guest@123 \
   --passthrough-responses true --main-harness 1 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
   --log logs/bridge-q3-level1.log &
