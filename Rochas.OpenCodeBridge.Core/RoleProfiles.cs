@@ -15,16 +15,16 @@ public sealed record RoleProfile(double Temperature, string Thinking);
 /// </summary>
 public static class RoleProfiles
 {
-    /// <summary>Tabela default: plan 0.3/events, build 0.1/off, orch 0.3/events, moe 0.5/events, scripter 0.1/off, exec 0.1/off.</summary>
+    /// <summary>Tabela default: plan 0.4/events, build 0.2/off, orch 0.4/events, moe 0.7/events, scripter 0.2/off, exec 0.2/off.</summary>
     /// <returns>Cópia mutável da tabela.</returns>
     public static Dictionary<string, RoleProfile> DefaultCopy() => new(StringComparer.OrdinalIgnoreCase)
     {
-        ["plan"] = new(0.3, "events"),
-        ["build"] = new(0.1, "off"),
-        ["orch"] = new(0.3, "events"),
-        ["moe"] = new(0.5, "events"),
-        ["scripter"] = new(0.1, "off"),
-        ["exec"] = new(0.1, "off"),
+        ["plan"] = new(0.4, "events"),
+        ["build"] = new(0.2, "off"),
+        ["orch"] = new(0.4, "events"),
+        ["moe"] = new(0.7, "events"),
+        ["scripter"] = new(0.2, "off"),
+        ["exec"] = new(0.2, "off"),
     };
 
     /// <summary>Resolve o perfil pelo sufixo do model id ("...-build" =&gt; build).</summary>

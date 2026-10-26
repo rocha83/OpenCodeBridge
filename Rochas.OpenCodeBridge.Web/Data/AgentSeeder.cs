@@ -12,7 +12,7 @@ public static class AgentSeeder
 
     // Snapshot da config atual: Gemma4 E4B Q4 ctx 128k na GPU :4124; Gemma4
     // E4B UD-Q3 (GPU2) ctx 128k em :4110/:4125; E4B Q4 CPU Forced em :4120/:4126. Temperaturas: baixa 0.2
-    // (Build/Exec), Scripter 0.1, média 0.4 (Plan/Orch), alta 0.7 (MoE).
+    // (Build/Exec), Scripter 0.2, média 0.4 (Plan/Orch), alta 0.7 (MoE).
     // Scripter e Exec compartilham o prompt; só o Exec tem 'exec' no harness
     // (Scripter cria+valida com 'bash -n'; Exec valida e executa 'bash <arquivo>').
     private static readonly Seed[] Seeds =
@@ -43,7 +43,7 @@ public static class AgentSeeder
             "executor", "Plan", 2.5, 1,
             "fetch,display,subagent"),
         new(6, "Desenvolvedor de Software - Scripter (GPU)", "Gemma4-E4B-Q4", "http://127.0.0.1:4124",
-            0.1, "off",
+            0.2, "off",
             "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
             "", "Build", 30.0, 1,
             "glob,read,grep,git,fetch,display,write,edit,proc,shell,install"),
@@ -53,7 +53,7 @@ public static class AgentSeeder
             "executor", "Plan", 2.5, 1,
             "glob,read,grep,git,fetch,display,subagent"),
         new(8, "Desenvolvedor de Software - Scripter (GPU2)", "Gemma4-E4B-UD-Q3", "http://127.0.0.1:4125",
-            0.1, "off",
+            0.2, "off",
             "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto ",
             "", "Build", 2.5, 1,
             "glob,read,grep,git,fetch,display,write,edit,proc,shell"),
@@ -106,7 +106,7 @@ public static class AgentSeeder
     }
 
     // Temperaturas por role: plan/orch 0.4, moe 0.7, build/exec 0.2,
-    // scripter 0.1. Idempotente: roda a cada boot e só toca agentes
+    // scripter 0.2. Idempotente: roda a cada boot e só toca agentes
     // Gemma4 E4B ativos; modelo base e agentes custom ficam intactos.
     private static void PromoteRoleTemperatures(SqliteConnection conn)
     {
@@ -118,7 +118,7 @@ public static class AgentSeeder
                     WHEN name LIKE '%MoE%' THEN 0.7
                     WHEN name LIKE '%Plan%' OR name LIKE '%Orch%' THEN 0.4
                     WHEN name LIKE '%Build%' OR name LIKE '%Exec%' THEN 0.2
-                    WHEN name LIKE '%Scripter%' THEN 0.1
+                    WHEN name LIKE '%Scripter%' THEN 0.2
                     ELSE temperature END
                 WHERE model LIKE 'Gemma4-E4B%' AND active = 1
                   AND (temperature IN (0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.8));
@@ -148,6 +148,7 @@ public static class AgentSeeder
                     WHEN name LIKE '%MoE%' THEN 0.7
                     WHEN name LIKE '%Plan%' OR name LIKE '%Orch%' THEN 0.4
                     WHEN name LIKE '%Build%' OR name LIKE '%Exec%' THEN 0.2
+                    WHEN name LIKE '%Scripter%' THEN 0.2
                     ELSE 0.1 END,
                 system_prompt = replace(replace(replace(system_prompt,
                     '(192k)', '(128k)'),

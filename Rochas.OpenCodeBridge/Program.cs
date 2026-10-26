@@ -386,7 +386,7 @@ internal static partial class Program
     // thinking ligado + temp media p/ planejar; build = thinking fundido +
     // temp media p/ executar; orch = coordena subagentes; moe = uso geral
     // hibrido; scripter = temp baixa (determinismo) e thinking off.
-    // Escala: 0.1 (baixa: build/scripter/exec) / 0.3 (média: plan/orch) / 0.5 (alta: moe).
+    // Escala: 0.2 (baixa: build/scripter/exec) / 0.4 (média: plan/orch) / 0.7 (alta: moe).
     // Request sem sufixo usa os
     // globais. O caminho Gemma 4 padrao (sem sufixo) fica byte-identico.
     // Dinamica dos roles (temp/thinking) mora no Core: RoleProfiles.

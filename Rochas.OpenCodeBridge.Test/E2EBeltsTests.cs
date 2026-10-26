@@ -154,7 +154,7 @@ internal static class E2EBeltsTests
                         try
                         {
                             r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                                new JsonObject { ["model"]=scripterModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
+                                new JsonObject { ["model"]=scripterModel, ["temperature"]=0.2, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
                         }
                         catch (Exception ex)
                         {
@@ -267,7 +267,7 @@ internal static class E2EBeltsTests
                             try
                             {
                                 r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                                    new JsonObject { ["model"]=scripterModel, ["temperature"]=0.1, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
+                                    new JsonObject { ["model"]=scripterModel, ["temperature"]=0.2, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
                             }
                             catch (Exception ex)
                             {

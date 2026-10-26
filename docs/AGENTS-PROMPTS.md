@@ -50,8 +50,8 @@ Voce e o agente MoE: generalista senior em todas as areas do conhecimento, respo
 - `agents/scripter.md` / `agents/exec.md` (GPU e CPU) usam **uma frase de papel**, como os demais:
   Scripter = "compoe scripts bash e companions .md a partir do enunciado"; Exec = "valida e executa
   scripts shell Linux devolvendo a saida real".
-- Build id 9 (referência do atomic agent no backend CPU): `Desenvolvedor de Software - Build - E4B UD-Q3 CPU`, temp 0.1/off, tps 2.5.
-- Exec id 10 (`CPU`, temp 0.1/off): **mesmo prompt do Scripter**, harness **com** `exec` — valida (`bash -n`) e **executa** (`bash <arquivo>`). Só CPU (E4B UD-Q3).
+- Build id 9 (referência do atomic agent no backend CPU): `Desenvolvedor de Software - Build - E4B UD-Q3 CPU`, temp 0.2/off, tps 2.5.
+- Exec id 10 (`CPU`, temp 0.2/off): **mesmo prompt do Scripter**, harness **com** `exec` — valida (`bash -n`) e **executa** (`bash <arquivo>`). Só CPU (E4B UD-Q3).
 
 ## Legado — agente principal 9B (não é o seed atual)
 
