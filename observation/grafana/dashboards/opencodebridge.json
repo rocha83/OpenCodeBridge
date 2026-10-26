@@ -325,9 +325,9 @@
           "format": "timeseries",
           "columns": [
             {
-              "selector": "time",
+              "selector": "ts",
               "text": "time",
-              "type": "time"
+              "type": "timestamp_epoch"
             },
             {
               "selector": "tps_output",
@@ -345,10 +345,11 @@
       "fieldConfig": {
         "defaults": {
           "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 10,
+            "drawStyle": "bars",
+            "barAlignment": 0,
+            "lineWidth": 1,
+            "fillOpacity": 100,
+            "gradientMode": "none",
             "showPoints": "never",
             "spanNulls": true,
             "axisPlacement": "auto"
@@ -416,9 +417,9 @@
           "format": "timeseries",
           "columns": [
             {
-              "selector": "time",
+              "selector": "ts",
               "text": "time",
-              "type": "time"
+              "type": "timestamp_epoch"
             },
             {
               "selector": "vram_used_mb",
@@ -441,10 +442,11 @@
       "fieldConfig": {
         "defaults": {
           "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 8,
+            "drawStyle": "bars",
+            "barAlignment": 0,
+            "lineWidth": 1,
+            "fillOpacity": 100,
+            "gradientMode": "none",
             "showPoints": "never",
             "spanNulls": true,
             "axisPlacement": "auto"
