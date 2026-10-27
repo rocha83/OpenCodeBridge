@@ -1,5 +1,20 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Diagnóstico ligado e sonda anti-repeat de 2048 chars (2026-10-26)
+
+**Causa:** a unit `bridge-gpu` estava com `diagnostic_level=off`: o Grafana lia
+`/api/metrics` sem a sonda e o anti-repeat só registrava `where/window/chars`.
+A amostra de 80 chars não permitia ver a cauda repetida nem o contexto anterior.
+
+**Correção:** a unit passa a subir com `--diagnostic 1 --diagnostic-level metrics`
+(sem corpos req/res, adequado ao painel). `CheckRepeat` agora loga a cauda real e
+`dup_ctx` até **2048 chars**; `TailText` substitui o corte de 80 chars. A sonda
+continua opt-in: sem `--diagnostic`/`DIAGNOSTIC=1`, não escreve.
+
+**Aceite:** build Release 0 avisos/0 erros; `/api/status` com
+`diagnostic_level=metrics`; log `anti-repeat-sonda` com `dup_at`, `dup_ctx` e
+`tail`; Grafana volta a receber dados.
+
 ## Enunciados das belts: verbo por papel (2026-10-26)
 
 **Causa:** o verbo "Especifique" pedia especificação, não implementação; no

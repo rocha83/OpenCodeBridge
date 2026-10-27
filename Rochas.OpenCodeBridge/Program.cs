@@ -187,6 +187,7 @@ internal static partial class Program
     static double ContextThreshold = 0.95;                       // fracao do ctx (0.5..0.99)
     static int ContextTokens = 0;                                // tamanho do ctx do modelo servido
     static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
+    const int SondaMaxChars = 2048;                              // amostra da cauda/duplicata no log de diagnostico
     // Granularidade da sonda (grupo observabilidade):
     //   off     = nenhuma sonda
     //   metrics = evento de trafego com metricas (usage/tps/elapsed), SEM os
@@ -3166,12 +3167,12 @@ var shape = new StringBuilder();
                 var win = norm[^w..];
                 dupAt = norm[..^w].IndexOf(win, StringComparison.Ordinal);
                 if (dupAt >= 0)
-                    dupCtx = Truncate(norm.Substring(dupAt, Math.Min(80, norm.Length - dupAt)), 80);
+                    dupCtx = norm.Substring(dupAt, Math.Min(SondaMaxChars, norm.Length - dupAt));
             }
-            Sonda(where, chars, trip, Truncate(norm, 80), dupAt, dupCtx);
+            Sonda(where, chars, trip, TailText(norm, SondaMaxChars), dupAt, dupCtx);
         }
         else if (chars < 512 || (chars % 2048) < 256)
-            Sonda(where, chars, trip, Truncate(ContentAntiRepeat.Normalize(accumulated ?? ""), 80));
+            Sonda(where, chars, trip, TailText(ContentAntiRepeat.Normalize(accumulated ?? ""), SondaMaxChars));
         return trip;
     }
 
@@ -4944,16 +4945,16 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
     /// <param name="where">Ponto de observacao (thinking/content/bypass-chat/bypass-responses).</param>
     /// <param name="chars">Acumulado ate aqui.</param>
     /// <param name="trip">Detector disparou?</param>
-    /// <param name="tail">Amostra da cauda (80 chars).</param>
+    /// <param name="tail">Amostra da cauda (ultimos 2048 chars normalizados).</param>
     /// <param name="dupAt">Indice da duplicata na cauda (-1 = nao localizada).</param>
-    /// <param name="dupCtx">Trecho da duplicata (até 80 chars).</param>
+    /// <param name="dupCtx">Trecho da duplicata (até 2048 chars).</param>
     static void Sonda(string where, int chars, bool trip, string tail, int dupAt = -1, string dupCtx = "")
     {
         if (!Diagnostic) return;
         try
         {
             // dup_at = posicao (no texto normalizado) da ocorrencia anterior da
-            // mesma janela; dup_ctx = 80 chars a partir dela. Sem isso o log so
+            // mesma janela; dup_ctx = 2048 chars a partir dela. Sem isso o log so
             // mostra a cauda e nao prova ONDE o modelo se repetiu.
             if (trip)
                 Serilog.Log.Warning("anti-repeat-sonda where={Where} chars={Chars} window={Window} trip={Trip} dup_at={DupAt} dup_ctx={DupCtx} tail={Tail}",
@@ -4978,4 +4979,5 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
     /// <param name="n">Maximo.</param>
     /// <returns>Texto cortado.</returns>
     static string Truncate(string s, int n) => s.Length <= n ? s : s[..n];
+    static string TailText(string s, int n) => s.Length <= n ? s : s[^n..];
 }

@@ -492,6 +492,12 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 | `--legacy-harness` | `false` | reativa o harness legado (README — "Compatibilidade legada") |
 | `--diagnostic` | `false` | sonda Serilog extra (`/tmp/bridge-sonda.log`) |
 | `--diagnostic-level` | `off` | `off`/`metrics`/`dump` — granularidade da sonda (metrics = sem corpos req/res) |
+
+> **Deploy atual (2026-10-26):** a unit `bridge-gpu` usa
+> `--diagnostic 1 --diagnostic-level metrics`; é o mínimo para o Grafana
+> (`/api/metrics` e `/api/status`) e para a sonda `anti-repeat-sonda` no
+> `/tmp/bridge-gpu.log`. A sonda grava `tail` e `dup_ctx` de até 2048 chars
+> normalizados — não 80.
 | `--qwen-standard` | `false` | **legado**: ModelPrompt + tools Alibaba (Qwen3/Qwen3.5); não usar na linha Gemma 4 |
 | `--workspace` | cwd | raiz de `POST /api/tools/execute` |
 | `--main-harness` | `true` | substitui o system no caminho gerido (model sem sufixo) |
