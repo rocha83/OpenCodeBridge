@@ -11,6 +11,10 @@ key da bridge **e** porta/senha da própria instância; a Web UI pede só a port
   (`desligado|ligado`, padrão `desligado`). As três units geradas pelos ícones
   recebem `--diagnostic 1 --diagnostic-level metrics` somente quando o usuário
   escolhe `ligado`; `desligado` (padrão) omite a flag.
+- **Cancelar não reinicia mais**: os três `start-bridge-*.sh` trocaram o
+  `|| { defaults; }` por `|| exit 0`. Antes, cancelar o form caía no fallback,
+  regenerava a unit, reiniciava a bridge e exibia “bridge ativa”. O fallback de
+  defaults agora só roda com `--defaults` ou sem `DISPLAY`/`zenity`.
 - `start-opencodeweb.sh` (`:4200`) mantém 4 campos com defaults `4124` /
   `guest@123` / `4200` / `guest@123`.
 - `start-ocagent-web.sh dev|moe` agora tem 4 campos e defaults dev `4125` /
@@ -22,9 +26,10 @@ key da bridge **e** porta/senha da própria instância; a Web UI pede só a port
   `/etc/bridge-web.env` e a unit usa `${BRIDGE_WEB_PORT}` no `--urls`.
 
 **Aceite:** `bash -n` nos 9 scripts; combo real testado abrindo em `desligado`
-(`rc=5` por timeout, stdout `desligado`); unit de bridge recebe as flags somente
-quando o combo vai para `ligado`; `/api/status` das bridges e Web UI respondendo;
-defaults dos formulários conferidos.
+(`rc=5` por timeout, stdout `desligado`); cancelamento simulado no `:4125`
+(`zenity --forms` rc=1) sai com `rc=0` e **sem** chamar `sudo`/reiniciar; unit de
+bridge recebe as flags somente quando o combo vai para `ligado`; `/api/status`
+das bridges e Web UI respondendo; defaults dos formulários conferidos.
 
 ## Diagnóstico ligado e sonda anti-repeat de 2048 chars (2026-10-26)
 
