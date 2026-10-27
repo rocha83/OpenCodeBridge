@@ -13,18 +13,72 @@
   "refresh": "5s",
   "panels": [
     {
+      "id": 19,
+      "type": "table",
+      "title": "Modo / Main Harness",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/status",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "format": "table",
+          "columns": [
+            {
+              "selector": "mode",
+              "text": "modo",
+              "type": "string"
+            },
+            {
+              "selector": "main_harness",
+              "text": "main_harness",
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": 1,
       "title": "Fluxo principal",
       "type": "text",
       "gridPos": {
         "h": 3,
-        "w": 24,
+        "w": 18,
         "x": 0,
         "y": 0
       },
       "options": {
         "mode": "markdown",
-        "content": "NOTA: Modo Bridge (Main Harness ON), Modo OpenCode (Main Harness OFF)"
+        "content": "FLUXO: Executa -> Falha -> Para e Corrige -> Republica Bridges -> Reinicia Testes\n\nNOTA: Modo Bridge (Main Harness ON), Modo OpenCode (Main Harness OFF)\n\nMODO ATUAL e Main Harness: ver painel ao lado."
       }
     },
     {
