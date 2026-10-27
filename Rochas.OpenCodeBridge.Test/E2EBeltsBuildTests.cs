@@ -21,22 +21,32 @@ internal static class E2EBeltsBuildTests
 
     static void Log(string msg) { Console.WriteLine(msg); Console.Out.Flush(); }
 
-    // 500 "peg-gemma4" e falha de formato do upstream, nao de assertiva. Um
-    // retry com o MESMO historico evita derrubar o belt inteiro por output
-    // transitorio do modelo; se repetir, o FAIL sobe normal.
-    static async Task<JsonObject> PostChat(string key, int turn, JsonObject body)
+    // 500 "peg-gemma4" e falha de formato do upstream, nao de assertiva. O
+    // retry e limitado a DUAS tentativas: a segunda leva um nudge curto com o
+    // erro, porque reenviar o mesmo historico as cegas pode repetir o defeito.
+    // Se falhar de novo, a excecao sobe e o step fica FAIL.
+    static async Task<JsonObject> PostChat(string key, int turn, JsonObject body, string toolName)
     {
-        for (int attempt = 0; ; attempt++)
+        for (int attempt = 0; attempt < 2; attempt++)
         {
             try { return await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", body); }
             catch (Exception ex) when (attempt == 0
                 && ex.Message.Contains("-> 500", StringComparison.Ordinal)
                 && ex.Message.Contains("peg-gemma4", StringComparison.OrdinalIgnoreCase))
             {
-                Log($"  [belt-build:{key}] turno {turn}: 500 peg-gemma4 — retry 1/1");
-                await Task.Delay(2000);
+                Log($"  [belt-build:{key}] turno {turn}: 500 peg-gemma4 — nudge 1/1 (tool={toolName})");
+                var msgs = body["messages"]?.AsArray()
+                    ?? throw new InvalidOperationException("historico sem messages no nudge peg-gemma4");
+                msgs.Add(new JsonObject
+                {
+                    ["role"] = "user",
+                    ["content"] = $"A ultima tentativa falhou no parser peg-gemma4: a tool call veio fora do formato. "
+                        + $"Reemita UMA tool call {toolName} com JSON completo e valido. Nao escreva texto fora do JSON."
+                });
+                await Task.Delay(1000);
             }
         }
+        throw new InvalidOperationException($"POST chat falhou apos nudge peg-gemma4 (turno={turn}, tool={toolName})");
     }
     static void SaveResult(string key, string status, string detail)
     {
@@ -87,7 +97,7 @@ internal static class E2EBeltsBuildTests
                 for (int turn = 0; turn < 14 && filesCreated < 8; turn++)
                 {
                     var r = await PostChat(key, turn,
-                        new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["max_tokens"]=16384, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
+                        new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["max_tokens"]=16384, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() }, "write");
                     var msg = r["choices"]?[0]?["message"]?.AsObject();
                     string content = msg?["content"]?.GetValue<string>() ?? "";
                     totalChars += content.Length;
@@ -163,7 +173,7 @@ internal static class E2EBeltsBuildTests
                     for (int turn = 0; turn < 4; turn++)
                     {
                         var r2 = await PostChat(key, 100 + turn,
-                            new JsonObject { ["model"]=model, ["temperature"]=0.1, ["stream"]=false, ["max_tokens"]=2048, ["messages"]=history.DeepClone(), ["tools"]=readTools.DeepClone() });
+                            new JsonObject { ["model"]=model, ["temperature"]=0.1, ["stream"]=false, ["max_tokens"]=2048, ["messages"]=history.DeepClone(), ["tools"]=readTools.DeepClone() }, "read");
                         var msg2 = r2["choices"]?[0]?["message"]?.AsObject();
                         string content2 = msg2?["content"]?.GetValue<string>() ?? "";
                         totalChars += content2.Length;

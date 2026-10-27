@@ -197,9 +197,12 @@ não conseguia limpar. O 500 peg-gemma4 é falha transitória de formato do
 upstream, não de assertiva.
 
 **Correção** — `E2EBeltsBuildTests` usa workspace único por execução
-(`<timestamp>-<pid>/<belt>`, sem apagar pasta antiga) e faz um retry do POST
-quando o erro é 500 + `peg-gemma4`, reenviando o mesmo histórico. As
-assertivas (>=3 arquivos e >500 chars) não mudam.
+(`<timestamp>-<pid>/<belt>`, sem apagar pasta antiga) e limita o POST a duas
+tentativas quando o erro é 500 + `peg-gemma4`: a segunda anexa um nudge
+`user` curto com o erro e pede UMA tool call válida (`write` na criação,
+`read` na revisão), em vez de reenviar o mesmo histórico às cegas. Se repetir,
+a exceção sobe e o step fica FAIL. As assertivas (>=3 arquivos e >500 chars)
+não mudam.
 
 **Prova** — `logs/levels/L2-20261027-l2fix`: 4/4 PASS (537 s); L1
 `logs/levels/L1-20261027-l1l2-l1`: 3/3 PASS (741 s).

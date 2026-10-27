@@ -17,8 +17,11 @@ artefatos dentro de `logs/levels` do repositório.
   não conseguia limpar o workspace anterior.
 - Correção em `E2EBeltsBuildTests`: workspace único por execução
   (`/tmp/opencode/belts-build/<timestamp>-<pid>/<belt>`, sem reutilizar pasta
-  root) e um retry para 500 `peg-gemma4` com o mesmo histórico. Build Release
-  0 avisos / 0 erros.
+  root) e retry limitado a **2 tentativas** para 500 `peg-gemma4`: a segunda
+  anexa um nudge curto com o erro, pedindo UMA tool call válida (`write` na
+  criação, `read` na revisão), em vez de reenviar o mesmo histórico às cegas.
+  Se repetir, a exceção sobe e o step fica FAIL. Build Release 0 avisos /
+  0 erros.
 - L2 final `logs/levels/L2-20261027-l2fix`: `responses-tools-bridge`,
   `tools-full-bridge`, `belts-build-bridge`, `belts-orch-bridge` = **4/4 PASS**
   (537 s), gate verde.

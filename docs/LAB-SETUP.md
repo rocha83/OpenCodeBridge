@@ -705,6 +705,30 @@ de 30% dos diálogos da esteira (ex.: roxa build falhou nos 2 transportes, 2/2)
 não alterar a bridge nem os defaults. A correção mantém o aceite e é validada
 no gate Q4; o Q3 continua diagnóstico.
 
+**Belts build: workspace root e nudge `peg-gemma4` (2026-10-27).** Dois FAILs
+seguidos no L2, ambos no `belts-build-bridge`:
+
+1. `500 The model produced output that does not match the expected peg-gemma4
+   format` no turno 3 da faixa azul. É o parser do `llama.cpp` recusando a
+   saída do modelo; o teste não tem como corrigir o parser.
+2. `Access to the path /tmp/opencode/belts-build/azul/Startup/DependencyInjection.cs
+   is denied` no run seguinte. A tool `write` roda no processo da bridge como
+   root e deixava o workspace root-owned; o teste seguinte, como `mint`, não
+   conseguia apagar a pasta.
+
+Correção no teste, sem tocar em bridge/ctx/`max_tokens`/aceite:
+
+- workspace único por execução: `/tmp/opencode/belts-build/<timestamp>-<pid>/<belt>`,
+  sem reutilizar nem apagar pasta anterior root-owned;
+- POST do chat limitado a **duas tentativas**; a segunda, só em 500 +
+  `peg-gemma4`, anexa um nudge `user` curto pedindo UMA tool call `write`
+  (criação) ou `read` (revisão) com JSON completo. Se repetir, FAIL;
+- aceite inalterado: `>=3` arquivos, `>500` chars, arquivos reais no disco.
+
+Evidência: `logs/levels/L2-20261027-l2fix` = 4/4 PASS (537 s) e
+`logs/levels/L1-20261027-l1l2-l1` = 3/3 PASS (741 s). O nudge é falha
+transitória de formato; não substitui a correção de causa raiz no upstream.
+
 **Fail-fast e seleção de modo (`scripts/war/run-levels.sh`).** Duas variáveis
 de ambiente mudam a esteira sem tocar em aceite:
 
