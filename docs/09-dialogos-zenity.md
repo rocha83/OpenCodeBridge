@@ -28,15 +28,18 @@ Nada de perguntar porta, usuário e senha em janelas separadas.
 
 **Defaults:** todo campo abre pedindo o dado, com o valor padrão no rótulo
 (`(padrao: X)`); deixar vazio usa X. `--forms` do zenity não tem preenchimento
-inicial — quem usa `--entry` (Web UI) recebe `--entry-text` já preenchido. Os
+inicial de texto, mas **combo** (`--add-combo`/`--combo-values`) abre no primeiro
+item da lista — o Diagnóstico das bridges usa `desligado|ligado` e abre em
+`desligado`. Quem usa `--entry` (Web UI) recebe `--entry-text` já preenchido. Os
 launchers também aceitam `--defaults` para pular a janela e usar os mesmos valores.
 
 - `ask_port_user_pass` → 1 form (Porta, Usuário, Senha) + 1 confirmação de firewall.
 - `ask_port_pass_only` → 1 form (Porta, Senha) + 1 confirmação.
 - `ask_bridge_config` → 1 form (Porta, URL upstream, API key, Modelo, Ctx, Usuário,
-  Senha da bridge, **Diagnóstico ligado/desligado**) + 1 confirmação. O campo
-  Diagnóstico vira `--diagnostic 1 --diagnostic-level metrics` na unit gerada
-  quando `ligado`; `desligado` não emite a flag.
+  Senha da bridge, **Diagnóstico em combo/dropdown `desligado|ligado`**) + 1
+  confirmação. O dropdown abre em `desligado` (padrão); `ligado` vira
+  `--diagnostic 1 --diagnostic-level metrics` na unit gerada e `desligado` omite
+  a flag.
 - `start-opencodeweb.sh` (principal, `:4200`) → 1 form (porta bridge, API key
   bridge, porta web, senha web), defaults `4124` / `guest@123` / `4200` /
   `guest@123`.

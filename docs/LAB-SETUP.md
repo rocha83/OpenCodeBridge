@@ -1109,11 +1109,11 @@ sem estar na imagem.
   Pede a senha do sudo no zenity e reexecuta com `sudo -n`.
 - **Diagnóstico nas bridges**: os três ícones (`start-bridge-gpu.sh`,
   `start-bridge-gpu2.sh`, `start-bridge-cpu-forced.sh`) usam
-  `ask_bridge_config`, cujo 8º campo é `Diagnóstico` (`ligado`/`desligado`).
-  `ligado` (padrão) emite `--diagnostic 1 --diagnostic-level metrics` na unit;
-  `desligado` omite. `metrics` alimenta `/api/metrics`/`/api/status` e o
-  Grafana sem gravar corpos req/res. A escolha vale para o próximo clique que
-  regenerar a unit.
+  `ask_bridge_config`, cujo 8º campo é um **combo/dropdown** `Diagnóstico`
+  (`desligado|ligado`). O padrão é `desligado` (sem flag). `ligado` emite
+  `--diagnostic 1 --diagnostic-level metrics` na unit; `metrics` alimenta
+  `/api/metrics`/`/api/status` e o Grafana sem gravar corpos req/res. A escolha
+  vale para o próximo clique que regenerar a unit.
 - **OpenCode Web**: `start-opencodeweb.sh` (`:4200`) pede porta/API key da
   bridge e porta/senha da instância; defaults `4124`, `guest@123`, `4200`,
   `guest@123`. `start-ocagent-web.sh dev|moe` pede os mesmos 4 campos;
@@ -1145,7 +1145,7 @@ Args gravados nas units (as três, `bridge-gpu`, `bridge-gpu2` e `bridge-cpu-for
 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512
 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0
 --upstream-parser native
-# opcional (padrao dos icones): --diagnostic 1 --diagnostic-level metrics
+# opcional: --diagnostic 1 --diagnostic-level metrics (so quando o combo = ligado)
 ```
 
 - **anti-repeat está ligado nos dois caminhos** (chat e Responses): é contenção

@@ -7,9 +7,10 @@ bridge precisa de flag de diagnóstico; os 3 OpenCode Web precisam de porta/API
 key da bridge **e** porta/senha da própria instância; a Web UI pede só a porta.
 
 **Implementação:**
-- `ask_bridge_config` ganhou o 8º campo `Diagnóstico` (`ligado`/`desligado`,
-  padrão `ligado`). As três units geradas pelos ícones recebem
-  `--diagnostic 1 --diagnostic-level metrics` quando ligado; desligado omite.
+- `ask_bridge_config` ganhou o 8º campo `Diagnóstico` como **combo/dropdown**
+  (`desligado|ligado`, padrão `desligado`). As três units geradas pelos ícones
+  recebem `--diagnostic 1 --diagnostic-level metrics` somente quando o usuário
+  escolhe `ligado`; `desligado` (padrão) omite a flag.
 - `start-opencodeweb.sh` (`:4200`) mantém 4 campos com defaults `4124` /
   `guest@123` / `4200` / `guest@123`.
 - `start-ocagent-web.sh dev|moe` agora tem 4 campos e defaults dev `4125` /
@@ -20,8 +21,10 @@ key da bridge **e** porta/senha da própria instância; a Web UI pede só a port
 - `start-bridge-web.sh` pede só a porta, com `--entry-text=4130`; grava
   `/etc/bridge-web.env` e a unit usa `${BRIDGE_WEB_PORT}` no `--urls`.
 
-**Aceite:** `bash -n` nos 9 scripts; unit de bridge com flags de diagnóstico;
-`/api/status` das bridges e Web UI respondendo; defaults nos formulários.
+**Aceite:** `bash -n` nos 9 scripts; combo real testado abrindo em `desligado`
+(`rc=5` por timeout, stdout `desligado`); unit de bridge recebe as flags somente
+quando o combo vai para `ligado`; `/api/status` das bridges e Web UI respondendo;
+defaults dos formulários conferidos.
 
 ## Diagnóstico ligado e sonda anti-repeat de 2048 chars (2026-10-26)
 
