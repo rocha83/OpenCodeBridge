@@ -4152,3 +4152,40 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   L2 depois de L1 vermelho.
 - O console global passa a imprimir `fail-fast: ON/OFF` no inicio da trilha,
   para nao depender de interpretar a ausencia da flag.
+
+**Regra de fronteira Core x consumidor (2026-10-27).**
+- Fica registrado em `AGENTS.md`: Web, suite de testes, OpenCode e CLI **nao
+  implementam logicas que pertencem ao Core**. Catalogo/schema/help de tools,
+  execucao, role/workspace guard, process runner, preflight, harness/tails,
+  sanitizacao, sampling e parsing ficam em `Rochas.OpenCodeBridge.Core`.
+- O consumidor faz apenas orquestracao, fixture, transporte HTTP, assertiva e
+  evidencia. `ToolCatalog`, `Tools()`, `Exec()`, `LocalExec()`, `Shell()` de
+  tool e conversao manual chat->Responses no projeto de testes sao proibidos.
+- Correcao aplicada na suite: `TestContext`, `E2EMissionTests` e
+  `E2EFrontPipeTests` passam a usar `Core.ToolCatalog.Chat/Responses` e
+  `POST /api/tools/execute`; `git` entra no catalogo do Core (o teste nao
+  inventa `action/message/paths`), e `zip` deixa de ser tool (vai por `shell`).
+- Frontend pipeline: a bateria Gen/Edit/Verify passa a cobrir criacao e edicao
+  de pecas MVC Razor e React, no fim do L2, com evidencia por artefato.
+
+**Limpeza total Core x testes e mission bridge (2026-10-27).**
+- Nenhum teste monta mais schema/catalogo de tool: `TestContext.Catalog(...)`
+  apenas filtra `Core.ToolCatalog.Chat()`. Saíram os `Tool()`/`DevTools()`/
+  schemas locais de `E2EDevPipeTests`, `E2EBeltsTests`, `E2EBeltsBuildTests`,
+  `E2EScripterTests`, `E2EMissionTests` e `E2EFrontPipeTests`.
+- Execucao de tool tambem e' unica: `TestContext.ExecuteTool` chama
+  `POST /api/tools/execute`; `E2EScripter`, belts, belts-build e mission nao
+  escrevem/leem arquivo por conta propria. Processos de teste usam
+  `Core.Tools.ProcessRunner` (sem `ProcessStartInfo` duplicado).
+- `E2EFrontPipeTests` ganhou `EditRazor`/`EditReact` no mesmo contrato do CSS;
+  Gen cria MVC Razor + React + CSS e Verify mede os tres. Enunciados novos:
+  `edit-razor-title-mvc.md` e `edit-react-painel-2026.md`.
+- L2 termina com `front-{mode}` (`--only E-front`) no `WarTemplate` e no
+  `scripts/war/run-levels.sh`; `PrintSteps` e BENCHTESTS refletem a ordem.
+- Mission tools/algo em `--mode bridge`: a verificacao final `dotnet run` passou
+  a usar a tool `shell` da bridge (mesmo executor do modelo), eliminando o
+  conflito de dono root/user em `bin/obj`. O enunciado pede explicitamente
+  `write` do arquivo completo para o E4B nao abrir com `edit` sem `oldString`.
+- Primeiras execucoes isoldadas: `E-mission-tools` expos dois problemas reais
+  (obj root-owned e modelo usando `edit` sem `oldString`), corrigidos na
+  sequencia acima; o rerun verde fica registrado neste arquivo após a bateria.

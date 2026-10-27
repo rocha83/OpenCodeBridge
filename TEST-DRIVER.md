@@ -43,6 +43,15 @@ TestCircuitDriver -> WarTemplate -> Execution
 - `Execution` não conhece WAR; `WarTemplate` não cria processo; `TestCircuitDriver`
   não conhece bridge/llama/opencode.
 
+### Fronteira Core x consumidor
+
+O driver e a suíte são **consumidores** do Core, como a Web UI, o OpenCode e a
+CLI. Catálogo/schema de tools, execução, permissão/workspace guard, process
+runner, preflight, harness/tails, sanitização, sampling e parsing ficam em
+`Rochas.OpenCodeBridge.Core`. O consumidor faz orquestração, fixture, transporte
+HTTP, assertiva e evidência; não cria `ToolCatalog`, `Tools()`, `Exec()`,
+`LocalExec()`, `Shell()` de tool nem schema paralelo.
+
 ## 2. Ordem de execução de um level
 
 `TestCircuitDriver.RunAsync` executa exatamente esta sequência:

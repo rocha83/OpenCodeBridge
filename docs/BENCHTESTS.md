@@ -164,6 +164,28 @@ estrutura TSX (`createRoot`). O caminho de navegador fica atrás de `--front-web
 `HEADED=1` para o modo visível — gancho pronto para a Web UI `:4130` quando o parâmetro headed
 geral for criado.
 
+### Fronteira Core x consumidores
+
+A suíte de testes é **consumidora** do Core, igual à Web UI, OpenCode e CLI.
+Ela não define catálogo/schema de tools, não executa tools por conta própria e
+não converte protocolo na mão. O caminho único é:
+
+- `Rochas.OpenCodeBridge.Core.ToolCatalog.Chat/Responses` para o schema;
+- `POST /api/tools/execute` (ou `BridgeToolExecutor`) para executar;
+- `Core.StackPreflight` para preflight de stack;
+- `Core.HarnessTails`/`MainHarness` para base e tails.
+
+No projeto de testes ficam apenas orquestração, enunciado, fixture, transporte
+HTTP, assertivas e evidência. Catálogo local (`Tools()`/`ToolCatalog()`),
+executor local (`Exec()`/`LocalExec()`), `Shell()` de tool, nomes paralelos
+(`read_file`/`write_file`/`edit_file`/`list_dir`) ou conversão manual
+chat→Responses são proibidos. Se o teste precisa de outra tool, a tool entra no
+Core e todos os consumidores passam a usá-la.
+
+A bateria frontend (`E-front-*`) segue a mesma regra: Gen/Edit/Verify usam o
+catálogo do Core e `POST /api/tools/execute`; os enunciados editam peças reais
+de MVC Razor e React, não um vocabulário próprio do teste.
+
 ## 10. Level 1 — ordem das trilhas (`scripts/war/run-levels.sh`)
 
 Level 1 é a subida antes da produção: **units → devpipe → belts Build → belts Orch**, cada
@@ -239,9 +261,10 @@ imagem. Sem essas variáveis o comportamento é o de antes (`:4100`, visão liga
 
 Roda, em `--mode bridge` e `--mode opencode`: `E-tools-full`, `E-dual-tools`,
 `E-mission-tools`, `E-responses-tools`, `E-science-gpu` (Q4, bridge do level) e
-`E-science-cpu` (linha Q3, `WAR_CPU_BRIDGE` ou `:4125`), fechando com a suíte web.
-`LEVEL_CPU=0` pula o científico da linha Q3 (útil quando a `:4125` está em uso por
-sessão real). Artefatos no mesmo layout do Level 1.
+`E-science-cpu` (linha Q3, `WAR_CPU_BRIDGE` ou `:4125`), e **fecha com o frontend
+pipeline `E-front-*`** (Gen MVC+React, edição de Razor, edição de React, edição de
+CSS e Verify). `LEVEL_CPU=0` pula o científico da linha Q3 (útil quando a `:4125`
+está em uso por sessão real). Artefatos no mesmo layout do Level 1.
 
 ### Level 3 — pacote completo de belts (azul → preta)
 

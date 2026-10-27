@@ -221,7 +221,8 @@ internal static class UnitToolBreakerTests
         TestContext.Check(tail.Contains("contrato de cada tool vai no schema"), "cauda aponta o schema como fonte");
         TestContext.Check(tail.Contains("bloqueio de role"), "cauda mantem bloqueio de role");
         TestContext.Check(tail.Contains("--project"), "cauda aponta o arquivo do projeto no dotnet");
-        TestContext.Check(tail.Contains("module Program"), "cauda explica o entrypoint de F#");
+        string fsMini = global::Rochas.OpenCodeBridge.Core.HarnessTails.FsMini;
+        TestContext.Check(fsMini.Contains("module Program"), "FsMini explica o entrypoint de F#");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
         TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
         TestContext.Check(!tail.Contains("CONCATENACAO DE COMANDOS"), "cauda nao duplica doc de shell");

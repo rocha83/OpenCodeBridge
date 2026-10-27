@@ -31,5 +31,23 @@
     "value": 16,
     "tol": 0.5,
     "no_regress": ["#quadro:rect_w", "#titulo:font-size"]
+  },
+  {
+    "id": "razor-title-mvc",
+    "kind": "razor",
+    "titulo": "titulo da pagina Razor com sufixo MVC",
+    "file": "edit-razor-title-mvc.md",
+    "path": "app/Views/Home/Index.cshtml",
+    "must_contain": ["<title>Frontpipe MVC</title>", "id=\"root\""],
+    "must_not_contain": ["<title>Frontpipe</title>"],
+    "no_regress": ["#titulo:font-size", "#quadro:rect_w"]
+  },
+  {
+    "id": "react-painel-2026",
+    "kind": "react",
+    "titulo": "texto do painel no React com ano 2026",
+    "file": "edit-react-painel-2026.md",
+    "path": "app/wwwroot/js/app.js",
+    "must_contain": ["Painel de vendas 2026", "createElement", "createRoot"]
   }
 ]

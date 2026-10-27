@@ -529,6 +529,9 @@ internal static partial class Program
     static long ModelFailedRequests;
     static string LastClient = "n/d";
     static long LastRequestMs;
+    // Ultimo inicio/fim de request de modelo (nao poll de /api/metrics):
+    // gate de frescor dos paineis. Sem fluxo recente => NO DATA.
+    static long LastModelActivityMs;
     // Tools executadas pela bridge (POST /api/tools/execute). No modo opencode
     // o CLI executa localmente e este contador fica em 0 de proposito.
     static long ToolsCalls;
@@ -536,6 +539,9 @@ internal static partial class Program
     // memoria para o painel ler throughput/VRAM/tools sem depender de arquivo.
     static readonly ConcurrentQueue<JsonObject> ProbeSamples = new();
     const int ProbeCap = 4096;
+    // Sem amostra da sonda nesse intervalo = nenhum run ativo: paineis live
+    // devem devolver vazio (Grafana NO DATA), nao o ultimo dado parado.
+    const int LivePanelMaxAgeSec = 120;
     // Resultado dos steps concluidos (driver -> POST /api/test/step). O painel
     // lista os passados com veredito e tempo; o atual fica no enunciado.
     static readonly ConcurrentDictionary<string, JsonObject> TestSteps = new();
@@ -574,6 +580,39 @@ internal static partial class Program
             TotalOutputTokens += outputTokens;
             TotalElapsedSecs += elapsedSecs;
         }
+    }
+
+    /// <summary>
+    /// Contabiliza uma resposta chat/completions (passthrough) no /api/metrics.
+    /// Mantem a metrica antiga: t/s por wall clock (output / tempo total do
+    /// request). `timings` so serve de fallback para tokens quando `usage`
+    /// nao vem no corpo.
+    /// </summary>
+    static void RecordChatUsage(JsonNode? usage, JsonNode? timings, double wallSecs)
+    {
+        int inTok = usage?["prompt_tokens"]?.GetValue<int>()
+                    ?? usage?["input_tokens"]?.GetValue<int>() ?? 0;
+        int outTok = usage?["completion_tokens"]?.GetValue<int>()
+                     ?? usage?["output_tokens"]?.GetValue<int>() ?? 0;
+        if (inTok == 0) inTok = timings?["prompt_n"]?.GetValue<int>() ?? 0;
+        if (outTok == 0) outTok = timings?["predicted_n"]?.GetValue<int>() ?? 0;
+        if (outTok > 0 && wallSecs > 0) AddMetrics(inTok, outTok, wallSecs);
+    }
+
+    /// <summary>Timestamp (epoch ms) de uma amostra da sonda.</summary>
+    static long ProbeTs(JsonObject sample)
+    {
+        try { return sample["ts"]?.GetValue<long>() ?? 0; }
+        catch { return 0; }
+    }
+
+    /// <summary>Ha amostra da sonda dentro da janela? Gate dos paineis live.</summary>
+    static bool ProbeFresh(int maxAgeSec)
+    {
+        long cutoff = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - maxAgeSec * 1000L;
+        foreach (var sample in ProbeSamples)
+            if (ProbeTs(sample) >= cutoff) return true;
+        return false;
     }
 
     /// <summary>Acrescenta uma mensagem ao historico do enunciado do step.</summary>
@@ -1219,6 +1258,7 @@ internal static partial class Program
                 else Interlocked.Increment(ref RequestsBridge);
                 LastClient = opencode ? "opencode" : "bridge";
                 LastRequestMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                LastModelActivityMs = LastRequestMs;
             }
 
             // ---- Documentacao Swagger (pagina black autocontida + OpenAPI JSON)
@@ -1266,6 +1306,21 @@ internal static partial class Program
             if (ctx.Request.HttpMethod == "GET" && path == "/api/metrics")
             {
                 if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
+                // fresh=1 (painel): sem request de modelo em voo e sem atividade
+                // recente, devolve vazio para o Grafana exibir NO DATA em vez do
+                // acumulado parado. Sem o parametro, mantem o contrato antigo.
+                bool freshOnly = ctx.Request.QueryString["fresh"] is "1" or "true" or "yes";
+                int freshAge = int.TryParse(ctx.Request.QueryString["max_age_s"], out int fa)
+                    ? Math.Clamp(fa, 1, 3600) : 60;
+                long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                long outstanding = Math.Max(0, ModelRequests - ModelResponses - ModelFailedRequests);
+                long lastActivity = LastModelActivityMs;
+                if (freshOnly && outstanding == 0
+                    && (lastActivity == 0 || nowMs - lastActivity > freshAge * 1000L))
+                {
+                    WriteJson(ctx, 200, new JsonArray());
+                    return;
+                }
                 double elapsed, tpsOut, tpsTotal;
                 long inTok, outTok;
                 lock (MetricsLock)
@@ -1287,6 +1342,10 @@ internal static partial class Program
                     ["elapsed_seconds"] = Math.Round(elapsed, 2),
                     ["tps_output"] = Math.Round(tpsOut, 2),
                     ["tps_total"] = Math.Round(tpsTotal, 2),
+                    ["last_model_activity_ms"] = lastActivity,
+                    ["model_outstanding"] = outstanding,
+                    ["model_idle_seconds"] = lastActivity == 0 ? -1
+                        : Math.Round((nowMs - lastActivity) / 1000.0, 1),
                     // Recusas por anel (sempre contadas, independente do diagnostic).
                     ["ring2_deny"] = Metrics.Ring2Deny,
                     ["ring3_deny"] = Metrics.Ring3Deny,
@@ -1304,6 +1363,12 @@ internal static partial class Program
             if (ctx.Request.HttpMethod == "GET" && path == "/api/test/enunciado/messages")
             {
                 if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
+                if (ctx.Request.QueryString["fresh"] is "1" or "true" or "yes"
+                    && !ProbeFresh(LivePanelMaxAgeSec))
+                {
+                    WriteJson(ctx, 200, new JsonArray());
+                    return;
+                }
                 WriteJson(ctx, 200, SnapshotEnunciado().Messages);
                 return;
             }
@@ -1312,6 +1377,12 @@ internal static partial class Program
             if (ctx.Request.HttpMethod == "GET" && path == "/api/test/activity")
             {
                 if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
+                if (ctx.Request.QueryString["fresh"] is "1" or "true" or "yes"
+                    && !ProbeFresh(LivePanelMaxAgeSec))
+                {
+                    WriteJson(ctx, 200, new JsonArray());
+                    return;
+                }
                 int limit = int.TryParse(ctx.Request.QueryString["limit"], out int lim) ? Math.Clamp(lim, 1, 50) : 6;
                 string step = SnapshotEnunciado().Step;
                 var rows = AgentActivity
@@ -1364,9 +1435,17 @@ internal static partial class Program
                     WriteJson(ctx, 200, new JsonObject { ["ok"] = true, ["samples"] = ProbeSamples.Count });
                     return;
                 }
+                // max_age_s (painel): so amostras dentro da janela. Sem amostra
+                // recente devolve vazio => Grafana NO DATA em vez de serie parada.
+                int probeAge = int.TryParse(ctx.Request.QueryString["max_age_s"], out int pa)
+                    ? Math.Clamp(pa, 1, 86400) : 0;
+                long probeCutoff = probeAge > 0
+                    ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - probeAge * 1000L : 0;
+                bool Fresh(JsonObject x) => probeAge == 0 || ProbeTs(x) >= probeCutoff;
                 if (path.EndsWith("/latest", StringComparison.Ordinal))
                 {
                     var latest = ProbeSamples
+                        .Where(Fresh)
                         .GroupBy(x => x["step"]?.GetValue<string>() ?? "n/d")
                         .Select(g => g.OrderByDescending(x => x["ts"]?.GetValue<long>() ?? 0).First())
                         .ToArray();
@@ -1378,6 +1457,7 @@ internal static partial class Program
                 string stepFilter = ctx.Request.QueryString["step"] ?? "";
                 int limit = int.TryParse(ctx.Request.QueryString["limit"], out int lim) ? Math.Clamp(lim, 1, ProbeCap) : 1000;
                 var rows = ProbeSamples
+                    .Where(Fresh)
                     .Where(x => stepFilter.Length == 0 || (x["step"]?.GetValue<string>() ?? "") == stepFilter)
                     .ToArray();
                 var slice = rows.Skip(Math.Max(0, rows.Length - limit)).ToArray();
@@ -1401,6 +1481,12 @@ internal static partial class Program
                     row["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     TestSteps[stepName] = row;
                     WriteJson(ctx, 200, new JsonObject { ["ok"] = true, ["steps"] = TestSteps.Count });
+                    return;
+                }
+                if (ctx.Request.QueryString["fresh"] is "1" or "true" or "yes"
+                    && !ProbeFresh(LivePanelMaxAgeSec))
+                {
+                    WriteJson(ctx, 200, new JsonArray());
                     return;
                 }
                 bool warOnly = ctx.Request.QueryString["war"] is "1" or "true" or "yes";
@@ -1645,7 +1731,10 @@ WriteJson(ctx, 200, new JsonObject
             modelFailed = true;
             Interlocked.Increment(ref FailedRequests);
             if (path.StartsWith("/v1/", StringComparison.Ordinal))
+            {
                 Interlocked.Increment(ref ModelFailedRequests);
+                LastModelActivityMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            }
             // Cliente desconectou no meio (opencode abortou: Esc/timeout). Nao e
             // falha da bridge: registra como cancel e nao tenta responder (morto).
             string msg = ex.ToString();
@@ -1666,7 +1755,10 @@ WriteJson(ctx, 200, new JsonObject
             // passthrough sem depender de AddMetrics (que so roda em alguns
             // caminhos e deixava o painel travado).
             if (modelRequest && !modelFailed && ctx.Response.StatusCode < 400)
+            {
                 Interlocked.Increment(ref ModelResponses);
+                LastModelActivityMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            }
         }
     }
 
@@ -2012,6 +2104,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             string? line;
             var sseText = new StringBuilder();
             var rawChatSse = new StringBuilder();
+            JsonNode? sseUsage = null, sseTimings = null;
             int sseChecked = 0;
             bool sseTrip = false;
             while ((line = reader.ReadLine()) != null)
@@ -2029,7 +2122,15 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                     try
                     {
                         string data = line["data:".Length..].Trim();
-                        if (data is not ("[DONE]" or "")) WalkText(JsonNode.Parse(data), sseText);
+                        if (data is not ("[DONE]" or ""))
+                        {
+                            var node = JsonNode.Parse(data);
+                            WalkText(node, sseText);
+                            // Metrica de t/s: o chunk final do llama traz usage/
+                            // timings. Guardar o ultimo visto e somar no fim do SSE.
+                            if (node?["usage"] is JsonNode u) sseUsage = u.DeepClone();
+                            if (node?["timings"] is JsonNode t) sseTimings = t.DeepClone();
+                        }
                     }
                     catch { }
                     if (sseText.Length - sseChecked >= 512)
@@ -2052,6 +2153,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = isChat ? "bypass-chat-stream" : "bypass-completions-stream", ["window"] = AntiRepeatWindow, ["chars"] = sseText.Length, ["late"] = true });
             }
             if (sseText.Length > 0) RecordAgentActivity("assistant", sseText.ToString());
+            // t/s do stream: usa usage/timings do ultimo chunk (geracao real).
+            RecordChatUsage(sseUsage, sseTimings, (DateTime.UtcNow - startedAt).TotalSeconds);
             // Sonda traffic FULL (só com DIAGNOSTICS; chat stream: integros).
             if (Diagnostic)
             {
@@ -2146,6 +2249,13 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 catch { }
             }
             RecordChatActivity(json);
+            // t/s do corpo unico: usage + timings do llama (sem stream).
+            try
+            {
+                var root = JsonNode.Parse(json);
+                RecordChatUsage(root?["usage"], root?["timings"], (DateTime.UtcNow - startedAt).TotalSeconds);
+            }
+            catch { }
             var bytes = new UTF8Encoding(false).GetBytes(json);
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
             // Sonda traffic FULL (só com DIAGNOSTICS; chat sem stream: integros).
@@ -2691,6 +2801,7 @@ using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHea
         {
             Interlocked.Increment(ref FailedRequests);
             Interlocked.Increment(ref ModelFailedRequests);
+            LastModelActivityMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             try
             {
                 using var er = new StreamReader(upstreamResponse.Content.ReadAsStream(), new UTF8Encoding(false));
@@ -3383,6 +3494,11 @@ var shape = new StringBuilder();
             };
             string json = outObj.ToJsonString(SerOpts);
             RecordChatActivity(json);
+            // Este caminho (anti-repeat com abort em stream) escreve o JSON
+            // direto no ctx, sem passar pelo bloco non-stream abaixo que
+            // contabilizava a metrica. Mantem a t/s antiga: wall clock do
+            // request inteiro + tokens de usage do chunk final.
+            RecordChatUsage(outObj["usage"], null, (DateTime.UtcNow - startedAt).TotalSeconds);
 
             // No caminho de abort em stream NAO fazemos retry: o retry pos-hoc
             // re-gerava o turno inteiro e degenerava de novo (medido). Ficamos

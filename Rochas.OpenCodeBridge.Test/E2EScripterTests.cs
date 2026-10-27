@@ -1,28 +1,18 @@
 using System.Text.Json.Nodes;
+using Rochas.OpenCodeBridge.Core.Tools;
 
 namespace Rochas.OpenCodeBridge.Test;
 
 // E2E Scripter (E4B compoe + valida sintaxe) -> Scripter E4B-Q3 (gera companion .md)
 // -> Exec (futuro le companion .md e executa os scripts):
 //   1) E4B-Q4 (role scripter) COMPÕE um script bash que executa a tarefa e o SALVA
-//      (write_file); valida sintaxe com bash -n.
+//      (tool write do Core); valida sintaxe com bash -n.
 //   2) E4B-Q3 (role scripter) LÊ o script e gera o companion .md descrevendo o que
 //      o script faz (para o Exec ler antes de executar).
 //   3) Exec (role exec) — backlog: le o companion .md e EXECUTA os scripts.
 internal static class E2EScripterTests
 {
     static string CpuBridge => Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125";
-
-    static (int Code, string Out) Run(string exe, string cwd, int secs, params string[] args)
-    {
-        var psi = new System.Diagnostics.ProcessStartInfo(exe) { WorkingDirectory = cwd, RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (var a in args) psi.ArgumentList.Add(a);
-        using var p = System.Diagnostics.Process.Start(psi) ?? throw new Exception("sem processo: " + exe);
-        var so = p.StandardOutput.ReadToEndAsync();
-        var se = p.StandardError.ReadToEndAsync();
-        if (!p.WaitForExit(secs * 1000)) { try { p.Kill(true); } catch { } throw new Exception("timeout " + exe); }
-        return (p.ExitCode, so.Result + se.Result);
-    }
 
     public static async Task ScripterGen()
     {
@@ -34,13 +24,9 @@ internal static class E2EScripterTests
         System.IO.Directory.CreateDirectory(ws);
         string scriptPath = System.IO.Path.Combine(ws, "tarefa.sh");
 
-        var tools = new JsonArray
-        {
-            new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write_file", ["description"]="escreve arquivo",
-                ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
-        };
+        var tools = TestContext.Catalog("write");
         var history = new JsonArray(
-            new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, E4B). Componha um script bash que cria um arquivo /tmp/scratchpad/ok.txt com o texto OK e imprime OK. Salve o script em tarefa.sh com shebang #!/usr/bin/env bash. Use write_file. Ao terminar responda apenas SCRIPTER-OK." },
+            new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, E4B). Componha um script bash que cria um arquivo /tmp/scratchpad/ok.txt com o texto OK e imprime OK. Salve o script em tarefa.sh com shebang #!/usr/bin/env bash. Use a tool write. Ao terminar responda apenas SCRIPTER-OK." },
             new JsonObject { ["role"]="user", ["content"]="Componha o script bash." });
         for (int t = 0; t < 8; t++)
         {
@@ -53,21 +39,21 @@ internal static class E2EScripterTests
             history.Add(new JsonObject { ["role"]="assistant", ["content"]=msg["content"]?.GetValue<string>()??"", ["tool_calls"]=echo });
             foreach (var c in calls)
             {
+                string callId = c?["id"]?.GetValue<string>() ?? "";
                 var a = JsonNode.Parse(c?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject();
-                string path = a["path"]?.GetValue<string>() ?? "";
-                string content = a["content"]?.GetValue<string>() ?? "";
-                string full = System.IO.Path.Combine(ws, path);
-                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
-                System.IO.File.WriteAllText(full, content);
-                history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c?["id"]?.GetValue<string>()??"", ["content"]=$"escrito {path}" });
-                Console.WriteLine($"  [scripter] wrote {path} ({content.Length} bytes)");
+                var exec = await TestContext.ExecuteTool("write", a, ws, model);
+                string outText = exec["ok"]?.GetValue<bool>() == true
+                    ? exec["output"]?.GetValue<string>() ?? "ok"
+                    : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
+                history.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = callId, ["content"] = outText });
+                Console.WriteLine($"  [scripter] write -> {outText}");
             }
         }
         TestContext.Check(System.IO.File.Exists(scriptPath), "scripter escreveu tarefa.sh");
         string script = System.IO.File.ReadAllText(scriptPath);
         TestContext.Check(script.Contains("#!"), "script tem shebang");
-        var (code, outp) = Run("bash", ws, 60, "-n", "tarefa.sh");
-        TestContext.Check(code == 0, "bash -n OK: " + outp);
+        var check = ProcessRunner.Run("bash", new[] { "-n", "tarefa.sh" }, ws, 60);
+        TestContext.Check(check.Success, "bash -n OK: " + (check.Success ? check.Output : check.Error));
         Console.WriteLine($"  [scripter:gen] OK (script {script.Length} bytes)");
     }
 
@@ -88,13 +74,9 @@ internal static class E2EScripterTests
         string script = System.IO.File.ReadAllText(System.IO.Path.Combine(ws, "tarefa.sh"));
         string metaPath = System.IO.Path.Combine(ws, "tarefa.md");
 
-        var tools = new JsonArray
-        {
-            new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write_file", ["description"]="escreve arquivo",
-                ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
-        };
+        var tools = TestContext.Catalog("write");
         var history = new JsonArray(
-            new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, E4B). Leia o script bash fornecido e gere um companion .md (tarefa.md) descrevendo o que o script faz, seus passos e como o Exec deve executa-lo. Salve com write_file em tarefa.md. Ao terminar responda apenas COMPANION-OK." },
+            new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, E4B). Leia o script bash fornecido e gere um companion .md (tarefa.md) descrevendo o que o script faz, seus passos e como o Exec deve executa-lo. Salve com a tool write em tarefa.md. Ao terminar responda apenas COMPANION-OK." },
             new JsonObject { ["role"]="user", ["content"]="SCRIPT:\n" + script + "\n\nGere o companion tarefa.md." });
         for (int t = 0; t < 8; t++)
         {
@@ -107,14 +89,14 @@ internal static class E2EScripterTests
             history.Add(new JsonObject { ["role"]="assistant", ["content"]=msg["content"]?.GetValue<string>()??"", ["tool_calls"]=echo });
             foreach (var c in calls)
             {
+                string callId = c?["id"]?.GetValue<string>() ?? "";
                 var a = JsonNode.Parse(c?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject();
-                string path = a["path"]?.GetValue<string>() ?? "";
-                string content = a["content"]?.GetValue<string>() ?? "";
-                string full = System.IO.Path.Combine(ws, path);
-                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
-                System.IO.File.WriteAllText(full, content);
-                history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c?["id"]?.GetValue<string>()??"", ["content"]=$"escrito {path}" });
-                Console.WriteLine($"  [companion] wrote {path} ({content.Length} bytes)");
+                var exec = await TestContext.ExecuteTool("write", a, ws, model);
+                string outText = exec["ok"]?.GetValue<bool>() == true
+                    ? exec["output"]?.GetValue<string>() ?? "ok"
+                    : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
+                history.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = callId, ["content"] = outText });
+                Console.WriteLine($"  [companion] write -> {outText}");
             }
         }
         TestContext.Check(System.IO.File.Exists(metaPath), "companion gerou tarefa.md");
@@ -134,8 +116,8 @@ internal static class E2EScripterTests
         Console.WriteLine(md);
         Console.WriteLine("  [exec:read] --- script ---");
         Console.WriteLine(sh);
-        var (code, outp) = Run("bash", ws, 60, "-n", "tarefa.sh");
-        TestContext.Check(code == 0, "bash -n OK: " + outp);
+        var check = ProcessRunner.Run("bash", new[] { "-n", "tarefa.sh" }, ws, 60);
+        TestContext.Check(check.Success, "bash -n OK: " + (check.Success ? check.Output : check.Error));
         Console.WriteLine("  [exec:read] sintaxe OK (execucao fica para outra fase/backlog)");
         return Task.CompletedTask;
     }

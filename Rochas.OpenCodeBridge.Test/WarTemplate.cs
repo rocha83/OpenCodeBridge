@@ -526,6 +526,9 @@ internal sealed class WarTemplate : CircuitTemplate
                         new[] { "--only", "E-belts-build-direct", "--belts", "roxa" });
                     yield return StepBridge(driver, $"belts-orch-roxa-{mode}", mode,
                         new[] { "--only", "E-belts-direct", "--belts", "roxa" });
+                    // Fim do L2: frontend pipeline (Gen MVC+React, edits reais, Verify).
+                    yield return StepBridge(driver, $"front-{mode}", mode,
+                        new[] { "--only", "E-front" });
                 }
                 break;
 
@@ -536,6 +539,8 @@ internal sealed class WarTemplate : CircuitTemplate
                 {
                     yield return StepBridge(driver, $"mission-tools-{mode}", mode,
                         new[] { "--only", "E-mission-tools" });
+                    yield return StepBridge(driver, $"algo-{mode}", mode,
+                        new[] { "--only", "E-mission-algo" });
                     yield return StepBridge(driver, $"belts-build-final-{mode}", mode,
                         new[] { "--only", "E-belts-build-direct", "--belts", "marrom,preta" });
                     yield return StepBridge(driver, $"belts-orch-final-{mode}", mode,
@@ -1218,7 +1223,7 @@ internal sealed class WarTemplate : CircuitTemplate
                 Console.WriteLine("Level 1 -> units, devpipe, tools-full (com ciclo git/arquivo), belts build/orch azul+verde (opencode primeiro; bridge tails ON depois)");
                 break;
             case 2:
-                Console.WriteLine("Level 2 -> mission-tools, responses-tools, science-gpu, science-cpu(Q3), roxa build/orch (bridge+opencode); webui no L3");
+                Console.WriteLine("Level 2 -> responses-tools, science-gpu, science-cpu(Q3), roxa build/orch (bridge+opencode), frontend pipeline (Gen/Edit Razor/Edit React/Edit CSS/Verify); webui no L3");
                 break;
             case 3:
                 Console.WriteLine("Level 3 -> belts marrom+preta build/orch (bridge+opencode), webui");

@@ -357,7 +357,7 @@ case "$LEVEL" in
     step_webtest
     ;;
   2)
-    STEPS_DESC="mission-tools; responses-tools; science-gpu; science-cpu(Q3); belts roxa build/orch (bridge+opencode); webui movida p/ fim do L3"
+    STEPS_DESC="mission-tools; responses-tools; science-gpu; science-cpu(Q3); belts roxa build/orch (bridge+opencode); frontend Gen/Edit Razor/Edit React/Edit CSS/Verify; webui movida p/ fim do L3"
     if [ "$LIST" = "1" ]; then
       echo "Level 2 -> $STEPS_DESC"; exit 0
     fi
@@ -377,6 +377,8 @@ case "$LEVEL" in
       # Faixa roxa: distribuida aqui; azul/verde ficam no L1 e marrom/preta no L3.
       step_bridge "belts-build-roxa-$mode" --only E-belts-build-direct --belts roxa --mode "$mode"
       step_bridge "belts-orch-roxa-$mode" --only E-belts-direct --belts roxa --mode "$mode"
+      # Frontend pipeline fecha o L2: Gen MVC+Razor/React, edits reais e Verify.
+      step_bridge "front-$mode" --only E-front --mode "$mode"
     done
     # Web UI saiu do L2: roda no fim da fila do L3.
     ;;

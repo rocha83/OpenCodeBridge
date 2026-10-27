@@ -162,3 +162,22 @@ real e gate por último veredito.
 
 **Prova** — `U-circuit-battery-stop` + `U-circuit-battery-resume` no mesmo
 commit do mecanismo (`8671581`).
+
+---
+
+## 10. E2E intermitente: `ResponseEnded` no pool HTTP
+
+**Sintoma** — `E-mission-tools` falhava 500
+`An error occurred while sending the request.` de forma intermitente.
+
+**Causa** — o log da bridge mostra
+`HttpIOException: The response ended prematurely. (ResponseEnded)` em
+`HttpConnection.SendAsync`: conexão keep-alive reutilizada depois que o
+upstream/bridge anterior fechou.
+
+**Correção** — cada step E2E reinicia a bridge alvo e recria o `HttpClient` do
+runner antes da primeira chamada, zerando contadores e o pool HTTP dos dois
+lados.
+
+**Prova** — `sudo systemctl restart bridge-gpu` + `/api/status`
+(`main_harness=true`); o 500 não reaparece no step seguinte.

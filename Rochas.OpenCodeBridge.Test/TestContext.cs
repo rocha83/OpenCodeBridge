@@ -40,7 +40,8 @@ internal static class TestContext
     public static string? Jwt;
     // 20 min: os E2E enterprise (crud-*/garnet/worker) geram muito e, sob carga da suite
     // inteira, passavam de 600s (visto 16/10); isolados ficam em ~110-215s.
-    public static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(120) };
+    public static HttpClient Http = NewHttp();
+    static HttpClient NewHttp() => new() { Timeout = TimeSpan.FromMinutes(120) };
 
     // Modelo servido pela bridge alvo (gemma|coder): expectativas por perfil.
     public static string ServedModel = "";
@@ -95,6 +96,69 @@ internal static class TestContext
 
     public static void Skip(string reason) => throw new SkipException(reason);
 
+    /// <summary>Reinicia a bridge alvo antes de cada step E2E e espera o status.</summary>
+    public static void RestartBridge()
+    {
+        string svc = BridgeService();
+        var psi = new ProcessStartInfo("sudo", $"-n systemctl restart {svc}")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        using var p = Process.Start(psi) ?? throw new Exception($"nao consegui executar sudo para {svc}");
+        string so = p.StandardOutput.ReadToEnd();
+        string se = p.StandardError.ReadToEnd();
+        if (!p.WaitForExit(30000) || p.ExitCode != 0)
+            throw new Exception($"restart {svc} falhou (exit={p.ExitCode}): {(se + so).Trim()}");
+        // O restart derruba as conexoes keep-alive dos dois lados: recria o
+        // HttpClient do runner para o primeiro step nao pegar conexao morta.
+        ResetHttp();
+        using var probeHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        string? cred = Jwt ?? ApiKey;
+        if (!string.IsNullOrWhiteSpace(cred))
+            probeHttp.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
+        var sw = Stopwatch.StartNew();
+        Exception? last = null;
+        while (sw.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            try
+            {
+                using var res = probeHttp.GetAsync(Bridge + "/api/status").GetAwaiter().GetResult();
+                if (res.IsSuccessStatusCode)
+                {
+                    var st = JsonNode.Parse(res.Content.ReadAsStringAsync().GetAwaiter().GetResult())?.AsObject();
+                    bool harness = st?["main_harness"]?.GetValue<bool>() ?? false;
+                    if (Mode != "bridge" || harness) return;
+                    last = new Exception("main_harness=false apos restart");
+                }
+            }
+            catch (Exception ex) { last = ex; }
+            Thread.Sleep(500);
+        }
+        throw new Exception($"bridge {svc} nao respondeu com status valido: {last?.Message}");
+    }
+
+    static string BridgeService()
+    {
+        int port = new Uri(Bridge).Port;
+        return port switch
+        {
+            4125 => "bridge-gpu2",
+            4126 => "bridge-cpu-forced",
+            _ => "bridge-gpu"
+        };
+    }
+
+    /// <summary>Recria o HttpClient do runner preservando a credencial.</summary>
+    public static void ResetHttp()
+    {
+        Http = NewHttp();
+        string? cred = Jwt ?? ApiKey;
+        if (!string.IsNullOrWhiteSpace(cred))
+            Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
+    }
+
     public static void Run(string name, Func<Task> fn)
     {
         if (Only.Length > 0 && !name.Contains(Only, StringComparison.OrdinalIgnoreCase))
@@ -107,7 +171,17 @@ internal static class TestContext
         // alimenta o painel (evita 100+ U-* no dicionario de steps).
         bool panelStep = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAR_STEP"))
                          && name.StartsWith("E-", StringComparison.Ordinal);
-        if (panelStep) PublishStep(name, "RUN", 0).GetAwaiter().GetResult();
+        // Regra de bateria: cada step E2E comeca com a bridge reiniciada.
+        if (panelStep) RestartBridge();
+        // Run isolado tambem alimenta a sonda de 5s (tps/VRAM/GPU/tools). No WAR
+        // o driver e' o dono da sonda; aqui ela morre junto com o step.
+        StepProbe? probe = null;
+        if (panelStep)
+        {
+            string probeRoot = Path.Combine(Path.GetTempPath(), "opencodebridge-isolated", "run-" + Environment.ProcessId);
+            probe = StepProbe.Start(probeRoot, name, Mode, Bridge, ApiKey, null);
+            PublishStep(name, "RUN", 0).GetAwaiter().GetResult();
+        }
         try
         {
             fn().GetAwaiter().GetResult();
@@ -128,6 +202,10 @@ internal static class TestContext
             Console.WriteLine($"FAIL {name}: {ex.Message}");
             if (Environment.GetEnvironmentVariable("E2E_STACK") == "1") Console.WriteLine(ex.ToString());
             if (panelStep) PublishStep(name, "FAIL", (DateTime.UtcNow - t0).TotalSeconds, ex.Message).GetAwaiter().GetResult();
+        }
+        finally
+        {
+            probe?.Dispose();
         }
     }
 
@@ -490,63 +568,6 @@ internal static class TestContext
 
     /// <summary>Catálogo completo de tools de sistema (formato Responses).</summary>
     /// <returns>Array de tools.</returns>
-    public static JsonArray ToolCatalog() => new()
-    {
-        Fn("shell", "Executa um comando de console. Um comando por chamada; sem heredoc.", new JsonObject
-        {
-            ["command"] = new JsonObject { ["type"] = "string" }
-        }, "command"),
-        Fn("write", "Cria/sobrescreve um arquivo de texto.", new JsonObject
-        {
-            ["path"] = new JsonObject { ["type"] = "string" },
-            ["content"] = new JsonObject { ["type"] = "string" }
-        }, "path", "content"),
-        Fn("read", "Le um arquivo de texto.", new JsonObject
-        {
-            ["path"] = new JsonObject { ["type"] = "string" }
-        }, "path"),
-        Fn("edit", "Substitui um trecho exato de um arquivo.", new JsonObject
-        {
-            ["path"] = new JsonObject { ["type"] = "string" },
-            ["oldString"] = new JsonObject { ["type"] = "string" },
-            ["newString"] = new JsonObject { ["type"] = "string" }
-        }, "path", "oldString", "newString"),
-        Fn("glob", "Lista arquivos por padrao. Nao aceita alternancia com |.", new JsonObject
-        {
-            ["pattern"] = new JsonObject { ["type"] = "string" }
-        }, "pattern"),
-        Fn("grep", "Busca expressao regular no conteudo dos arquivos.", new JsonObject
-        {
-            ["pattern"] = new JsonObject { ["type"] = "string" }
-        }, "pattern"),
-        Fn("git", "Executa um comando git no repositorio. Leitura para todos; init/add/commit/config so para build/exec.", new JsonObject
-        {
-            ["command"] = new JsonObject { ["type"] = "string" },
-            ["path"] = new JsonObject { ["type"] = "string" }
-        }, "command")
-    };
-
-    static JsonObject Fn(string name, string description, JsonObject props, params string[] required)
-    {
-        var req = new JsonArray();
-        foreach (var r in required) req.Add(r);
-        return new JsonObject
-        {
-            ["type"] = "function",
-            ["function"] = new JsonObject
-            {
-                ["name"] = name,
-                ["description"] = description,
-                ["parameters"] = new JsonObject
-                {
-                    ["type"] = "object",
-                    ["properties"] = props,
-                    ["required"] = req
-                }
-            }
-        };
-    }
-
     /// <summary>
     /// Executa um enunciado agentico no modo corrente e devolve o texto final +
     /// histórico das tools executadas.
@@ -569,6 +590,38 @@ internal static class TestContext
         catch (Exception ex) { Console.WriteLine($"  [enunciado] publish falhou: {ex.Message}"); }
     }
 
+    /// <summary>
+    /// Executa uma tool pela bridge (consumidor unico dos testes). O catalogo,
+    /// o schema e os handlers continuam no Core; aqui so' vai o HTTP.
+    /// </summary>
+    /// <summary>
+    /// Filtro do catálogo canônico do Core para o cenário. Não cria schema:
+    /// apenas escolhe quais tools o modelo pode ver neste teste.
+    /// </summary>
+    public static JsonArray Catalog(params string[] names)
+    {
+        var arr = new JsonArray();
+        foreach (var t in global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat())
+        {
+            string name = t?["function"]?["name"]?.GetValue<string>() ?? "";
+            if (names.Length == 0 || names.Contains(name, StringComparer.Ordinal)) arr.Add(t!.DeepClone());
+        }
+        return arr;
+    }
+
+    public static async Task<JsonObject> ExecuteTool(string name, JsonNode? arguments, string? cwd = null, string? model = null)
+    {
+        var body = new JsonObject
+        {
+            ["name"] = name,
+            ["arguments"] = arguments?.DeepClone() ?? new JsonObject(),
+            ["model"] = string.IsNullOrWhiteSpace(model) ? SuiteModel : model
+        };
+        if (!string.IsNullOrWhiteSpace(cwd)) body["workspace"] = cwd;
+        try { return await PostObj(Bridge + "/api/tools/execute", body); }
+        catch (Exception ex) { return new JsonObject { ["ok"] = false, ["error"] = ex.Message }; }
+    }
+
     public static async Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps, string? cwd)
     {
         string enunciadoStep = Environment.GetEnvironmentVariable("WAR_STEP")
@@ -584,22 +637,9 @@ internal static class TestContext
         bool nudged = false;
         for (int step = 0; step < max; step++)
         {
-            // /v1/responses espera a forma Responses ({type,name,description,parameters});
-            // ToolCatalog() e chat-style ({type,function:{...}}). Sem esta conversao a
-            // bridge nao reconhece a call de volta e o turno volta vazio (2 tok).
-            var respTools = new JsonArray();
-            foreach (var t in ToolCatalog())
-            {
-                if (t?["function"] is JsonObject fnObj)
-                    respTools.Add(new JsonObject
-                    {
-                        ["type"] = "function",
-                        ["name"] = fnObj["name"]?.DeepClone(),
-                        ["description"] = fnObj["description"]?.DeepClone(),
-                        ["parameters"] = fnObj["parameters"]?.DeepClone()
-                    });
-                else if (t is not null) respTools.Add(t.DeepClone());
-            }
+            // Forma Responses vem do Core; o teste nao reescreve schema nem faz
+            // conversao manual de chat para Responses.
+            var respTools = global::Rochas.OpenCodeBridge.Core.ToolCatalog.Responses();
             var res = await PostObj(Bridge + "/v1/responses", new JsonObject
             {
                 ["model"] = SuiteModel,
@@ -634,22 +674,10 @@ internal static class TestContext
                             ["type"] = "function_call", ["id"] = callId, ["call_id"] = callId,
                             ["name"] = name, ["arguments"] = args
                         });
-                        JsonObject exec;
                         var callSw = Stopwatch.StartNew();
-                        try
-                        {
-                            var execBody = new JsonObject
-                            {
-                                ["name"] = name,
-                                ["arguments"] = JsonNode.Parse(args) ?? new JsonObject(),
-                                // Role do agente: a tool git libera escrita só p/ build/exec.
-                                ["model"] = SuiteModel
-                            };
-                            // Harness resolve o diretorio da tarefa; o enunciado nao carrega path.
-                            if (!string.IsNullOrWhiteSpace(cwd)) execBody["workspace"] = cwd;
-                            exec = await PostObj(Bridge + "/api/tools/execute", execBody);
-                        }
-                        catch (Exception ex) { exec = new JsonObject { ["ok"] = false, ["error"] = ex.Message }; }
+                        JsonNode? callArgsNode = null;
+                        try { callArgsNode = JsonNode.Parse(args); } catch { }
+                        JsonObject exec = await ExecuteTool(name, callArgsNode, cwd);
                         callSw.Stop();
                         string outText = exec["ok"]?.GetValue<bool>() == true
                             ? (exec["output"]?.GetValue<string>() ?? "")

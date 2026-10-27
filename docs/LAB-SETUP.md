@@ -930,6 +930,21 @@ drawio -x -f png --size page -s 2.5 \
 
 ## 5. Build, testes e pipeline
 
+### Regra: reinício de bateria reinicia a bridge
+
+**Toda bateria E2E, em ambos os modos (`bridge` e `opencode`), começa com o reinício da bridge alvo.**
+
+```bash
+sudo systemctl restart bridge-gpu        # :4124
+sudo systemctl restart bridge-gpu2       # :4125
+sudo systemctl restart bridge-cpu-forced # :4126
+```
+
+Confirme `/api/status` antes do primeiro step; no `--mode bridge`, exija
+`main_harness=true`. Motivo: zera contadores/`ProbeSamples` e renova o pool
+HTTP dos dois lados; sem isso o segundo teste herda métricas e conexões do
+primeiro. Se o restart ou o status falhar, a bateria para com erro claro.
+
 ```bash
 dotnet build Rochas.OpenCodeBridge.slnx -c Release
 

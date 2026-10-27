@@ -41,13 +41,7 @@
           "source": "url",
           "url": "http://127.0.0.1:4124/api/status",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "table",
@@ -62,7 +56,8 @@
               "text": "main_harness",
               "type": "string"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -100,15 +95,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/enunciado/messages",
+          "url": "http://127.0.0.1:4124/api/test/enunciado/messages?fresh=1",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "table",
@@ -128,7 +117,8 @@
               "text": "mensagem",
               "type": "string"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "options": {
@@ -198,15 +188,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/activity?limit=6",
+          "url": "http://127.0.0.1:4124/api/test/activity?limit=6&fresh=1",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "table",
@@ -226,7 +210,8 @@
               "text": "resposta",
               "type": "string"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "options": {
@@ -296,15 +281,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -313,7 +292,8 @@
               "text": "mensagens",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -336,15 +316,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -353,7 +327,8 @@
               "text": "tps",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -376,15 +351,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -393,7 +362,8 @@
               "text": "arquivos",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "options": {
@@ -436,15 +406,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -453,7 +417,8 @@
               "text": "falhas",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -476,15 +441,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -498,7 +457,8 @@
               "text": "bridge",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -521,15 +481,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -543,7 +497,8 @@
               "text": "tools",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -566,15 +521,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe/latest",
+          "url": "http://127.0.0.1:4124/api/test/probe/latest?max_age_s=60",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "table",
@@ -594,7 +543,8 @@
               "text": "mensagens",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "options": {
@@ -640,15 +590,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/steps?war=1",
+          "url": "http://127.0.0.1:4124/api/test/steps?war=1&fresh=1",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "table",
@@ -673,7 +617,8 @@
               "text": "modo",
               "type": "string"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "options": {
@@ -778,15 +723,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
+          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000&max_age_s=60",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "timeseries",
@@ -806,7 +745,8 @@
               "text": "t/s total",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "fieldConfig": {
@@ -878,15 +818,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
+          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000&max_age_s=60",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "timeseries",
@@ -911,7 +845,8 @@
               "text": "GPU %",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "fieldConfig": {
@@ -1001,13 +936,7 @@
           "source": "url",
           "url": "http://127.0.0.1:4124/api/status",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -1071,7 +1000,8 @@
               "text": "uptime_s",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -1096,13 +1026,7 @@
           "source": "url",
           "url": "http://127.0.0.1:4124/api/status",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -1141,7 +1065,8 @@
               "text": "tail_scope",
               "type": "string"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -1164,15 +1089,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -1181,7 +1100,8 @@
               "text": "respostas",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     }

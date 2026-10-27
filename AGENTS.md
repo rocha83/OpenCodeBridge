@@ -88,6 +88,33 @@
 - PROD (`/usr/src/opencodebridge`) só faz pull + rebuild + restart (deploy).
 - Em conflito de merge, a prioridade é do persistente (`checkout --ours <arquivo>`).
 
+## Regra: Core é a fonte única; consumidor não reimplementa
+
+Vale para Web, suíte de testes, OpenCode, CLI e qualquer consumidor do Core.
+**Não se implementa no consumidor uma lógica que já pertence ao Core.**
+Consumidor chama `Rochas.OpenCodeBridge.Core` ou a API da bridge; não cria
+uma segunda versão da mesma responsabilidade.
+
+- **No Core:** catálogo/schema de tools, help curado, execução de tools,
+  permissão/role, `WorkspaceGuard`, process runner, preflight de stack,
+  MainHarness/tails, sanitização/coerção, sampling, métricas e parsing de
+  protocolo.
+- **No consumidor:** só orquestração do cenário, fixture, transporte HTTP,
+  assertivas e evidência. Teste pode montar o workspace e o enunciado; não
+  pode criar `ToolCatalog`, `Tools()`, `Exec()`, `LocalExec()`, `Shell()` de
+  tool, conversão manual chat→Responses nem schema paralelo.
+- **Nome/args de tool são contrato do Core.** Se o teste usa `read_file`,
+  `write_file`, `edit_file` ou `list_dir`, isso é bug: o catálogo canônico é
+  `read`, `write`, `edit`, `glob` (e `git` quando exposto).
+- **Divergência é bug de Core, não do teste.** Corrija a fonte única e todos
+  os consumidores passam a usar a mesma definição. Não “adapte” o teste.
+- **Proibido:** `TestContext.ToolCatalog`, `E2EMissionTests.Tools/Exec`,
+  `E2EFrontPipeTests.FrontTools/LocalExec` e equivalentes. O caminho correto
+  é `Core.ToolCatalog.Chat/Responses` + `POST /api/tools/execute`.
+- **Exceção legítima:** lógica exclusiva do cenário de teste (gerar
+  enunciado, preparar fixture, controlar serviço, checar saída) não é Core;
+  ainda assim, não duplique uma responsabilidade que o Core já tem.
+
 ## Regra: blindagem em C# — teste + evidência, nunca script decorativo
 Vale para gate, preflight, driver, parsing de veredito e qualquer verificação que
 decida PASS/FAIL. O padrão do projeto é C# com teste e evidência; bash é
@@ -124,4 +151,13 @@ conveniência manual, nunca fonte de verdade.
   codifica hints por role.
 - Evidência mínima: evento `main-harness` com `path=chat`, `role` e `tools=N`;
   `U-main-harness` verde.
+
+## Regra: reinício de bateria reinicia a bridge
+- Toda bateria E2E, em ambos os modos (`bridge` e `opencode`), começa com o
+  restart da bridge alvo: `sudo systemctl restart bridge-gpu` (`:4124`),
+  `bridge-gpu2` (`:4125`) ou `bridge-cpu-forced` (`:4126`).
+- Validar `/api/status` antes do primeiro step; em `--mode bridge`, exigir
+  `main_harness=true`. Falhar rápido se o restart ou o status não subir.
+- Motivo: contadores e `ProbeSamples` começam em zero e o pool HTTP dos dois
+  lados é renovado.
 

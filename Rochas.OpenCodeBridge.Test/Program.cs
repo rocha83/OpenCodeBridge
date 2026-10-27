@@ -262,6 +262,7 @@ internal static class Program
         if (TestContext.RunCpu) TestContext.Run("E-science-cpu", E2EScienceTests.ScienceCpu);
         else Console.WriteLine("[test] skip E-science-cpu (--skip-cpu)");
         TestContext.Run("E-mission-tools", E2EMissionTests.MissionTools);
+        TestContext.Run("E-mission-algo", E2EMissionTests.MissionAlgo);
             // Sonda direta do parser hermes no vLLM: so faz sentido no parser nativo.
             if (!TestContext.ServedIsCoder) TestContext.Run("E-vllm-tool-hermes", E2EToolTests.VllmToolHermes);
             else Console.WriteLine("[test] skip E-vllm-tool-hermes (perfil coder)");
@@ -299,6 +300,8 @@ internal static class Program
             // pelos enunciados e a suite confere os estilos medidos no navegador.
             TestContext.Run("E-front-gen", E2EFrontPipeTests.Gen);
             TestContext.Run("E-front-edit", E2EFrontPipeTests.Edit);
+            TestContext.Run("E-front-edit-razor", E2EFrontPipeTests.EditRazor);
+            TestContext.Run("E-front-edit-react", E2EFrontPipeTests.EditReact);
             TestContext.Run("E-front-verify", E2EFrontPipeTests.Verify);
             // Scripter 12B compoe script bash (+ valida sintaxe); Scripter E2B gera companion .md; Exec (backlog) le companion e executa.
             TestContext.Run("E-scripter-gen", E2EScripterTests.ScripterGen);

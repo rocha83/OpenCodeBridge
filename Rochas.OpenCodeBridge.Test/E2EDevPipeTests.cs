@@ -8,29 +8,7 @@ internal static class E2EDevPipeTests
 {
     static string Model() => TestContext.SuiteModel;
 
-    static JsonObject Tool(string name, string desc, JsonObject props, params string[] required)
-    {
-        var req = new JsonArray();
-        foreach (var r in required) req.Add(r);
-        return new JsonObject
-        {
-            ["type"] = "function",
-            ["function"] = new JsonObject
-            {
-                ["name"] = name, ["description"] = desc,
-                ["parameters"] = new JsonObject { ["type"] = "object", ["properties"] = props, ["required"] = req }
-            }
-        };
-    }
-
-    static JsonObject Str(string desc = "") => new() { ["type"] = "string", ["description"] = desc };
-
-    static JsonArray DevTools() => new()
-    {
-        Tool("glob", "Lista arquivos por padrão", new JsonObject { ["pattern"] = Str("padrão glob") }, "pattern"),
-        Tool("read", "Lê arquivo", new JsonObject { ["path"] = Str("caminho") }, "path"),
-        Tool("shell", "Executa comando único", new JsonObject { ["command"] = Str("comando") }, "command"),
-    };
+    static JsonArray DevTools() => TestContext.Catalog("glob", "read", "shell");
 
     // Turno 1: modelo deve chamar glob no fixture; turno 2: alimenta glob e
     // exige read; turno 3: alimenta conteúdo e exige o marcador no final.
@@ -206,8 +184,8 @@ internal static class E2EDevPipeTests
             ["tool_choice"] = "required",
             ["messages"] = new JsonArray(
                 new JsonObject { ["role"] = "system", ["content"] = "Voce e um desenvolvedor senior." },
-                VisionMsg("Identifique o texto da imagem via visao e CHAME a tool read_file com file_path /tmp/vlimg/placa.png.", img64)),
-            ["tools"] = new JsonArray(Tool("read_file", "Le arquivo", new JsonObject { ["file_path"] = Str("caminho") }, "file_path")),
+                VisionMsg("Identifique o texto da imagem via visao e CHAME a tool read com path /tmp/vlimg/placa.png.", img64)),
+            ["tools"] = TestContext.Catalog("read"),
         };
         var r = await TestContext.PostObj(bridge + "/v1/chat/completions", body);
         string finish = r["choices"]?[0]?["finish_reason"]?.GetValue<string>() ?? "";
@@ -222,7 +200,7 @@ internal static class E2EDevPipeTests
         // identificador copiado do prompt (placa.png -> placa.ng/_ng/.PNG/
         // .jpg/.txt, deterministico). A infra roda DRY 0.0 (LAB-SETUP §10) e o
         // path exato e o aceite; o retry x3 absorve variacao residual do VL.
-        bool nameOk = name is "read" or "read_file";
+        bool nameOk = name == "read";
         bool exact = ArgsMatchPath(args, "/tmp/vlimg/placa.png");
         for (int attempt = 1; attempt <= 3 && !(nameOk && exact); attempt++)
         {
@@ -232,7 +210,7 @@ internal static class E2EDevPipeTests
             name = retryFn?["name"]?.GetValue<string>() ?? "";
             args = retryFn?["arguments"]?.GetValue<string>() ?? "";
             Console.WriteLine($"[devpipe] vision-tool retry {attempt}: name={name} args={args}");
-            nameOk = name is "read" or "read_file";
+            nameOk = name == "read";
             exact = ArgsMatchPath(args, "/tmp/vlimg/placa.png");
         }
 

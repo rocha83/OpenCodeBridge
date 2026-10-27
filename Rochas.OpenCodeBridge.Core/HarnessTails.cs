@@ -28,10 +28,22 @@ public static class HarnessTails
         "Independentes no mesmo turno; dependentes esperam. Nao repita a mesma chamada/caminho; em loop, mude a abordagem. " +
         "`execute` nao e sandbox: a bridge desembrulha tools.X; bloqueio de role nao se contorna por shell. " +
         "DOTNET: com mais de um projeto na pasta, `--project <pasta>` e ambiguo: aponte o ARQUIVO (`<dir>/<nome>.fsproj` ou `.csproj`). " +
-        "F#: o entrypoint e `module Program` em Program.fs; o assembly e o nome do .fsproj. " +
-        "F# SINTAXE: use `System.Math.Sin/Sqrt/PI` qualificado; aritmetica float com `+ - * /`; potencia com `** 2.0`; formate com `printfn \"%f\"` ou `\"%.6f\"`; listas usam `List.sum`, `List.map`, `List.fold` (qualificadas); acumulador mutavel e `let mutable x = 0.0` com `x <- x + ...`. " +
         "PROJETO EXISTENTE: edite os arquivos do projeto; `dotnet new` so em pasta vazia (segundo .csproj/.fsproj na mesma pasta quebra `dotnet run --project <pasta>`). " +
         "SUBAGENTE: o schema de cada tool viaja no array `tools` do request; preserve o array e o system do role ao delegar; nao troque schema por prosa.";
+
+    /// <summary>
+    /// Mini tutorial F#: injetado apenas na fase F# (nao entra no DefaultTools,
+    /// para nao impor sintaxe F# em requests C#/Orch).
+    /// </summary>
+    public const string FsMini =
+        "F# MINI (sintaxe; os exemplos sao genericos, nao o algoritmo do pedido): " +
+        "arquivo: 1a linha `module Program`; funcoes `let nome (x: float) = ...`. " +
+        "acumulador: `let mutable acc = 0.0` e `acc <- acc + x`; loop `for i in 1 .. n-1 do ...` com `float i`. " +
+        "listas: `List.fold (fun acc x -> acc + x) 0.0 xs`; `List.sum xs`; `List.map (fun x -> x * x) xs`. " +
+        "math: `System.Math.Sin x`; `System.Math.Sqrt x`; `System.Math.PI`; potencia `x ** 2.0`. " +
+        "tipos: `%` so em int; converta com `float n` e `int x`. " +
+        "saida: `printfn \"%.6f\" valor`. " +
+        "tools: `write` grava o arquivo inteiro; `shell` roda `dotnet run --project <dir>/<nome>.fsproj`; apos erro, `read`/`edit` so na linha indicada.";
 
     /// <summary>
     /// Compõe o system prompt com as caudas. Com harness desligado devolve o

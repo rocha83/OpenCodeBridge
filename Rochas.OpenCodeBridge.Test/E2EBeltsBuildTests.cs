@@ -37,10 +37,7 @@ internal static class E2EBeltsBuildTests
         if (!model.Contains("build")) model = model.Replace("-orch", "-build").Replace("-plan", "-build");
         if (!model.Contains("build")) model += "-build";
         Log($"[belts-build:direct] modelo {model} (bridge {TestContext.Bridge})");
-        var tools = new JsonArray
-        {
-            new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write", ["description"]="escreve arquivo em disco", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
-        };
+        var tools = TestContext.Catalog("write");
         int pass = 0, fail = 0;
         var keysEnv = string.IsNullOrWhiteSpace(TestContext.BeltsFilter) ? Environment.GetEnvironmentVariable("BELTS_KEYS") : TestContext.BeltsFilter;
         var beltsToRun = string.IsNullOrWhiteSpace(keysEnv)
@@ -117,19 +114,21 @@ internal static class E2EBeltsBuildTests
                     history.Add(new JsonObject { ["role"]="assistant", ["content"]=content, ["tool_calls"]=echo });
                     foreach (var (c, a) in parsed)
                     {
-                        string path = a["path"]?.GetValue<string>() ?? "";
                         string ctt = a["content"]?.GetValue<string>() ?? "";
-                        if (string.IsNullOrWhiteSpace(path)) path = $"artefato_{filesCreated}.txt";
-                        string full = System.IO.Path.Combine(ws, path);
-                        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
-                        System.IO.File.WriteAllText(full, ctt);
-                        filesCreated++;
-                        // Metrica de substancia: o artefato real e o conteudo
-                        // gravado em disco, nao o texto do assistant (que pode
-                        // ser so um resumo curto). Sem isto, um belt com 6
-                        // arquivos de ~4 KB era reprovado por chars=326.
-                        totalChars += ctt.Length;
-                        history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c["id"]?.GetValue<string>()??"", ["content"]=$"criado {path} ({ctt.Length} chars)" });
+                        var exec = await TestContext.ExecuteTool("write", a, ws, model);
+                        bool wrote = exec["ok"]?.GetValue<bool>() == true;
+                        string outText = wrote
+                            ? exec["output"]?.GetValue<string>() ?? "ok"
+                            : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
+                        if (wrote)
+                        {
+                            filesCreated++;
+                            // Metrica de substancia: o artefato real e o conteudo
+                            // gravado em disco, nao o texto do assistant (que pode
+                            // ser so um resumo curto).
+                            totalChars += ctt.Length;
+                        }
+                        history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c["id"]?.GetValue<string>()??"", ["content"]=outText });
                     }
                     Log($"  [belt-build:{key}] turno {turn}: {parsed.Count} write(s), total arquivos={filesCreated}");
                     if (filesCreated == lastFiles) stall++; else stall = 0;
@@ -139,10 +138,7 @@ internal static class E2EBeltsBuildTests
                 // Fase de revisao: E4B le os arquivos criados e revisa.
                 if (filesCreated >= 3)
                 {
-                    var readTools = new JsonArray
-                    {
-                        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="read", ["description"]="le arquivo", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path") } } }
-                    };
+                    var readTools = TestContext.Catalog("read");
                     history.Add(new JsonObject { ["role"]="user", ["content"]="Revise os arquivos criados (leia-os com read) e responda REVIEW-OK com um resumo de 1 linha por arquivo." });
                     for (int turn = 0; turn < 4; turn++)
                     {
@@ -159,10 +155,11 @@ internal static class E2EBeltsBuildTests
                         foreach (var c in calls2)
                         {
                             var a = JsonNode.Parse(c?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject();
-                            string path = a["path"]?.GetValue<string>() ?? "";
-                            string full = System.IO.Path.Combine(ws, path);
-                            string fileContent = System.IO.File.Exists(full) ? System.IO.File.ReadAllText(full) : "(nao existe)";
-                            history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c?["id"]?.GetValue<string>()??"", ["content"]=fileContent[..Math.Min(500,fileContent.Length)] });
+                            var exec = await TestContext.ExecuteTool("read", a, ws, model);
+                            string outText = exec["ok"]?.GetValue<bool>() == true
+                                ? exec["output"]?.GetValue<string>() ?? ""
+                                : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
+                            history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c?["id"]?.GetValue<string>()??"", ["content"]=outText[..Math.Min(500, outText.Length)] });
                         }
                     }
                 }
