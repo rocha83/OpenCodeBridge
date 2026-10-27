@@ -3,7 +3,7 @@
 #
 # A bridge guarda as amostras da sonda apenas em memoria; um restart zera o
 # ring e o painel "Throughput por step" do Grafana fica vazio ate o proximo
-# StepProbe. Este helper roda como ExecStartPost e repovoa o ring com os
+# StepProbe. Este helper e manual (botao Sonda t/s) e repovoa o ring com os
 # eventos `response` que ja estao no log, sem reiniciar nada e sem gravar
 # corpos de requisicao/resposta.
 #
@@ -24,7 +24,7 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 BASE="http://127.0.0.1:${PORT}"
 
-# ExecStartPost roda logo apos o processo; espera o listener responder.
+# Chamado manualmente apos o restart, espera o listener responder.
 for _ in $(seq 1 30); do
   if curl -fsS -m 2 -H "Authorization: Bearer ${KEY}" "${BASE}/api/status" >/dev/null 2>&1; then
     break

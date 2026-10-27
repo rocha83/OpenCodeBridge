@@ -175,6 +175,8 @@ segmenta → Scripter → Exec); o runner só passou a executá-las **nesta orde
 > **`export PORT=<porta livre>`** antes dos blocos abaixo. A bridge é **de bancada**:
 > descartável, criada e morta na execução. Ela **não** entra em unit, firewall, `opencode.json`
 > nem em agente — o ambiente só conhece os serviços predefinidos (retrato em `LAB-SETUP.md` §12).
+> A bridge de bancada pode usar `--main-harness 1` para testar o modo
+> bridge e a Web UI; as units OpenCode `:4124/:4125/:4126` ficam em `0`.
 
 ```bash
 # bridge própria (para testar o build do repo, não o binário de produção)

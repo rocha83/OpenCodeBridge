@@ -68,6 +68,32 @@ cat > "/usr/local/bin/svc-common.sh" <<'__FIX_ICONES_EOF_7F3A__'
 SVC_DEF_USER="mint"
 SVC_DEF_PASS="guest@123"
 SVC_DIAG="desligado"   # ligado|desligado: default dos icones de bridge
+SVC_PROBE="desligado"   # ligado|desligado: botao manual da sonda de t/s
+
+# Defaults do tail harness lidos do appsettings da bridge. A CLI da unit
+# continua vencendo; o form so escolhe se as tails entram ou nao.
+bridge_appsettings_path() {
+  local f="${BRIDGE_APPSETTINGS:-/usr/src/opencodebridge/Rochas.OpenCodeBridge/appsettings.json}"
+  [ -f "$f" ] || f="/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0/appsettings.json"
+  printf '%s' "$f"
+}
+bridge_cfg_raw() {
+  local key="$1" f
+  f=$(bridge_appsettings_path)
+  [ -f "$f" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  jq -r --arg k "$key" '.[$k] // empty' "$f" 2>/dev/null
+}
+SVC_TAIL_SCOPE="$(bridge_cfg_raw tailScope)"
+case "$SVC_TAIL_SCOPE" in managed|all|off) ;; *) SVC_TAIL_SCOPE="all" ;; esac
+SVC_TAILS="$(bridge_cfg_raw harnessTails)"
+case "$SVC_TAILS" in
+  true|True|1) SVC_TAILS="ligado" ;;
+  false|False|0) SVC_TAILS="desligado" ;;
+  *) SVC_TAILS="ligado" ;;
+esac
+[ "$SVC_TAIL_SCOPE" = "off" ] && SVC_TAILS="desligado"
+
 # Firewall helper (UFW): fw_allow / ask_fw_or_cancel / fw_url_port
 [ -f /usr/local/bin/svc-firewall.sh ] && source /usr/local/bin/svc-firewall.sh
 
@@ -75,6 +101,19 @@ SVC_DIAG="desligado"   # ligado|desligado: default dos icones de bridge
 # SVC_DIAG=ligado -> metrics (sem corpos req/res); desligado -> nada.
 bridge_diag_flags() {
   [ "${SVC_DIAG:-desligado}" = "ligado" ] && printf '%s' '--diagnostic 1 --diagnostic-level metrics'
+}
+
+# Flags de tail harness. SVC_TAILS=desligado -> desliga as duas tails;
+# SVC_TAIL_SCOPE vem do appsettings (managed|all|off).
+bridge_tail_flags() {
+  local scope="${SVC_TAIL_SCOPE:-all}"
+  case "$scope" in managed|all|off) ;; *) scope="all" ;; esac
+  if [ "${SVC_TAILS:-ligado}" = "ligado" ]; then
+    [ "$scope" = "off" ] && scope="all"
+    printf '%s' "--harness-tails 1 --tail-scope $scope"
+  else
+    printf '%s' "--harness-tails 0 --tail-scope off"
+  fi
 }
 
 ask_port_user_pass() {
@@ -238,6 +277,9 @@ ask_bridge_ports() {
 # bridge (GPU, CPU e a 3a instancia CPU ngl=0).
 ask_bridge_config() {
   local DEF_PORT="$1"; local DEF_UPSTREAM="$2"; local DEF_MODEL="$3"; local DEF_CTX="$4"; local TITLE="$5"
+  local DEF_TAILS="${SVC_TAILS:-ligado}"
+  local TAIL_VALUES="ligado|desligado"
+  [ "$DEF_TAILS" = "desligado" ] && TAIL_VALUES="desligado|ligado"
   local OUT
   OUT=$(zenity --forms --title="$TITLE" --text="Configuracao da bridge $TITLE" \
     --add-entry="Porta bridge (padrao: $DEF_PORT)" \
@@ -249,7 +291,11 @@ ask_bridge_config() {
     --add-password="Senha bridge (padrao: $SVC_DEF_PASS)" \
     --add-combo="Diagnostico (padrao: desligado)" \
     --combo-values="desligado|ligado" \
-    --width=560 --height=390 2>/dev/null) || return 1
+    --add-combo="Tail harness (padrao: $DEF_TAILS, scope: $SVC_TAIL_SCOPE)" \
+    --combo-values="$TAIL_VALUES" \
+    --add-combo="Sonda t/s (manual, padrao: desligado)" \
+    --combo-values="desligado|ligado" \
+    --width=560 --height=470 2>/dev/null) || return 1
   SVC_PORT=$(echo "$OUT" | cut -d'|' -f1)
   SVC_UPSTREAM_URL=$(echo "$OUT" | cut -d'|' -f2)
   SVC_UPSTREAM_KEY=$(echo "$OUT" | cut -d'|' -f3)
@@ -264,6 +310,20 @@ ask_bridge_config() {
     [Dd][Ee][Ss][Ll][Ii][Gg][Aa][Dd][Oo]|0|off|OFF|false|False) SVC_DIAG="desligado" ;;
     *) SVC_DIAG="desligado" ;;
   esac
+  SVC_TAILS=$(echo "$OUT" | cut -d'|' -f9)
+  [ -z "$SVC_TAILS" ] && SVC_TAILS="$DEF_TAILS"
+  case "$SVC_TAILS" in
+    [Ll][Ii][Gg][Aa][Dd][Oo]|1|on|ON|true|True) SVC_TAILS="ligado" ;;
+    [Dd][Ee][Ss][Ll][Ii][Gg][Aa][Dd][Oo]|0|off|OFF|false|False) SVC_TAILS="desligado" ;;
+    *) SVC_TAILS="$DEF_TAILS" ;;
+  esac
+  SVC_PROBE=$(echo "$OUT" | cut -d'|' -f10)
+  [ -z "$SVC_PROBE" ] && SVC_PROBE="desligado"
+  case "$SVC_PROBE" in
+    [Ll][Ii][Gg][Aa][Dd][Oo]|1|on|ON|true|True) SVC_PROBE="ligado" ;;
+    [Dd][Ee][Ss][Ll][Ii][Gg][Aa][Dd][Oo]|0|off|OFF|false|False) SVC_PROBE="desligado" ;;
+    *) SVC_PROBE="desligado" ;;
+  esac
   [ -z "$SVC_PORT" ] && SVC_PORT="$DEF_PORT"
   [ -z "$SVC_UPSTREAM_URL" ] && SVC_UPSTREAM_URL="$DEF_UPSTREAM"
   [ -z "$SVC_UPSTREAM_KEY" ] && SVC_UPSTREAM_KEY="$SVC_DEF_PASS"
@@ -272,7 +332,7 @@ ask_bridge_config() {
   [ -z "$SVC_USER" ] && SVC_USER="$SVC_DEF_USER"
   [ -z "$SVC_PASS" ] && SVC_PASS="$SVC_DEF_PASS"
   id "$SVC_USER" >/dev/null 2>&1 || SVC_USER="$SVC_DEF_USER"
-  export SVC_PORT SVC_UPSTREAM_URL SVC_UPSTREAM_KEY SVC_MODEL SVC_CTX SVC_USER SVC_PASS SVC_DIAG
+  export SVC_PORT SVC_UPSTREAM_URL SVC_UPSTREAM_KEY SVC_MODEL SVC_CTX SVC_USER SVC_PASS SVC_DIAG SVC_TAILS SVC_TAIL_SCOPE SVC_PROBE
   ask_fw_or_cancel "$SVC_PORT" "$TITLE" "tcp" || return 1
   echo "$SVC_PASS" | sudo -S -v 2>/dev/null || sudo -v 2>/dev/null || true
 }
@@ -340,7 +400,7 @@ cat > "/usr/local/bin/seed-bridge-probe.sh" <<'__FIX_ICONES_EOF_7F3A__'
 #
 # A bridge guarda as amostras da sonda apenas em memoria; um restart zera o
 # ring e o painel "Throughput por step" do Grafana fica vazio ate o proximo
-# StepProbe. Este helper roda como ExecStartPost e repovoa o ring com os
+# StepProbe. Este helper e manual (botao Sonda t/s) e repovoa o ring com os
 # eventos `response` que ja estao no log, sem reiniciar nada e sem gravar
 # corpos de requisicao/resposta.
 #
@@ -361,7 +421,7 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 BASE="http://127.0.0.1:${PORT}"
 
-# ExecStartPost roda logo apos o processo; espera o listener responder.
+# Chamado manualmente apos o restart, espera o listener responder.
 for _ in $(seq 1 30); do
   if curl -fsS -m 2 -H "Authorization: Bearer ${KEY}" "${BASE}/api/status" >/dev/null 2>&1; then
     break
@@ -533,11 +593,15 @@ else
   ask_bridge_config "4124" "http://127.0.0.1:4100" "Gemma4-E4B-Q4" "131072" "OpenCode Bridge GPU" || exit 0
 fi
 DIAG_FLAGS=$(bridge_diag_flags)
+TAIL_FLAGS=$(bridge_tail_flags)
 echo "$SVC_PASS" | sudo -S bash -c "
-printf '[Unit]\nDescription=OpenCode Bridge GPU (:4124 -> llama :4100 Gemma4-E4B-Q4)\nAfter=network-online.target llama-gpu.service\nWants=network-online.target llama-gpu.service\n\n[Service]\nType=simple\nUser=root\nEnvironment=HOME=/root\nWorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0\nExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port %s --upstream %s --model %s --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens %s --api-key %s --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 %s --log /tmp/bridge-gpu.log\nExecStartPost=/usr/local/bin/seed-bridge-probe.sh 4124 /tmp/bridge-gpu.log guest@123 500\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' \"$SVC_PORT\" \"$SVC_UPSTREAM_URL\" \"$SVC_MODEL\" \"$SVC_CTX\" \"$SVC_UPSTREAM_KEY\" \"$DIAG_FLAGS\" > /etc/systemd/system/bridge-gpu.service
+printf '[Unit]\nDescription=OpenCode Bridge GPU (:4124 -> llama :4100 Gemma4-E4B-Q4)\nAfter=network-online.target llama-gpu.service\nWants=network-online.target llama-gpu.service\n\n[Service]\nType=simple\nUser=root\nEnvironment=HOME=/root\nWorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0\nExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port %s --upstream %s --model %s --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens %s --api-key %s --passthrough-responses true --main-harness 0 %s --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 %s --log /tmp/bridge-gpu.log\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' \"$SVC_PORT\" \"$SVC_UPSTREAM_URL\" \"$SVC_MODEL\" \"$SVC_CTX\" \"$SVC_UPSTREAM_KEY\" \"$TAIL_FLAGS\" \"$DIAG_FLAGS\" > /etc/systemd/system/bridge-gpu.service
   systemctl daemon-reload
   systemctl restart bridge-gpu
 "
+if [ "${SVC_PROBE:-desligado}" = "ligado" ]; then
+  /usr/local/bin/seed-bridge-probe.sh "4124" "/tmp/bridge-gpu.log" guest@123 500 >/dev/null 2>&1 || true
+fi
 sleep 3
 STATE=$(systemctl is-active bridge-gpu 2>/dev/null || echo "desconhecido")
 HEALTH=$(curl -s --max-time 3 http://127.0.0.1:${SVC_PORT}/api/status 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('model','?') + ' bypass=' + str(d.get('passthrough_responses','?')))" 2>/dev/null || echo "sem resposta")
@@ -564,11 +628,15 @@ else
   ask_bridge_config "4125" "http://127.0.0.1:4110" "Gemma4-E4B-UD-Q3" "57344" "OpenCode Bridge GPU2" || exit 0
 fi
 DIAG_FLAGS=$(bridge_diag_flags)
+TAIL_FLAGS=$(bridge_tail_flags)
 echo "$SVC_PASS" | sudo -S bash -c "
-printf '[Unit]\nDescription=OpenCode Bridge GPU2 (:4125 -> llama :4110 Gemma4-E4B-UD-Q3)\nAfter=network-online.target llama-gpu2.service\nWants=network-online.target llama-gpu2.service\n\n[Service]\nType=simple\nUser=root\nEnvironment=HOME=/root\nWorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0\nExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port %s --upstream %s --model %s --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens %s --api-key %s --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 %s --log /tmp/bridge-gpu2.log\nExecStartPost=/usr/local/bin/seed-bridge-probe.sh 4125 /tmp/bridge-gpu2.log guest@123 500\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' \"$SVC_PORT\" \"$SVC_UPSTREAM_URL\" \"$SVC_MODEL\" \"$SVC_CTX\" \"$SVC_UPSTREAM_KEY\" \"$DIAG_FLAGS\" > /etc/systemd/system/bridge-gpu2.service
+printf '[Unit]\nDescription=OpenCode Bridge GPU2 (:4125 -> llama :4110 Gemma4-E4B-UD-Q3)\nAfter=network-online.target llama-gpu2.service\nWants=network-online.target llama-gpu2.service\n\n[Service]\nType=simple\nUser=root\nEnvironment=HOME=/root\nWorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0\nExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port %s --upstream %s --model %s --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens %s --api-key %s --passthrough-responses true --main-harness 0 %s --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 %s --log /tmp/bridge-gpu2.log\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' \"$SVC_PORT\" \"$SVC_UPSTREAM_URL\" \"$SVC_MODEL\" \"$SVC_CTX\" \"$SVC_UPSTREAM_KEY\" \"$TAIL_FLAGS\" \"$DIAG_FLAGS\" > /etc/systemd/system/bridge-gpu2.service
   systemctl daemon-reload
   systemctl restart bridge-gpu2
 "
+if [ "${SVC_PROBE:-desligado}" = "ligado" ]; then
+  /usr/local/bin/seed-bridge-probe.sh "4125" "/tmp/bridge-gpu2.log" guest@123 500 >/dev/null 2>&1 || true
+fi
 sleep 3
 STATE=$(systemctl is-active bridge-gpu2 2>/dev/null || echo "desconhecido")
 HEALTH=$(curl -s --max-time 3 http://127.0.0.1:${SVC_PORT}/api/status 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('model','?') + ' bypass=' + str(d.get('passthrough_responses','?')))" 2>/dev/null || echo "sem resposta")
@@ -595,11 +663,15 @@ else
   ask_bridge_config "4126" "http://127.0.0.1:4120" "Gemma4-E4B-Q4" "131072" "OpenCode Bridge CPU Forced" || exit 0
 fi
 DIAG_FLAGS=$(bridge_diag_flags)
+TAIL_FLAGS=$(bridge_tail_flags)
 echo "$SVC_PASS" | sudo -S bash -c "
-printf '[Unit]\nDescription=OpenCode Bridge CPU Forced (:4126 -> llama :4120 Gemma4-E4B-Q4, ngl=0)\nAfter=network-online.target llama-cpu-forced.service\nWants=network-online.target llama-cpu-forced.service\n\n[Service]\nType=simple\nUser=root\nEnvironment=HOME=/root\nWorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0\nExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port %s --upstream %s --model %s --thinking events --temperature 0.5 --max-tokens 16384 --context-guard 1 --context-tokens %s --api-key %s --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 %s --log /tmp/bridge-cpu-forced.log\nExecStartPost=/usr/local/bin/seed-bridge-probe.sh 4126 /tmp/bridge-cpu-forced.log guest@123 500\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' \"$SVC_PORT\" \"$SVC_UPSTREAM_URL\" \"$SVC_MODEL\" \"$SVC_CTX\" \"$SVC_UPSTREAM_KEY\" \"$DIAG_FLAGS\" > /etc/systemd/system/bridge-cpu-forced.service
+printf '[Unit]\nDescription=OpenCode Bridge CPU Forced (:4126 -> llama :4120 Gemma4-E4B-Q4, ngl=0)\nAfter=network-online.target llama-cpu-forced.service\nWants=network-online.target llama-cpu-forced.service\n\n[Service]\nType=simple\nUser=root\nEnvironment=HOME=/root\nWorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0\nExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port %s --upstream %s --model %s --thinking events --temperature 0.5 --max-tokens 16384 --context-guard 1 --context-tokens %s --api-key %s --passthrough-responses true --main-harness 0 %s --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 %s --log /tmp/bridge-cpu-forced.log\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' \"$SVC_PORT\" \"$SVC_UPSTREAM_URL\" \"$SVC_MODEL\" \"$SVC_CTX\" \"$SVC_UPSTREAM_KEY\" \"$TAIL_FLAGS\" \"$DIAG_FLAGS\" > /etc/systemd/system/bridge-cpu-forced.service
   systemctl daemon-reload
   systemctl restart bridge-cpu-forced
 "
+if [ "${SVC_PROBE:-desligado}" = "ligado" ]; then
+  /usr/local/bin/seed-bridge-probe.sh "4126" "/tmp/bridge-cpu-forced.log" guest@123 500 >/dev/null 2>&1 || true
+fi
 sleep 3
 STATE=$(systemctl is-active bridge-cpu-forced 2>/dev/null || echo "desconhecido")
 HEALTH=$(curl -s --max-time 3 http://127.0.0.1:${SVC_PORT}/api/status 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('model','?') + ' bypass=' + str(d.get('passthrough_responses','?')))" 2>/dev/null || echo "sem resposta")
@@ -1093,7 +1165,6 @@ User=root
 Environment=HOME=/root
 WorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port 4124 --upstream http://127.0.0.1:4100 --model Gemma4-E4B-Q4 --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens 131072 --api-key guest@123 --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 --log /tmp/bridge-gpu.log
-ExecStartPost=/usr/local/bin/seed-bridge-probe.sh 4124 /tmp/bridge-gpu.log guest@123 500
 Restart=on-failure
 RestartSec=10
 
@@ -1113,7 +1184,6 @@ User=root
 Environment=HOME=/root
 WorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port 4125 --upstream http://127.0.0.1:4110 --model Gemma4-E4B-UD-Q3 --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens 57344 --api-key guest@123 --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512  --log /tmp/bridge-gpu2.log
-ExecStartPost=/usr/local/bin/seed-bridge-probe.sh 4125 /tmp/bridge-gpu2.log guest@123 500
 Restart=on-failure
 RestartSec=10
 
@@ -1133,7 +1203,6 @@ User=root
 Environment=HOME=/root
 WorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port 4126 --upstream http://127.0.0.1:4120 --model Gemma4-E4B-Q4 --thinking events --temperature 0.5 --max-tokens 16384 --context-guard 1 --context-tokens 131072 --api-key guest@123 --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 --log /tmp/bridge-cpu-forced.log
-ExecStartPost=/usr/local/bin/seed-bridge-probe.sh 4126 /tmp/bridge-cpu-forced.log guest@123 500
 Restart=on-failure
 RestartSec=10
 

@@ -56,7 +56,7 @@ and `Gemma4-E4B-UD-Q3` (**GPU2**, text-only, `:4110`/`:4125`), both fully on GPU
 # GPU1 (managed path, Web/opencode with tools)
 dotnet Rochas.OpenCodeBridge.dll --port 4124 --upstream http://127.0.0.1:4100 \
   --model Gemma4-E4B-Q4 --api-key guest@123 --thinking events \
-  --main-harness 1 --harness-tails 1 --tail-scope managed \
+  --main-harness 0 --harness-tails 1 --tail-scope all \
   --anti-repeat 1 --anti-repeat-window 512 --anti-repeat-retry 1 \
   --breaker-soft 3 --breaker-hard 6 --diagnostic 1 --diagnostic-level metrics
 ```
@@ -641,7 +641,7 @@ con su propio bucle de herramientas.**
 dotnet add package Rochas.OpenCodeBridge
 
 dotnet Rochas.OpenCodeBridge.dll --port 4124 --upstream http://127.0.0.1:4100 \
-  --model Gemma4-E4B-Q4 --api-key guest@123 --main-harness 1 --harness-tails 1 \
+  --model Gemma4-E4B-Q4 --api-key guest@123 --main-harness 0 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-window 512
 ```
 
@@ -670,7 +670,7 @@ boucle d'outils.**
 dotnet add package Rochas.OpenCodeBridge
 
 dotnet Rochas.OpenCodeBridge.dll --port 4124 --upstream http://127.0.0.1:4100 \
-  --model Gemma4-E4B-Q4 --api-key guest@123 --main-harness 1 --harness-tails 1 \
+  --model Gemma4-E4B-Q4 --api-key guest@123 --main-harness 0 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-window 512
 ```
 
@@ -700,7 +700,7 @@ agentischer Tool-Schleife.**
 dotnet add package Rochas.OpenCodeBridge
 
 dotnet Rochas.OpenCodeBridge.dll --port 4124 --upstream http://127.0.0.1:4100 \
-  --model Gemma4-E4B-Q4 --api-key guest@123 --main-harness 1 --harness-tails 1 \
+  --model Gemma4-E4B-Q4 --api-key guest@123 --main-harness 0 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-window 512
 ```
 

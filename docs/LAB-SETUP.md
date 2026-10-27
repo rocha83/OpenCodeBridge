@@ -778,14 +778,13 @@ Medição de 2026-10-25 (antes → depois):
 | `agents/*.md` (12) | 3.115 tok no total, até 528 tok cada | **~500 tok no total**, 26–50 tok cada (1 frase) |
 | tails | 2.482 chars ≈ 620 tok | inalteradas (único incremento) |
 
-**Estado das units (2026-10-26, `e64d3fc`+):** `bridge-gpu` e `bridge-gpu2` rodam com
-`--main-harness 1 --harness-tails 1 --tail-scope all --anti-repeat 1
---anti-repeat-retry 1`. Antes rodavam com
-`--main-harness 0` (só tails) e o `MainHarness.Apply` bloqueava por **sufixo do
-modelo** (`hasProfile`): o WAR usa `<modelo>-build`, então a base nunca aplicava.
-Agora o discriminador é o **cliente** (`User-Agent`), o mesmo das tails; base e
-tails coexistem (as tails eram dispensadas quando a base ligava — o inverso do
-fluxo).
+**Estado canônico das units:** `bridge-gpu` e `bridge-gpu2` rodam com
+`--main-harness 0 --harness-tails 1 --tail-scope all --anti-repeat 1
+--anti-repeat-retry 1`. O MainHarness fica off no caminho OpenCode; as tails
+continuam on por default. A raia WAR/bridge, quando testada, sobe uma instância
+descartável com `--main-harness 1` e não altera estas units. O discriminador de
+cliente (`User-Agent`) continua valendo para a lane; base e tails são switches
+independentes.
 
 Saiu do `MainHarness`: descrição tool-por-tool (o schema vai no request), MoE,
 roles/pipeline, princípios longos e escrita extensa. Ficou: disciplina de chamada,
@@ -869,7 +868,7 @@ Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `MAIN_HARNESS=0` e
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4124 --upstream http://127.0.0.1:4100 --model Gemma4-E4B-Q4 \
   --thinking events --temperature 0.2 --max-tokens 16384 --api-key guest@123 \
-  --passthrough-responses true --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0 \
+  --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 \
   --anti-repeat 1 --anti-repeat-retry 1 \
   --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 \
   --anti-repeat-window 512 --log /tmp/bridge-gpu.log
@@ -878,14 +877,14 @@ ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4125 --upstream http://127.0.0.1:4110 --model Gemma4-E4B-UD-Q3 \
   --thinking events --temperature 0.2 --max-tokens 16384 --api-key guest@123 \
-  --passthrough-responses true --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0 \
+  --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 \
   --anti-repeat 1 --anti-repeat-retry 1 \
   --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 \
   --anti-repeat-window 512 --log /tmp/bridge-cpu.log
 ```
 
 A `bridge-cpu-forced.service` (`:4126`, `-ngl 0`) também roda
-`--main-harness 1 --harness-tails 1 --tail-scope all --anti-repeat-retry 1`.
+`--main-harness 0 --harness-tails 1 --tail-scope all --anti-repeat-retry 1`.
 
 Atalhos de desktop: `OpenCode Bridge GPU/CPU` reiniciam as units e mostram
 saúde; `Llama GPU`/`Llama CPU` regeneram e reiniciam os servidores;
@@ -1000,7 +999,7 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 - Pull `origin/main` + rebuild do DLL
   (`dotnet build Rochas.OpenCodeBridge/Rochas.OpenCodeBridge.csproj -c Release`);
   smoke test em instância descartável OK.
-- `:4124`/`:4125` com args canônicos: `--max-tokens 16384`, `--main-harness 1
+- `:4124`/`:4125` com args canônicos: `--max-tokens 16384`, `--main-harness 0
   --harness-tails 1 --tail-scope all`, `--legacy-harness 0`, `--anti-repeat 1 --anti-repeat-retry 1`,
   `--coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0`,
   `--anti-repeat-window 512`, `--passthrough-responses true` e sem
@@ -1141,7 +1140,7 @@ Args gravados nas units (as três, `bridge-gpu`, `bridge-gpu2` e `bridge-cpu-for
 ```
 --thinking events --temperature 0.2 --max-tokens 16384
 --context-guard 1 --context-tokens 131072   (Q3 :4125 usa 57344 = 1 slot de 56k)
---passthrough-responses true --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0
+--passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0
 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512
 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0
 --upstream-parser native
@@ -1467,14 +1466,14 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
 
 | serviço | flags-chave |
 |---|---|
-| bridges `:4124` / `:4125` | `--main-harness 1 --harness-tails 1 --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 --passthrough-responses true`; request com **`parallel_tool_calls: false`** (comportamento do código, não flag — §11) |
-| bridge `:4126` (CPU forced) | **inativa e desabilitada** (não há testes na linha CPU); unit preservada com `--harness-tails 1 --tail-scope all --main-harness 1` e upstream `:4120` (`-ngl 0`) para quando for ligada |
+| bridges `:4124` / `:4125` | `--main-harness 0 --harness-tails 1 --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 --passthrough-responses true`; request com **`parallel_tool_calls: false`** (comportamento do código, não flag — §11) |
+| bridge `:4126` (CPU forced) | **inativa e desabilitada** (não há testes na linha CPU); unit preservada com `--harness-tails 1 --tail-scope all --main-harness 0` e upstream `:4120` (`-ngl 0`) para quando for ligada |
 | Web UI `:4130` | `Core` in-process: `mainHarness`, `harnessTails` e `antiRepeat` nos defaults (ligados) — o `BridgeUrl` do agente só dimensiona contexto |
 | llama `:4100` / `:4110` / `:4120` | `--dry-multiplier 0.0`, `--repeat-penalty 1.08` (§10) |
 
 - O alias **`--harness`** não existe mais: o binário atual recusa no boot. Os
   `start-bridge-*.sh` reescrevem a unit do zero — já emitindo
-  `--main-harness 1 --harness-tails 1 --tail-scope all`; se um pacote antigo voltar,
+  `--main-harness 0 --harness-tails 1 --tail-scope all`; se um pacote antigo voltar,
   o clique no ícone recria a unit quebrada (mesmo padrão do `4200` acima).
 - Unit com `--harness 0` (gerador antigo) **não sobe**: o processo sai no boot e a
   porta fica fechada. Sintoma no `journalctl`: `argumento desconhecido: --harness`.

@@ -11,16 +11,25 @@ Atualização 2026-10-24. O **main harness** é o system prompt que a bridge usa
 O texto é o **main harness**; as tails são um **delta separado**
 (`harness-tails`). São dois switches independentes:
 
-| Switch | CLI | appsettings | Default | Efeito |
+| Switch | CLI | appsettings | Default do código | Efeito |
 |---|---|---|---|---|
 | Main harness | `--main-harness` | `mainHarness` | `true` | troca o system no caminho gerido |
 | Harness tails | `--harness-tails` | `harnessTails` | `true` | injeta behavior/tools tails conforme `tailScope` |
 
+No `appsettings.json` do laboratório, `mainHarness` fica **false** para as
+bridges OpenCode; a Web UI `:4130` liga no Core. O default do código continua
+`true` para deployments que não passarem a flag.
+
 `--harness-tails 0` desliga as tails, mas **não** desliga o main harness. Para o
-tubo puro, use `--main-harness 0 --harness-tails 0`. **No caminho bridge/Web UI
-o main harness é obrigatório**: `--main-harness 1 --harness-tails 1 --tail-scope all`
-(base + tails; sem isso a bridge fica órfã de direção). `--main-harness 0` só vale
-para **opencode puro / tubo puro**, onde o CLI tem o harness dele.
+tubo puro, use `--main-harness 0 --harness-tails 0`.
+
+**Política do laboratório:** as bridges OpenCode `:4124`, `:4125` e `:4126` rodam
+com `--main-harness 0 --harness-tails 1 --tail-scope all` — o master do cliente
+(OpenCode) já dirige o caminho, e as tails entram como delta. A Web UI `:4130`
+liga o MainHarness **on** no Core in-process, independentemente das units. A raia
+WAR/bridge só usa `--main-harness 1` em instância descartável de teste; não
+altere a unit canônica para isso. O `--main-harness 0` não desliga as tails: são
+switches independentes.
 
 O modo `opencode` também permite tails (`BridgeMode.Opencode.Tails = true`); o
 switch real é `--harness-tails` + `--tail-scope`. Com `--tail-scope managed` o
@@ -83,11 +92,11 @@ As tails deixaram de ser texto fixo no código:
   `--harness-tails 0`) desliga as tails nos dois
   caminhos.
 
-`/api/harness` mostra o efetivo (exemplo de produção:
-`--main-harness 1 --harness-tails 1 --tail-scope all`):
+`/api/harness` mostra o efetivo (exemplo das bridges OpenCode canônicas
+`--main-harness 0 --harness-tails 1 --tail-scope all`):
 
 ```json
-{"tail_scope":"all","main_harness":true,"main_harness_chars":9147,"harness_tails":true,"tails_managed":true,"tails_opencode":true,"behavior_chars":833,"tools_chars":1366}
+{"tail_scope":"all","main_harness":false,"main_harness_opencode":false,"harness_tails":true,"tails_managed":true,"tails_opencode":true,"behavior_chars":833,"tools_chars":1366}
 ```
 
 O efetivo é `main_harness || harness_tails`; `tails_managed` e

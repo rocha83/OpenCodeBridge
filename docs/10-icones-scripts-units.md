@@ -47,7 +47,7 @@ Nunca trocar para `0.0.0.0`; a exposição é só Caddy/cloudflared.
 
 | script | janela | campos/defaults |
 |---|---|---|
-| `start-bridge-*.sh` | `ask_bridge_config` | porta, upstream, API key, modelo, ctx, usuário, senha, **Diagnóstico (combo `desligado|ligado`, default `desligado`)** |
+| `start-bridge-*.sh` | `ask_bridge_config` | porta, upstream, API key, modelo, ctx, usuário, senha, **Diagnóstico** (combo, default `desligado`), **Tail harness** (combo, default lido de `appsettings.harnessTails`) e **Sonda t/s** (manual, default `desligado`) |
 | `start-llama-*.sh` | `ask_llama_config` | porta, usuário, senha, ctx, slots |
 | `start-opencodeweb.sh` | form de 4 campos | bridge `4124`, key `guest@123`, web `4200`, senha `guest@123`; host `0.0.0.0` |
 | `start-ocagent-web.sh dev` | form de 4 campos | bridge `4125`, key `guest@123`, web `4210`, senha `Developer.PCSS@LVP006` |
@@ -78,26 +78,32 @@ As três units de bridge são geradas com o mesmo núcleo:
 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512
 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0
 --upstream-parser native
+# tail: combo Tail harness; desligado grava --harness-tails 0 --tail-scope off
 # opcional: --diagnostic 1 --diagnostic-level metrics
 ```
 
 Política canônica: as três bridges (`:4124`, `:4125` e `:4126`) usam
 `--main-harness 0`; a `bridge-cpu-forced` usa `--temperature 0.5` e está
 inativa. Todas ficam com diagnóstico `off` por default; `metrics` só quando o
-combo `Diagnostico` for `ligado` (opt-in de teste/Grafana).
+combo `Diagnostico` for `ligado` (opt-in de teste/Grafana). O combo
+`Tail harness` abre no valor de `harnessTails` do `appsettings.json` e pode ser
+desligado por execução; não é uma flag fixa do instalador.
 
 A série de t/s usada pelo Grafana vem de duas fontes: `/api/metrics` (acumulado
 desde o start) e `/api/test/probe` (ring em memória publicado pelo `StepProbe` a
-cada 5 s). As duas zeram no restart. Para não perder a série, cada unit de
-bridge tem:
+cada 5 s). As duas zeram no restart. Não há `ExecStartPost` automático e não há
+contorno para “vazar” estatística entre bridges: com diagnóstico off, a
+estatística pode ficar off — é aceito. O combo `Sonda t/s` (manual, default
+`desligado`) chama o helper depois do restart quando o operador pedir:
 
 ```text
-ExecStartPost=/usr/local/bin/seed-bridge-probe.sh <porta> <log> guest@123 500
+/usr/local/bin/seed-bridge-probe.sh <porta> <log> guest@123 500
 ```
 
 O helper repovoa o ring com os últimos 500 eventos `response` do log, sem
-reiniciar a bridge. `--diagnostic`/`metrics` não gera t/s: ele só controla os
-corpos `req`/`res` no log; a amostragem é independente.
+reiniciar a bridge; também pode ser chamado à mão. `--diagnostic`/`metrics` não
+gera t/s: ele só controla os corpos `req`/`res` no log; a amostragem é
+independente.
 
 ### 4.2 Harness: flag global × lane (importante)
 
@@ -114,8 +120,8 @@ Política canônica deste ambiente: `--main-harness 0` nas três bridges.
 
 | cliente | unit `--main-harness 0` | efetivo | tails | `/api/status` |
 |---|---|---|---|---|
-| OpenCode CLI/Web (UA opencode ou header `opencode`) | sim | **off** | off | `main_harness=false`, `main_harness_opencode=false`, `tails_opencode=false` |
-| WAR / cliente `X-Bridge-Mode: bridge` | sim | **off** | off | `main_harness=false`, `tails_managed=true` |
+| OpenCode CLI/Web (UA opencode ou header `opencode`) | sim | **off** | **on** (default `harnessTails`; combo pode desligar) | `main_harness=false`, `main_harness_opencode=false`, `tails_opencode=true` |
+| WAR / cliente `X-Bridge-Mode: bridge` | sim | **off** | **on** (default `harnessTails`; combo pode desligar) | `main_harness=false`, `tails_managed=true` |
 | Web UI `:4130` (Core in-process) | não usa bridge | **on** | n/a | `ChatController` chama `MainHarness.BuildSystem` |
 
 Consequência: com `0`, **nenhuma** requisição que passa pela bridge recebe o
@@ -214,6 +220,11 @@ echo "rc=$?"   # 0 e sem restart
 - `main-harness 0` em bridge que atende WAR: preflight duro falha.
 - Diagnóstico default é **desligado** no combo; para Grafana, escolher
   `ligado` (emite `--diagnostic 1 --diagnostic-level metrics`).
+- Tail harness não é flag fixa: o combo lê `appsettings.harnessTails` e
+  `tailScope`; `desligado` grava `--harness-tails 0 --tail-scope off`.
+- Sonda t/s é manual: `ligado` chama o helper depois do restart; `desligado`
+  não chama. Não existe `ExecStartPost` automático. O replay só alimenta
+  `/api/test/probe`, não `/api/metrics`; diagnóstico off + estatística off é ok.
 - 4200: mudar host só na unit ou só no script é revertido no próximo clique.
 - 4210/4220: nunca `0.0.0.0`; expor só por Caddy/cloudflared.
 - Unit editada à mão: o próximo clique sobrescreve. A fonte é o script.
