@@ -103,23 +103,56 @@ internal static class TestContext
             return;
         }
         var t0 = DateTime.UtcNow;
+        // No WAR o driver ja publica step_end; aqui so o run isolado de E2E
+        // alimenta o painel (evita 100+ U-* no dicionario de steps).
+        bool panelStep = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAR_STEP"))
+                         && name.StartsWith("E-", StringComparison.Ordinal);
+        if (panelStep) PublishStep(name, "RUN", 0).GetAwaiter().GetResult();
         try
         {
             fn().GetAwaiter().GetResult();
             Passed++;
-            Console.WriteLine($"PASS {name} ({(DateTime.UtcNow - t0).TotalSeconds:F1}s)");
+            double secs = (DateTime.UtcNow - t0).TotalSeconds;
+            Console.WriteLine($"PASS {name} ({secs:F1}s)");
+            if (panelStep) PublishStep(name, "PASS", secs).GetAwaiter().GetResult();
         }
         catch (SkipException ex)
         {
             Skipped++;
             Console.WriteLine($"SKIP {name} ({ex.Message})");
+            if (panelStep) PublishStep(name, "SKIP", (DateTime.UtcNow - t0).TotalSeconds, ex.Message).GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
             Failed++;
             Console.WriteLine($"FAIL {name}: {ex.Message}");
             if (Environment.GetEnvironmentVariable("E2E_STACK") == "1") Console.WriteLine(ex.ToString());
+            if (panelStep) PublishStep(name, "FAIL", (DateTime.UtcNow - t0).TotalSeconds, ex.Message).GetAwaiter().GetResult();
         }
+    }
+
+    static readonly HttpClient StepHttp = new() { Timeout = TimeSpan.FromSeconds(3) };
+
+    /// <summary>Publica o step no painel (RUN/PASS/FAIL/SKIP) também no run isolado.</summary>
+    public static async Task PublishStep(string step, string verdict, double secs, string cause = "")
+    {
+        try
+        {
+            var body = new JsonObject
+            {
+                ["step"] = step,
+                ["mode"] = Mode,
+                ["verdict"] = verdict,
+                ["secs"] = secs,
+                ["cause"] = cause,
+            };
+            using var req = new HttpRequestMessage(HttpMethod.Post, Bridge + "/api/test/step");
+            if (!string.IsNullOrWhiteSpace(ApiKey))
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + ApiKey);
+            req.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+            using var _ = await StepHttp.SendAsync(req);
+        }
+        catch { }
     }
 
     public static void Check(bool cond, string msg)
@@ -715,9 +748,10 @@ internal static class TestContext
         if (url.Contains("/v1/", StringComparison.Ordinal))
         {
             string prompt = ExtractPrompt(body);
-            string? warStep = Environment.GetEnvironmentVariable("WAR_STEP");
-            if (prompt.Length > 0 && !string.IsNullOrWhiteSpace(warStep))
-                await PublishEnunciado(warStep, prompt);
+            // JourneyStep cai em manual-<mode> quando nao ha WAR_STEP: o run
+            // isolado (--only) tambem alimenta o painel de enunciado.
+            if (prompt.Length > 0)
+                await PublishEnunciado(JourneyStep, prompt);
         }
         var t0 = DateTime.UtcNow;
         for (int attempt = 0; ; attempt++)

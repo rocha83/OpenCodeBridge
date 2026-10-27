@@ -200,7 +200,7 @@ internal static class E2EMissionTests
                     $"Sem prosa: o build do F# falhou: {errLine}. Corrija {ws}/mfs/Program.fs e rode `dotnet run --project {ws}/mfs/mfs.fsproj` ate sair 2.000000 e 5.000000." });
             }
             history.Add(new JsonObject { ["role"] = "user", ["content"] =
-                $"Em {ws}/mfs, implemente em Program.fs (o projeto ja existe em {ws}/mfs/mfs.fsproj; NAO crie mfs.csproj, Program.cs, bin ou obj) um programa F# que calcule e imprima com 6 casas: (a) Simpson de System.Math.Sin em [0, pi] com n=100 -> meta 2.000000; (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> meta 5.000000; (c) o desvio padrao populacional da mesma lista -> meta 2.000000. F# idiomatico: `System.Math.Sin/Sqrt/PI` qualificado, `printfn \"%.6f\"` (nunca {{0:F6}}), sem operadores OCaml (`+.` `-.` `*.` `/.`) e sem `open System.Math`. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` e ajuste ate as metas baterem." });
+                $"Em {ws}/mfs, implemente em Program.fs (o projeto ja existe em {ws}/mfs/mfs.fsproj; NAO crie mfs.csproj, Program.cs, bin ou obj) um programa F# que calcule e imprima com 6 casas: (a) Simpson de System.Math.Sin em [0, pi] com n=100 -> meta 2.000000; (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> meta 5.000000; (c) o desvio padrao populacional da mesma lista -> meta 2.000000. F# idiomatico: `System.Math.Sin/Sqrt/PI` qualificado, `printfn \"%.6f\"`, aritmetica float com `+ - * /` e `** 2.0`, listas com `List.sum/List.map/List.fold`. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` e ajuste ate as metas baterem." });
         for (int turn = 0; turn < 22; turn++)
         {
             var rf = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());

@@ -11,3 +11,8 @@ datasources:
     jsonData:
       allowedHosts:
         - http://127.0.0.1:4124
+      # A bridge exige Bearer em /api/test/* e /api/metrics; sem este header
+      # todos os paineis recebem 401 e ficam vazios.
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: Bearer guest@123
