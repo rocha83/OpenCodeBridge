@@ -300,6 +300,9 @@ internal sealed class WarTemplate : CircuitTemplate
         LogGlobal(globalLog, $"=== run-all-levels {stamp} (levels: {string.Join(",", levels)}) ===");
         LogGlobal(globalLog, $"repo: {p.Root}");
         LogGlobal(globalLog, $"artefatos: {p.OutBase}");
+        LogGlobal(globalLog, o.StopOnFirstFailure
+            ? "fail-fast: ON (para no primeiro FAIL/STALE/BLOCKED e nao segue de nivel)"
+            : "fail-fast: OFF (--war-no-stop-on-fail: segue mesmo com FAIL)");
 
         foreach (int lvl in levels)
         {
@@ -320,8 +323,16 @@ internal sealed class WarTemplate : CircuitTemplate
             if (rc != 0)
             {
                 failed++;
+                if (o.StopOnFirstFailure)
+                {
+                    LogGlobal(globalLog,
+                        $"Level {lvl} VERMELHO (rc={rc}) — PARADA fail-fast: nao segue para o proximo nivel.");
+                    LogGlobal(globalLog,
+                        $"  retomar: dotnet run --project {p.TestProj} -c Release -- --war-level {lvl} --war-stamp {lvlStamp}");
+                    break;
+                }
                 LogGlobal(globalLog,
-                    $"Level {lvl} VERMELHO (rc={rc}) — registrado; SEGUINDO para o proximo nivel.");
+                    $"Level {lvl} VERMELHO (rc={rc}) — registrado; SEGUINDO para o proximo nivel (--war-no-stop-on-fail).");
                 LogGlobal(globalLog,
                     $"  retomar: dotnet run --project {p.TestProj} -c Release -- --war-level {lvl} --war-stamp {lvlStamp}");
             }

@@ -4144,3 +4144,11 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   (bad/once/p1/p2/first/next...) nao aparecem mais em "Steps concluidos":
   `WAR_EVENT_URL` e limpo no `OnRunEnd` e o `TestContext` so publica
   enunciado quando `WAR_STEP` existe.
+
+**Fail-fast real entre niveis (2026-10-27).**
+- O driver ja parava no primeiro FAIL dentro do nivel, mas o `RunAll`
+  continuava para o proximo nivel com a mensagem "SEGUINDO". Agora, com
+  `StopOnFirstFailure=true` (default), o `RunAll` faz `break` e nao executa
+  L2 depois de L1 vermelho.
+- O console global passa a imprimir `fail-fast: ON/OFF` no inicio da trilha,
+  para nao depender de interpretar a ausencia da flag.
