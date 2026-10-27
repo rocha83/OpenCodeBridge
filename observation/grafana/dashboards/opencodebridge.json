@@ -78,7 +78,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "FLUXO: Executa -> Falha -> Para e Corrige -> Republica Bridges -> Reinicia Testes\n\nMODO ATUAL e Main Harness: ver painel ao lado."
+        "content": "Executa -> Falha -> Para e Corrige -> Republica Bridges -> Reinicia Testes\n\nMODO ATUAL e Main Harness: ver painel ao lado."
       }
     },
     {
