@@ -188,7 +188,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/activity?limit=6&fresh=1",
+          "url": "http://127.0.0.1:4124/api/test/activity?limit=6",
           "url_options": {
             "method": "GET"
           },
