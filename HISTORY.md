@@ -1,5 +1,21 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Enunciados das belts: verbo imperativo (2026-10-26)
+
+**Causa:** o verbo "Especifique" pedia especificação, não implementação; o
+modelo local respondia prosa e não chamava `write`. A regra em
+`docs/LAB-SETUP.md` já dizia `Implemente/Crie`, mas 10 enunciados vivos ainda
+usavam o verbo antigo.
+
+**Correção:** `E2EBeltsTests` (verde/marrom/preta), `E2EBeltsBuildTests`
+(verde/marrom/preta) e `BeltUiTests` (verde/roxa/marrom/preta) passaram a
+`Implemente`. `E2EOrchTests` já não usava o verbo. Registro em
+`docs/LAB-SETUP.md` §"Regra de redação" com o check
+`grep -rni 'especifique' --include='*.cs'` = zero.
+
+**Aceite:** build Release 0 avisos/0 erros; WAR total reiniciada pela raia
+opencode com os enunciados novos.
+
 ## Stream history / coding journey na sonda (2026-10-26, sessão atual)
 
 **Pedido:** a sonda do WAR deve analisar a jornada de codificação do opencode e
