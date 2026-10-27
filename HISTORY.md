@@ -4101,3 +4101,9 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
 `{"event":"main-harness","path":"chat","role":"Scripter","tools":1}`,
 `prompt_tokens=1782`, resposta com `write_file`; mesmo request com header
 `opencode` -> sem evento, `prompt_tokens=40`; `U-main-harness` PASS=10 FAIL=0.
+
+**Dashboard Grafana + provisioning (2026-10-27).**
+- PROD (`/usr/src`) estava em `dc7f518`, atras do persistente `9e5cc3b`; `/api/test/enunciado` dava 404 e as sondas nao apareciam. Recuperado com `git clean -fd` + `git reset --hard persist/main` (backup em `/tmp/opencode/usr-src-backup-*.tgz`) e `scripts/deploy-pull.sh` (pull --rebase + build + restart). Bridge `:4124` subida manualmente com `--main-harness 1 --diagnostic 1` para a bancada, mantendo a unit canonica em `0`.
+- O painel "Tools calls por step" (e demais) ficavam vazios porque a bateria rodava via `run-levels.sh` (bash), que nao inicia o `StepProbe`. Agora a bateria L1+L2 roda pelo driver C# (`--war-levels 1,2`), que publica `/api/test/probe`, `/api/test/steps`, `/api/test/enunciado` e `/api/test/activity`. O dashboard se preenche com dados reais.
+- Plugin Infinity instalado (`yesoreyeram-infinity-datasource`) e dashboard provisionado em `/etc/grafana/provisioning` + `/var/lib/grafana/dashboards` (datasource `opencodebridge-infinity`, allowedHosts 4124). Script idempotente criado: `scripts/lab/install-grafana-observation.sh` (commitado).
+- Units canonicas permanecem `--main-harness 0` nas 3 bridges; `:4130` Core mantem MainHarness on. Apenas a instacia manual da bancada usa `1`.
