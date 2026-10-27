@@ -4113,3 +4113,9 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   rodados. Default continua `opencode bridge`. Com `--war-modes bridge`, a bateria
   publica apenas steps `*-bridge`, evitando nomes `*-opencode` em run bridge.
 - Commits: `1ecb729` (filtro) + `a9ee3fc` (script Grafana) + `96f7c2e` (history).
+
+**WAR single-thread sem parada (2026-10-27).**
+- `--war-no-stop-on-fail` (alias `--war-continue`) adicionado ao `WarTemplate` para
+  medir o placar completo sem interromper no primeiro FAIL/STALE. MaxParallelSteps
+  permanece 1 (sequencial). Rodar L1+L2 em modo bridge:
+  `--war-levels 1,2 --war-modes bridge --war-no-stop-on-fail --war-no-build`.
