@@ -61,6 +61,7 @@ internal sealed class WarTemplate : CircuitTemplate
         public bool RetryAll;
         public bool Rebuild;
         public bool NoBuild;
+        public bool StopOnFirstFailure = true;
         public bool Pause;
         public bool Resume;
         public bool Status;
@@ -254,6 +255,7 @@ internal sealed class WarTemplate : CircuitTemplate
             DefaultTimeoutSeconds: p.StepTimeout,
             RequireGreen: p.RequireGreen,
             AcquireLock: !gateOnly && !lockHeld,
+            StopOnFirstFailure: o.StopOnFirstFailure,
             LogSink: globalLog is null ? null : line => globalLog.WriteLine(line)), template);
 
         if (gateOnly) return GateOnly(template, driver);
@@ -1254,6 +1256,8 @@ internal sealed class WarTemplate : CircuitTemplate
                 case "--war-rebuild": o.Rebuild = true; break;
                 case "--war-no-build":
                 case "--war-no-rebuild": o.NoBuild = true; break;
+                case "--war-no-stop-on-fail":
+                case "--war-continue": o.StopOnFirstFailure = false; break;
                 case "--war-pause": o.Pause = true; break;
                 case "--war-resume": o.Resume = true; break;
                 case "--war-status": o.Status = true; break;
