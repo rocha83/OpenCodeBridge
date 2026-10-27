@@ -29,6 +29,7 @@ public static class HarnessTails
         "`execute` nao e sandbox: a bridge desembrulha tools.X; bloqueio de role nao se contorna por shell. " +
         "DOTNET: com mais de um projeto na pasta, `--project <pasta>` e ambiguo: aponte o ARQUIVO (`<dir>/<nome>.fsproj` ou `.csproj`). " +
         "F#: o entrypoint e `module Program` em Program.fs; o assembly e o nome do .fsproj. " +
+        "F# SINTAXE: use System.Math.Sin/Sqrt/PI qualificado (nunca `open System.Math`); operadores OCaml (`+.` `-.` `*.` `/.`) nao existem - use `+ - * /`; potencia float e `** 2.0` (`^` e deprecated, FS0101); formate com printfn \"%f\"/\"%.6f\", nunca {0:F6}; nao indexe lista com indice float. " +
         "PROJETO EXISTENTE: edite os arquivos do projeto; `dotnet new` so em pasta vazia (segundo .csproj/.fsproj na mesma pasta quebra `dotnet run --project <pasta>`). " +
         "SUBAGENTE: o schema de cada tool viaja no array `tools` do request; preserve o array e o system do role ao delegar; nao troque schema por prosa.";
 

@@ -489,13 +489,14 @@ internal sealed class WarTemplate : CircuitTemplate
         switch (_level)
         {
             case 1:
-                // L1 canônico: opencode primeiro (sem MainHarness; tails +
-                // anti-repeat) e bridge depois (MainHarness + tails + anti-repeat).
-                // Unidades por ultimo: o teste U-metrics-ring3-shell incrementa
-                // ring3 de proposito; rodar isso primeiro faria o painel mostrar
-                // ring3 subindo antes de qualquer cenario real.
+                // L1 canonico: units primeiro (fail-fast barato: se o nucleo
+                // quebrou, nao gasta minutos nos cenarios de modelo), depois
+                // opencode/bridge caros. O ring3 do U-metrics-ring3-shell e
+                // incremento de teste; o step nao depende do ring3 anterior.
                 foreach (string mode in _p.Modes)
                 {
+                    yield return StepBridge(driver, $"units-{mode}", mode,
+                        new[] { "--only", "U-" });
                     yield return StepBridge(driver, $"devpipe-{mode}", mode,
                         new[] { "--only", "E-devpipe" });
                     // Tools completas ja incluem o ciclo do antigo dual (pasta, git,
@@ -506,16 +507,12 @@ internal sealed class WarTemplate : CircuitTemplate
                         new[] { "--only", "E-belts-build-direct", "--belts", "azul,verde" });
                     yield return StepBridge(driver, $"belts-orch-{mode}", mode,
                         new[] { "--only", "E-belts-direct", "--belts", "azul,verde" });
-                    yield return StepBridge(driver, $"units-{mode}", mode,
-                        new[] { "--only", "U-" });
                 }
                 break;
 
             case 2:
                 foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"mission-tools-{mode}", mode,
-                        new[] { "--only", "E-mission-tools" });
                     yield return StepBridge(driver, $"responses-tools-{mode}", mode,
                         new[] { "--only", "E-responses-tools" });
                     yield return StepBridge(driver, $"science-gpu-{mode}", mode,
@@ -533,8 +530,12 @@ internal sealed class WarTemplate : CircuitTemplate
                 break;
 
             case 3:
+                // Mission e a entrega completa (C# + F# + git + zip): abre o
+                // fechamento. Se falhar, o L3 para antes das belts finais e do Web.
                 foreach (string mode in _p.Modes)
                 {
+                    yield return StepBridge(driver, $"mission-tools-{mode}", mode,
+                        new[] { "--only", "E-mission-tools" });
                     yield return StepBridge(driver, $"belts-build-final-{mode}", mode,
                         new[] { "--only", "E-belts-build-direct", "--belts", "marrom,preta" });
                     yield return StepBridge(driver, $"belts-orch-final-{mode}", mode,

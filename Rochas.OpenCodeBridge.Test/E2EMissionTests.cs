@@ -25,6 +25,31 @@ internal static class E2EMissionTests
         return await TestContext.PostObj(bridge + "/v1/chat/completions", body);
     }
 
+    static List<double> SixDecimals(string text)
+    {
+        var list = new List<double>();
+        foreach (System.Text.RegularExpressions.Match m in
+                 System.Text.RegularExpressions.Regex.Matches(text, @"-?\d+[.,]\d{6}"))
+            if (double.TryParse(m.Value.Replace(',', '.'),
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var v))
+                list.Add(v);
+        return list;
+    }
+
+    // Hardcode do resultado: 2.000000/5.000000 como literal no fonte (com ou
+    // sem aspas). Ignora comentarios para nao acusar a meta copiada do enunciado.
+    static bool HasHardcodedResult(string src)
+    {
+        string code = string.Join("\n", src.Split('\n').Select(l =>
+        {
+            int i = l.IndexOf("//", StringComparison.Ordinal);
+            return i >= 0 ? l[..i] : l;
+        }));
+        return System.Text.RegularExpressions.Regex.IsMatch(
+            code, @"(?<!\d)(2[.,]000000|5[.,]000000)(?!\d)");
+    }
+
     static JsonArray Tools()
     {
         JsonObject P(string desc, JsonObject props, params string[] req)
@@ -63,13 +88,45 @@ internal static class E2EMissionTests
         TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
         TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
 
+        ResetCsScaffold();
         var sys = new JsonObject { ["role"] = "system", ["content"] = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls, sem prosa." };
         var history = new JsonArray(sys);
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Em {ws}/mcs, implemente em Program.cs o calculo de Simpson de Math.Sin em [0,pi] (n=100) e a media/desvio de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. Rode o projeto e ajuste ate a saida ser 2.000000 e 5.000000." });
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Em {ws}/mcs, implemente em Program.cs o calculo de Simpson de Math.Sin em [0,pi] (n=100) e a media e o desvio padrao populacional de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. O projeto C# ja existe em {ws}/mcs/mcs.csproj; NAO crie Program.csproj, bin ou obj. Rode `dotnet run --project {ws}/mcs/mcs.csproj` (nao use `dotnet build --project`) e ajuste ate a saida ser 2.000000, 5.000000 e 2.000000." });
 
         string fcode = "", final = "";
         string logPath = Path.Combine(ws, "_mission.log");
         void LogT(string s) { try { File.AppendAllText(logPath, s + "\n"); } catch { } }
+        // O modelo as vezes cria mfs.csproj/Program.cs no diretorio F# e o
+        // `dotnet run --project mfs` fica ambiguo. O scaffold e mfs.fsproj;
+        // limpa so os artefatos estranhos, preservando Program.fs.
+        void ResetFsScaffold()
+        {
+            string dir = Path.Combine(ws, "mfs");
+            if (!Directory.Exists(dir)) return;
+            foreach (var f in Directory.GetFiles(dir, "*.csproj")) { try { File.Delete(f); } catch { } }
+            string pc = Path.Combine(dir, "Program.cs");
+            if (File.Exists(pc)) { try { File.Delete(pc); } catch { } }
+            foreach (var d in new[] { "bin", "obj" })
+            {
+                string p = Path.Combine(dir, d);
+                if (Directory.Exists(p)) { try { Directory.Delete(p, true); } catch { } }
+            }
+        }
+        // Mesmo problema no C#: o modelo cria Program.csproj ao lado do mcs.csproj.
+        // O scaffold e mcs.csproj; limpa os csproj extras e bin/obj, preserva Program.cs.
+        void ResetCsScaffold()
+        {
+            string dir = Path.Combine(ws, "mcs");
+            if (!Directory.Exists(dir)) return;
+            foreach (var f in Directory.GetFiles(dir, "*.csproj"))
+                if (!Path.GetFileName(f).Equals("mcs.csproj", StringComparison.OrdinalIgnoreCase))
+                    { try { File.Delete(f); } catch { } }
+            foreach (var d in new[] { "bin", "obj" })
+            {
+                string p = Path.Combine(dir, d);
+                if (Directory.Exists(p)) { try { Directory.Delete(p, true); } catch { } }
+            }
+        }
         for (int turn = 0; turn < 14; turn++)
         {
             var r = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());
@@ -110,27 +167,40 @@ internal static class E2EMissionTests
         string csSrc = File.Exists(csFile) ? File.ReadAllText(csFile) : "";
         TestContext.Check((csSrc.Contains("Sin") || csSrc.Contains("sin")) && csSrc.Length > 60,
             "mcs/Program.cs com Simpson (nao template), veio: " + csSrc[..Math.Min(100, csSrc.Length)]);
-        string runOut = Run("dotnet", "run --project mcs -c Release", ws, 240);
+        ResetCsScaffold();
+        string runOut = Run("dotnet", "run --project mcs/mcs.csproj -c Release", ws, 240);
         LogT($"[C#] RUN -> {runOut[..Math.Min(220, runOut.Length)]}");
-        TestContext.Check(runOut.Contains("2,000000") || runOut.Contains("2.000000"), "Simpson = 2.0, saiu: " + runOut[..Math.Min(120, runOut.Length)]);
-        TestContext.Check(runOut.Contains("5,000000") || runOut.Contains("5.000000"), "media = 5.0");
+        TestContext.Check(!HasHardcodedResult(csSrc), "C# calcula (sem hardcode de 2.000000/5.000000 no fonte)");
+        var csNums = SixDecimals(runOut);
+        TestContext.Check(csNums.Count >= 3, "C# imprime 3 numeros com 6 casas, saiu: " + runOut[..Math.Min(160, runOut.Length)]);
+        TestContext.Check(csNums.Count >= 1 && Math.Abs(csNums[0] - 2.0) < 1e-4, "C# Simpson = 2.0, saiu: " + runOut[..Math.Min(120, runOut.Length)]);
+        TestContext.Check(csNums.Count >= 2 && Math.Abs(csNums[1] - 5.0) < 1e-4, "C# media = 5.0");
+        TestContext.Check(csNums.Count >= 3 && Math.Abs(csNums[2] - 2.0) < 1e-4, "C# desvio = 2.0 (populacional)");
         Console.WriteLine($"  [mission] C# ok:\n{runOut.Trim()}");
 
         // Fase 2: portabilidade para F# (mesma matematica, System.Math qualificado).
+        // O E4B Q4 nao infere F# de forma estavel: o enunciado entrega a META
+        // (2.000000 / 5.000000) e as restricoes de sintaxe, sem ditar o algoritmo.
+        // O retry nao "ensina" sintaxe: reseta o contexto F# e repassa so a linha
+        // real do erro, para o modelo corrigir com o proprio codigo em vista.
+        int historyBeforeFs = history.Count;
         string fsOut = "";
+        string fsSrc = "";
         string lastErr = "";
-        for (int attempt = 1; attempt <= 3; attempt++)
+        for (int attempt = 1; attempt <= 2; attempt++)
         {
+            ResetFsScaffold();
             if (attempt > 1)
             {
-                // Nada de injetar o erro no prompt: o retorno da tool ja voltou ao
-                // contexto no turno anterior (item role=tool). O fio continua
-                // intacto — o modelo reenxerga o erro e se corrige sozinho.
-                LogT($"[F#] retry {attempt}: sem sucesso; contexto (tool outputs) preservado ({lastErr.Split('\n')[0]})");
+                while (history.Count > historyBeforeFs) history.RemoveAt(history.Count - 1);
+                string errLine = lastErr.Split('\n').FirstOrDefault(l => l.Contains("error"))?.Trim()
+                    ?? lastErr.Split('\n').FirstOrDefault()?.Trim() ?? "";
+                LogT($"[F#] retry {attempt}: contexto F# resetado; erro real repassado ({errLine})");
                 history.Add(new JsonObject { ["role"] = "user", ["content"] =
-                    $"Sem prosa: o erro e FS0588 (o bloco `let` terminou com outro `let`). Corrija {ws}/mfs/Program.fs: a ultima linha do bloco `let simpson =` deve ser a expressao `(h / 3.0) * soma`; rode `dotnet run --project {ws}/mfs` e confira 2.000000/5.000000." });
+                    $"Sem prosa: o build do F# falhou: {errLine}. Corrija {ws}/mfs/Program.fs e rode `dotnet run --project {ws}/mfs/mfs.fsproj` ate sair 2.000000 e 5.000000." });
             }
-            history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Em {ws}/mfs, implemente em Program.fs um programa F# que imprima com 6 casas: (a) Simpson de sin em [0,pi] com n=100 (2.000000), (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] (5.000000) e (c) o desvio padrao dessa lista. Rode `dotnet run --project {ws}/mfs` e ajuste ate os dois primeiros valores baterem." });
+            history.Add(new JsonObject { ["role"] = "user", ["content"] =
+                $"Em {ws}/mfs, implemente em Program.fs (o projeto ja existe em {ws}/mfs/mfs.fsproj; NAO crie mfs.csproj, Program.cs, bin ou obj) um programa F# que calcule e imprima com 6 casas: (a) Simpson de System.Math.Sin em [0, pi] com n=100 -> meta 2.000000; (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> meta 5.000000; (c) o desvio padrao populacional da mesma lista -> meta 2.000000. F# idiomatico: `System.Math.Sin/Sqrt/PI` qualificado, `printfn \"%.6f\"` (nunca {{0:F6}}), sem operadores OCaml (`+.` `-.` `*.` `/.`) e sem `open System.Math`. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` e ajuste ate as metas baterem." });
         for (int turn = 0; turn < 22; turn++)
         {
             var rf = await Chat(bridge, model, (JsonArray)history.DeepClone(), Tools());
@@ -167,8 +237,9 @@ internal static class E2EMissionTests
             if (fres.Any(s => (s.Contains("2,000000") || s.Contains("2.000000")) && (s.Contains("5,000000") || s.Contains("5.000000")))) break;
         }
             string fsFile = Path.Combine(ws, "mfs", "Program.fs");
-            string fsSrc = File.Exists(fsFile) ? File.ReadAllText(fsFile) : "";
-            fsOut = Run("dotnet", "run --project mfs -c Release", ws, 240);
+            fsSrc = File.Exists(fsFile) ? File.ReadAllText(fsFile) : "";
+            ResetFsScaffold();
+            fsOut = Run("dotnet", "run --project mfs/mfs.fsproj -c Release", ws, 240);
             lastErr = fsOut;
             LogT($"[F#] RUN -> {fsOut[..Math.Min(220, fsOut.Length)]}");
             bool ok = fsSrc.Contains("Math") && fcode.Contains("Math")
@@ -176,8 +247,12 @@ internal static class E2EMissionTests
                 && (fsOut.Contains("5,000000") || fsOut.Contains("5.000000"));
             if (ok) break;
         }
-        TestContext.Check(fsOut.Contains("2,000000") || fsOut.Contains("2.000000"), "F# Simpson = 2.0, saiu: " + fsOut[..Math.Min(160, fsOut.Length)]);
-        TestContext.Check(fsOut.Contains("5,000000") || fsOut.Contains("5.000000"), "F# media = 5.0");
+        TestContext.Check(!HasHardcodedResult(fsSrc), "F# calcula (sem hardcode de 2.000000/5.000000 no fonte)");
+        var fsNums = SixDecimals(fsOut);
+        TestContext.Check(fsNums.Count >= 3, "F# imprime 3 numeros com 6 casas, saiu: " + fsOut[..Math.Min(160, fsOut.Length)]);
+        TestContext.Check(fsNums.Count >= 1 && Math.Abs(fsNums[0] - 2.0) < 1e-4, "F# Simpson = 2.0, saiu: " + fsOut[..Math.Min(160, fsOut.Length)]);
+        TestContext.Check(fsNums.Count >= 2 && Math.Abs(fsNums[1] - 5.0) < 1e-4, "F# media = 5.0");
+        TestContext.Check(fsNums.Count >= 3 && Math.Abs(fsNums[2] - 2.0) < 1e-4, "F# desvio = 2.0 (populacional)");
         Console.WriteLine($"  [mission] F# ok:\n{fsOut.Trim()}");
 
         // Fase 3: versionamento + pacote com as tools nativas git/zip.
