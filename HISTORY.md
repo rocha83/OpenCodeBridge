@@ -4224,3 +4224,16 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   em `U-translate-temp-respeita-tunel` porque a cauda e do caminho bridge.
 - O preflight do `run-levels.sh` so exige a Web UI no L4; L1..L3 rodam sem a
   Web no ar, coerente com a nova distribuicao.
+- Correcao de comportamento: o padrao de modos volta a ser **bridge apenas**
+  (`WarTemplate` e `run-levels.sh`); `opencode` so com `--war-modes opencode`
+  ou `LEVEL_MODES=opencode`. Fail-fast fica explicito em `--war-stop-on-fail`
+  (default do driver) e documentado; `--war-no-stop-on-fail` e a excecao.
+- O painel `/api/test/steps?war=1` nao tem `run_id` e empilha runs: os itens
+  `E-mission-tools RUN`, `units-opencode FAIL` e `units PASS` vistos juntos
+  eram de execucoes diferentes (timestamps distintos), nao de um run que
+  ignorou fail-fast. A evidencia de fail-fast passa a ser o `events.jsonl`
+  do run atual, nunca o painel agregado.
+- Execucao errada registrada: `--war-level 1` inteiro foi iniciado em
+  `opencode bridge` e interrompido; a regra operacional volta a ser um step
+  por vez quando o objetivo for diagnosticar, e `--war-levels 1,2` so quando
+  o pedido for rodar L1+L2 de ponta a ponta.

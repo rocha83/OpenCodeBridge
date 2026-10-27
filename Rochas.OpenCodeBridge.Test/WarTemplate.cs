@@ -121,7 +121,7 @@ internal sealed class WarTemplate : CircuitTemplate
             int retryDelay = Math.Max(0, o.RetryDelay ?? ParseInt(Env("LEVEL_RETRY_DELAY"), 5));
             int stepTimeout = o.StepTimeout ?? ParseInt(Env("LEVEL_STEP_TIMEOUT"), 7200);
 
-            string modesRaw = (o.Modes ?? Env("LEVEL_MODES") ?? "opencode bridge").Trim();
+            string modesRaw = (o.Modes ?? Env("LEVEL_MODES") ?? "bridge").Trim();
             string[] modes = modesRaw.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(m => m.Trim().ToLowerInvariant())
                 .Where(m => m is "opencode" or "bridge")
@@ -1240,13 +1240,13 @@ internal sealed class WarTemplate : CircuitTemplate
         switch (_level)
         {
             case 1:
-                Console.WriteLine("Level 1 -> units (bridge), integracao (E-stream/E-review/E-iot/E-error/E-full-cycle/E-healthy) e topicos (E-senior/E-ent) em bridge+opencode");
+                Console.WriteLine("Level 1 -> units (bridge), integracao (E-stream/E-review/E-iot/E-error/E-full-cycle/E-healthy) e topicos (E-senior/E-ent), bridge (default)");
                 break;
             case 2:
-                Console.WriteLine("Level 2 -> responses-tools, tools-full, belts build/orch azul+verde, bridge+opencode");
+                Console.WriteLine("Level 2 -> responses-tools, tools-full, belts build/orch azul+verde, bridge (default)");
                 break;
             case 3:
-                Console.WriteLine("Level 3 -> science-gpu, mission-tools, belts build/orch roxa, bridge+opencode");
+                Console.WriteLine("Level 3 -> science-gpu, mission-tools, belts build/orch roxa, bridge (default)");
                 break;
             case 4:
                 Console.WriteLine("Level 4 -> mission-algo, belts build/orch marrom+preta, frontend pipeline (E-front), webui-integracao-topicos");
@@ -1302,6 +1302,7 @@ internal sealed class WarTemplate : CircuitTemplate
                 case "--war-rebuild": o.Rebuild = true; break;
                 case "--war-no-build":
                 case "--war-no-rebuild": o.NoBuild = true; break;
+                case "--war-stop-on-fail": o.StopOnFirstFailure = true; break;
                 case "--war-no-stop-on-fail":
                 case "--war-continue": o.StopOnFirstFailure = false; break;
                 case "--war-pause": o.Pause = true; break;
@@ -1346,13 +1347,15 @@ internal sealed class WarTemplate : CircuitTemplate
           --war-all                executa 1 -> 4 em sequencia
           --war-levels 1,2,3,4     levels explicitos
           --war-only NAME          roda so steps cujo nome contem NAME (virgula = lista)
-          --war-modes bridge       modos (opencode|bridge), default "opencode bridge"
+          --war-modes bridge       modos (bridge|opencode), default "bridge"
           --war-from N --war-to N  faixa de levels
           --war-stamp STAMP        stamp do run (level unico)
           --war-resume-stamp S     retoma um stamp no --war-all
           --war-resume-level N     level do stamp retomado
           --war-gate-only          recalcula o gate sem executar steps
           --war-list               lista os steps do level
+          --war-stop-on-fail       para no primeiro FAIL/STALE/BLOCKED (default)
+          --war-no-stop-on-fail    segue mesmo com FAIL (mede placar completo)
           --war-require-green      gate vermelho derruba o exit (default)
           --war-no-require-green   nao derruba
 

@@ -250,7 +250,9 @@ dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
 ```
 
 `--war-all` e `run-all-levels.sh` sem argumentos percorrem **1 → 2 → 3 → 4**,
-parando no primeiro gate vermelho.
+parando no primeiro gate vermelho. O modo padrão é **bridge**; para a raia
+opencode use `--war-modes opencode` ou `LEVEL_MODES=opencode`. Fail-fast é o
+padrão e pode ser declarado explicitamente com `--war-stop-on-fail`.
 
 > **`export PORT=<porta livre>`** antes dos blocos abaixo. A bridge é **de bancada**:
 > descartável, criada e morta na execução. Ela **não** entra em unit, firewall, `opencode.json`
@@ -317,7 +319,7 @@ imagem. Sem essas variáveis o comportamento é o de antes (`:4100`, visão liga
 
 `LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 2`
 
-Roda, em `--mode bridge` e `--mode opencode`, nesta ordem:
+Roda, em `--mode bridge` (default), nesta ordem:
 `E-responses-tools` → `E-tools-full` → `belts-build` azul+verde →
 `belts-orch` azul+verde. As duas trilhas de belt são
 `E-belts-build-direct` (build implementa direto) e `E-belts-direct`
@@ -327,7 +329,7 @@ Roda, em `--mode bridge` e `--mode opencode`, nesta ordem:
 
 `LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 3`
 
-Roda, em `--mode bridge` e `--mode opencode`, nesta ordem:
+Roda, em `--mode bridge` (default), nesta ordem:
 `E-science-gpu` → `E-mission-tools` → `belts-build` roxa →
 `belts-orch` roxa. A linha `E-science-cpu` não entra neste nível; roda
 isolada com `--only E-science-cpu` quando a Q3 estiver dedicada.
@@ -336,7 +338,7 @@ isolada com `--only E-science-cpu` quando a Q3 estiver dedicada.
 
 `LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 4`
 
-Roda, em `--mode bridge` e `--mode opencode`, nesta ordem:
+Roda, em `--mode bridge` (default), nesta ordem:
 `E-mission-algo` → `belts-build` marrom+preta →
 `belts-orch` marrom+preta → `E-front-*` (Gen/Edit CSS/Razor/React/Verify)
 → `webui-integracao-topicos` (Web.Test: integração + tópicos).

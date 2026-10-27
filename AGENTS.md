@@ -183,7 +183,14 @@ Cada nível roda sozinho (`--war-level 1..4` / `run-levels.sh --level 1..4`).
 Dentro do nível, `--war-only NAME` filtra steps (substring ou lista com
 vírgula). Dentro do step, o teste individual é `--only NOME` no runner.
 `--war-all` e `run-all-levels.sh` sem argumentos percorrem **1 → 2 → 3 → 4**
-e param no primeiro gate vermelho. Não mover testes entre níveis sem atualizar
-`WarTemplate`, `run-levels.sh`, `docs/BENCHTESTS.md`, `TEST-DRIVER.md` e este
-arquivo na mesma mudança.
+e param no primeiro gate vermelho.
+
+- **Modo padrão: `bridge`.** `opencode` só entra com `--war-modes opencode`
+  ou `LEVEL_MODES=opencode`; não alternar modos na mesma bateria.
+- **Fail-fast explícito:** `--war-stop-on-fail` (padrão do driver) para no
+  primeiro FAIL/STALE/BLOCKED; `--war-no-stop-on-fail` só para medir placar
+  completo. Não afirmar “fail-fast” sem o `events.jsonl` do run atual mostrar
+  a parada.
+- Não mover testes entre níveis sem atualizar `WarTemplate`, `run-levels.sh`,
+  `docs/BENCHTESTS.md`, `TEST-DRIVER.md` e este arquivo na mesma mudança.
 

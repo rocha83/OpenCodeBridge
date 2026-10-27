@@ -59,7 +59,7 @@ fi
 # Modos da bateria: "bridge opencode" (padrao) | "opencode" | "bridge".
 # Medir um caminho por vez evita alternancia: no opencode o harness e do
 # CLIENTE (a tail/main harness da bridge nao atuam), no bridge e o nosso.
-MODES="${LEVEL_MODES:-bridge opencode}"
+MODES="${LEVEL_MODES:-bridge}"
 # Fail-fast: com LEVEL_STOP_ON_FAIL=1 (padrao) o nivel PARA no primeiro
 # FAIL/STALE. Rodar os passos seguintes com o mesmo defeito so torra GPU e
 # esconde a causa; para medir o placar completo, LEVEL_STOP_ON_FAIL=0.
@@ -357,7 +357,7 @@ case "$LEVEL" in
     done
     ;;
   2)
-    STEPS_DESC="responses-tools; tools-full; belts build/orch azul,verde (bridge+opencode)"
+    STEPS_DESC="responses-tools; tools-full; belts build/orch azul,verde (bridge default)"
     if [ "$LIST" = "1" ]; then
       echo "Level 2 -> $STEPS_DESC"; exit 0
     fi
@@ -373,7 +373,7 @@ case "$LEVEL" in
     done
     ;;
   3)
-    STEPS_DESC="science-gpu; mission-tools; belts build/orch roxa (bridge+opencode)"
+    STEPS_DESC="science-gpu; mission-tools; belts build/orch roxa (bridge default)"
     if [ "$LIST" = "1" ]; then
       echo "Level 3 -> $STEPS_DESC"; exit 0
     fi
@@ -393,7 +393,7 @@ case "$LEVEL" in
     done
     ;;
   4)
-    STEPS_DESC="mission-algo; belts build/orch marrom,preta (bridge+opencode); frontend E-front; webui-integracao-topicos"
+    STEPS_DESC="mission-algo; belts build/orch marrom,preta (bridge default); frontend E-front; webui-integracao-topicos"
     if [ "$LIST" = "1" ]; then
       echo "Level 4 -> $STEPS_DESC"; exit 0
     fi

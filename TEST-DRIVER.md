@@ -340,14 +340,14 @@ Observações:
 ## 10. Levels e steps da WAR
 
 Cada level roda os steps em série (`MaxParallelSteps=1`), nos dois modos
-(`bridge` e `opencode`), quando aplicável:
+(padrão `bridge`; `opencode` só com `--war-modes opencode`):
 
 | Level | Steps |
 |---|---|
-| **L1** | `units` uma vez (`U-`, bridge), `integration-{bridge,opencode}` (`E-stream/E-review/E-iot/E-error/E-full-cycle/E-healthy`), `topics-{bridge,opencode}` (`E-senior/E-ent`). |
-| **L2** | `responses-tools-{bridge,opencode}`, `tools-full-{bridge,opencode}`, `belts-build-{bridge,opencode}` (azul,verde), `belts-orch-{bridge,opencode}` (azul,verde). |
-| **L3** | `science-gpu-{bridge,opencode}`, `mission-tools-{bridge,opencode}`, `belts-build-roxa-{bridge,opencode}`, `belts-orch-roxa-{bridge,opencode}`. |
-| **L4** | `algo-{bridge,opencode}`, `belts-build-final-{bridge,opencode}` (marrom,preta), `belts-orch-final-{bridge,opencode}` (marrom,preta), `front-{bridge,opencode}`, `webui-integracao-topicos`. |
+| **L1** | `units` uma vez (`U-`, bridge), `integration-{bridge}` (`E-stream/E-review/E-iot/E-error/E-full-cycle/E-healthy`), `topics-{bridge}` (`E-senior/E-ent`). |
+| **L2** | `responses-tools-{bridge}`, `tools-full-{bridge}`, `belts-build-{bridge}` (azul,verde), `belts-orch-{bridge}` (azul,verde). |
+| **L3** | `science-gpu-{bridge}`, `mission-tools-{bridge}`, `belts-build-roxa-{bridge}`, `belts-orch-roxa-{bridge}`. |
+| **L4** | `algo-{bridge}`, `belts-build-final-{bridge}` (marrom,preta), `belts-orch-final-{bridge}` (marrom,preta), `front-{bridge}`, `webui-integracao-topicos`. |
 
 Cada level roda sozinho (`--war-level N`). Dentro do level, `--war-only NAME`
 filtra steps por substring (ou lista com vírgula); dentro do step, o teste
@@ -355,9 +355,11 @@ individual é `--only NOME` no runner.
 
 Modos:
 
-- `bridge`: o teste chama a bridge pura (`/v1/responses` + tools); a bridge monta
-  o turno.
-- `opencode`: o teste chama o `opencode` real; o cliente traz o master.
+- `bridge` (**padrão**): o teste chama a bridge pura (`/v1/responses` + tools);
+  a bridge monta o turno.
+- `opencode`: o teste chama o `opencode` real; o cliente traz o master. Só
+  roda com `--war-modes opencode`/`LEVEL_MODES=opencode`.
+- Fail-fast é o padrão (`--war-stop-on-fail`); `--war-no-stop-on-fail` desliga.
 
 O driver passa `--mode` para a suíte. O step `web` roda
 `dotnet exec Rochas.OpenCodeBridge.Web.Test.dll` e não usa `--mode`.
