@@ -30,6 +30,30 @@ internal static class E2EBeltsTests
 
     const string OrchSystem = "Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada.";
 
+    /// <summary>System do role Orch igual ao opencode: corpo do agents/orch.md
+    /// (sem frontmatter). Sem isso a bridge usa so o OrchSystem curto, o main
+    /// harness generico fala em "tool nativa" e o modelo vaza call:shell em vez
+    /// de devolver o JSON array. Fallback = OrchSystem se o arquivo nao existir.</summary>
+    static string LoadOrchSystem()
+    {
+        try
+        {
+            string home = Environment.GetEnvironmentVariable("HOME") ?? "";
+            if (home.Length == 0)
+                home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string path = System.IO.Path.Combine(home, ".config", "opencode", "agents", "orch.md");
+            if (System.IO.File.Exists(path))
+            {
+                string raw = System.IO.File.ReadAllText(path);
+                var parts = raw.Split("---", 3, StringSplitOptions.None);
+                if (parts.Length >= 3 && !string.IsNullOrWhiteSpace(parts[2]))
+                    return parts[2].Trim();
+            }
+        }
+        catch { }
+        return OrchSystem;
+    }
+
     /// <summary>Extrai o JSON array de tarefas do texto do Orch (bridge ou opencode com logs).</summary>
     static JsonArray ExtractTaskArray(string text)
     {
@@ -218,11 +242,13 @@ internal static class E2EBeltsTests
                 {
                     Log($"  [belt:{key}] 1/3 Orch via bridge...");
                     var orchHistory = new JsonArray(
-                        new JsonObject { ["role"]="system", ["content"]=OrchSystem },
-                        new JsonObject { ["role"]="user", ["content"]=prompt.Replace("{ws}", ws) });
+                        new JsonObject { ["role"]="system", ["content"]=LoadOrchSystem() },
+                        new JsonObject { ["role"]="user", ["content"]="ENUNCIADO (na pasta atual):\n" + prompt.Replace("{ws}", ws) });
                     var orchR = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
                         new JsonObject { ["model"]=orchModel, ["temperature"]=0.3, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
                     orchContent = Str(orchR["choices"]?[0]?["message"]?["content"]);
+                    string rawLog = orchContent.Replace("\r", " ").Replace("\n", "\\n");
+                    Log($"  [belt:{key}] Orch raw: {rawLog[..Math.Min(400, rawLog.Length)]}");
                 }
                 var tasks = ExtractTaskArray(orchContent);
                 TestContext.Check(tasks.Count > 0, $"[{key}] Orch segmentou em JSON array");
