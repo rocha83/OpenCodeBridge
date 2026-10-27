@@ -9,7 +9,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "5s",
   "panels": [
     {
@@ -281,7 +281,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
+          "url": "http://127.0.0.1:4124/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -316,7 +316,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
+          "url": "http://127.0.0.1:4124/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -351,7 +351,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
+          "url": "http://127.0.0.1:4124/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -406,7 +406,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
+          "url": "http://127.0.0.1:4124/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -441,7 +441,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
+          "url": "http://127.0.0.1:4124/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -481,7 +481,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
+          "url": "http://127.0.0.1:4124/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -521,7 +521,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe/latest?max_age_s=60",
+          "url": "http://127.0.0.1:4124/api/test/probe/latest",
           "url_options": {
             "method": "GET"
           },
@@ -723,7 +723,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000&max_age_s=60",
+          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
           "url_options": {
             "method": "GET"
           },
@@ -818,7 +818,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000&max_age_s=60",
+          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
           "url_options": {
             "method": "GET"
           },
@@ -1089,7 +1089,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics?fresh=1",
+          "url": "http://127.0.0.1:4124/api/metrics",
           "url_options": {
             "method": "GET"
           },
