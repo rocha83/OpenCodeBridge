@@ -4119,3 +4119,16 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   medir o placar completo sem interromper no primeiro FAIL/STALE. MaxParallelSteps
   permanece 1 (sequencial). Rodar L1+L2 em modo bridge:
   `--war-levels 1,2 --war-modes bridge --war-no-stop-on-fail --war-no-build`.
+
+**Metricas reais do modelo no dashboard (2026-10-27).**
+- `requests`/`failed_requests` continuam sendo HTTP total (inclui polling do
+  Grafana e health checks), mas o dashboard deixou de usa-los. Foram expostos
+  `model_requests` (POST `/v1/*` = mensagem inteira), `model_responses`
+  (conclusao de inferencia em `AddMetrics`) e `model_failed_requests`.
+- Painel "Mensagens ao modelo" usa `model_requests`, "Respostas do modelo" usa
+  `model_responses`, "Falhas do modelo" usa `model_failed_requests` e o grafico
+  por step usa `model_requests`. O polling do Grafana nao infla mais esses
+  numeros; `http_requests` fica apenas para diagnostico.
+- `E-devpipe-doc` normaliza acento/caixa sem `string.Normalize` (o projeto roda
+  com `InvariantGlobalization=true`, que anula a normalizacao Unicode): o VL
+  transcreve "Linha TRÊS" e o assert aceita `TRES`/`tres`/`TRÊS`.

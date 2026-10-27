@@ -521,6 +521,12 @@ internal static partial class Program
     // main_harness global (caminho gerido) com o harness do opencode.
     static long RequestsOpencode;
     static long RequestsBridge;
+    // Mensagens reais ao modelo: POST /v1/* conta uma mensagem inteira por
+    // request. requests/responses/falhas ficam separados do HTTP total
+    // (TotalRequests), que inclui polling do dashboard e health checks.
+    static long ModelRequests;
+    static long ModelResponses;
+    static long ModelFailedRequests;
     static string LastClient = "n/d";
     static long LastRequestMs;
     // Tools executadas pela bridge (POST /api/tools/execute). No modo opencode
@@ -568,6 +574,8 @@ internal static partial class Program
             TotalOutputTokens += outputTokens;
             TotalElapsedSecs += elapsedSecs;
         }
+        // Uma conclusao de inferencia = uma resposta real do modelo.
+        Interlocked.Increment(ref ModelResponses);
     }
 
     /// <summary>Acrescenta uma mensagem ao historico do enunciado do step.</summary>
@@ -1205,6 +1213,7 @@ internal static partial class Program
             // metrics e dashboard nao poluem a leitura do painel.
             if (ctx.Request.HttpMethod == "POST" && path.StartsWith("/v1/", StringComparison.Ordinal))
             {
+                Interlocked.Increment(ref ModelRequests);
                 bool opencode = OpencodeClient.Value;
                 if (opencode) Interlocked.Increment(ref RequestsOpencode);
                 else Interlocked.Increment(ref RequestsBridge);
@@ -1268,6 +1277,10 @@ internal static partial class Program
                 WriteJson(ctx, 200, new JsonObject
                 {
                     ["requests"] = TotalRequests, ["failed_requests"] = FailedRequests,
+                    ["model_requests"] = ModelRequests,
+                    ["model_responses"] = ModelResponses,
+                    ["model_failed_requests"] = ModelFailedRequests,
+                    ["http_requests"] = TotalRequests, ["http_failed_requests"] = FailedRequests,
                     ["requests_opencode"] = RequestsOpencode, ["requests_bridge"] = RequestsBridge,
                     ["last_client"] = LastClient, ["last_request_ms"] = LastRequestMs,
                     ["input_tokens"] = inTok, ["output_tokens"] = outTok,
@@ -1628,6 +1641,8 @@ WriteJson(ctx, 200, new JsonObject
         catch (Exception ex)
         {
             Interlocked.Increment(ref FailedRequests);
+            if (path.StartsWith("/v1/", StringComparison.Ordinal))
+                Interlocked.Increment(ref ModelFailedRequests);
             // Cliente desconectou no meio (opencode abortou: Esc/timeout). Nao e
             // falha da bridge: registra como cancel e nao tenta responder (morto).
             string msg = ex.ToString();
@@ -1672,7 +1687,9 @@ WriteJson(ctx, 200, new JsonObject
         ["legacy_harness"] = LegacyHarness, ["stream_per_delta"] = StreamPerDelta,
         ["bridge_managed"] = BridgeManagedAll ? "all" : "direct-only",
         ["uptime_seconds"] = (long)(DateTime.UtcNow - StartedAt).TotalSeconds,
-        ["total_requests"] = TotalRequests, ["failed_requests"] = FailedRequests
+        ["total_requests"] = TotalRequests, ["failed_requests"] = FailedRequests,
+        ["model_requests"] = ModelRequests, ["model_responses"] = ModelResponses,
+        ["model_failed_requests"] = ModelFailedRequests
     };
 
     /// <summary>Le o corpo da requisicao como texto UTF-8.</summary>
@@ -2661,6 +2678,7 @@ using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHea
         if (!upstreamResponse.IsSuccessStatusCode)
         {
             Interlocked.Increment(ref FailedRequests);
+            Interlocked.Increment(ref ModelFailedRequests);
             try
             {
                 using var er = new StreamReader(upstreamResponse.Content.ReadAsStream(), new UTF8Encoding(false));

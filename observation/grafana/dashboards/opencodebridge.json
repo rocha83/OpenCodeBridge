@@ -279,11 +279,11 @@
     },
     {
       "id": 2,
-      "title": "Requests totais",
+      "title": "Mensagens ao modelo",
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 5,
         "x": 0,
         "y": 11
       },
@@ -309,8 +309,8 @@
           "root_selector": "",
           "columns": [
             {
-              "selector": "requests",
-              "text": "requests",
+              "selector": "model_requests",
+              "text": "mensagens",
               "type": "number"
             }
           ]
@@ -323,8 +323,8 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
+        "w": 5,
+        "x": 5,
         "y": 11
       },
       "datasource": {
@@ -363,8 +363,8 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 12,
+        "w": 5,
+        "x": 10,
         "y": 11
       },
       "datasource": {
@@ -419,12 +419,12 @@
     },
     {
       "id": 3,
-      "title": "Falhas",
+      "title": "Falhas do modelo",
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 18,
+        "w": 4,
+        "x": 15,
         "y": 11
       },
       "datasource": {
@@ -449,8 +449,8 @@
           "root_selector": "",
           "columns": [
             {
-              "selector": "failed_requests",
-              "text": "failed",
+              "selector": "model_failed_requests",
+              "text": "falhas",
               "type": "number"
             }
           ]
@@ -590,8 +590,8 @@
               "type": "number"
             },
             {
-              "selector": "requests",
-              "text": "requests",
+              "selector": "model_requests",
+              "text": "mensagens",
               "type": "number"
             }
           ]
@@ -1140,6 +1140,46 @@
               "selector": "tail_scope",
               "text": "tail_scope",
               "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "title": "Respostas do modelo",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 19,
+        "y": 11
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "http://127.0.0.1:4124/api/metrics",
+          "url_options": {
+            "method": "GET",
+            "headers": [
+              {
+                "key": "Authorization",
+                "value": "Bearer guest@123"
+              }
+            ]
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "model_responses",
+              "text": "respostas",
+              "type": "number"
             }
           ]
         }

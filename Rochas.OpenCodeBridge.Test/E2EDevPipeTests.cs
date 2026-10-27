@@ -134,6 +134,31 @@ internal static class E2EDevPipeTests
             new JsonObject { ["type"] = "image_url", ["image_url"] = new JsonObject { ["url"] = "data:image/png;base64," + img64 } }),
     };
 
+    // O VL pode transcrever "TRÊS"/"tres"/"Tres": compara sem acento e sem caixa
+    // para nao transformar transcricao correta em FAIL.
+    // InvariantGlobalization=true deixa string.Normalize sem efeito; o mapa
+    // explicito cobre os acentos que o VL pode emitir na transcricao.
+    static string NormText(string s)
+    {
+        var b = new System.Text.StringBuilder(s.Length);
+        foreach (char c in s)
+        {
+            char f = c switch
+            {
+                'á' or 'à' or 'â' or 'ã' or 'ä' or 'Á' or 'À' or 'Â' or 'Ã' or 'Ä' => 'a',
+                'é' or 'è' or 'ê' or 'ë' or 'É' or 'È' or 'Ê' or 'Ë' => 'e',
+                'í' or 'ì' or 'î' or 'ï' or 'Í' or 'Ì' or 'Î' or 'Ï' => 'i',
+                'ó' or 'ò' or 'ô' or 'õ' or 'ö' or 'Ó' or 'Ò' or 'Ô' or 'Õ' or 'Ö' => 'o',
+                'ú' or 'ù' or 'û' or 'ü' or 'Ú' or 'Ù' or 'Û' or 'Ü' => 'u',
+                'ç' or 'Ç' => 'c',
+                'ñ' or 'Ñ' => 'n',
+                _ => c
+            };
+            b.Append(char.ToLowerInvariant(f));
+        }
+        return b.ToString();
+    }
+
     // VL lê a imagem e identifica o texto.
     public static async Task DevPipeVision()
     {
@@ -145,7 +170,8 @@ internal static class E2EDevPipeTests
         };
         var r = await TestContext.PostObj(bridge + "/v1/chat/completions", body);
         var content = r["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
-        TestContext.Check(content.Contains("TESTE") && content.Contains("456"), "visao identifica TESTE 456");
+        var norm = NormText(content);
+        TestContext.Check(norm.Contains("teste") && norm.Contains("456"), "visao identifica TESTE 456");
     }
 
     // VL decompõe o documento em texto, linha a linha.
@@ -159,7 +185,9 @@ internal static class E2EDevPipeTests
         };
         var r = await TestContext.PostObj(bridge + "/v1/chat/completions", body);
         var content = r["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
-        TestContext.Check(content.Contains("UM") && content.Contains("DOIS") && content.Contains("TRES"), "doc decomposto em 3 linhas");
+        var norm = NormText(content);
+        Console.WriteLine($"[devpipe] doc: {content.Replace("\r", " ").Replace("\n", " | ")}");
+        TestContext.Check(norm.Contains("um") && norm.Contains("dois") && norm.Contains("tres"), "doc decomposto em 3 linhas");
     }
 
     // Visão + tool call específica: identifica e chama read no path exato.
