@@ -15,6 +15,13 @@ key da bridge **e** porta/senha da própria instância; a Web UI pede só a port
   `|| { defaults; }` por `|| exit 0`. Antes, cancelar o form caía no fallback,
   regenerava a unit, reiniciava a bridge e exibia “bridge ativa”. O fallback de
   defaults agora só roda com `--defaults` ou sem `DISPLAY`/`zenity`.
+- **Mesmo bug nos llama servers**: `start-llama-gpu.sh`,
+  `start-llama-gpu2.sh` e `start-llama-cpu-forced.sh` também usavam
+  `ask_llama_config ... || { defaults; }`; receberam a mesma correção
+  (`|| exit 0`) e o fallback condicionado a `--defaults`/sem `DISPLAY`.
+- **OpenCode Web (3)**: `start-opencodeweb.sh` e `start-ocagent-web.sh
+  dev|moe` já usavam `|| exit 0`; cancelamento testado nos três sem `sudo` e
+  sem reinício. `start-opencode-web-{dev,moe}.sh` não abrem zenity.
 - `start-opencodeweb.sh` (`:4200`) mantém 4 campos com defaults `4124` /
   `guest@123` / `4200` / `guest@123`.
 - `start-ocagent-web.sh dev|moe` agora tem 4 campos e defaults dev `4125` /
@@ -25,11 +32,12 @@ key da bridge **e** porta/senha da própria instância; a Web UI pede só a port
 - `start-bridge-web.sh` pede só a porta, com `--entry-text=4130`; grava
   `/etc/bridge-web.env` e a unit usa `${BRIDGE_WEB_PORT}` no `--urls`.
 
-**Aceite:** `bash -n` nos 9 scripts; combo real testado abrindo em `desligado`
-(`rc=5` por timeout, stdout `desligado`); cancelamento simulado no `:4125`
-(`zenity --forms` rc=1) sai com `rc=0` e **sem** chamar `sudo`/reiniciar; unit de
-bridge recebe as flags somente quando o combo vai para `ligado`; `/api/status`
-das bridges e Web UI respondendo; defaults dos formulários conferidos.
+**Aceite:** `bash -n` nos scripts; combo real testado abrindo em `desligado`
+(`rc=5` por timeout, stdout `desligado`); cancelamento simulado nos **3 bridges**
+e nos **3 llama servers** (`zenity --forms` rc=1) sai com `rc=0` e **sem** chamar
+`sudo`/reiniciar; cancelamento simulado nos **3 OpenCode Web** (`4200`, dev e
+moe) também sai `rc=0` sem `sudo`; unit de bridge recebe as flags somente quando
+o combo vai para `ligado`; `/api/status` das bridges e Web UI respondendo.
 
 ## Diagnóstico ligado e sonda anti-repeat de 2048 chars (2026-10-26)
 

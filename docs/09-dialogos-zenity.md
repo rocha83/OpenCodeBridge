@@ -33,11 +33,12 @@ item da lista — o Diagnóstico das bridges usa `desligado|ligado` e abre em
 `desligado`. Quem usa `--entry` (Web UI) recebe `--entry-text` já preenchido. Os
 launchers também aceitam `--defaults` para pular a janela e usar os mesmos valores.
 
-**Cancelar = não fazer nada.** Os launchers de bridge usam
-`ask_bridge_config ... || exit 0`; fechar/cancelar o form (ou a confirmação de
-firewall) encerra sem regenerar unit, sem reiniciar serviço e sem mostrar
-“bridge ativa”. O fallback de defaults só roda com `--defaults` ou sem
-`DISPLAY`/`zenity`.
+**Cancelar = não fazer nada.** Os launchers de bridge **e os de llama**
+(`start-llama-gpu*.sh`, `start-llama-cpu-forced.sh`) usam
+`ask_bridge_config`/`ask_llama_config ... || exit 0`; fechar/cancelar o form
+(ou a confirmação de firewall, quando existe) encerra sem regenerar unit, sem
+reiniciar serviço e sem mostrar “bridge/llama ativo”. O fallback de defaults só
+roda com `--defaults` ou sem `DISPLAY`/`zenity`.
 
 - `ask_port_user_pass` → 1 form (Porta, Usuário, Senha) + 1 confirmação de firewall.
 - `ask_port_pass_only` → 1 form (Porta, Senha) + 1 confirmação.
