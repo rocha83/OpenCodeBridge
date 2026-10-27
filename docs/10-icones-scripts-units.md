@@ -86,6 +86,19 @@ Política canônica: as três bridges (`:4124`, `:4125` e `:4126`) usam
 inativa. Todas ficam com diagnóstico `off` por default; `metrics` só quando o
 combo `Diagnostico` for `ligado` (opt-in de teste/Grafana).
 
+A série de t/s usada pelo Grafana vem de duas fontes: `/api/metrics` (acumulado
+desde o start) e `/api/test/probe` (ring em memória publicado pelo `StepProbe` a
+cada 5 s). As duas zeram no restart. Para não perder a série, cada unit de
+bridge tem:
+
+```text
+ExecStartPost=/usr/local/bin/seed-bridge-probe.sh <porta> <log> guest@123 500
+```
+
+O helper repovoa o ring com os últimos 500 eventos `response` do log, sem
+reiniciar a bridge. `--diagnostic`/`metrics` não gera t/s: ele só controla os
+corpos `req`/`res` no log; a amostragem é independente.
+
 ### 4.2 Harness: flag global × lane (importante)
 
 O flag `--main-harness` é **global**, mas a aplicação é por **cliente**. O
