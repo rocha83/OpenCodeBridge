@@ -181,3 +181,25 @@ lados.
 
 **Prova** — `sudo systemctl restart bridge-gpu` + `/api/status`
 (`main_harness=true`); o 500 não reaparece no step seguinte.
+
+---
+
+## 11. Belts build: workspace root e 500 peg-gemma4
+
+**Sintoma** — o segundo run do L2 falhava em 1 s com
+`Access to the path '/tmp/opencode/belts-build/azul/Startup/DependencyInjection.cs' is denied`;
+o primeiro falhava em 500
+`The model produced output that does not match the expected peg-gemma4 format`.
+
+**Causa** — o bridge executa a tool `write` como root, então o workspace de
+`/tmp/opencode/belts-build` ficava root-owned; o run seguinte, como `mint`,
+não conseguia limpar. O 500 peg-gemma4 é falha transitória de formato do
+upstream, não de assertiva.
+
+**Correção** — `E2EBeltsBuildTests` usa workspace único por execução
+(`<timestamp>-<pid>/<belt>`, sem apagar pasta antiga) e faz um retry do POST
+quando o erro é 500 + `peg-gemma4`, reenviando o mesmo histórico. As
+assertivas (>=3 arquivos e >500 chars) não mudam.
+
+**Prova** — `logs/levels/L2-20261027-l2fix`: 4/4 PASS (537 s); L1
+`logs/levels/L1-20261027-l1l2-l1`: 3/3 PASS (741 s).

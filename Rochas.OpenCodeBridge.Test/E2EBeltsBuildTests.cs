@@ -20,6 +20,24 @@ internal static class E2EBeltsBuildTests
     };
 
     static void Log(string msg) { Console.WriteLine(msg); Console.Out.Flush(); }
+
+    // 500 "peg-gemma4" e falha de formato do upstream, nao de assertiva. Um
+    // retry com o MESMO historico evita derrubar o belt inteiro por output
+    // transitorio do modelo; se repetir, o FAIL sobe normal.
+    static async Task<JsonObject> PostChat(string key, int turn, JsonObject body)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try { return await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", body); }
+            catch (Exception ex) when (attempt == 0
+                && ex.Message.Contains("-> 500", StringComparison.Ordinal)
+                && ex.Message.Contains("peg-gemma4", StringComparison.OrdinalIgnoreCase))
+            {
+                Log($"  [belt-build:{key}] turno {turn}: 500 peg-gemma4 — retry 1/1");
+                await Task.Delay(2000);
+            }
+        }
+    }
     static void SaveResult(string key, string status, string detail)
     {
         try
@@ -43,13 +61,15 @@ internal static class E2EBeltsBuildTests
         var beltsToRun = string.IsNullOrWhiteSpace(keysEnv)
             ? Belts
             : Belts.Where(b => keysEnv.Split(',').Select(x=>x.Trim()).Contains(b.Key)).ToArray();
+        // Workspace unico por run: o bridge executa write como root, entao
+        // reutilizar a mesma pasta faz a limpeza do mint falhar com acesso
+        // negado no run seguinte. Pasta nova tambem preserva a evidencia.
+        string runTag = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Environment.ProcessId}";
+        string baseWs = System.IO.Path.Combine("/tmp/opencode/belts-build", runTag);
         foreach (var (key, prompt) in beltsToRun)
         {
-            string ws = System.IO.Path.Combine("/tmp/opencode/belts-build", key);
+            string ws = System.IO.Path.Combine(baseWs, key);
             System.IO.Directory.CreateDirectory(ws);
-            // limpa workspace da faixa para contagem limpa
-            foreach (var f in System.IO.Directory.GetFiles(ws)) System.IO.File.Delete(f);
-            foreach (var d in System.IO.Directory.GetDirectories(ws)) System.IO.Directory.Delete(d, true);
             Log($"  [belt-build:{key}] START ws={ws}");
             try
             {
@@ -66,7 +86,7 @@ internal static class E2EBeltsBuildTests
                 // >=3 arquivos e >500 chars reais em disco.
                 for (int turn = 0; turn < 14 && filesCreated < 8; turn++)
                 {
-                    var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
+                    var r = await PostChat(key, turn,
                         new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["max_tokens"]=16384, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
                     var msg = r["choices"]?[0]?["message"]?.AsObject();
                     string content = msg?["content"]?.GetValue<string>() ?? "";
@@ -142,7 +162,7 @@ internal static class E2EBeltsBuildTests
                     history.Add(new JsonObject { ["role"]="user", ["content"]="Revise os arquivos criados (leia-os com read) e responda REVIEW-OK com um resumo de 1 linha por arquivo." });
                     for (int turn = 0; turn < 4; turn++)
                     {
-                        var r2 = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
+                        var r2 = await PostChat(key, 100 + turn,
                             new JsonObject { ["model"]=model, ["temperature"]=0.1, ["stream"]=false, ["max_tokens"]=2048, ["messages"]=history.DeepClone(), ["tools"]=readTools.DeepClone() });
                         var msg2 = r2["choices"]?[0]?["message"]?.AsObject();
                         string content2 = msg2?["content"]?.GetValue<string>() ?? "";

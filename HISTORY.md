@@ -1,5 +1,30 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## WAR L1+L2 bridge-only: L1 verde, L2 corrigido e verde (2026-10-27)
+
+**Pedido:** reiniciar corretamente, rodar L1+L2 em bridge-only e fail-fast, com
+artefatos dentro de `logs/levels` do repositório.
+
+**Execução e resultados:**
+- L1 `logs/levels/L1-20261027-l1l2-l1`: `units`, `integration-bridge`,
+  `topics-bridge` = **3/3 PASS** (741 s), gate verde.
+- L2 `logs/levels/L2-20261027-l1l2-l2`: `belts-build-bridge` falhou em 500
+  `The model produced output that does not match the expected peg-gemma4
+  format`; `belts-orch-bridge` ficou SKIP (fail-fast). Gate vermelho.
+- Retry `logs/levels/L2-20261027-l2retry`: falha imediata `Access to the path
+  /tmp/opencode/belts-build/azul/Startup/DependencyInjection.cs is denied`.
+  Causa: o bridge executa `write` como root e o run seguinte, como `mint`,
+  não conseguia limpar o workspace anterior.
+- Correção em `E2EBeltsBuildTests`: workspace único por execução
+  (`/tmp/opencode/belts-build/<timestamp>-<pid>/<belt>`, sem reutilizar pasta
+  root) e um retry para 500 `peg-gemma4` com o mesmo histórico. Build Release
+  0 avisos / 0 erros.
+- L2 final `logs/levels/L2-20261027-l2fix`: `responses-tools-bridge`,
+  `tools-full-bridge`, `belts-build-bridge`, `belts-orch-bridge` = **4/4 PASS**
+  (537 s), gate verde.
+- Console e artefatos sempre no repo: `logs/levels/<run>.console.log` e
+  `logs/levels/L<N>-<stamp>/`; regra registrada no `AGENTS.md`.
+
 ## Janelas Zenity: diagnóstico nas bridges e 4 campos nos OpenCode Web (2026-10-26)
 
 **Pedido:** toda janela abre pedindo os dados, mas considerando os padrões; a
