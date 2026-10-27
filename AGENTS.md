@@ -161,3 +161,29 @@ conveniência manual, nunca fonte de verdade.
 - Motivo: contadores e `ProbeSamples` começam em zero e o pool HTTP dos dois
   lados é renovado.
 
+## Regra: disposição WAR L1 → L4 (ordem obrigatória)
+
+A esteira WAR tem quatro níveis, nesta ordem, tanto no `WarTemplate`
+(`--war-level`) quanto em `scripts/war/run-levels.sh` (`--level`):
+
+| Level | Ordem interna |
+|---|---|
+| **L1** | `units` (uma vez, bridge) → `integração` → `tópicos` |
+| **L2** | `E-responses-tools` → `E-tools-full` → belts **azul e verde** (build + orch) |
+| **L3** | `E-science-gpu` → `E-mission-tools` → belt **roxa** (build + orch) |
+| **L4** | `E-mission-algo` → belts **marrom e preta** (build + orch) → `E-front-*` → `webui-integracao-topicos` |
+
+- **L1 integração**: `E-stream-*`, `E-review-*`, `E-iot-*`, `E-error-*`,
+  `E-full-cycle-*`, `E-healthy-*`.
+- **L1 tópicos**: `E-senior-*`, `E-ent-*`.
+- **L4 web UI**: `E-front-gen`, `E-front-edit`, `E-front-edit-razor`,
+  `E-front-edit-react`, `E-front-verify` e `webui-integracao-topicos`.
+
+Cada nível roda sozinho (`--war-level 1..4` / `run-levels.sh --level 1..4`).
+Dentro do nível, `--war-only NAME` filtra steps (substring ou lista com
+vírgula). Dentro do step, o teste individual é `--only NOME` no runner.
+`--war-all` e `run-all-levels.sh` sem argumentos percorrem **1 → 2 → 3 → 4**
+e param no primeiro gate vermelho. Não mover testes entre níveis sem atualizar
+`WarTemplate`, `run-levels.sh`, `docs/BENCHTESTS.md`, `TEST-DRIVER.md` e este
+arquivo na mesma mudança.
+

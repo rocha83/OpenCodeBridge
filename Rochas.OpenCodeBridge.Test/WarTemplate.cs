@@ -4,18 +4,19 @@
 //  Este arquivo nao executa processo, nao controla pausa, nao faz lock e nao
 //  grava summary/events: tudo isso e o TestCircuitDriver (TestCircuitDriver.cs).
 //  Aqui mora somente a receita WAR:
-//    - levels 1..3, steps bridge/opencode/webui;
+//    - levels 1..4, steps bridge/opencode/webui;
 //    - preflight de llama, bridge, binarios, opencode, disco e GPU;
 //    - parser PASS/FAIL dos testes, causa e hash STALE;
 //    - build da .slnx e redeploy opt-in;
 //    - gate WAR (PASS>0, FAIL=0, STALE=0).
 //
 //  CLI:
-//    dotnet run -c Release -- --war-level 3
+//    dotnet run -c Release -- --war-level 4
 //    dotnet run -c Release -- --war-all
 //    dotnet run -c Release -- --war-levels 1,2
 //    dotnet run -c Release -- --war-level 2 --war-gate-only
-//    dotnet run -c Release -- --war-level 3 --war-list
+//    dotnet run -c Release -- --war-level 4 --war-list
+//    dotnet run -c Release -- --war-level 3 --war-only mission-tools
 //    dotnet run -c Release -- --war-pause | --war-resume | --war-status
 //
 //  Portavel: sem bash, flock(2), /proc, nvidia-smi obrigatorio ou paths
@@ -40,8 +41,9 @@ internal sealed class WarTemplate : CircuitTemplate
         public bool? Cpu;
         public int Level = 1;
         public int From = 1;
-        public int To = 3;
+        public int To = 4;
         public string? Levels;
+        public string? OnlySteps;
         public string? Stamp;
         public string? ResumeStamp;
         public int ResumeLevel = 1;
@@ -486,21 +488,47 @@ internal sealed class WarTemplate : CircuitTemplate
 
     public override IEnumerable<CircuitStepSpec> Steps(TestCircuitDriver driver)
     {
+        foreach (CircuitStepSpec step in AllSteps(driver))
+            if (MatchesStep(step.Name))
+                yield return step;
+    }
+
+    /// <summary>Filtro --war-only: substring (ou lista com virgula) do nome do step.</summary>
+    private bool MatchesStep(string name)
+    {
+        if (string.IsNullOrWhiteSpace(_o.OnlySteps)) return true;
+        foreach (string token in _o.OnlySteps.Split(',',
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            if (name.Contains(token, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    private IEnumerable<CircuitStepSpec> AllSteps(TestCircuitDriver driver)
+    {
         switch (_level)
         {
+            // L1: nucleo + integracao + topicos. Units primeiro (fail-fast
+            // barato); depois os cenarios de arquitetura e de dominio.
             case 1:
-                // L1 canonico: units primeiro (fail-fast barato: se o nucleo
-                // quebrou, nao gasta minutos nos cenarios de modelo), depois
-                // opencode/bridge caros. O ring3 do U-metrics-ring3-shell e
-                // incremento de teste; o step nao depende do ring3 anterior.
+                // Units sao da bridge (HTTP), nao do opencode: roda uma vez.
+                yield return StepBridge(driver, "units", "bridge",
+                    new[] { "--only", "U-" });
                 foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"units-{mode}", mode,
-                        new[] { "--only", "U-" });
-                    yield return StepBridge(driver, $"devpipe-{mode}", mode,
-                        new[] { "--only", "E-devpipe" });
-                    // Tools completas ja incluem o ciclo do antigo dual (pasta, git,
-                    // arquivo, edit, commits e historico_git.log).
+                    yield return StepBridge(driver, $"integration-{mode}", mode,
+                        new[] { "--only", "E-stream,E-review,E-iot,E-error,E-full-cycle,E-healthy" });
+                    yield return StepBridge(driver, $"topics-{mode}", mode,
+                        new[] { "--only", "E-senior,E-ent" });
+                }
+                break;
+
+            // L2: tools completas + belts azul/verde (build e orch).
+            case 2:
+                foreach (string mode in _p.Modes)
+                {
+                    yield return StepBridge(driver, $"responses-tools-{mode}", mode,
+                        new[] { "--only", "E-responses-tools" });
                     yield return StepBridge(driver, $"tools-full-{mode}", mode,
                         new[] { "--only", "E-tools-full" });
                     yield return StepBridge(driver, $"belts-build-{mode}", mode,
@@ -510,47 +538,39 @@ internal sealed class WarTemplate : CircuitTemplate
                 }
                 break;
 
-            case 2:
+            // L3: cientifico GPU + mission tools + belt roxa (build e orch).
+            case 3:
                 foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"responses-tools-{mode}", mode,
-                        new[] { "--only", "E-responses-tools" });
                     yield return StepBridge(driver, $"science-gpu-{mode}", mode,
                         new[] { "--only", "E-science-gpu" });
-                    if (_p.Cpu)
-                        yield return StepBridge(driver, $"science-cpu-{mode}", mode,
-                            new[] { "--only", "E-science-cpu" });
-                    else
-                        driver.Log($"SKIP science-cpu-{mode} (LEVEL_CPU=0)");
+                    yield return StepBridge(driver, $"mission-tools-{mode}", mode,
+                        new[] { "--only", "E-mission-tools" });
                     yield return StepBridge(driver, $"belts-build-roxa-{mode}", mode,
                         new[] { "--only", "E-belts-build-direct", "--belts", "roxa" });
                     yield return StepBridge(driver, $"belts-orch-roxa-{mode}", mode,
                         new[] { "--only", "E-belts-direct", "--belts", "roxa" });
-                    // Fim do L2: frontend pipeline (Gen MVC+React, edits reais, Verify).
-                    yield return StepBridge(driver, $"front-{mode}", mode,
-                        new[] { "--only", "E-front" });
                 }
                 break;
 
-            case 3:
-                // Mission e a entrega completa (C# + F# + git + zip): abre o
-                // fechamento. Se falhar, o L3 para antes das belts finais e do Web.
+            // L4: mission algo + belts marrom/preta + frontend e Web UI.
+            case 4:
                 foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"mission-tools-{mode}", mode,
-                        new[] { "--only", "E-mission-tools" });
                     yield return StepBridge(driver, $"algo-{mode}", mode,
                         new[] { "--only", "E-mission-algo" });
                     yield return StepBridge(driver, $"belts-build-final-{mode}", mode,
                         new[] { "--only", "E-belts-build-direct", "--belts", "marrom,preta" });
                     yield return StepBridge(driver, $"belts-orch-final-{mode}", mode,
                         new[] { "--only", "E-belts-direct", "--belts", "marrom,preta" });
+                    yield return StepBridge(driver, $"front-{mode}", mode,
+                        new[] { "--only", "E-front" });
                 }
                 yield return StepWeb(driver);
                 break;
 
             default:
-                throw new ArgumentException($"level invalido: {_level} (use 1..3)");
+                throw new ArgumentException($"level invalido: {_level} (use 1..4)");
         }
     }
 
@@ -795,7 +815,7 @@ internal sealed class WarTemplate : CircuitTemplate
                 ["harness_tails"] = btails,
                 ["context_tokens"] = bctx
             });
-            // Gate duro: o WAR sempre roda steps de bridge (L1..L3). Bridge
+            // Gate duro: o WAR sempre roda steps de bridge (L1..L4). Bridge
             // gerido sem MainHarness = modelo orfao de base, so tails. Nao e
             // aviso: aborta o preflight com a correcao explicita. O modo
             // opencode puro (fora do WAR) pode viver sem a base, porque usa o
@@ -1122,13 +1142,13 @@ internal sealed class WarTemplate : CircuitTemplate
             var list = new List<int>();
             foreach (string part in o.Levels.Split(',',
                          StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                if (int.TryParse(part, out int v) && v is >= 1 and <= 3) list.Add(v);
-            return list.Count > 0 ? list : new List<int> { 1, 2, 3 };
+                if (int.TryParse(part, out int v) && v is >= 1 and <= 4) list.Add(v);
+            return list.Count > 0 ? list : new List<int> { 1, 2, 3, 4 };
         }
         var all = new List<int>();
         for (int i = o.From; i <= o.To; i++)
-            if (i is >= 1 and <= 3) all.Add(i);
-        return all.Count > 0 ? all : new List<int> { 1, 2, 3 };
+            if (i is >= 1 and <= 4) all.Add(i);
+        return all.Count > 0 ? all : new List<int> { 1, 2, 3, 4 };
     }
 
     private static void LogGlobal(TextWriter? log, string message)
@@ -1220,13 +1240,16 @@ internal sealed class WarTemplate : CircuitTemplate
         switch (_level)
         {
             case 1:
-                Console.WriteLine("Level 1 -> units, devpipe, tools-full (com ciclo git/arquivo), belts build/orch azul+verde (opencode primeiro; bridge tails ON depois)");
+                Console.WriteLine("Level 1 -> units (bridge), integracao (E-stream/E-review/E-iot/E-error/E-full-cycle/E-healthy) e topicos (E-senior/E-ent) em bridge+opencode");
                 break;
             case 2:
-                Console.WriteLine("Level 2 -> responses-tools, science-gpu, science-cpu(Q3), roxa build/orch (bridge+opencode), frontend pipeline (Gen/Edit Razor/Edit React/Edit CSS/Verify); webui no L3");
+                Console.WriteLine("Level 2 -> responses-tools, tools-full, belts build/orch azul+verde, bridge+opencode");
                 break;
             case 3:
-                Console.WriteLine("Level 3 -> belts marrom+preta build/orch (bridge+opencode), webui");
+                Console.WriteLine("Level 3 -> science-gpu, mission-tools, belts build/orch roxa, bridge+opencode");
+                break;
+            case 4:
+                Console.WriteLine("Level 4 -> mission-algo, belts build/orch marrom+preta, frontend pipeline (E-front), webui-integracao-topicos");
                 break;
             default:
                 Console.WriteLine($"Level {_level} invalido");
@@ -1251,8 +1274,9 @@ internal sealed class WarTemplate : CircuitTemplate
                 case "--war-level": o.Level = ParseInt(Next(), 1); break;
                 case "--war-all": o.All = true; break;
                 case "--war-levels": o.Levels = Next(); o.All = true; break;
+                case "--war-only": o.OnlySteps = Next(); break;
                 case "--war-from": o.From = ParseInt(Next(), 1); o.All = true; break;
-                case "--war-to": o.To = ParseInt(Next(), 3); o.All = true; break;
+                case "--war-to": o.To = ParseInt(Next(), 4); o.All = true; break;
                 case "--war-stamp": o.Stamp = Next(); break;
                 case "--war-resume-stamp": o.ResumeStamp = Next(); o.All = true; break;
                 case "--war-resume-level": o.ResumeLevel = ParseInt(Next(), 1); o.All = true; break;
@@ -1301,9 +1325,9 @@ internal sealed class WarTemplate : CircuitTemplate
                     break;
             }
         }
-        if (o.Level is < 1 or > 3) throw new ArgumentException("--war-level deve ser 1..3");
-        if (o.From is < 1 or > 3) throw new ArgumentException("--war-from deve ser 1..3");
-        if (o.To is < 1 or > 3) throw new ArgumentException("--war-to deve ser 1..3");
+        if (o.Level is < 1 or > 4) throw new ArgumentException("--war-level deve ser 1..4");
+        if (o.From is < 1 or > 4) throw new ArgumentException("--war-from deve ser 1..4");
+        if (o.To is < 1 or > 4) throw new ArgumentException("--war-to deve ser 1..4");
         if (o.From > o.To) throw new ArgumentException("--war-from maior que --war-to");
         if (o.Retries is < 1 or > 10) throw new ArgumentException("--war-retries deve ser 1..10");
         if (o.Pause && o.Resume) throw new ArgumentException("--war-pause e --war-resume sao exclusivos");
@@ -1318,9 +1342,10 @@ internal sealed class WarTemplate : CircuitTemplate
         WarTemplate (Rochas.OpenCodeBridge.Test) — template WAR do TestCircuitDriver
 
         EXECUCAO
-          --war-level N            executa um level (1..3)
-          --war-all                executa 1 -> 3 em sequencia
-          --war-levels 1,2,3       levels explicitos
+          --war-level N            executa um level (1..4)
+          --war-all                executa 1 -> 4 em sequencia
+          --war-levels 1,2,3,4     levels explicitos
+          --war-only NAME          roda so steps cujo nome contem NAME (virgula = lista)
           --war-modes bridge       modos (opencode|bridge), default "opencode bridge"
           --war-from N --war-to N  faixa de levels
           --war-stamp STAMP        stamp do run (level unico)

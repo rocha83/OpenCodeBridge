@@ -4189,3 +4189,38 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
 - Primeiras execucoes isoldadas: `E-mission-tools` expos dois problemas reais
   (obj root-owned e modelo usando `edit` sem `oldString`), corrigidos na
   sequencia acima; o rerun verde fica registrado neste arquivo após a bateria.
+
+**WAR L1 -> L4 e filtros por nivel/step/teste (2026-10-27).**
+- A esteira passa a ter **quatro niveis**, nesta ordem obrigatoria:
+  - **L1**: `units` -> `integracao` (`E-stream`, `E-review`, `E-iot`,
+    `E-error`, `E-full-cycle`, `E-healthy`) -> `topicos` (`E-senior`,
+    `E-ent`);
+  - **L2**: `E-responses-tools` -> `E-tools-full` -> belts **azul e verde**
+    (build + orch);
+  - **L3**: `E-science-gpu` -> `E-mission-tools` -> belt **roxa**
+    (build + orch);
+  - **L4**: `E-mission-algo` -> belts **marrom e preta** (build + orch) ->
+    frontend `E-front-*` -> `webui-integracao-topicos`.
+- `WarTemplate` (`--war-level 1..4`, `--war-all`, `--war-levels`, `--war-from/--war-to`)
+  e `scripts/war/run-levels.sh` (`--level 1..4`) foram alinhados. Cada nivel
+  roda sozinho; `run-all-levels.sh` percorre 1 -> 4 e para no primeiro gate
+  vermelho.
+- Filtros preservados e ampliados:
+  - `--war-only NAME` seleciona steps do nivel por substring (ou lista com
+    virgula), sem executar o resto;
+  - `--only NAME` continua selecionando o teste individual dentro do step e
+    agora aceita lista com virgula (`--only E-front-edit-razor,E-senior-erp`).
+- `PrintSteps`/`--war-list` e `docs/BENCHTESTS.md`, `TEST-DRIVER.md` e
+  `AGENTS.md` registram a disposicao. O antigo L2 (science/front) e o antigo
+  L3 (marrom/preta/webui) foram redistribuidos; `E-science-cpu`,
+  `E-devpipe-*` e `E-dual-tools` ficam fora dos niveis e rodam por `--only`
+  quando necessario.
+- Validacao: `dotnet build Rochas.OpenCodeBridge.Test -c Release` verde
+  (0 avisos, 0 erros); `--war-list` de L1..L4 e `run-levels.sh --level 1..4
+  --list` imprimem a nova ordem; `bash -n` limpo nos dois scripts.
+- `--war-level 1 --war-only units` rodou como step unico e fechou
+  `PASS=1 FAIL=0 SKIP=0` (`/tmp/opencode/war-check2/L1-20261027-l1units2`).
+  Units rodam uma vez na bridge, nao no opencode: a variante opencode falhava
+  em `U-translate-temp-respeita-tunel` porque a cauda e do caminho bridge.
+- O preflight do `run-levels.sh` so exige a Web UI no L4; L1..L3 rodam sem a
+  Web no ar, coerente com a nova distribuicao.

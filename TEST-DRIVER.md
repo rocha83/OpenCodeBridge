@@ -97,7 +97,7 @@ nesse caso o driver nem cria/executa o restante do run.
 - `--war-status` mostra o lock, a pausa, os binários e os últimos levels.
 - `--war-all` mantém **um único lock** para a trilha inteira e passa
   `AcquireLock=false` para os drivers dos levels; assim nenhum outro runner
-  entra entre L1 e L3.
+  entra entre L1 e L4.
 - `--war-gate-only` é leitura pura: não adquire lock.
 
 ### Exit codes
@@ -335,7 +335,7 @@ Observações:
 - `sem_run_orfao` usa `Process.GetProcesses()` e `ProcessName`; se o runner for
   iniciado como `dotnet exec`, o nome será `dotnet` e a detecção é limitada.
   Isso é documentado como limitação portável, não como bloqueio.
-- No L3, `main_harness=false` gera **apenas aviso**; não bloqueia.
+- No L3 e no L4, `main_harness=false` gera **apenas aviso**; não bloqueia.
 
 ## 10. Levels e steps da WAR
 
@@ -344,9 +344,14 @@ Cada level roda os steps em série (`MaxParallelSteps=1`), nos dois modos
 
 | Level | Steps |
 |---|---|
-| **L1** | `units-{bridge,opencode}` (`U-`), `devpipe-{bridge,opencode}` (`E-devpipe`), `tools-full-{bridge,opencode}` (`E-tools-full`, com o ciclo git/arquivo do antigo dual), `belts-build-{bridge,opencode}` (azul,verde), `belts-orch-{bridge,opencode}` (azul,verde). Web UI fica no L3. |
-| **L2** | `mission-tools`, `responses-tools`, `science-gpu`, `science-cpu` (se CPU ligada), `belts-build-roxa` e `belts-orch-roxa` nos dois modos. Web UI fica no L3. |
-| **L3** | `belts-build-final` (marrom,preta), `belts-orch-final` (marrom,preta) nos dois modos, `webui-integracao-topicos`. |
+| **L1** | `units` uma vez (`U-`, bridge), `integration-{bridge,opencode}` (`E-stream/E-review/E-iot/E-error/E-full-cycle/E-healthy`), `topics-{bridge,opencode}` (`E-senior/E-ent`). |
+| **L2** | `responses-tools-{bridge,opencode}`, `tools-full-{bridge,opencode}`, `belts-build-{bridge,opencode}` (azul,verde), `belts-orch-{bridge,opencode}` (azul,verde). |
+| **L3** | `science-gpu-{bridge,opencode}`, `mission-tools-{bridge,opencode}`, `belts-build-roxa-{bridge,opencode}`, `belts-orch-roxa-{bridge,opencode}`. |
+| **L4** | `algo-{bridge,opencode}`, `belts-build-final-{bridge,opencode}` (marrom,preta), `belts-orch-final-{bridge,opencode}` (marrom,preta), `front-{bridge,opencode}`, `webui-integracao-topicos`. |
+
+Cada level roda sozinho (`--war-level N`). Dentro do level, `--war-only NAME`
+filtra steps por substring (ou lista com vírgula); dentro do step, o teste
+individual é `--only NOME` no runner.
 
 Modos:
 
@@ -407,17 +412,21 @@ de enunciado/teste, não para afrouxar o gate.
 ## 13. CLI
 
 ```bash
-# level único
-dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-level 3
+# level único (1..4)
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-level 4
 
-# trilha inteira
+# trilha inteira (1 -> 4)
 dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-all
 
 # levels explícitos
 dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-levels 1,2
 
+# um step do level
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- \
+  --war-level 1 --war-only integration
+
 # listar steps sem executar
-dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-level 3 --war-list
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-level 4 --war-list
 
 # recalcular gate de um run
 dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- \
@@ -514,7 +523,7 @@ Exemplo: `--war-level 2` com Q4 em `:4124` e Q3 em `:4125`.
     exit 0; senão exit 1.
 11. `OnRunEnd` publica `run_end` e imprime os artefatos.
 
-Se `--war-all`, o `WarTemplate` mantém **um** lock para L1→L3, cria um
+Se `--war-all`, o `WarTemplate` mantém **um** lock para L1→L4, cria um
 `TestCircuitDriver` por level e continua após um level vermelho, registrando o
 rc em `driver-summary-<stamp>.tsv`. No fim, exit 1 se qualquer level falhou.
 `--war-resume-stamp`/`--war-resume-level` reutilizam o stamp de um level

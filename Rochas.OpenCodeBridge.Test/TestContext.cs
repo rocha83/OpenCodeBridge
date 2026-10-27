@@ -150,6 +150,15 @@ internal static class TestContext
         };
     }
 
+    /// <summary>--only aceita nome unico ou lista separada por virgula (substring).</summary>
+    private static bool MatchesOnly(string name)
+    {
+        foreach (string token in Only.Split(',',
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            if (name.Contains(token, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
     /// <summary>Recria o HttpClient do runner preservando a credencial.</summary>
     public static void ResetHttp()
     {
@@ -161,7 +170,7 @@ internal static class TestContext
 
     public static void Run(string name, Func<Task> fn)
     {
-        if (Only.Length > 0 && !name.Contains(Only, StringComparison.OrdinalIgnoreCase))
+        if (Only.Length > 0 && !MatchesOnly(name))
         {
             Console.WriteLine($"SKIP {name} (filtro --only)");
             return;

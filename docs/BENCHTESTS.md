@@ -186,13 +186,71 @@ A bateria frontend (`E-front-*`) segue a mesma regra: Gen/Edit/Verify usam o
 catálogo do Core e `POST /api/tools/execute`; os enunciados editam peças reais
 de MVC Razor e React, não um vocabulário próprio do teste.
 
-## 10. Level 1 — ordem das trilhas (`scripts/war/run-levels.sh`)
+## 10. Disposição canônica dos LEVELS (L1 → L4)
 
-Level 1 é a subida antes da produção: **units → devpipe → belts Build → belts Orch**, cada
-bloco em dois passes (`--mode pure` e `--mode opencode`), fechando com a suíte web
-(integração + tópicos). As duas trilhas de belts já existiam como testes separados
-(`E-belts-build-direct` = role build implementa direto; `E-belts-direct` = role orch
-segmenta → Scripter → Exec); o runner só passou a executá-las **nesta ordem**.
+Ordem obrigatória da esteira WAR, válida para `WarTemplate` (`--war-level`)
+e para `scripts/war/run-levels.sh` (`--level`). Cada nível roda sozinho; os
+steps de um nível podem ser filtrados por `--war-only`; um teste dentro do
+step pode ser filtrado por `--only`.
+
+| Level | Ordem interna |
+|---|---|
+| **L1** | `units` (uma vez, bridge) → `integração` → `tópicos` |
+| **L2** | `E-responses-tools` → `E-tools-full` → belts **azul e verde** (build + orch) |
+| **L3** | `E-science-gpu` → `E-mission-tools` → belt **roxa** (build + orch) |
+| **L4** | `E-mission-algo` → belts **marrom e preta** (build + orch) → frontend `E-front-*` → `webui-integracao-topicos` |
+
+- **L1 integração**: `E-stream-architect`, `E-review-architect`,
+  `E-iot-event-queue`, `E-error-mitigation`,
+  `E-full-cycle-iot-queue-push`, `E-healthy-concurrency`.
+- **L1 tópicos**: `E-senior-react`, `E-senior-bus`, `E-senior-erp`,
+  `E-senior-arm`, `E-ent-crud-product`, `E-ent-crud-customer`,
+  `E-ent-crud-saleinvoice`, `E-ent-worker`, `E-ent-garnet`, `E-ent-dashboard`.
+- **L4 frontend/web**: `E-front-gen`, `E-front-edit` (CSS),
+  `E-front-edit-razor`, `E-front-edit-react`, `E-front-verify` e
+  `webui-integracao-topicos` (Web.Test).
+
+### Rodar um nível sozinho
+
+```bash
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --war-level 1
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --war-level 4
+```
+
+### Rodar um step do nível
+
+`--war-only` aceita substring ou lista separada por vírgula:
+
+```bash
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --war-level 1 --war-only integration
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --war-level 4 --war-only belts-build-final,front
+```
+
+### Rodar um teste individual
+
+O step é só o agrupamento; o teste específico é `--only` no runner:
+
+```bash
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --only E-front-edit-react --mode bridge
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --only E-senior-erp --mode bridge
+```
+
+### Scripts e trilha completa
+
+```bash
+./scripts/war/run-levels.sh --level 3
+./scripts/war/run-all-levels.sh --levels 1,2
+./scripts/war/run-all-levels.sh --from 3   # 3 -> 4
+```
+
+`--war-all` e `run-all-levels.sh` sem argumentos percorrem **1 → 2 → 3 → 4**,
+parando no primeiro gate vermelho.
 
 > **`export PORT=<porta livre>`** antes dos blocos abaixo. A bridge é **de bancada**:
 > descartável, criada e morta na execução. Ela **não** entra em unit, firewall, `opencode.json`
@@ -218,7 +276,7 @@ Artefatos: `logs/levels/L1-<stamp>/{summary.tsv,steps/,state/}` (disco da sda3);
 `STATE` do mesmo stamp (`LEVEL_STAMP=<stamp>`). Sem ordem fixa de faixas: `--belts azul,verde`
 filtra.
 
-### Raia Q3 (Level 1 texto-only)
+### Raia Q3 (opcional, texto-only)
 
 A `:4110` roda o UD-Q3 **sem mmproj**, então os testes de imagem (`E-devpipe-vision`,
 `E-devpipe-doc`, `E-devpipe-vision-tool`) não têm como passar. O runner trata isso por
@@ -255,26 +313,36 @@ Duas variáveis mandam na raia: **`LEVEL_UPSTREAM`** vira `WAR_UPSTREAM` (o asse
 `LEVEL_UPSTREAM` termina em `:4110`, e `LEVEL_NO_VISION=0` força a execução dos testes de
 imagem. Sem essas variáveis o comportamento é o de antes (`:4100`, visão ligada).
 
-### Level 2 — bateria de tools + científico
+### L2 — tools + belts azul/verde
 
 `LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 2`
 
-Roda, em `--mode bridge` e `--mode opencode`: `E-tools-full`, `E-dual-tools`,
-`E-mission-tools`, `E-responses-tools`, `E-science-gpu` (Q4, bridge do level) e
-`E-science-cpu` (linha Q3, `WAR_CPU_BRIDGE` ou `:4125`), e **fecha com o frontend
-pipeline `E-front-*`** (Gen MVC+React, edição de Razor, edição de React, edição de
-CSS e Verify). `LEVEL_CPU=0` pula o científico da linha Q3 (útil quando a `:4125`
-está em uso por sessão real). Artefatos no mesmo layout do Level 1.
+Roda, em `--mode bridge` e `--mode opencode`, nesta ordem:
+`E-responses-tools` → `E-tools-full` → `belts-build` azul+verde →
+`belts-orch` azul+verde. As duas trilhas de belt são
+`E-belts-build-direct` (build implementa direto) e `E-belts-direct`
+(orch segmenta → Scripter → Exec). Não roda science, mission nem frontend.
 
-### Level 3 — pacote completo de belts (azul → preta)
+### L3 — science + mission tools + roxa
 
 `LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 3`
 
-Duas trilhas, nas cinco faixas (`azul,verde,roxa,marrom,preta`), em `--mode pure` e
-`--mode opencode`: **trilha Build** (`E-belts-build-direct` — role build implementa
-direto) e **trilha Orch** (`E-belts-direct` — orch segmenta → Scripter → Exec).
-Exige **harness ligado** na bridge; o runner consulta `/api/harness` e loga aviso se
-`main_harness` não estiver `true`:
+Roda, em `--mode bridge` e `--mode opencode`, nesta ordem:
+`E-science-gpu` → `E-mission-tools` → `belts-build` roxa →
+`belts-orch` roxa. A linha `E-science-cpu` não entra neste nível; roda
+isolada com `--only E-science-cpu` quando a Q3 estiver dedicada.
+
+### L4 — mission algo + marrom/preta + web UI
+
+`LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 4`
+
+Roda, em `--mode bridge` e `--mode opencode`, nesta ordem:
+`E-mission-algo` → `belts-build` marrom+preta →
+`belts-orch` marrom+preta → `E-front-*` (Gen/Edit CSS/Razor/React/Verify)
+→ `webui-integracao-topicos` (Web.Test: integração + tópicos).
+
+L3 e L4 exigem **harness ligado** na bridge; o runner consulta `/api/harness`
+e loga aviso se `main_harness` não estiver `true`:
 
 ```bash
 cd Rochas.OpenCodeBridge/bin/Release/net10.0

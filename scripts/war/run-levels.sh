@@ -18,6 +18,7 @@
 #
 # Uso:
 #   run-levels.sh --level 1                      # executa (retoma pelo stamp)
+#   run-levels.sh --level 4                      # L1..L4, cada um sozinho
 #   LEVEL_STAMP=fixed run-levels.sh --level 1
 #   run-levels.sh --level 1 --list
 #   run-levels.sh --level 2 --gate-only          # so recalcula o gate do run
@@ -183,13 +184,15 @@ preflight() {
   else
     pf "opencode_cli" false "{\"erro\":\"opencode ausente no PATH\"}"
   fi
-  # 6) Web UI (o step webui roda o Web.Test contra esta porta)
-  local web_port="${BRIDGE_WEB_PORT:-4130}" wcode
-  wcode=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$web_port/Account/Login" 2>/dev/null || echo 000)
-  if [ "$wcode" = "200" ]; then
-    pf "web_ui" true "{\"port\":$web_port,\"login\":200}"
-  else
-    pf "web_ui" false "{\"port\":$web_port,\"login\":\"$wcode\"}"
+  # 6) Web UI: so o L4 roda o step webui; L1..L3 nao exigem a Web no ar.
+  if [ "$LEVEL" = "4" ]; then
+    local web_port="${BRIDGE_WEB_PORT:-4130}" wcode
+    wcode=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$web_port/Account/Login" 2>/dev/null || echo 000)
+    if [ "$wcode" = "200" ]; then
+      pf "web_ui" true "{\"port\":$web_port,\"login\":200}"
+    else
+      pf "web_ui" false "{\"port\":$web_port,\"login\":\"$wcode\"}"
+    fi
   fi
   # 7) infra: run orfao, disco, GPU
   if pgrep -f "Rochas[.]OpenCodeBridge[.]Test[.]dll" >/dev/null 2>&1; then
@@ -339,51 +342,38 @@ fi
 
 case "$LEVEL" in
   1)
-    STEPS_DESC="units bridge/opencode; devpipe bridge/opencode; tools-full (com ciclo git/arquivo) bridge/opencode; belts build (azul,verde) bridge/opencode; belts orch (azul,verde) bridge/opencode"
+    STEPS_DESC="units (bridge, uma vez); integracao bridge/opencode (E-stream/E-review/E-iot/E-error/E-full-cycle/E-healthy); topicos bridge/opencode (E-senior/E-ent)"
     if [ "$LIST" = "1" ]; then
       echo "Level 1 -> $STEPS_DESC"; exit 0
     fi
     emit "{\"t\":\"run_start\",\"level\":1,\"stamp\":\"$STAMP\",\"git\":\"$(jesc "$HASH_GIT")\",\"dlls\":{\"bridge\":\"$HASH_BRIDGE\",\"test\":\"$INIT_HASH_TEST\",\"web\":\"$HASH_WEB\"},\"bridge\":\"$(jesc "$BRIDGE")\",\"upstream\":\"$(jesc "$WAR_UPSTREAM")\",\"no_vision\":$([ "$NO_VISION" = "1" ] && echo true || echo false)}"
     log "=== LEVEL 1 ($OUT) ==="
     preflight || { log "BLOCKED: preflight reprovado"; gate; exit 3; }
+    # Units sao da bridge (HTTP), nao do opencode: roda uma vez.
+    step_bridge "units" --only U- --mode bridge
     for mode in $MODES; do
-      step_bridge "units-$mode" --only U- --mode "$mode"
-      step_bridge "devpipe-$mode" --only E-devpipe --mode "$mode"
-      step_bridge "tools-full-$mode" --only E-tools-full --mode "$mode"
-      # Ordem: trilha Build primeiro, trilha Orch depois (duas trilhas da suite).
-      step_bridge "belts-build-$mode" --only E-belts-build-direct --belts azul,verde --mode "$mode"
-      step_bridge "belts-orch-$mode" --only E-belts-direct --belts azul,verde --mode "$mode"
+      step_bridge "integration-$mode" --only E-stream,E-review,E-iot,E-error,E-full-cycle,E-healthy --mode "$mode"
+      step_bridge "topics-$mode" --only E-senior,E-ent --mode "$mode"
     done
-    step_webtest
     ;;
   2)
-    STEPS_DESC="mission-tools; responses-tools; science-gpu; science-cpu(Q3); belts roxa build/orch (bridge+opencode); frontend Gen/Edit Razor/Edit React/Edit CSS/Verify; webui movida p/ fim do L3"
+    STEPS_DESC="responses-tools; tools-full; belts build/orch azul,verde (bridge+opencode)"
     if [ "$LIST" = "1" ]; then
       echo "Level 2 -> $STEPS_DESC"; exit 0
     fi
-    emit "{\"t\":\"run_start\",\"modes\":\"$(jesc "$MODES")\",\"level\":2,\"stamp\":\"$STAMP\",\"git\":\"$(jesc "$HASH_GIT")\",\"dlls\":{\"bridge\":\"$HASH_BRIDGE\",\"test\":\"$INIT_HASH_TEST\",\"web\":\"$HASH_WEB\"},\"bridge\":\"$(jesc "$BRIDGE")\",\"upstream\":\"$(jesc "$WAR_UPSTREAM")\",\"q3_bridge\":\"$(jesc "${LEVEL_BRIDGE_Q3:-}")\"}"
+    emit "{\"t\":\"run_start\",\"modes\":\"$(jesc "$MODES")\",\"level\":2,\"stamp\":\"$STAMP\",\"git\":\"$(jesc "$HASH_GIT")\",\"dlls\":{\"bridge\":\"$HASH_BRIDGE\",\"test\":\"$INIT_HASH_TEST\",\"web\":\"$HASH_WEB\"},\"bridge\":\"$(jesc "$BRIDGE")\",\"upstream\":\"$(jesc "$WAR_UPSTREAM")\"}"
     log "=== LEVEL 2 ($OUT) ==="
     preflight || { log "BLOCKED: preflight reprovado"; gate; exit 3; }
     for mode in $MODES; do
-      step_bridge "mission-tools-$mode" --only E-mission-tools --mode "$mode"
       step_bridge "responses-tools-$mode" --only E-responses-tools --mode "$mode"
-      step_bridge "science-gpu-$mode" --only E-science-gpu --mode "$mode"
-      # Cientifico na linha Q3 (bridge de bancada via LEVEL_BRIDGE_Q3).
-      if [ "${LEVEL_CPU:-1}" = "1" ]; then
-        step_bridge "science-cpu-$mode" --only E-science-cpu --mode "$mode"
-      else
-        log "SKIP science-cpu-$mode (LEVEL_CPU=0)"
-      fi
-      # Faixa roxa: distribuida aqui; azul/verde ficam no L1 e marrom/preta no L3.
-      step_bridge "belts-build-roxa-$mode" --only E-belts-build-direct --belts roxa --mode "$mode"
-      step_bridge "belts-orch-roxa-$mode" --only E-belts-direct --belts roxa --mode "$mode"
-      # Frontend pipeline fecha o L2: Gen MVC+Razor/React, edits reais e Verify.
-      step_bridge "front-$mode" --only E-front --mode "$mode"
+      step_bridge "tools-full-$mode" --only E-tools-full --mode "$mode"
+      # Ordem: trilha Build primeiro, trilha Orch depois.
+      step_bridge "belts-build-$mode" --only E-belts-build-direct --belts azul,verde --mode "$mode"
+      step_bridge "belts-orch-$mode" --only E-belts-direct --belts azul,verde --mode "$mode"
     done
-    # Web UI saiu do L2: roda no fim da fila do L3.
     ;;
   3)
-    STEPS_DESC="belts marrom,preta: trilha build + trilha orch, modos bridge e opencode (harness on); webui no fim"
+    STEPS_DESC="science-gpu; mission-tools; belts build/orch roxa (bridge+opencode)"
     if [ "$LIST" = "1" ]; then
       echo "Level 3 -> $STEPS_DESC"; exit 0
     fi
@@ -396,14 +386,35 @@ case "$LEVEL" in
     echo "$HSTATUS" | grep -q '"main_harness":true' \
       || log "AVISO: main_harness nao esta true — Level 3 pede harness ligado (--main-harness 1 --harness-tails 1)"
     for mode in $MODES; do
+      step_bridge "science-gpu-$mode" --only E-science-gpu --mode "$mode"
+      step_bridge "mission-tools-$mode" --only E-mission-tools --mode "$mode"
+      step_bridge "belts-build-roxa-$mode" --only E-belts-build-direct --belts roxa --mode "$mode"
+      step_bridge "belts-orch-roxa-$mode" --only E-belts-direct --belts roxa --mode "$mode"
+    done
+    ;;
+  4)
+    STEPS_DESC="mission-algo; belts build/orch marrom,preta (bridge+opencode); frontend E-front; webui-integracao-topicos"
+    if [ "$LIST" = "1" ]; then
+      echo "Level 4 -> $STEPS_DESC"; exit 0
+    fi
+    emit "{\"t\":\"run_start\",\"modes\":\"$(jesc "$MODES")\",\"level\":4,\"stamp\":\"$STAMP\",\"git\":\"$(jesc "$HASH_GIT")\",\"dlls\":{\"bridge\":\"$HASH_BRIDGE\",\"test\":\"$INIT_HASH_TEST\",\"web\":\"$HASH_WEB\"},\"bridge\":\"$(jesc "$BRIDGE")\",\"upstream\":\"$(jesc "$WAR_UPSTREAM")\"}"
+    log "=== LEVEL 4 ($OUT) ==="
+    preflight || { log "BLOCKED: preflight reprovado"; gate; exit 3; }
+    HSTATUS="$(curl -s -m 5 -H "Authorization: Bearer $API" "$BRIDGE/api/harness" 2>/dev/null)"
+    [ -n "$HSTATUS" ] || HSTATUS="$(curl -s -m 5 -H "Authorization: Bearer $API" "$BRIDGE/api/status" 2>/dev/null)"
+    log "harness na bridge $BRIDGE: $(echo "$HSTATUS" | head -c 300)"
+    echo "$HSTATUS" | grep -q '"main_harness":true' \
+      || log "AVISO: main_harness nao esta true — Level 4 pede harness ligado (--main-harness 1 --harness-tails 1)"
+    for mode in $MODES; do
+      step_bridge "algo-$mode" --only E-mission-algo --mode "$mode"
       step_bridge "belts-build-final-$mode" --only E-belts-build-direct --belts marrom,preta --mode "$mode"
       step_bridge "belts-orch-final-$mode" --only E-belts-direct --belts marrom,preta --mode "$mode"
+      step_bridge "front-$mode" --only E-front --mode "$mode"
     done
-    # Web UI no fim da fila do L3 (saiu do L2).
     step_webtest
     ;;
   *)
-    echo "Level $LEVEL ainda nao definido (implementado: 1, 2, 3)"; exit 2 ;;
+    echo "Level $LEVEL ainda nao definido (implementado: 1, 2, 3, 4)"; exit 2 ;;
 esac
 
 gate; exit $?

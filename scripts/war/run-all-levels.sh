@@ -1,13 +1,13 @@
 #!/bin/bash
 # ============================================================================
-# Trilha unica de levels: roda Level 1 -> 2 -> 3 em sequencia e PARA no
+# Trilha unica de levels: roda Level 1 -> 2 -> 3 -> 4 em sequencia e PARA no
 # primeiro gate vermelho (FAIL/BLOCKED/STALE). Cada nivel grava seus artefatos
 # em logs/levels/L<n>-<stamp>/ e o console consolidado em
 # logs/levels/all-levels-<stamp>.console.log.
 #
 # Uso:
-#   scripts/war/run-all-levels.sh                 # 1 -> 2 -> 3
-#   scripts/war/run-all-levels.sh --from 2        # 2 -> 3
+#   scripts/war/run-all-levels.sh                 # 1 -> 2 -> 3 -> 4
+#   scripts/war/run-all-levels.sh --from 2        # 2 -> 3 -> 4
 #   scripts/war/run-all-levels.sh --levels 1,2    # so 1 e 2
 #   scripts/war/run-all-levels.sh --gate-only     # recalcula gate dos runs
 #
@@ -21,7 +21,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${LEVEL_ROOT:-${REPO:-$(cd "$HERE/../.." && pwd)}}"
 OUTBASE="${LEVEL_OUT:-$ROOT/logs/levels}"
 FROM=1
-TO=3
+TO=4
 GATE_ONLY=0
 LEVELS=""
 RESUME_STAMP=""

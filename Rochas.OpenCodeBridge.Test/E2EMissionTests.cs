@@ -76,7 +76,7 @@ internal static class E2EMissionTests
         const string sysBase = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls, sem prosa.";
         var sys = new JsonObject { ["role"] = "system", ["content"] = sysBase };
         var history = new JsonArray(sys);
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Em {ws}/mcs, implemente em Program.cs o calculo de Simpson de Math.Sin em [0,pi] (n=100) e a media e o desvio padrao populacional de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. O projeto C# ja existe em {ws}/mcs/mcs.csproj; NAO crie Program.csproj, bin ou obj. Grave o arquivo completo com a tool write (nao use edit para criar o arquivo). Rode `dotnet run --project {ws}/mcs/mcs.csproj` (nao use `dotnet build --project`) e ajuste ate a saida ser 2.000000, 5.000000 e 2.000000." });
+        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Em {ws}/mcs, implemente em Program.cs o calculo de Simpson de Math.Sin em [0,pi] (n=100) e a media e o desvio padrao populacional de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. O projeto C# ja existe em {ws}/mcs/mcs.csproj; NAO crie Program.csproj, bin ou obj. Grave o arquivo completo com a tool write (nao use edit para criar o arquivo), enxuto e sem comentarios longos. Dica de Simpson: h=(b-a)/n e integral=(h/3)*(f0+fn+4*impares+2*pares). Rode `dotnet run --project {ws}/mcs/mcs.csproj` (nao use `dotnet build --project`) e ajuste ate a saida ser 2.000000, 5.000000 e 2.000000." });
 
         string fcode = "", final = "";
         string logPath = Path.Combine(ws, "_mission.log");
@@ -114,7 +114,17 @@ internal static class E2EMissionTests
         }
         for (int turn = 0; turn < 14; turn++)
         {
-            var r = await Chat(bridge, model, (JsonArray)history.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
+            JsonObject r;
+            try
+            {
+                r = await Chat(bridge, model, (JsonArray)history.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
+            }
+            catch (Exception ex)
+            {
+                LogT($"[C#] T{turn} HTTP falhou: {ex.Message.Split('\n')[0]}");
+                history.Add(new JsonObject { ["role"] = "user", ["content"] = "A resposta anterior foi cortada pela bridge. Reenvie uma tool call curta: write com o arquivo completo, enxuto e sem comentarios longos." });
+                continue;
+            }
             var msg = r["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message");
             var calls = msg["tool_calls"]?.AsArray();
             if (calls is null || calls.Count == 0)
@@ -190,10 +200,20 @@ internal static class E2EMissionTests
                     $"Sem prosa: o build do F# falhou: {errLine}. Corrija {ws}/mfs/Program.fs e rode `dotnet run --project {ws}/mfs/mfs.fsproj` ate sair 2.000000 e 5.000000." });
             }
             histFs.Add(new JsonObject { ["role"] = "user", ["content"] =
-                $"Em {ws}/mfs, implemente em Program.fs (o projeto ja existe em {ws}/mfs/mfs.fsproj; NAO crie mfs.csproj, Program.cs, bin ou obj) um programa F# que calcule e imprima com 6 casas: (a) Simpson de System.Math.Sin em [0, pi] com n=100 -> meta 2.000000; (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> meta 5.000000; (c) o desvio padrao populacional da mesma lista -> meta 2.000000. Grave o arquivo completo com a tool write (nao use edit para criar o arquivo). F# idiomatico: `System.Math.Sin/Sqrt/PI` qualificado, `printfn \"%.6f\"`, aritmetica float com `+ - * /` e `** 2.0`, listas com `List.sum/List.map/List.fold`. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` e ajuste ate as metas baterem." });
+                $"Em {ws}/mfs, implemente em Program.fs (o projeto ja existe em {ws}/mfs/mfs.fsproj; NAO crie mfs.csproj, Program.cs, bin ou obj) um programa F# que calcule e imprima com 6 casas: (a) Simpson de System.Math.Sin em [0, pi] com n=100 -> meta 2.000000; (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> meta 5.000000; (c) o desvio padrao populacional da mesma lista -> meta 2.000000. Grave o arquivo completo com a tool write (nao use edit para criar o arquivo), enxuto e sem comentarios longos. Dica de Simpson: h=(b-a)/n e integral=(h/3)*(f0+fn+4*impares+2*pares). F# idiomatico: `System.Math.Sin/Sqrt/PI` qualificado, `printfn \"%.6f\"`, aritmetica float com `+ - * /` e `** 2.0`, listas com `List.sum/List.map/List.fold`. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` e ajuste ate as metas baterem." });
         for (int turn = 0; turn < 22; turn++)
         {
-            var rf = await Chat(bridge, model, (JsonArray)histFs.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
+            JsonObject rf;
+            try
+            {
+                rf = await Chat(bridge, model, (JsonArray)histFs.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
+            }
+            catch (Exception ex)
+            {
+                LogT($"[F#] T{turn} HTTP falhou: {ex.Message.Split('\n')[0]}");
+                histFs.Add(new JsonObject { ["role"] = "user", ["content"] = "A resposta anterior foi cortada pela bridge. Reenvie uma tool call curta: write com Program.fs completo, enxuto e sem comentarios longos." });
+                continue;
+            }
             var mf = rf["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message (F#)");
             var cf = mf["tool_calls"]?.AsArray();
             if (cf is null || cf.Count == 0)
@@ -337,7 +357,17 @@ internal static class E2EMissionTests
         hist.Add(new JsonObject { ["role"] = "user", ["content"] = prompt });
         for (int turn = 0; turn < turns; turn++)
         {
-            var r = await Chat(bridge, model, (JsonArray)hist.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
+            JsonObject r;
+            try
+            {
+                r = await Chat(bridge, model, (JsonArray)hist.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
+            }
+            catch (Exception ex)
+            {
+                hist.Add(new JsonObject { ["role"] = "user", ["content"] = "A resposta anterior foi cortada pela bridge. Reenvie uma tool call curta: write com o arquivo completo, enxuto e sem comentarios longos." });
+                Console.WriteLine($"  [algo:{lang}] HTTP falhou: {ex.Message.Split('\n')[0]}");
+                continue;
+            }
             var m = r["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message (" + lang + ")");
             var calls = m["tool_calls"]?.AsArray();
             if (calls is null || calls.Count == 0)
