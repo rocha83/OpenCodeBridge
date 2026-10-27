@@ -95,7 +95,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/enunciado/messages?fresh=1",
+          "url": "http://127.0.0.1:4124/api/test/enunciado/messages",
           "url_options": {
             "method": "GET"
           },
@@ -590,7 +590,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/steps?war=1&fresh=1",
+          "url": "http://127.0.0.1:4124/api/test/steps?war=1",
           "url_options": {
             "method": "GET"
           },
