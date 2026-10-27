@@ -4132,3 +4132,15 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
 - `E-devpipe-doc` normaliza acento/caixa sem `string.Normalize` (o projeto roda
   com `InvariantGlobalization=true`, que anula a normalizacao Unicode): o VL
   transcreve "Linha TRÊS" e o assert aceita `TRES`/`tres`/`TRÊS`.
+
+**Fail-fast + steps reais no painel (2026-10-27).**
+- Bateria L1+L2 volta a rodar com fail-fast ON (sem `--war-no-stop-on-fail`):
+  o circuito para no primeiro FAIL/STALE e o fluxo e corrigir, republicar e
+  reiniciar os testes.
+- `model_responses` passou a ser contado no `finally` do handler `/v1/*`
+  (chat, stream, responses e passthrough). Antes era incrementado no
+  `AddMetrics`, que nao roda em todos os caminhos, e ficava travado em 24.
+- `/api/test/steps?war=1` filtra apenas steps de WAR. `UnitCircuitTests`
+  (bad/once/p1/p2/first/next...) nao aparecem mais em "Steps concluidos":
+  `WAR_EVENT_URL` e limpo no `OnRunEnd` e o `TestContext` so publica
+  enunciado quando `WAR_STEP` existe.

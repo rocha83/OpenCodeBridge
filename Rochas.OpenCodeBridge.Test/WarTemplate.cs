@@ -553,6 +553,11 @@ internal sealed class WarTemplate : CircuitTemplate
             ["green"] = gate.Green
         });
         driver.Log($"artefatos: {_out} (events.jsonl + summary.tsv)");
+        // Nao deixa a env vazar para os testes unitarios do proximo nivel:
+        // sem isso, UnitCircuitTests publica steps fake (bad/once/p1...) no
+        // /api/test/step e eles aparecem em "Steps concluidos".
+        Environment.SetEnvironmentVariable("WAR_EVENT_URL", null);
+        Environment.SetEnvironmentVariable("WAR_EVENT_KEY", null);
     }
 
     // ---------------------------------------------------------------------

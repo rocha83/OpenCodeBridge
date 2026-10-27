@@ -715,8 +715,9 @@ internal static class TestContext
         if (url.Contains("/v1/", StringComparison.Ordinal))
         {
             string prompt = ExtractPrompt(body);
-            if (prompt.Length > 0)
-                await PublishEnunciado(Environment.GetEnvironmentVariable("WAR_STEP") ?? "model", prompt);
+            string? warStep = Environment.GetEnvironmentVariable("WAR_STEP");
+            if (prompt.Length > 0 && !string.IsNullOrWhiteSpace(warStep))
+                await PublishEnunciado(warStep, prompt);
         }
         var t0 = DateTime.UtcNow;
         for (int attempt = 0; ; attempt++)

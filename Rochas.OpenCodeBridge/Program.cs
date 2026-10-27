@@ -574,8 +574,6 @@ internal static partial class Program
             TotalOutputTokens += outputTokens;
             TotalElapsedSecs += elapsedSecs;
         }
-        // Uma conclusao de inferencia = uma resposta real do modelo.
-        Interlocked.Increment(ref ModelResponses);
     }
 
     /// <summary>Acrescenta uma mensagem ao historico do enunciado do step.</summary>
@@ -1205,13 +1203,15 @@ internal static partial class Program
         // auto-gerencia; mesmo um request direto com header opencode nao recebe
         // o harness da bridge. Mode=opencode no processo tambem desliga a raia.
         BridgeLane.Value = !opencodeClient && (Mode is null || Mode.MainHarness);
+        bool modelRequest = ctx.Request.HttpMethod == "POST" && path.StartsWith("/v1/", StringComparison.Ordinal);
+        bool modelFailed = false;
         try
         {
             Interlocked.Increment(ref TotalRequests);
 
             // Conta o modo do cliente apenas em request de modelo; health,
             // metrics e dashboard nao poluem a leitura do painel.
-            if (ctx.Request.HttpMethod == "POST" && path.StartsWith("/v1/", StringComparison.Ordinal))
+            if (modelRequest)
             {
                 Interlocked.Increment(ref ModelRequests);
                 bool opencode = OpencodeClient.Value;
@@ -1403,7 +1403,9 @@ internal static partial class Program
                     WriteJson(ctx, 200, new JsonObject { ["ok"] = true, ["steps"] = TestSteps.Count });
                     return;
                 }
+                bool warOnly = ctx.Request.QueryString["war"] is "1" or "true" or "yes";
                 var list = TestSteps.Values
+                    .Where(x => !warOnly || !string.IsNullOrWhiteSpace(x["mode"]?.GetValue<string>()))
                     .OrderBy(x => x["ts"]?.GetValue<long>() ?? 0)
                     .ToArray();
                 var arr = new JsonArray();
@@ -1640,6 +1642,7 @@ WriteJson(ctx, 200, new JsonObject
         }
         catch (Exception ex)
         {
+            modelFailed = true;
             Interlocked.Increment(ref FailedRequests);
             if (path.StartsWith("/v1/", StringComparison.Ordinal))
                 Interlocked.Increment(ref ModelFailedRequests);
@@ -1655,6 +1658,15 @@ WriteJson(ctx, 200, new JsonObject
             }
             Log(new JsonObject { ["event"] = "error", ["path"] = path, ["error"] = Truncate(msg, 800) });
             try { WriteJson(ctx, 500, new JsonObject { ["error"] = ex.Message }); } catch { }
+        }
+        finally
+        {
+            // Uma resposta de modelo concluida = request /v1/* que nao estourou
+            // nem terminou em erro HTTP. Cobre chat, stream, responses e
+            // passthrough sem depender de AddMetrics (que so roda em alguns
+            // caminhos e deixava o painel travado).
+            if (modelRequest && !modelFailed && ctx.Response.StatusCode < 400)
+                Interlocked.Increment(ref ModelResponses);
         }
     }
 
