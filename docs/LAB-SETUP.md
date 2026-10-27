@@ -1107,6 +1107,23 @@ sem estar na imagem.
 - `start-models-default.sh` — sobe/valida o **par principal sem diálogo**
   (`--restart` regenera as 4 units; sem flag só sobe o que estiver fora do ar).
   Pede a senha do sudo no zenity e reexecuta com `sudo -n`.
+- **Diagnóstico nas bridges**: os três ícones (`start-bridge-gpu.sh`,
+  `start-bridge-gpu2.sh`, `start-bridge-cpu-forced.sh`) usam
+  `ask_bridge_config`, cujo 8º campo é `Diagnóstico` (`ligado`/`desligado`).
+  `ligado` (padrão) emite `--diagnostic 1 --diagnostic-level metrics` na unit;
+  `desligado` omite. `metrics` alimenta `/api/metrics`/`/api/status` e o
+  Grafana sem gravar corpos req/res. A escolha vale para o próximo clique que
+  regenerar a unit.
+- **OpenCode Web**: `start-opencodeweb.sh` (`:4200`) pede porta/API key da
+  bridge e porta/senha da instância; defaults `4124`, `guest@123`, `4200`,
+  `guest@123`. `start-ocagent-web.sh dev|moe` pede os mesmos 4 campos;
+  defaults `4125`, `guest@123`, `4210`/`Developer.PCSS@LVP006` (dev) e
+  `4220`/`Convidado.PCSS@LVP006` (moe). A porta/senha da instância fica em
+  `/etc/opencode-web-<role>.env` (`EnvironmentFile` da unit) e a porta/API key
+  da bridge no `opencode.json` do usuário.
+- **Bridge Web UI**: `start-bridge-web.sh` pede só a porta (`--entry`,
+  pré-preenchida com `4130`; vazio = `4130`) e grava
+  `/etc/bridge-web.env`; a unit usa `${BRIDGE_WEB_PORT}` no `--urls`.
 
 ### 9.3 Ícones (`~/Desktop`, dono `mint`, `chmod +x`)
 
@@ -1128,6 +1145,7 @@ Args gravados nas units (as três, `bridge-gpu`, `bridge-gpu2` e `bridge-cpu-for
 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512
 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0
 --upstream-parser native
+# opcional (padrao dos icones): --diagnostic 1 --diagnostic-level metrics
 ```
 
 - **anti-repeat está ligado nos dois caminhos** (chat e Responses): é contenção

@@ -26,10 +26,26 @@ Regra da casa: **o preenchimento acontece em uma única janela** com todos os ca
 depois dela vem **somente** a confirmação de firewall (quando o serviço publica porta).
 Nada de perguntar porta, usuário e senha em janelas separadas.
 
+**Defaults:** todo campo abre pedindo o dado, com o valor padrão no rótulo
+(`(padrao: X)`); deixar vazio usa X. `--forms` do zenity não tem preenchimento
+inicial — quem usa `--entry` (Web UI) recebe `--entry-text` já preenchido. Os
+launchers também aceitam `--defaults` para pular a janela e usar os mesmos valores.
+
 - `ask_port_user_pass` → 1 form (Porta, Usuário, Senha) + 1 confirmação de firewall.
 - `ask_port_pass_only` → 1 form (Porta, Senha) + 1 confirmação.
 - `ask_bridge_config` → 1 form (Porta, URL upstream, API key, Modelo, Ctx, Usuário,
-  Senha da bridge) + 1 confirmação.
+  Senha da bridge, **Diagnóstico ligado/desligado**) + 1 confirmação. O campo
+  Diagnóstico vira `--diagnostic 1 --diagnostic-level metrics` na unit gerada
+  quando `ligado`; `desligado` não emite a flag.
+- `start-opencodeweb.sh` (principal, `:4200`) → 1 form (porta bridge, API key
+  bridge, porta web, senha web), defaults `4124` / `guest@123` / `4200` /
+  `guest@123`.
+- `start-ocagent-web.sh dev|moe` → 1 form (porta bridge, API key bridge, porta
+  web, senha da instância). Defaults dev `4125` / `guest@123` / `4210` /
+  `Developer.PCSS@LVP006`; moe `4125` / `guest@123` / `4220` /
+  `Convidado.PCSS@LVP006`.
+- `start-bridge-web.sh` → 1 `--entry` (porta da Web UI, `--entry-text=4130`,
+  pré-preenchido) e grava `/etc/bridge-web.env`; sem outros campos.
 - `ask_bridge_ports` → 1 form (2 portas) + **1** confirmação para as duas portas
   (`ask_fw_ports_or_cancel`), não duas.
 - `share-samba.sh` → 1 form com 6 campos, incluindo a **senha do sudo**; não existe
@@ -74,12 +90,12 @@ sudo /usr/local/bin/zenity --info --title="ZROOT" --text="root" --timeout=6 &
 sleep 2; DISPLAY=:0 gnome-screenshot -f /tmp/shot.png
 
 # helpers (uma janela + uma confirmação)
-PATH=/tmp/zstub:$PATH ZSTUB_OUT='4125|http://127.0.0.1:4110|k|M|65536|mint|s' bash -c '
+PATH=/tmp/zstub:$PATH ZSTUB_OUT='4125|http://127.0.0.1:4110|k|M|65536|mint|s|ligado' bash -c '
   source /usr/local/bin/svc-common.sh
-  ask_bridge_config 4125 http://127.0.0.1:4110 M 65536 T; echo "$SVC_PORT $SVC_MODEL"'
+  ask_bridge_config 4125 http://127.0.0.1:4110 M 65536 T; echo "$SVC_PORT $SVC_MODEL $SVC_DIAG"'
 ```
 
-Validado nesta sessão: `--question`, `--forms` (Caddy) e form de 7 campos (bridge)
+Validado nesta sessão: `--question`, `--forms` (Caddy) e form de 8 campos (bridge)
 apareceram **centralizados e escuros**; `sudo zenity` saiu escuro (antes: branco).
 
 ## Limites

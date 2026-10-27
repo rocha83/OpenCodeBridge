@@ -1,5 +1,28 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Janelas Zenity: diagnóstico nas bridges e 4 campos nos OpenCode Web (2026-10-26)
+
+**Pedido:** toda janela abre pedindo os dados, mas considerando os padrões; a
+bridge precisa de flag de diagnóstico; os 3 OpenCode Web precisam de porta/API
+key da bridge **e** porta/senha da própria instância; a Web UI pede só a porta.
+
+**Implementação:**
+- `ask_bridge_config` ganhou o 8º campo `Diagnóstico` (`ligado`/`desligado`,
+  padrão `ligado`). As três units geradas pelos ícones recebem
+  `--diagnostic 1 --diagnostic-level metrics` quando ligado; desligado omite.
+- `start-opencodeweb.sh` (`:4200`) mantém 4 campos com defaults `4124` /
+  `guest@123` / `4200` / `guest@123`.
+- `start-ocagent-web.sh dev|moe` agora tem 4 campos e defaults dev `4125` /
+  `guest@123` / `4210` / `Developer.PCSS@LVP006`; moe `4125` / `guest@123` /
+  `4220` / `Convidado.PCSS@LVP006`. A porta/senha vai para
+  `/etc/opencode-web-<role>.env`; a unit usa `EnvironmentFile` e os launchers
+  `start-opencode-web-{dev,moe}.sh` leem as variáveis.
+- `start-bridge-web.sh` pede só a porta, com `--entry-text=4130`; grava
+  `/etc/bridge-web.env` e a unit usa `${BRIDGE_WEB_PORT}` no `--urls`.
+
+**Aceite:** `bash -n` nos 9 scripts; unit de bridge com flags de diagnóstico;
+`/api/status` das bridges e Web UI respondendo; defaults nos formulários.
+
 ## Diagnóstico ligado e sonda anti-repeat de 2048 chars (2026-10-26)
 
 **Causa:** a unit `bridge-gpu` estava com `diagnostic_level=off`: o Grafana lia
