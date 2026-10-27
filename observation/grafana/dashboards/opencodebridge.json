@@ -78,7 +78,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "FLUXO: Executa -> Falha -> Para e Corrige -> Republica Bridges -> Reinicia Testes\n\nNOTA: Modo Bridge (Main Harness ON), Modo OpenCode (Main Harness OFF)\n\nMODO ATUAL e Main Harness: ver painel ao lado."
+        "content": "FLUXO: Executa -> Falha -> Para e Corrige -> Republica Bridges -> Reinicia Testes\n\nMODO ATUAL e Main Harness: ver painel ao lado."
       }
     },
     {
