@@ -11,6 +11,8 @@ aqui ou automação em `../scripts/`.
 | `LAB-SETUP.md` | units llama, TurboQuant, VRAM, contextos, cenários A–E, referência de todos os argumentos da bridge e `appsettings.json` |
 | `04-rede-e-exposicao.md` | portas, ufw, Caddy/cloudflared e exposição |
 | `09-dialogos-zenity.md` | diálogos dos ícones (zenity house style) |
+| `10-icones-scripts-units.md` | inventário operacional: ícone → script → unit, binds, harness por lane e armadilhas |
+| `11-FIX-ICONES-UNITS.md` | **runbook de aplicação no chroot/live**: instalador único com scripts, units, env files e ícones exatos |
 | `PENDENCIAS-CHROOT-CUBIC.md` | checklist do remaster Cubic (chroot) |
 
 ## Testes e baterias

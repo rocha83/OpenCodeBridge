@@ -3,7 +3,8 @@
 Atualizado em 2026-10-27. Este é o retrato operacional dos launchers do desktop:
 **ícone → script → formulário zenity → unit/systemd ou processo**. A unit é
 derivada; o script é a fonte. Não editar unit à mão: o próximo clique no ícone
-regenera o arquivo.
+regenera o arquivo. Para reconstruir tudo em chroot/live, use o runbook
+[`11-FIX-ICONES-UNITS.md`](11-FIX-ICONES-UNITS.md) (instalador único).
 
 ## 1. Regra de ouro
 
