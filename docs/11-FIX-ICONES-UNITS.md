@@ -4,6 +4,12 @@ Atualizado em **2026-10-27**. Este documento é a instrução operacional para
 reconstruir, em outro ambiente Linux live/chroot **igual**, o estado correto dos
 ícones, scripts, units e env files deste laboratório.
 
+> **Política canônica deste runbook (não é retrato de teste):**
+> as bridges `:4124`, `:4125` e `:4126` rodam com `--main-harness 0`;
+> a Web UI `:4130` mantém o MainHarness **on internamente** no Core.
+> O `systemctl cat`/`/api/status` de uma sessão em teste pode divergir; não
+> copie esses valores para a unit.
+
 > Execute como **root no chroot**. O instalador grava arquivos e **não reinicia
 > nenhum serviço**. No chroot o `systemd` normalmente não está rodando; as units
 > ficam gravadas e o `daemon-reload`/`enable` é feito depois do boot.
@@ -17,6 +23,8 @@ reconstruir, em outro ambiente Linux live/chroot **igual**, o estado correto dos
 | OpenCode Web moe | `127.0.0.1:4220`, senha `Convidado.PCSS@LVP006` |
 | Bridge Web UI | `0.0.0.0:4130`, porta em `/etc/bridge-web.env` |
 | Bridges | formulário de **8 campos**; combo `Diagnostico` com default **desligado** |
+| Harness das bridges | `:4124`, `:4125` e `:4126` com `--main-harness 0` |
+| Harness da Web UI | `:4130` com `MainHarness` **on** no Core in-process |
 | Llama servers | formulário de **5 campos**; `Cancelar` não reinicia |
 | Cancelar | encerra com `exit 0`; não regenera unit e não reinicia serviço |
 | 4200 no boot | unit `opencode-web.service` com a senha vinda de `/etc/opencode-web.env` (modo 600) |
@@ -74,6 +82,7 @@ Conteúdo do instalador:
 #!/usr/bin/env bash
 # Aplica o estado canônico de ícones, scripts e units do OpenCodeBridge.
 # Fonte: docs/11-FIX-ICONES-UNITS.md. Rode como root; NÃO reinicia serviços.
+# Política: bridges :4124/:4125/:4126 --main-harness 0; Web UI :4130 Core on.
 set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -539,7 +548,7 @@ else
 fi
 DIAG_FLAGS=$(bridge_diag_flags)
 echo "$SVC_PASS" | sudo -S bash -c "
-printf '[Unit]\nDescription=OpenCode Bridge GPU (:4124 -> llama :4100 Gemma4-E4B-Q4)\nAfter=network-online.target llama-gpu.service\nWants=network-online.target llama-gpu.service\n\n[Service]\nType=simple\nUser=root\nEnvironment=HOME=/root\nWorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0\nExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port %s --upstream %s --model %s --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens %s --api-key %s --passthrough-responses true --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 %s --log /tmp/bridge-gpu.log\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' \"$SVC_PORT\" \"$SVC_UPSTREAM_URL\" \"$SVC_MODEL\" \"$SVC_CTX\" \"$SVC_UPSTREAM_KEY\" \"$DIAG_FLAGS\" > /etc/systemd/system/bridge-gpu.service
+printf '[Unit]\nDescription=OpenCode Bridge GPU (:4124 -> llama :4100 Gemma4-E4B-Q4)\nAfter=network-online.target llama-gpu.service\nWants=network-online.target llama-gpu.service\n\n[Service]\nType=simple\nUser=root\nEnvironment=HOME=/root\nWorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0\nExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port %s --upstream %s --model %s --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens %s --api-key %s --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 %s --log /tmp/bridge-gpu.log\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' \"$SVC_PORT\" \"$SVC_UPSTREAM_URL\" \"$SVC_MODEL\" \"$SVC_CTX\" \"$SVC_UPSTREAM_KEY\" \"$DIAG_FLAGS\" > /etc/systemd/system/bridge-gpu.service
   systemctl daemon-reload
   systemctl restart bridge-gpu
 "
@@ -570,7 +579,7 @@ else
 fi
 DIAG_FLAGS=$(bridge_diag_flags)
 echo "$SVC_PASS" | sudo -S bash -c "
-printf '[Unit]\nDescription=OpenCode Bridge GPU2 (:4125 -> llama :4110 Gemma4-E4B-UD-Q3)\nAfter=network-online.target llama-gpu2.service\nWants=network-online.target llama-gpu2.service\n\n[Service]\nType=simple\nUser=root\nEnvironment=HOME=/root\nWorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0\nExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port %s --upstream %s --model %s --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens %s --api-key %s --passthrough-responses true --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 %s --log /tmp/bridge-gpu2.log\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' \"$SVC_PORT\" \"$SVC_UPSTREAM_URL\" \"$SVC_MODEL\" \"$SVC_CTX\" \"$SVC_UPSTREAM_KEY\" \"$DIAG_FLAGS\" > /etc/systemd/system/bridge-gpu2.service
+printf '[Unit]\nDescription=OpenCode Bridge GPU2 (:4125 -> llama :4110 Gemma4-E4B-UD-Q3)\nAfter=network-online.target llama-gpu2.service\nWants=network-online.target llama-gpu2.service\n\n[Service]\nType=simple\nUser=root\nEnvironment=HOME=/root\nWorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0\nExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port %s --upstream %s --model %s --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens %s --api-key %s --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 %s --log /tmp/bridge-gpu2.log\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' \"$SVC_PORT\" \"$SVC_UPSTREAM_URL\" \"$SVC_MODEL\" \"$SVC_CTX\" \"$SVC_UPSTREAM_KEY\" \"$DIAG_FLAGS\" > /etc/systemd/system/bridge-gpu2.service
   systemctl daemon-reload
   systemctl restart bridge-gpu2
 "
@@ -1097,7 +1106,7 @@ Type=simple
 User=root
 Environment=HOME=/root
 WorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0
-ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port 4124 --upstream http://127.0.0.1:4100 --model Gemma4-E4B-Q4 --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens 131072 --api-key guest@123 --passthrough-responses true --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 --diagnostic 1 --diagnostic-level metrics --log /tmp/bridge-gpu.log
+ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port 4124 --upstream http://127.0.0.1:4100 --model Gemma4-E4B-Q4 --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens 131072 --api-key guest@123 --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 --log /tmp/bridge-gpu.log
 Restart=on-failure
 RestartSec=10
 
@@ -1116,7 +1125,7 @@ Type=simple
 User=root
 Environment=HOME=/root
 WorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0
-ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port 4125 --upstream http://127.0.0.1:4110 --model Gemma4-E4B-UD-Q3 --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens 57344 --api-key guest@123 --passthrough-responses true --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512  --log /tmp/bridge-gpu2.log
+ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port 4125 --upstream http://127.0.0.1:4110 --model Gemma4-E4B-UD-Q3 --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens 57344 --api-key guest@123 --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512  --log /tmp/bridge-gpu2.log
 Restart=on-failure
 RestartSec=10
 
@@ -1494,6 +1503,7 @@ fi
 
 echo "OK: arquivos gravados. Backup: $BACKUP"
 echo "Nada foi reiniciado. Siga o pós-boot do documento."
+
 ````
 
 ## 3. O que ele grava (manifesto)
@@ -1507,9 +1517,9 @@ echo "Nada foi reiniciado. Siga o pós-boot do documento."
 | `start-llama-gpu.sh` | llama :4100, form de 5 campos, cancelar sai |
 | `start-llama-gpu2.sh` | llama :4110, form de 5 campos, cancelar sai |
 | `start-llama-cpu-forced.sh` | llama :4120, form de 5 campos, cancelar sai |
-| `start-bridge-gpu.sh` | bridge :4124, form de 8 campos, `--main-harness 1` |
-| `start-bridge-gpu2.sh` | bridge :4125, form de 8 campos, `--main-harness 1` |
-| `start-bridge-cpu-forced.sh` | bridge :4126, form de 8 campos, `--main-harness 0` (bancada CPU) |
+| `start-bridge-gpu.sh` | bridge :4124, form de 8 campos, `--main-harness 0` |
+| `start-bridge-gpu2.sh` | bridge :4125, form de 8 campos, `--main-harness 0` |
+| `start-bridge-cpu-forced.sh` | bridge :4126, form de 8 campos, `--main-harness 0` |
 | `start-opencodeweb.sh` | 4200; host `0.0.0.0`; senha default `guest@123`; form sempre |
 | `start-ocagent-web.sh` | dev/moe; form de 4 campos; grava env e reinicia a unit |
 | `start-opencode-web-dev.sh` | wrapper dev :4210, host `127.0.0.1` |
@@ -1524,8 +1534,8 @@ echo "Nada foi reiniciado. Siga o pós-boot do documento."
 | `llama-gpu.service` | 4100 | modelo Q4 + mmproj |
 | `llama-gpu2.service` | 4110 | Q3 abliterated, 2 slots |
 | `llama-cpu-forced.service` | 4120 | `-ngl 0`; não habilitar por padrão |
-| `bridge-gpu.service` | 4124 | `--main-harness 1`; diagnóstico `metrics` na unit atual |
-| `bridge-gpu2.service` | 4125 | `--main-harness 1`; diagnóstico desligado |
+| `bridge-gpu.service` | 4124 | `--main-harness 0`; diagnóstico default desligado |
+| `bridge-gpu2.service` | 4125 | `--main-harness 0`; diagnóstico default desligado |
 | `bridge-cpu-forced.service` | 4126 | `--main-harness 0`; não habilitar por padrão |
 | `bridge-web.service` | 4130 | usa `${BRIDGE_WEB_PORT}` + env |
 | `opencode-web.service` | 4200 | **corrigida**: `EnvironmentFile=-/etc/opencode-web.env`, host `0.0.0.0` |
@@ -1580,9 +1590,9 @@ Não habilitar por padrão:
 # systemctl disable --now llama-cpu-forced bridge-cpu-forced
 ```
 
-`bridge-cpu-forced` usa `--main-harness 0`; é bancada CPU/OpenCode. Se ele for
-usado pela raia WAR/bridge, troque para `--main-harness 1` **no script e na
-unit** antes de habilitar.
+Todas as três bridges usam `--main-harness 0` por política. Se em algum teste
+isolado for necessário rodar a raia WAR/bridge, suba uma bridge temporária com
+`--main-harness 1` **sem alterar estas units**; depois volte para `0`.
 
 ## 5. Verificação (evidência mínima)
 
@@ -1638,7 +1648,7 @@ Em `:4125` espere:
 
 ```json
 {
-  "main_harness": true,
+  "main_harness": false,
   "main_harness_opencode": false,
   "harness_tails": true,
   "tails_opencode": false
@@ -1669,7 +1679,16 @@ Esperado: `rc=0`, **sem** `systemctl restart` e sem mensagem de “bridge ativa�
 Repita para `start-opencodeweb.sh`, `start-ocagent-web.sh dev`,
 `start-llama-gpu2.sh` e `start-bridge-web.sh`.
 
-## 6. Harness: não confunda flag da unit com lane do cliente
+## 6. Harness: política canônica
+
+Política deste ambiente:
+
+```text
+:4124  --main-harness 0
+:4125  --main-harness 0
+:4126  --main-harness 0
+:4130  Core in-process, MainHarness on (sempre)
+```
 
 O flag `--main-harness` é global, mas a aplicação é **por cliente**
 (`Program.cs`):
@@ -1680,23 +1699,25 @@ BridgeLane     = !opencodeClient && (Mode is null || Mode.MainHarness)
 mainHarness    = MainHarnessOn && BridgeLane
 ```
 
-| Cliente | Unit `--main-harness 1` | Efetivo | Tails |
+| Cliente | Unit `--main-harness 0` | Efetivo | Tails |
 |---|---|---|---|
 | OpenCode CLI/Web | sim | **off** | off |
-| WAR / `X-Bridge-Mode: bridge` | sim | **on** | on |
+| WAR / `X-Bridge-Mode: bridge` | sim | **off** | off |
 | Web UI :4130 (Core in-process) | não usa bridge | **on** | n/a |
 
-Portanto:
+Consequências que precisam ficar explícitas:
 
-- “main harness off para OpenCode” é o **efeito**, não o flag da unit.
-- As units `:4124`/`:4125` **devem continuar `--main-harness 1`** se a mesma
-  bridge atende WAR/bridge. Com `0`, o OpenCode continua off, mas o preflight
-  `bridge_main_harness` da raia WAR falha.
+- Com `0` nas três bridges, **nenhuma** requisição que passa pela bridge recebe
+  o MainHarness; não há exceção por lane. O OpenCode já era off; a raia
+  WAR/bridge também fica off.
 - A Web UI `:4130` não passa pela bridge: `ChatController` chama
   `MainHarness.BuildSystem` no chat e em `instructions` do Responses. Por isso
-  ela mantém harness **true** por dentro.
-- `:4126` está `0` por ser bancada CPU/OpenCode. Se for usada pela raia WAR,
-  mude para `1` no script e na unit.
+  ela mantém harness **true** por dentro, independentemente das units.
+- Se algum teste exigir WAR/bridge com harness, suba uma instância temporária
+  com `--main-harness 1` em outra porta/unit; não altere a unit canônica.
+- O preflight `bridge_main_harness` da raia WAR, se executado, vai falhar por
+  desenho com esta política. Isso é esperado; não “corrija” a unit para 1 sem
+  mudar a política.
 
 ## 7. Armadilhas que não podem voltar
 
@@ -1711,11 +1732,16 @@ Portanto:
 5. **4210/4220 em `0.0.0.0`** — proibido; são loopback e saem só por
    Caddy/cloudflared.
 6. **Diagnóstico default** — o combo abre em `desligado`; para Grafana escolha
-   `ligado`, que gera `--diagnostic 1 --diagnostic-level metrics`.
+   `ligado`, que gera `--diagnostic 1 --diagnostic-level metrics`. Este runbook
+   grava o default **desligado**; não copie `--diagnostic` de uma sessão de
+   teste.
 7. **Unit editada à mão** — o próximo clique no ícone regenera; a fonte é o
    script. O runbook grava ambos para o boot.
 8. **`/usr/src` é deploy-only** — este runbook grava `/usr/local/bin`, `/etc` e
    `/home/mint/Desktop`; não edita fonte em `/usr/src`.
+9. **Retrato de teste não é unit** — `systemctl cat`/`/api/status` de uma sessão
+   em teste podem mostrar `--main-harness 1`, `--diagnostic metrics` ou números
+   de anti-repeat. Nada disso entra no instalador; a fonte é este runbook.
 
 ## 8. Rollback
 
@@ -1747,8 +1773,10 @@ O backup usa `basename`, e os nomes são únicos entre esses 39 arquivos.
   `/api/info`.
 - `:4210`/`:4220` só em `127.0.0.1`.
 - Cancelar os formulários retorna `rc=0` e não reinicia.
-- `:4125/api/harness` mostra `main_harness_opencode=false` e
-  `tails_opencode=false`.
+- `:4124`, `:4125` e `:4126` mostram `main_harness=false` e
+  `main_harness_opencode=false`; `:4130` mantém o Core com harness on.
+- `tail` continua `harness_tails=true`, `tails_opencode=false` (o tail é
+  independente do MainHarness).
 
 Se qualquer item falhar, **não** afrouxe asserts, contexto, `max_tokens` ou
 coerção. Corrija o arquivo/unit e repita.

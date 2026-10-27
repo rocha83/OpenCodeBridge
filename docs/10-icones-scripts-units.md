@@ -74,17 +74,17 @@ As três units de bridge são geradas com o mesmo núcleo:
 --thinking events --temperature 0.2 --max-tokens 16384
 --context-guard 1 --context-tokens <ctx>
 --passthrough-responses true
---main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0
+--main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0
 --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512
 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0
 --upstream-parser native
 # opcional: --diagnostic 1 --diagnostic-level metrics
 ```
 
-`bridge-cpu-forced` usa `--temperature 0.5`, `--main-harness 0` na unit atual e
-está inativa. As units `bridge-gpu` (`:4124`) e `bridge-gpu2` (`:4125`) estão
-com `--main-harness 1`; a `:4125` está com diagnóstico `off`, a `:4124` com
-`metrics`.
+Política canônica: as três bridges (`:4124`, `:4125` e `:4126`) usam
+`--main-harness 0`; a `bridge-cpu-forced` usa `--temperature 0.5` e está
+inativa. Todas ficam com diagnóstico `off` por default; `metrics` só quando o
+combo `Diagnostico` for `ligado` (opt-in de teste/Grafana).
 
 ### 4.2 Harness: flag global × lane (importante)
 
@@ -97,20 +97,20 @@ BridgeLane     = !opencodeClient && (Mode is null || Mode.MainHarness)
 mainHarness    = MainHarnessOn && BridgeLane
 ```
 
-Consequência:
+Política canônica deste ambiente: `--main-harness 0` nas três bridges.
 
-| cliente | unit `--main-harness 1` | efetivo | tails | `/api/status` |
+| cliente | unit `--main-harness 0` | efetivo | tails | `/api/status` |
 |---|---|---|---|---|
-| OpenCode CLI/Web (UA opencode ou header `opencode`) | sim | **off** | off | `main_harness=true`, `main_harness_opencode=false`, `tails_opencode=false` |
-| WAR / cliente `X-Bridge-Mode: bridge` | sim | **on** | on | `main_harness=true`, `tails_managed=true` |
+| OpenCode CLI/Web (UA opencode ou header `opencode`) | sim | **off** | off | `main_harness=false`, `main_harness_opencode=false`, `tails_opencode=false` |
+| WAR / cliente `X-Bridge-Mode: bridge` | sim | **off** | off | `main_harness=false`, `tails_managed=true` |
 | Web UI `:4130` (Core in-process) | não usa bridge | **on** | n/a | `ChatController` chama `MainHarness.BuildSystem` |
 
-Portanto: **“main harness off” para OpenCode é o efeito correto**, mas o flag da
-unit deve continuar `1` quando a mesma bridge também atende a raia WAR/bridge.
-Se colocar `--main-harness 0` na unit, o OpenCode continua off (não muda nada
-para ele), mas a raia WAR fica órfã de base e o preflight
-`bridge_main_harness` falha. Só use `0` se a bridge for **exclusivamente**
-OpenCode/tubo puro e o WAR bridge não for usado.
+Consequência: com `0`, **nenhuma** requisição que passa pela bridge recebe o
+MainHarness, inclusive a raia WAR/bridge. O preflight `bridge_main_harness`
+falha por desenho. Se algum teste precisar de WAR com harness, suba uma
+instância temporária com `--main-harness 1` em outra porta/unit; não mude a
+unit canônica. A Web UI `:4130` continua **on** por dentro, sem passar pela
+bridge.
 
 ### 4.3 Web UI `:4130`
 
@@ -134,13 +134,17 @@ contexto/anti-repeat; não é o cérebro do harness.
   `OPENCODE_WEB_PORT`/`OPENCODE_SERVER_PASSWORD`.
 - Os três são clientes OpenCode: não recebem MainHarness da bridge (lane off).
 
-## 5. Estado atual (verificado em 2026-10-27)
+## 5. Estado canônico (defaults)
+
+> O live de teste pode usar `:4124` com `--diagnostic 1 --diagnostic-level
+> metrics` para observar anti-repeat; isso é **opt-in** e não muda o default.
+> A tabela abaixo é o que o instalador grava, não um retrato da sessão de teste.
 
 | serviço | estado | bind | harness efetivo | diagnóstico |
 |---|---|---|---|---|
-| `bridge-gpu` `:4124` | active | `0.0.0.0` | `main_harness=true`, opencode off | `metrics` |
-| `bridge-gpu2` `:4125` | active | `0.0.0.0` | `main_harness=true`, opencode off | `off` |
-| `bridge-cpu-forced` `:4126` | inactive | `0.0.0.0` | unit atual `main_harness=0` | `off` |
+| `bridge-gpu` `:4124` | active | `0.0.0.0` | `main_harness=false`, opencode off | `off` |
+| `bridge-gpu2` `:4125` | active | `0.0.0.0` | `main_harness=false`, opencode off | `off` |
+| `bridge-cpu-forced` `:4126` | inactive | `0.0.0.0` | `main_harness=0` | `off` |
 | `opencode` `:4200` | processo ativo | `0.0.0.0` | lane OpenCode (base off) | Basic auth `guest@123` |
 | `opencode-web-dev` `:4210` | inactive | `127.0.0.1` | lane OpenCode | senha `Developer.PCSS@LVP006` |
 | `opencode-web-moe` `:4220` | inactive | `127.0.0.1` | lane OpenCode | senha `Convidado.PCSS@LVP006` |
