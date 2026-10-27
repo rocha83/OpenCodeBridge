@@ -4107,3 +4107,9 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
 - O painel "Tools calls por step" (e demais) ficavam vazios porque a bateria rodava via `run-levels.sh` (bash), que nao inicia o `StepProbe`. Agora a bateria L1+L2 roda pelo driver C# (`--war-levels 1,2`), que publica `/api/test/probe`, `/api/test/steps`, `/api/test/enunciado` e `/api/test/activity`. O dashboard se preenche com dados reais.
 - Plugin Infinity instalado (`yesoreyeram-infinity-datasource`) e dashboard provisionado em `/etc/grafana/provisioning` + `/var/lib/grafana/dashboards` (datasource `opencodebridge-infinity`, allowedHosts 4124). Script idempotente criado: `scripts/lab/install-grafana-observation.sh` (commitado).
 - Units canonicas permanecem `--main-harness 0` nas 3 bridges; `:4130` Core mantem MainHarness on. Apenas a instacia manual da bancada usa `1`.
+
+**Nomes semanticos nos steps do WAR (2026-10-27).**
+- `WarTemplate` ganhou `--war-modes` (e env `LEVEL_MODES`) para filtrar os modos
+  rodados. Default continua `opencode bridge`. Com `--war-modes bridge`, a bateria
+  publica apenas steps `*-bridge`, evitando nomes `*-opencode` em run bridge.
+- Commits: `1ecb729` (filtro) + `a9ee3fc` (script Grafana) + `96f7c2e` (history).
