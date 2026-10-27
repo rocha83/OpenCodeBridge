@@ -51,6 +51,7 @@ internal sealed class WarTemplate : CircuitTemplate
         public string? ApiKey;
         public string? BridgeQ3;
         public string? Blog;
+        public string? Modes;
         public string? Lock;
         public string? PauseFile;
         public string? Root;
@@ -96,7 +97,8 @@ internal sealed class WarTemplate : CircuitTemplate
         bool Cpu,
         bool NoBuild,
         bool ForceBuild,
-        bool RetryAll)
+        bool RetryAll,
+        string[] Modes)
     {
         public static WarPaths From(WarOptions o)
         {
@@ -115,6 +117,14 @@ internal sealed class WarTemplate : CircuitTemplate
             int retries = Math.Clamp(o.Retries ?? ParseInt(Env("LEVEL_RETRIES"), 1), 1, 10);
             int retryDelay = Math.Max(0, o.RetryDelay ?? ParseInt(Env("LEVEL_RETRY_DELAY"), 5));
             int stepTimeout = o.StepTimeout ?? ParseInt(Env("LEVEL_STEP_TIMEOUT"), 7200);
+
+            string modesRaw = (o.Modes ?? Env("LEVEL_MODES") ?? "opencode bridge").Trim();
+            string[] modes = modesRaw.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(m => m.Trim().ToLowerInvariant())
+                .Where(m => m is "opencode" or "bridge")
+                .Distinct()
+                .ToArray();
+            if (modes.Length == 0) modes = new[] { "opencode", "bridge" };
 
             string testProj = Path.Combine(root, "Rochas.OpenCodeBridge.Test",
                 "Rochas.OpenCodeBridge.Test.csproj");
@@ -147,7 +157,8 @@ internal sealed class WarTemplate : CircuitTemplate
                 Cpu: cpu,
                 NoBuild: noBuild,
                 ForceBuild: forceBuild,
-                RetryAll: retryAll);
+                RetryAll: retryAll,
+                Modes: modes);
         }
     }
 
@@ -470,7 +481,7 @@ internal sealed class WarTemplate : CircuitTemplate
                 // Unidades por ultimo: o teste U-metrics-ring3-shell incrementa
                 // ring3 de proposito; rodar isso primeiro faria o painel mostrar
                 // ring3 subindo antes de qualquer cenario real.
-                foreach (string mode in new[] { "opencode", "bridge" })
+                foreach (string mode in _p.Modes)
                 {
                     yield return StepBridge(driver, $"devpipe-{mode}", mode,
                         new[] { "--only", "E-devpipe" });
@@ -488,7 +499,7 @@ internal sealed class WarTemplate : CircuitTemplate
                 break;
 
             case 2:
-                foreach (string mode in new[] { "opencode", "bridge" })
+                foreach (string mode in _p.Modes)
                 {
                     yield return StepBridge(driver, $"mission-tools-{mode}", mode,
                         new[] { "--only", "E-mission-tools" });
@@ -509,7 +520,7 @@ internal sealed class WarTemplate : CircuitTemplate
                 break;
 
             case 3:
-                foreach (string mode in new[] { "opencode", "bridge" })
+                foreach (string mode in _p.Modes)
                 {
                     yield return StepBridge(driver, $"belts-build-final-{mode}", mode,
                         new[] { "--only", "E-belts-build-direct", "--belts", "marrom,preta" });
@@ -1232,6 +1243,8 @@ internal sealed class WarTemplate : CircuitTemplate
                 case "--war-bridge-q3": o.BridgeQ3 = Next(); break;
                 case "--war-blog": o.Blog = Next(); break;
                 case "--war-lock": o.Lock = Next(); break;
+                case "--war-mode":
+                case "--war-modes": o.Modes = Next(); break;
                 case "--war-pause-file": o.PauseFile = Next(); break;
                 case "--war-root": o.Root = Next(); break;
                 case "--war-step-timeout": o.StepTimeout = ParseInt(Next(), 7200); break;
@@ -1282,6 +1295,7 @@ internal sealed class WarTemplate : CircuitTemplate
           --war-level N            executa um level (1..3)
           --war-all                executa 1 -> 3 em sequencia
           --war-levels 1,2,3       levels explicitos
+          --war-modes bridge       modos (opencode|bridge), default "opencode bridge"
           --war-from N --war-to N  faixa de levels
           --war-stamp STAMP        stamp do run (level unico)
           --war-resume-stamp S     retoma um stamp no --war-all
