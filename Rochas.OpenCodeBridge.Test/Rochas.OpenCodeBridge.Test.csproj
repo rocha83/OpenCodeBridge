@@ -32,4 +32,10 @@
     <None Update="TestData/**/*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- Prompt real do role Orch (paridade com o opencode): pinado no repo para
+       o teste nao depender de ~/.config/opencode/agents/orch.md. -->
+  <ItemGroup>
+    <None Update="Prompts/**/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

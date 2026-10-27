@@ -36,21 +36,34 @@ internal static class E2EBeltsTests
     /// de devolver o JSON array. Fallback = OrchSystem se o arquivo nao existir.</summary>
     static string LoadOrchSystem()
     {
+        var candidates = new List<string>
+        {
+            System.IO.Path.Combine(AppContext.BaseDirectory, "Prompts", "orch.md")
+        };
         try
         {
             string home = Environment.GetEnvironmentVariable("HOME") ?? "";
             if (home.Length == 0)
                 home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            string path = System.IO.Path.Combine(home, ".config", "opencode", "agents", "orch.md");
-            if (System.IO.File.Exists(path))
-            {
-                string raw = System.IO.File.ReadAllText(path);
-                var parts = raw.Split("---", 3, StringSplitOptions.None);
-                if (parts.Length >= 3 && !string.IsNullOrWhiteSpace(parts[2]))
-                    return parts[2].Trim();
-            }
+            if (home.Length > 0)
+                candidates.Add(System.IO.Path.Combine(home, ".config", "opencode", "agents", "orch.md"));
         }
         catch { }
+        foreach (string path in candidates)
+        {
+            try
+            {
+                if (!System.IO.File.Exists(path)) continue;
+                string raw = System.IO.File.ReadAllText(path);
+                var parts = raw.Split("---", 3, StringSplitOptions.None);
+                string body = parts.Length >= 3 ? parts[2].Trim() : raw.Trim();
+                if (body.Length == 0) continue;
+                Log($"  [orch-system] source={path} chars={body.Length}");
+                return body;
+            }
+            catch { }
+        }
+        Log("  [orch-system] FALLBACK curto (Prompts/orch.md e ~/.config ausentes)");
         return OrchSystem;
     }
 
