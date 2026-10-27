@@ -371,8 +371,8 @@ ask_bridge_config() {
     --add-entry="Contexto ctx (padrao: $DEF_CTX)" \
     --add-entry="Usuario bridge (padrao: $SVC_DEF_USER)" \
     --add-password="Senha bridge (padrao: $SVC_DEF_PASS)" \
-    --add-combo="Diagnostico (padrao: desligado)" \
-    --combo-values="desligado|ligado" \
+    --add-combo="Diagnostico (padrao: ligado)" \
+    --combo-values="ligado|desligado" \
     --add-combo="Tail harness (padrao: $DEF_TAILS, scope: $SVC_TAIL_SCOPE)" \
     --combo-values="$TAIL_VALUES" \
     --add-combo="Sonda t/s (padrao: ligado)" \
@@ -668,7 +668,7 @@ source /usr/local/bin/svc-common.sh
 DEFAULTS=0
 [ "${1:-}" = "--defaults" ] && DEFAULTS=1
 if [ "$DEFAULTS" -eq 1 ] || [ -z "${DISPLAY:-}" ] || ! command -v zenity >/dev/null 2>&1; then
-  SVC_PORT=4124; SVC_UPSTREAM_URL=http://127.0.0.1:4100; SVC_UPSTREAM_KEY=guest@123; SVC_MODEL=Gemma4-E4B-Q4; SVC_CTX=131072; SVC_USER=mint; SVC_PASS=guest@123; SVC_DIAG=desligado
+  SVC_PORT=4124; SVC_UPSTREAM_URL=http://127.0.0.1:4100; SVC_UPSTREAM_KEY=guest@123; SVC_MODEL=Gemma4-E4B-Q4; SVC_CTX=131072; SVC_USER=mint; SVC_PASS=guest@123; SVC_DIAG=ligado
   export SVC_PORT SVC_UPSTREAM_URL SVC_UPSTREAM_KEY SVC_MODEL SVC_CTX SVC_USER SVC_PASS SVC_DIAG
   command -v fw_allow >/dev/null 2>&1 && fw_allow "$SVC_PORT" tcp "OpenCode Bridge GPU"
 else
@@ -705,7 +705,7 @@ source /usr/local/bin/svc-common.sh
 DEFAULTS=0
 [ "${1:-}" = "--defaults" ] && DEFAULTS=1
 if [ "$DEFAULTS" -eq 1 ] || [ -z "${DISPLAY:-}" ] || ! command -v zenity >/dev/null 2>&1; then
-  SVC_PORT=4125; SVC_UPSTREAM_URL=http://127.0.0.1:4110; SVC_UPSTREAM_KEY=guest@123; SVC_MODEL=Gemma4-E4B-UD-Q3; SVC_CTX=57344; SVC_USER=mint; SVC_PASS=guest@123; SVC_DIAG=desligado
+  SVC_PORT=4125; SVC_UPSTREAM_URL=http://127.0.0.1:4110; SVC_UPSTREAM_KEY=guest@123; SVC_MODEL=Gemma4-E4B-UD-Q3; SVC_CTX=57344; SVC_USER=mint; SVC_PASS=guest@123; SVC_DIAG=ligado
   export SVC_PORT SVC_UPSTREAM_URL SVC_UPSTREAM_KEY SVC_MODEL SVC_CTX SVC_USER SVC_PASS SVC_DIAG
   command -v fw_allow >/dev/null 2>&1 && fw_allow "$SVC_PORT" tcp "OpenCode Bridge GPU2"
 else
@@ -742,7 +742,7 @@ source /usr/local/bin/svc-common.sh
 DEFAULTS=0
 [ "${1:-}" = "--defaults" ] && DEFAULTS=1
 if [ "$DEFAULTS" -eq 1 ] || [ -z "${DISPLAY:-}" ] || ! command -v zenity >/dev/null 2>&1; then
-  SVC_PORT=4126; SVC_UPSTREAM_URL=http://127.0.0.1:4120; SVC_UPSTREAM_KEY=guest@123; SVC_MODEL=Gemma4-E4B-Q4; SVC_CTX=131072; SVC_USER=mint; SVC_PASS=guest@123; SVC_DIAG=desligado
+  SVC_PORT=4126; SVC_UPSTREAM_URL=http://127.0.0.1:4120; SVC_UPSTREAM_KEY=guest@123; SVC_MODEL=Gemma4-E4B-Q4; SVC_CTX=131072; SVC_USER=mint; SVC_PASS=guest@123; SVC_DIAG=ligado
   export SVC_PORT SVC_UPSTREAM_URL SVC_UPSTREAM_KEY SVC_MODEL SVC_CTX SVC_USER SVC_PASS SVC_DIAG
   command -v fw_allow >/dev/null 2>&1 && fw_allow "$SVC_PORT" tcp "OpenCode Bridge CPU Forced"
 else
