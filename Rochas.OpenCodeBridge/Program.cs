@@ -847,6 +847,40 @@ internal static partial class Program
 
 
 
+    /// <summary>Repovoa o ring /api/test/probe a partir do log (substitui o
+    /// helper de shell). So roda quando DIAGNOSTIC esta ligado.</summary>
+    static void SeedProbeFromLog()
+    {
+        if (!Diagnostic) return;
+        try
+        {
+            if (!File.Exists(LogPath)) return;
+            var lines = File.ReadAllLines(LogPath);
+            int start = Math.Max(0, lines.Length - 5000);
+            for (int i = start; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                try
+                {
+                    var obj = JsonNode.Parse(line)?.AsObject();
+                    if (obj is null) continue;
+                    if ((obj["event"]?.GetValue<string>() ?? "") != "response") continue;
+                    if (obj["tps_output"] is null || obj["tps_total"] is null) continue;
+                    var sample = obj.DeepClone().AsObject();
+                    if (sample["ts"] is null)
+                        sample["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    if (sample["step"] is null)
+                        sample["step"] = "bridge-replay";
+                    ProbeSamples.Enqueue(sample);
+                    while (ProbeSamples.Count > 500) ProbeSamples.TryDequeue(out _);
+                }
+                catch { /* linha malformada nunca derruba o seed */ }
+            }
+        }
+        catch { /* seed nunca derruba a bridge */ }
+    }
+
     /// <summary>Ponto de entrada: le CLI, sobe o HttpListener e atende em loop.</summary>
     /// <param name="cliArgs">Argumentos --chave valor.</param>
     static int Main(string[] cliArgs)
@@ -880,6 +914,10 @@ internal static partial class Program
             File.AppendAllText(LogPath, $"{{\"event\":\"start\",\"port\":{Port},\"upstream\":\"{Upstream}\",\"model\":\"{Model}\",\"thinking\":\"{Thinking}\"}}\n");
         }
         catch { /* log de startup nunca derruba a bridge (ex.: /tmp owned by root) */ }
+
+        // Seeder em C#: repovoa o ring /api/test/probe a partir do log, sem
+        // helper de shell. So roda quando DIAGNOSTIC esta ligado.
+        SeedProbeFromLog();
 
         // HttpListener e o servidor HTTP embutido da BCL (sem Kestrel/NuGet)
         using var listener = new HttpListener();
