@@ -11,7 +11,7 @@
 | 4125 | `bridge-gpu2` | **0.0.0.0** | direto (ApiKey) |
 | 4126 | `bridge-cpu` | **0.0.0.0** | direto (ApiKey) |
 | 4130 | Bridge Web UI | 0.0.0.0 | Caddy `4151` |
-| 4200 | `opencode serve` (mint) | 127.0.0.1 | Caddy `4230` |
+| 4200 | `opencode serve` (mint) | **0.0.0.0** | HTTP direto (Basic auth `guest@123`); Caddy `4230` opcional |
 | **4210** | `opencode serve` (dev-agent) | 127.0.0.1 | Caddy **`4240`** |
 | **4220** | `opencode serve` (moe-agent) | 127.0.0.1 | Caddy **`4250`** |
 | 4800 | app existente | 127.0.0.1 | Caddy `4150` |
