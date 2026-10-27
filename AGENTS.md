@@ -185,6 +185,12 @@ vírgula). Dentro do step, o teste individual é `--only NOME` no runner.
 `--war-all` e `run-all-levels.sh` sem argumentos percorrem **1 → 2 → 3 → 4**
 e param no primeiro gate vermelho.
 
+- **Saída de teste/SEMPRE em `logs/levels` do repositório.** O default do
+  `WarTemplate`/`run-levels.sh` é `<repo>/logs/levels`; é proibido mandar
+  artefato de WAR para `/tmp/opencode` ou qualquer pasta fora do repo. Console
+  do run vai para `logs/levels/<stamp>.console.log`; summary/events/probes
+  ficam em `logs/levels/L<N>-<stamp>/`. Só use `--war-out`/`LEVEL_OUT` para
+  subpasta dentro de `logs/levels`.
 - **Modo padrão: `bridge`.** `opencode` só entra com `--war-modes opencode`
   ou `LEVEL_MODES=opencode`; não alternar modos na mesma bateria.
 - **Fail-fast explícito:** `--war-stop-on-fail` (padrão do driver) para no
