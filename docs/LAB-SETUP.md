@@ -686,11 +686,12 @@ caminho + ação + aceite, sem meta-instrução de planejamento. Ajustar enuncia
 é legítimo (teste se adapta à bridge); não é legítimo mexer em ctx,
 `max_tokens`, coerção ou instância para passar.
 
-**Inventário 2026-10-26.** Os 10 enunciados vivos das belts
-(`E2EBeltsTests`, `E2EBeltsBuildTests` e `BeltUiTests`; verde/marrom/preta e
-roxa) usam `Implemente`, nunca `Especifique`. O check de regressão é
-`grep -rni 'especifique' --include='*.cs'` retornar zero; as menções restantes
-em `LAB-SETUP.md`/`HISTORY.md` são registro histórico da causa, não enunciado.
+**Inventário 2026-10-26.** O verbo depende do papel. A trilha **build**
+(`E2EBeltsBuildTests`: verde/marrom/preta) usa `Implemente` — é o executor. As
+trilhas **Orch/Web** (`E2EBeltsTests` e `BeltUiTests`) mantêm `Especifique` —
+elas apenas especificam/segmentam e não executam. O check de regressão é no
+arquivo de build (`grep -n 'Especifique' E2EBeltsBuildTests.cs` = 0), não um
+`grep` global; as menções em `LAB-SETUP.md`/`HISTORY.md` são registro histórico.
 
 **Critério de correção (>30%).** Comportamento repetido/instável que atinge mais
 de 30% dos diálogos da esteira (ex.: roxa build falhou nos 2 transportes, 2/2)

@@ -1,20 +1,21 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
-## Enunciados das belts: verbo imperativo (2026-10-26)
+## Enunciados das belts: verbo por papel (2026-10-26)
 
-**Causa:** o verbo "Especifique" pedia especificação, não implementação; o
-modelo local respondia prosa e não chamava `write`. A regra em
-`docs/LAB-SETUP.md` já dizia `Implemente/Crie`, mas 10 enunciados vivos ainda
-usavam o verbo antigo.
+**Causa:** o verbo "Especifique" pedia especificação, não implementação; no
+**executor** o modelo local respondia prosa e não chamava `write`. A regra em
+`docs/LAB-SETUP.md` já dizia `Implemente/Crie` para a trilha build.
 
-**Correção:** `E2EBeltsTests` (verde/marrom/preta), `E2EBeltsBuildTests`
-(verde/marrom/preta) e `BeltUiTests` (verde/roxa/marrom/preta) passaram a
-`Implemente`. `E2EOrchTests` já não usava o verbo. Registro em
-`docs/LAB-SETUP.md` §"Regra de redação" com o check
-`grep -rni 'especifique' --include='*.cs'` = zero.
+**Correção:** apenas a trilha **build** (`E2EBeltsBuildTests`:
+verde/marrom/preta) passou a `Implemente`; ela é o executor. As trilhas
+**Orch/Web** (`E2EBeltsTests` e `BeltUiTests`) mantêm `Especifique`: apenas
+especificam/segmentam e não executam; o executor recebe o prompt da tarefa.
+A primeira tentativa de trocar os 10 enunciados foi revertida nesses dois
+arquivos. Registro em `docs/LAB-SETUP.md` §"Regra de redação"; o check é
+`grep -n 'Especifique' E2EBeltsBuildTests.cs` = 0.
 
 **Aceite:** build Release 0 avisos/0 erros; WAR total reiniciada pela raia
-opencode com os enunciados novos.
+opencode com `Implemente` no build e `Especifique` no Orch/Web.
 
 ## Stream history / coding journey na sonda (2026-10-26, sessão atual)
 
