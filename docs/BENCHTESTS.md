@@ -516,3 +516,17 @@ apenas `*.journey.json` e `*.opencode.meta.json` (sem raw) ou usar
   PASS=1 FAIL=0.
 - Enunciados agentivos sem coordenadas (`oldString=...`/`newString=...`):
   objetivo + aceite, o modelo decide as tools.
+
+## Sem proibicao de ferramenta (2026-10-28)
+
+- Enunciado e help de tool nao proibem ferramenta fora da blacklist: o
+  modelo escolhe `curl`, `webfetch` ou `grep` do shell conforme a tarefa.
+  Proibicoes removidas: "nao use curl" (webfetch/fetch) e "nao use grep do
+  shell" (grep); MainHarness diz "Rede via webfetch/websearch ou shell".
+- `webfetch` publicado no `ToolCatalog` do Core (Chat/Responses, 8 tools):
+  o Core e a fonte unica do que o modelo pode chamar; sem isso o modelo em
+  bridge nem via a tool no schema.
+- `E-tools-full` pede "busque na internet" (sem nomear tool); o aceite aceita
+  qualquer caminho de rede — mede uso de rede, nao a escolha da ferramenta.
+- `ToolAgent` (nudge x2): segunda cutucada pede conclusao dos passos quando o
+  modelo para em prosa; nao responde a tarefa pelo modelo.

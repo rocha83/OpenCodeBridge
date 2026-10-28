@@ -4294,3 +4294,25 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
 - run-all-levels.sh: fail-fast entre niveis (break no primeiro rc!=0; override
   `LEVEL_CONTINUE_ON_FAIL=1` para placar completo) — alinha AGENTS.md e o
   pedido de execucao sequencial fail-fast.
+
+**Sem proibicao de ferramenta nos enunciados (2026-10-28).**
+- Regra nova: enunciado (e help de tool) NAO proibe ferramenta que nao esteja
+  na blacklist. O modelo escolhe a tool; proibir `curl`/`grep do shell` no
+  texto nao agrega nada cognitivo e vira coordenada de harness.
+- Removidas as proibicoes "nao use curl" (`ToolHelp["webfetch"]`,
+  `ToolHelp["fetch"]`, descricao da `webfetch` no `ToolCatalog`) e "nao use
+  grep do shell" (`ToolHelp["grep"]`); `MainHarness` passa a dizer "Rede via
+  webfetch/websearch ou shell, como a tarefa pedir".
+- `webfetch` entrou no `ToolCatalog` do Core (Chat/Responses, 7 -> 8 tools)
+  com schema `url`/`format`/`timeout` — o catalogo do Core e a fonte unica e
+  antes o modelo em bridge nem via a tool (so via help/sanitizer). Executor ja
+  existia (`BridgeToolExecutor`: `webfetch` -> `fetch`).
+- `E-tools-full`: enunciado fala "busque na internet" (sem pedir web fetch
+  nem tool nomeada); o aceite em bridge aceita QUALQUER caminho de rede
+  (`webfetch`, `fetch` ou `shell` com curl/wget/http) — verifica uso, nao
+  escolha de ferramenta.
+- `ToolAgent` ganhou cutucada de continuacao (max 2): o modelo parava no meio
+  da tarefa em prosa e o teste morria por silencio; agora uma segunda nudge
+  pede conclusao dos passos do enunciado (nao responde por ele).
+- E-tools-full PASS isolado apos os ajustes: `PASS E-tools-full (51.4s)`,
+  `[test] PASS=1 FAIL=0 SKIP=0`.

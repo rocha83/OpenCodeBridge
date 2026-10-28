@@ -49,8 +49,9 @@ internal static class E2EToolsFullTests
             "Trabalhe na pasta atual. Crie uma estrutura de pastas (src e docs). Crie um arquivo .txt em docs com " +
             "nome aleatorio contendo a data de hoje (formato AAAA-MM-DD) e o clima de Sao Paulo (busque na internet). " +
             "Rode git init, faca git add e o primeiro commit com a mensagem 'data' (o primeiro commit nao pode ter " +
-            "a palavra EDITADO). Confirme 1 commit no git log. Depois edite o .txt para acrescentar uma nova linha " +
-            "com EDITADO abaixo da data (sem substituir a data) e faca o segundo commit com a mensagem 'EDITADO', " +
+            "a palavra EDITADO). Confirme 1 commit no git log. Depois escreva o texto (ARQUIVO EDITADO) dentro do " +
+            ".txt, junto com o resto do conteudo (a data de hoje e o clima devem continuar no arquivo), e faca o " +
+            "segundo commit com a mensagem 'EDITADO', " +
             "confirmando 2 commits. Liste os arquivos, busque o .txt com glob/grep, leia o arquivo e grave o " +
             "historico do git (hashes e mensagens) em historico_git.log. Nao commite o historico_git.log.";
 
@@ -106,6 +107,9 @@ internal static class E2EToolsFullTests
             TestContext.Check(used("glob(") || used("grep(")
                 || calls.Any(c => c.StartsWith("shell(") && (c.Contains("ls") || c.Contains("find") || c.Contains("grep"))),
                 "[toolsfull:agent] listou/buscou arquivos");
+            bool web = used("webfetch(") || used("fetch(")
+                || calls.Any(c => c.StartsWith("shell(") && (c.Contains("curl") || c.Contains("wget") || c.Contains("http")));
+            TestContext.Check(web, $"[toolsfull:agent] busca web executada (calls={string.Join(";", calls)})");
         }
         Console.WriteLine($"  [toolsfull:agent] repo={repo} ({calls.Count} calls, texto={text.Length} chars)");
     }

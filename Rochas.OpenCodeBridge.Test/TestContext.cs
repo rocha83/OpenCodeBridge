@@ -643,7 +643,8 @@ internal static class TestContext
         var journeyCalls = new JsonArray();
         var journeySw = Stopwatch.StartNew();
         string text = "";
-        bool nudged = false;
+        int nudges = 0;
+        const int MaxNudges = 2;
         for (int step = 0; step < max; step++)
         {
             // Forma Responses vem do Core; o teste nao reescreve schema nem faz
@@ -716,15 +717,18 @@ internal static class TestContext
             bool hasCall = input.Count > 0 && input[input.Count - 1]!["type"]?.GetValue<string>() == "function_call_output";
             if (!hasCall)
             {
-                // Turno vazio (2 tok, nenhuma tool): o modelo nao executou nada.
-                // Uma cutucada explicita e o loop segue; sem isso o caso morre
-                // sem artefato e o veredito vira FAIL por silencio do modelo.
-                if (text.Trim().Length > 0 || nudged) break;
-                nudged = true;
+                // Turno sem tool call: o modelo parou no meio da tarefa ou so
+                // resumiu em prosa. Cutucada explicita de continuacao (ate
+                // MaxNudges) e o loop segue; sem isso o caso morre sem artefato
+                // e o veredito vira FAIL por silencio do modelo.
+                if (nudges >= MaxNudges) break;
+                nudges++;
                 input.Add(new JsonObject
                 {
                     ["role"] = "user",
-                    ["content"] = "Voce nao emitiu nenhuma tool call. Execute a tarefa agora com as tools (write/edit/read); nao responda em prosa."
+                    ["content"] = nudges == 1 && text.Trim().Length == 0
+                        ? "Voce nao emitiu nenhuma tool call. Execute a tarefa agora com as tools (write/edit/read); nao responda em prosa."
+                        : "A tarefa ainda nao esta concluida. Continue de onde parou e finalize todos os passos do enunciado com as tools; nao responda em prosa."
                 });
                 continue;
             }
