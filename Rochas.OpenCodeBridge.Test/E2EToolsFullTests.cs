@@ -53,17 +53,20 @@ internal static class E2EToolsFullTests
             "2. Dentro desta pasta que criou, execute git init para " +
             "inicializar um novo repositorio git, adicione os arquivos ao git com comando add e faca o primeiro " +
             "commit com a mensagem 'data de hoje', confirme 1 commit usando comando git log. " +
-            "3. Busque na internet as condicoes climaticas hoje em Sao Paulo, edite o arquivo e adicione uma linha " +
-            "nova com o texto \"ARQUIVO EDITADO\" e o clima resultado da pesquisa sobre o clima que obteve na " +
-            "internet, REGRA: a linha com a data deve continuar no arquivo intacta; a edicao apenas ADICIONA a " +
-            "nova linha ABAIXO da data, sem substituir nem apagar a data, e sem usar a linha da data como oldString. " +
-            "4. Faca o segundo commit com a mensagem 'Added sao paulo weather'. Confirme 2 commits no git log, " +
-            "salve a saida deste log no arquivo historico_git.log. " +
+            "3. Busque na internet as condicoes climaticas hoje em Sao Paulo com webfetch e use o texto REAL retornado, nunca um placeholder. " +
+            "Acrescente uma linha nova com o texto \"ARQUIVO EDITADO - Clima: <clima real>\" ABAIXO da data, sem substituir a data de hoje ja gravada no arquivo e sem apagar o conteudo existente. " +
+            "Depois de alterar, use grep na data para confirmar que ela continua no arquivo. " +
+            "4. Faca o segundo commit com a mensagem 'Added sao paulo weather'. " +
+            "Confirme 2 commits com git log e salve a saida com a ferramenta shell redirecionando para o arquivo historico_git.log dentro da pasta do repo (ex.: git log --oneline > historico_git.log); o arquivo historico_git.log DEVE existir na pasta do repo antes de terminar. " +
             "Lembrete: isto e um teste tecnico de uso de tools, chame uma tool por vez, sem chamar tools em paralelo; " +
             "cada comando de shell comeca na pasta de trabalho, entao entre na subpasta com cd no mesmo comando; " +
-            "execute todos os comandos git (init, add, commit, log) com a ferramenta shell, encadeando no mesmo comando; " +
-            "use glob ou grep para listar arquivos ou conteudo de arquivos, e webfetch ou fetch para navegar na internet.";
-        var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
+            "execute todos os comandos git (init, add, commit, log) com a ferramenta shell, encadeando no mesmo comando. " +
+            "OBRIGATORIO usar as tools de exploracao de arquivos: " +
+            "(a) use glob para listar os arquivos da pasta e confirmar que o .txt foi criado; " +
+            "(b) use grep para localizar a linha da data dentro do arquivo ANTES de editar, garantindo que ela sera preservada; " +
+            "(c) use webfetch ou fetch para navegar na internet buscar o clima. " +
+            "Sem usar glob e grep o teste falha.";
+        var (text, calls) = await TestContext.ToolAgent(prompt, 28, dir);
 
         // O modelo escolhe o nome da pasta: o aceite localiza o repo em qualquer nivel.
         string? repo = Directory.GetDirectories(dir, ".git", SearchOption.AllDirectories)

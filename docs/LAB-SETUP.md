@@ -503,6 +503,12 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 | `--main-harness` | `true` | substitui o system no caminho gerido (model sem sufixo) |
 | `--harness-tails` | `true` | liga as caudas (behavior/tools) conforme `tailScope`; `0` desliga |
 
+> **Regra (HARNESS POR MODO):** MainHarness on/off depende do MODO: bridge →
+> SEMPRE on; opencode → off (o opencode já carrega o seu harness no stream com
+> o llama). O discriminador é o CLIENTE (BridgeLane), nunca o sufixo do modelo.
+> Passthrough só dispara fora da raia bridge. Web UI (`ChatController`)
+> hardcoda `harness = true`.
+
 > **Legado:** Qwen3/Qwen3.5 não são a linha atual; as flags marcadas (legado) não são usadas na linha Gemma 4.
 
 **Coerção (legado Qwen3/Qwen3.5 e famílias com parser textual):** `--coerce-text-tools 1`

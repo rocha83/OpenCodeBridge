@@ -39,8 +39,13 @@
 - Históricos: do fim ao começo, blocos de 8k.
 
 ## Conteúdo longo + subagentes que só agem (2026-10-04)
-- Thinking: GPU com thinking ligado (`--thinking events`); linha 4B/CPU
-  conforme o cadastro do agente (`events` p/ Plan, `off` p/ execução direta).
+- **Thinking por role (regra desde o início):** ON **só** em **Plan, Orch e MoE**
+  (planejamento/exploração, sem tools densas); **Build, Scripter e Exec são OFF**
+  (execução determinística). Fonte única em `RoleProfiles.cs` + `appsettings.json`.
+  Thinking on em tools densas gasta raciocínio, ramifica e alucina.
+- **Toda a esteira WAR roda `--thinking off`**, porque é executada na maior parte
+  pelo role **Build** (é o par do agent `build`). Plan/Orch/MoE seguem on onde
+  fizer sentido; o gate da WAR é sempre off.
 - Conteúdo longo (>10k tokens) NÃO vai inteiro no prompt: fatiar em blocos
   com sobreposição e um índice (arquivo:início:fim) antes de delegar.
 - Subagente = Qwen com viés executor: o 9B delega a subagentes DELE MESMO

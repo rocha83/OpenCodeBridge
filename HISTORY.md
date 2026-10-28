@@ -4316,3 +4316,36 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   pede conclusao dos passos do enunciado (nao responde por ele).
 - E-tools-full PASS isolado apos os ajustes: `PASS E-tools-full (51.4s)`,
   `[test] PASS=1 FAIL=0 SKIP=0`.
+
+## E-tools-full: 5x em loop (2026-10-28) — guard + variância cognitiva
+- Bateria 5x (reiniciando :4134 a cada rodada) reportou "PASS=0 FAIL=5", MAS o
+  placar e enganoso: so a rodada 1 executou o teste. As rodadas 2-5 foram
+  BLOQUEADAS pelo BinaryGuard/rerun-guard ("binarios inalterados desde o
+  ultimo FAIL") — o guard existe justamente para proibir reexecutar os mesmos
+  binarios apos um FAIL. Rodar o mesmo build 5x sem rebuild e exatamente o que
+  ele impede. Amostra real: 1 teste cognitivo.
+- A causa do FAIL da rodada 1 e COGNITIVA/nao-deterministica, nao bug de
+  codigo (mesmo build do PASS isolado): o modelo criou `random_dir` mas chamou
+  edit/read com `path:"random_file.txt"` (sem o subdir) -> tool fail; ao refaz,
+  usou `replaceAll` com `oldString="2026-10-28"` e APAGOU a linha da data ->
+  assert "data do sistema anotada" falhou.
+- Licao: E-tools-full tem variancia entre runs do modelo (repo git + edit + 2
+  commits + historico). PASS isolado nao prova estabilidade; para medir
+  estabilidade precisa-se de rebuild entre runs (ou desligar o guard) — nunca
+  de binarios identicos.
+
+## Regra (HARNESS POR MODO) — MainHarness on/off (2026-10-28)
+
+- MainHarness on/off depende do MODO: bridge → SEMPRE on; opencode → off (o
+  opencode já carrega o seu harness no stream com o llama). O discriminador é
+  o CLIENTE (BridgeLane = !opencodeClient && (Mode is null || Mode.MainHarness)),
+  nunca o sufixo do modelo. Por isso o WAR (`...-build`) não fica sem base.
+- `main_harness_scope:"managed-only"` é rótulo de status, não condição sobre o
+  sufixo; a prova é o evento `main-harness` (`chars≈3916, tails=true`) no log
+  com `model: Gemma4-E4B-Q4-build`.
+- Implementação: `Program.cs` chat (`1900`) e responses (`2408`) aplicam o
+  MainHarness quando `BridgeLane.Value == true`; o bypass `passthrough-responses`
+  (`2627`) só dispara fora da raia bridge (`BridgeLane.Value != true`).
+- Web UI (`ChatController`) hardcoda `harness = true` e chama
+  `MainHarness.BuildSystem`.
+- Documentado em `docs/LAB-SETUP.md` e `docs/BENCHTESTS.md`.

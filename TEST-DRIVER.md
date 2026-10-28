@@ -336,6 +336,11 @@ Observações:
   iniciado como `dotnet exec`, o nome será `dotnet` e a detecção é limitada.
   Isso é documentado como limitação portável, não como bloqueio.
 - No L3 e no L4, `main_harness=false` gera **apenas aviso**; não bloqueia.
+- **Thinking off é regra da WAR.** A bridge de bancada roda `--thinking off`
+  (o role `build` já é off por perfil; a esteira é executada na maior parte por
+  ele). Thinking on fica para Plan/Orch/MoE — em tools densas ele gasta
+  raciocínio, ramifica e alucina. O preflight confere `main_harness` (L3/L4) mas
+  não força thinking: a regra é do setup da bridge (`--thinking off`).
 
 ## 10. Levels e steps da WAR
 

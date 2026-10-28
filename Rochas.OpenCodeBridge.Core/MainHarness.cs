@@ -67,19 +67,6 @@ SEGURANÇA E FORMATO
 - Responda no idioma do usuário, tool calls completas; quando o cliente trouxer `<available_skills>` ou `<env>`, use os valores reais.
 """;
 
-    /// <summary>System do opencode (master Code Mode/AGENTS.md) nao e substituido.</summary>
-    /// <param name="clientSystem">System enviado pelo cliente.</param>
-    /// <returns>True quando o cliente ja traz o harness proprio do opencode.</returns>
-    public static bool LooksLikeOpencodeMaster(string? clientSystem)
-    {
-        if (string.IsNullOrWhiteSpace(clientSystem)) return false;
-        string t = clientSystem.Trim();
-        return t.Length > 6000
-            || t.Contains("# Code Mode", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("Instructions from:", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("You are opencode", StringComparison.OrdinalIgnoreCase);
-    }
-
     /// <summary>
     /// Substitui o system do cliente pelo main harness (caminho gerido).
     /// Preserva <env>, <available_skills>, data e o system do role/subagente.
@@ -87,7 +74,7 @@ SEGURANÇA E FORMATO
     /// no texto. A segmentacao e papel do enunciado do teste/role, nao da base.
     /// </summary>
     /// <param name="messages">Mensagens ja convertidas (chat).</param>
-    /// <param name="enabled">Flag --main-harness/appsettings ja filtrada por CLIENTE.</param>
+    /// <param name="enabled">Flag ja filtrada por CLIENTE (BridgeLane).</param>
     /// <param name="role">Role do subagente (ex.: Scripter); null = cliente generico.</param>
     /// <returns>true se substituiu o system.</returns>
     public static bool Apply(System.Text.Json.Nodes.JsonArray messages, bool enabled, string? role = null)
@@ -97,7 +84,8 @@ SEGURANÇA E FORMATO
         if (messages.Count > 0 && messages[0] is System.Text.Json.Nodes.JsonObject first
             && first["role"]?.GetValue<string>() == "system")
             clientSystem = first["content"]?.GetValue<string>();
-        if (LooksLikeOpencodeMaster(clientSystem)) return false;
+        // (sem curto-circuito por "opencode master": em bridge lane o harness é
+        // SEMPRE on; o discriminador é o modo/cliente, não o conteúdo do system)
 
         string text = BuildSystem(clientSystem, role);
         if (messages.Count > 0 && messages[0] is System.Text.Json.Nodes.JsonObject sys
@@ -123,7 +111,7 @@ SEGURANÇA E FORMATO
         if (date is not null) sb.Append("\n\n").Append(date);
 
         string trimmed = clientSystem?.Trim() ?? "";
-        if (!LooksLikeOpencodeMaster(trimmed) && trimmed.Length > 0)
+        if (trimmed.Length > 0 && trimmed.Length < 6000)
         {
             string label = string.IsNullOrWhiteSpace(role)
                 ? "INSTRUCOES DO CLIENTE"

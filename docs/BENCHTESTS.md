@@ -259,12 +259,21 @@ padrão e pode ser declarado explicitamente com `--war-stop-on-fail`.
 > nem em agente — o ambiente só conhece os serviços predefinidos (retrato em `LAB-SETUP.md` §12).
 > A bridge de bancada pode usar `--main-harness 1` para testar o modo
 > bridge e a Web UI; as units OpenCode `:4124/:4125/:4126` ficam em `0`.
+> **Regra WAR:** todos os testes da esteira rodam `--thinking off` (role build,
+> que já é off por perfil). Thinking on fica para Plan/Orch/MoE (planejamento,
+> sem tools complexas): em tools densas ele gasta raciocínio, ramifica e alucina
+> (ver `HISTORY.md`, 2026-10-19 "Suíte sempre no role Build").
+> **Regra (HARNESS POR MODO):** MainHarness on/off depende do MODO: bridge →
+> SEMPRE on; opencode → off (o opencode já carrega o seu harness no stream com
+> o llama). O discriminador é o CLIENTE (BridgeLane), nunca o sufixo do modelo.
+> `main_harness_scope:"managed-only"` é rótulo. Passthrough só dispara fora da
+> raia bridge.
 
 ```bash
 # bridge própria (para testar o build do repo, não o binário de produção)
 cd Rochas.OpenCodeBridge/bin/Release/net10.0
 dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4100 \
-  --model Gemma4-E4B-Q4 --thinking events --temperature 0.3 --max-tokens 16384 \
+  --model Gemma4-E4B-Q4 --thinking off --temperature 0.3 --max-tokens 16384 \
   --context-guard 1 --context-tokens 131072 --api-key guest@123 \
   --passthrough-responses true --main-harness 1 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
@@ -287,7 +296,7 @@ ambiente, sem tocar no catálogo:
 ```bash
 # bridge Q3 dedicada (harness off, mesmo perfil da :4125)
 dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4110 \
-  --model Gemma4-E4B-UD-Q3 --thinking events --temperature 0.3 --max-tokens 16384 \
+  --model Gemma4-E4B-UD-Q3 --thinking off --temperature 0.3 --max-tokens 16384 \
   --context-guard 1 --context-tokens 65536 --api-key guest@123 \
   --passthrough-responses true --main-harness 1 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
@@ -349,7 +358,7 @@ e loga aviso se `main_harness` não estiver `true`:
 ```bash
 cd Rochas.OpenCodeBridge/bin/Release/net10.0
 dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4100 \
-  --model Gemma4-E4B-Q4 --thinking events --temperature 0.3 --max-tokens 16384 \
+  --model Gemma4-E4B-Q4 --thinking off --temperature 0.3 --max-tokens 16384 \
   --context-guard 1 --context-tokens 131072 --api-key guest@123 \
   --passthrough-responses true --main-harness 1 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \

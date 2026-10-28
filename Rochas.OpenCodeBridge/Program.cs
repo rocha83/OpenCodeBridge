@@ -1897,7 +1897,7 @@ WriteJson(ctx, 200, new JsonObject
             // direto). So na raia bridge; opencode se auto-gerencia. O array
             // `tools` NAO e tocado: o schema continua sendo a fonte do request.
             if (node is not null && node["messages"] is JsonArray chatHarness
-                && MainHarnessOn && BridgeLane.Value == true)
+                && BridgeLane.Value == true)
             {
                 bool applied = MainHarness.Apply(chatHarness, true, reqRole);
                 if (applied)
@@ -2405,7 +2405,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // Main harness: BASE do caminho gerido (cliente != CLI do opencode).
         // O discriminador e o CLIENTE (igual as tails), nunca o sufixo do modelo:
         // o WAR usa <modelo>-build e ficaria sem base.
-        bool mainHarness = MainHarness.Apply(messages, MainHarnessOn && BridgeLane.Value == true, RoleOfModel(requestedModel));
+        bool mainHarness = MainHarness.Apply(messages, BridgeLane.Value == true, RoleOfModel(requestedModel));
         if (Diagnostic && mainHarness)
             Log(new JsonObject
             {
@@ -2624,7 +2624,10 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // resto intacto — tools nativas, sem traducao p/ chat.
         // EXCETO com tools: llama /v1/responses nao devolve function_call
         // (so texto) — cai na traducao p/ chat + ToolsCoercion.
-        if (PassthroughResponses && !ReqHasTools(req))
+        // Regra primordial: em bridge lane o harness é ON, então o bypass
+        // (que pula o harness) só vale fora da raia bridge. Tools-less em
+        // bridge lane cai na tradução (BuildChatRequest), que aplica o harness.
+        if (PassthroughResponses && !ReqHasTools(req) && BridgeLane.Value != true)
         {
             ForwardResponses(ctx, body, req);
             return;
