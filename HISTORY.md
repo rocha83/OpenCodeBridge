@@ -4403,6 +4403,26 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   aceitar moderno (`AddStackExchangeRedisCache`), memory fallback, legado
   (`AddDistributedRedisCache`) ou `IConnectionMultiplexer`, com a versão exposta
   em `[info] di=modern|legacy|custom` — versão de API é visibilidade, não gate.
+## E-tools-full: falha de path corrigida no Core (2026-10-28)
+
+- Sintoma (L2 `L2-20261028-160036`, step `tools-full-bridge` FAIL 127s,
+  `GATE VERMELHO`, belts SKIP pelo fail-fast):
+  `assert: [toolsfull:agent] marca EDITADO no arquivo (calls=... edit(...) ->
+  fail; grep(...) -> fail; shell(cd temp_dir && git commit) -> fail; glob(...) -> ok)`.
+- Causa: o modelo criou o arquivo em `temp_dir/` via shell (`cd temp_dir`), mas
+  chamou `edit` com `path: "random_file.txt"` — o path de tool é relativo à raiz
+  do workspace e o `cd` do shell não muda. `edit` falhou, `grep` falhou no mesmo
+  path e o loop gastou os steps até parar sem a linha EDITADO. O enunciado está
+  natural e os asserts continuam iguais; nada foi afrouxado.
+- Correção no Core (mecânica, não no teste): `WorkspaceGuard.Locate` busca o
+  MESMO nome de arquivo (BFS, depth 4, 3 achados, `bin/obj/.git/node_modules`
+  pulados) e `edit`/`read` respondem `arquivo não encontrado: '<path>' (existe
+  em: temp_dir/random_file.txt — use esse path)`. Sem achado, a mensagem fica a
+  original (não promete caminho errado).
+- Prova em C#: `U-tools-path-hint` (`PathHintApontaCaminhoReal`) — `edit` e
+  `read` no path errado apontam `temp_dir/random_file.txt`, path certo edita de
+  verdade e caminho inexistente não promete achado. `[test] PASS=1 FAIL=0`.
+
 ## Painel Grafana mostra o step em execução (RUN) (2026-10-28)
 
 - Sintoma: durante o L1 o painel não mostrava `RUN` — `units` e

@@ -25,7 +25,15 @@ public sealed class EditToolHandler : IToolHandler
 
         if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why, context.ExtraRoots))
             return ToolResult.Fail(why);
-        if (!File.Exists(full)) return ToolResult.Fail($"arquivo não encontrado: '{path}'");
+        if (!File.Exists(full))
+        {
+            // O modelo frequentemente passa so o nome depois de um `cd` no shell:
+            // aponta o caminho real para a proxima chamada ser a certa.
+            string achou = WorkspaceGuard.Locate(context.WorkspaceRoot, path, context.ExtraRoots);
+            return ToolResult.Fail(achou.Length > 0
+                ? $"arquivo não encontrado: '{path}' (existe em: {achou} — use esse path)"
+                : $"arquivo não encontrado: '{path}'");
+        }
 
         try
         {

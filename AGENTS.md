@@ -217,6 +217,16 @@ conveniência manual, nunca fonte de verdade.
 - Vale igual para `--only <lista>`: a lista é ordem de execução, não licença
   para rodar tudo depois de vermelho.
 
+## Regra: falha de path na tool devolve o caminho real (primordial)
+- `read`/`edit` com arquivo inexistente respondem `arquivo não encontrado:
+  '<path>' (existe em: <relativo> — use esse path)` (`WorkspaceGuard.Locate`:
+  BFS depth 4, 3 achados, sem prometer quando não há achado). O modelo faz `cd`
+  no shell e esquece que o path de tool é relativo à raiz — sem a dica ele
+  repete a chamada e queima os steps (`E-tools-full`: "marca EDITADO").
+- É correção de mecânica no Core, **não** afrouxamento de aceite: o teste
+  continua exigindo o artefato editado no disco.
+- Prova: `U-tools-path-hint`.
+
 ## Regra: painel do gate mostra o step em EXECUÇÃO (primordial)
 - O driver publica **também** `step_start` na bridge, como `verdict: "RUN"`
   (`TestCircuitDriver.PostStepEvent`); o `step_end` sobrescreve a linha com
