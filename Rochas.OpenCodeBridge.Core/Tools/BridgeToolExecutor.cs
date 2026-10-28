@@ -37,6 +37,15 @@ public sealed class BridgeToolExecutor
         yield return new SubagentToolHandler();
     }
 
+    /// <summary>
+    /// Renderiza o resultado de uma execução no formato canonico de historico
+    /// de chat (a falha vem de <see cref="ToolResult.Success"/>, semantica do
+    /// executor, nao do texto). Ponto unico para clientes (Web/runner) montarem
+    /// o par tool_call_id/tool sem divergir do breaker.
+    /// </summary>
+    public static string FormatResultForHistory(ToolResult result)
+        => result.ToHistoryContent();
+
     public ToolResult Execute(string name, string arguments, int timeoutSeconds = 300)
     {
         if (string.IsNullOrWhiteSpace(name))

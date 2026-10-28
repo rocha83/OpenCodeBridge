@@ -42,30 +42,41 @@ public abstract class ToolsAntiRepeat
     public abstract string Scope { get; }
 
     /// <summary>Aviso injetado no ultimo resultado (modo Nudge).</summary>
+    /// <remarks>
+    /// Generico de proposito: nasceu de loops de path, de compilador e de shell,
+    /// mas nao receita nenhuma receita (a mecanica de ferramenta mora na harness
+    /// tool tail). O aviso descreve o FATO (mesmo alvo falhando) e o ESCAPE
+    /// (trocar de abordagem ou parar), nunca o passo a passo.
+    /// </remarks>
     public const string NudgeNotice =
-        "\n\n[BRIDGE-BREAKER] A ponte notou {N} falhas seguidas no mesmo alvo. Se fizer sentido, vale conferir o caminho real " +
-        "com `ls -la <diretorio-pai>` e copiar o nome da saida; se o diretorio nao existir, criar com caminho absoluto e " +
-        "conferir com `ls`. Se preferir, relate o erro exato e o que ja tentou.";
+        "\n\n[BRIDGE-BREAKER] {N} falhas sobre o mesmo alvo nesta rodada. Repetir a mesma chamada nao resolve: " +
+        "troque de abordagem (outro caminho, outra forma de escrever, outra ferramenta) ou, se nao avancar, " +
+        "entregue o que ja funciona e relate o erro exato e o que ja tentou.";
 
     /// <summary>Aviso devolvido no curto-circuito (modo Trip).</summary>
     public const string TripNotice =
-        "[BRIDGE-BREAKER] A ponte encerrou este turno apos {N} falhas seguidas no mesmo alvo, para evitar repeticao. " +
-        "Nao houve chamada ao modelo. Vale relatar o erro exato e a ultima saida; na proxima mensagem, " +
-        "conferir o caminho com `ls -la` e usar o nome copiado.";
+        "[BRIDGE-BREAKER] Turno encerrado apos {N} falhas sobre o mesmo alvo (Nao houve chamada ao modelo). " +
+        "Nao adianta repetir: mude de abordagem ou relate o erro exato e o que ja tentou.";
 
-    /// <summary>Marcadores que caracterizam resultado de falha de tool.</summary>
+    /// <summary>
+    /// Marcadores que caracterizam resultado de falha de tool.
+    /// </summary>
     /// <remarks>
-    /// "exit [1-9]:" e o formato REAL do <c>ProcessRunner</c> (ToolResult.Fail);
-    /// a forma antiga "exited with code" ficou so por compatibilidade — com ela
-    /// so, o breaker ficava mudo no loop mais caro medido (E-mission-tools:
-    /// 10 edits identicos devolvendo o MESMO error FS0751, sem nudge e sem trip).
-    /// Erros de compilador entram pelo mesmo motivo: o modelo re-escreve o fonte
-    /// e recebe a mesma linha do compilador de novo.
+    /// E o CONTRATO de saida das nossas tools, nao o vocabulario de cada
+    /// ecossistema: toda ferramenta shell passa pelo ProcessRunner (exit != 0,
+    /// com a saida embutida — compilador, traceback e afins vem dentro) e os
+    /// handlers devolvem "nao encontrado"/"negada". Snifar "error FS0751" ou
+    /// "traceback" aqui acoplaria o Core a linguagens; a deteccao fica generica e
+    /// vale para qualquer ferramenta futura que siga o mesmo contrato.
     /// </remarks>
     private static readonly Regex FailureMarkers = new(
-        "exited? with code [1-9]|(?m)^\\s*exit [1-9]" +
-        "|error fs\\d+|error cs\\d+|error msb\\d+|error fsi\\d+" +
-        "|traceback \\(most recent call last\\)|undefined reference|unhandled exception\\.|assertionfailed" +
+        // Falha semantica do executor: o resultado carimbado pelo ToolExecutor
+        // (ToolResult.Success=false) chega como "ERRO: ..." / "Error: ...".
+        // Detectar o prefixo canonico (nao vocabulario de ecossistema) e o que
+        // torna a deteccao abstrata para qualquer ferramenta futura.
+        "ERRO:|Error:|\\berror:" +
+        "|exited? with code [1-9]|(^|\\n)\\s*exit [1-9]\\d*" +
+        "|traceback (most recent call last)|undefined reference|unhandled exception\\.|assertionfailed" +
         "|file not found|no such file|not a directory|is a directory" +
         "|search path does not exist|unable to find files|unable to write" +
         "|command not found|permission denied|operation not permitted" +

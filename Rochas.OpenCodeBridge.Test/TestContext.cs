@@ -687,6 +687,12 @@ internal static class TestContext
                 ["stream"] = false
             });
             text = "";
+            // Progresso contado POR ITERACAO: o modelo pode devolver output vazio
+            // ou so prosa apos a primeira tool call. Antes, hasCall olhava o
+            // ULTIMO item do input (sempre function_call_output apos a 1a call),
+            // entao a cutucada nunca disparava e o loop girava gastando steps
+            // (medido em E-ent-redis: ~10 respostas vazias apos glob sem hit).
+            bool emittedCall = false;
             if (Environment.GetEnvironmentVariable("TCTX_DUMP") == "1")
                 Console.WriteLine($"  [dump] {res.ToJsonString()[..Math.Min(700, res.ToJsonString().Length)]}");
             if (res["output"] is JsonArray output)
@@ -705,6 +711,7 @@ internal static class TestContext
                     }
                     else if (type == "function_call")
                     {
+                        emittedCall = true;
                         string callId = item?["call_id"]?.GetValue<string>() ?? item?["id"]?.GetValue<string>() ?? "";
                         string name = item?["name"]?.GetValue<string>() ?? "";
                         string args = item?["arguments"]?.GetValue<string>() ?? "{}";
@@ -718,9 +725,13 @@ internal static class TestContext
                         try { callArgsNode = JsonNode.Parse(args); } catch { }
                         JsonObject exec = await ExecuteTool(name, callArgsNode, cwd);
                         callSw.Stop();
-                        string outText = exec["ok"]?.GetValue<bool>() == true
-                            ? (exec["output"]?.GetValue<string>() ?? "")
-                            : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
+                        string outText = global::Rochas.OpenCodeBridge.Core.Tools.BridgeToolExecutor.FormatResultForHistory(
+                            new global::Rochas.OpenCodeBridge.Core.Tools.ToolResult
+                            {
+                                Success = exec["ok"]?.GetValue<bool>() == true,
+                                Output = exec["output"]?.GetValue<string>() ?? "",
+                                Error = exec["error"]?.GetValue<string>() ?? "falha"
+                            });
                         bool callOk = exec["ok"]?.GetValue<bool>() == true;
                         calls.Add($"{name}({args}) -> {(callOk ? "ok" : "fail")}");
                         JsonNode? callArgs = null;
@@ -743,7 +754,9 @@ internal static class TestContext
                     }
                 }
             }
-            bool hasCall = input.Count > 0 && input[input.Count - 1]!["type"]?.GetValue<string>() == "function_call_output";
+            // Progresso = este response EMITIU uma tool call (nao o ultimo item
+            // do input, que fica true apos a 1a call mesmo com output vazio).
+            bool hasCall = emittedCall;
             if (!hasCall)
             {
                 // Turno sem tool call: o modelo parou no meio da tarefa ou so

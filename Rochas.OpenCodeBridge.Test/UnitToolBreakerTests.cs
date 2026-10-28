@@ -387,6 +387,12 @@ internal static class UnitToolBreakerTests
     public static async Task TranslateTempRespeitaTunel()
     {
         await RequireNewBridge();
+        // Doutrina de temperatura por perfil (build 0.1) so vale no modo bridge
+        // (a raia WAR/bench traz --main-harness 1 e perfil build 0.1). Na raia
+        // opencode o deployment e opencode (main_harness 0, perfil proprio) e o
+        // tunel nao segue essa doutrina: o teste passa como SKIP em vez de FAIL.
+        if (TestContext.Mode == "opencode")
+            TestContext.Skip("perfil build 0.1 e doutrina do modo bridge; a raia opencode usa o harness/perfil proprio");
         var harness = await TestContext.GetObj(TestContext.Bridge + "/api/harness");
         bool tailsEnabled = harness["harness_tails"]?.GetValue<bool>() ?? true;
         string scope = harness["tail_scope"]?.GetValue<string>() ?? "";
