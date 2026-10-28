@@ -206,3 +206,27 @@ não mudam.
 
 **Prova** — `logs/levels/L2-20261027-l2fix`: 4/4 PASS (537 s); L1
 `logs/levels/L1-20261027-l1l2-l1`: 3/3 PASS (741 s).
+
+---
+
+## 12. ToolAgent: cutucada nunca disparava após a 1ª tool call
+
+**Sintoma** — `E-ent-redis` falhava `ProductRepository.cs com codigo util (len=0)`.
+O dump (`TCTX_DUMP=1`) mostrava ~10 respostas `output:[]` (1 tok) seguidas após um
+`glob` sem hit, sem nudge, gastando steps até o modelo escrever arquivo errado
+(ou nenhum) e estourar o orçamento de 14 passos.
+
+**Causa** — `TestContext.ToolAgent` calculava `hasCall` pelo **último item do
+input** ser `function_call_output`. Após a 1ª tool call esse item permanece
+`function_call_output` mesmo quando o `output` do response vem **vazio** (ou só
+prosa): `hasCall` ficava `true`, a cutucada nunca incrementava e o loop girava
+às cegas (medido: 10+ chamadas ao modelo sem progresso).
+
+**Correção** — progresso contado **por iteração** (`emittedCall`), setado no
+branch `function_call` do response atual; `hasCall = emittedCall`. Output vazio
+ou só prosa agora incrementa `nudges` e dispara a cutucada (até `MaxNudges`),
+como já acontecia antes da 1ª call. Sem mudar enunciado nem afrouxar assertiva.
+
+**Prova** — `E-ent-redis` saiu de `len=0` para gravar o repositório completo
+(4386 chars, cache-aside + fallback + lock) em `logs/levels/L1-20261028-175935-l1`;
+units `U-breaker-*` 8/8 PASS; build 0 erros. Commit `0d291fa`.
