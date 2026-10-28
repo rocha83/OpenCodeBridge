@@ -46,15 +46,23 @@ internal static class E2EToolsFullTests
         // Enunciado de TAREFA, nao de harness: sem path, sem nome de tool e sem
         // coringa de coordenada. O modelo flui; o harness resolve o cwd.
         const string prompt =
-            "Trabalhe na pasta atual. Crie uma estrutura de pastas (src e docs). Crie um arquivo .txt em docs com " +
-            "nome aleatorio contendo a data de hoje (formato AAAA-MM-DD) e o clima de Sao Paulo (busque na internet). " +
-            "Rode git init, faca git add e o primeiro commit com a mensagem 'data' (o primeiro commit nao pode ter " +
-            "a palavra EDITADO). Confirme 1 commit no git log. Depois escreva o texto (ARQUIVO EDITADO) dentro do " +
-            ".txt, junto com o resto do conteudo (a data de hoje e o clima devem continuar no arquivo), e faca o " +
-            "segundo commit com a mensagem 'EDITADO', " +
-            "confirmando 2 commits. Liste os arquivos, busque o .txt com glob/grep, leia o arquivo e grave o " +
-            "historico do git (hashes e mensagens) em historico_git.log. Nao commite o historico_git.log.";
-
+            "Utilize a pasta atual como espaco de trabalho: crie a subpasta dentro dela e mantenha todos os " +
+            "arquivos do trabalho dentro desta pasta; nao crie nada fora dela. " +
+            "1. Crie uma pasta com nome aleatorio e, dentro dela, um arquivo .txt tambem com nome aleatorio, " +
+            "contendo a data de hoje escrita como texto dentro dele. " +
+            "2. Dentro desta pasta que criou, execute git init para " +
+            "inicializar um novo repositorio git, adicione os arquivos ao git com comando add e faca o primeiro " +
+            "commit com a mensagem 'data de hoje', confirme 1 commit usando comando git log. " +
+            "3. Busque na internet as condicoes climaticas hoje em Sao Paulo, edite o arquivo e adicione uma linha " +
+            "nova com o texto \"ARQUIVO EDITADO\" e o clima resultado da pesquisa sobre o clima que obteve na " +
+            "internet, REGRA: a linha com a data deve continuar no arquivo intacta; a edicao apenas ADICIONA a " +
+            "nova linha ABAIXO da data, sem substituir nem apagar a data, e sem usar a linha da data como oldString. " +
+            "4. Faca o segundo commit com a mensagem 'Added sao paulo weather'. Confirme 2 commits no git log, " +
+            "salve a saida deste log no arquivo historico_git.log. " +
+            "Lembrete: isto e um teste tecnico de uso de tools, chame uma tool por vez, sem chamar tools em paralelo; " +
+            "cada comando de shell comeca na pasta de trabalho, entao entre na subpasta com cd no mesmo comando; " +
+            "execute todos os comandos git (init, add, commit, log) com a ferramenta shell, encadeando no mesmo comando; " +
+            "use glob ou grep para listar arquivos ou conteudo de arquivos, e webfetch ou fetch para navegar na internet.";
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
 
         // O modelo escolhe o nome da pasta: o aceite localiza o repo em qualquer nivel.
@@ -84,6 +92,12 @@ internal static class E2EToolsFullTests
         var (lgCode, lgOut) = Run("git", repo, 30, "-c", "safe.directory=" + repo, "log", "--oneline");
         string[] commits = lgCode == 0 ? lgOut.Split('\n', StringSplitOptions.RemoveEmptyEntries) : Array.Empty<string>();
         TestContext.Check(commits.Length >= 2, $"[toolsfull:agent] 2 commits no repo (git log: {lgOut.Trim()}; calls={string.Join(";", calls)})");
+        // Mensagens pedidas no enunciado: primeiro 'data de hoje', segundo 'Added sao paulo weather'.
+        string logAll = lgCode == 0 ? Run("git", repo, 30, "-c", "safe.directory=" + repo, "log", "--format=%s").Out : "";
+        TestContext.Check(logAll.Contains("data de hoje"),
+            $"[toolsfull:agent] primeiro commit com mensagem 'data de hoje' (log: {logAll.Trim()})");
+        TestContext.Check(logAll.Contains("Added sao paulo weather"),
+            $"[toolsfull:agent] segundo commit com mensagem 'Added sao paulo weather' (log: {logAll.Trim()})");
         string histBody = File.Exists(hist) ? File.ReadAllText(hist) : "";
         // O log pode citar qualquer commit real do repo (o tip muda se o proprio
         // historico for commitado; nesse caso o hash dele nao pode estar dentro
@@ -93,6 +107,10 @@ internal static class E2EToolsFullTests
             .FirstOrDefault(h => h.Length >= 7 && histBody.Contains(h)) ?? "";
         TestContext.Check(realCommit.Length >= 7,
             $"[toolsfull:agent] historico_git.log com um commit real ({realCommit}; git log: {lgOut.Trim()})");
+        // A saida salva deve refletir os 2 commits confirmados no enunciado.
+        int inHist = commits.Count(c => c.Split(' ')[0].Length >= 7 && histBody.Contains(c.Split(' ')[0]));
+        TestContext.Check(inHist >= 2,
+            $"[toolsfull:agent] historico_git.log reflete os 2 commits ({inHist}/2; log: {lgOut.Trim()})");
 
         // O artefato prova o fluxo nos dois modos. No bridge as calls tambem
         // provam tools; no opencode as tools sao do CLI e nao entram nesse log.

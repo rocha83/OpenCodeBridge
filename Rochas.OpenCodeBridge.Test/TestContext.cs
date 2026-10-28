@@ -638,7 +638,19 @@ internal static class TestContext
         await PublishEnunciado(enunciadoStep, prompt);
         if (Mode == "opencode") return OpencodeRunDetailed(prompt, cwd);
         int max = steps > 0 ? steps : ToolAgentSteps;
-        var input = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = prompt });
+        var input = new JsonArray();
+        // Contexto de ambiente igual ao do cliente opencode: sem <env> o modelo
+        // nao sabe qual e a "pasta atual" e o MainHarness manda temporarios para
+        // /tmp/opencode, tirando os artefatos do dir do teste. E contexto real de
+        // ambiente, nao comando enxertado no enunciado.
+        if (!string.IsNullOrWhiteSpace(cwd))
+            input.Add(new JsonObject
+            {
+                ["role"] = "system",
+                ["content"] = "<env>\n  Working directory: " + cwd +
+                              "\n  Is directory a git repo: no\n  Platform: linux\n</env>"
+            });
+        input.Add(new JsonObject { ["role"] = "user", ["content"] = prompt });
         var calls = new List<string>();
         var journeyCalls = new JsonArray();
         var journeySw = Stopwatch.StartNew();
