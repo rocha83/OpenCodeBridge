@@ -46,13 +46,13 @@ internal static class E2EToolsFullTests
         // Enunciado de TAREFA, nao de harness: sem path, sem nome de tool e sem
         // coringa de coordenada. O modelo flui; o harness resolve o cwd.
         const string prompt =
-            "Trabalhe na pasta atual. Crie um arquivo .txt com nome aleatorio contendo a data de hoje (formato AAAA-MM-DD) " +
-            "e o clima de Sao Paulo se conseguir acessar a internet. Rode git init, faca git add e o primeiro commit " +
-            "com a mensagem 'data' (o primeiro commit nao pode ter a palavra EDITADO). Confirme 1 commit no git log. " +
-            "Depois edite o .txt para acrescentar uma nova linha com EDITADO abaixo da data (sem substituir a data) e " +
-            "faca o segundo commit com a mensagem 'EDITADO', confirmando 2 commits. Liste os arquivos, busque o .txt " +
-            "com glob/grep, leia o arquivo e grave o historico do git (hashes e mensagens) em historico_git.log. " +
-            "Nao commite o historico_git.log.";
+            "Trabalhe na pasta atual. Crie uma estrutura de pastas (src e docs). Crie um arquivo .txt em docs com " +
+            "nome aleatorio contendo a data de hoje (formato AAAA-MM-DD) e o clima de Sao Paulo (busque na internet). " +
+            "Rode git init, faca git add e o primeiro commit com a mensagem 'data' (o primeiro commit nao pode ter " +
+            "a palavra EDITADO). Confirme 1 commit no git log. Depois edite o .txt para acrescentar uma nova linha " +
+            "com EDITADO abaixo da data (sem substituir a data) e faca o segundo commit com a mensagem 'EDITADO', " +
+            "confirmando 2 commits. Liste os arquivos, busque o .txt com glob/grep, leia o arquivo e grave o " +
+            "historico do git (hashes e mensagens) em historico_git.log. Nao commite o historico_git.log.";
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
 
@@ -61,6 +61,8 @@ internal static class E2EToolsFullTests
             .Select(g => Path.GetDirectoryName(g)!)
             .FirstOrDefault();
         TestContext.Check(repo is not null, $"[toolsfull:agent] pasta com repo git iniciado (dir={dir})");
+        TestContext.Check(Directory.GetDirectories(dir, "*", SearchOption.AllDirectories).Length > 0,
+            $"[toolsfull:agent] estrutura de pastas criada (dir={dir})");
         repo ??= dir;
 
         string[] txts = Directory.GetFiles(repo, "*.txt", SearchOption.AllDirectories)
