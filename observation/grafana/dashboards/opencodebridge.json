@@ -39,7 +39,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/status",
+          "url": "${bridge}/api/status",
           "url_options": {
             "method": "GET"
           },
@@ -95,7 +95,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/enunciado/messages",
+          "url": "${bridge}/api/test/enunciado/messages",
           "url_options": {
             "method": "GET"
           },
@@ -188,7 +188,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/activity?limit=6",
+          "url": "${bridge}/api/test/activity?limit=6",
           "url_options": {
             "method": "GET"
           },
@@ -281,7 +281,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -316,7 +316,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -351,7 +351,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -406,7 +406,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -441,7 +441,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -481,7 +481,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -521,7 +521,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe/latest",
+          "url": "${bridge}/api/test/probe/latest",
           "url_options": {
             "method": "GET"
           },
@@ -590,7 +590,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/steps?war=1",
+          "url": "${bridge}/api/test/steps?war=1",
           "url_options": {
             "method": "GET"
           },
@@ -723,7 +723,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
+          "url": "${bridge}/api/test/probe?limit=1000",
           "url_options": {
             "method": "GET"
           },
@@ -818,7 +818,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
+          "url": "${bridge}/api/test/probe?limit=1000",
           "url_options": {
             "method": "GET"
           },
@@ -934,7 +934,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/status",
+          "url": "${bridge}/api/status",
           "url_options": {
             "method": "GET"
           },
@@ -1024,7 +1024,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/status",
+          "url": "${bridge}/api/status",
           "url_options": {
             "method": "GET"
           },
@@ -1089,7 +1089,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
             "method": "GET"
           },
@@ -1105,5 +1105,32 @@
         }
       ]
     }
-  ]
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "bridge",
+        "type": "custom",
+        "label": "Bridge",
+        "query": "http://127.0.0.1:4124,http://127.0.0.1:4134",
+        "current": {
+          "text": "http://127.0.0.1:4134",
+          "value": "http://127.0.0.1:4134"
+        },
+        "options": [
+          {
+            "text": "http://127.0.0.1:4124",
+            "value": "http://127.0.0.1:4124"
+          },
+          {
+            "text": "http://127.0.0.1:4134",
+            "value": "http://127.0.0.1:4134"
+          }
+        ],
+        "includeAll": false,
+        "multi": false,
+        "hide": 0
+      }
+    ]
+  }
 }

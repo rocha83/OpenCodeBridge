@@ -99,8 +99,16 @@ for lvl in $LIST; do
   log "############ LEVEL $lvl -> rc=$rc ($(date '+%F %T')) ############"
   if [ "$rc" -ne 0 ]; then
     failed=$((failed + 1))
-    log "Level $lvl VERMELHO (rc=$rc) — registrado; SEGUINDO para o proximo nivel."
+    log "Level $lvl VERMELHO (rc=$rc) — registrado."
     log "  retomar: LEVEL_STAMP=$stamp scripts/war/run-levels.sh --level $lvl"
+    # Fail-fast entre niveis (padrao): nao executa o proximo nivel com um gate
+    # vermelho pendente. Override com LEVEL_CONTINUE_ON_FAIL=1 para medir o
+    # placar completo (uso diagnostico).
+    if [ "${LEVEL_CONTINUE_ON_FAIL:-0}" != "1" ]; then
+      log "fail-fast: nivel vermelho; interrompendo a trilha (LEVEL_CONTINUE_ON_FAIL=1 para continuar)."
+      break
+    fi
+    log "LEVEL_CONTINUE_ON_FAIL=1: seguindo para o proximo nivel."
   else
     log "Level $lvl VERDE — seguindo."
   fi

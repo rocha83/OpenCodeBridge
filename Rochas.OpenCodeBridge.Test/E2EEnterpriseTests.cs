@@ -2,7 +2,7 @@ using System.Text.Json.Nodes;
 
 namespace Rochas.OpenCodeBridge.Test;
 
-/// <summary>E2E enterprise: ASP.NET (CRUD simples e composto), worker, Garnet e React+dashboard.</summary>
+/// <summary>E2E enterprise: ASP.NET (CRUD simples e composto), worker, Redis e React+dashboard.</summary>
 internal static class E2EEnterpriseTests
 {
     static JsonObject Req(string text, bool stream = false) => new()
@@ -105,22 +105,35 @@ internal static class E2EEnterpriseTests
         Console.WriteLine($"  [info] worker retry={text.Contains("retry", StringComparison.OrdinalIgnoreCase)} deadletter={text.Contains("dead", StringComparison.OrdinalIgnoreCase)}");
     }
 
-    public static async Task GarnetCircuit()
+    public static async Task RedisCircuit()
     {
-        // Circuito assincrono com Garnet: cache-aside + invalidacao + antifalha.
-        var r = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", Req(
-            "C# .NET 9 + Garnet (Redis-protocol): repositorio de Product com cache-aside — GET tenta Garnet " +
+        // Circuito assincrono com Redis: cache-aside + invalidacao + antifalha.
+        // Diferente dos demais E-ent (texto puro via /v1/responses), este pede
+        // ARQUIVO escrito com a tool write — o modelo grava e a suite le o disco
+        // (mesmo caminho do mission: ToolAgent + ToolCatalog do Core).
+        string dir = Path.Combine(Path.GetTempPath(), "e2e-redis-" + Environment.ProcessId);
+        if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        Directory.CreateDirectory(dir);
+        var (_, calls) = await TestContext.ToolAgent(
+            "C# .NET 9 + Redis (StackExchange.Redis): repositorio de Product com cache-aside — GET tenta Redis " +
             "primeiro (IDistributedCache, sliding 5min), fallback Postgres + repopula; PUT/DELETE invalidam a " +
-            "chave com `cache.RemoveAsync(key)` (a API e `RemoveAsync` — `Remove` esta obsoleto no .NET 8+); " +
-            "stampede controlado por lock por chave; quando o Garnet cai, opera direto no banco e loga " +
-            "degradado (circuit-breaker simples com 3 falhas). Entregue o repositorio + registro no DI. " +
-            "So codigo + 3 bullets."));
-        TestContext.Check(r["status"]?.GetValue<string>() == "completed", "garnet completed");
-        string text = TextOf(r);
-        TestContext.Check(text.Length > 500, "garnet com codigo util");
-        CheckNoStub(text, "garnet");
-        TestContext.Check(text.Contains("IDistributedCache") && text.Contains("RemoveAsync"), "garnet com invalidacao");
-        Console.WriteLine($"  [info] garnet sliding={text.Contains("Sliding", StringComparison.OrdinalIgnoreCase)} circuito={text.Contains("circuit", StringComparison.OrdinalIgnoreCase)}");
+            "chave com cache.RemoveAsync(key) (a API e RemoveAsync — Remove esta obsoleto no .NET 8+); " +
+            "stampede controlado por lock por chave; quando o Redis cai, opera direto no banco e loga " +
+            "degradado (circuit-breaker simples com 3 falhas). Grave o repositorio completo em ProductRepository.cs " +
+            "com a tool write (nao use edit para criar o arquivo), sem placeholders, sem TODO, sem NotImplementedException " +
+            "e sem '// ...' ou '/* ... */' no meio do codigo: implemente tudo por completo. Depois grave o registro " +
+            "no DI em Startup.cs. So tool calls, sem prosa.",
+            10, dir);
+        string repo = File.Exists(Path.Combine(dir, "ProductRepository.cs"))
+            ? File.ReadAllText(Path.Combine(dir, "ProductRepository.cs")) : "";
+        TestContext.Check(repo.Length > 500, "redis ProductRepository.cs com codigo util (len=" + repo.Length + ")");
+        CheckNoStub(repo, "redis");
+        TestContext.Check(repo.Contains("IDistributedCache") && repo.Contains("RemoveAsync"), "redis com invalidacao");
+        string startup = File.Exists(Path.Combine(dir, "Startup.cs"))
+            ? File.ReadAllText(Path.Combine(dir, "Startup.cs")) : "";
+        TestContext.Check(startup.Contains("AddStackExchangeRedisCache") || startup.Contains("AddDistributedMemoryCache"),
+            "redis registro no DI (Startup.cs, len=" + startup.Length + ")");
+        Console.WriteLine($"  [info] redis sliding={repo.Contains("Sliding", StringComparison.OrdinalIgnoreCase)} circuito={repo.Contains("circuit", StringComparison.OrdinalIgnoreCase)} calls={calls.Count}");
     }
 
     public static async Task ReactDashboard()

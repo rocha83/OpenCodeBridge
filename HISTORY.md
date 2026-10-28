@@ -4265,3 +4265,32 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   `opencode bridge` e interrompido; a regra operacional volta a ser um step
   por vez quando o objetivo for diagnosticar, e `--war-levels 1,2` so quando
   o pedido for rodar L1+L2 de ponta a ponta.
+
+**Teste cognitivo puro (2026-10-28).**
+- `E-tools-full` deixa de executar tools DIRETAMENTE (o `RunOnBridge`, que
+  enviava comandos fixos via `/api/tools/execute` sem modelo, foi removido).
+  O teste passa a ser exclusivamente cognitivo do modelo via `AgentScenario`
+  (`ToolAgent` + `Core.ToolCatalog`): enunciado natural, o modelo decide as
+  tools e a suite valida o artefato em disco. Motivo: o objetivo do teste e
+  a capacidade cognitiva do modelo e o uso de tools, nao o Core (que ja tem
+  seus proprios testes). Enviar comandos fixos "para o modelo" nao testa
+  nada cognitivo.
+- Enunciado do `AgentScenario` tornado natural (sem "Siga a ordem: 1)...",
+  sem `oldString = ...`/`newString = ...` e sem coordenadas): objetivo + aceite,
+  o modelo decide as tools. Alinha-se a REGRA "enunciado de tarefa, nao de
+  harness" (HISTORY 2026-10-26).
+- `E-ent-garnet` -> `E-ent-redis`: termo Garnet trocado para Redis e enunciado
+  passa a pedir gravacao via tool `write` (modelo grava `ProductRepository.cs`
+  em workspace; a suite le o arquivo e aplica `CheckNoStub` + `IDistributedCache`/
+  `RemoveAsync`). Renomeado para `E-ent-redis` apos passar (PASS=1 FAIL=0).
+- `E2EToolsFullTests.FullTools` agora e apenas `AgentScenario()` (sem a lane
+  de infra `RunOnBridge`).
+- `E2EToolsFullTests.RunOnBridge` removido (codigo morto).
+- `E2EEnterpriseTests.GarnetCircuit` -> `RedisCircuit` (metodo + registro
+  `E-ent-redis` em Program.cs).
+- Grafana: datasource allowedHosts inclui `http://127.0.0.1:4134` e o
+  dashboard ganha variavel `bridge` (default :4124, opcao :4134) nas URLs dos
+  paineis, para mostrar a run da bancada.
+- run-all-levels.sh: fail-fast entre niveis (break no primeiro rc!=0; override
+  `LEVEL_CONTINUE_ON_FAIL=1` para placar completo) — alinha AGENTS.md e o
+  pedido de execucao sequencial fail-fast.

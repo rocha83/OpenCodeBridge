@@ -294,7 +294,7 @@ internal static class Program
             TestContext.Run("E-ent-crud-customer", E2EEnterpriseTests.CrudCustomer);
             TestContext.Run("E-ent-crud-saleinvoice", E2EEnterpriseTests.CrudSaleInvoice);
             TestContext.Run("E-ent-worker", E2EEnterpriseTests.BackgroundWorker);
-            TestContext.Run("E-ent-garnet", E2EEnterpriseTests.GarnetCircuit);
+            TestContext.Run("E-ent-redis", E2EEnterpriseTests.RedisCircuit);
             TestContext.Run("E-ent-dashboard", E2EEnterpriseTests.ReactDashboard);
             // frontpipe: o 12B gera o front (MVC+React+Bootstrap+Tailwind), o E2B ajusta
             // pelos enunciados e a suite confere os estilos medidos no navegador.

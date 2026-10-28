@@ -8,79 +8,6 @@ namespace Rochas.OpenCodeBridge.Test;
 // em paralelo via bridge pura. Deve passar antes da bateria belts.
 internal static class E2EToolsFullTests
 {
-    static async Task RunOnBridge(string bridge, string label)
-    {
-        async Task<JsonObject> Exec(string name, JsonObject args)
-        {
-            return await TestContext.PostObj(bridge + "/api/tools/execute",
-                new JsonObject { ["name"] = name, ["arguments"] = args, ["role"] = "build" });
-        }
-
-        // 1. write
-        var w = await Exec("write", new JsonObject { ["path"] = "a.cs", ["content"] = "class A { public int X = 1; }" });
-        TestContext.Check(w["ok"]?.GetValue<bool>() == true, $"{label} write ok");
-
-        // 2. read
-        var r = await Exec("read", new JsonObject { ["path"] = "a.cs" });
-        TestContext.Check(r["ok"]?.GetValue<bool>() == true && (r["output"]?.GetValue<string>() ?? "").Contains("class A"), $"{label} read ok");
-
-        // 3. edit nativo (trecho exato) — sed -i e negado pelo inspetor
-        var e = await Exec("edit", new JsonObject { ["path"] = "a.cs", ["oldString"] = "int X = 1", ["newString"] = "int X = 42" });
-        TestContext.Check(e["ok"]?.GetValue<bool>() == true, $"{label} edit ok");
-        var sedDenied = await Exec("shell", new JsonObject { ["command"] = "sed -i 's/int X = 42/int X = 7/' a.cs" });
-        TestContext.Check(sedDenied["ok"]?.GetValue<bool>() != true, $"{label} sed -i negado");
-
-        // 4. glob
-        var g = await Exec("glob", new JsonObject { ["pattern"] = "*.cs" });
-        TestContext.Check(g["ok"]?.GetValue<bool>() == true && (g["output"]?.GetValue<string>() ?? "").Contains("a.cs"), $"{label} glob ok");
-
-        // 5. grep
-        var gr = await Exec("grep", new JsonObject { ["pattern"] = "class A" });
-        TestContext.Check(gr["ok"]?.GetValue<bool>() == true, $"{label} grep ok");
-
-        // 6. navegacao em pastas
-        var mk = await Exec("shell", new JsonObject { ["command"] = "mkdir -p sub && echo criado" });
-        TestContext.Check(mk["ok"]?.GetValue<bool>() == true, $"{label} mkdir ok");
-        var ls = await Exec("shell", new JsonObject { ["command"] = "ls" });
-        TestContext.Check(ls["ok"]?.GetValue<bool>() == true && (ls["output"]?.GetValue<string>() ?? "").Contains("sub"), $"{label} ls ok");
-
-        // 7. write em subpasta
-        var w2 = await Exec("write", new JsonObject { ["path"] = "sub/b.cs", ["content"] = "class B { }" });
-        TestContext.Check(w2["ok"]?.GetValue<bool>() == true, $"{label} write subpasta ok");
-
-        // 8. git: repo ISOLADO no /tmp — nunca o cwd do workspace (um `git init`
-        // espurio no root da workspace envenenava o log dos testes seguintes)
-        string gdir = "/tmp/opencode/toolsfull/git-" + Environment.ProcessId;
-        var ginit = await Exec("shell", new JsonObject { ["command"] = $"mkdir -p {gdir} && git init {gdir}" });
-        TestContext.Check(ginit["ok"]?.GetValue<bool>() == true, $"{label} git init ok");
-        var gcfg = await Exec("shell", new JsonObject { ["command"] = $"git -C {gdir} config user.email teste@exemplo.local" });
-        TestContext.Check(gcfg["ok"]?.GetValue<bool>() == true, $"{label} git config ok");
-        var gcm = await Exec("shell", new JsonObject { ["command"] = $"git -C {gdir} commit --allow-empty -m inicial" });
-        TestContext.Check(gcm["ok"]?.GetValue<bool>() == true, $"{label} git commit ok");
-        var gst = await Exec("shell", new JsonObject { ["command"] = $"git -C {gdir} status --short" });
-        TestContext.Check(gst["ok"]?.GetValue<bool>() == true, $"{label} git status ok");
-        var glog = await Exec("shell", new JsonObject { ["command"] = $"git -C {gdir} log --oneline" });
-        TestContext.Check(glog["ok"]?.GetValue<bool>() == true, $"{label} git log ok");
-
-        // 9. compilacao C# (dotnet new + build + run)
-        var dn = await Exec("shell", new JsonObject { ["command"] = "bash -c \"mkdir -p /tmp/opencode/toolsfull/csharptest && cd /tmp/opencode/toolsfull/csharptest && dotnet new console --force 2>&1 | tail -1\"" });
-        TestContext.Check(dn["ok"]?.GetValue<bool>() == true, $"{label} dotnet new ok");
-        var db = await Exec("shell", new JsonObject { ["command"] = "bash -c \"cd /tmp/opencode/toolsfull/csharptest && dotnet build 2>&1 | tail -3\"" });
-        TestContext.Check(db["ok"]?.GetValue<bool>() == true, $"{label} dotnet build ok");
-        var dr = await Exec("shell", new JsonObject { ["command"] = "bash -c \"cd /tmp/opencode/toolsfull/csharptest && dotnet run 2>&1 | tail -3\"" });
-        TestContext.Check(dr["ok"]?.GetValue<bool>() == true, $"{label} dotnet run ok");
-
-        // 10. validacao e execucao de script
-        var wsh = await Exec("write", new JsonObject { ["path"] = "/tmp/opencode/toolsfull/run.sh", ["content"] = "#!/bin/bash\necho 'hello tools'" });
-        TestContext.Check(wsh["ok"]?.GetValue<bool>() == true, $"{label} write script ok");
-        var val = await Exec("shell", new JsonObject { ["command"] = "bash -n /tmp/opencode/toolsfull/run.sh" });
-        TestContext.Check(val["ok"]?.GetValue<bool>() == true, $"{label} bash -n ok");
-        var exec = await Exec("shell", new JsonObject { ["command"] = "bash /tmp/opencode/toolsfull/run.sh" });
-        TestContext.Check(exec["ok"]?.GetValue<bool>() == true && (exec["output"]?.GetValue<string>() ?? "").Contains("hello tools"), $"{label} exec script ok");
-
-        Console.WriteLine($"  [toolsfull:{label}] PASS (read/write/edit/glob/grep/mkdir/git/dotnet/script)");
-    }
-
     static (int Code, string Out) Run(string exe, string cwd, int secs, params string[] args)
     {
         var psi = new System.Diagnostics.ProcessStartInfo(exe) { WorkingDirectory = cwd, RedirectStandardOutput = true, RedirectStandardError = true };
@@ -119,16 +46,13 @@ internal static class E2EToolsFullTests
         // Enunciado de TAREFA, nao de harness: sem path, sem nome de tool e sem
         // coringa de coordenada. O modelo flui; o harness resolve o cwd.
         const string prompt =
-            "Trabalhe na pasta atual. Siga a ordem: " +
-            "1) Crie um arquivo .txt com nome aleatorio contendo a data de hoje (formato AAAA-MM-DD) e o clima de " +
-            "Sao Paulo se conseguir acessar a internet. " +
-            "2) Rode git init. Faca git add . e o primeiro commit com a mensagem 'data'. O primeiro commit nao pode " +
-            "ter a palavra EDITADO. Rode git log --oneline e confirme 1 commit. " +
-            "3) No mesmo .txt, use edit para acrescentar uma nova linha com EDITADO abaixo da data: oldString = a " +
-            "data, newString = a data + quebra de linha + EDITADO. Nao substitua a data por EDITADO. Faca git add . " +
-            "e o segundo commit com a mensagem 'EDITADO'. Rode git log --oneline e confirme 2 commits. " +
-            "4) Liste os arquivos, busque o .txt com glob/grep, leia o arquivo e grave o historico do git (hashes e " +
-            "mensagens) em historico_git.log. Nao commite o historico_git.log.";
+            "Trabalhe na pasta atual. Crie um arquivo .txt com nome aleatorio contendo a data de hoje (formato AAAA-MM-DD) " +
+            "e o clima de Sao Paulo se conseguir acessar a internet. Rode git init, faca git add e o primeiro commit " +
+            "com a mensagem 'data' (o primeiro commit nao pode ter a palavra EDITADO). Confirme 1 commit no git log. " +
+            "Depois edite o .txt para acrescentar uma nova linha com EDITADO abaixo da data (sem substituir a data) e " +
+            "faca o segundo commit com a mensagem 'EDITADO', confirmando 2 commits. Liste os arquivos, busque o .txt " +
+            "com glob/grep, leia o arquivo e grave o historico do git (hashes e mensagens) em historico_git.log. " +
+            "Nao commite o historico_git.log.";
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
 
@@ -193,9 +117,11 @@ internal static class E2EToolsFullTests
         // o aceite sem afrouxar assertiva.
         // Q3 fora desta premissa (hipotese reprovada): tools-full roda so no
         // Q4 estavel. A lane Q3 nao entra no aceite.
-        await RunOnBridge("http://127.0.0.1:4124", "GPU1-E4B-Q4");
-        // Proposito do dual-tools mesclado: um enunciado agentico unico no modo corrente.
+        // Apenas cenario COGNITIVO do modelo (AgentScenario): enunciado natural,
+        // o modelo decide as tools e a suite valida o artefato em disco.
+        // Nao existe mais execucao direta de tools no teste (RunOnBridge removido):
+        // o objetivo e a capacidade cognitiva do modelo, nao o Core.
         await AgentScenario();
-        Console.WriteLine("[toolsfull] 1/1 modelo PASS + cenario agentico");
+        Console.WriteLine("[toolsfull] cenario agentico concluido");
     }
 }

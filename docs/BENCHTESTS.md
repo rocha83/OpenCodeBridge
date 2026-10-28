@@ -502,3 +502,17 @@ O raw contém código e caminhos do workspace. Guardar só em `/tmp`/disco local
 nunca commitar; o bundle é recriado a cada WAR. Para auditoria longa, copiar
 apenas `*.journey.json` e `*.opencode.meta.json` (sem raw) ou usar
 `opencode session export --sanitize`.
+
+## Testes cognitivos puros (2026-10-28)
+
+- `E-tools-full` e' exclusivamente cognitivo: o modelo recebe um enunciado
+  natural e executa as tools via `ToolAgent` + `Core.ToolCatalog`; a suite
+  valida o artefato em disco. Nao existe mais execucao direta de tools no
+  teste (`RunOnBridge` removido) — o objetivo e a capacidade cognitiva do
+  modelo, nao o Core (que tem seus proprios testes).
+- `E-ent-redis` (ex-`E-ent-garnet`): termo Garnet -> Redis, enunciado pede
+  gravacao via tool `write` em `ProductRepository.cs`; a suite le o arquivo e
+  aplica `CheckNoStub` + `IDistributedCache`/`RemoveAsync`. Renomeado apos
+  PASS=1 FAIL=0.
+- Enunciados agentivos sem coordenadas (`oldString=...`/`newString=...`):
+  objetivo + aceite, o modelo decide as tools.
