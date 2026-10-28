@@ -4403,6 +4403,30 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   aceitar moderno (`AddStackExchangeRedisCache`), memory fallback, legado
   (`AddDistributedRedisCache`) ou `IConnectionMultiplexer`, com a versão exposta
   em `[info] di=modern|legacy|custom` — versão de API é visibilidade, não gate.
+## E-mission-tools (2): sucesso intercalado zera o streak + comprehension alheia (2026-10-28)
+
+- 2a rodada vermelha (`L3-20261028-163556`, `mission-tools-bridge` FAIL 274s;
+  evidência em `logs/levels/L3-20261028-163556/evidence/mission-agent.log`):
+  `error FS0010: símbolo '|' inesperado` — o modelo escreveu comprehension de
+  **Haskell** (`[i | i <- [1 .. n-1]; ...]`) e repetiu o ciclo write/edit OK +
+  `dotnet run` falhando 22 turnos por rodada; `breaker_nudge=0`, `breaker_trip=0`.
+- Causa 3 (Core): o streak era **consecutivo** — `edit`/`write` com sucesso no
+  meio zerava a contagem (sucesso + falha alternados → streak 1 sempre) e o
+  breaker ficava mudo no loop mais comum do agente (editar bem, compilar mal).
+- Causa 4 (sintaxe do modelo): comprehension `[i | i <- ...]` não existe em F# —
+  o `FsMini` não a nomeava.
+- Correção (Core; enunciado e asserts intocados):
+  - `ToolsAntiRepeat.EvaluateFailureLoop`: além do streak, conta as falhas do
+    **alvo mais frequente na janela** (`2 * max(soft, hard)`), com sucesso
+    intercalado **não** zerando; nudge passa a aceitar **2 alvos** (o loop real é
+    `edit path` + `shell command` sobre o mesmo arquivo — normalizam diferente);
+    3+ alvos continuam sendo progresso (`U-breaker-ignores-distinct-targets` verde);
+  - `HarnessTails.FsMini`: comprehension de F# é `[for i in 1 .. n-1 -> expr]`
+    (ou `do ... yield`); `[i | i <- [1 .. n-1]; ...]` nomeada como sintaxe alheia.
+- Prova em C#: `U-breaker-interleaved-loop` (edit OK + shell falhando: 2 falhas =
+  None, 3 = Nudge, 6 = Trip; variante com edit também falhando = 2 alvos, ainda
+  Nudge) e as asserções novas de `FsMini`. Bateria: `[test] PASS=8 FAIL=0`.
+
 ## E-mission-tools: breaker mudo no loop do compilador (2026-10-28)
 
 - Sintoma (L3 `L3-20261028-161849`, step `mission-tools-bridge` FAIL 218s,

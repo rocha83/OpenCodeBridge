@@ -196,6 +196,71 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Loop medido em E-mission-tools (logs/levels/L3-20261028-163556/evidence):
+    /// edit/write OK intercalado com shell falhando no MESMO arquivo, 10x. O
+    /// streak classico via 1 a cada par (sucesso zera) e o breaker ficava mudo;
+    /// agora a janela por alvo conta as falhas e corta no hard.
+    /// </summary>
+    public static Task CountsInterleavedLoop()
+    {
+        static JsonArray Turnos(int falhas)
+        {
+            var passos = new List<(string, string, string, string)>();
+            string path = "{\"path\":\"/tmp/e2e-mission/mfs/Program.fs\",\"oldString\":\"let sumTerms\",\"newString\":\"let sumTerms = ...\"}";
+            string cmd = "{\"command\":\"dotnet run --project /tmp/e2e-mission/mfs/mfs.fsproj\"}";
+            string erro = "ERRO: exit 1: /tmp/e2e-mission/mfs/Program.fs(11,22): error FS0010: símbolo '|' inesperado em expressão.";
+            for (int i = 0; i < falhas; i++)
+            {
+                passos.Add(("assistant", "edit", path, ""));   // edit OK nao zera o loop
+                passos.Add(("tool", "", "", "1 substituição em '/tmp/e2e-mission/mfs/Program.fs'"));
+                passos.Add(("assistant", "shell", cmd, ""));
+                passos.Add(("tool", "", "", erro));
+            }
+            return Chat(passos.ToArray());
+        }
+
+        var guard = new global::Rochas.OpenCodeBridge.Core.ToolsBreaker(3, 6);
+
+        var r2 = guard.Evaluate(Turnos(2));
+        TestContext.Check(r2.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.None,
+            $"2 falhas intercaladas nao disparam (veio {r2.Verdict}, contagem {r2.Streak})");
+
+        var r3 = guard.Evaluate(Turnos(3));
+        TestContext.Check(r3.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Nudge,
+            $"3 falhas intercaladas no mesmo arquivo disparam nudge (veio {r3.Verdict})");
+        TestContext.Check(r3.Streak == 3, $"janela conta as 3 falhas mesmo com edit OK no meio (veio {r3.Streak})");
+        // So o shell falhou, entao ha UM alvo; o edit de sucesso nao conta.
+        TestContext.Check(r3.DistinctTargets == 1, $"so o shell falhou = 1 alvo (veio {r3.DistinctTargets})");
+
+        var r6 = guard.Evaluate(Turnos(6));
+        TestContext.Check(r6.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Trip,
+            $"6 falhas intercaladas cortam o turno (veio {r6.Verdict})");
+
+        // Variante com o edit TAMBEM falhando (oldString nao achado): path e
+        // command normalizam em 2 alvos e o nudge ainda dispara (<= 2 alvos).
+        // 2 iteracoes = 4 falhas seguidas (abaixo do hard 6).
+        static JsonArray TurnosComEdicaoFalhando(int falhas)
+        {
+            var passos = new List<(string, string, string, string)>();
+            string path = "{\"path\":\"/tmp/e2e-mission/mfs/Program.fs\",\"oldString\":\"let sumTerms\",\"newString\":\"let sumTerms = ...\"}";
+            string cmd = "{\"command\":\"dotnet run --project /tmp/e2e-mission/mfs/mfs.fsproj\"}";
+            for (int i = 0; i < falhas; i++)
+            {
+                passos.Add(("assistant", "edit", path, ""));
+                passos.Add(("tool", "", "", "arquivo não encontrado: 'Program.fs'"));
+                passos.Add(("assistant", "shell", cmd, ""));
+                passos.Add(("tool", "", "", "ERRO: exit 1: error FS0010: símbolo '|' inesperado em expressão."));
+            }
+            return Chat(passos.ToArray());
+        }
+        var r4b = guard.Evaluate(TurnosComEdicaoFalhando(2));
+        TestContext.Check(r4b.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Nudge,
+            $"edit+shell falhando sobre o MESMO arquivo = 2 alvos, nudge (veio {r4b.Verdict}, contagem {r4b.Streak})");
+        TestContext.Check(r4b.DistinctTargets == 2, $"2 alvos esperados (veio {r4b.DistinctTargets})");
+        return Task.CompletedTask;
+    }
+
     // ---- dois escopos: conteudo (AntiRepeatReply) x tools (ToolSig/ToolsBreaker/RepeatedCall) ----
 
     public static Task ContentScopeUsesHelperSubclasses()
@@ -283,6 +348,10 @@ internal static class UnitToolBreakerTests
         // nao existe em F#; o range com passo e `[start .. step .. finish]`.
         TestContext.Check(fsMini.Contains("[start .. step .. finish]"), "FsMini ensina range com passo");
         TestContext.Check(fsMini.Contains("[1; 3 .. n-1]"), "FsMini nomeia a sintaxe errada (FS0751)");
+        // 2a forma medida no L3-20261028-163556: o modelo escreveu comprehension
+        // de Haskell ([i | i <- ...]) e errou FS0010 22 turnos.
+        TestContext.Check(fsMini.Contains("[for i in 1 .. n-1 -> expr]"), "FsMini ensina comprehension de F#");
+        TestContext.Check(fsMini.Contains("[i | i <- [1 .. n-1]; ...]"), "FsMini nomeia a comprehension alheia (FS0010)");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
         TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
         TestContext.Check(!tail.Contains("CONCATENACAO DE COMANDOS"), "cauda nao duplica doc de shell");
