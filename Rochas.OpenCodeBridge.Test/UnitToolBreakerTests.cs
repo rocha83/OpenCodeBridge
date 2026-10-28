@@ -288,7 +288,9 @@ internal static class UnitToolBreakerTests
         });
         double t2 = semTemp["temperature"]?.GetValue<double>() ?? -1;
         string s2 = semTemp["temperature_source"]?.GetValue<string>() ?? "";
-        TestContext.Check(Math.Abs(t2 - 0.2) < 0.0001, $"sem temperatura vale o perfil build 0.2 (veio {t2})");
+        // Doutrina WAR: perfil build = 0.1 (thinking off) no appsettings de
+        // ORIGEM; o tunel devolve o perfil, nao um default de 0.2.
+        TestContext.Check(Math.Abs(t2 - 0.1) < 0.0001, $"sem temperatura vale o perfil build 0.1 (veio {t2})");
         TestContext.Check(s2.StartsWith("profile"), $"procedencia profile (veio '{s2}')");
         TestContext.Check(semTemp["tails_on"]?.GetValue<bool>() == expectTails,
             $"cauda no caminho opencode segue o deployment (scope={scope}, tails={tailsEnabled})");

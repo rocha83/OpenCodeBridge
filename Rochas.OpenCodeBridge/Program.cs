@@ -174,11 +174,16 @@ internal static partial class Program
     static bool IsOpencodeClient(HttpListenerContext? ctx) =>
         (ctx?.Request.Headers["User-Agent"] ?? "").Contains("opencode", StringComparison.OrdinalIgnoreCase);
 
-    // Cauda vale NESTE pedido? --harness-tails e o switch das tails; tailScope
-    // decide o caminho. Exclusivo do caminho bridge: em opencode o cliente se
-    // auto-gerencia (master/AGENTS.md proprio) e nao recebe tail da bridge.
+    // Cauda vale NESTE pedido? --harness-tails e o switch; tailScope decide o
+    // caminho: "all" injeta TAMBEM na raia opencode, "managed" so no cliente
+    // direto/Web (opencode se auto-gerencia). O gate do modo e `Tails` do
+    // BridgeMode — nunca o BridgeLane, que discrimina apenas o MainHarness.
     static bool TailsOn(string? modelId) =>
-        TailsEnabled && TailScope != "off" && (BridgeLane.Value ?? true) && TailsAtivas();
+        TailsEnabled
+        && TailScope != "off"
+        && (Mode?.Tails ?? true)
+        && (TailScope == "all" || !OpencodeClient.Value)
+        && TailsAtivas();
     static int AntiRepeatWindow = ContentAntiRepeat.DefaultWindow; // janela (chars) da cauda comparada com o historico (64..2048); default unico no Core
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
     // devolve 413 pedindo compactacao em vez da resposta. Parametrizavel
@@ -937,7 +942,17 @@ internal static partial class Program
 
         LoadAppSettings();                                       // 1.1 arquivo (CLI vence)
         ParseArgs(cliArgs);                                        // 1.2 parse CLI
-        ApplyMode();                                               // 1.2b modo manda no harness/tails
+        try
+        {
+            ApplyMode();                                           // 1.2b modo manda no harness/tails
+        }
+        catch (ArgumentException ex)
+        {
+            // REGRA PRIMORDIAL: modo bridge + harness off e combinacao invalida.
+            // Nao sobe o listener (exit 2) e devolve a excecao de argumentos.
+            Console.Error.WriteLine($"[bridge] ERRO DE ARGUMENTOS: {ex.Message}");
+            return 2;
+        }
         if (!ValidateConfig()) return 2;                           // 1.3 coerencia de flags
         // Sonda Serilog: probe do AntiRepeat, SO com DIAGNOSTIC ligado
         // (--diagnostic / appsettings diagnostic / env DIAGNOSTIC=1).
@@ -1133,6 +1148,14 @@ internal static partial class Program
     static void ApplyMode()
     {
         if (Mode is not { } m) return;
+        // REGRA PRIMORDIAL: modo bridge exige MainHarness ON. Combinacao
+        // bridge + harness off e invalida e NAO deve subir (excecao de args).
+        // A raia opencode (m.MainHarness==false) e a unica que roda sem o nosso
+        // harness, pois ja carrega o dela no stream com o llama.
+        if (m.MainHarness && !MainHarnessOn)
+            throw new ArgumentException(
+                "modo bridge exige main harness ON: --main-harness 0 e invalido com --mode bridge. " +
+                "Use --mode opencode para a raia que ja carrega o harness proprio no stream.");
         if (!m.MainHarness) MainHarnessOn = false;
         if (!m.Tails) TailsEnabled = false;
         if (m.AntiRepeat) AntiRepeat = true;
@@ -1945,11 +1968,12 @@ WriteJson(ctx, 200, new JsonObject
                 && node["messages"] is JsonArray fm)
             {
                 string fmodel = node["model"]?.GetValue<string>() ?? "";
+                bool fHasTools = node["tools"] is JsonArray ftools && ftools.Count > 0;
                 foreach (var m in fm)
                 {
                     if (m is JsonObject mo && mo["role"]?.GetValue<string>() is "system" or "developer"
                         && mo["content"] is JsonValue mcv && mcv.TryGetValue<string>(out string? mtext))
-                    { mo["content"] = WithFormula(mtext, fmodel); break; }
+                    { mo["content"] = WithFormula(mtext, fmodel, fHasTools); break; }
                 }
                 outBody = node.ToJsonString(SerOpts);
             }
@@ -2422,17 +2446,18 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // cliente direto/Web. Sem system nao ha onde pendurar: nao inventamos.
         // Tails: UNICO incremento sobre a base (podem coexistir com ela).
         bool tails = TailsOn(requestedModel);
+        bool reqHasTools = req["tools"] is JsonArray rta && rta.Count > 0;
         if (tails)
         {
             if (messages.Count > 0 && messages[0] is JsonObject sys0
                 && sys0["role"]?.GetValue<string>() == "system"
                 && sys0["content"] is JsonValue sysv && sysv.TryGetValue<string>(out string? syst))
-                sys0["content"] = WithFormula(syst, requestedModel);
+                sys0["content"] = WithFormula(syst, requestedModel, reqHasTools);
             else
                 // Cliente sem system/instructions (WAR/SDK): a formula do harness
                 // precisa existir como system; antes a tail era descartada e o
                 // modelo rodava sem DATA/GIT/EDIT/GLOB.
-                messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = WithFormula("", requestedModel) });
+                messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = WithFormula("", requestedModel, reqHasTools) });
         }
         if (Diagnostic)
             Log(new JsonObject
@@ -2773,17 +2798,18 @@ string outBody = body;
         // "all" injeta tambem no opencode; "managed" so no cliente direto/Web.
         try
         {
+            bool pthHasTools = req["tools"] is JsonArray pta && pta.Count > 0;
             if (req.TryGetPropertyValue("instructions", out JsonNode? fins) && fins is JsonValue fiv
                 && fiv.TryGetValue<string>(out string? finst))
             {
-                req["instructions"] = WithFormula(finst, req["model"]?.GetValue<string>() ?? "");
+                req["instructions"] = WithFormula(finst, req["model"]?.GetValue<string>() ?? "", pthHasTools);
                 outBody = req.ToJsonString(SerOpts);
             }
             else
             {
                 // Cliente que nao manda `instructions` (WAR/SDK) ainda recebe a
                 // formula do harness; sem isso as tails nao chegavam ao modelo.
-                string formula = WithFormula("", req["model"]?.GetValue<string>() ?? "");
+                string formula = WithFormula("", req["model"]?.GetValue<string>() ?? "", pthHasTools);
                 if (!string.IsNullOrWhiteSpace(formula))
                 {
                     req["instructions"] = formula;
@@ -2939,12 +2965,13 @@ var shape = new StringBuilder();
     /// <summary>Composição das caudas decidida pelo model id (perfil = opencode).</summary>
     /// <param name="sys">System prompt original.</param>
     /// <param name="modelId">Model id do pedido (define o caminho).</param>
+    /// <param name="hasTools">Request traz array `tools`? (sem tools: nada de cauda de tools)</param>
     /// <returns>System prompt composto.</returns>
-    internal static string WithFormula(string sys, string? modelId)
+    internal static string WithFormula(string sys, string? modelId, bool hasTools = true)
     {
         // Fonte unica das caudas no Core; o host so decide ligar/desligar e
         // passa as sobrescritas de CLI/appsettings.
-        return HarnessTails.Compose(sys, TailsOn(modelId), HarnessBehaviorTail, HarnessToolsTail);
+        return HarnessTails.Compose(sys, TailsOn(modelId), HarnessBehaviorTail, HarnessToolsTail, hasTools);
     }
 
     /// <summary>Pedido opencode (perfil com sufixo)? Se sim, tubo puro, sem formula.</summary>

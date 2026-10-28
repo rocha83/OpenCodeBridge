@@ -87,6 +87,11 @@ internal static class TestContext
     static int Passed;
     static int Failed;
     static int Skipped;
+    /// <summary>Fail-fast da rodada: no primeiro FAIL, o resto nao executa (nao gasta GPU).</summary>
+    public static bool StopOnFail = true;
+    /// <summary>Verdadeiro depois do primeiro FAIL quando <see cref="StopOnFail"/> esta ligado.</summary>
+    public static bool Aborted { get; private set; }
+    public static string AbortedAt { get; private set; } = "";
 
     /// <summary>Marca o teste como pulado (ex.: cobre caminho legado desligado).</summary>
     public sealed class SkipException : Exception
@@ -175,6 +180,12 @@ internal static class TestContext
             Console.WriteLine($"SKIP {name} (filtro --only)");
             return;
         }
+        // Fail-fast: apos o primeiro FAIL nada mais roda (sem GPU, sem rede).
+        if (Aborted)
+        {
+            Console.WriteLine($"SKIP {name} (fail-fast: rodada abortada em {AbortedAt})");
+            return;
+        }
         var t0 = DateTime.UtcNow;
         // No WAR o driver ja publica step_end; aqui so o run isolado de E2E
         // alimenta o painel (evita 100+ U-* no dicionario de steps).
@@ -209,6 +220,12 @@ internal static class TestContext
         {
             Failed++;
             Console.WriteLine($"FAIL {name}: {ex.Message}");
+            if (StopOnFail)
+            {
+                Aborted = true;
+                AbortedAt = name;
+                Console.WriteLine($"[test] FAIL-FAST: rodada abortada no primeiro FAIL ({name})");
+            }
             if (Environment.GetEnvironmentVariable("E2E_STACK") == "1") Console.WriteLine(ex.ToString());
             if (panelStep) PublishStep(name, "FAIL", (DateTime.UtcNow - t0).TotalSeconds, ex.Message).GetAwaiter().GetResult();
         }
@@ -873,6 +890,7 @@ internal static class TestContext
 
     public static int Summary()
     {
+        if (Aborted) Console.WriteLine($"[test] ABORTADO (fail-fast) no primeiro FAIL: {AbortedAt} — restantes nao executados");
         Console.WriteLine($"[test] PASS={Passed} FAIL={Failed} SKIP={Skipped}");
         return Failed == 0 ? 0 : 1;
     }

@@ -7,12 +7,13 @@ internal static class E2ESeniorTests
 {
     static JsonObject Req(string text, bool stream = false) => new()
     {
-        ["model"] = "openai/Gemma4-E4B-Q4",
+        ["model"] = "openai/Gemma4-E4B-Q4-plan",
         ["stream"] = stream,
         ["input"] = new JsonArray(new JsonObject
         {
             ["type"] = "message", ["role"] = "user",
-            ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = text })
+            ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text",
+                ["text"] = text + " ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS." })
         })
     };
 

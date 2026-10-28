@@ -268,6 +268,16 @@ padrão e pode ser declarado explicitamente com `--war-stop-on-fail`.
 > o llama). O discriminador é o CLIENTE (BridgeLane), nunca o sufixo do modelo.
 > `main_harness_scope:"managed-only"` é rótulo. Passthrough só dispara fora da
 > raia bridge.
+> **Trava (primordial):** `--mode bridge` + `--main-harness 0` não sobe
+> (exit 2, `ERRO DE ARGUMENTOS`). Sem o nosso harness só a raia
+> `--mode opencode`. **Fail-fast e guard andam juntos:** com
+> `--war-stop-on-fail` o preflight exige `guard_ativo_fail_fast`
+> (sha512 + modo na evidência); não há flag para desligar o guard.
+> **Tool tail é regra:** todo teste que enuncia tools exige
+> `--harness-tails 1` + `--tail-scope all|managed` (preflight
+> `bridge_harness_tails`). Pedido sem `tools` no array não recebe cauda de
+> tools. Tópico sem tools = perfil `plan` (0.3/on) e o corpo termina com
+> `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`; com tools = `build` (0.1/off).
 
 ```bash
 # bridge própria (para testar o build do repo, não o binário de produção)

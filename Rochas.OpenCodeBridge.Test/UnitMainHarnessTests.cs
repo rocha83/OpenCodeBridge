@@ -83,15 +83,56 @@ internal static class UnitMainHarnessTests
 
     public static Task KeepsOpencodeMasterWithoutProfile()
     {
+        // Determinacao vigente: em bridge lane o harness e SEMPRE on. O
+        // discriminador e o modo/cliente, nao o conteudo do system. Master
+        // curto vira INSTRUCOES DO CLIENTE, sem substituir a base.
         var messages = new JsonArray(new JsonObject
         {
             ["role"] = "system",
             ["content"] = "# Code Mode\nUse the execute tool."
         });
         bool applied = global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(messages, enabled: true);
-        TestContext.Check(!applied, "nao aplica no master opencode sem sufixo");
-        TestContext.Check(messages[0]?["content"]?.GetValue<string>()?.Contains("# Code Mode") == true,
-            "system do opencode intacto");
+        TestContext.Check(applied, "aplica mesmo com master opencode em bridge lane");
+        string? content = messages[0]?["content"]?.GetValue<string>();
+        TestContext.Check(content?.StartsWith(Text) == true, "base do harness prevalece");
+        TestContext.Check(content?.Contains("INSTRUCOES DO CLIENTE") == true,
+            "master curto vira instrucao do cliente");
+
+        // Raia opencode (enabled=false) segue intacta: o harness dela vem do
+        // proprio opencode no stream com o llama.
+        var opencode = new JsonArray(new JsonObject
+        {
+            ["role"] = "system",
+            ["content"] = "# Code Mode\nUse the execute tool."
+        });
+        bool off = global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(opencode, enabled: false);
+        TestContext.Check(!off, "raia opencode nao recebe o nosso harness");
+        TestContext.Check(opencode[0]?["content"]?.GetValue<string>()?.Contains("# Code Mode") == true,
+            "system do opencode intacto na raia dele");
+        return Task.CompletedTask;
+    }
+
+    public static Task TailsOnlyWithTools()
+    {
+        // REGRA PRIMORDIAL: cauda de tools e para pedido que DECLARA tools.
+        // Sem tools o modelo recebe JSON de tool como texto e trunca a resposta.
+        const string beh = "BEHAVIOR-X";
+        const string tools = "TOOLS-X";
+        string withTools = global::Rochas.OpenCodeBridge.Core.HarnessTails
+            .Compose("S", true, beh, tools, hasTools: true);
+        TestContext.Check(withTools.Contains("TOOLS-X"), "com tools recebe a cauda de tools");
+        TestContext.Check(withTools.Contains("BEHAVIOR-X"), "com tools recebe o delta");
+
+        string without = global::Rochas.OpenCodeBridge.Core.HarnessTails
+            .Compose("S", true, beh, tools, hasTools: false);
+        TestContext.Check(!without.Contains("TOOLS-X"), "sem tools NAO recebe a cauda de tools");
+        TestContext.Check(without.Contains("BEHAVIOR-X"), "override de behavior preservado");
+
+        string dflt = global::Rochas.OpenCodeBridge.Core.HarnessTails.Compose("S", true,
+            global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultBehavior,
+            global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools, hasTools: false);
+        TestContext.Check(dflt.Contains("PEDIDO SEM TOOLS"), "delta padrao vira variante sem tools");
+        TestContext.Check(!dflt.Contains("TOOLS PRIMEIRO"), "sem 'TOOLS PRIMEIRO' no pedido sem tools");
         return Task.CompletedTask;
     }
 
@@ -108,11 +149,19 @@ internal static class UnitMainHarnessTests
 
     public static Task DropsMasterButKeepsEnv()
     {
+        // Env/skills/data do cliente sao preservados sempre. A guarda e de
+        // TAMANHO (sem heuristica de conteudo): master curto entra rotulado,
+        // master grande nao e copiado para nao inflar o system.
         string master = "# Code Mode\nUse the execute tool.\n<env>\n  Working directory: /tmp/x\n</env>\n<available_skills>\n  <skill><id>opencode</id></skill>\n</available_skills>";
         string built = global::Rochas.OpenCodeBridge.Core.MainHarness.BuildSystem(master);
-        TestContext.Check(!built.Contains("# Code Mode"), "nao copia Code Mode");
+        TestContext.Check(built.StartsWith(Text), "base do harness no inicio");
         TestContext.Check(built.Contains("Working directory: /tmp/x"), "preserva env do master");
-        TestContext.Check(!built.Contains("INSTRUCOES DO CLIENTE"), "nao copia master como instrucao");
+        TestContext.Check(built.Contains("<available_skills>"), "preserva skills do master");
+        TestContext.Check(built.Contains("INSTRUCOES DO CLIENTE"), "master curto vira instrucao rotulada");
+
+        string huge = "# Code Mode\n" + new string('x', 7000);
+        string builtHuge = global::Rochas.OpenCodeBridge.Core.MainHarness.BuildSystem(huge);
+        TestContext.Check(!builtHuge.Contains("INSTRUCOES DO CLIENTE"), "master grande nao e copiado");
         return Task.CompletedTask;
     }
 }

@@ -157,6 +157,66 @@ conveniência manual, nunca fonte de verdade.
 - Evidência mínima: evento `main-harness` com `path=chat`, `role` e `tools=N`;
   `U-main-harness` verde.
 
+## Regra: modo bridge exige MainHarness — trava de execução (primordial)
+- `--mode bridge` + `--main-harness 0` é combinação **inválida**: a bridge não
+  sobe e devolve `[bridge] ERRO DE ARGUMENTOS: modo bridge exige main harness ON`
+  (exit 2, `ArgumentException` em `ApplyMode`). Sem o nosso harness só roda a
+  raia `--mode opencode`, que carrega o harness próprio no stream com o llama.
+- As units OpenCode `:4124/:4125/:4126` são (ou devem ser) `mode=opencode`.
+- O discriminador do lado do request é o cliente (`BridgeLane`), nunca o
+  sufixo do modelo nem o conteúdo do system (não há heurística de "master
+  opencode": em bridge lane o harness é SEMPRE on).
+- Longevidade: todo teste que regredir por causa desta determinação se adapta
+  (ex.: `U-main-harness-opencode-master`, `U-main-harness-master`,
+  `U-translate-temp-respeita-tunel` = perfil build 0.1).
+
+## Regra: fail-fast do driver exige guard de rebuild (primordial)
+- Com `--war-stop-on-fail` (default) o guard de rebuild é **obrigatório**:
+  preflight `guard_ativo_fail_fast` (fail-fast + sha512 + modo na evidência).
+- Não existe flag para desligar o guard; PASS só depois de estado limpo e
+  binário com o hash corrente.
+
+## Regra: tool tail é obrigatória para teste que usa tools (primordial)
+- Todo enunciado/teste que **declara ou enuncia uso de tools** roda com a cauda
+  de tools ligada: `--harness-tails 1` + `--tail-scope all|managed`. Preflight
+  do WAR exige `bridge_harness_tails` (tails on e scope ≠ off); sem isso o
+  modelo perde o contrato `read/write/edit/glob` (que não vai duplicado na
+  prosa) e o step falha por motivo errado.
+- O inverso também vale: pedido **sem** `tools` no array não recebe cauda de
+  tools (`HarnessTails.Compose(..., hasTools:false)`), porque o modelo devolve
+  JSON de tool como texto e trunca. `U-main-harness-tools-tail` cobre os dois.
+- Teste/e enunciado sem tools é **conceito**: perfil `plan` (0.3, thinking on)
+  e o corpo do pedido termina com `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`.
+- Tails seguem o **modo** (`BridgeMode.Tails`) e o `tail-scope`, não o
+  `BridgeLane`: `all` injeta também na raia opencode; `managed` só direto/Web.
+
+## Regra: enunciado de teste é de dev humano, não receita (primordial)
+- O enunciado declara o **problema e o contrato observável** (status HTTP, transação,
+  detalhe header+items, cache-aside) — **nunca a mecânica do teste**: proibido
+  enumerar `app.MapGet/MapPost/...`, "use `useEffect`", a chamada exata de DI,
+  "não use edit", "sem TODO/NotImplementedException", "grave PRIMEIRO/POR ÚLTIMO",
+  "(sem tool calls)".
+- A mecânica pertence ao harness/tool-help. O aceite continua literal e **não**
+  afrouxa: quando o assert depender de nome, prefira um check **estrutural**
+  (ex.: detalhe = `ProductId` + `Qty`) a ditar o nome no enunciado.
+- Enunciado sem tools termina com `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`; o Core
+  (`DefaultBehaviorNoTools`) garante que isso vale **texto com o entregável
+  completo**, não "plano de implementação". Proibido trocar por
+  `MOSTRE-ME COMO MODO PLANO EM TEXTO`: o modelo lê "modo plano" como *documento
+  de plano* e devolve "Plano de Implementação… aguardando confirmação" (medido
+  em `E-ent-crud-product` e `E-ent-dashboard`, `:4134`).
+
+## Regra: fail-fast em TODA rodada de runner (não só no WAR)
+- `TestContext.Run` aborta a rodada no primeiro FAIL (`StopOnFail` default ON):
+  imprime `[test] FAIL-FAST: rodada abortada no primeiro FAIL (<nome>)`, marca o
+  resto como `SKIP ... (fail-fast)` e o summary sai com
+  `[test] ABORTADO (fail-fast) no primeiro FAIL: <nome>`. Nenhum teste depois do
+  FAIL executa — nada de GPU gasta em cascata vermelha.
+- `--no-stop-on-fail` é a única forma de medir placar completo (uso consciente,
+  nunca para "ver quantos passam").
+- Vale igual para `--only <lista>`: a lista é ordem de execução, não licença
+  para rodar tudo depois de vermelho.
+
 ## Regra: reinício de bateria reinicia a bridge
 - Toda bateria E2E, em ambos os modos (`bridge` e `opencode`), começa com o
   restart da bridge alvo: `sudo systemctl restart bridge-gpu` (`:4124`),

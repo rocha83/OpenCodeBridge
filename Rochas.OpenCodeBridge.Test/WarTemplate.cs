@@ -828,6 +828,22 @@ internal sealed class WarTemplate : CircuitTemplate
                     ["main_harness"] = bmain,
                     ["fix"] = "ligue --main-harness 1 na unit do bridge (WAR roda steps de bridge)"
                 });
+
+            // REGRA PRIMORDIAL: cauda de tools e obrigatoria para todo teste que
+            // ENUNCIA uso de tools. Sem ela o modelo perde o contrato operacional
+            // (read/write/edit/glob/...), que nao vai duplicado na prosa. O gate
+            // e o deployment: --harness-tails 1 e --tail-scope != off.
+            string bscope = Str(st, "tail_scope");
+            Pf(driver, "bridge_harness_tails",
+                string.Equals(btails, "true", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(bscope, "off", StringComparison.OrdinalIgnoreCase),
+                new JsonObject
+                {
+                    ["bridge"] = _p.Bridge,
+                    ["harness_tails"] = btails,
+                    ["tail_scope"] = bscope,
+                    ["fix"] = "ligue --harness-tails 1 --tail-scope all|managed (tool tails e regra para teste que usa tools)"
+                });
         }
 
         Pf(driver, "bridge_upstream",
@@ -866,6 +882,18 @@ internal sealed class WarTemplate : CircuitTemplate
         {
             ["sha512"] = _sha512.Length >= 16 ? _sha512[..16] : _sha512,
             ["motivo"] = rerunGuard.Reason
+        });
+
+        // REGRA DO CRIADOR: fail-fast e guard de rebuild andam juntos. Com
+        // --war-stop-on-fail o guard e obrigatorio (nao existe flag para
+        // desligar); sem ele um PASS poderia sair com binario velho. A
+        // evidencia carrega o modo do driver que esta sendo verificado.
+        Pf(driver, "guard_ativo_fail_fast", !_o.StopOnFirstFailure || rerunGuard.Allowed, new JsonObject
+        {
+            ["fail_fast"] = _o.StopOnFirstFailure,
+            ["guard"] = "regeracao-por-sha512",
+            ["modo"] = string.IsNullOrWhiteSpace(_o.Modes) ? "bridge" : _o.Modes,
+            ["estado"] = rerunGuard.Allowed ? "ok" : rerunGuard.Reason
         });
 
         string? opencode = Execution.FindOnPath("opencode");

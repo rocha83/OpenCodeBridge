@@ -508,6 +508,16 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 > o llama). O discriminador é o CLIENTE (BridgeLane), nunca o sufixo do modelo.
 > Passthrough só dispara fora da raia bridge. Web UI (`ChatController`)
 > hardcoda `harness = true`.
+> **Trava (primordial):** `--mode bridge` + `--main-harness 0` NÃO sobe
+> (exit 2, `ERROR DE ARGUMENTOS`, `ArgumentException` em `ApplyMode`). A raia
+> sem o nosso harness é `--mode opencode`; as units `:4124/:4125/:4126` são
+> (ou devem ser) `mode=opencode`.
+> **Tool tail é regra:** qualquer teste que enuncia uso de tools exige
+> `--harness-tails 1` + `--tail-scope all|managed` (preflight
+> `bridge_harness_tails`). Request sem `tools` no array não recebe cauda de
+> tools (`hasTools:false`). Tópico sem tools usa perfil `plan` (0.3/on) e o
+> enunciado termina com `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`; com tools fica
+> `build` (0.1/off).
 
 > **Legado:** Qwen3/Qwen3.5 não são a linha atual; as flags marcadas (legado) não são usadas na linha Gemma 4.
 

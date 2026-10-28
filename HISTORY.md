@@ -4348,4 +4348,87 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   (`2627`) só dispara fora da raia bridge (`BridgeLane.Value != true`).
 - Web UI (`ChatController`) hardcoda `harness = true` e chama
   `MainHarness.BuildSystem`.
+- **Trava de execução (regra primordial):** `--mode bridge` com
+  `--main-harness 0` é combinação INVÁLIDA — a bridge não sobe e devolve
+  `[bridge] ERRO DE ARGUMENTOS: modo bridge exige main harness ON` (exit 2,
+  `ArgumentException` em `ApplyMode`). A raia sem o nosso harness é
+  `--mode opencode` (o opencode carrega o dele no stream com o llama); as units
+  `:4124/:4125/:4126` são/ devem ser `mode=opencode`.
+- **Driver (regra primordial):** fail-fast e guard de rebuild andam juntos.
+  Com `--war-stop-on-fail` (default) o guard é obrigatório — preflight
+  `guard_ativo_fail_fast` (fail-fast + sha512 + modo na evidência). Não há flag
+  para desligar o guard.
+- Testes unitários que protegiam o curto-circuito antigo foram adaptados
+  (`U-main-harness-opencode-master`, `U-main-harness-master`) e o perfil build
+  0.1 passou a ser o esperado em `U-translate-temp-respeita-tunel`.
+- **Tool tail é regra (primordial):** todo teste que enuncia tools roda com
+  `harness-tails` ligada e `tail-scope != off` (preflight
+  `bridge_harness_tails`). Pedido sem `tools` no array não recebe cauda de
+  tools (`HarnessTails.Compose(..., hasTools:false)` + variante
+  `DefaultBehaviorNoTools`, sem "TOOLS PRIMEIRO") — evidência do bug: request
+  sem tools devolveu `{"tools":[{"type":"shell"...` como TEXTO e truncou.
+- **Tails por modo:** o gate é `BridgeMode.Tails` + `tail-scope`, não
+  `BridgeLane` (que discrimina só o MainHarness). `all` injeta também na raia
+  opencode; `managed` só direto/Web.
+- **Tópicos sem tools = conceito:** perfil `plan` (0.3, thinking on) e o corpo
+  do enunciado termina com `MOSTRE-ME COMO MODO PLANO EM TEXTO`. Teste com
+  tools continua `build` (0.1, thinking off) — regra sem exceção.
+- Prova do colapso em `:4134`: mesmo prompt com `-build` (0.1/off) = 431–1.079
+  chars/2–7s; com `-plan` (0.3/on) = 7.213–8.097 chars/59–62s. Harness e tails
+  ligados nos dois; a variável é o perfil.
 - Documentado em `docs/LAB-SETUP.md` e `docs/BENCHTESTS.md`.
+
+## Regra (ENUNCIADO DE TESTE) — dev humano, não receita (2026-10-28)
+
+- `E-ent-*` estava ditando o artefato no enunciado (lista de `app.MapGet`,
+  "use `useEffect`", `AddStackExchangeRedisCache(...)` exato, "não use edit",
+  "sem TODO/NotImplemented", "grave PRIMEIRO/POR ÚLTIMO"). Isso responde o
+  teste pelo modelo e mede obediência, não engenharia. Removido.
+- Fica no enunciado só o **contrato observável** (status, transação,
+  header+items, cache-aside). Mecânica é do harness/tool-help.
+- Aceite não afrouxa: quando o assert dependia de nome, virou check
+  estrutural (`saleinvoice com detalhe` = `Items` **ou** `ProductId`+`Qty`).
+- Frase obrigatória em pedido sem tools: `MOSTRE-ME COMO MODO PLANO EM TEXTO`.
+  O Core (`DefaultBehaviorNoTools`) define que isso é **texto com o entregável
+  completo**, não plano de implementação — foi o que derrubou o
+  `E-ent-crud-product` (respondeu "🗺️ Plano de Implementação").
+- Segunda passada de humanização (mesma data): saíram também `Use Results<T> tipados`,
+  `Mostre o SQL com OFFSET/FETCH` e `codigo com IDbTransaction` — o enunciado virou
+  só o contrato (endpoints/status/transação/índice). Os asserts correspondentes
+  passaram a estrutural: paginação = `OFFSET`|`Skip` (já era), ciclo de vida =
+  `AbortController` + (`useEffect`|`useLayoutEffect`|`use(`).
+- `E-ent-redis` (15:16): modelo gravou `Startup.cs` com `services.AddDistributedRedisCache(...)`
+  (API removida no .NET 3.0) e o assert antigo exigia `AddStackExchangeRedisCache`.
+  O contrato de verdade é "cache distribuído registrado no DI": assert passou a
+  aceitar moderno (`AddStackExchangeRedisCache`), memory fallback, legado
+  (`AddDistributedRedisCache`) ou `IConnectionMultiplexer`, com a versão exposta
+  em `[info] di=modern|legacy|custom` — versão de API é visibilidade, não gate.
+## Fail-fast também no runner isolado (2026-10-28)
+
+- Sintoma: `--only E-ent` seguia depois de `FAIL E-ent-crud-saleinvoice`, gastando
+  GPU nos 3 testes seguintes. O fail-fast existia só no driver WAR (por step).
+- Correção em C# na suíte: `TestContext.StopOnFail` (default `true`), `Aborted`/
+  `AbortedAt`; `Run` retorna imediatamente (`SKIP ... (fail-fast)`) e o summary
+  imprime `[test] ABORTADO (fail-fast) no primeiro FAIL: <nome>`. Flag de escape:
+  `--no-stop-on-fail`.
+- Regra em `AGENTS.md` (§ "fail-fast em TODA rodada de runner").
+
+- **Frase de fechamento trocada (decisão final).** `MOSTRE-ME COMO MODO PLANO EM
+  TEXTO` foi lida como *documento de plano* pelo E4B: `E-ent-crud-product` e
+  `E-ent-dashboard` devolveram "**Plano de Implementação** … *(aguardando
+  confirmação para entregar o código)*" — sem `MapGet/HttpPost`, sem `useEffect`,
+  e `E-ent-redis` não gravou arquivo. Fechamento agora é
+  `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS` (mesma posição: fim do
+  corpo), com `DefaultBehaviorNoTools` mapeando as duas formas para "artefato
+  final, não plano". Regra única em `AGENTS.md`, `docs/LAB-SETUP.md` e
+  `docs/BENCHTESTS.md`.
+- Medição da rodada de de-ditado: `E-ent` PASS=5/FAIL=1 antes (com dictação),
+  falha residual `saleinvoice` por nome (`Items`), corrigida no assert.
+- Sem dictação, sobraram duas falhas semânticas (15:06): `E-ent-dashboard`
+  respondeu "Plano Arquitetural" (leu `MODO PLANO` como documento) e
+  `E-ent-redis` não gravou arquivo (1 `glob` e prosa). Correção no **harness**
+  (não no enunciado): `DefaultBehaviorNoTools` passou a definir
+  `MOSTRE-ME COMO MODO PLANO EM TEXTO` = modo texto, entregável final, e a
+  proibir "plano de implementação/arquitetural"; `DefaultTools` ganhou
+  "ARQUIVO: pedido que manda criar/gravar entrega via `write`; prosa não
+  conclui". Dictação continua fora do enunciado.

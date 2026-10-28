@@ -52,13 +52,14 @@ internal static class Program
             }
             else if (args[i] == "--tool-agent-steps" && i + 1 < args.Length) TestContext.ToolAgentSteps = int.Parse(args[++i]);
             else if (args[i] == "--skip-unit") TestContext.SkipUnit = true;
+            else if (args[i] == "--no-stop-on-fail") TestContext.StopOnFail = false;
             else if (args[i] == "--front-webdriver" || args[i] == "--webdriver") TestContext.WebDriver = true;
             else if (args[i] == "--webdriver-url" && i + 1 < args.Length) TestContext.WebDriverUrl = args[++i];
             else if (args[i] == "--skip-cpu") TestContext.RunCpu = false;
             else if (args[i] == "--cpu") TestContext.RunCpu = true;
         }
         Console.WriteLine($"[test] bridge={TestContext.Bridge} llama={TestContext.Llama} skipE2E={TestContext.SkipE2E}");
-        Console.WriteLine($"[test] dual={TestContext.Dual} mode={TestContext.Mode} role={TestContext.Role}");
+        Console.WriteLine($"[test] dual={TestContext.Dual} mode={TestContext.Mode} role={TestContext.Role} stop_on_fail={TestContext.StopOnFail}");
         string? cred = TestContext.Jwt ?? TestContext.ApiKey;
         if (cred is not null) TestContext.Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
 
@@ -150,6 +151,7 @@ internal static class Program
         TestContext.Run("U-main-harness-opencode-master", UnitMainHarnessTests.KeepsOpencodeMasterWithoutProfile);
         TestContext.Run("U-main-harness-dynamic", UnitMainHarnessTests.PreservesDynamicBlocks);
         TestContext.Run("U-main-harness-master", UnitMainHarnessTests.DropsMasterButKeepsEnv);
+        TestContext.Run("U-main-harness-tools-tail", UnitMainHarnessTests.TailsOnlyWithTools);
         TestContext.Run("U-coding-journey", UnitCodingJourneyTests.AnalyzesBothModes);
         TestContext.Run("U-coding-journey-probe", UnitCodingJourneyTests.StepProbeWritesJourney);
         TestContext.Run("U-sampling-passthrough", UnitSamplingTests.CopiesKnownNumericKeys);
