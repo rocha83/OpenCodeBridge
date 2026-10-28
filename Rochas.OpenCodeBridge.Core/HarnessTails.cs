@@ -56,6 +56,8 @@ public static class HarnessTails
         "arquivo: 1a linha `module Program`; funcoes `let nome (x: float) = ...`. " +
         "acumulador: `let mutable acc = 0.0` e `acc <- acc + x`; loop `for i in 1 .. n-1 do ...` com `float i`. " +
         "listas: `List.fold (fun acc x -> acc + x) 0.0 xs`; `List.sum xs`; `List.map (fun x -> x * x) xs`. " +
+        "range: `[1 .. n-1]` e passo 1; com passo e `[start .. step .. finish]` (ex.: `[1 .. 2 .. n-1]` para impares) — " +
+        "`[1; 3 .. n-1]` NAO existe (`;` separa elementos, nao passo) e os extremos precisam do mesmo tipo (int com int, float com float). " +
         "math: `System.Math.Sin x`; `System.Math.Sqrt x`; `System.Math.PI`; potencia `x ** 2.0`. " +
         "tipos: `%` so em int; converta com `float n` e `int x`. " +
         "saida: `printfn \"%.6f\" valor`. " +

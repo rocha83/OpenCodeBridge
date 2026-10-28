@@ -54,8 +54,18 @@ public abstract class ToolsAntiRepeat
         "conferir o caminho com `ls -la` e usar o nome copiado.";
 
     /// <summary>Marcadores que caracterizam resultado de falha de tool.</summary>
+    /// <remarks>
+    /// "exit [1-9]:" e o formato REAL do <c>ProcessRunner</c> (ToolResult.Fail);
+    /// a forma antiga "exited with code" ficou so por compatibilidade — com ela
+    /// so, o breaker ficava mudo no loop mais caro medido (E-mission-tools:
+    /// 10 edits identicos devolvendo o MESMO error FS0751, sem nudge e sem trip).
+    /// Erros de compilador entram pelo mesmo motivo: o modelo re-escreve o fonte
+    /// e recebe a mesma linha do compilador de novo.
+    /// </remarks>
     private static readonly Regex FailureMarkers = new(
-        "exited with code [1-9]" +
+        "exited? with code [1-9]|(?m)^\\s*exit [1-9]" +
+        "|error fs\\d+|error cs\\d+|error msb\\d+|error fsi\\d+" +
+        "|traceback \\(most recent call last\\)|undefined reference|unhandled exception\\.|assertionfailed" +
         "|file not found|no such file|not a directory|is a directory" +
         "|search path does not exist|unable to find files|unable to write" +
         "|command not found|permission denied|operation not permitted" +

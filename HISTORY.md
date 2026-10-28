@@ -4403,6 +4403,34 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   aceitar moderno (`AddStackExchangeRedisCache`), memory fallback, legado
   (`AddDistributedRedisCache`) ou `IConnectionMultiplexer`, com a versão exposta
   em `[info] di=modern|legacy|custom` — versão de API é visibilidade, não gate.
+## E-mission-tools: breaker mudo no loop do compilador (2026-10-28)
+
+- Sintoma (L3 `L3-20261028-161849`, step `mission-tools-bridge` FAIL 218s,
+  `GATE VERMELHO`, belt roxa SKIP pelo fail-fast):
+  `assert: F# imprime 3 numeros com 6 casas, saiu: ERRO: exit 1:
+  /tmp/e2e-mission/mfs/Program.fs(10,92): error FS0751: Expressão incompleta...`.
+- Evidência no repo: `logs/levels/L3-20261028-161849/evidence/mission-agent.log` +
+  `Program.fs.falho`. O log do agente mostra `retry 2` (o teste já reseta o
+  contexto e repassa o erro) e, no 2o turno, **T4→T20: o MESMO `edit` repetido
+  10x** com o MESMO `error FS0751` — nem nudge nem trip do breaker.
+- Causa 1 (Core): `FailureMarkers` cobria `exited with code [1-9]`, formato
+  **morto** — o `ProcessRunner` devolve `exit <code>: <saida>`. Logo o resultado
+  `exit 1: ... error FS0751` não casava nenhum marcador e o loop não era contado.
+- Causa 2 (sintaxe do modelo): `[1; 3 .. n-1]` **não existe** em F# — range com
+  passo é `[start .. step .. finish]`; `;` separa elementos. O `FsMini` não
+  ensinava isso e o modelo re-escrevia o mesmo erro.
+- Correção (Core, mecânica; enunciado e asserts intocados):
+  - `ToolsAntiRepeat.FailureMarkers`: `(?m)^\s*exit [1-9]` (mantendo a forma
+    antiga por compatibilidade) + `error fs\d+/cs\d+/msb\d+/fsi\d+`,
+    `traceback (most recent call last)`, `undefined reference`,
+    `unhandled exception.`, `assertionfailed`;
+  - `HarnessTails.FsMini`: regra de range (`[1 .. n-1]`, `[start .. step .. finish]`,
+    nomeia `[1; 3 .. n-1]` como inexistente) e extremos do mesmo tipo.
+- Prova em C#: `U-breaker-compiler-loop` (3 falhas de compilador = Nudge,
+    6 = Trip, mesmo alvo) e `U-breaker-failure-markers` estendido com o formato
+    real (`exit 1: ... error FS0751`, `error CS1002`, `exit 104`; `exit 0` e
+    prosa que cita `exit` continuam sem falha). Bateria: `[test] PASS=7 FAIL=0`.
+
 ## E-tools-full: falha de path corrigida no Core (2026-10-28)
 
 - Sintoma (L2 `L2-20261028-160036`, step `tools-full-bridge` FAIL 127s,

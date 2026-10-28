@@ -131,12 +131,68 @@ internal static class UnitToolBreakerTests
     public static Task DetectsFailureMarkers()
     {
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure("Exited with code 128"), "exit!=0");
+        // Formato REAL do ProcessRunner ("exit <code>: <saida>") + erros de
+        // compilador: com so "exited with code" o breaker ficava mudo no loop
+        // medido em E-mission-tools (10 edits com o mesmo FS0751).
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure(
+            "exit 1: /logs/e2e/mfs/Program.fs(10,92): error FS0751: Expressão incompleta ou uso inválido da sintaxe do indexador"),
+            "exit 1 + error FS");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure(
+            "exit 1: Program.cs(3,1): error CS1002: ; esperado"), "error CS");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure("exit 104: build falhou"), "exit 104 (2 digitos)");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure("exit 0: 3 numeros"), "exit 0 nao e falha");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure("o manual manda rodar `exit 1` la na frente"), "prosa que cita exit nao e falha");
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure("File not found: /x"), "file not found");
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure("Search path does not exist: /x"), "search path");
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure("/bin/bash: linha 1: sqlite3: comando nao encontrado\ncommand not found"), "command not found");
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure("/bin/bash: -c: linha 1: erro de sintaxe"), "erro de sintaxe");
         TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure("PASS 12 testes"), "sucesso nao e falha");
         TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure(""), "vazio nao e falha");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Loop medido em E-mission-tools (evidencia em
+    /// logs/levels/L3-20261028-161849/evidence/mission-agent.log): o MESMO edit
+    /// devolvendo o MESMO error do compilador repetiu 10x sem nudge e sem trip,
+    /// porque o marcador cobria so "exited with code" (formato morto). Com o
+    /// marcador real: 3 falhas avisam, 6 cortam o turno.
+    /// </summary>
+    public static Task BreaksCompilerEditLoop()
+    {
+        static JsonArray Turnos(int n, string edit, string erro)
+        {
+            var passos = new List<(string, string, string, string)>();
+            for (int i = 0; i < n; i++)
+            {
+                passos.Add(("assistant", "edit", edit, ""));
+                passos.Add(("tool", "", "", erro));
+            }
+            return Chat(passos.ToArray());
+        }
+
+        string erro = "exit 1: /logs/e2e/mfs/Program.fs(10,92): error FS0751: Expressão incompleta ou uso inválido da sintaxe do indexador";
+        string edit = "{\"path\":\"/logs/e2e/mfs/Program.fs\",\"oldString\":\"let sumTerms\",\"newString\":\"let sumTerms = f a + f b + List.sum (List.map ...)\"}";
+        var guard = new global::Rochas.OpenCodeBridge.Core.ToolsBreaker(3, 6);
+
+        var r2 = guard.Evaluate(Turnos(2, edit, erro));
+        TestContext.Check(r2.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.None,
+            $"2 falhas de compilador nao disparam (veio {r2.Verdict})");
+
+        var r3 = guard.Evaluate(Turnos(3, edit, erro));
+        TestContext.Check(r3.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Nudge,
+            $"3 falhas de compilador disparam nudge (veio {r3.Verdict})");
+        TestContext.Check(r3.Streak == 3 && r3.DistinctTargets == 1,
+            $"streak={r3.Streak} targets={r3.DistinctTargets} (mesmo alvo)");
+
+        var r6 = guard.Evaluate(Turnos(6, edit, erro));
+        TestContext.Check(r6.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Trip,
+            $"6 falhas de compilador cortam o turno (veio {r6.Verdict})");
+        TestContext.Check(r6.Notice.Contains("6", StringComparison.Ordinal),
+            $"aviso cita o total de falhas (notice: '{r6.Notice[..Math.Min(70, r6.Notice.Length)]}')");
+
+        // Saidas que so citam exit no meio do texto nao viram falha.
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure("exit 0: build ok"), "exit 0 segue sem falha");
         return Task.CompletedTask;
     }
 
@@ -223,6 +279,10 @@ internal static class UnitToolBreakerTests
         TestContext.Check(tail.Contains("--project"), "cauda aponta o arquivo do projeto no dotnet");
         string fsMini = global::Rochas.OpenCodeBridge.Core.HarnessTails.FsMini;
         TestContext.Check(fsMini.Contains("module Program"), "FsMini explica o entrypoint de F#");
+        // Regra que derrubou E-mission-tools (L3-20261028-161849): `[1; 3 .. n-1]`
+        // nao existe em F#; o range com passo e `[start .. step .. finish]`.
+        TestContext.Check(fsMini.Contains("[start .. step .. finish]"), "FsMini ensina range com passo");
+        TestContext.Check(fsMini.Contains("[1; 3 .. n-1]"), "FsMini nomeia a sintaxe errada (FS0751)");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
         TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
         TestContext.Check(!tail.Contains("CONCATENACAO DE COMANDOS"), "cauda nao duplica doc de shell");

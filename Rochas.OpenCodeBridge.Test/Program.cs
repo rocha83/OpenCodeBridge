@@ -175,6 +175,7 @@ internal static class Program
         TestContext.Run("U-breaker-ignores-distinct-targets", UnitToolBreakerTests.IgnoresDistinctTargets);
         TestContext.Run("U-breaker-normalize-collapses", UnitToolBreakerTests.NormalizeCollapsesMutations);
         TestContext.Run("U-breaker-failure-markers", UnitToolBreakerTests.DetectsFailureMarkers);
+        TestContext.Run("U-breaker-compiler-loop", UnitToolBreakerTests.BreaksCompilerEditLoop);
         TestContext.Run("U-content-antireply-scopes", UnitToolBreakerTests.ContentScopeUsesHelperSubclasses);
         TestContext.Run("U-tools-antireply-helpers", UnitToolBreakerTests.ToolScopeUsesHelperSubclasses);
         TestContext.Run("U-toolargs-literal-newline", UnitToolBreakerTests.FixesLiteralNewlineEscape);
