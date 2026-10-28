@@ -194,6 +194,7 @@ internal static class Program
         TestContext.Run("U-circuit-resume-done", UnitCircuitTests.ResumeSkipsDone);
         TestContext.Run("U-circuit-battery-stop", UnitCircuitTests.BatteryStopsOnFail);
         TestContext.Run("U-circuit-battery-resume", UnitCircuitTests.BatteryResumesAfterFail);
+        TestContext.Run("U-circuit-publish-run", UnitCircuitTests.PublishesRunBeforeVerdict);
         TestContext.Run("U-circuit-restart", UnitCircuitTests.RestartRetries);
         TestContext.Run("U-circuit-pause", UnitCircuitTests.PauseResumes);
         TestContext.Run("U-circuit-lock", UnitCircuitTests.LockExclusive);

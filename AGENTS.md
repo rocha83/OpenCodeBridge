@@ -217,6 +217,16 @@ conveniência manual, nunca fonte de verdade.
 - Vale igual para `--only <lista>`: a lista é ordem de execução, não licença
   para rodar tudo depois de vermelho.
 
+## Regra: painel do gate mostra o step em EXECUÇÃO (primordial)
+- O driver publica **também** `step_start` na bridge, como `verdict: "RUN"`
+  (`TestCircuitDriver.PostStepEvent`); o `step_end` sobrescreve a linha com
+  `PASS/FAIL/SKIP`. Publicar só `step_end` deixa o painel parado durante a
+  bateria — parece "Grafana não atualizou".
+- O row precisa de `mode` não vazio: `GET /api/test/steps?war=1` descarta linha
+  sem `mode` (o filtro do painel). Prova: `U-circuit-publish-run`.
+- Dicionário do painel: `RUN` (azul) e `PAUSA` (roxo) existem em `status`;
+  `STALE`/`BLOCKED` não mudam.
+
 ## Regra: reinício de bateria reinicia a bridge
 - Toda bateria E2E, em ambos os modos (`bridge` e `opencode`), começa com o
   restart da bridge alvo: `sudo systemctl restart bridge-gpu` (`:4124`),

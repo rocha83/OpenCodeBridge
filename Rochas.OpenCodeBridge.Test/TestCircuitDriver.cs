@@ -380,20 +380,31 @@ internal sealed class TestCircuitDriver : IDisposable
 
     static readonly System.Net.Http.HttpClient EventHttp = new() { Timeout = TimeSpan.FromSeconds(3) };
 
-    // step_end tambem vai para a bridge (painel Grafana). Best-effort: sem
-    // WAR_EVENT_URL ou bridge fora, o circuito segue normalmente.
+    // step_start (verdict RUN) e step_end vao para a bridge (painel Grafana):
+    // sem o step_start o painel nao mostra o step EM EXECUCAO — ele so passa a
+    // existir quando ja acabou (impressao de "nao atualizou"). A bridge guarda
+    // por nome de step, entao o PASS/FAIL do step_end sobrescreve o RUN.
+    // Best-effort: sem WAR_EVENT_URL ou bridge fora, o circuito segue normalmente.
     static void PostStepEvent(JsonObject ev)
     {
         try
         {
-            if ((ev["t"]?.GetValue<string>() ?? "") != "step_end") return;
+            string t = ev["t"]?.GetValue<string>() ?? "";
+            if (t is not ("step_start" or "step_end")) return;
+            var row = ev.DeepClone().AsObject();
+            if (t == "step_start")
+            {
+                row["verdict"] = "RUN";
+                row["secs"] = 0;
+                row["cause"] = "";
+            }
             string url = Environment.GetEnvironmentVariable("WAR_EVENT_URL") ?? "";
             if (url.Length == 0) return;
             using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
             string key = Environment.GetEnvironmentVariable("WAR_EVENT_KEY") ?? "";
             if (key.Length > 0)
                 req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
-            req.Content = new System.Net.Http.StringContent(ev.ToJsonString(), Encoding.UTF8, "application/json");
+            req.Content = new System.Net.Http.StringContent(row.ToJsonString(), Encoding.UTF8, "application/json");
             using var _ = EventHttp.Send(req);
         }
         catch { }

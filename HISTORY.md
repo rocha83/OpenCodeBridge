@@ -4403,6 +4403,27 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   aceitar moderno (`AddStackExchangeRedisCache`), memory fallback, legado
   (`AddDistributedRedisCache`) ou `IConnectionMultiplexer`, com a versão exposta
   em `[info] di=modern|legacy|custom` — versão de API é visibilidade, não gate.
+## Painel Grafana mostra o step em execução (RUN) (2026-10-28)
+
+- Sintoma: durante o L1 o painel não mostrava `RUN` — `units` e
+  `integration-bridge` só apareciam depois de prontos, dando impressão de
+  desatualizado.
+- Causa: `TestCircuitDriver.PostStepEvent` descartava tudo que não fosse
+  `step_end` (`if (t != "step_end") return;`), então o `step_start` nunca
+  chegava na bridge. O painel lê `GET /api/test/steps?war=1` (filtra row sem
+  `mode`) e só recebia o veredito quando o teste já tinha acabado.
+- Correção: encaminha `step_start` como `verdict: "RUN", secs: 0` (mantendo
+  `mode`); a bridge guarda por nome de step, então o `step_end` sobrescreve
+  `RUN` → `PASS/FAIL` sem estado fantasma. Dashboard ganhou mapeamento
+  `RUN` (azul) e `PAUSA` (roxo) em `status`.
+- Prova em C#: `U-circuit-publish-run` (`PublishesRunBeforeVerdict`) —
+  `HttpListener` local + `WAR_EVENT_URL`, 3 steps reais, exige a sequência
+  `RUN(p1) PASS(p1) RUN(p2) PASS(p2) RUN(p3) PASS(p3)` (6 eventos) e
+  `mode=bridge` nas duas faces (filtro do painel). Bateria do driver completa:
+  `[test] PASS=19 FAIL=0 SKIP=0`.
+- Gate de referência: L1 `L1-20261028-154239` = `PASS=3 FAIL=0 SKIP=0 STALE=0`
+  (643s), `topics-bridge` PASS 624s.
+
 ## Fail-fast também no runner isolado (2026-10-28)
 
 - Sintoma: `--only E-ent` seguia depois de `FAIL E-ent-crud-saleinvoice`, gastando

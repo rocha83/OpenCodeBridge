@@ -694,6 +694,14 @@
                       "BLOCKED": {
                         "color": "red",
                         "index": 4
+                      },
+                      "RUN": {
+                        "color": "blue",
+                        "index": 5
+                      },
+                      "PAUSA": {
+                        "color": "purple",
+                        "index": 6
                       }
                     }
                   }

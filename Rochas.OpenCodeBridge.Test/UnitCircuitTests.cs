@@ -3,6 +3,8 @@
 //  retry/restart, build incremental, deploy e lock. Sem modelo/bridge.
 // ===========================================================================
 
+using System.Text.Json.Nodes;
+
 namespace Rochas.OpenCodeBridge.Test;
 
 internal static class UnitCircuitTests
@@ -235,6 +237,101 @@ internal static class UnitCircuitTests
         {
             Cleanup(root);
         }
+    }
+
+    /// <summary>
+    /// step_start chega na bridge como RUN ANTES do veredito (3 steps reais):
+    /// RUN(p1) -> PASS(p1) -> RUN(p2) -> ... Sem isso o painel Grafana nao tem
+    /// linha do step em execucao — ele so aparece quando ja acabou.
+    /// </summary>
+    public static Task PublishesRunBeforeVerdict()
+    {
+        string root = NewRoot();
+        var received = new List<JsonObject>();
+        string prevUrl = Environment.GetEnvironmentVariable("WAR_EVENT_URL") ?? "";
+        string prevKey = Environment.GetEnvironmentVariable("WAR_EVENT_KEY") ?? "";
+        using var listener = new System.Net.HttpListener();
+        listener.Prefixes.Add($"http://127.0.0.1:{FreePort()}/step/");
+        listener.Start();
+        var collector = Task.Run(() =>
+        {
+            try
+            {
+                while (true)
+                {
+                    var ctx = listener.GetContext();
+                    string body;
+                    using (var sr = new StreamReader(ctx.Request.InputStream)) body = sr.ReadToEnd();
+                    var node = JsonNode.Parse(body)?.AsObject();
+                    if (node != null) lock (received) received.Add(node);
+                    byte[] ack = System.Text.Encoding.UTF8.GetBytes("{\"ok\":true}");
+                    ctx.Response.OutputStream.Write(ack, 0, ack.Length);
+                    ctx.Response.Close();
+                }
+            }
+            catch { /* listener.Stop() encerra o loop */ }
+        });
+
+        Environment.SetEnvironmentVariable("WAR_EVENT_URL", listener.Prefixes.First());
+        Environment.SetEnvironmentVariable("WAR_EVENT_KEY", "");
+        try
+        {
+            using var circuit = NewDriver(root);
+            var results = circuit.RunStepsAsync(new[]
+            {
+                new CircuitStepSpec("p1", Dotnet("--version"), 30, Mode: "bridge"),
+                new CircuitStepSpec("p2", Dotnet("--version"), 30, Mode: "bridge"),
+                new CircuitStepSpec("p3", Dotnet("--version"), 30, Mode: "bridge")
+            }).GetAwaiter().GetResult();
+            TestContext.Check(results.All(r => r.Verdict == CircuitVerdict.Pass),
+                $"os 3 steps deveriam passar (vi: {string.Join(",", results.Select(r => r.Verdict))})");
+            bool chegou = System.Threading.SpinWait.SpinUntil(
+                () => { lock (received) return received.Count >= 6; }, TimeSpan.FromSeconds(10));
+            TestContext.Check(chegou, "driver nao enviou os 6 eventos (3 RUN + 3 veredito)");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("WAR_EVENT_URL", prevUrl);
+            Environment.SetEnvironmentVariable("WAR_EVENT_KEY", prevKey);
+            try { listener.Stop(); } catch { }
+        }
+
+        lock (received)
+        {
+            TestContext.Check(received.Count == 6,
+                $"6 eventos esperados, vieram {received.Count}");
+            for (int i = 0; i < 3; i++)
+            {
+                string nome = "p" + (i + 1);
+                var run = received[2 * i];
+                var fim = received[2 * i + 1];
+                TestContext.Check(run["t"]?.GetValue<string>() == "step_start",
+                    $"{nome}: 1o evento deveria ser step_start (veio {run["t"]})");
+                TestContext.Check(run["verdict"]?.GetValue<string>() == "RUN",
+                    $"{nome}: 1o evento deveria ser verdict RUN (veio {run["verdict"]})");
+                TestContext.Check(fim["t"]?.GetValue<string>() == "step_end",
+                    $"{nome}: 2o evento deveria ser step_end (veio {fim["t"]})");
+                TestContext.Check(fim["verdict"]?.GetValue<string>() == "PASS",
+                    $"{nome}: veredito deveria ser PASS (veio {fim["verdict"]})");
+                TestContext.Check(run["step"]?.GetValue<string>() == nome
+                                  && fim["step"]?.GetValue<string>() == nome,
+                    $"{nome}: RUN e veredito devem ser do mesmo step");
+                // O painel Grafana le ?war=1, que descarta row sem mode.
+                TestContext.Check(run["mode"]?.GetValue<string>() == "bridge"
+                                  && fim["mode"]?.GetValue<string>() == "bridge",
+                    $"{nome}: RUN/veredito precisam de mode=bridge (filtro ?war=1)");
+            }
+        }
+        return Task.CompletedTask;
+    }
+
+    private static int FreePort()
+    {
+        var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        l.Start();
+        int port = ((System.Net.IPEndPoint)l.LocalEndpoint).Port;
+        l.Stop();
+        return port;
     }
 
     public static Task RestartRetries()
