@@ -772,6 +772,39 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // 7a amostra (2026-10-29): a fase F# so' injetava a dica quando a saida tinha
+    // "error FS"; o FS0193 veio como WARNING e o reparo nunca entrou no fluxo.
+    public static Task FsRepairDiagnosticDetection()
+    {
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.HasDiagnostic(
+            "ERRO: exit 1: /x/Program.fs(14,9): warning FS0193: This expression is a function value."),
+            "warning FSdddd conta como diagnostico (era o caso que ficava sem dica)");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.HasDiagnostic(
+            "ERRO: exit 1: /x/Program.fs(3,1): error FS0010: Unexpected symbol."),
+            "error FSdddd conta como diagnostico");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.HasDiagnostic(
+            "ERRO: exit 1: MSBUILD : error MSB1009: Project file does not exist."),
+            "erro sem codigo FS nao dispara reparo de sintaxe F#");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.HasDiagnostic(""),
+            "saida vazia nao dispara reparo");
+        return Task.CompletedTask;
+    }
+
+    // Garante que a tabela que a fase F# injeta no system cobre TODA regra que o
+    // reparo sabe responder — sem isso o modelo recebe a forma certa no turno da
+    // falha mas nao tem o contrato antes de agir.
+    public static Task FsMiniCoversRepairCodes()
+    {
+        string mini = global::Rochas.OpenCodeBridge.Core.HarnessTails.FsMini;
+        TestContext.Check(mini.StartsWith("F# MINI", StringComparison.Ordinal),
+            "FsMini comeca com o marcador 'F# MINI' (o dump da fase F# confere ele)");
+        string[] codes = { "FS0001", "FS0003", "FS0010", "FS0020", "FS0037", "FS0039", "FS0058",
+            "FS0072", "FS0193", "FS0528", "FS0588", "FS0597", "FS0603", "FS0751", "FS3118", "FS3563" };
+        foreach (string c in codes)
+            TestContext.Check(mini.Contains(c, StringComparison.Ordinal), "FsMini cita " + c + " (tem regra de reparo)");
+        return Task.CompletedTask;
+    }
+
     // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
 
     public static Task AntiRepeatArgsWindowIsIndependent()

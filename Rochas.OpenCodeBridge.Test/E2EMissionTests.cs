@@ -429,7 +429,7 @@ internal static class E2EMissionTests
         TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
 
         string csPrompt = AlgoPrompt(ws, "mcs");
-        var (src, output) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", csPrompt);
+        var (src, output) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", new[] { csPrompt });
         TestContext.Check(!HasHardcodedAlgo(src), "C# calcula (sem hardcode das metas)");
         TestContext.Check(AlgoOk(output), "C# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
         Console.WriteLine($"  [algo] C# ok:\n{output.Trim()}");
@@ -442,9 +442,14 @@ internal static class E2EMissionTests
         string model = AlgoModel();
         string ws = TestContext.FreshWorkspace("e2e-mission-algo-fs");
         TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
+        // O template do `dotnet new` para F# nao traz diretiva de modulo, e o modelo
+        // gastava turnos no cabecalho (FS0010 `let` fora de posicao). O arquivo inicial
+        // ja' compila — o pedido (algoritmo e metas) continua inteiro.
+        File.WriteAllText(Path.Combine(ws, "mfs", "Program.fs"),
+            "module Program\n\nopen System\n\n// resolva o pedido aqui\nprintfn \"ok\"\n");
 
-        string fsPrompt = AlgoPrompt(ws, "mfs");
-        var (src, output) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", fsPrompt);
+        string[] fsStages = AlgoStages(ws, "mfs");
+        var (src, output) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", fsStages);
         TestContext.Check(!HasHardcodedAlgo(src), "F# calcula (sem hardcode das metas)");
         TestContext.Check(AlgoOk(output), "F# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
         Console.WriteLine($"  [algo] F# ok:\n{output.Trim()}");
@@ -472,26 +477,61 @@ internal static class E2EMissionTests
             + "Pode rodar `dotnet run --project " + ws + "/" + dir + "/" + proj + "` e ajustar ate bater.";
     }
 
-    /// <summary>Roda uma fase C#/F# de um agente com tools e devolve fonte + saida final.</summary>
+    /// <summary>
+    /// Enunciado da missao em duas etapas sobre o MESMO arquivo: Hanoi primeiro,
+    /// primos depois. O aceite final (as cinco chaves) e' o mesmo; a segmentacao so'
+    /// reduz o que o modelo precisa acertar de uma vez (regra de micro-runs).
+    /// </summary>
+    static string[] AlgoStages(string ws, string dir)
+    {
+        bool cs = dir == "mcs";
+        string ext = cs ? "cs" : "fs";
+        string proj = dir + (cs ? ".csproj" : ".fsproj");
+        string run = "`dotnet run --project " + ws + "/" + dir + "/" + proj + "`";
+        string head = "Preciso de um programa em " + ws + "/" + dir + "/Program." + ext + ", no projeto " + proj
+            + " que ja existe (nao crie outro projeto), imprimindo o resultado de um jeito simples para eu conferir, so com numeros inteiros.\n";
+        string hanoi = "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Imprima quantos movimentos foram necessarios em `hanoi=<n>` e a sequencia completa em `hanoi_seq=`, no formato 1->2,1->3,...\n"
+            + "Rode " + run + " e ajuste ate imprimir as duas linhas com os valores que o programa calculou (nao copie numeros do enunciado).";
+        string primes = "2) No MESMO programa, acrescente a analise dos primos: quantos ha abaixo de 100 (`primes100=`), abaixo de 1000 (`primes1000=`) e quantos pares gemeos abaixo de 100 (`twin100=`). O crivo de Eratostenes e uma boa pedida.\n"
+            + "Mantenha as duas linhas de Hanoi ja' corretas e termine com estas cinco linhas, uma por linha e nessa ordem:\n"
+            + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\nprimes100=<n>\nprimes1000=<n>\ntwin100=<n>\n"
+            + "Rode " + run + " e ajuste ate bater; nao copie os numeros do enunciado.";
+        return new[] { head + hanoi, head + primes };
+    }
+
+    /// <summary>
+    /// Roda uma fase C#/F# de um agente com tools e devolve fonte + saida final.
+    /// Cada item de <paramref name="stages"/> e' um enunciado com contexto novo sobre
+    /// o MESMO workspace (segmentacao: o modelo local nao entrega um programa F#
+    /// inteiro num laco so'; o aceite final e' o mesmo).
+    /// </summary>
     static async Task<(string Src, string Out)> RunAlgoPhase(
-        string bridge, string model, string ws, string lang, string project, string file, string prompt, int turns = 30)
+        string bridge, string model, string ws, string lang, string project, string file, string[] stages, int turns = 26)
     {
         string sysBase = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls, sem prosa.";
         string sys = lang == "F#"
             ? sysBase + "\n\n" + global::Rochas.OpenCodeBridge.Core.HarnessTails.FsMini
             : sysBase;
+        // Guarda de fluxo: a fase F# so' age com a tabela de sintaxe no system. Se o
+        // enunciado/scaffold mudar e a tabela sair, a fase falha com a causa certa em
+        // vez de gastar 30 turnos sem o contrato (medido em 2026-10-29).
+        if (lang == "F#" && !sys.Contains("F# MINI", StringComparison.Ordinal))
+            throw new Exception("fase F# sem FsMini no system: o modelo agiria sem a tabela de sintaxe");
         bool dump = Environment.GetEnvironmentVariable("TCTX_DUMP") == "1";
         if (dump)
             Console.WriteLine($"  [algo:{lang}] system={sys.Length} chars; regras F# presentes={sys.Contains("F# MINI")}");
         string feedback = "";
-        // Duas tentativas com contexto resetado e a falha REALIMENTADA, como no
-        // mission-tools: um programa inteiro em F# custa mais de uma rodada. O aceite
-        // (metas e formato) nao muda entre as tentativas.
-        for (int attempt = 1; attempt <= 2; attempt++)
+        // Uma rodada por etapa, com contexto resetado: um programa inteiro em F# custa
+        // mais de uma passada. O aceite (metas e formato) nao muda entre as etapas.
+        for (int attempt = 1; attempt <= stages.Length; attempt++)
         {
         var hist = new JsonArray(new JsonObject { ["role"] = "system", ["content"] = sys });
-        hist.Add(new JsonObject { ["role"] = "user", ["content"] = prompt + feedback });
+        hist.Add(new JsonObject { ["role"] = "user", ["content"] = stages[attempt - 1] + feedback });
         int prosaSeguida = 0;
+        // Dica repetida nao ensina: medido em 2026-10-29 (17 reparos identicos, 30
+        // turnos). Na 3a vez a mesma dica vira instrucao de reescrever o arquivo.
+        string lastHint = "";
+        int hintRepeats = 0;
         int httpFalhas = 0;
         for (int turn = 0; turn < turns; turn++)
         {
@@ -547,13 +587,17 @@ internal static class E2EMissionTests
                 // Reparo in-flow: erro de sintaxe F# volta com a forma correta concreta
                 // (mesma mecanica do mission-tools, texto no Core) para o modelo corrigir
                 // no MESMO turno, em vez de repetir o cabecalho colado (medido 2026-10-29).
-                if (lang == "F#" && res.Contains("error FS", StringComparison.Ordinal))
+                if (lang == "F#" && global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.HasDiagnostic(res))
                 {
                     string curFs = File.Exists(Path.Combine(ws, "mfs", file)) ? File.ReadAllText(Path.Combine(ws, "mfs", file)) : "";
                     string hint = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(curFs, res);
                     if (hint.Length > 0)
                     {
+                        if (hint == lastHint) hintRepeats++; else { lastHint = hint; hintRepeats = 0; }
                         res += "\n\n" + hint;
+                        if (hintRepeats >= 2)
+                            res += "\n\nA MESMA dica ja' veio " + (hintRepeats + 1)
+                                 + " vezes: pare de editar a mesma linha e reescreva o arquivo inteiro com a tool `write`, aplicando a forma acima.";
                         if (dump) Console.WriteLine($"  [algo:{lang}] T{turn} reparo: {hint.Replace("\n", " | ")}");
                     }
                 }
@@ -573,8 +617,8 @@ internal static class E2EMissionTests
         string output = await RunShell(ws, model, "dotnet run --project " + project + " -c Release");
         if (dump)
             Console.WriteLine($"  [algo:{lang}] tentativa {attempt}: {(AlgoOk(output) ? "bateu as metas" : "fora das metas")} | {output.Replace("\n", " | ")[..Math.Min(180, output.Replace("\n", " | ").Length)]}");
-        if (AlgoOk(output) || attempt == 2) return (src, output);
-        // Falha realimentada para a tentativa seguinte: a saida real, sem dica de passo.
+        if (AlgoOk(output) || attempt == stages.Length) return (src, output);
+        // Saida real alimenta a etapa seguinte junto do enunciado dela (sem dica de passo).
         feedback = "\n\nA saida anterior nao bateu. Saida real:\n" + (output.Length > 900 ? output[..900] : output)
                  + "\nCorrija " + Path.Combine(ws, dir, file) + " e rode de novo; as metas e o formato continuam os mesmos.";
         }

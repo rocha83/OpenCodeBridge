@@ -211,6 +211,15 @@ public static class FsSyntaxRepair
     /// <summary>Codigo do PRIMEIRO erro do compilador (<c>FS0010</c>...) ou "" se nao houver.</summary>
     /// <param name="compilerError">Saida do build (pode trazer varios erros).</param>
     /// <returns>Ex.: <c>FS0003</c>.</returns>
+    /// <summary>
+    /// Ha diagnostico F# com codigo na saida do build? Vale para `error` e
+    /// `warning`: o FS0193 sai como warning e o chamador que so' olhava `error`
+    /// deixava de injetar a dica (medido em 2026-10-29 — 4 builds sem reparo).
+    /// </summary>
+    public static bool HasDiagnostic(string output)
+        => !string.IsNullOrEmpty(output)
+           && Regex.IsMatch(output, @"(?:error|warning) (FS\d{4})");
+
     static string FirstCode(string compilerError)
     {
         // Erro primeiro; warning so' quando ele e' o unico diagnostico com codigo

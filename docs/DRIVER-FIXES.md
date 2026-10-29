@@ -732,3 +732,26 @@ pegou antes de ir para a bancada.
 **Prova.** `units` 129 PASS / 0 FAIL; pin novo `U-fs-repair-list-literal-arrow`
 com 4 checagens, inclusive "com comprehension no fonte a dica continua sendo a da
 comprehension". Commit `80264d5`.
+
+## 29. FS0193 saía como `warning` e o reparo só olhava `error` (2026-10-29)
+
+**Sintoma.** 6ª amostra do `E-mission-algo-fs`: o modelo encadeou
+`hanoi ... |> List.append` três vezes (o operador sem o segundo operando) e
+repetiu a MESMA linha por 4 builds seguidos, sem nenhuma dica.
+
+**Causa.** Duas lacunas no Core:
+(a) `FS0193` ("This expression is a function value, i.e. is missing arguments")
+não tinha mapa no `FsSyntaxRepair`;
+(b) `FirstCode` casava apenas `error FSdddd` — quando o diagnóstico vinha como
+`warning FS0193`, o código saía vazio e **nenhuma** regra disparava, mesmo que
+existisse mapa. O reparo ficava inerte justamente no caso em que o build falha
+por outro motivo e o warning é o único diagnóstico com código.
+
+**Correção.** `FS0193` entra na tabela `FsMini` e no `FsSyntaxRepair` só com a
+forma que compila (`a @ b`, `List.append a b`, `x |> List.append ys`); `FirstCode`
+passa a preferir `error` e, na ausência dele, aceitar `warning`.
+
+**Prova.** Pin `U-fs-repair-partial-operator` (3 checagens, inclusive "não ecoa o
+pipe sem o segundo operando"), caso compilado no `scripts/diag/fs-repair-probe.fsx`
+(`List.sort tudo = List.sort tudo2`), `units` **130 PASS / 0 FAIL**, build
+`0 Aviso(s) / 0 Erro(s)`, commit `f65f054`.
