@@ -106,6 +106,18 @@ Correções, uma por vez e sem afrouxar assertiva:
 **Prova:** `E-tools-full` isolado **PASS 23,5 s** com o binário `c67e529`; units
 `PASS=124 FAIL=0 SKIP=6`, build `0 Aviso(s)/0 Erro(s)`.
 
+**WAR L2 → L3 no mesmo binário (`c67e529`, modo `bridge`, fail-fast, um nível por
+vez):**
+- `logs/levels/L2-20261029-143602` (701 s) — `responses-tools` 2 s,
+  `tools-full` 27 s, `belts-build` (azul+verde) 239 s, `belts-direct`
+  (azul+verde) 427 s = **4/4 PASS**, `STALE=0`.
+- `logs/levels/L3-20261029-144743` (612 s) — `science-gpu` 166 s,
+  `mission-tools` 82 s, `belts-build` roxa 108 s, `belts-direct` roxa 251 s =
+  **4/4 PASS**, `STALE=0`.
+- Reset do painel: **uma** linha `diag-reset` por nível (14:36:02 e 14:47:43);
+  nenhuma por `step_start`. `thinking=events` restaurado no fim (o efetivo por
+  requisição é o do perfil `-build`), `main_harness=true`, `harness_tails=true`.
+
 
 ## WAR L1+L2 bridge-only: L1 verde, L2 corrigido e verde (2026-10-27)
 
