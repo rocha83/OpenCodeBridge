@@ -97,6 +97,15 @@ public static class FsSyntaxRepair
             return "CERTO: quando o tipo do parametro nao sai sozinho, anote no lambda:\n"
                  + "List.map (fun (a: int, b: int) -> sprintf \"%d->%d\" a b) movs";
 
+        // FS0193: `@`/`List.append` usados como valor no fim de um pipe ficam sem o
+        // segundo operando (medido no isolado de 2026-10-29: o modelo encadeou
+        // `|> List.append` tres vezes e repetiu a linha).
+        if (code == "FS0193")
+            return "CERTO: `@` e `List.append` exigem os DOIS operandos:\n"
+                 + "let tudo = a @ b\n"
+                 + "let tudo2 = List.append a b\n"
+                 + "let tudo3 = x |> List.append ys";
+
         // FS0058 (offside): `let` na propria linha do `else` deixa o corpo fora da
         // coluna permitida. Forma estrutural: auxiliar no nivel do modulo, recebendo
         // por parametro o que ele usa de fora; no ramo, so' a chamada.
@@ -204,7 +213,11 @@ public static class FsSyntaxRepair
     /// <returns>Ex.: <c>FS0003</c>.</returns>
     static string FirstCode(string compilerError)
     {
+        // Erro primeiro; warning so' quando ele e' o unico diagnostico com codigo
+        // (medido em 2026-10-29: FS0193 saiu como warning e o reparo nunca disparava).
         var m = Regex.Match(compilerError, @"error (FS\d{4})");
+        if (m.Success) return m.Groups[1].Value;
+        m = Regex.Match(compilerError, @"warning (FS\d{4})");
         return m.Success ? m.Groups[1].Value : "";
     }
 

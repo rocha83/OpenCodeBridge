@@ -757,6 +757,21 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // 6a amostra do F# (2026-10-29): `|> List.append` sem o segundo operando
+    // (FS0193, "missing arguments") repetido em 4 builds sem dica.
+    public static Task FsRepairPartialOperator()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let rec hanoi n a b c =\n    if n = 1 then [ a, b ]\n    else hanoi (n - 1) a c b |> List.append\n",
+            "warning FS0193: This expression is a function value, i.e. is missing arguments. Its type is (^a * ^b) list -> (^a * ^b) list.");
+        TestContext.Check(p.Contains("a @ b") && p.Contains("List.append a b"),
+            "FS0193 -> operador exige os dois operandos (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains("x |> List.append ys"),
+            "FS0193 -> no pipe o segundo operando vem explicito");
+        TestContext.Check(!p.Contains("|> List.append\n"), "a dica nao ecoa o pipe sem o segundo operando");
+        return Task.CompletedTask;
+    }
+
     // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
 
     public static Task AntiRepeatArgsWindowIsIndependent()

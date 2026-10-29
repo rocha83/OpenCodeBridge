@@ -201,6 +201,7 @@ internal static class Program
         TestContext.Run("U-fs-repair-body-shape", UnitToolBreakerTests.FsRepairFunctionBodyShape);
         TestContext.Run("U-fs-repair-call-parens", UnitToolBreakerTests.FsRepairCallArgumentParens);
         TestContext.Run("U-fs-repair-type-annotation", UnitToolBreakerTests.FsRepairInferredTypeAnnotation);
+        TestContext.Run("U-fs-repair-partial-operator", UnitToolBreakerTests.FsRepairPartialOperator);
         TestContext.Run("U-fs-repair-list-literal-arrow", UnitToolBreakerTests.FsRepairListLiteralArrow);
         TestContext.Run("U-antirepeat-args-window", UnitToolBreakerTests.AntiRepeatArgsWindowIsIndependent);
         TestContext.Run("U-toolcall-salvage-notice", UnitToolBreakerTests.SalvageNoticeIsRecognizable);

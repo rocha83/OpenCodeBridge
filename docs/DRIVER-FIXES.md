@@ -708,3 +708,27 @@ com o caso compilado no `scripts/diag/fs-repair-probe.fsx` e o pin
 
 **Prova.** `units` 128 PASS / 0 FAIL; probe OK na linha "tipo do parametro
 anotado no lambda (FS0072)". Commit `0c750ff`.
+
+## 28. O exemplo CERTO da tabela vazou fora de contexto: `[s->d]` (2026-10-29)
+
+**Sintoma.** 5ª amostra do `E-mission-algo-fs`: o modelo escreveu a lista literal
+`[s->d]` querendo a tupla `(s, d)` e ficou 30 turnos sem receber dica
+(`FS0010: Unexpected symbol '->' in expression. Expected ']'`), porque nenhuma
+regra casava essa mensagem.
+
+**Causa.** Duas, e a segunda é a lição: (a) lacuna de ensino em `FS0010` para
+`->` fora de comprehension; (b) **o exemplo `[| for i in 1 .. 3 -> i * i |]` da
+tabela foi copiado como operador de lista**. A regra "a dica ensina a forma certa"
+não basta: um exemplo certo, **fora de contexto**, também é copiável e vira erro.
+
+**Correção.** Regra `FS0010` + `Unexpected symbol '->'` ensina as duas formas
+separadas — lista de elementos `[ (1, 2); (1, 3) ]` e comprehension
+`[ for i in 1 .. 3 -> i * i ]` — e só dispara quando o fonte **não** tem
+comprehension (`[ ... for ...`), porque com `for` no bracket o caso já tem dica
+própria (`do` → `yield`, `|` → `->`, `step` → passo). A primeira versão desta
+regra roubava o tratamento de comprehension e o pin `U-fs-repair-comprehension`
+pegou antes de ir para a bancada.
+
+**Prova.** `units` 129 PASS / 0 FAIL; pin novo `U-fs-repair-list-literal-arrow`
+com 4 checagens, inclusive "com comprehension no fonte a dica continua sendo a da
+comprehension". Commit `80264d5`.

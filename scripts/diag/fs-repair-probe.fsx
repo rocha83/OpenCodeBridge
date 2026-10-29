@@ -91,5 +91,8 @@ let juntos = if true then [| (1, 2) |] else Array.append [| (1, 2) |] [| (1, 3) 
 check "ramos do if com o mesmo tipo: array junta com Array.append (FS0001)" (Array.length juntos = 1)
 let pares movs = List.map (fun (a: int, b: int) -> sprintf "%d->%d" a b) movs
 check "tipo do parametro anotado no lambda (FS0072)" (pares [ (1, 2); (1, 3) ] = [ "1->2"; "1->3" ])
+let tudo = [ (1, 2) ] @ [ (2, 3) ]
+let tudo2 = [ (1, 2) ] |> List.append [ (2, 3) ]
+check "operador @ e List.append com os dois operandos (FS0193)" (List.sort tudo = List.sort tudo2 && List.length tudo = 2)
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."

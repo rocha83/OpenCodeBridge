@@ -80,6 +80,7 @@ public static class HarnessTails
         "FS0603 array -> a comprehension de array envolve TUDO entre `[|` e `|]`: `[| for i in 1 .. 3 -> i * i |]`; lista de elementos leva `;` e tupla entre parenteses: `[ (1, 2); (1, 3) ]`. " +
         "FS0597 argumento -> quando o argumento e' chamada, pipe ou composicao, ele vai entre parenteses: `printfn \"%s\" (String.concat \",\" movs)`. " +
         "FS0072 tipo -> quando o tipo do parametro nao sai sozinho, anote no lambda: `List.map (fun (a: int, b: int) -> sprintf \"%d->%d\" a b) movs` (ou use `fst`/`snd`). " +
+        "FS0193 funcao -> `@` e `List.append` exigem os DOIS operandos: `a @ b` ou `List.append a b` (no pipe, o segundo vem explicito: `x |> List.append ys`). " +
         "FS0020 resultado descartado -> `|> ignore` ou `printfn \"%d\" v`. " +
         "FS3563 identificador invalido -> crase dupla no nome (``mdc``). " +
         "SE O BUILD FALHAR: leia a linha `error`, aplique a forma da tabela e edite SO' o trecho; nao reescreva o arquivo igual.";
