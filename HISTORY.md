@@ -4664,3 +4664,10 @@ do `UnitToolBreakerTests`. O global sem sufixo continua **0.2**.
 Documentação: `docs/LAB-SETUP.md` (tabela por modelo, escala, agents e valores do
 runtime) e `docs/BENCHTESTS.md` §9. Atestação segue sendo
 `temperature_source=profile` no evento `response`.
+
+**Prova (pós-deploy, `:4124` reiniciada com `main_harness`/tails on):** quatro
+requests reais em `/v1/responses` atestam no evento `response`
+`temperature_source=profile` — `-plan` **0.3**, `-build` **0.1**, `-orch`
+**0.3**, `-moe` **0.5**. O `appsettings.json` do runtime
+(`.../bin/Release/net10.0`) confirma `plan 0.3` e `moe 0.5`; deploy levou
+bridge + Grafana no mesmo ciclo com `/api/status` e `/api/health` verdes.
