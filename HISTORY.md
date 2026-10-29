@@ -4671,3 +4671,23 @@ requests reais em `/v1/responses` atestam no evento `response`
 **0.3**, `-moe` **0.5**. O `appsettings.json` do runtime
 (`.../bin/Release/net10.0`) confirma `plan 0.3` e `moe 0.5`; deploy levou
 bridge + Grafana no mesmo ciclo com `/api/status` e `/api/health` verdes.
+
+## Reset da sonda: por bateria; contadores seguem por step (2026-10-29)
+
+O reset que substituiu o restart estava com granularidade errada: o driver
+mandava `probe=1` em **todo** `step_start`, então a curva de throughput/VRAM do
+painel mostrava só o step corrente e a dos anteriores desaparecia (as amostras
+não são persistidas em arquivo; o ring da bridge é a única fonte).
+
+Corrigido sem mudar o servidor (o parâmetro já existia):
+
+- `TestCircuitDriver.PostDiagReset(bool clearProbe = false)` — no `step_start`
+  vai `?files=1` (contadores + arquivos, **sem** probe);
+- `WarTemplate.ResetDiagnosticsOnce` — uma vez por bateria (`RunAll`, antes do
+  laço de níveis) e no run de nível único: `?probe=1&files=1`;
+- `TestContext.ResetDiagnostics` (run isolado) continua com `probe=1`: o `E-*`
+  isolado é a própria rodada.
+
+Regra registrada em `AGENTS.md` e `docs/BENCHTESTS.md` §9.1. Aceite: após dois
+steps, `GET /api/test/probe?limit=1000` traz **≥2 valores distintos de `step`**
+e `/api/metrics` continua voltando a zero em cada `step_start`.

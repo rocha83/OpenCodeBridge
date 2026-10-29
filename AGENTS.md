@@ -242,8 +242,14 @@ conveniência manual, nunca fonte de verdade.
 - Contadores de `/api/metrics`, `ProbeSamples` e arquivos contados são por vida
   do processo. Zerar número **não** exige restart: `POST /api/diag/reset`
   (Bearer ApiKey; `?probe=1&files=1` inclui sonda e arquivos) zera tudo e
-  devolve `{ok:true,event:"diag-reset"}`. O driver chama no `step_start` (painel
-  por step) e o runner isolado antes de cada `E-*`.
+  devolve `{ok:true,event:"diag-reset"}`.
+- **Granularidade**: na WAR o driver zera **contadores/arquivos por step**
+  (`?files=1`, no `step_start`) e **sonda uma vez por bateria**
+  (`WarTemplate.ResetDiagnosticsOnce`, com `?probe=1&files=1`). Assim o painel
+  de throughput/VRAM mostra a rodada inteira (o campo `step` da amostra
+  distingue cada passo) em vez de apagar a curva a cada `step_start`. O run
+  isolado (`TestContext.ResetDiagnostics`) é a própria rodada: limpa sonda e
+  contadores.
 - Toda bateria E2E, em ambos os modos (`bridge` e `opencode`), **ainda** começa
   com o restart da bridge alvo: `sudo systemctl restart bridge-gpu` (`:4124`),
   `bridge-gpu2` (`:4125`) ou `bridge-cpu-forced` (`:4126`). Ali o binário em uso

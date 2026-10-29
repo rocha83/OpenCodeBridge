@@ -411,12 +411,14 @@ internal sealed class TestCircuitDriver : IDisposable
     }
 
     // Reset dos diagnosticos da bridge alvo no inicio de cada step, pela propria
-    // bridge (POST /api/diag/reset) e sem restart: o painel mede o step atual
-    // em vez do acumulado da vida do processo. A URL sai do proprio endpoint de
-    // eventos do painel (WAR_EVENT_URL -> mesma origem /api/diag/reset), sem
-    // variavel de ambiente nova. Best-effort: sem painel, o circuito segue.
+    // bridge (POST /api/diag/reset) e sem restart. Contadores e arquivos sao por
+    // step (o painel mede o step atual); a SONDA nao entra aqui — ela e por
+    // bateria (ResetDiagnosticsOnce), senao a curva dos steps anteriores some a
+    // cada step_start. A URL sai do proprio endpoint de eventos do painel
+    // (WAR_EVENT_URL -> mesma origem /api/diag/reset), sem variavel nova.
+    // Best-effort: sem painel, o circuito segue.
     static readonly System.Net.Http.HttpClient DiagHttp = new() { Timeout = TimeSpan.FromSeconds(5) };
-    static void PostDiagReset()
+    static void PostDiagReset(bool clearProbe = false)
     {
         try
         {
@@ -425,7 +427,7 @@ internal sealed class TestCircuitDriver : IDisposable
             var reset = new UriBuilder(u.Scheme, u.Host, u.Port)
             {
                 Path = "/api/diag/reset",
-                Query = "probe=1&files=1"
+                Query = clearProbe ? "probe=1&files=1" : "files=1"
             }.Uri;
             using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, reset);
             // HttpListener responde 411 sem Content-Length: corpo vazio explicito.
@@ -568,10 +570,10 @@ internal sealed class TestCircuitDriver : IDisposable
         CircuitStepResult result = default!;
         long totalSeconds = 0;
 
-        // Painel por step: zera os diagnosticos da bridge alvo antes de rodar o
-        // step. E' POST /api/diag/reset (sem restart): contador e amostras sao
-        // por vida do processo, e derrubar a bridge para zerar numero custa
-        // keep-alive e mascara o binario em uso.
+        // Painel por step: zera contadores e arquivos da bridge alvo antes de
+        // rodar o step. A sonda NAO e zerada aqui (ver ResetDiagnosticsOnce na
+        // WarTemplate: um reset por bateria), senao a curva dos steps anteriores
+        // desaparece a cada step_start.
         PostDiagReset();
 
         using var probe = StepProbe.Start(

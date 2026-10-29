@@ -563,3 +563,17 @@ no evento `response` do log da bridge.
 Efeito no bench: cenário com tools roda a 0.1 (menos variação de amostragem);
 texto puro (`-plan`, sem tools) roda a 0.3, que é onde a variação de elisão
 apareceu no `E-ent-crud-saleinvoice`.
+
+### 9.1 Granularidade do reset de diagnóstico (2026-10-29)
+
+Duas granularidades, de propósito:
+
+| dado | quando zera | por quê |
+|---|---|---|
+| contadores de `/api/metrics`, `files_generated` | **por step** (`step_start`, `?files=1`) | o painel de números mede o step atual, não a vida da bridge |
+| amostras da sonda (`ProbeSamples`) | **por bateria** (`WarTemplate.ResetDiagnosticsOnce`, `?probe=1`) | a curva de throughput/VRAM/tools precisa cobrir L1→L2→L3; o campo `step` da amostra já separa os passos |
+
+Antes disso o driver mandava `probe=1` em cada `step_start` e a curva dos steps
+anteriores desaparecia. O run isolado (`E-*`) continua limpando tudo: ele é a
+própria rodada. Prova de aceite: `GET /api/test/probe?limit=1000` após dois
+steps deve trazer **≥2 valores distintos de `step`** na mesma resposta.

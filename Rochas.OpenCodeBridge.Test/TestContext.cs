@@ -146,9 +146,10 @@ internal static class TestContext
 
     /// <summary>
     /// Zera os diagnosticos da bridge alvo (contadores de /api/metrics, amostras
-    /// da sonda e arquivos contados) por HTTP, sem restart. O numero do painel
-    /// passa a refletir o run atual; o restart so se justifica para trocar
-    /// binario (deploy), nao para zerar contador.
+    /// da sonda e arquivos contados) por HTTP, sem restart. Usado no run isolado,
+    /// que e a propria rodada: nasce com sonda e contadores limpos. Na WAR o
+    /// reset por step limpa so contadores/arquivos — a sonda e zerada uma vez
+    /// por bateria (<c>WarTemplate.ResetDiagnosticsOnce</c>).
     /// </summary>
     public static void ResetDiagnostics()
     {
