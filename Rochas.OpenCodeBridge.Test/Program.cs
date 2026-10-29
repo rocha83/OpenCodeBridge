@@ -113,6 +113,7 @@ internal static class Program
         TestContext.Run("U-tool-loop-context", UnitToolLoopContextTests.Run);
         TestContext.Run("U-status", UnitStatusTests.Status);
         TestContext.Run("U-metrics", UnitStatusTests.Metrics);
+        TestContext.Run("U-diag-reset", UnitStatusTests.DiagReset);
         TestContext.Run("U-models-passthrough", UnitStatusTests.ModelsPassthrough);
         TestContext.Run("U-translate-tools", UnitTranslateTests.TranslateTools);
         TestContext.Run("U-translate-without-stop", UnitTranslateTests.TranslateWithoutStop);

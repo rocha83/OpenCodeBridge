@@ -20,6 +20,28 @@ internal static class UnitStatusTests
         TestContext.Check(m["tps_output"] is not null && m["tps_total"] is not null, "tps presentes");
     }
 
+    /// <summary>
+    /// Reset dos diagnosticos (POST /api/diag/reset): zera os contadores
+    /// cumulativos sem reiniciar a bridge — e' o que permite o painel medir o
+    /// step atual. Depois do reset, model/tokens voltam a zero e o HTTP segue.
+    /// </summary>
+    public static async Task DiagReset()
+    {
+        using var post = new HttpRequestMessage(HttpMethod.Post,
+            TestContext.Bridge + "/api/diag/reset?probe=1&files=1");
+        using var res = await TestContext.Http.SendAsync(post);
+        string body = await res.Content.ReadAsStringAsync();
+        TestContext.Check(res.IsSuccessStatusCode, $"reset responde {(int)res.StatusCode}: {body.Trim()}");
+        var ack = JsonNode.Parse(body)?.AsObject();
+        TestContext.Check(ack?["ok"]?.GetValue<bool>() == true, "reset devolve ok");
+        TestContext.Check(ack?["event"]?.GetValue<string>() == "diag-reset", "reset devolve evento diag-reset");
+        var m = await TestContext.GetObj(TestContext.Bridge + "/api/metrics");
+        long modelReqs = m["model_requests"]?.GetValue<long>() ?? -1;
+        long tokens = m["input_tokens"]?.GetValue<long>() ?? -1;
+        TestContext.Check(modelReqs == 0, $"model_requests zerado depois do reset, veio {modelReqs}");
+        TestContext.Check(tokens == 0, $"input_tokens zerado depois do reset, veio {tokens}");
+    }
+
     public static async Task ModelsPassthrough()
     {
         var models = await TestContext.GetObj(TestContext.Bridge + "/v1/models");
