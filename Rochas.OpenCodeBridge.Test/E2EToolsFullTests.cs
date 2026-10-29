@@ -36,9 +36,11 @@ internal static class E2EToolsFullTests
             "2. Nessa mesma subpasta, inicialize um repositorio git, adicione os arquivos e faca o primeiro commit " +
             "com a mensagem 'data de hoje'; confirme com git log. " +
             "3. Busque na internet o clima de Sao Paulo de hoje e use o texto real retornado; escreva no MESMO arquivo, " +
-            "na linha de baixo da data, \"ARQUIVO EDITADO - Clima: \" seguido desse clima — o arquivo termina com a data e a linha do clima. " +
+            "na linha de baixo da data, \"ARQUIVO EDITADO - Clima: \" seguido desse clima — o arquivo fica com a data e a linha do clima " +
+            "e voce confere isso lendo o arquivo. " +
             "4. Faca o segundo commit com a mensagem 'Added sao paulo weather', confirme os 2 commits com git log e salve essa " +
-            "saida num arquivo de historico dentro da pasta do repositorio; o arquivo de historico deve existir antes de terminar. " +
+            "saida num arquivo de historico dentro da pasta do repositorio; confira a lista dos arquivos que ficaram nessa pasta " +
+            "e o arquivo de historico deve aparecer nela antes de terminar. " +
             "Execute uma tool por vez, de forma sequencial e sem chamadas em paralelo, conforme as instrucoes previas da sessao (main harness e tails).";
         // A retentativa recebe a FALHA do aceite (contrato observavel), nunca a
         // mecanica do teste; a 1a tentativa e o enunciado puro.
@@ -122,7 +124,7 @@ internal static class E2EToolsFullTests
                 "[toolsfull:agent] ciclo git executado");
             TestContext.Check(used("glob(") || used("grep(")
                 || calls.Any(c => c.StartsWith("shell(") && (c.Contains("ls") || c.Contains("find") || c.Contains("grep"))),
-                "[toolsfull:agent] listou/buscou arquivos");
+                $"[toolsfull:agent] listou/buscou arquivos (calls={string.Join(";", calls)})");
             bool web = used("webfetch(") || used("fetch(")
                 || calls.Any(c => c.StartsWith("shell(") && (c.Contains("curl") || c.Contains("wget") || c.Contains("http")));
             TestContext.Check(web, $"[toolsfull:agent] busca web executada (calls={string.Join(";", calls)})");
