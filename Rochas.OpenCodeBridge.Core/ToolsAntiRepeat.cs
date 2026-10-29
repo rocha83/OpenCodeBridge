@@ -383,3 +383,52 @@ public sealed class RepeatedCall : ToolsAntiRepeat
     /// <returns>Conjunto de assinaturas loopadas.</returns>
     public HashSet<string> Find(JsonNode? messages) => FindRepeatedCalls(messages, MinCount);
 }
+
+/// <summary>
+/// Alvos de `write` que ja apareceram no historico. O modelo que reescreve o
+/// MESMO arquivo varias vezes (variando o conteudo) fura o anti-repeat de
+/// assinatura exata; o path e' o sinal estavel do loop de reescrita.
+/// </summary>
+public sealed class RepeatedWritePath : ToolsAntiRepeat
+{
+    /// <summary>Ocorrencias do mesmo path que caracterizam reescrita.</summary>
+    public int MinCount { get; }
+
+    /// <summary>Cria o detector por path.</summary>
+    /// <param name="minCount">Ocorrencias no historico (>= 1).</param>
+    public RepeatedWritePath(int minCount) => MinCount = Math.Max(1, minCount);
+
+    /// <inheritdoc />
+    public override string Scope => "write-path";
+
+    /// <summary>Paths de `write` repetidos no historico.</summary>
+    /// <param name="messages">Mensagens no formato chat.</param>
+    /// <returns>Conjunto de paths ja escritos.</returns>
+    public HashSet<string> Find(JsonNode? messages)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (messages is JsonArray arr)
+            foreach (var m in arr)
+            {
+                if (m is not JsonObject mo || mo["tool_calls"] is not JsonArray calls) continue;
+                foreach (var c in calls)
+                {
+                    if (c is not JsonObject co || co["function"] is not JsonObject fn) continue;
+                    // So `write` (criar/sobrescrever) — `edit` e' correcao pontual legitima.
+                    if ((fn["name"]?.GetValue<string>() ?? "").Trim().ToLowerInvariant() is not ("write" or "write_file")) continue;
+                    string path = PathOf(fn["arguments"]?.GetValue<string>() ?? "");
+                    if (path.Length == 0) continue;
+                    counts[path] = counts.TryGetValue(path, out int n) ? n + 1 : 1;
+                }
+            }
+        return new HashSet<string>(counts.Where(kv => kv.Value >= MinCount).Select(kv => kv.Key),
+                                   StringComparer.Ordinal);
+    }
+
+    /// <summary>Extrai `path` dos argumentos (JSON) sem lancar.</summary>
+    static string PathOf(string args)
+    {
+        try { return JsonNode.Parse(args)?["path"]?.GetValue<string>() ?? ""; }
+        catch { return ""; }
+    }
+}

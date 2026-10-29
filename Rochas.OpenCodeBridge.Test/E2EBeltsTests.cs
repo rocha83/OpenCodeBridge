@@ -321,7 +321,7 @@ internal static class E2EBeltsTests
                             // 500 do llama no parse da tool call (JSON invalido/truncado)
                             // nao pode derrubar a belt inteira: devolve o erro e tenta de novo.
                             Log($"  [belt:{key}] post scripter falhou: {ex.Message.Split('\n')[0]}");
-                            sh.Add(new JsonObject { ["role"]="user", ["content"]="O turno anterior falhou no parser de tool call (JSON invalido/truncado). Reenvie com UM write de JSON valido; script com no maximo 60 linhas, sem C#/SQL solto e sem quebrar strings." });
+                            global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Apply(sh);
                             continue;
                         }
                         var msg = r["choices"]?[0]?["message"]?.AsObject();
@@ -423,7 +423,7 @@ internal static class E2EBeltsTests
                             catch (Exception ex)
                             {
                                 Log($"  [belt:{key}] post scripter (gate) falhou: {ex.Message.Split('\n')[0]}");
-                                sh.Add(new JsonObject { ["role"]="user", ["content"]="O turno anterior falhou no parser de tool call (JSON invalido/truncado). Reenvie com UM write de JSON valido; script com no maximo 60 linhas, sem C#/SQL solto e sem quebrar strings." });
+                                global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Apply(sh);
                                 continue;
                             }
                             var msg = r["choices"]?[0]?["message"]?.AsObject();

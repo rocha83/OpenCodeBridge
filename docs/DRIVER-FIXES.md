@@ -230,3 +230,70 @@ como já acontecia antes da 1ª call. Sem mudar enunciado nem afrouxar assertiva
 **Prova** — `E-ent-redis` saiu de `len=0` para gravar o repositório completo
 (4386 chars, cache-aside + fallback + lock) em `logs/levels/L1-20261028-175935-l1`;
 units `U-breaker-*` 8/8 PASS; build 0 erros. Commit `0d291fa`.
+
+---
+
+## 13. F# do mission-tools: a própria dica induzia o erro (FS0751/FS0001) e o retry lia saída como "erro"
+
+**Sintoma** — `E-mission-tools` falhava no F# com `FS0751` (sintaxe `[1; 3 .. n-1]`) e
+`FS0001` (esperava `int`, veio `float` em `simpson ... 100.0`); o retry "repassava o
+erro real" mas mandava `3.998355` (a **saída** da tentativa anterior), confundindo o
+modelo; e a atestação do system nunca aparecia no log (rodava depois dos asserts,
+abortada pelo fail-fast).
+
+**Causa** — (a) o texto do `FsMini` listava o literal inválido `[1; 3 .. n-1]` como
+exemplo do que **não** existe, e o modelo **copiou** o literal; (b) a dica "range com
+passo" empurrava `[1 .. 2 .. n-1]` (int), forçando `n : int`, enquanto a chamada
+passava `100.0` (float) → `FS0001`; (c) `lastErr.Split('\n').FirstOrDefault(l => l.Contains("error"))`
+caía no primeiro item da saída (`3.998355`) quando não havia erro de compilação;
+(d) a atestação (`GET /api/test/last-system`) ficava depois dos `Check` semânticos.
+
+**Correção** — `HarnessTails.FsMini` agora traz a regra **abstrata** `TIPOS NUMERICOS`
+(tipo por papel: contagem/índice/passo/tamanho = int; medida/resultado = float;
+conversão só na borda) e **não** repete o literal inválido; o passo é sempre
+`[inicio .. passo .. fim]` (`;` nunca é passo). `E2EMissionTests` passou a
+distinguir *erro de build* (repassa a linha `error ...`) de *saída errada* (repassa a
+saída + metas + fórmula), com 3 tentativas. A atestação roda **antes** dos asserts
+semânticos e a bridge registra o system **final** (`RecordSystemSent` →
+`GET /api/test/last-system`: `fsmini`, `tipos_regra`, `tail_scope`, `harness_tails`).
+
+**Prova** — rodada `logs/levels/mission-tools-20261028-223657.console.log`: F#
+PASS com `[for i in 1 .. n-1 do if i % 2 <> 0 then f (a + float i * h) else 0.0]`
+e atestação `{"fsmini":true,"tipos_regra":true,"tail_scope":"all","harness_tails":true,"chars":7790}`.
+Falha residual movida para o passo git/zip (assertiva exigia `.git` na raiz; o modelo
+versionou `mfs/`), corrigida no teste (aceita raiz ou pasta do projeto).
+
+## 14. 500 `Failed to parse tool call arguments` em loop: a bridge historizava args truncado
+
+**Sintoma** — `E-mission-tools` estourava em `POST /v1/chat/completions -> 500
+Failed to parse tool call arguments as JSON: ... column 3110`, sempre **no mesmo
+byte**, 12× seguidas. Cada retry do teste reenviava o mesmo histórico e recebia o
+mesmo 500; o turno nunca avançava. Não era amostragem aleatória: era determinístico.
+
+**Causa** — o salvage anti-repeat montava a tool call com `arguments` como veio. Quando
+o `abort` cortava a geração no meio do JSON, a bridge **emitia e gravava no histórico**
+uma assistant com `arguments` truncado. O llama, ao reler esse histórico, responde 500
+no parse do turno anterior — e como o teste reenviava o mesmo histórico, o erro se
+repetia para sempre. `HISTORY.md:3761` já registrava que o parse quebrado é artefato de
+**geração**; faltava a bridge não propagar o artefato.
+
+**Correção** — mecânica única no Core, `ToolCallRepair` (`ArgsOk` / `HasBrokenArgs` /
+`DropBrokenAssistant` / `Apply` + `Nudge`): (a) no salvage, só entra a call cujo
+`arguments` **parseia**; as truncadas acumulam o nome e o corpo recebe o nudge de
+reparo com `finish_reason="stop"` (evento `salvage-args-rejected`); (b) no consumidor,
+`ToolCallRepair.Apply(history)` **poda** a assistant quebrada antes de anexar o nudge —
+sem isso o 500 volta igual. `E2EMissionTests` (C# e F#), `MissionAlgo` e
+`E2EBeltsTests` (scripter e gate) passaram a chamar o mesmo helper em vez de repetir o
+texto. FsMini foi reorganizado como tabela **INCONSISTENCIAS PREVISTAS EM F#**
+(código do erro → sintaxe correta), preservando o anchor `TIPOS NUMERICOS` que a
+atestação lê. `ProbeMinChars` 1024 → 256 e o rótulo `convert` → `probe`. Anti-repeat
+ganhou `RepeatedWritePath` (nudge `anti-repeat-write`, não bloqueia). `RoleProfiles`
+default build 0.2 → 0.1 (drift vs `appsettings.json`) e `RecordSystemSent` passou a
+registrar `temperature` no system efetivamente enviado.
+
+**Prova** — `logs/levels/mission-tools-20261028-233914.console.log`:
+`PASS E-mission-tools (171.0s)` / `PASS=1 FAIL=0 SKIP=0`, com **0** ocorrências de
+`HTTP falhou` em `/tmp/e2e-mission/_mission.log` (antes: 12) e C# fechando em 3 turnos
+(`read`, `write`, `shell`). Atestação do system enviado:
+`{"role":"Build","fsmini":true,"tipos_regra":true,"tail_scope":"all","harness_tails":true,"temperature":0.1}`
+— temperatura vinda do perfil do role, não do cliente.

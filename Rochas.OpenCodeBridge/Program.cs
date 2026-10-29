@@ -544,6 +544,32 @@ internal static partial class Program
     // memoria para o painel ler throughput/VRAM/tools sem depender de arquivo.
     static readonly ConcurrentQueue<JsonObject> ProbeSamples = new();
     const int ProbeCap = 4096;
+    // System efetivamente enviado ao upstream (harness + cliente + tails).
+    // Atestacao honesta: o FsMini do cliente chegou ao modelo? Lido por
+    // GET /api/test/last-system. Nao inventa: e' o texto final do request.
+    static JsonObject? LastSystemSent;
+    static void RecordSystemSent(string path, string? role, string model, string systemText,
+        double? temperature = null, bool hasProfile = false)
+    {
+        LastSystemSent = new JsonObject
+        {
+            ["event"] = "system-sent",
+            ["path"] = path,
+            ["role"] = role ?? "",
+            ["model"] = model ?? "",
+            ["chars"] = systemText.Length,
+            ["fsmini"] = systemText.Contains("F# MINI", StringComparison.Ordinal),
+            ["tipos_regra"] = systemText.Contains("TIPOS NUMERICOS", StringComparison.Ordinal),
+            ["env"] = systemText.Contains("<env>", StringComparison.Ordinal),
+            ["tail_scope"] = TailScope,
+            ["harness_tails"] = TailsEnabled,
+            // Temperatura que vai no corpo do upstream + se o model id carrega role
+            // (has_profile=true + valor == perfil do role = prova de "rodou a 0.1").
+            ["temperature"] = temperature.HasValue ? JsonValue.Create(temperature.Value) : null,
+            ["has_profile"] = hasProfile
+        };
+        if (Diagnostic) Log(LastSystemSent.DeepClone().AsObject());
+    }
     // Sem amostra da sonda nesse intervalo = nenhum run ativo: paineis live
     // devem devolver vazio (Grafana NO DATA), nao o ultimo dado parado.
     const int LivePanelMaxAgeSec = 120;
@@ -1490,6 +1516,14 @@ internal static partial class Program
                 return;
             }
 
+            // Atestacao honesta: ultimo system enviado ao upstream (FsMini chegou?).
+            if (path == "/api/test/last-system")
+            {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
+                WriteJson(ctx, 200, LastSystemSent?.DeepClone().AsObject() ?? new JsonObject());
+                return;
+            }
+
             // Steps concluidos: o driver publica step_end; o painel lista os
             // passados (veredito + tempo) e mantem o atual no enunciado.
             if (path == "/api/test/step" || path == "/api/test/steps")
@@ -1976,6 +2010,11 @@ WriteJson(ctx, 200, new JsonObject
                     { mo["content"] = WithFormula(mtext, fmodel, fHasTools); break; }
                 }
                 outBody = node.ToJsonString(SerOpts);
+                string sysSentChat = fm.OfType<JsonObject>()
+                    .FirstOrDefault(x => x["role"]?.GetValue<string>() is "system" or "developer")
+                    ?["content"]?.GetValue<string>() ?? "";
+                if (sysSentChat.Length > 0) RecordSystemSent("chat", reqRole, fmodel, sysSentChat,
+                    node["temperature"]?.GetValue<double>(), TryProfile(fmodel, out _, out _));
             }
             // QwenStandard: tools OpenAI -> Alibaba + re-serializa p/ upstream.
             // Sem tool_choice explícito: força "required" (VL só emite calls assim).
@@ -2459,6 +2498,11 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 // modelo rodava sem DATA/GIT/EDIT/GLOB.
                 messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = WithFormula("", requestedModel, reqHasTools) });
         }
+        string sysSentR = messages.OfType<JsonObject>()
+            .FirstOrDefault(x => x["role"]?.GetValue<string>() is "system" or "developer")
+            ?["content"]?.GetValue<string>() ?? "";
+        if (sysSentR.Length > 0) RecordSystemSent("responses", RoleOfModel(requestedModel), requestedModel, sysSentR,
+            temperature, hasProfile);
         if (Diagnostic)
             Log(new JsonObject
             {
@@ -3481,14 +3525,17 @@ var shape = new StringBuilder();
                 try { cts.Cancel(); } catch { }
             }
 
-            // Salvage: entra toda call que tenha nome. Arguments truncado e
-            // mantido como veio (o llama nativo tambem devolve truncado quando
-            // bate max_tokens; o runner salva o que fecha por regex).
+            // Salvage: entra toda call que tenha nome E args JSON parseavel. Args
+            // truncado (o abort corta no meio) NAO pode virar tool call: o cliente
+            // reenvia essa assistant e o llama responde 500 no parse, repetindo para
+            // sempre. Nesse caso o texto avisa e pede o reenvio correto.
             var keep = new JsonArray();
+            var brokenArgs = new List<string>();
             foreach (var kv in calls)
             {
                 if (string.IsNullOrEmpty(kv.Value.Name)) continue;
                 string a = kv.Value.Args.ToString();
+                if (!ToolCallRepair.ArgsOk(a)) { brokenArgs.Add(kv.Value.Name); continue; }
                 keep.Add(new JsonObject
                 {
                     ["id"] = string.IsNullOrEmpty(kv.Value.Id) ? "call_" + kv.Key : kv.Value.Id,
@@ -3497,6 +3544,12 @@ var shape = new StringBuilder();
                 });
             }
             string cbody = content.ToString();
+            if (brokenArgs.Count > 0)
+            {
+                cbody = (cbody.Length > 0 ? cbody + "\n\n" : "")
+                        + "BRIDGE (" + string.Join(", ", brokenArgs) + "): " + ToolCallRepair.Nudge;
+                Log(new JsonObject { ["event"] = "salvage-args-rejected", ["tools"] = string.Join(",", brokenArgs) });
+            }
             // Sem nada recebido (stream vazio) e sem trip: cai no caminho normal.
             // Qualquer delta vira resposta — nunca re-gerar (dobraria o custo).
             if (!gotAnything) { resp.Dispose(); return false; }
@@ -4144,7 +4197,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                     if (func?["arguments"]?.GetValue<string>() is string argsChunk)
                     {
                         acc.Args.Append(argsChunk);
-                        if (AntiRepeat && acc.Args.Length >= 1024 && !argsProbeLogged.Contains(index))
+                        if (AntiRepeat && acc.Args.Length >= ToolArgsAntiRepeatReply.ProbeMinChars && !argsProbeLogged.Contains(index))
                         {
                             string argsText = acc.Args.ToString();
                             if (new ToolArgsAntiRepeatReply(AntiRepeatWindow).IsRepeat(argsText))
@@ -4657,6 +4710,10 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         // AntiRepeat cross-turn: a chamada ja repetiu no historico, entao e loop.
         var loopedSigs = AntiRepeat ? new RepeatedCall(2).Find(historyMessages)
                                      : new HashSet<string>(StringComparer.Ordinal);
+        // Loop de REESCRITA: mesmo path de `write` repetido no historico. O modelo
+        // varia o conteudo, entao a assinatura exata nao casa; o path e' estavel.
+        var writtenPaths = AntiRepeat ? new RepeatedWritePath(1).Find(historyMessages)
+                                      : new HashSet<string>(StringComparer.Ordinal);
         if (message["tool_calls"] is JsonArray callArray)
         {
             foreach (var callNode in callArray)
@@ -4691,6 +4748,20 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                     if (blockedNotice.Length == 0)
                         blockedNotice = "\n\n" + string.Format(ToolBlockNotice, nativeName, RoleOfModel(model)) + "\n\n";
                     continue;
+                }
+                // Reescrita do MESMO arquivo: conteudo varia, mas o alvo e' o mesmo.
+                // Cutuca (nao bloqueia) para o modelo trocar de abordagem.
+                if (AntiRepeat && nativeName.Equals("write", StringComparison.OrdinalIgnoreCase)
+                    && blockedNotice.Length == 0)
+                {
+                    string wpath = "";
+                    try { wpath = JsonNode.Parse(JsonToString(funcObj["arguments"]))?["path"]?.GetValue<string>() ?? ""; }
+                    catch { }
+                    if (wpath.Length > 0 && writtenPaths.Contains(wpath))
+                    {
+                        Log(new JsonObject { ["event"] = "anti-repeat-write", ["tool"] = nativeName, ["path"] = wpath });
+                        blockedNotice = "\n\n" + AntiRepeatNotice + "\n\n";
+                    }
                 }
                 // AntiRepeat cross-turn: nao emitimos a chamada que ja repetiu; o modelo
                 // so reenfileiraria o mesmo comando e o turno travaria aqui.
@@ -4752,9 +4823,9 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         // nao-stream: o texto do args pode crescer em loop sem tocar thinking/content.
         if (AntiRepeat)
             foreach (var (_, probeName, probeArgs) in toolCalls)
-                if (probeArgs.Length >= 1024 && new ToolArgsAntiRepeatReply(AntiRepeatWindow).IsRepeat(probeArgs))
+                if (probeArgs.Length >= ToolArgsAntiRepeatReply.ProbeMinChars && new ToolArgsAntiRepeatReply(AntiRepeatWindow).IsRepeat(probeArgs))
                     Log(new JsonObject { ["event"] = "anti-repeat-args", ["tool"] = probeName,
-                        ["chars"] = probeArgs.Length, ["window"] = AntiRepeatWindow, ["mode"] = "convert" });
+                        ["chars"] = probeArgs.Length, ["window"] = AntiRepeatWindow, ["mode"] = "probe" });
 
         // 4.6.3) Uso de tokens: chat usa prompt/completion, Responses usa input/output
         var chatUsage = chat["usage"]?.AsObject() ?? new JsonObject();

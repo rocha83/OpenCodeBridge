@@ -112,68 +112,97 @@ internal static class E2EMissionTests
                 if (Directory.Exists(p)) { try { Directory.Delete(p, true); } catch { } }
             }
         }
-        for (int turn = 0; turn < 14; turn++)
+        int csHistoryBefore = history.Count;
+        string csRunOut = "";
+        string csLastErr = "";
+        for (int csAttempt = 1; csAttempt <= 3; csAttempt++)
         {
-            JsonObject r;
-            try
+            ResetCsScaffold();
+            if (csAttempt > 1)
             {
-                r = await Chat(bridge, model, (JsonArray)history.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
+                while (history.Count > csHistoryBefore) history.RemoveAt(history.Count - 1);
+                string errLine = ErrLine(csLastErr);
+                bool compileErr = errLine.Contains("error", StringComparison.OrdinalIgnoreCase);
+                LogT($"[C#] retry {csAttempt}: contexto C# resetado; {(compileErr ? "erro de build" : "saida errada")} repassado ({errLine})");
+                string guidance = compileErr
+                    ? $"Sem prosa: o build C# falhou: {errLine}. Corrija {ws}/mcs/Program.cs e rode `dotnet run --project {ws}/mcs/mcs.csproj`."
+                    : $"Sem prosa: a saida C# nao bateu: {errLine}. Metas: 2.000000 (Simpson de Sin em [0,pi] com n=100), 5.000000 (media) e 2.000000 (desvio populacional). Simpson: h=(b-a)/n e integral=(h/3)*(Math.Sin(a) + Math.Sin(b) + 4*impares + 2*pares), impares i=1,3,..,n-1 e pares i=2,4,..,n-2. Corrija {ws}/mcs/Program.cs e rode `dotnet run --project {ws}/mcs/mcs.csproj`.";
+                history.Add(new JsonObject { ["role"] = "user", ["content"] = guidance });
             }
-            catch (Exception ex)
+            for (int turn = 0; turn < 14; turn++)
             {
-                LogT($"[C#] T{turn} HTTP falhou: {ex.Message.Split('\n')[0]}");
-                history.Add(new JsonObject { ["role"] = "user", ["content"] = "A resposta anterior foi cortada pela bridge. Reenvie uma tool call curta: write com o arquivo completo, enxuto e sem comentarios longos." });
-                continue;
+                JsonObject r;
+                try
+                {
+                    r = await Chat(bridge, model, (JsonArray)history.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
+                }
+                catch (Exception ex)
+                {
+                    LogT($"[C#] T{turn} HTTP falhou: {ex.Message.Split('\n')[0]}");
+                    bool dropped = global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Apply(history);
+                    LogT($"[C#] T{turn} reparo: assistant quebrada podada={dropped}; nudge JSON anexado");
+                    continue;
+                }
+                var msg = r["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message");
+                var calls = msg["tool_calls"]?.AsArray();
+                if (calls is null || calls.Count == 0)
+                {
+                    final = msg["content"]?.GetValue<string>() ?? "";
+                    LogT($"[C#] T{turn} SEM CALLS: {final[..Math.Min(200, final.Length)]}");
+                    history.Add(new JsonObject { ["role"] = "assistant", ["content"] = final });
+                    if (turn >= 2) break;
+                    history.Add(new JsonObject { ["role"] = "user", ["content"] = "Sem prosa: emita a proxima tool call agora." });
+                    continue;
+                }
+                var echo = new JsonArray();
+                foreach (var tc in calls)
+                {
+                    var fn = tc?["function"]?["name"]?.GetValue<string>() ?? "";
+                    JsonObject args;
+                    try { args = JsonNode.Parse(tc?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject(); }
+                    catch { args = new JsonObject(); }
+                    string res = await ExecTool(ws, model, fn, args);
+                    LogT($"[C#] T{turn} {fn} {args.ToJsonString()[..Math.Min(160, args.ToJsonString().Length)]} -> {res[..Math.Min(180, res.Length)]}");
+                    if (fn == "write" && (args["path"]?.GetValue<string>() ?? "").EndsWith("Program.fs")) fcode = args["content"]?.GetValue<string>() ?? fcode;
+                    echo.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = tc?["id"]?.GetValue<string>() ?? "", ["content"] = res });
+                }
+                var freshCalls = new JsonArray();
+                foreach (var c in calls)
+                    freshCalls.Add(new JsonObject { ["id"] = c?["id"]?.GetValue<string>() ?? "", ["type"] = "function",
+                        ["function"] = new JsonObject { ["name"] = c?["function"]?["name"]?.GetValue<string>() ?? "",
+                            ["arguments"] = c?["function"]?["arguments"]?.GetValue<string>() ?? "{}" } });
+                history.Add(new JsonObject { ["role"] = "assistant", ["content"] = msg["content"]?.GetValue<string>() ?? "", ["tool_calls"] = freshCalls });
+                foreach (var e in echo) history.Add((JsonObject)e!.DeepClone());
+                // Sucesso atingido: para de editar (o modelo tende a quebrar o que ja funciona).
+                // Predicado estrito (2/5/2 NA ORDEM), igual ao F#: "contem 2 e 5" aceita
+                // 3,332895 / 5,000000 / 2,000000 (2 e' o desvio) e mata o turno de reparo.
+                if (echo.Any(e => ThreeFloatsOk(e?["content"]?.GetValue<string>() ?? ""))) break;
             }
-            var msg = r["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message");
-            var calls = msg["tool_calls"]?.AsArray();
-            if (calls is null || calls.Count == 0)
-            {
-                final = msg["content"]?.GetValue<string>() ?? "";
-                LogT($"[C#] T{turn} SEM CALLS: {final[..Math.Min(200, final.Length)]}");
-                history.Add(new JsonObject { ["role"] = "assistant", ["content"] = final });
-                if (turn >= 2) break;
-                history.Add(new JsonObject { ["role"] = "user", ["content"] = "Sem prosa: emita a proxima tool call agora." });
-                continue;
-            }
-            var echo = new JsonArray();
-            foreach (var tc in calls)
-            {
-                var fn = tc?["function"]?["name"]?.GetValue<string>() ?? "";
-                JsonObject args;
-                try { args = JsonNode.Parse(tc?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject(); }
-                catch { args = new JsonObject(); }
-                string res = await ExecTool(ws, model, fn, args);
-                LogT($"[C#] T{turn} {fn} {args.ToJsonString()[..Math.Min(160, args.ToJsonString().Length)]} -> {res[..Math.Min(180, res.Length)]}");
-                if (fn == "write" && (args["path"]?.GetValue<string>() ?? "").EndsWith("Program.fs")) fcode = args["content"]?.GetValue<string>() ?? fcode;
-                echo.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = tc?["id"]?.GetValue<string>() ?? "", ["content"] = res });
-            }
-            var freshCalls = new JsonArray();
-            foreach (var c in calls)
-                freshCalls.Add(new JsonObject { ["id"] = c?["id"]?.GetValue<string>() ?? "", ["type"] = "function",
-                    ["function"] = new JsonObject { ["name"] = c?["function"]?["name"]?.GetValue<string>() ?? "",
-                        ["arguments"] = c?["function"]?["arguments"]?.GetValue<string>() ?? "{}" } });
-            history.Add(new JsonObject { ["role"] = "assistant", ["content"] = msg["content"]?.GetValue<string>() ?? "", ["tool_calls"] = freshCalls });
-            foreach (var e in echo) history.Add((JsonObject)e!.DeepClone());
-            // Sucesso atingido: para de editar (o modelo tende a quebrar o que ja funciona).
-            // Predicado estrito (2/5/2 NA ORDEM), igual ao F#: "contem 2 e 5" aceita
-            // 3,332895 / 5,000000 / 2,000000 (2 e' o desvio) e mata o turno de reparo.
-            if (echo.Any(e => ThreeFloatsOk(e?["content"]?.GetValue<string>() ?? ""))) break;
+            string csFile = Path.Combine(ws, "mcs", "Program.cs");
+            string csSrc = File.Exists(csFile) ? File.ReadAllText(csFile) : "";
+            ResetCsScaffold();
+            string runOut = await RunShell(ws, model, "dotnet run --project mcs/mcs.csproj -c Release");
+            LogT($"[C#] RUN -> {runOut[..Math.Min(220, runOut.Length)]}");
+            csRunOut = runOut;
+            csLastErr = runOut;
+            var probe = SixDecimals(runOut);
+            bool csOk = (csSrc.Contains("Sin") || csSrc.Contains("sin")) && csSrc.Length > 60
+                        && !HasHardcodedResult(csSrc)
+                        && probe.Count >= 3
+                        && Math.Abs(probe[0] - 2.0) < 1e-4 && Math.Abs(probe[1] - 5.0) < 1e-4 && Math.Abs(probe[2] - 2.0) < 1e-4;
+            if (csOk) break;
         }
-        string csFile = Path.Combine(ws, "mcs", "Program.cs");
-        string csSrc = File.Exists(csFile) ? File.ReadAllText(csFile) : "";
-        TestContext.Check((csSrc.Contains("Sin") || csSrc.Contains("sin")) && csSrc.Length > 60,
-            "mcs/Program.cs com Simpson (nao template), veio: " + csSrc[..Math.Min(100, csSrc.Length)]);
-        ResetCsScaffold();
-        string runOut = await RunShell(ws, model, "dotnet run --project mcs/mcs.csproj -c Release");
-        LogT($"[C#] RUN -> {runOut[..Math.Min(220, runOut.Length)]}");
-        TestContext.Check(!HasHardcodedResult(csSrc), "C# calcula (sem hardcode de 2.000000/5.000000 no fonte)");
-        var csNums = SixDecimals(runOut);
-        TestContext.Check(csNums.Count >= 3, "C# imprime 3 numeros com 6 casas, saiu: " + runOut[..Math.Min(160, runOut.Length)]);
-        TestContext.Check(csNums.Count >= 1 && Math.Abs(csNums[0] - 2.0) < 1e-4, "C# Simpson = 2.0, saiu: " + runOut[..Math.Min(120, runOut.Length)]);
+        string csFileFinal = Path.Combine(ws, "mcs", "Program.cs");
+        string csSrcFinal = File.Exists(csFileFinal) ? File.ReadAllText(csFileFinal) : "";
+        TestContext.Check((csSrcFinal.Contains("Sin") || csSrcFinal.Contains("sin")) && csSrcFinal.Length > 60,
+            "mcs/Program.cs com Simpson (nao template), veio: " + csSrcFinal[..Math.Min(100, csSrcFinal.Length)]);
+        TestContext.Check(!HasHardcodedResult(csSrcFinal), "C# calcula (sem hardcode de 2.000000/5.000000 no fonte)");
+        var csNums = SixDecimals(csRunOut);
+        TestContext.Check(csNums.Count >= 3, "C# imprime 3 numeros com 6 casas, saiu: " + csRunOut[..Math.Min(160, csRunOut.Length)]);
+        TestContext.Check(csNums.Count >= 1 && Math.Abs(csNums[0] - 2.0) < 1e-4, "C# Simpson = 2.0, saiu: " + csRunOut[..Math.Min(120, csRunOut.Length)]);
         TestContext.Check(csNums.Count >= 2 && Math.Abs(csNums[1] - 5.0) < 1e-4, "C# media = 5.0");
         TestContext.Check(csNums.Count >= 3 && Math.Abs(csNums[2] - 2.0) < 1e-4, "C# desvio = 2.0 (populacional)");
-        Console.WriteLine($"  [mission] C# ok:\n{runOut.Trim()}");
+        Console.WriteLine($"  [mission] C# ok:\n{csRunOut.Trim()}");
 
         // F# tem system proprio: FsMini so entra aqui (C# nao recebe regra F#).
         var histFs = new JsonArray(new JsonObject { ["role"] = "system", ["content"] = sysBase + "\n\n" + global::Rochas.OpenCodeBridge.Core.HarnessTails.FsMini });
@@ -187,20 +216,27 @@ internal static class E2EMissionTests
         string fsOut = "";
         string fsSrc = "";
         string lastErr = "";
-        for (int attempt = 1; attempt <= 2; attempt++)
+        for (int attempt = 1; attempt <= 3; attempt++)
         {
             ResetFsScaffold();
             if (attempt > 1)
             {
                 while (histFs.Count > historyBeforeFs) histFs.RemoveAt(histFs.Count - 1);
-                string errLine = lastErr.Split('\n').FirstOrDefault(l => l.Contains("error"))?.Trim()
-                    ?? lastErr.Split('\n').FirstOrDefault()?.Trim() ?? "";
-                LogT($"[F#] retry {attempt}: contexto F# resetado; erro real repassado ({errLine})");
-                histFs.Add(new JsonObject { ["role"] = "user", ["content"] =
-                    $"Sem prosa: o build do F# falhou: {errLine}. Antes de editar, reavalie o tail F# (FsMini) fornecido no system (range com passo '[start .. step .. finish]', tipos float/int, saida printfn \"%.6f\"). Corrija {ws}/mfs/Program.fs e rode `dotnet run --project {ws}/mfs/mfs.fsproj` para verificar." });
+                string errLine = ErrLine(lastErr);
+                bool compileErr = errLine.Contains("error", StringComparison.OrdinalIgnoreCase);
+                LogT($"[F#] retry {attempt}: contexto F# resetado; {(compileErr ? "erro de build" : "saida errada")} repassado ({errLine})");
+                string fsSrcNow = File.Exists(Path.Combine(ws, "mfs", "Program.fs"))
+                    ? File.ReadAllText(Path.Combine(ws, "mfs", "Program.fs")) : "";
+                string fsHint = compileErr
+                    ? global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(fsSrcNow, errLine) : "";
+                string guidance = compileErr
+                    ? $"Sem prosa: o build do F# falhou: {errLine}. " + (fsHint.Length > 0 ? fsHint + " " : "")
+                      + $"Corrija {ws}/mfs/Program.fs e rode `dotnet run --project {ws}/mfs/mfs.fsproj`."
+                    : $"Sem prosa: a saida do F# nao bateu: {errLine}. Metas: 2.000000 (Simpson de Sin em [0,pi] com n=100), 5.000000 (media) e 2.000000 (desvio populacional). Simpson: h=(b-a)/n e integral=(h/3)*(f a + f b + 4*impares + 2*pares), impares i=1,3,..,n-1 e pares i=2,4,..,n-2. Corrija {ws}/mfs/Program.fs e rode `dotnet run --project {ws}/mfs/mfs.fsproj`.";
+                histFs.Add(new JsonObject { ["role"] = "user", ["content"] = guidance });
             }
             histFs.Add(new JsonObject { ["role"] = "user", ["content"] =
-                $"Em {ws}/mfs, implemente em Program.fs (o projeto ja existe em {ws}/mfs/mfs.fsproj; NAO crie mfs.csproj, Program.cs, bin ou obj) um programa F# que calcule e imprima com 6 casas: (a) Simpson de System.Math.Sin em [0, pi] com n=100 -> meta 2.000000; (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> meta 5.000000; (c) o desvio padrao populacional da mesma lista -> meta 2.000000. Grave o arquivo completo com a tool write (nao use edit para criar o arquivo), enxuto e sem comentarios longos. Dica de Simpson: h=(b-a)/n e integral=(h/3)*(f0+fn+4*impares+2*pares). F# idiomatico: `System.Math.Sin/Sqrt/PI` qualificado, `printfn \"%.6f\"`, aritmetica float com `+ - * /` e `** 2.0`, listas com `List.sum/List.map/List.fold`. Lembre-se e ateste o tail F# (FsMini) ja fornecido no system: range com passo '[start .. step .. finish]' (ex. '[1 .. 2 .. n-1]'), NUNCA '[a; b ..]'; tipos float/int; saida printfn \"%.6f\". Rode `dotnet run --project {ws}/mfs/mfs.fsproj` para verificar a saida (metas: 2.000000, 5.000000, 2.000000)." });
+                $"Em {ws}/mfs, implemente em Program.fs (o projeto ja existe em {ws}/mfs/mfs.fsproj; NAO crie mfs.csproj, Program.cs, bin ou obj) um programa F# que calcule e imprima com 6 casas: (a) Simpson de System.Math.Sin em [0, pi] com n=100 -> meta 2.000000; (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> meta 5.000000; (c) o desvio padrao populacional da mesma lista -> meta 2.000000. Grave o arquivo completo com a tool write (nao use edit para criar o arquivo), enxuto e sem comentarios longos. Dica de Simpson: h=(b-a)/n e integral=(h/3)*(f0+fn+4*impares+2*pares). F# idiomatico: `System.Math.Sin/Sqrt/PI` qualificado, `printfn \"%.6f\"`, aritmetica float com `+ - * /` e `** 2.0`, listas com `List.sum/List.map/List.fold`. Lembre-se e ateste o tail F# (FsMini) ja fornecido no system: aplique a regra de TIPOS — contagem/indice/passo/tamanho de range = int, medida/coordenada/resultado = float, converta SO' na borda (`float i`, `float n`, `int x`); se um parametro entra em `[ .. .. param .. ]` ele E' int, entao a chamada passa 100 (NUNCA 100.0). Saida `printfn \"%.6f\"`. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` para verificar a saida (metas: 2.000000, 5.000000, 2.000000)." });
         for (int turn = 0; turn < 22; turn++)
         {
             JsonObject rf;
@@ -211,7 +247,8 @@ internal static class E2EMissionTests
             catch (Exception ex)
             {
                 LogT($"[F#] T{turn} HTTP falhou: {ex.Message.Split('\n')[0]}");
-                histFs.Add(new JsonObject { ["role"] = "user", ["content"] = "A resposta anterior foi cortada pela bridge. Reenvie uma tool call curta: write com Program.fs completo, enxuto e sem comentarios longos." });
+                bool dropped = global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Apply(histFs);
+                LogT($"[F#] T{turn} reparo: assistant quebrada podada={dropped}; nudge JSON anexado");
                 continue;
             }
             var mf = rf["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message (F#)");
@@ -239,6 +276,19 @@ internal static class E2EMissionTests
                 string fnf = c?["function"]?["name"]?.GetValue<string>() ?? "";
                 string resf = await ExecTool(ws, model, fnf, af);
                 LogT($"[F#] T{turn} {fnf} {af.ToJsonString()[..Math.Min(160, af.ToJsonString().Length)]} -> {resf[..Math.Min(180, resf.Length)]}");
+                // Reparo in-flow: erro de sintaxe volta com ERRO->CERTO concreto (mesma
+                // mecanica do retry, no Core) para o modelo corrigir no MESMO turno.
+                if (resf.Contains("error FS", StringComparison.Ordinal))
+                {
+                    string curFs = File.Exists(Path.Combine(ws, "mfs", "Program.fs"))
+                        ? File.ReadAllText(Path.Combine(ws, "mfs", "Program.fs")) : "";
+                    string inFlow = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(curFs, resf);
+                    if (inFlow.Length > 0)
+                    {
+                        resf += "\n\n" + inFlow;
+                        LogT($"[F#] T{turn} reparo in-flow: {inFlow.Replace("\n", " | ")}");
+                    }
+                }
                 if (fnf == "write" && (af["path"]?.GetValue<string>() ?? "").EndsWith("Program.fs")) fcode = af["content"]?.GetValue<string>() ?? fcode;
                 fres.Add(resf);
                 histFs.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = resf });
@@ -255,6 +305,19 @@ internal static class E2EMissionTests
             bool ok = fsSrc.Contains("Math") && fcode.Contains("Math") && ThreeFloatsOk(fsOut);
             if (ok) break;
         }
+        // Atestacao honesta: o system final do request F# (registrado pela bridge)
+        // realmente carregou o FsMini? Roda ANTES dos asserts semanticos para o
+        // log provar o fluxo mesmo quando o modelo erra a matematica/sintaxe.
+        try
+        {
+            var att = await TestContext.GetObj(bridge + "/api/test/last-system");
+            LogT($"[F#] atestacao system: {att.ToJsonString()}");
+            TestContext.Check(att["fsmini"]?.GetValue<bool>() == true, "F# atestado: system final contem FsMini (modelo nao orfao)");
+            TestContext.Check(att["tipos_regra"]?.GetValue<bool>() == true, "F# atestado: regra TIPOS NUMERICOS no system enviado");
+            TestContext.Check(att["tail_scope"]?.GetValue<string>() == "all", "F# atestado: tail_scope=all na bridge");
+            TestContext.Check(att["harness_tails"]?.GetValue<bool>() == true, "F# atestado: harness_tails=on na bridge");
+        }
+        catch (Exception ex) { TestContext.Check(false, "F# atestacao falhou: " + ex.Message); }
         TestContext.Check(!HasHardcodedResult(fsSrc), "F# calcula (sem hardcode de 2.000000/5.000000 no fonte)");
         var fsNums = SixDecimals(fsOut);
         TestContext.Check(fsNums.Count >= 3, "F# imprime 3 numeros com 6 casas, saiu: " + fsOut[..Math.Min(160, fsOut.Length)]);
@@ -264,7 +327,7 @@ internal static class E2EMissionTests
         Console.WriteLine($"  [mission] F# ok:\n{fsOut.Trim()}");
 
         // Fase 3: versionamento com a tool git (command/path) + pacote via shell (zip).
-        histFs.Add(new JsonObject { ["role"] = "user", ["content"] = "Conclua a entrega: versione o workspace com a tool git (command/path: init, config, add, commit) e gere o pacote entrega.zip na raiz do workspace com a tool shell (zip -qr). So tool calls ate concluir, sem texto." });
+        histFs.Add(new JsonObject { ["role"] = "user", ["content"] = $"Conclua a entrega: versione o workspace com a tool git (command/path: init, config, add, commit) — vale a raiz {ws} ou a pasta do projeto {ws}/mfs — e gere entrega.zip com a tool shell (zip -qr) na raiz {ws}. So tool calls ate concluir, sem texto." });
         for (int turn = 0; turn < 12; turn++)
         {
             var r2 = await Chat(bridge, model, (JsonArray)histFs.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
@@ -296,9 +359,27 @@ internal static class E2EMissionTests
                 histFs.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = res2 });
             }
         }
-        TestContext.Check(Directory.Exists(Path.Combine(ws, ".git")), "git init executado");
-        TestContext.Check(File.Exists(Path.Combine(ws, ".git", "HEAD")), "repo git criado");
-        TestContext.Check(Directory.GetFiles(ws, "entrega.zip").Length == 1, "entrega.zip gerado");
+        // Entrega robusta: o modelo pode versionar a raiz do workspace ou a pasta
+        // do projeto (ele trabalhou em mfs/). Nao fixar onde — so que exista.
+        bool gitOk = Directory.Exists(Path.Combine(ws, ".git")) || Directory.Exists(Path.Combine(ws, "mfs", ".git"));
+        TestContext.Check(gitOk, "git init executado (raiz ou pasta do projeto)");
+        bool headOk = File.Exists(Path.Combine(ws, ".git", "HEAD")) || File.Exists(Path.Combine(ws, "mfs", ".git", "HEAD"));
+        TestContext.Check(headOk, "repo git criado");
+        bool zipOk = File.Exists(Path.Combine(ws, "entrega.zip")) || File.Exists(Path.Combine(ws, "mfs", "entrega.zip"));
+        TestContext.Check(zipOk, "entrega.zip gerado");
+    }
+
+    /// <summary>Linha de erro real do build (ignora `warning` e linhas de resumo).</summary>
+    /// <param name="log">Saida do build/run.</param>
+    /// <returns>Linha com `: error` (ou a primeira nao vazia).</returns>
+    static string ErrLine(string log)
+    {
+        var lines = (log ?? "").Split('\n').Select(l => l.Trim()).ToList();
+        return lines.FirstOrDefault(l => l.Contains(": error", StringComparison.OrdinalIgnoreCase)
+                                         && !l.Contains("warning", StringComparison.OrdinalIgnoreCase))
+            ?? lines.FirstOrDefault(l => l.Contains("error", StringComparison.OrdinalIgnoreCase)
+                                         && !l.Contains("warning", StringComparison.OrdinalIgnoreCase))
+            ?? lines.FirstOrDefault(l => l.Length > 0) ?? "";
     }
 
     /// <summary>
@@ -364,7 +445,7 @@ internal static class E2EMissionTests
             }
             catch (Exception ex)
             {
-                hist.Add(new JsonObject { ["role"] = "user", ["content"] = "A resposta anterior foi cortada pela bridge. Reenvie uma tool call curta: write com o arquivo completo, enxuto e sem comentarios longos." });
+                global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Apply(hist);
                 Console.WriteLine($"  [algo:{lang}] HTTP falhou: {ex.Message.Split('\n')[0]}");
                 continue;
             }

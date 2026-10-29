@@ -176,8 +176,9 @@ public sealed class StreamAntiRepeatReply : AntiRepeatReply
 /// <summary>Helper fino de conteudo nos TOOL-ARGS: cauda dos argumentos de uma chamada.</summary>
 public sealed class ToolArgsAntiRepeatReply : AntiRepeatReply
 {
-    /// <summary>Tamanho minimo dos args para valer a pena sondar.</summary>
-    public const int ProbeMinChars = 1024;
+    /// <summary>Tamanho minimo dos args para valer a pena sondar (write/edit
+    /// carrega o arquivo inteiro; arquivo pequeno tambem entra em loop).</summary>
+    public const int ProbeMinChars = 256;
 
     /// <summary>Cria o detector de argumentos.</summary>
     /// <param name="window">Janela em caracteres.</param>

@@ -40,6 +40,8 @@ public static class HarnessTails
         "MODO DE USO DAS TOOLS (regras transversais; o contrato de cada tool vai no schema): " +
         "Prefira a tool dedicada: read/write/edit para arquivo, glob/grep para descobrir, webfetch/websearch para rede, shell para executar. " +
         "Um passo = uma acao; argumentos JSON completos; leia o resultado antes de repetir. " +
+        "JSON DO ARGS: o conteudo de `write`/`edit` e' string JSON — quebra de linha = `\\n` (barra + n, dois caracteres) e aspas = `\\\"`; nunca quebre a linha crua dentro da string (o parser recusa). " +
+        "ARQUIVO GRANDE: grave um `write` curto e complete com `edit` (args menor = menos risco de truncar). " +
         "Independentes no mesmo turno; dependentes esperam. Nao repita a mesma chamada/caminho; em loop, mude a abordagem. " +
         "`execute` nao e sandbox: a bridge desembrulha tools.X; bloqueio de role nao se contorna por shell. " +
         "DOTNET: com mais de um projeto na pasta, `--project <pasta>` e ambiguo: aponte o ARQUIVO (`<dir>/<nome>.fsproj` ou `.csproj`). " +
@@ -52,18 +54,22 @@ public static class HarnessTails
     /// para nao impor sintaxe F# em requests C#/Orch).
     /// </summary>
     public const string FsMini =
-        "F# MINI (sintaxe; os exemplos sao genericos, nao o algoritmo do pedido): " +
-        "arquivo: 1a linha `module Program`; funcoes `let nome (x: float) = ...`. " +
-        "acumulador: `let mutable acc = 0.0` e `acc <- acc + x`; loop `for i in 1 .. n-1 do ...` com `float i`. " +
-        "listas: `List.fold (fun acc x -> acc + x) 0.0 xs`; `List.sum xs`; `List.map (fun x -> x * x) xs`. " +
-        "range: `[1 .. n-1]` e passo 1; com passo e `[start .. step .. finish]` (ex.: `[1 .. 2 .. n-1]` para impares) — " +
-        "`[1; 3 .. n-1]` NAO existe (`;` separa elementos, nao passo) e os extremos precisam do mesmo tipo (int com int, float com float). " +
-        "comprehension: F# e `[for i in 1 .. n-1 -> expr]` (ou `[for i in ... do ... ]` com `yield`) — " +
-        "`[i | i <- [1 .. n-1]; ...]` NAO existe (e sintaxe de outra linguagem). " +
-        "math: `System.Math.Sin x`; `System.Math.Sqrt x`; `System.Math.PI`; potencia `x ** 2.0`. " +
-        "tipos: `%` so em int; converta com `float n` e `int x`. " +
-        "saida: `printfn \"%.6f\" valor`. " +
-        "tools: `write` grava o arquivo inteiro; `shell` roda `dotnet run --project <dir>/<nome>.fsproj`; apos erro, `read`/`edit` so na linha indicada.";
+        "F# MINI (sintaxe geral; os exemplos NAO sao o algoritmo do pedido). " +
+        "BASE: 1a linha `module Program`; `open System`; funcoes `let f (x: float) = ...`; saida `printfn \"%.6f\" valor`. " +
+        "MATH: `System.Math.Sin/Sqrt/PI` qualificados; potencia `** 2.0`. " +
+        "LISTAS: `List.sum xs`, `List.map (fun x -> x * x) xs`, `List.fold (fun acc x -> acc + x) 0.0 xs`, `List.length xs`, `List.init n (fun i -> ...)`. " +
+        "TOOLS: `write` grava o arquivo inteiro (correcao pontual = `edit`); `shell` roda `dotnet run --project <dir>/<nome>.fsproj`. " +
+        "INCONSISTENCIAS PREVISTAS EM F# (codigo: causa -> sintaxe correta): " +
+        "FS0010 `[expr | for i in ...]` ('|' nao existe em lista) -> `[for i in 1 .. n-1 -> expr]` ou `[for i in ... do yield expr]`. " +
+        "FS0010 `[a; b .. c]` (';' nao e' passo) -> `[a .. b .. c]`, DOIS `..` com o passo no MEIO (`[1 .. 2 .. n-1]` impares). " +
+        "FS0001 mistura int/float -> TIPOS NUMERICOS por PAPEL: contagem/indice/passo/tamanho = int; medida/coordenada/resultado = float; converta SO' na borda (`float i`, `int x`); um parametro = um tipo. " +
+        "FS0001 parametro em range ou `List.length` -> ele E' int: a chamada passa `100`, NUNCA `100.0`. " +
+        "FS0001 `x ** 2` -> potencia exige float dos dois lados: `x ** 2.0`. " +
+        "FS0001 `%` em float -> `%` so em int (use `int` ou `System.Math.IEEERemainder`). " +
+        "FS0988 modulo vazio -> falta `[<EntryPoint>] let main argv = ...` com `0` no fim. " +
+        "FS0020 resultado descartado -> `|> ignore` ou `printfn`. " +
+        "TRUNCA (sem erro) `/` entre dois int -> converta um lado: `float a / float b`. " +
+        "SE O BUILD FALHAR: leia a linha `error`, aplique a correcao da tabela e edite SO' o trecho; NAO reescreva o arquivo igual.";
 
     /// <summary>
     /// Compõe o system prompt com as caudas. Com harness desligado devolve o
