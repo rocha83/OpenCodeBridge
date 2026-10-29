@@ -62,7 +62,9 @@ public static class HarnessTails
         "RANGE COM PASSO: sao TRES termos e a ordem e' inicio, PASSO, fim — o PASSO e' o SEGUNDO termo, entre os dois `..`, e o TERCEIRO e' o fim (`[for i in 1 .. 2 .. n-1]` = 1, 3, .., n-1). Passo e fim trocados ainda compilam e produzem resultado errado SEM erro do compilador. " +
         "INTEIROS: `%` so em int; `/` entre dois int TRUNCA o resto (sem erro). " +
         "RECURSAO: funcao que chama a si mesma precisa `let rec f ...`; sem `rec` a auto-chamada sai como FS0039 `nao definido`. " +
-        "RESTO E OPERADORES: `mod` e' operador sem crase (`a mod b`); crase simples em nome nao existe em F# (identificador com caractere especial usa CRASE DUPLA). " +
+        "RESTO: o operador de resto e' `%`, so' em inteiros; `mod` NAO existe em F#. Crase simples em nome tambem nao existe (identificador com caractere especial usa CRASE DUPLA). " +
+        "RANGE: os dois limites sao do MESMO tipo (`1 .. 50` = int); limite que sai float (ex.: `Math.Sqrt`) precisa de conversao no proprio limite: `[2 .. int (Math.Sqrt(float n))]`. " +
+        "DEFINA CADA NOME UMA VEZ (repetir o mesmo `let` da FS0037); produto/fatorial nao exige recursao: `List.fold (fun acc x -> acc * x) 1 [1..10]`. " +
         "ESTRUTURA: funcao auxiliar vive no NIVEL DO MODULO, antes de quem a chama, recebendo como parametro os valores que usa de fora; `let` dentro de ramo `if/else` (na propria linha do `else`) quebra a indentacao (FS0058) — no ramo so' a CHAMADA. Para 'todo/existe' prefira `List.forall`/`List.exists` com lambda. " +
         "INCONSISTENCIAS PREVISTAS EM F# (codigo: causa -> sintaxe correta): " +
         "FS0010 `[expr | for i in ...]` ('|' nao existe em lista) -> `[for i in 1 .. n-1 -> expr]` ou `[for i in ... do yield expr]`. " +

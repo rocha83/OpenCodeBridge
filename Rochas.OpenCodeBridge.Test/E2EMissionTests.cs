@@ -211,9 +211,9 @@ internal static class E2EMissionTests
         // F# tem system proprio: FsMini so entra aqui (C# nao recebe regra F#).
         var histFs = new JsonArray(new JsonObject { ["role"] = "system", ["content"] = sysBase + "\n\n" + global::Rochas.OpenCodeBridge.Core.HarnessTails.FsMini });
 
-        // Fase 2: portabilidade para F# (mesma matematica, System.Math qualificado).
+        // Fase 2: portabilidade para F# (mesma teoria inteira, sem ponto flutuante).
         // O E4B Q4 nao infere F# de forma estavel: o enunciado entrega a META
-        // (2.000000 / 5.000000) e as restricoes de sintaxe, sem ditar o algoritmo.
+        // (3628800 / 21 / 15) e as restricoes de sintaxe, sem ditar o algoritmo.
         // O retry nao "ensina" sintaxe: reseta o contexto F# e repassa so a linha
         // real do erro, para o modelo corrigir com o proprio codigo em vista.
         int historyBeforeFs = histFs.Count;

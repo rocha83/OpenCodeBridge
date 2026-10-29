@@ -54,6 +54,15 @@ public static class FsSyntaxRepair
         if (code == "FS0039")
         {
             var miss = Regex.Match(compilerError, @"constructor '([^']+)' is not defined");
+            // `mod` e' OCaml/Pascal: em F# o resto e' `%` (medido no isolado de
+            // 2026-10-29, depois de o modelo acertar estrutura e recursao).
+            if (miss.Success && miss.Groups[1].Value == "mod")
+            {
+                var use = Regex.Match(source, @"(?<a>[\w\)\]]+)\s+mod\s+(?<b>[\w\(]+)");
+                if (use.Success)
+                    return $"ERRADO: {use.Value}\n" +
+                           $"CERTO: {use.Groups["a"].Value} % {use.Groups["b"].Value}   (F# nao tem esse operador: o resto e' `%`, so' em inteiros)";
+            }
             if (miss.Success)
             {
                 string name = miss.Groups[1].Value;
@@ -64,6 +73,19 @@ public static class FsSyntaxRepair
             }
             return "";
         }
+
+        // FS0037 nome definido duas vezes: o segundo `let` sai (o arquivo tem sobra).
+        if (code == "FS0037")
+        {
+            var dup = Regex.Match(compilerError, @"Duplicate definition of [^']*'([^']+)'");
+            if (dup.Success)
+                return $"CERTO: defina '{dup.Groups[1].Value}' UMA vez: apague a definicao repetida (o arquivo ficou com duas)";
+        }
+
+        // FS0001 no range: limite float num range int. Converte-se o LIMITE, nao o range.
+        if (code == "FS0001"
+            && Regex.IsMatch(source, @"\[\s*-?\d+\s*\.\.\s*[^\]\r\n]*(Math\.Sqrt|float\s)"))
+            return "CERTO: `[2 .. int (Math.Sqrt(float n))]`   (os dois limites do range sao do MESMO tipo; converta o limite que sai float)";
 
         // FS0001 `List.*` recebendo `[| ... |]`: o compilador diz lista esperada e
         // array recebido. A dica nomeia a lista (`[...]`) e o `Array.*` correto.

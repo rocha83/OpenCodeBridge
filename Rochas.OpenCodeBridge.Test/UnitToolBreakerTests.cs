@@ -372,7 +372,9 @@ internal static class UnitToolBreakerTests
         // funcao recursiva sem `rec` da FS0039 — as duas formas medidas no isolado.
         TestContext.Check(fsMini.Contains("ESTRUTURA"), "FsMini ensina onde vive a funcao auxiliar");
         TestContext.Check(fsMini.Contains("let rec"), "FsMini ensina recursao sem `rec` (FS0039)");
-        TestContext.Check(fsMini.Contains("operador sem crase"), "FsMini ensina operador sem crase (FS3563)");
+        TestContext.Check(fsMini.Contains("`mod` NAO existe"), "FsMini ensina o operador de resto real (FS0039 'mod')");
+        TestContext.Check(fsMini.Contains("RANGE: os dois limites"), "FsMini ensina range de tipo unico (limite convertido)");
+        TestContext.Check(fsMini.Contains("DEFINA CADA NOME UMA VEZ"), "FsMini ensina nome unico (FS0037)");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
         TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
         TestContext.Check(!tail.Contains("CONCATENACAO DE COMANDOS"), "cauda nao duplica doc de shell");
@@ -575,6 +577,19 @@ internal static class UnitToolBreakerTests
             "error FS3563: This is not a valid identifier");
         TestContext.Check(n11.Contains("CERTO: mod") && !n11.Contains("CERTO: `mod`"),
             "FS3563 -> operador sem crase (veio: " + n11.Replace("\n", " | ") + ")");
+
+        // 6b6) `mod` (OCaml/Pascal) em F#: FS0039 nomeia o operador -> resto e' `%`.
+        string n13 = Fs("let rec gcd a b = if b = 0 then a else gcd b (a mod b)",
+            "error FS0039: The value or constructor 'mod' is not defined.");
+        TestContext.Check(n13.Contains("CERTO: a % b"), "FS0039 'mod' -> operador % (veio: " + n13.Replace("\n", " | ") + ")");
+
+        // 6b7) Nome definido duas vezes (FS0037) e range com limite float (FS0001).
+        TestContext.Check(Fs("let isPrime n = n > 1\nlet isPrime n = n > 2",
+            "error FS0037: Duplicate definition of value 'isPrime'").Contains("UMA vez"),
+            "FS0037 -> nome definido uma vez");
+        TestContext.Check(Fs("let ps = [1..System.Math.Sqrt(float n)]",
+            "error FS0001: This expression was expected to have type 'int' but here has type 'float'").Contains("int (Math.Sqrt(float n))"),
+            "FS0001 no range -> converte o limite");
 
         // 6b5) `let` aninhado na linha do `else` (FS0058): o auxiliar vai para o
         // nivel do modulo, recebendo por parametro o que usa de fora.
