@@ -64,9 +64,7 @@ internal static class E2EMissionTests
         string bridge = TestContext.Bridge;
         string model = TestContext.SuiteModel;
         if (!model.EndsWith("-build")) model += "-build";
-        string ws = Path.Combine(Path.GetTempPath(), "e2e-mission");
-        if (Directory.Exists(ws)) Directory.Delete(ws, true);
-        Directory.CreateDirectory(ws);
+        string ws = TestContext.FreshWorkspace("e2e-mission");
         // Scaffold dos projetos e' do harness (template `dotnet new`, estilo Visual Studio):
         // o modelo so escreve o fonte e roda; elimina a variabilidade do `dotnet new` no modelo.
         TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
@@ -407,9 +405,7 @@ internal static class E2EMissionTests
         string bridge = TestContext.Bridge;
         string model = TestContext.SuiteModel;
         if (!model.EndsWith("-build")) model += "-build";
-        string ws = Path.Combine(Path.GetTempPath(), "e2e-mission-algo");
-        if (Directory.Exists(ws)) Directory.Delete(ws, true);
-        Directory.CreateDirectory(ws);
+        string ws = TestContext.FreshWorkspace("e2e-mission-algo");
         TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
         TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
 

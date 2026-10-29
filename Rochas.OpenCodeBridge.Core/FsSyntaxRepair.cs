@@ -28,6 +28,14 @@ public static class FsSyntaxRepair
             return "ERRADO: open System.Math\n" +
                    "CERTO: open System   (Math e' TIPO, nao namespace: chame System.Math.Sin/Sqrt/PI qualificado)";
 
+        // FS0001 `List.*` recebendo `[| ... |]`: o compilador diz lista esperada e
+        // array recebido. A dica nomeia a lista (`[...]`) e o `Array.*` correto.
+        if (compilerError.Contains("FS0001", StringComparison.Ordinal)
+            && compilerError.Contains("list", StringComparison.OrdinalIgnoreCase)
+            && compilerError.Contains("array", StringComparison.OrdinalIgnoreCase))
+            return "CERTO: `[ a; b ]` (lista) com `List.sum/List.map/List.length`; " +
+                   "`[| a; b |]` e' ARRAY: use `Array.sum/Array.map/Array.length`";
+
         // So' os codigos que este mapa cobre: erro alheio nao recebe conserto de
         // comprehension (evita "corrigir" a linha errada do fonte).
         if (!new[] { "FS0010", "FS0001", "FS0020", "FS0751" }

@@ -363,6 +363,13 @@ internal static class UnitToolBreakerTests
         TestContext.Check(fsMini.Contains("[for i in 1 .. 2 .. n-1 -> expr]"), "FsMini ensina paridade como passo");
         TestContext.Check(fsMini.Contains("System.Math.Sin"), "FsMini ensina Math qualificado");
         TestContext.Check(!fsMini.Contains("CERTO: open System.Math"), "FsMini nao induz o 'open' invalido");
+        // 5a e 5b formas medidas no isolado de 2026-10-29 (pos-reparo): o F# compilou
+        // e imprimiu 0.002631 porque o modelo pos o passo no FIM do range (compila e
+        // calcula errado, sem erro do compilador), e gastou 21 turnos em `[| |]` com
+        // `List.sum`. A cauda ensina a ORDEM por descricao e o array por tipo.
+        TestContext.Check(fsMini.Contains("PASSO e' o SEGUNDO termo"), "FsMini ensina a ordem do range (passo no meio)");
+        TestContext.Check(fsMini.Contains("Array.sum"), "FsMini separa array de lista (List.* x Array.*)");
+        TestContext.Check(!fsMini.Contains("1 .. n - 1 .. 2"), "FsMini nao exibe a ordem trocada (o modelo copia)");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
         TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
         TestContext.Check(!tail.Contains("CONCATENACAO DE COMANDOS"), "cauda nao duplica doc de shell");
@@ -540,6 +547,14 @@ internal static class UnitToolBreakerTests
         // 6c) Erro fora do mapa nao recebe conserto de comprehension (linha errada).
         TestContext.Check(Fs("let a = [x | for x in xs]", "error FS0410: The type 'int' is not compatible") == "",
             "erro alheio nao recebe conserto de comprehension");
+
+        // 6d) `[| ... |]` (array) entregue a `List.sum` (FS0001 list vs array): a dica
+        // nomeia a lista e o Array.* correto — 21 turnos perdidos no isolado de
+        // 2026-10-29 reescrevendo o mesmo arquivo sem entender o erro.
+        string n6 = Fs("let dataList = [|2.0; 4.0|]\nlet sum = List.sum dataList",
+            "error FS0001: This expression was expected to have type    ''a list'    but here has type    ''b array'");
+        TestContext.Check(n6.Contains("Array.sum"), "FS0001 list/array ensina Array.sum");
+        TestContext.Check(n6.Contains("[ a; b ]"), "FS0001 list/array mostra a lista");
 
         // 7) Negativos: forma JA' valida nao pode ser 'corrigida'.
         TestContext.Check(Fs("let xs = [for i in 1 .. 3 -> float i]", fs0010Arrow) == "",

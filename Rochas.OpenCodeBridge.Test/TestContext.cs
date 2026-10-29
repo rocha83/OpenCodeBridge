@@ -961,6 +961,32 @@ internal static class TestContext
     /// O harness faz isso (nao o modelo) para os testes nao dependerem de o modelo acertar o
     /// `dotnet new`; o valor do teste fica em escrever o fonte e iterar ate rodar.
     /// </summary>
+    /// <summary>
+    /// Workspace limpo e UNICO por execucao para um teste E2E. Nunca derruba o
+    /// teste por sobra de rodada anterior: a bridge roda como root e deixa
+    /// bin/obj sem permissao para o usuario da suite; se a remocao falhar, devolve
+    /// um diretorio novo (sufixo stamp-pid) em vez de falhar em 0,1 s.
+    /// </summary>
+    /// <param name="prefix">Prefixo do diretorio (ex.: "e2e-mission").</param>
+    /// <returns>Caminho existente e vazio.</returns>
+    public static string FreshWorkspace(string prefix)
+    {
+        string baseDir = Path.Combine(Path.GetTempPath(), prefix);
+        try
+        {
+            if (Directory.Exists(baseDir)) Directory.Delete(baseDir, true);
+            Directory.CreateDirectory(baseDir);
+            return baseDir;
+        }
+        catch (Exception ex)
+        {
+            string alt = baseDir + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Environment.ProcessId;
+            Directory.CreateDirectory(alt);
+            Console.WriteLine($"  [ws] cleanup ignorado em {baseDir} ({ex.GetType().Name}); usando {alt}");
+            return alt;
+        }
+    }
+
     public static void ScaffoldProject(string name, string dir, string lang = "C#", string kind = "console", int secs = 180)
     {
         Directory.CreateDirectory(dir);

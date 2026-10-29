@@ -745,6 +745,40 @@ Evidência: `logs/levels/L2-20261027-l2fix` = 4/4 PASS (537 s) e
 `logs/levels/L1-20261027-l1l2-l1` = 3/3 PASS (741 s). O nudge é falha
 transitória de formato; não substitui a correção de causa raiz no upstream.
 
+**Workspace de missão: sobras `root` e `TestContext.FreshWorkspace` (2026-10-29).**
+A mesma classe de falha voltou no `E-mission-tools` isolado, agora em `/tmp/e2e-mission`:
+
+```
+FAIL E-mission-tools: Access to the path
+'/tmp/e2e-mission/mfs/bin/Release/net10.0/mfs.pdb' is denied.        (0,1 s)
+```
+
+Causa: as tools rodam **dentro da bridge** (`POST /api/tools/execute`), então
+`bin/` e `obj/` dos projetos scaffolados aparecem `root:root` (conferido: `ls -la
+/tmp/e2e-mission/mfs` → `bin`/`obj` root, `Program.fs` do usuário). O teste roda
+como `mint` e o `Directory.Delete(ws, true)` do começo do passo estoura
+`UnauthorizedAccessException` **antes do primeiro turno do modelo** — o FAIL não
+diz nada sobre a capacidade do modelo e queima o step em 0,1 s.
+
+Regra (vale para qualquer passo E2E que scaffolde projeto):
+
+- **workspace único por execução** via `TestContext.FreshWorkspace("<prefixo>")`
+  (fonte única no `TestContext`, não copiar helper no teste). Ele tenta apagar o
+  path; se a remoção falhar por sobra `root`, devolve
+  `<prefixo>-<stamp>-<pid>` e loga `[ws] cleanup ignorado em ... (UnauthorizedAccessException); usando ...`
+  em vez de derrubar o teste. É o mesmo desenho já usado no `belts-build`
+  (`/tmp/opencode/belts-build/<stamp>-<pid>/<belt>`);
+- **o teste nunca chama `sudo`** (a suíte não tem senha e sujar permissão é
+  justamente o que se quer eliminar). Limpeza manual, quando for o caso:
+  `sudo rm -rf /tmp/e2e-mission /tmp/e2e-mission-algo`;
+- antes de diagnosticar um FAIL instantâneo, olhar dono dos diretórios:
+  `ls -la /tmp/e2e-*/<projeto>` — se `bin`/`obj` são `root`, o defeito é sobra de
+  rodada, não enunciado/aceite.
+
+Evidência: `PASS=4 FAIL=0` nos units (`U-tails-path-simulation-rules`,
+`U-fs-repair-comprehension`) e o `E-mission-tools` passou a gastar os turnos no
+modelo (F# compilou e imprimiu valores) em vez de morrer no mkdir.
+
 **Fail-fast e seleção de modo (`scripts/war/run-levels.sh`).** Duas variáveis
 de ambiente mudam a esteira sem tocar em aceite:
 

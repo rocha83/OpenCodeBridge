@@ -58,6 +58,7 @@ public static class HarnessTails
         "BASE: 1a linha `module Program`; `open System`; funcoes `let f (x: float) = ...`; saida `printfn \"%.6f\" valor`. " +
         "MATH: `System.Math.Sin/Sqrt/PI` qualificados; potencia `** 2.0`. " +
         "LISTAS: `List.sum xs`, `List.map (fun x -> x * x) xs`, `List.fold (fun acc x -> acc + x) 0.0 xs`, `List.length xs`, `List.init n (fun i -> ...)`. " +
+        "FS0001 `List.*` recebendo `[| a; b |]` -> `[| ... |]` e' ARRAY (tipo diferente de lista): use `[ a; b ]` com `List.sum/List.map/List.length`, ou `Array.sum/Array.map/Array.length` quando o valor precisa ser array. " +
         "TOOLS: `write` grava o arquivo inteiro (correcao pontual = `edit`); `shell` roda `dotnet run --project <dir>/<nome>.fsproj`. " +
         "INCONSISTENCIAS PREVISTAS EM F# (codigo: causa -> sintaxe correta): " +
         "FS0010 `[expr | for i in ...]` ('|' nao existe em lista) -> `[for i in 1 .. n-1 -> expr]` ou `[for i in ... do yield expr]`. " +
@@ -66,6 +67,7 @@ public static class HarnessTails
         "FS0010 `do` e `->` juntos na MESMA comprehension -> tire o `do` e mantenha o `->`; paridade vira passo no range: `[for i in 1 .. 2 .. n-1 -> expr]`. " +
         "FS0039 `open System.Math` -> `Math` e' TIPO, nao namespace: `open System` e chame `System.Math.Sin` qualificado. " +
         "FS0010/FS0751 `[a; b .. c]` (';' nao e' passo) -> `[a .. b .. c]`, DOIS `..` com o passo no MEIO (`[1 .. 2 .. n-1]` impares). " +
+        "RANGE COM PASSO: sao TRES termos e a ordem e' inicio, PASSO, fim — o PASSO e' o SEGUNDO termo, entre os dois `..`, e o TERCEIRO e' o fim (`[for i in 1 .. 2 .. n-1]` = 1, 3, .., n-1). Passo e fim trocados ainda compilam e produzem resultado errado SEM erro do compilador. " +
         "FS0001 mistura int/float -> TIPOS NUMERICOS por PAPEL: contagem/indice/passo/tamanho = int; medida/coordenada/resultado = float; converta SO' na borda (`float i`, `int x`); um parametro = um tipo. " +
         "FS0001 parametro em range ou `List.length` -> ele E' int: a chamada passa `100`, NUNCA `100.0`. " +
         "FS0001 `x ** 2` -> potencia exige float dos dois lados: `x ** 2.0`. " +
