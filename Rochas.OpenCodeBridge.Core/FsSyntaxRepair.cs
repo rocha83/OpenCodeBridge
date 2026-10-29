@@ -57,6 +57,16 @@ public static class FsSyntaxRepair
             }
         }
 
+        // FS0010 `->` dentro de lista literal: o `->` so' existe em comprehension.
+        // Medido no isolado de 2026-10-29: o modelo escreveu `[s->d]` querendo a
+        // tupla (o exemplo de comprehension da tabela induziu o operador). A dica
+        // separa as duas formas, cada uma compilavel.
+        if (code == "FS0010" && compilerError.Contains("Unexpected symbol '->'", StringComparison.Ordinal)
+            && !Regex.IsMatch(source, @"\[[^\]]*\bfor\b"))
+            return "CERTO: a lista de elementos leva `;` entre eles e a tupla entre parenteses:\n"
+                 + "[ (1, 2); (1, 3) ]\n"
+                 + "o `->` so' existe dentro de comprehension: `[ for i in 1 .. 3 -> i * i ]`";
+
         // FS3118/FS0588/FS0528: a funcao foi declarada com `=` e o corpo nao termina
         // numa expressao (let interno engole o resultado, ou o arquivo acaba antes).
         // A forma certa e' um corpo com as linhas alinhadas sob o `=` e a ultima

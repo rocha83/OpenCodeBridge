@@ -735,6 +735,28 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // 5a amostra do F# (2026-10-29): o modelo escreveu `[s->d]` (o `->` do exemplo de
+    // comprehension vazou para a lista literal) e nao havia dica: 30 turnos em zero.
+    public static Task FsRepairListLiteralArrow()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let rec solve k =\n    if k = 1 then\n        [s->d]\n    else\n        [s->d]\n",
+            "error FS0010: Unexpected symbol '->' in expression. Expected ']' or other token.");
+        TestContext.Check(p.Contains("[ (1, 2); (1, 3) ]"),
+            "FS0010 '->' em lista -> lista com ; e tupla entre parenteses (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains("[ for i in 1 .. 3 -> i * i ]"),
+            "a dica separa comprehension (onde o -> existe) da lista literal");
+        TestContext.Check(!p.Contains("[s->d]"), "a dica nao ecoa a forma errada");
+        // Com comprehension no fonte (`for ... in`) a dica continua sendo a da
+        // comprehension: o `->` ali e' legal e o defeito e' outro (`do`, `|`, `step`).
+        string comp = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let s = [for i in 1 .. n - 1 do i =% 2 -> 4.0 * f (float i * h)]",
+            "error FS0010: Unexpected symbol '->' in expression.");
+        TestContext.Check(comp.Contains("do if") || comp.Contains("yield"),
+            "FS0010 '->' com comprehension mantem a dica de comprehension (veio: " + comp.Replace("\n", " | ") + ")");
+        return Task.CompletedTask;
+    }
+
     // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
 
     public static Task AntiRepeatArgsWindowIsIndependent()
