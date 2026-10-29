@@ -356,6 +356,7 @@ internal static class UnitToolBreakerTests
         // de Haskell (`[i | i <- ...]`) e errou FS0010 por 22 turnos.
         TestContext.Check(fsMini.Contains("[for i in 1 .. n-1 -> expr]"), "FsMini ensina comprehension de F#");
         TestContext.Check(fsMini.Contains("[x | x <- xs]"), "FsMini nomeia a comprehension alheia (FS0010)");
+        TestContext.Check(fsMini.Contains("COMPREHENSION e' SEMPRE de LISTA"), "FsMini separa array literal de comprehension de lista");
         // 3a e 4a formas medidas no L3-20261029-030937: `do` na lista sem `yield`
         // (lista tipada unit) e `do`+`->` juntos; e `open System.Math` (tipo, nao
         // namespace). A dica ensina a forma CERTA e nao repete o `open` invalido.
@@ -533,6 +534,22 @@ internal static class UnitToolBreakerTests
             "do+-> com paridade -> passo no range (veio: " + n2.Replace("\n", " | ") + ")");
         string n3 = Fs("let e = [4.0 * f i | for i in 2 .. n - 2 do i % 2 = 0]", fs0010Pipe);
         TestContext.Check(n3.Contains("[for i in 2 .. 2 .. n - 2 -> 4.0 * f i]"), "paridade par -> passo a partir do par");
+
+        // 5) array-comprehension do modelo (`[| expr | for i in ... step 2 |]`): o
+        // reparo antigo devolvia `[for i in 1 .. n - 1 step 2 | -> | expr]` (lixo com
+        // `step` e barras) e o modelo copiava; medido no isolado de 2026-10-29.
+        string n7 = Fs("let so = List.sum [| 2.0 * f (a + float i * h) | for i in 1 .. n - 1 step 2 |]",
+            "error FS0010: Unexpected symbol '|' in expression. Expected '|]' or other token.");
+        TestContext.Check(n7.Contains("[for i in 1 .. 2 .. n - 1 -> 2.0 * f (a + float i * h)]"),
+            "array-comprehension -> lista com passo no meio (veio: " + n7.Replace("\n", " | ") + ")");
+        // So' o CERTO e' contrato: o ERRADO ecoa o fonte do modelo (que tem `step`).
+        string certo7 = n7[(n7.IndexOf("CERTO: ", StringComparison.Ordinal) + 7)..];
+        TestContext.Check(!certo7.Contains("step"), "CERTO nunca ensina `step` (nao existe em F#)");
+        TestContext.Check(!certo7.Contains("| ->"), "CERTO nao carrega a barra do array para o arrow");
+        string n8 = Fs("let se = List.sum [| 2.0 * f (float i) | for i in 2 .. n - 2 step 2]",
+            "error FS0010: Unexpected symbol '|' in expression. Expected '|]' or other token.");
+        TestContext.Check(n8.Contains("[for i in 2 .. 2 .. n - 2 -> 2.0 * f (float i)]"),
+            "array-comprehension sem barra final -> lista (veio: " + n8.Replace("\n", " | ") + ")");
 
         // 6) `open System.Math` (FS0039): Math e' TIPO, nao namespace.
         string n4 = Fs("module Program\nopen System.Math\nlet x = Sin 1.0", fs0039Math);

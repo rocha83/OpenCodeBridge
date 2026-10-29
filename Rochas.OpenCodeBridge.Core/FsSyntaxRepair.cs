@@ -66,20 +66,29 @@ public static class FsSyntaxRepair
     static string FixComprehension(string body)
     {
         if (body.Contains('\n')) return "";   // corpo multilinha: nao adivinha
+        // `[| ... |]` e' ARRAY: as barras de borda sao DELIMITADOR, nao operador. O
+        // modelo mistura as duas formas (`[| expr | for i in ... step 2 |]`); normalizar
+        // a borda antes de ler o corpo evita ensinar `... step 2 | -> | expr` — literal
+        // invalido copiado no isolado de 2026-10-29 (DRIVER-FIXES #20).
+        string bodyTrim = body.Trim();
+        if (bodyTrim.StartsWith("|", StringComparison.Ordinal)) bodyTrim = bodyTrim[1..].Trim();
+        if (bodyTrim.EndsWith("|", StringComparison.Ordinal)) bodyTrim = bodyTrim[..^1].Trim();
         // Guarda 1: `yield` em qualquer ponto ja' declara o elemento — forma valida,
         // nao se toca (senao `[for i in r do if c then yield x]` viraria arrow+yield).
-        if (Regex.IsMatch(body, @"\byield\b")) return "";
+        if (Regex.IsMatch(bodyTrim, @"\byield\b")) return "";
         // Guarda 2: so' o que e' conhecidamente suspeito — `|` de outra linguagem ou
         // `do` dentro de lista. Forma apenas com `->` e' F# valido: nao se toca.
-        if (!body.Contains('|') && !Regex.IsMatch(body, @"\sdo\s")) return "";
+        if (!bodyTrim.Contains('|') && !Regex.IsMatch(bodyTrim, @"\sdo\s")) return "";
 
         // (1) `[expr | for v in range]` — comprehension de Python/Haskell/JS.
-        var pipe = Regex.Match(body, @"^(?<expr>.+?)\s*\|\s*for\s+(?<v>\w+)\s+in\s+(?<range>.+)$");
+        var pipe = Regex.Match(bodyTrim, @"^(?<expr>.+?)\s*\|\s*for\s+(?<v>\w+)\s+in\s+(?<range>.+)$");
         if (pipe.Success)
         {
-            string expr = pipe.Groups["expr"].Value.Trim();
+            string expr = pipe.Groups["expr"].Value.Trim().TrimEnd('|').Trim();
             var (range, cond) = SplitDo(pipe.Groups["range"].Value.Trim());
             string r = StepRange(range, cond) ?? range;
+            // `step` nao existe em F#: sem forma conhecida, silencio (nunca ensina `step`).
+            if (Regex.IsMatch(r, @"\bstep\b")) return "";
             return $"[for {pipe.Groups["v"].Value} in {r} -> {expr}]";
         }
 
@@ -87,8 +96,9 @@ public static class FsSyntaxRepair
         var doForm = Regex.Match(body, @"^for\s+(?<v>\w+)\s+in\s+(?<range>.+?)\s+do\s+(?<tail>.+)$");
         if (!doForm.Success) return "";
         string v = doForm.Groups["v"].Value;
-        string rng = doForm.Groups["range"].Value.Trim();
-        string tail = doForm.Groups["tail"].Value.Trim();
+        string rng = StepToRange(doForm.Groups["range"].Value.Trim());
+        string tail = doForm.Groups["tail"].Value.Trim().TrimEnd('|').Trim();
+        if (Regex.IsMatch(rng, @"\bstep\b")) return "";   // `step` nao existe em F#
         if (tail.StartsWith("yield ", StringComparison.Ordinal)) return "";   // ja' e' F# valido
 
         // `do cond -> expr`: `do` e `->` juntos. A condicao tem que vir antes do
@@ -170,7 +180,9 @@ public static class FsSyntaxRepair
     /// <returns>Range na forma F#.</returns>
     static string StepToRange(string range)
     {
-        var s = Regex.Match(range, @"^(?<a>\S+)\s*\.\.\s*(?<b>.+?)\s+step\s+(?<st>\d+)$");
-        return s.Success ? $"{s.Groups["a"].Value} .. {s.Groups["st"].Value} .. {s.Groups["b"].Value}" : range;
+        // Bordas de array/comprehension (`|`, `]`) nao fazem parte do range.
+        string r = range.Trim().TrimEnd('|', ']').Trim();
+        var s = Regex.Match(r, @"^(?<a>\S+)\s*\.\.\s*(?<b>.+?)\s+step\s+(?<st>\d+)$");
+        return s.Success ? $"{s.Groups["a"].Value} .. {s.Groups["st"].Value} .. {s.Groups["b"].Value}" : r;
     }
 }

@@ -63,6 +63,7 @@ public static class HarnessTails
         "INCONSISTENCIAS PREVISTAS EM F# (codigo: causa -> sintaxe correta): " +
         "FS0010 `[expr | for i in ...]` ('|' nao existe em lista) -> `[for i in 1 .. n-1 -> expr]` ou `[for i in ... do yield expr]`. " +
         "FS0010 `[x | x <- xs]` (comprehension de Haskell) -> `[for x in xs -> expr]`. " +
+        "COMPREHENSION e' SEMPRE de LISTA (`[for ...]`): `[| a; b |]` e' literal de ARRAY de valores fixos e nao aceita `for` dentro. " +
         "FS0010/FS0001 `do` dentro de LISTA sem `yield` (a lista vira `unit`) -> declare o elemento com `->` ou com `do yield`; as duas formas sao validas, `do` sozinho nao. " +
         "FS0010 `do` e `->` juntos na MESMA comprehension -> tire o `do` e mantenha o `->`; paridade vira passo no range: `[for i in 1 .. 2 .. n-1 -> expr]`. " +
         "FS0039 `open System.Math` -> `Math` e' TIPO, nao namespace: `open System` e chame `System.Math.Sin` qualificado. " +
