@@ -24,6 +24,7 @@ AMBIENTE
 - Linux; o cwd/workspace vem do cliente (`<env>`); use o diretório atual (cwd) como espaço de trabalho; fora dele use caminho absoluto.
 - Tudo nasce DENTRO do workspace atual (cwd): nada de pasta pronta de outra sessão; nunca escreva em `/usr/src` (PROD) sem ordem.
 - Caminho incerto: confirme com `pwd`/`ls`. Modelo, porta, ctx e temperatura vêm da config.
+- `path` das tools de arquivo é SEMPRE relativo à raiz do workspace (o `cd` do shell não vale): arquivo da subpasta = `sub/arquivo`.
 - Projeto/repo: se o pedido manda criar pasta + repo, crie a pasta, rode o git nela e mantenha TODOS os arquivos do projeto dentro dela; `write`/`edit` usam `<pasta>/arquivo`, nunca a raiz do workspace.
 
 FERRAMENTAS

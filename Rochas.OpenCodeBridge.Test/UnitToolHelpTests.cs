@@ -49,6 +49,23 @@ internal static class UnitToolHelpTests
             "help do git explica o sintoma de identidade ausente");
         TestContext.Check(!git.Contains("user.user.name", StringComparison.Ordinal),
             "help do git nao exibe a chave errada (so o certo e' copiavel)");
+
+        // Path das tools de arquivo: RAIZ do workspace, nao o cwd do shell — o
+        // modelo gravava `data.txt` na raiz achando que estava na subpasta.
+        var paths = global::Rochas.OpenCodeBridge.Core.ToolHelp.Apply(JsonNode.Parse("""
+        [
+          {"type":"function","function":{"name":"write","description":"w"}},
+          {"type":"function","function":{"name":"read","description":"r"}},
+          {"type":"function","function":{"name":"edit","description":"e"}}
+        ]
+        """)!.AsArray());
+        foreach (int i in new[] { 0, 1, 2 })
+        {
+            string d = paths[i]!["function"]!["description"]!.GetValue<string>();
+            TestContext.Check(d.Contains("RAIZ do workspace", StringComparison.Ordinal)
+                && d.Contains("NAO vale para tools", StringComparison.Ordinal),
+                "help de path ensina raiz do workspace (" + paths[i]!["function"]!["name"] + ")");
+        }
         TestContext.Check(chat[0]!["function"]!["parameters"]!["properties"]!["command"] is not null,
             "schema nao e alterado");
 
