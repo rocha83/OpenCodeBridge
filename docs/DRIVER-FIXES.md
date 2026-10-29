@@ -556,3 +556,27 @@ de um guard novo de repetição entre turnos, descartado). Agora vive em
 `Core/BridgeNotice` (`Prefix`/`Tag`/`Notice`/`Is`/`Append`), o `Apply` do salvage
 anexa por `BridgeNotice.Append` (uma cópia, não empilha) e a tag sai com as tools
 recusadas (`BRIDGE (edit, write): …`).
+
+## 23. Mission-tools: `zip` com a origem no lugar do pacote (help não ensinava a ordem) (2026-10-29)
+
+**Sintoma.** Rodada 3 do aceite (isolado, `E-mission-tools`) FAIL em
+`assert: pacote .zip gerado (saiu: )`, com seis `shell` consecutivos devolvendo
+`exit 3: zip error: Zip file structure invalid (…/mfs/.git)` e
+`(…/mfs/Program.fs)`.
+
+**Causa.** No `zip` o **primeiro** argumento é o arquivo `.zip` de destino; o
+erro cita justamente a origem (`.git`, `Program.fs`) porque o modelo a passou
+como pacote. O help curado da tool `shell` (`Core/ToolHelp.cs`) só ensinava
+`cd dir && cmd`, script e `ls -la` — nada sobre a ordem do pacote, e o enunciado
+do teste diz apenas "gere um pacote .zip com a tool shell (zip -qr)", que é
+contrato, não mecânica. Sem a forma certa, o modelo repetiu o mesmo comando 4×.
+
+**Correção.** O help de `shell`/`bash`/`sh` passa a trazer a forma correta com
+exemplo — `pacote = zip -qr pacote.zip .` (o nome do `.zip` vem primeiro) — e o
+sintoma em prosa (`Zip file structure invalid` = o primeiro argumento não é um
+`.zip` válido; use um nome novo). Nenhuma forma incorreta aparece no help (regra
+da dica: só o literal que o modelo deve copiar). `U-tool-help` pina as duas
+frases. Nada de nudge/guard no teste: a mecânica é do Core.
+
+**Prova.** Build `0 Aviso(s)/0 Erro(s)`, `PASS U-tool-help`; aceite reaberto com
+3 rodadas isoladas verdes consecutivas antes da WAR L1→L3.
