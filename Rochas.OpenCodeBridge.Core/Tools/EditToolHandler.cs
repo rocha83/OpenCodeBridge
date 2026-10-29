@@ -39,7 +39,24 @@ public sealed class EditToolHandler : IToolHandler
             if (text.Length > MaxChars) return ToolResult.Fail($"arquivo grande demais ({text.Length} chars, teto {MaxChars})");
 
             int count = CountOccurrences(text, oldString);
-            if (count == 0) return ToolResult.Fail("oldString não encontrado no arquivo");
+            if (count == 0)
+            {
+                // Nao ecoa o trecho errado: a dica e' a forma que funciona. O modelo
+                // reenviava o bloco inteiro com um `oldString` que nao existia e batia no
+                // mesmo erro (medido no isolado de 2026-10-29); a primeira linha real
+                // serve de ancora para o trecho curto.
+                string first = "";
+                foreach (string line in text.Split('\n'))
+                {
+                    if (line.Trim().Length == 0) continue;
+                    first = line.Trim();
+                    break;
+                }
+                if (first.Length > 80) first = first[..80];
+                return ToolResult.Fail("oldString não encontrado no arquivo. Copie o trecho EXATO de um `read` "
+                    + "(um trecho curto, de uma linha, e' mais facil de acertar) ou grave o arquivo inteiro com `write`. "
+                    + $"Primeira linha de '{path}': {first}");
+            }
             if (count > 1 && !replaceAll) return ToolResult.Fail($"oldString ocorre {count}x; use replaceAll ou refine o trecho");
 
             string updated = replaceAll ? text.Replace(oldString, newString) : ReplaceFirst(text, oldString, newString);

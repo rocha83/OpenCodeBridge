@@ -478,6 +478,7 @@ internal static class E2EMissionTests
         var hist = new JsonArray(new JsonObject { ["role"] = "system", ["content"] = sys });
         hist.Add(new JsonObject { ["role"] = "user", ["content"] = prompt + feedback });
         int prosaSeguida = 0;
+        int httpFalhas = 0;
         for (int turn = 0; turn < turns; turn++)
         {
             JsonObject r;
@@ -489,8 +490,13 @@ internal static class E2EMissionTests
             {
                 global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Apply(hist);
                 Console.WriteLine($"  [algo:{lang}] HTTP falhou: {ex.Message.Split('\n')[0]}");
+                // Ponte fora do ar nao e' falha de raciocinio: 3 seguidas encerram a
+                // fase com a causa certa (antes o laco gastou 15 turnos em Connection
+                // refused durante um restart — medido 2026-10-29).
+                if (++httpFalhas >= 3) throw new Exception($"bridge indisponivel na fase {lang}: {ex.Message.Split('\n')[0]}");
                 continue;
             }
+            httpFalhas = 0;
             var m = r["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message (" + lang + ")");
             var calls = m["tool_calls"]?.AsArray();
             if (dump)
