@@ -2689,6 +2689,11 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             if (kw?["enable_thinking"] is JsonValue ev && ev.TryGetValue<bool>(out bool b)) wantThinking = b;
         }
         catch { }
+        // Progresso entre turnos: mesma tool call repetida depois de erro nao
+        // muda o estado — o aviso aponta a repeticao sem repetir o erro (o
+        // modelo ja' o tem na mensagem `role: tool`).
+        if (ToolCallRepeat.Apply(messages))
+            Log(new JsonObject { ["event"] = "call-repeat-nudge", ["messages"] = messages.Count });
         var chat = new JsonObject
         {
             ["model"] = Model,

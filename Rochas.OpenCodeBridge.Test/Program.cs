@@ -107,6 +107,15 @@ internal static class Program
             return 4;
         }
 
+        // Run manual (fora do driver) comeca com o PAINEL limpo: enunciado,
+        // historico e steps da execucao anterior nao vazam para esta rodada —
+        // medido em 2026-10-29: linha `E-mission-tools` de um isolado anterior
+        // fez `U-diag-reset-panel` contar 2 steps. Na WAR quem zera e o
+        // WarTemplate (1x por bateria) e o `step_start` NAO usa panel=1.
+        if (Environment.GetEnvironmentVariable("WAR_STEP") is null)
+            TestContext.ResetDiagnostics(clearProbe: true, required: false,
+                apiKey: cred, clearPanel: true);
+
         // ---- unit (bridge, sem modelo)
         if (!TestContext.SkipUnit)
         {
@@ -186,6 +195,7 @@ internal static class Program
         TestContext.Run("U-fs-repair-comprehension", UnitToolBreakerTests.FsRepairComprehensionForms);
         TestContext.Run("U-antirepeat-args-window", UnitToolBreakerTests.AntiRepeatArgsWindowIsIndependent);
         TestContext.Run("U-toolcall-salvage-notice", UnitToolBreakerTests.SalvageNoticeIsRecognizable);
+        TestContext.Run("U-toolcall-repeat-notice", UnitToolBreakerTests.ToolCallRepeatNotice);
         TestContext.Run("U-tails-tool-first", UnitToolBreakerTests.BehaviorTailForcesToolFirst);
         TestContext.Run("U-translate-temp-respeita-tunel", UnitToolBreakerTests.TranslateTempRespeitaTunel);
         TestContext.Run("U-translate-breaker-verdicts", UnitToolBreakerTests.TranslateBreakerVerdicts);
