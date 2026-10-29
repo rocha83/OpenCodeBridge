@@ -231,10 +231,10 @@ internal static class TestContext
         // alimenta o painel (evita 100+ U-* no dicionario de steps).
         bool panelStep = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAR_STEP"))
                          && name.StartsWith("E-", StringComparison.Ordinal);
-        // Diagnostico por step: zera contadores/sonda/arquivos pela API, sem
-        // reiniciar a bridge. Restart fica reservado a troca de binario
-        // (deploy) e ao inicio da bateria — zerar numero nao exige downtime.
-        if (panelStep) ResetDiagnostics();
+        // Diagnostico: a limpeza e' do runner, UMA por nivel/run (o step nao zera
+        // contador — zerar por step apagava a leitura do run no painel). Aqui so'
+        // o run isolado de E2E, que e' a propria rodada, limpa antes de comecar.
+        if (panelStep && Environment.GetEnvironmentVariable("WAR_NO_RESET") is null) ResetDiagnostics();
         // Run isolado tambem alimenta a sonda de 5s (tps/VRAM/GPU/tools). No WAR
         // o driver e' o dono da sonda; aqui ela morre junto com o step.
         StepProbe? probe = null;

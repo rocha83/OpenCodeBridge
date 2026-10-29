@@ -110,9 +110,10 @@ internal static class Program
         // Run manual (fora do driver) comeca com o PAINEL limpo: enunciado,
         // historico e steps da execucao anterior nao vazam para esta rodada —
         // medido em 2026-10-29: linha `E-mission-tools` de um isolado anterior
-        // fez `U-diag-reset-panel` contar 2 steps. Na WAR quem zera e o
-        // WarTemplate (1x por bateria) e o `step_start` NAO usa panel=1.
-        if (Environment.GetEnvironmentVariable("WAR_STEP") is null)
+        // fez `U-diag-reset-panel` contar 2 steps. Na WAR quem zera e' o runner
+        // da esteira, UMA vez por nivel/run (`WAR_NO_RESET=1` no step).
+        if (Environment.GetEnvironmentVariable("WAR_STEP") is null
+            && Environment.GetEnvironmentVariable("WAR_NO_RESET") is null)
             TestContext.ResetDiagnostics(clearProbe: true, required: false,
                 apiKey: cred, clearPanel: true);
 

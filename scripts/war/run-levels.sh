@@ -135,6 +135,20 @@ pf() { # check ok evidence-json
 }
 json_get() { grep -o "\"$2\":[^,}]*" <<<"$1" 2>/dev/null | head -1 | sed "s/\"$2\"://; s/\"//g"; }
 
+# Limpeza UNICA do nivel: contadores, arquivos, sonda e painel. E' o unico
+# reset da bateria — cada step roda com WAR_NO_RESET=1 e nao zera mais nada
+# (zerar por step apagava a leitura do run: throughput/tools/arquivos voltavam
+# a zero a cada linha da esteira).
+reset_once() {
+  local ack
+  ack=$(curl -s -m 10 -X POST -H "Authorization: Bearer $API" \
+        "$BRIDGE/api/diag/reset?probe=1&files=1&panel=1" 2>/dev/null)
+  case "$ack" in
+    *'"ok":true'*) log "diag reset do nivel: $ack" ;;
+    *) log "AVISO: reset do nivel sem ack da bridge ($ack)" ;;
+  esac
+}
+
 preflight() {
   log "=== preflight ==="
   # 1) llama do upstream (health + ctx por slot)
@@ -216,6 +230,7 @@ preflight() {
     return 1
   fi
   log "preflight ok"
+  reset_once
   return 0
 }
 
@@ -231,7 +246,7 @@ _step_bridge() { # nome + args do runner
   [ -f "$BLOG" ] && b0=$(wc -l < "$BLOG")
   local t0; t0=$(date +%s)
   log "=== $name :: $*"
-  timeout "${LEVEL_STEP_TIMEOUT:-7200}" dotnet run --project "$TESTPROJ" -c Release --no-build -- \
+  WAR_NO_RESET=1 timeout "${LEVEL_STEP_TIMEOUT:-7200}" dotnet run --project "$TESTPROJ" -c Release --no-build -- \
       --api-key "$API" --bridge "$BRIDGE" "$@" > "$STEPS/$name.test.log" 2>&1
   local rc=$?
   local secs=$(( $(date +%s) - t0 ))
@@ -291,7 +306,7 @@ _step_webtest() { # integracao + topicos (suite web; TopicsSweep roda no bloco u
   emit "{\"t\":\"step_start\",\"step\":\"$name\",\"mode\":\"web\",\"attempt\":$attempt,\"run\":\"$HASH_GIT\"}"
   local t0; t0=$(date +%s)
   log "=== $name :: Web.Test (integracao + topicos)"
-  timeout "${LEVEL_STEP_TIMEOUT:-3600}" dotnet exec "$WEBTEST" > "$STEPS/$name.test.log" 2>&1
+  WAR_NO_RESET=1 timeout "${LEVEL_STEP_TIMEOUT:-3600}" dotnet exec "$WEBTEST" > "$STEPS/$name.test.log" 2>&1
   local rc=$?
   local secs=$(( $(date +%s) - t0 ))
   local verdict=SKIP cause=""
