@@ -198,6 +198,7 @@ internal static class Program
         TestContext.Run("U-tails-path-simulation-rules", UnitToolBreakerTests.ToolsTailCarriesPathAndSimulationRules);
         TestContext.Run("U-fs-repair-comprehension", UnitToolBreakerTests.FsRepairComprehensionForms);
         TestContext.Run("U-fs-repair-module-line", UnitToolBreakerTests.FsRepairModuleLineAlone);
+        TestContext.Run("U-fs-repair-body-shape", UnitToolBreakerTests.FsRepairFunctionBodyShape);
         TestContext.Run("U-antirepeat-args-window", UnitToolBreakerTests.AntiRepeatArgsWindowIsIndependent);
         TestContext.Run("U-toolcall-salvage-notice", UnitToolBreakerTests.SalvageNoticeIsRecognizable);
         TestContext.Run("U-bridge-notice", UnitToolBreakerTests.BridgeNoticeFormatIsSingleSource);

@@ -57,6 +57,22 @@ public static class FsSyntaxRepair
             }
         }
 
+        // FS3118/FS0588/FS0528: a funcao foi declarada com `=` e o corpo nao termina
+        // numa expressao (let interno engole o resultado, ou o arquivo acaba antes).
+        // A forma certa e' um corpo com as linhas alinhadas sob o `=` e a ultima
+        // expressao devolvendo o valor (medido no isolado de 2026-10-29).
+        if (code is "FS3118" or "FS0588" or "FS0528")
+            return "CERTO: o corpo da funcao tem as linhas alinhadas sob o `=` e a ULTIMA expressao devolve o valor:\n"
+                   + "let total xs =\n"
+                   + "    let dobro = List.map (fun x -> x * 2) xs\n"
+                   + "    List.sum dobro";
+
+        // FS0603 (`[|` incompativel): a comprehension de array envolve TUDO entre
+        // `[|` e `|]`, com `->` no elemento — a barra nao separa elemento de gerador.
+        if (code == "FS0603")
+            return "CERTO: a comprehension de array fica inteira entre `[|` e `|]`:\n"
+                   + "[| for i in 1 .. 3 -> i * i |]";
+
         // FS0058 (offside): `let` na propria linha do `else` deixa o corpo fora da
         // coluna permitida. Forma estrutural: auxiliar no nivel do modulo, recebendo
         // por parametro o que ele usa de fora; no ramo, so' a chamada.

@@ -671,6 +671,30 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // L4/isolado de 2026-10-29: o F# do modelo declarava a funcao com `=` e engolia o
+    // resultado num `let` interno (FS3118/FS0588) e usava array-comprehension com a
+    // barra no meio (FS0603). A dica devolve a forma que compila, com o corpo alinhado.
+    public static Task FsRepairFunctionBodyShape()
+    {
+        static string Fs(string src, string err)
+            => global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(src, err);
+        string corpo = Fs("let primesCount n =\n    let countPrimes limit =\n        limit\n",
+            "error FS3118: Incomplete value or function definition.");
+        TestContext.Check(corpo.Contains("let total xs =\n    let dobro") && corpo.Contains("List.sum dobro"),
+            "FS3118 -> corpo com let local e ultima expressao como valor (veio: " + corpo.Replace("\n", " | ") + ")");
+        string inacabado = Fs("let f n =\n    let g = n\n",
+            "error FS0588: The block following this 'let' is unfinished.");
+        TestContext.Check(inacabado.Contains("List.sum dobro"), "FS0588 -> mesma forma de corpo");
+        string eof = Fs("let f n =\n    let g = n\n", "error FS0528: Unexpected end of input");
+        TestContext.Check(eof.Contains("List.sum dobro"), "FS0528 -> mesma forma de corpo");
+        string arr = Fs("let s = [| if p i then 1 else 0 | for i in 2 .. n |]",
+            "error FS0603: ''[|'' incompatible.");
+        TestContext.Check(arr.Contains("[| for i in 1 .. 3 -> i * i |]"),
+            "FS0603 -> comprehension de array inteira entre [| e |] (veio: " + arr.Replace("\n", " | ") + ")");
+        TestContext.Check(!arr.Contains("| for i in 2 .."), "a dica nao repete a barra no meio");
+        return Task.CompletedTask;
+    }
+
     // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
 
     public static Task AntiRepeatArgsWindowIsIndependent()

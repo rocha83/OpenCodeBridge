@@ -75,5 +75,14 @@ let private buildHeader (header: string) =
 
 check "cabecalho colado -> compilador recusa" (buildHeader "module Program open System" <> 0)
 check "cabecalho ensinado (module sozinho + open) -> compila" (buildHeader "module Program\n\nopen System" = 0)
+
+// 8) Formas novas da tabela de erros (FS3118/FS0588/FS0603): corpo de funcao que
+//    termina numa expressao e comprehension de array inteira entre `[|` e `|]`.
+let total xs =
+    let dobro = List.map (fun x -> x * 2) xs
+    List.sum dobro
+check "corpo com let local + ultima expressao (FS3118/FS0588)" (total [1; 2; 3] = 12)
+let quadrados = [| for i in 1 .. 3 -> i * i |]
+check "comprehension de array inteira entre [| e |] (FS0603)" (quadrados = [| 1; 4; 9 |])
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."

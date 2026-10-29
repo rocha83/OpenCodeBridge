@@ -443,10 +443,14 @@ internal static class E2EMissionTests
             .Replace(ws + "/mcs/mcs.csproj", ws + "/mfs/mfs.fsproj")
             .Replace("projeto mcs.csproj", "projeto mfs.fsproj");
 
-        var (csSrc, csOut) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", csPrompt);
-        TestContext.Check(!HasHardcodedAlgo(csSrc), "C# calcula (sem hardcode das metas)");
-        TestContext.Check(AlgoOk(csOut), "C# entrega as chaves esperadas, saiu: " + csOut[..Math.Min(240, csOut.Length)]);
-        Console.WriteLine($"  [algo] C# ok:\n{csOut.Trim()}");
+        // Diagnostico: ALGO_FROM=F# pula a metade C# (ela e' medida no run normal).
+        if (Environment.GetEnvironmentVariable("ALGO_FROM") != "F#")
+        {
+            var (csSrc, csOut) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", csPrompt);
+            TestContext.Check(!HasHardcodedAlgo(csSrc), "C# calcula (sem hardcode das metas)");
+            TestContext.Check(AlgoOk(csOut), "C# entrega as chaves esperadas, saiu: " + csOut[..Math.Min(240, csOut.Length)]);
+            Console.WriteLine($"  [algo] C# ok:\n{csOut.Trim()}");
+        }
 
         var (fsSrc, fsOut) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", fsPrompt);
         TestContext.Check(!HasHardcodedAlgo(fsSrc), "F# calcula (sem hardcode das metas)");
