@@ -149,6 +149,36 @@ reset_once() {
   esac
 }
 
+# Regra da WAR (AGENTS.md): a esteira roda com o thinking OFF — quem a executa
+# e' o role build, que ja e' off por perfil; pensamento ligado em tools densas
+# gasta raciocinio e ramifica. A bridge de bancada e' a mesma das sessoes, por
+# isso o valor original volta no fim do nivel (trap EXIT).
+THINK_BEFORE=""
+thinking_off() {
+  local st ack
+  st=$(curl -s -m 8 -H "Authorization: Bearer $API" "$BRIDGE/api/status" 2>/dev/null)
+  THINK_BEFORE=$(json_get "$st" thinking)
+  if [ "$THINK_BEFORE" = "off" ]; then
+    log "thinking ja' off (regra da WAR)"
+    return 0
+  fi
+  ack=$(curl -s -m 8 -X POST -H "Authorization: Bearer $API" -H "Content-Type: application/json" \
+        -d '{"thinking":"off"}' "$BRIDGE/api/config" 2>/dev/null)
+  if [ "$(json_get "$ack" thinking)" = "off" ]; then
+    log "thinking OFF na bridge da WAR (antes: ${THINK_BEFORE:-n/d})"
+    return 0
+  fi
+  log "ERRO: nao consegui por thinking=off na bridge ($ack)"
+  return 1
+}
+thinking_restore() {
+  [ -n "$THINK_BEFORE" ] && [ "$THINK_BEFORE" != "off" ] || return 0
+  curl -s -m 8 -X POST -H "Authorization: Bearer $API" -H "Content-Type: application/json" \
+       -d "{\"thinking\":\"$THINK_BEFORE\"}" "$BRIDGE/api/config" >/dev/null 2>&1
+  log "thinking restaurado para $THINK_BEFORE (fim do nivel)"
+}
+trap thinking_restore EXIT
+
 preflight() {
   log "=== preflight ==="
   # 1) llama do upstream (health + ctx por slot)
@@ -224,6 +254,12 @@ preflight() {
   local gpu
   gpu=$(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader 2>/dev/null | head -1)
   pf "gpu" true "{\"uso\":\"$(jesc "$gpu")\"}"
+  # 8) thinking: a WAR roda off (role build). Setado aqui e restaurado no exit.
+  if thinking_off; then
+    pf "bridge_thinking" true "{\"thinking\":\"off\"}"
+  else
+    pf "bridge_thinking" false "{}"
+  fi
   if [ -n "$PF_FAIL" ]; then
     emit "{\"t\":\"preflight_fail\",\"checks\":\"$(jesc "$PF_FAIL")\"}"
     log "preflight FALHOU: $PF_FAIL (veredito BLOCKED)"
