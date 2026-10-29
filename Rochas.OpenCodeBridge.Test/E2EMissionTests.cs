@@ -346,8 +346,13 @@ internal static class E2EMissionTests
         Console.WriteLine($"  [mission] F# ok:\n{fsOut.Trim()}");
 
         // Fase 3: versionamento com a tool git (command/path) + pacote via shell (zip).
-        histFs.Add(new JsonObject { ["role"] = "user", ["content"] = $"Conclua a entrega: versione o workspace com a tool git (command/path: init, config, add, commit) — vale a raiz {ws} ou a pasta do projeto {ws}/mfs — e gere entrega.zip com a tool shell (zip -qr) na raiz {ws}. So tool calls ate concluir, sem texto." });
-        for (int turn = 0; turn < 12; turn++)
+        // O nome do pacote vai em frase propria: medido em 2026-10-29 (10:18), o
+        // modelo gerou `delivery.zip` e o assert (correto) exige `entrega.zip`.
+        histFs.Add(new JsonObject { ["role"] = "user", ["content"] =
+            $"Conclua a entrega em duas partes, so' tool calls, sem texto. " +
+            $"1) Versione com a tool git (command/path: init, config, add, commit) — vale a raiz {ws} ou a pasta do projeto {ws}/mfs. " +
+            $"2) Gere o pacote com a tool shell: o arquivo e' {ws}/entrega.zip, com esse nome exato (zip -qr entrega.zip . a partir de {ws})." });
+        for (int turn = 0; turn < 14; turn++)
         {
             var r2 = await Chat(bridge, model, (JsonArray)histFs.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
             var m2 = r2["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message (git/zip)");
@@ -358,7 +363,9 @@ internal static class E2EMissionTests
                 if (Directory.GetFiles(ws, "entrega.zip").Length == 1) break;
                 LogT($"[git/zip] T{turn + 1} sem tool call e sem entrega.zip; pedindo shell com zip");
                 histFs.Add(new JsonObject { ["role"] = "user",
-                    ["content"] = "Voce encerrou sem concluir a entrega. Verifique o que falta e emita a tool call correspondente, sem texto." });
+                    ["content"] =
+                        $"Ainda falta o pacote: o arquivo tem que ser {ws}/entrega.zip (nome exato). " +
+                        $"Emita a tool shell com `zip -qr entrega.zip .` em {ws}; um pacote com outro nome nao conclui." });
                 continue;
             }
             var f2 = new JsonArray();
