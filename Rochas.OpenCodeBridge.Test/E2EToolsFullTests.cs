@@ -30,14 +30,13 @@ internal static class E2EToolsFullTests
         // Enunciado de TAREFA, nao de harness: sem path, sem nome de tool e sem
         // coringa de coordenada. O modelo flui; o harness resolve o cwd.
         const string basePrompt =
-            "Trabalhe SOMENTE dentro da pasta atual: crie tudo (pastas e arquivos) dentro dela e nada fora. " +
+            "Trabalhe dentro da pasta atual: tudo (pastas e arquivos) nasce aqui. " +
             "1. Crie uma subpasta com nome a sua escolha e, dentro dela, um arquivo de texto simples com nome a sua escolha " +
             "contendo a data de hoje (a data do sistema) escrita como texto. " +
             "2. Nessa mesma subpasta, inicialize um repositorio git, adicione os arquivos e faca o primeiro commit " +
             "com a mensagem 'data de hoje'; confirme com git log. " +
-            "3. Busque na internet as condicoes climaticas de hoje em Sao Paulo e use o texto REAL retornado, nunca placeholder. " +
-            "Acrescente ao MESMO arquivo de texto uma linha nova ABAIXO da data, comecando com \"ARQUIVO EDITADO - Clima: \" " +
-            "seguida do clima real, sem substituir nem apagar a data ja gravada; confirme com grep que a data continua no arquivo. " +
+            "3. Busque na internet o clima de Sao Paulo de hoje e use o texto real retornado; escreva no MESMO arquivo, " +
+            "na linha de baixo da data, \"ARQUIVO EDITADO - Clima: \" seguido desse clima — o arquivo termina com a data e a linha do clima. " +
             "4. Faca o segundo commit com a mensagem 'Added sao paulo weather', confirme os 2 commits com git log e salve essa " +
             "saida num arquivo de historico dentro da pasta do repositorio; o arquivo de historico deve existir antes de terminar. " +
             "Execute uma tool por vez, de forma sequencial e sem chamadas em paralelo, conforme as instrucoes previas da sessao (main harness e tails).";

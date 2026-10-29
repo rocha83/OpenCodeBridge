@@ -141,7 +141,7 @@ json_get() { grep -o "\"$2\":[^,}]*" <<<"$1" 2>/dev/null | head -1 | sed "s/\"$2
 # a zero a cada linha da esteira).
 reset_once() {
   local ack
-  ack=$(curl -s -m 10 -X POST -H "Authorization: Bearer $API" \
+  ack=$(curl -s -m 10 -X POST -d '' -H "Authorization: Bearer $API" \
         "$BRIDGE/api/diag/reset?probe=1&files=1&panel=1" 2>/dev/null)
   case "$ack" in
     *'"ok":true'*) log "diag reset do nivel: $ack" ;;

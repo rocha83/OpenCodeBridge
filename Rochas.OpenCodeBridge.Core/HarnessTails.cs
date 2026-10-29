@@ -41,6 +41,7 @@ public static class HarnessTails
         "Prefira a tool dedicada: read/write/edit para arquivo, glob/grep para descobrir, webfetch/websearch para rede, shell para executar. " +
         "Um passo = uma acao; argumentos JSON completos; leia o resultado antes de repetir. " +
         "JSON DO ARGS: o conteudo de `write`/`edit` e' string JSON — quebra de linha = `\\n` (barra + n, dois caracteres) e aspas = `\\\"`; nunca quebre a linha crua dentro da string (o parser recusa). " +
+        "EDITAR ACRESCENTANDO: o `oldString` e' o trecho que CONTINUA no arquivo; o `newString` traz esse mesmo trecho + o texto novo, para o arquivo terminar com os dois. " +
         "ARQUIVO GRANDE: grave um `write` curto e complete com `edit` (args menor = menos risco de truncar). " +
         "Independentes no mesmo turno; dependentes esperam. Nao repita a mesma chamada/caminho; em loop, mude a abordagem. " +
         "`execute` nao e sandbox: a bridge desembrulha tools.X; bloqueio de role nao se contorna por shell. " +
