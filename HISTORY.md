@@ -32,12 +32,20 @@ aplicar, e programa F# de 95 linhas com construções inválidas
    cada, com contexto novo e a saída real realimentada; o aceite final é o mesmo
    (5 chaves, `hanoi_seq` com 15 movimentos) e `HasHardcodedAlgo` continua
    reprovando meta copiada.
+7. **Escalada da dica repetida foi para o Core**: `FsSyntaxRepair.Suggest(source,
+   error, repeatCount)` acrescenta “reescreva o arquivo inteiro com a tool
+   `write`” a partir da 3ª vez da MESMA dica (e nunca quando não há dica). O teste
+   só conta repetições — nada de mecânica de ensino no consumidor.
+8. **`FS0010` + `Unexpected type application`** (8ª amostra: `(moves: ref
+   seq<string>)`) ensina `ref` como tipo POS-fixado com `:=`/`!`
+   (`moves: string list ref`, `moves := !moves @ [ … ]`), sem ecoar `ref seq`.
 
 **Pins novos.** `U-fs-repair-diagnostic-detection` (warning conta, error conta,
-`MSB1009` e saída vazia não contam) e `U-fsmini-covers-repair-codes` (o `FsMini`
+`MSB1009` e saída vazia não contam), `U-fsmini-covers-repair-codes` (o `FsMini`
 citado pela fase cobre as 16 regras que o reparo responde e começa com o marcador
-`F# MINI`). Prova: `units` **132 PASS / 0 FAIL**, build `0 Aviso(s) / 0 Erro(s)`,
-commit `59deeaa`, deploy + restart (`uptime=0`, `main_harness=True`, `tails=True`).
+`F# MINI`), `U-fs-repair-ref-type` e `U-fs-repair-repeat-escalation`. Prova:
+`units` **134 PASS / 0 FAIL**, build `0 Aviso(s) / 0 Erro(s)`, commits `59deeaa`
+e `1b14994`, deploy + restart (`uptime=0`, `main_harness=True`, `tails=True`).
 
 ## `E-mission-algo` dividido em dois testes (C# e F#) e dicas que ensinavam o caso errado (2026-10-29)
 
