@@ -327,3 +327,24 @@ classe nova ou conhecimento do teste dentro do Core — o handler continua puro.
 `PASS E-tools-full (41.7s)` / `PASS=1 FAIL=0 SKIP=0`, com
 `temperature=0.1, temperature_source=profile` no log da `:4124`.
 
+
+## 16. POST de reset voltava 411 e deploy reprovava por pressa (2026-10-29)
+
+**Sintoma** — `curl -X POST /api/diag/reset` devolvia `<h1>Length Required</h1>`;
+`deploy-pull.sh` terminava com `curl: (7) Failed to connect ... :4800` mesmo com
+o Grafana subindo normalmente.
+
+**Causa** — (a) `HttpListener` responde **411** para POST sem `Content-Length`, e
+`HttpRequestMessage`/`PostAsync(url, null)` não manda esse header; o handler
+estava certo, o cliente incompleto. (b) O script verificava `/api/health` 3 s
+após o restart; o deb do Grafana leva ~6 s para abrir a porta.
+
+**Correção** — clientes (`TestContext.ResetDiagnostics`,
+`TestCircuitDriver.PostDiagReset`, `U-diag-reset`) mandam `StringContent("")`;
+`deploy-pull.sh` faz *polling* com teto (bridge 30 s, Grafana 60 s) e só então
+falha. Nenhum assert afrouxado.
+
+**Prova** — `curl -X POST -d '' .../api/diag/reset?probe=1&files=1` →
+`{"ok":true,"event":"diag-reset",...}`; `--only U-diag-reset` →
+`[test] PASS=1 FAIL=0 SKIP=0`; deploy posterior sobe bridge e Grafana com
+`/api/status` e `/api/health` 200.
