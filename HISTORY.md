@@ -1,5 +1,52 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## WAR L1+L2 bridge com harness on: L1 verde, L2 e `tools-full` corrigidos (2026-10-29)
+
+**Pedido:** reiniciar o WAR em **L1 + L2**, modo `bridge`, `main harness` e
+`tools tail` ligados; registrar; e mitigar **só** o teste que falhou, sempre na
+`:4124`, um por vez.
+
+**Estado da ponte alvo (antes da bateria):** `:4124` (`bridge-gpu`) rodava com
+`--main-harness 0`, então o preflight refutaria o L1. Corrigido na própria unit
+(`/etc/systemd/system/bridge-gpu.service`), como manda a regra de não criar
+ponte paralela: `--main-harness 1` + `daemon-reload` + restart. Status passou a
+`main_harness=true, harness_tails=true, tail_scope=all, legacy_harness=false`.
+A instância de bancada em `:4134` (criada em sessão anterior, contra a regra)
+foi **encerrada**; o único resíduo são referências legadas (dashboard/datasource
+do Grafana e WAR v2 em `scripts/war`).
+
+**L1 — verde.** `logs/levels/L1-20261029-000257-l1`, commit `8b4f604`,
+`rc=0` em 00:14:26: `units` + `integr-bridge` + `topics-bridge`. O `units`
+fechou 64/64 depois de alinhar o contrato `FsMini` ×
+`U-tails-path-simulation-rules` (o teste ainda exigia os literais inválidos que
+a correção #13 removeu de propósito; agora exige a forma correta
+`[1 .. 2 .. n-1]` e **proíbe** o literal copiável `[1; 3 .. n-1]`).
+
+**L2 — primeira rodada vermelha por um único step.**
+`responses-tools-bridge` PASS (3 s); `tools-full-bridge` FAIL (37 s);
+`belts-build-bridge` e `belts-orch-bridge` SKIP (fail-fast, **não medidos**).
+
+**`tools-full-bridge`: duas amostras, duas falhas distintas**
+- amostra A: `edit(oldString="2026-10-29", newString="\nARQUIVO EDITADO - Clima: …")`
+  **apagou a data** → assert `data do sistema anotada` falhou;
+- amostra B: **nenhum `edit`**; o modelo foi para o 2º commit com árvore limpa,
+  repetiu o mesmo `shell` e o mesmo `read`, e o `anti-repeat-loop` cortou o turno.
+- Ambas são disciplina de fluxo num enunciado de 4 passos — não defeito de tool.
+
+**Correções (uma por vez, sem afrouxar aceite)**
+1. `Core/ToolHelp.cs` (`edit`): declara a invariante — para ACRESCENTAR, o
+   `oldString` **precisa reaparecer intacto** dentro do `newString` — e corrige a
+   ordem da verificação: confirmar com `read`/`grep` **depois** da edição.
+   Texto genérico, sem citar cenário, path ou data.
+2. `E2EToolsFullTests`: era o **único** teste duro da suíte com 1 tentativa
+   (mission roda 3 com feedback, belts cutucam). Passou a ter 3 tentativas com a
+   falha do aceite realimentada e pasta nova por tentativa; **enunciado e
+   assertivas idênticos**.
+
+**Prova do teste isolado** `logs/levels/tools-full-20261029-005826.console.log`:
+`PASS E-tools-full (41.7s)` na primeira tentativa, com
+`temperature=0.1 / source=profile` (role Build) no log da bridge.
+
 ## WAR L1+L2 bridge-only: L1 verde, L2 corrigido e verde (2026-10-27)
 
 **Pedido:** reiniciar corretamente, rodar L1+L2 em bridge-only e fail-fast, com

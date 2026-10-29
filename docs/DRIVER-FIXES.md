@@ -297,3 +297,33 @@ registrar `temperature` no system efetivamente enviado.
 (`read`, `write`, `shell`). Atestação do system enviado:
 `{"role":"Build","fsmini":true,"tipos_regra":true,"tail_scope":"all","harness_tails":true,"temperature":0.1}`
 — temperatura vinda do perfil do role, não do cliente.
+
+## 15. `tools-full`: `edit` destrutivo e a ausência de orçamento de reparo no teste mais duro
+
+**Sintoma** — `E-tools-full` passou a falhar em **dois formatos distintos** na
+mesma máquina: (a) `[toolsfull:agent] data do sistema anotada` com o `.txt`
+contendo só `"\nARQUIVO EDITADO - Clima: …"`, sem o ano; (b) `marca EDITADO`
+ausente, porque o modelo **nunca chamou `edit`** e foi direto ao 2º
+`git commit` com árvore limpa (`nothing to commit`), repetindo o mesmo `shell` e
+o mesmo `read` até o `anti-repeat-loop` cortar o turno.
+
+**Causa** — (a) o help do `edit` dizia apenas "para acrescentar, `newString` =
+oldString + trecho novo": não declarava a **invariante** (o `oldString` precisa
+reaparecer intacto dentro do `newString`) nem **quando** confirmar — o modelo
+rodava o `grep` de confirmação *antes* da edição e nunca depois, e a edição
+respondia `ok`; (b) o `E-tools-full` era o único teste duro da suíte com **uma**
+tentativa, enquanto `E-mission-tools` roda 3 com feedback e as belts cutucam —
+enunciado de 4 passos encadeados sem orçamento de reparo mede sorte de
+amostragem, não capacidade.
+
+**Correção** — `Core/ToolHelp.cs` (`edit`) passa a declarar a invariante do
+append e a ordem `read`/`grep` **depois** da edição, em texto genérico (sem
+cenário, path ou data). `E2EToolsFullTests` ganhou o mesmo padrão do mission:
+`AgentAttempt` + 3 tentativas com a **falha do aceite** realimentada e pasta nova
+por tentativa; enunciado e assertivas **inalterados**. Nada de estado global,
+classe nova ou conhecimento do teste dentro do Core — o handler continua puro.
+
+**Prova** — `logs/levels/tools-full-20261029-005826.console.log`:
+`PASS E-tools-full (41.7s)` / `PASS=1 FAIL=0 SKIP=0`, com
+`temperature=0.1, temperature_source=profile` no log da `:4124`.
+
