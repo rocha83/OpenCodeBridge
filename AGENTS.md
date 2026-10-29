@@ -120,6 +120,35 @@ uma segunda versão da mesma responsabilidade.
   enunciado, preparar fixture, controlar serviço, checar saída) não é Core;
   ainda assim, não duplique uma responsabilidade que o Core já tem.
 
+## Regra: DRY antes de criar — procure o artefato existente e complete-o (primordial)
+
+Vale para **todo** artefato novo: arquivo, classe, método, tool, pin, script,
+unidade systemd, seção de doc, mensagem de nudge. Criar antes de procurar é bug
+de processo, não estilo.
+
+1. **Busca primeiro, criação depois.** Antes de escrever, procure o mesmo
+   sujeito no repo (`grep -rn "<termo>"`, `ls <pasta>`, `git log -S "<termo>"`,
+   leitura do arquivo que já trata o assunto). Nome diferente não é assunto
+   diferente: "retry", "loop", "breaker", "anti-repeat" e "escalada" são o
+   **mesmo** mecanismo.
+2. **Complemento > duplicata.** Se o existente cobre a responsabilidade, ele
+   ganha o caso novo (parâmetro, ramo, asserção, linha de tabela). Só se cria
+   artefato novo quando o existente **não** cobre — e o retorno diz, com
+   evidência, por que não servia.
+3. **Caso medido (2026-10-29).** Para o loop de 15 `edit` com `oldString`
+   obsoleto no `E-mission-algo-fs` foi criado `Core/ToolRetryEscalation` — que
+   duplicava `ToolsAntiRepeat`/`ToolsBreaker` (falha no mesmo alvo, soft 3 / hard
+   6, nudge/trip), já usado pela bridge no caminho de chat. O artefato foi
+   **revertido**; o certo era o consumidor (`RunAlgoPhase`) chamar o controle
+   existente. O pin novo também saiu: o caso entrou em `U-breaker-compiler-loop`.
+4. **Evidência no retorno:** “procurei `<termo>` em `<caminho>` → achei
+   `<arquivo:símbolo>` → completei com `<caso>`” (comando + trecho). Busca sem
+   resultado também se declara (“procurei X, Y e Z; não existe”) — nunca criar
+   no escuro.
+5. **Dedup também vale para texto:** duas cópias da mesma dica/aviso/aprendizado
+   divergem na primeira edição. Um lugar só (Core/tabela única), consumidores
+   chamam. Ver “a dica ensina a forma CERTA” e “Core é a fonte única”.
+
 ## Regra: blindagem em C# — teste + evidência, nunca script decorativo
 Vale para gate, preflight, driver, parsing de veredito e qualquer verificação que
 decida PASS/FAIL. O padrão do projeto é C# com teste e evidência; bash é
