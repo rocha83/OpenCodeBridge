@@ -40,7 +40,7 @@ internal static class E2EToolsFullTests
             "seguida do clima real, sem substituir nem apagar a data ja gravada; confirme com grep que a data continua no arquivo. " +
             "4. Faca o segundo commit com a mensagem 'Added sao paulo weather', confirme os 2 commits com git log e salve essa " +
             "saida num arquivo de historico dentro da pasta do repositorio; o arquivo de historico deve existir antes de terminar. " +
-            "Uma tool por vez.";
+            "Conforme as instrucoes previas da sessao (main harness e tails), execute uma acao por vez e siga o contrato das tools.";
         // A retentativa recebe a FALHA do aceite (contrato observavel), nunca a
         // mecanica do teste; a 1a tentativa e o enunciado puro.
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
@@ -77,10 +77,21 @@ internal static class E2EToolsFullTests
         string[] files = Directory.GetFiles(dir, "*", SearchOption.AllDirectories)
             .Where(f => !f.Contains(gitDir, StringComparison.Ordinal)).ToArray();
         string year = DateTime.Now.ToString("yyyy");
-        string body = files.Select(ReadText).FirstOrDefault(t => t.Contains(year)) ?? "";
-        TestContext.Check(body.Length > 0,
+        static string Trecho(string f)
+        {
+            string t = ReadText(f).Replace('\n', ' ').Trim();
+            return t[..Math.Min(70, t.Length)];
+        }
+        string[] comData = files.Where(f => ReadText(f).Contains(year, StringComparison.Ordinal)).ToArray();
+        TestContext.Check(comData.Length > 0,
             $"[toolsfull:agent] arquivo de texto com a data criado (files={files.Length})");
-        TestContext.Check(body.Contains("EDITADO"), $"[toolsfull:agent] marca EDITADO no arquivo (calls={string.Join(";", calls)})");
+        // Contrato: UM arquivo com a data E a linha do clima. Escolhe o que ja'
+        // tem as duas coisas; na falha a mensagem mostra o que cada um tem (o
+        // modelo grava a data num arquivo e o EDITADO em outro homonimo).
+        string body = comData.Select(ReadText).FirstOrDefault(t => t.Contains("EDITADO", StringComparison.Ordinal)) ?? "";
+        TestContext.Check(body.Length > 0,
+            "[toolsfull:agent] marca EDITADO no MESMO arquivo da data (arquivos com data: "
+            + string.Join(" | ", comData.Select(f => Path.GetFileName(f) + "='" + Trecho(f) + "'")) + ")");
 
         var (lgCode, lgOut) = Run("git", repo, 30, "-c", "safe.directory=" + repo, "log", "--oneline");
         string[] commits = lgCode == 0 ? lgOut.Split('\n', StringSplitOptions.RemoveEmptyEntries) : Array.Empty<string>();

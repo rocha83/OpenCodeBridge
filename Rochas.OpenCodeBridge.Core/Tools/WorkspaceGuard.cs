@@ -80,6 +80,10 @@ public static class WorkspaceGuard
 
             const int DepthMax = 4, AchaMax = 3, VisitaMax = 4000;
             var achados = new List<string>();
+            // A raiz do workspace vem primeiro; se ela ja' tem o arquivo, as
+            // raizes extras NAO entram na dica. Medido no E-tools-full: a dica
+            // anunciava `data.txt` de execucoes anteriores e o modelo seguia o
+            // path de outra tarefa (artefato de terceiro nao e' o do modelo).
             foreach (string raiz in raizes)
             {
                 int vistos = 0;
@@ -113,6 +117,8 @@ public static class WorkspaceGuard
                     catch { /* sem permissao ou link quebrado: segue */ }
                 }
                 if (achados.Count >= AchaMax) break;
+                // Achou no proprio workspace: a dica para aqui (nao mistura raiz extra).
+                if (raiz == baseRoot && achados.Count > 0) break;
             }
             return string.Join(", ", achados);
         }
