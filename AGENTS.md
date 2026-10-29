@@ -246,6 +246,20 @@ conveniência manual, nunca fonte de verdade.
 - Motivo: contadores e `ProbeSamples` começam em zero e o pool HTTP dos dois
   lados é renovado.
 
+## Regra: NÃO criar instâncias de bridge em portas paralelas durante testes (primordial)
+
+- Proibido subir uma `Rochas.OpenCodeBridge` extra em porta separada (ex.: 4134,
+  4144) só para "bancada" de teste. Os testes E2E usam **a bridge alvo já
+  existente** (unit systemd `bridge-gpu` `:4124`, `bridge-gpu2` `:4125` ou
+  `bridge-cpu-forced` `:4126`), reiniciada no início da bateria.
+- Se a bridge alvo não servir para o modo do teste (`main_harness`), o correto é
+  **ajustar o restart da própria unit** (flag/`appsettings`), e não clonar a
+  bridge numa porta efêmera.
+- Motivo: ponte paralela mascara o ambiente real (perfil, harness, `--impl`),
+  duplica VRAM/portas e criou "inconstância" já medida (modelo avaliado contra
+  uma bancada que não é a de produção). O único uso legítimo de porta extra é a
+  porta **experimental canônica** do projeto, nunca uma inventada por sessão.
+
 ## Regra: disposição WAR L1 → L4 (ordem obrigatória)
 
 A esteira WAR tem quatro níveis, nesta ordem, tanto no `WarTemplate`

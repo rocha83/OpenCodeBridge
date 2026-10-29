@@ -124,15 +124,24 @@ internal static class E2EEnterpriseTests
             "C# .NET 9 + Redis (StackExchange.Redis): repositorio de Product com cache-aside (IDistributedCache, " +
             "sliding 5min), fallback Postgres + repopula; PUT/DELETE invalidam a chave com cache.RemoveAsync; " +
             "stampede controlado por lock por chave e circuit-breaker simples (3 falhas) quando o Redis cai. " +
-            "Grave ProductRepository.cs e o registro no DI em Startup.cs (APIs do .NET 8+). So tool calls, sem prosa.",
+            "Grave os arquivos na raiz do workspace (repositorio de Product + registro no DI), APIs do .NET 8+. So tool calls, sem prosa.",
             14, dir);
-        string repo = File.Exists(Path.Combine(dir, "ProductRepository.cs"))
-            ? File.ReadAllText(Path.Combine(dir, "ProductRepository.cs")) : "";
-        TestContext.Check(repo.Length > 500, "redis ProductRepository.cs com codigo util (len=" + repo.Length + ")");
+        // O modelo pode inventar outros nomes de artefato; localiza por CONTEUDO,
+        // nao por nomenclatura fixa (contrato e o codigo, nao o nome do arquivo).
+        string repo = "", startup = "";
+        foreach (var f in Directory.GetFiles(dir, "*.cs", SearchOption.AllDirectories))
+        {
+            if (f.IndexOf(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar, StringComparison.Ordinal) >= 0) continue;
+            if (f.IndexOf(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar, StringComparison.Ordinal) >= 0) continue;
+            var t = File.ReadAllText(f);
+            if (string.IsNullOrEmpty(repo) && t.Contains("IDistributedCache") && t.Contains("RemoveAsync")) repo = t;
+            if (string.IsNullOrEmpty(startup) && (t.Contains("AddStackExchangeRedisCache") || t.Contains("AddDistributedMemoryCache")
+                || t.Contains("AddDistributedRedisCache") || t.Contains("IConnectionMultiplexer"))) startup = t;
+        }
+        if (string.IsNullOrEmpty(startup)) startup = repo;
+        TestContext.Check(repo.Length > 500, "redis repositorio com codigo util (len=" + repo.Length + ")");
         CheckNoStub(repo, "redis");
         TestContext.Check(repo.Contains("IDistributedCache") && repo.Contains("RemoveAsync"), "redis com invalidacao");
-        string startup = File.Exists(Path.Combine(dir, "Startup.cs"))
-            ? File.ReadAllText(Path.Combine(dir, "Startup.cs")) : "";
         // Contrato observavel: cache distribuido registrado no DI. A API exata e
         // escolha do autor (StackExchange moderno, memory fallback ou a legada
         // pre-3.0); a versao escolhida vai no [info], nao no assert.
