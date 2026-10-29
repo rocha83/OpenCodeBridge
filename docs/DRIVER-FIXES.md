@@ -629,3 +629,38 @@ contratos do Core davam feedback incompleto:
 (inclui `U-tool-feedback-shell-cwd`, `U-tool-feedback-git-chain` e os pins do
 exemplo em `U-tool-help`); `E-tools-full` isolado **3/3 PASS** (25,7 s / 42,5 s
 / 35,9 s) contra o binário deployado no PROD (`b17f180`).
+
+## 25. Mission-algo: F# não compilava com `module Program open System` na mesma linha (2026-10-29)
+
+**Sintoma.** L4 (`logs/levels/L4-20261029-150833`), step `algo-bridge` FAIL em
+568 s. A metade C# passou (`hanoi=15`, `primes100=25`, `primes1000=168`,
+`twin100=8`); a metade F# morreu no primeiro erro do compilador:
+
+```
+/tmp/e2e-mission-algo/mfs/Program.fs(4,1): error FS0010: Unexpected keyword 'let'
+or 'use' in implementation file
+```
+
+**Causa.** A linha 1 do arquivo gerado era `module Program open System` — duas
+diretivas na mesma linha. O F# lê o resto da linha como corpo do módulo, o topo do
+arquivo vira expressão e o `let` seguinte (linha 4, coluna 1) fica fora de posição.
+A mensagem do compilador não diz a forma certa, e o `FsSyntaxRepair` não tinha
+mapa para esse FS0010 — o modelo só repetia o cabeçalho.
+
+Prova de compilação das duas formas (projeto mínimo, `net10.0`):
+`module Program open System` → FS0010 em `(4,1)`; `module Program` sozinho com
+`open System` na linha de baixo → build sem erro.
+
+**Correção (Core, geral).**
+
+- `FsSyntaxRepair`: caso `FS0010` com `'let'`/`'use'` inesperado → a dica traz
+  **só** a forma que compila (`module <nome>` sozinho e **cada** `open` na própria
+  linha), sem ecoar a linha colada.
+- `HarnessTails.FsMini`: a linha `BASE` passa a dizer “cada diretiva na própria
+  linha — a 1a linha tem só `module Program` e o `open` vai na linha de baixo”.
+
+**Prova.** `U-fs-repair-module-line` (novo) verde e `U-fs-repair-comprehension`
+intacto: units `PASS=125 FAIL=0 SKIP=6`; `dotnet fsi scripts/diag/fs-repair-probe.fsx`
+com os dois casos novos OK (`cabecalho colado -> compilador recusa`,
+`cabecalho ensinado (module sozinho + open) -> compila`); build
+`0 Aviso(s)/0 Erro(s)`.

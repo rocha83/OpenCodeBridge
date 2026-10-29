@@ -639,6 +639,30 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // L4 de 2026-10-29 (step algo-bridge): a 1a linha saiu `module Program open System`
+    // e o `let` do topo virou FS0010 "Unexpected keyword 'let' or 'use' in implementation
+    // file" — a mensagem do compilador nao diz a forma certa e o modelo repetiu. A dica
+    // devolve SO' a forma que compila (module sozinho + cada `open` na propria linha).
+    public static Task FsRepairModuleLineAlone()
+    {
+        const string err = "error FS0010: Unexpected keyword 'let' or 'use' in implementation file";
+        string glued = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "module Program open System\n\n// teste\nlet soma a b = a + b\n", err);
+        TestContext.Check(glued.Contains("module Program\nopen System"),
+            "module + open colados -> uma diretiva por linha (veio: " + glued.Replace("\n", " | ") + ")");
+        TestContext.Check(!glued.Contains("module Program open"), "a dica nao repete a forma que nao compila");
+        // Dois `open` na mesma linha do modulo: cada um sai na sua linha.
+        string dois = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "module Program open System open System.IO\nlet x = 1\n", err);
+        TestContext.Check(dois.Contains("module Program\nopen System\nopen System.IO"),
+            "dois `open` -> uma linha cada (veio: " + dois.Replace("\n", " | ") + ")");
+        // Arquivo ja' com o cabecalho correto: nenhuma dica inventada.
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "module Program\n\nopen System\n\nlet soma a b = a + b\n", err) == "",
+            "cabecalho ja' correto nao recebe dica");
+        return Task.CompletedTask;
+    }
+
     // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
 
     public static Task AntiRepeatArgsWindowIsIndependent()

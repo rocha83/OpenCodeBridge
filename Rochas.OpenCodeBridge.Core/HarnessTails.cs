@@ -58,7 +58,7 @@ public static class HarnessTails
     /// </summary>
     public const string FsMini =
         "F# MINI (sintaxe geral; os exemplos NAO sao o algoritmo do pedido). " +
-        "BASE: 1a linha `module Program`; `open System`; funcao `let f x = x + 1`; saida inteira `printfn \"%d\" v`; entrada `[<EntryPoint>] let main argv = ... 0`. " +
+        "BASE: cada diretiva na propria linha — a 1a linha tem so' `module Program` e o `open` vai na linha de baixo (`open System`); funcao `let f x = x + 1`; saida inteira `printfn \"%d\" v`; entrada `[<EntryPoint>] let main argv = ... 0`. " +
         "LISTA e ARRAY: `[ 1; 2; 3 ]` e' lista e combina com `List.sum`, `List.map (fun x -> x * x)`, `List.filter (fun x -> x > 0)`, `List.fold (fun acc x -> acc + x) 0`, `List.length`, `List.forall`, `List.exists`; `[| 1; 2; 3 |]` e' array de valores fixos e combina com `Array.sum`, `Array.map`, `Array.length`. " +
         "RANGE: `a .. b`; com passo, o PASSO e' o SEGUNDO termo. " +
         "INTEIROS: `%` e' resto; `/` entre dois int trunca. " +

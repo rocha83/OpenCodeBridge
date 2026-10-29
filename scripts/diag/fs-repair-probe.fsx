@@ -51,5 +51,29 @@ check "arrow puro -> desvios quadraticos" (abs ((List.sum squared) - 26.0) < 1e-
 // 6) `open System.Math` e' FS0039: Math e' TIPO, nao namespace.
 let qualificado = System.Math.Sin 0.0
 check "System.Math.Sin qualificado" (qualificado = 0.0)
+
+// 7) Cabecalho do arquivo (medido no L4 de 2026-10-29, step algo-bridge): `module X`
+//    na MESMA linha do `open` nao compila (FS0010 no `let` seguinte) e a mensagem do
+//    compilador nao diz a forma certa. O que o FsSyntaxRepair ensina hoje e' o modulo
+//    sozinho com cada `open` na propria linha — abaixo a prova, compilando as duas.
+let private buildHeader (header: string) =
+    let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "fs-repair-probe", string (abs (header.GetHashCode())))
+    System.IO.Directory.CreateDirectory dir |> ignore
+    System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "p.fsproj"),
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType>" +
+        "<TargetFramework>net10.0</TargetFramework></PropertyGroup>" +
+        "<ItemGroup><Compile Include=\"Program.fs\" /></ItemGroup></Project>")
+    System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "Program.fs"),
+        header + "\n\nlet soma a b = a + b\nprintfn \"%d\" (soma 1 2)\n")
+    let psi = System.Diagnostics.ProcessStartInfo("dotnet", "build -c Release --nologo -v q",
+                                                  WorkingDirectory = dir,
+                                                  RedirectStandardOutput = true,
+                                                  RedirectStandardError = true)
+    use p = System.Diagnostics.Process.Start psi
+    p.WaitForExit()
+    p.ExitCode
+
+check "cabecalho colado -> compilador recusa" (buildHeader "module Program open System" <> 0)
+check "cabecalho ensinado (module sozinho + open) -> compila" (buildHeader "module Program\n\nopen System" = 0)
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."

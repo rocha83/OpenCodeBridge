@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
 namespace Rochas.OpenCodeBridge.Core;
@@ -33,6 +34,27 @@ public static class FsSyntaxRepair
             if (bt.Success)
                 return $"ERRADO: `{bt.Groups["w"].Value}`\n" +
                        $"CERTO: {bt.Groups["w"].Value}   (crase simples nao existe em F#: escreva o nome/operador sem crase)";
+        }
+
+        // FS0010 `let`/`use` inesperado num arquivo de implementacao: a 1a linha
+        // junta `module X` e `open Y`, o compilador le o resto como corpo do modulo
+        // e o topo vira expressao — o `let` seguinte fica fora da posicao (medido no
+        // L4 de 2026-10-29, step algo-bridge). A dica mostra SO' a forma que compila.
+        if (code == "FS0010" && Regex.IsMatch(compilerError, @"'let'|'use'"))
+        {
+            var glued = Regex.Match(source,
+                @"(?m)^[ \t]*module[ \t]+(?<m>[\w\.]+)[ \t]+(?<rest>(?:open[ \t]+[\w\.]+[ \t]*(?:[;,][ \t]*)?)+)$");
+            if (glued.Success)
+            {
+                var opens = new List<string>();
+                foreach (Match o in Regex.Matches(glued.Groups["rest"].Value, @"open[ \t]+(?<ns>[\w\.]+)"))
+                {
+                    string ns = "open " + o.Groups["ns"].Value;
+                    if (!opens.Contains(ns)) opens.Add(ns);
+                }
+                return "CERTO: a diretiva do modulo fica sozinha na primeira linha e cada `open` na propria linha:\n"
+                       + "module " + glued.Groups["m"].Value + "\n" + string.Join("\n", opens);
+            }
         }
 
         // FS0058 (offside): `let` na propria linha do `else` deixa o corpo fora da
