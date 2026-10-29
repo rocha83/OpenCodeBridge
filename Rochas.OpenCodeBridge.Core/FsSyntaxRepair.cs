@@ -80,6 +80,13 @@ public static class FsSyntaxRepair
             return "CERTO: argumento com chamada, pipe ou composicao vai entre parenteses:\n"
                    + "printfn \"%s\" (String.concat \",\" movs)";
 
+        // FS0072: o tipo do parametro nao pode ser inferido (medido no isolado de
+        // 2026-10-29, com o programa ja' calculando e a saida so' esperando isso).
+        // A forma que compila e' a anotacao no lambda.
+        if (code == "FS0072")
+            return "CERTO: quando o tipo do parametro nao sai sozinho, anote no lambda:\n"
+                 + "List.map (fun (a: int, b: int) -> sprintf \"%d->%d\" a b) movs";
+
         // FS0058 (offside): `let` na propria linha do `else` deixa o corpo fora da
         // coluna permitida. Forma estrutural: auxiliar no nivel do modulo, recebendo
         // por parametro o que ele usa de fora; no ramo, so' a chamada.

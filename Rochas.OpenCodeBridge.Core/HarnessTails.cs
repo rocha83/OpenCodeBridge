@@ -79,6 +79,7 @@ public static class HarnessTails
         "FS3118/FS0588/FS0528 corpo -> toda funcao termina numa expressao, e a ultima linha do corpo e' o valor: `let total xs =` / `let dobro = List.map (fun x -> x * 2) xs` / `List.sum dobro` (as linhas do corpo alinhadas sob o `=`). " +
         "FS0603 array -> a comprehension de array envolve TUDO entre `[|` e `|]`: `[| for i in 1 .. 3 -> i * i |]` (a lista fica `[ for i in 1 .. 3 -> i * i ]`). " +
         "FS0597 argumento -> quando o argumento e' chamada, pipe ou composicao, ele vai entre parenteses: `printfn \"%s\" (String.concat \",\" movs)`. " +
+        "FS0072 tipo -> quando o tipo do parametro nao sai sozinho, anote no lambda: `List.map (fun (a: int, b: int) -> sprintf \"%d->%d\" a b) movs` (ou use `fst`/`snd`). " +
         "FS0020 resultado descartado -> `|> ignore` ou `printfn \"%d\" v`. " +
         "FS3563 identificador invalido -> crase dupla no nome (``mdc``). " +
         "SE O BUILD FALHAR: leia a linha `error`, aplique a forma da tabela e edite SO' o trecho; nao reescreva o arquivo igual.";

@@ -722,6 +722,19 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // Isolado de 2026-10-29 (4a amostra do F#): programa ja' calculando, travado em
+    // FS0072 na linha da formatacao — o codigo nao tinha dica e a fase morreu nela.
+    public static Task FsRepairInferredTypeAnnotation()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "printfn \"%s\" (String.concat \",\" (List.map (fun move -> sprintf \"%d->%d\" move.Item1 move.Item2) movs))\n",
+            "error FS0072: The type of this expression cannot be determined here, as no further information is available.");
+        TestContext.Check(p.Contains("(a: int, b: int)") && p.Contains("List.map"),
+            "FS0072 -> anotacao no lambda (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains("sprintf \"%d->%d\" a b"), "FS0072 -> tuple desmontado com a e b");
+        return Task.CompletedTask;
+    }
+
     // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
 
     public static Task AntiRepeatArgsWindowIsIndependent()
