@@ -63,6 +63,49 @@ datasource — este último exigiu subir o `version` do YAML acima do gravado no
 (estava `3`, editado pela UI), porque **provisionamento de datasource ignora em
 silêncio arquivo com versão menor**, mesmo após restart.
 
+## WAR thinking OFF e limpeza do painel: a regra já existia (2026-10-29)
+
+**Pedido:** a WAR tem de rodar com thinking **off** e o painel só pode ser limpo
+no início da rodada, nunca por step.
+
+**Thinking — nada novo era preciso.** A regra já está implementada no perfil do
+model id (`docs/LAB-SETUP.md` §1.2): a suíte manda `Gemma4-E4B-Q4-build` e o id
+com sufixo vence o global da unit → **temp 0.1 + thinking off**. O `--thinking
+events` da unit é o default de quem não manda sufixo. Evidência no log da ponte:
+`"model":"Gemma4-E4B-Q4-build","temperature":0.1,"temperature_source":"profile",
+"has_reasoning":false` (1158 requisições da esteira, todas com o sufixo). Um
+toggle de `POST /api/config` chegou a ser escrito no runner e foi **revertido**
+(`fc5dd52`) por ser artefato duplicado de mecanismo existente.
+
+**Painel — um reset por nível.** A limpeza virou `reset_once` no
+`scripts/war/run-levels.sh` (`?probe=1&files=1&panel=1`, com `-d ''` — sem corpo
+o `HttpListener` devolve 411) e os steps rodam com `WAR_NO_RESET=1`, respeitado
+por `Program.cs` e `TestContext.Run`. A prova no log da ponte são duas linhas
+`diag-reset` por bateria (uma por nível), em vez do par por `step_start`.
+
+## `tools-full`: enunciado de missão e a dica da forma certa (2026-10-29)
+
+Três falhas medidas na WAR, todas de fluxo, nenhuma de tool:
+
+- data **substituída** pela linha do clima (`data.txt` sem o ano);
+- clima buscado e **2º commit sem a linha** (o modelo pulou a escrita);
+- **nenhuma listagem** da pasta (`listou/buscou arquivos`), passo que o enunciado
+  não pedia.
+
+Correções, uma por vez e sem afrouxar assertiva:
+
+1. `E2EToolsFullTests` — passo 3 e 4 em língua de dev, no artefato observável:
+   “o arquivo fica com a data e a linha do clima e você confere isso **lendo** o
+   arquivo”; “salve a saída em um histórico dentro da pasta do repositório e
+   **confira a lista dos arquivos** que ficaram nessa pasta”. A mensagem do assert
+   de listagem passou a imprimir as `calls` (diagnóstico, não aceite).
+2. `Core/HarnessTails.cs` (`tools`) — linha positiva `EDITAR ACRESCENTANDO`:
+   o `oldString` é o trecho que **continua**; o `newString` traz esse mesmo trecho
+   + o texto novo. Sem exemplo copiável de path nem nome concreto.
+
+**Prova:** `E-tools-full` isolado **PASS 23,5 s** com o binário `c67e529`; units
+`PASS=124 FAIL=0 SKIP=6`, build `0 Aviso(s)/0 Erro(s)`.
+
 
 ## WAR L1+L2 bridge-only: L1 verde, L2 corrigido e verde (2026-10-27)
 
@@ -4755,3 +4798,28 @@ step/histórico/steps → publica de novo).
 `run-isolated.sh` (log em `logs/isolated/` + trail do `_mission.log`),
 `push-persist.sh` (token fora do repo, conferido por `ls-remote`) e
 `prod-repair-ownership.sh` (recuperação do PROD, DRIVER-FIXES #21).
+
+## E-mission-tools fechado: 3 verdes consecutivos (2026-10-29)
+
+Sequência do dia, do sintoma ao aceite:
+
+1. **`09:40` FAIL** — F# imprimiu `3628800 / 21 / 0`: o `isPrime` usava
+   `[1 .. int (Math.Sqrt(float n))]` no intervalo dos divisores e o `1` zera a
+   contagem. O `FsMini` ganhou a linha `PRIMOS` separando **entrada** (`[1 .. 50]`)
+   de **divisores** (começa em 2) e a tabela de erros virou uma linha por código,
+   sem prosa duplicando a tabela.
+2. **`10:18` FAIL** — o assert exigia o nome `entrega.zip` e o modelo gerou
+   `delivery.zip`. Decisão: o pacote é o contrato, não o nome — qualquer `.zip`
+   na raiz conta (e o nome que saiu vai na mensagem).
+3. **`10:56` FAIL** — `zip error: Zip file structure invalid (…/Program.fs)` 6×:
+   a origem foi passada no lugar do pacote. O help curado de `shell`/`bash`/`sh`
+   passou a ensinar `zip -qr pacote.zip .` (o `.zip` vem primeiro) e o sintoma em
+   prosa. Nada de nudge no teste: mecânica é do Core.
+4. **Dedup** — o guard de repetição entre turnos foi descartado (experimento sem
+   medição); o formato do aviso da bridge virou `Core/BridgeNotice`
+   (`Prefix`/`Tag`/`Notice`/`Is`/`Append`), com o literal `"BRIDGE ("` em um lugar
+   só e `Apply` do salvage anexando uma cópia.
+
+**Prova do aceite:** `PASS 87,9 s`, `PASS 74,6 s`, `PASS 69,6 s` — três rodadas
+isoladas consecutivas, cada uma com restart da bridge, após o help do zip.
+Build `0 Aviso(s)/0 Erro(s)`; units `PASS=121 FAIL=0 SKIP=6`.
