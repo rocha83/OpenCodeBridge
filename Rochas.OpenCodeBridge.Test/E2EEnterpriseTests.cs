@@ -125,7 +125,11 @@ internal static class E2EEnterpriseTests
             "sliding 5min), fallback Postgres + repopula; PUT/DELETE invalidam a chave com cache.RemoveAsync; " +
             "stampede controlado por lock por chave e circuit-breaker simples (3 falhas) quando o Redis cai. " +
             "Grave os arquivos na raiz do workspace (repositorio de Product + registro no DI), APIs do .NET 8+. So tool calls, sem prosa.",
-            14, dir);
+            // Orcamento medido (2026-10-29): o cenario entrega 2+ artefatos
+            // (repositorio + registro no DI) e, com 14 passos, gastou 14/14 em
+            // exploracao (git/shell/glob) e fechou o DI com mock. Mesma faixa dos
+            // demais cenarios multi-artefato (16..28). O aceite nao muda.
+            20, dir);
         // O modelo pode inventar outros nomes de artefato; localiza por CONTEUDO,
         // nao por nomenclatura fixa (contrato e o codigo, nao o nome do arquivo).
         string repo = "", startup = "";
@@ -147,7 +151,7 @@ internal static class E2EEnterpriseTests
         // pre-3.0); a versao escolhida vai no [info], nao no assert.
         bool di = startup.Contains("AddStackExchangeRedisCache") || startup.Contains("AddDistributedMemoryCache")
             || startup.Contains("AddDistributedRedisCache") || startup.Contains("IConnectionMultiplexer");
-        TestContext.Check(di, "redis registro no DI (Startup.cs, len=" + startup.Length + ")");
+        TestContext.Check(di, "redis registro no DI (Startup.cs, len=" + startup.Length + ", calls=" + calls.Count + ")");
         string diApi = startup.Contains("AddStackExchangeRedisCache") ? "modern"
             : startup.Contains("AddDistributedRedisCache") ? "legacy" : "custom";
         Console.WriteLine($"  [info] redis sliding={repo.Contains("Sliding", StringComparison.OrdinalIgnoreCase)} circuito={repo.Contains("circuit", StringComparison.OrdinalIgnoreCase)} calls={calls.Count} di={diApi}");
