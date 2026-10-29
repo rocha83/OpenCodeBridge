@@ -410,6 +410,32 @@ internal sealed class TestCircuitDriver : IDisposable
         catch { }
     }
 
+    // Reset dos diagnosticos da bridge alvo no inicio de cada step, pela propria
+    // bridge (POST /api/diag/reset) e sem restart: o painel mede o step atual
+    // em vez do acumulado da vida do processo. A URL sai do proprio endpoint de
+    // eventos do painel (WAR_EVENT_URL -> mesma origem /api/diag/reset), sem
+    // variavel de ambiente nova. Best-effort: sem painel, o circuito segue.
+    static readonly System.Net.Http.HttpClient DiagHttp = new() { Timeout = TimeSpan.FromSeconds(5) };
+    static void PostDiagReset()
+    {
+        try
+        {
+            string url = Environment.GetEnvironmentVariable("WAR_EVENT_URL") ?? "";
+            if (url.Length == 0 || !Uri.TryCreate(url, UriKind.Absolute, out var u)) return;
+            var reset = new UriBuilder(u.Scheme, u.Host, u.Port)
+            {
+                Path = "/api/diag/reset",
+                Query = "probe=1&files=1"
+            }.Uri;
+            using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, reset);
+            string key = Environment.GetEnvironmentVariable("WAR_EVENT_KEY") ?? "";
+            if (key.Length > 0)
+                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
+            using var _ = DiagHttp.Send(req);
+        }
+        catch { }
+    }
+
     // ------------------------------------------------------------------
     // Pausa / retomada
     // ------------------------------------------------------------------
@@ -540,11 +566,16 @@ internal sealed class TestCircuitDriver : IDisposable
         CircuitStepResult result = default!;
         long totalSeconds = 0;
 
+        // Painel por step: zera os diagnosticos da bridge alvo antes de rodar o
+        // step. E' POST /api/diag/reset (sem restart): contador e amostras sao
+        // por vida do processo, e derrubar a bridge para zerar numero custa
+        // keep-alive e mascara o binario em uso.
+        PostDiagReset();
+
         using var probe = StepProbe.Start(
             _o.RunDirectory,
             step.Name, step.Mode, step.ProbeUrl, step.ProbeApiKey, step.ProbeLogs,
             Path.Combine(_o.RunDirectory, "journey"));
-
         for (int i = 0; i < maxAttempts; i++)
         {
             if (i > 0)

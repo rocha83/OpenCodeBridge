@@ -20,10 +20,10 @@ fi
 
 git pull --rebase persist main
 dotnet build Rochas.OpenCodeBridge.slnx -c Release --nologo -v:minimal
-# REGRA: rebuild exige restart da bridge. A bridge expoe /api/metrics CUMULATIVO
-# desde o start (nao ha reset por run), entao sem restart o painel do Grafana
-# mostra numero acumulado de runs anteriores. O Grafana entra no mesmo ciclo
-# para reaplicar provisioning e recarregar dashboard/datasource.
+# REGRA: rebuild exige restart da bridge (binario novo + pool HTTP). Zerar
+# contador NAO exige restart: POST /api/diag/reset?probe=1&files=1 zera os
+# diagnosticos sem downtime. O Grafana entra no mesmo ciclo para reaplicar
+# provisioning e recarregar dashboard/datasource.
 systemctl restart bridge-gpu bridge-web grafana-server
 sleep 3
 

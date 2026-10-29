@@ -4589,3 +4589,31 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
   proibir "plano de implementação/arquitetural"; `DefaultTools` ganhou
   "ARQUIVO: pedido que manda criar/gravar entrega via `write`; prosa não
   conclui". Dictação continua fora do enunciado.
+
+## Diagnóstico por reset: painel por step sem restart da bridge (2026-10-29)
+
+**Sintoma.** Painel mostrando número acumulado (`requests 2530`, `input_tokens
+781046`) que só zerava com restart. A premissa "rebuild exige restart" estava
+sendo usada também para zerar contador — restart derruba keep-alive e troca o
+binário em uso por motivo que não é binário.
+
+**Causa.** `/api/metrics`, `ProbeSamples` e `files_generated` são por vida do
+processo; não existia reset. `?fresh=1` apenas esconde o número (NO DATA), não
+zera — por isso a saída anterior era reiniciar.
+
+**Correção (um lugar só, no servidor).** `POST /api/diag/reset` com Bearer:
+`Metrics.Clear()` (anéis, deny, nudge, breaker, anti-repeat) + `Interlocked.
+Exchange` dos contadores locais (requests, model, tokens, elapsed, tools) +
+`LastClient`/`last_model_activity_ms` zerados; `?probe=1` limpa as amostras da
+sonda e `?files=1` o conjunto de arquivos contados. Resposta
+`{ok:true,event:"diag-reset",probe,files,ts}` e evento no log. Nada de estado
+paralelo nem de reinício.
+
+**Consumidores.** `TestContext.ResetDiagnostics()` (run isolado, antes de cada
+`E-*`, substituindo o restart por step) e `TestCircuitDriver.PostDiagReset()` no
+`step_start` da WAR (URL derivada da origem de `WAR_EVENT_URL`, sem env nova).
+O restart continua onde é insubstituível: início da bateria (binário em uso +
+pool HTTP) e deploy.
+
+**Regra atualizada** em `AGENTS.md` (`## Regra: diagnóstico zera por reset;
+restart é para binário/pool`) e comentário do `scripts/deploy-pull.sh`.

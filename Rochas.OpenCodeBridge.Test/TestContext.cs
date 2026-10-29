@@ -144,6 +144,24 @@ internal static class TestContext
         throw new Exception($"bridge {svc} nao respondeu com status valido: {last?.Message}");
     }
 
+    /// <summary>
+    /// Zera os diagnosticos da bridge alvo (contadores de /api/metrics, amostras
+    /// da sonda e arquivos contados) por HTTP, sem restart. O numero do painel
+    /// passa a refletir o run atual; o restart so se justifica para trocar
+    /// binario (deploy), nao para zerar contador.
+    /// </summary>
+    public static void ResetDiagnostics()
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        string? cred = Jwt ?? ApiKey;
+        if (!string.IsNullOrWhiteSpace(cred))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
+        using var res = http.PostAsync(Bridge + "/api/diag/reset?probe=1&files=1", null).GetAwaiter().GetResult();
+        if (!res.IsSuccessStatusCode)
+            throw new Exception($"reset de diagnosticos falhou em {Bridge}: HTTP {(int)res.StatusCode} " +
+                res.Content.ReadAsStringAsync().GetAwaiter().GetResult().Trim());
+    }
+
     static string BridgeService()
     {
         int port = new Uri(Bridge).Port;
@@ -191,8 +209,10 @@ internal static class TestContext
         // alimenta o painel (evita 100+ U-* no dicionario de steps).
         bool panelStep = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAR_STEP"))
                          && name.StartsWith("E-", StringComparison.Ordinal);
-        // Regra de bateria: cada step E2E comeca com a bridge reiniciada.
-        if (panelStep) RestartBridge();
+        // Diagnostico por step: zera contadores/sonda/arquivos pela API, sem
+        // reiniciar a bridge. Restart fica reservado a troca de binario
+        // (deploy) e ao inicio da bateria — zerar numero nao exige downtime.
+        if (panelStep) ResetDiagnostics();
         // Run isolado tambem alimenta a sonda de 5s (tps/VRAM/GPU/tools). No WAR
         // o driver e' o dono da sonda; aqui ela morre junto com o step.
         StepProbe? probe = null;

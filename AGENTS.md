@@ -237,14 +237,22 @@ conveniência manual, nunca fonte de verdade.
 - Dicionário do painel: `RUN` (azul) e `PAUSA` (roxo) existem em `status`;
   `STALE`/`BLOCKED` não mudam.
 
-## Regra: reinício de bateria reinicia a bridge
-- Toda bateria E2E, em ambos os modos (`bridge` e `opencode`), começa com o
-  restart da bridge alvo: `sudo systemctl restart bridge-gpu` (`:4124`),
-  `bridge-gpu2` (`:4125`) ou `bridge-cpu-forced` (`:4126`).
+## Regra: diagnóstico zera por reset; restart é para binário/pool
+
+- Contadores de `/api/metrics`, `ProbeSamples` e arquivos contados são por vida
+  do processo. Zerar número **não** exige restart: `POST /api/diag/reset`
+  (Bearer ApiKey; `?probe=1&files=1` inclui sonda e arquivos) zera tudo e
+  devolve `{ok:true,event:"diag-reset"}`. O driver chama no `step_start` (painel
+  por step) e o runner isolado antes de cada `E-*`.
+- Toda bateria E2E, em ambos os modos (`bridge` e `opencode`), **ainda** começa
+  com o restart da bridge alvo: `sudo systemctl restart bridge-gpu` (`:4124`),
+  `bridge-gpu2` (`:4125`) ou `bridge-cpu-forced` (`:4126`). Ali o binário em uso
+  é trocado e o pool HTTP dos dois lados é renovado.
 - Validar `/api/status` antes do primeiro step; em `--mode bridge`, exigir
   `main_harness=true`. Falhar rápido se o restart ou o status não subir.
-- Motivo: contadores e `ProbeSamples` começam em zero e o pool HTTP dos dois
-  lados é renovado.
+- Rebuild/deploy (binário novo) sempre leva restart junto; painel/contador não.
+  Bridge antiga sem `/api/diag/reset` faz o reset falhar rápido — não se volta a
+  reiniciar por step só para zerar número.
 
 ## Regra: NÃO criar instâncias de bridge em portas paralelas durante testes (primordial)
 

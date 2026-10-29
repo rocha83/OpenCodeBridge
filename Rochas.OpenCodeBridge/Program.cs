@@ -1407,6 +1407,49 @@ internal static partial class Program
                 return;
             }
 
+            // Reset dos diagnosticos cumulativos (POST /api/diag/reset): zera os
+            // contadores de /api/metrics e (opcional) as amostras da sonda, sem
+            // reiniciar a bridge. Os numeros sao por vida do processo; sem este
+            // reset o painel mistura runs e so zera com restart. Com o reset, o
+            // painel mede o step/run atual sem downtime e sem derrubar keep-alive.
+            if (ctx.Request.HttpMethod == "POST" && path == "/api/diag/reset")
+            {
+                if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
+                bool clearProbe = ctx.Request.QueryString["probe"] is "1" or "true" or "yes";
+                bool clearFiles = ctx.Request.QueryString["files"] is "1" or "true" or "yes";
+                Metrics.Clear();
+                System.Threading.Interlocked.Exchange(ref TotalRequests, 0);
+                System.Threading.Interlocked.Exchange(ref FailedRequests, 0);
+                System.Threading.Interlocked.Exchange(ref RequestsOpencode, 0);
+                System.Threading.Interlocked.Exchange(ref RequestsBridge, 0);
+                System.Threading.Interlocked.Exchange(ref ModelRequests, 0);
+                System.Threading.Interlocked.Exchange(ref ModelResponses, 0);
+                System.Threading.Interlocked.Exchange(ref ModelFailedRequests, 0);
+                System.Threading.Interlocked.Exchange(ref LastRequestMs, 0);
+                System.Threading.Interlocked.Exchange(ref LastModelActivityMs, 0);
+                System.Threading.Interlocked.Exchange(ref ToolsCalls, 0);
+                LastClient = "n/d";
+                lock (MetricsLock)
+                {
+                    TotalInputTokens = 0;
+                    TotalOutputTokens = 0;
+                    TotalElapsedSecs = 0;
+                }
+                if (clearFiles) GeneratedFiles.Clear();
+                if (clearProbe) while (ProbeSamples.TryDequeue(out _)) { }
+                var resetAck = new JsonObject
+                {
+                    ["ok"] = true,
+                    ["event"] = "diag-reset",
+                    ["probe"] = clearProbe,
+                    ["files"] = clearFiles,
+                    ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                };
+                Log(resetAck.DeepClone().AsObject());
+                WriteJson(ctx, 200, resetAck);
+                return;
+            }
+
             // Enunciado do teste em execucao: o runner publica antes de rodar o
             // cenario e o painel Infinity le. GET sem corpo devolve o ultimo.
             if (ctx.Request.HttpMethod == "GET" && path == "/api/test/enunciado/messages")
