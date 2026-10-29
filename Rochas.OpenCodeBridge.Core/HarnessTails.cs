@@ -55,27 +55,25 @@ public static class HarnessTails
     /// </summary>
     public const string FsMini =
         "F# MINI (sintaxe geral; os exemplos NAO sao o algoritmo do pedido). " +
-        "BASE: 1a linha `module Program`; `open System`; funcoes `let f x = ...`; saida inteira `printfn \"%d\" valor`. " +
-        "LISTAS: `List.sum xs`, `List.map (fun x -> x * x) xs`, `List.fold (fun acc x -> acc + x) 0 xs`, `List.filter (fun x -> x > 0) xs`, `List.length xs`, `List.init n (fun i -> ...)`. " +
-        "TOOLS: `write` grava o arquivo inteiro (correcao pontual = `edit`); `shell` roda `dotnet run --project <dir>/<nome>.fsproj`. " +
-        "COMPREHENSION e' SEMPRE de LISTA (`[for x in xs -> expr]`); `[| a; b |]` e' literal de ARRAY de valores fixos e nao aceita `for` dentro. " +
-        "RANGE COM PASSO: sao TRES termos e a ordem e' inicio, PASSO, fim — o PASSO e' o SEGUNDO termo, entre os dois `..`, e o TERCEIRO e' o fim (`[for i in 1 .. 2 .. n-1]` = 1, 3, .., n-1). Passo e fim trocados ainda compilam e produzem resultado errado SEM erro do compilador. " +
-        "INTEIROS: `%` so em int; `/` entre dois int TRUNCA o resto (sem erro). " +
-        "RECURSAO: funcao que chama a si mesma precisa `let rec f ...`; sem `rec` a auto-chamada sai como FS0039 `nao definido`. " +
-        "RESTO E NOMES: crase simples nao existe em F# (identificador com caractere especial usa CRASE DUPLA); resto, nome repetido e range estao na tabela abaixo. " +
-        "FATORIAL/PRODUTO: nao exige recursao — `List.fold (fun acc x -> acc * x) 1 [1..10]`. " +
-        "ESTRUTURA: funcao auxiliar vive no NIVEL DO MODULO, antes de quem a chama, recebendo como parametro os valores que usa de fora; `let` dentro de ramo `if/else` (na propria linha do `else`) quebra a indentacao (FS0058) — no ramo so' a CHAMADA. Para 'todo/existe' prefira `List.forall`/`List.exists` com lambda. " +
-        "INCONSISTENCIAS PREVISTAS EM F# (codigo: causa -> sintaxe correta): " +
-        "FS0010 `[expr | for i in ...]` ('|' nao existe em lista) -> `[for i in 1 .. n-1 -> expr]` ou `[for i in ... do yield expr]`. " +
-        "FS0010/FS0001 `do` dentro de LISTA sem `yield` (a lista vira `unit`) -> declare o elemento com `->` ou com `do yield`; `do` sozinho nao. " +
-        "FS0010/FS0751/FS0003 `step` no range -> `step` nao existe em F#: `a .. passo .. b`, com o passo no MEIO. " +
-        "FS0001 `List.*` recebendo `[| a; b |]` -> `[| ... |]` e' ARRAY (tipo diferente de lista): use `[ a; b ]` com `List.sum/List.map/List.length`, ou `Array.sum/Array.map/Array.length`. " +
-        "FS0039 nome nao definido -> o nome nao existe no arquivo: use o parametro ou o valor ja' declarado (nao invente nome); se o nome for `mod`, o resto em F# e' `%`, so' em inteiros: `a % b`. " +
-        "FS0037 nome definido duas vezes -> defina o nome UMA vez: apague a definicao repetida. " +
-        "FS0001 no range -> os dois limites sao do MESMO tipo: converta o limite que sai float, `[2 .. int (Math.Sqrt(float n))]`. " +
-        "FS0988 modulo vazio -> falta `[<EntryPoint>] let main argv = ...` com `0` no fim. " +
-        "FS0020 resultado descartado -> `|> ignore` ou `printfn`. " +
-        "SE O BUILD FALHAR: leia a linha `error`, aplique a correcao da tabela e edite SO' o trecho; NAO reescreva o arquivo igual.";
+        "BASE: 1a linha `module Program`; `open System`; funcao `let f x = x + 1`; saida inteira `printfn \"%d\" v`; entrada `[<EntryPoint>] let main argv = ... 0`. " +
+        "LISTA e ARRAY: `[ 1; 2; 3 ]` e' lista e combina com `List.sum`, `List.map (fun x -> x * x)`, `List.filter (fun x -> x > 0)`, `List.fold (fun acc x -> acc + x) 0`, `List.length`, `List.forall`, `List.exists`; `[| 1; 2; 3 |]` e' array de valores fixos e combina com `Array.sum`, `Array.map`, `Array.length`. " +
+        "RANGE: `a .. b`; com passo, o PASSO e' o SEGUNDO termo. " +
+        "INTEIROS: `%` e' resto; `/` entre dois int trunca. " +
+        "RECURSAO: `let rec f n = if n <= 1 then 1 else n * f (n - 1)`. " +
+        "AUXILIAR: vive no NIVEL DO MODULO, antes de quem a chama, e recebe por parametro o que usa de fora: `let isPrime n = n > 1 && List.forall (fun d -> n % d <> 0) [2 .. int (Math.Sqrt(float n))]`; no ramo `if/else` vai so' a chamada. " +
+        "PRIMOS: divisores candidatos de 2 ate a raiz; o intervalo de ENTRADA pode comecar em 1. " +
+        "FATORIAL/PRODUTO: `List.fold (fun acc x -> acc * x) 1 [1..10]`, sem recursao. " +
+        "TABELA DE ERROS (codigo: sintoma -> forma correta): " +
+        "FS0010 lista -> elemento com `-> expr` ou `do yield expr`: `[for i in 1 .. n-1 -> expr]` ou `[for i in 1 .. n-1 do yield expr]`. " +
+        "FS0751/FS0003 passo -> passo no MEIO dos dois `..`: `[for i in 1 .. 2 .. n-1]` percorre 1, 3, .., n-1. " +
+        "FS0001 tipo -> lista com `List.sum [ 1; 2 ]` e array com `Array.sum [| 1; 2 |]`; no range os dois limites sao do MESMO tipo. " +
+        "FS0039 nome nao definido -> parametro ou valor ja declarado; resto de inteiro e' `a % b`; auto-chamada pede `let rec f`. " +
+        "FS0037 nome repetido -> uma definicao por nome. " +
+        "FS0058 offside -> auxiliar no nivel do modulo; no ramo, so' a chamada. " +
+        "FS0988 modulo sem entrada -> a entrada da BASE (`[<EntryPoint>]`). " +
+        "FS0020 resultado descartado -> `|> ignore` ou `printfn \"%d\" v`. " +
+        "FS3563 identificador invalido -> crase dupla no nome (``mdc``). " +
+        "SE O BUILD FALHAR: leia a linha `error`, aplique a forma da tabela e edite SO' o trecho; nao reescreva o arquivo igual.";
 
     /// <summary>
     /// Compõe o system prompt com as caudas. Com harness desligado devolve o

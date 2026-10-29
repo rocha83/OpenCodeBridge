@@ -155,11 +155,15 @@ internal static class TestContext
     /// <param name="bridge">URL alvo; null usa <see cref="Bridge"/>.</param>
     /// <param name="required">true lança em falha (run isolado); false só avisa (WAR/painel).</param>
     /// <param name="apiKey">Bearer explícito (ex.: o da WAR); null usa <see cref="Jwt"/> ou <see cref="ApiKey"/>.</param>
+    /// <param name="clearPanel">true zera também o painel (enunciado, histórico e
+    /// steps). Use só no início da bateria/run — no <c>step_start</c> apagaria o
+    /// enunciado em execução.</param>
     public static void ResetDiagnostics(bool clearProbe = true, string? bridge = null, bool required = true,
-        string? apiKey = null)
+        string? apiKey = null, bool clearPanel = false)
     {
         string target = (bridge ?? Bridge).TrimEnd('/') +
-                        "/api/diag/reset?files=1" + (clearProbe ? "&probe=1" : "");
+                        "/api/diag/reset?files=1" + (clearProbe ? "&probe=1" : "") +
+                        (clearPanel ? "&panel=1" : "");
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };

@@ -237,7 +237,8 @@ internal sealed class WarTemplate : CircuitTemplate
         if (o.Status) return PrintStatus(p);
         if (o.All || !string.IsNullOrWhiteSpace(o.Levels) || o.From != 1)
             return RunAll(o, p);
-        TestContext.ResetDiagnostics(clearProbe: true, bridge: o.Bridge, required: false, apiKey: o.ApiKey);
+        TestContext.ResetDiagnostics(clearProbe: true, bridge: o.Bridge, required: false, apiKey: o.ApiKey,
+            clearPanel: true);
         return RunLevel(o, p, o.Level,
             o.Stamp ?? Env("LEVEL_STAMP") ?? NowStamp(),
             o.GateOnly, lockHeld: false, globalLog: null);
@@ -301,7 +302,8 @@ internal sealed class WarTemplate : CircuitTemplate
 
         int failed = 0;
         // Sonda zerada UMA vez por bateria (o run isolado ja faz o mesmo por ser a propria rodada).
-        TestContext.ResetDiagnostics(clearProbe: true, bridge: o.Bridge, required: false, apiKey: o.ApiKey);
+        TestContext.ResetDiagnostics(clearProbe: true, bridge: o.Bridge, required: false, apiKey: o.ApiKey,
+            clearPanel: true);
         LogGlobal(globalLog, $"=== run-all-levels {stamp} (levels: {string.Join(",", levels)}) ===");
         LogGlobal(globalLog, $"repo: {p.Root}");
         LogGlobal(globalLog, $"artefatos: {p.OutBase}");

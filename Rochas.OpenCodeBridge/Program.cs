@@ -752,6 +752,28 @@ internal static partial class Program
         if (prompt.Length > 0) AddEnunciadoMessage("enunciado", prompt);
     }
 
+    /// <summary>
+    /// Zera o estado do painel (enunciado, historico, respostas do agente e
+    /// lista de steps). Chamado no reset de bateria: o painel comeca limpo em
+    /// cada run, sem arrastar o enunciado anterior pelo arquivo de estado.
+    /// </summary>
+    static void ClearPanelState()
+    {
+        lock (EnunciadoLock)
+        {
+            while (TestStatementHistory.TryDequeue(out _)) { }
+            LastEnunciadoStep = "n/d";
+            LastEnunciado = "";
+            LastEnunciadoMs = 0;
+            // O estado em disco ja' foi zerado: nao recarrega o run anterior.
+            EnunciadoStateLoaded = true;
+            SaveEnunciadoStateLocked();
+        }
+        lock (AgentActivityLock)
+            while (AgentActivity.TryDequeue(out _)) { }
+        TestSteps.Clear();
+    }
+
     /// <summary>Snapshot do enunciado: step, ultimo prompt e lista de mensagens.</summary>
     static (string Step, string Prompt, long Ms, JsonArray Messages) SnapshotEnunciado()
     {
@@ -1426,6 +1448,10 @@ internal static partial class Program
                 if (!ClientAuthorized(ctx)) { WriteJson(ctx, 401, new JsonObject { ["error"] = "nao autorizado (Bearer JWT ou ApiKey)" }); return; }
                 bool clearProbe = ctx.Request.QueryString["probe"] is "1" or "true" or "yes";
                 bool clearFiles = ctx.Request.QueryString["files"] is "1" or "true" or "yes";
+                // ?panel=1 zera o painel (enunciado/historico/activity/steps). O
+                // reset de bateria usa; o reset por step NAO (apagaria o enunciado
+                // no meio do run).
+                bool clearPanel = ctx.Request.QueryString["panel"] is "1" or "true" or "yes";
                 Metrics.Clear();
                 System.Threading.Interlocked.Exchange(ref TotalRequests, 0);
                 System.Threading.Interlocked.Exchange(ref FailedRequests, 0);
@@ -1446,12 +1472,14 @@ internal static partial class Program
                 }
                 if (clearFiles) GeneratedFiles.Clear();
                 if (clearProbe) while (ProbeSamples.TryDequeue(out _)) { }
+                if (clearPanel) ClearPanelState();
                 var resetAck = new JsonObject
                 {
                     ["ok"] = true,
                     ["event"] = "diag-reset",
                     ["probe"] = clearProbe,
                     ["files"] = clearFiles,
+                    ["panel"] = clearPanel,
                     ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 };
                 Log(resetAck.DeepClone().AsObject());

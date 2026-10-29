@@ -43,6 +43,81 @@ internal static class UnitStatusTests
         TestContext.Check(tokens == 0, $"input_tokens zerado depois do reset, veio {tokens}");
     }
 
+    /// <summary>
+    /// Reset do painel (?panel=1): o enunciado publicado, o historico e a lista
+    /// de steps somem no reset de bateria — sem apagar o enunciado no reset por
+    /// step (que roda no <c>step_start</c>).
+    /// </summary>
+    public static async Task DiagResetPanel()
+    {
+        string enunciado = TestContext.Bridge + "/api/test/enunciado";
+        async Task<JsonNode?> Get(string url)
+        {
+            using var res = await TestContext.Http.GetAsync(url);
+            string raw = await res.Content.ReadAsStringAsync();
+            TestContext.Check(res.IsSuccessStatusCode, $"GET {url.Split('/').Last()} -> {(int)res.StatusCode}");
+            return JsonNode.Parse(raw);
+        }
+        async Task<JsonObject> Publish(string step, string prompt)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, enunciado)
+            { Content = new StringContent(new JsonObject { ["step"] = step, ["prompt"] = prompt }.ToJsonString(),
+                System.Text.Encoding.UTF8, "application/json") };
+            using var res = await TestContext.Http.SendAsync(req);
+            TestContext.Check(res.IsSuccessStatusCode, $"publica enunciado ({(int)res.StatusCode})");
+            return (await Get(enunciado))!.AsObject();
+        }
+
+        var snap = await Publish("U-panel-probe", "ENUNCIADO DO PAINEL");
+        TestContext.Check(snap["step"]?.GetValue<string>() == "U-panel-probe", "enunciado publicado no painel");
+        TestContext.Check((snap["messages"]?.AsArray().Count ?? 0) >= 1, "historico do painel tem a mensagem inicial");
+
+        using (var stepReq = new HttpRequestMessage(HttpMethod.Post, TestContext.Bridge + "/api/test/step")
+        {
+            Content = new StringContent(new JsonObject
+            { ["step"] = "U-panel-probe", ["verdict"] = "PASS", ["mode"] = "bridge", ["secs"] = 1 }.ToJsonString(),
+                System.Text.Encoding.UTF8, "application/json")
+        })
+        {
+            using var stepRes = await TestContext.Http.SendAsync(stepReq);
+            TestContext.Check(stepRes.IsSuccessStatusCode, $"/api/test/step aceita a linha ({(int)stepRes.StatusCode})");
+        }
+        var steps = await Get(TestContext.Bridge + "/api/test/steps?war=1");
+        TestContext.Check(steps!.AsArray().Count == 1, "painel lista o step publicado");
+
+        // Reset por step (sem panel): nada do painel pode ser apagado no meio do run.
+        using (var keep = new HttpRequestMessage(HttpMethod.Post, TestContext.Bridge + "/api/diag/reset?files=1")
+        { Content = new StringContent("") })
+        {
+            using var keepRes = await TestContext.Http.SendAsync(keep);
+            TestContext.Check(keepRes.IsSuccessStatusCode, $"reset por step responde {(int)keepRes.StatusCode}");
+        }
+        var kept = (await Get(enunciado))!.AsObject();
+        TestContext.Check(kept["step"]?.GetValue<string>() == "U-panel-probe",
+            "reset sem panel preserva o enunciado (step_start nao apaga)");
+        TestContext.Check((kept["messages"]?.AsArray().Count ?? 0) >= 1, "reset sem panel preserva o historico");
+
+        // Reset de bateria (com panel): painel limpo.
+        string body;
+        using (var clear = new HttpRequestMessage(HttpMethod.Post,
+            TestContext.Bridge + "/api/diag/reset?files=1&panel=1") { Content = new StringContent("") })
+        {
+            using var clearRes = await TestContext.Http.SendAsync(clear);
+            body = await clearRes.Content.ReadAsStringAsync();
+            TestContext.Check(clearRes.IsSuccessStatusCode, $"reset de bateria responde {(int)clearRes.StatusCode}: {body.Trim()}");
+        }
+        TestContext.Check(JsonNode.Parse(body)?["panel"]?.GetValue<bool>() == true, "reset devolve panel=true");
+        var cleared = (await Get(enunciado))!.AsObject();
+        TestContext.Check(cleared["step"]?.GetValue<string>() == "n/d", $"painel zerado no step, veio {cleared["step"]}");
+        TestContext.Check((cleared["messages"]?.AsArray().Count ?? -1) == 0, "historico do painel zerado");
+        var stepsAfter = await Get(TestContext.Bridge + "/api/test/steps?war=1");
+        TestContext.Check(stepsAfter!.AsArray().Count == 0, "lista de steps zerada");
+
+        // Depois do reset o painel volta a aceitar publicacao (proximo step do run).
+        var again = await Publish("U-panel-probe-2", "SEGUNDO RUN");
+        TestContext.Check(again["step"]?.GetValue<string>() == "U-panel-probe-2", "painel volta a publicar depois do reset");
+    }
+
     public static async Task ModelsPassthrough()
     {
         var models = await TestContext.GetObj(TestContext.Bridge + "/v1/models");

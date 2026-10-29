@@ -473,3 +473,44 @@ U-toolcall-salvage-notice,U-tails-path-simulation-rules --api-key guest@123`:
 `PASS=4 FAIL=0 SKIP=0`. Build `0 Aviso(s) / 0 Erro(s)`. Emulação independente
 (`scripts/diag/verify-antirepeat-args-window.py`): payload @256 `True`, @1024
 `False`, loop real @1024 `True`.
+
+## 21. Deploy do PROD travado por dono root em `.git` e na árvore (2026-10-29)
+
+**Sintoma.** `scripts/deploy-pull.sh` falhou duas vezes seguidas, em pontos
+diferentes do mesmo `git pull`:
+
+1. `error: insufficient permission for adding an object to repository database
+   .git/objects` / `fatal: failed to write object` / `fatal: unpack-objects
+   failed`;
+2. depois do `chown` só do `.git/:` `error: unable to unlink old
+   'Rochas.OpenCodeBridge.Core/FsSyntaxRepair.cs': Permissão negada` — o pull
+   ficou **no meio**, deixando dois arquivos modificados no worktree e o
+   `deploy-pull.sh` recusando a próxima rodada
+   (`ERRO: /usr/src/opencodebridge tem alteracao local`).
+
+**Causa.** Alguém rodou o deploy (ou um build) como `root` dentro de
+`/usr/src/opencodebridge`; os objetos e os arquivos do worktree ficaram
+`root:root`. O deploy é feito pelo usuário do dia a dia (`mint`), então
+`unpack-objects` e `unlink` batem na permissão. Não é bug de código nem de
+harness: é estado de disco.
+
+**Correção (infra, sem tocar no script).**
+
+```bash
+sudo chown -R mint:mint /usr/src/opencodebridge
+cd /usr/src/opencodebridge && git checkout -- .   # desfaz o pull parcial
+bash scripts/deploy-pull.sh                       # pull --rebase + build + restart
+```
+
+`git checkout -- .` (e **não** `reset --hard`) restaura só o worktree do PROD,
+que é deploy-only; os refs seguem avançando por fast-forward/rebase do
+persistente, como manda a regra.
+
+**Prova.** Deploy verde depois do `chown`+`checkout`: `pull --rebase` de
+`persist/main`, build `0 Aviso(s) / 0 Erro(s)`, `systemctl restart bridge-gpu
+bridge-web grafana-server`, `/api/status` e `/api/health` (4800) respondendo e
+`OK: /usr/src/opencodebridge atualizado por pull --rebase e redeploy concluido`.
+
+**Regra derivada.** Rebuild/deploy no PROD é do usuário dono do repo; rodar
+`dotnet build` como `root` ali envenena o próximo pull. Se acontecer, o conserto
+é `chown -R` + `git checkout -- .`, nunca `reset --hard`.

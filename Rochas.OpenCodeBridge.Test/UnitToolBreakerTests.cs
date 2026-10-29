@@ -355,7 +355,7 @@ internal static class UnitToolBreakerTests
         // 2a forma medida no L3-20261028-163556: o modelo escreveu comprehension
         // de Haskell (`[i | i <- ...]`) e errou FS0010 por 22 turnos.
         TestContext.Check(fsMini.Contains("[for i in 1 .. n-1 -> expr]"), "FsMini ensina comprehension de F#");
-        TestContext.Check(fsMini.Contains("COMPREHENSION e' SEMPRE de LISTA"), "FsMini separa array literal de comprehension de lista");
+        TestContext.Check(fsMini.Contains("LISTA e ARRAY"), "FsMini separa array literal de comprehension de lista");
         // 3a e 4a formas medidas no L3-20261029-030937: `do` na lista sem `yield`
         // (lista tipada unit) e `step` no range (nao existe em F#).
         TestContext.Check(fsMini.Contains("do yield"), "FsMini ensina do+yield como alternativa");
@@ -370,14 +370,18 @@ internal static class UnitToolBreakerTests
         TestContext.Check(!fsMini.Contains("TIPOS NUMERICOS"), "FsMini nao carrega mais a regra int/float");
         // Estrutura (2026-10-29): `let` aninhado no ramo quebra o offside (FS0058) e
         // funcao recursiva sem `rec` da FS0039 — as duas formas medidas no isolado.
-        TestContext.Check(fsMini.Contains("ESTRUTURA"), "FsMini ensina onde vive a funcao auxiliar");
+        TestContext.Check(fsMini.Contains("AUXILIAR"), "FsMini ensina onde vive a funcao auxiliar");
         TestContext.Check(fsMini.Contains("let rec"), "FsMini ensina recursao sem `rec` (FS0039)");
-        TestContext.Check(fsMini.Contains("FS0039 nome nao definido") && fsMini.Contains("se o nome for `mod`"),
+        TestContext.Check(fsMini.Contains("FS0039 nome nao definido") && fsMini.Contains("resto de inteiro e' `a % b`"),
             "tabela F# ensina resto real na MESMA linha do FS0039");
-        TestContext.Check(fsMini.Split("FS0039").Length - 1 <= 2,
-            "FS0039 nao vira duas linhas de tabela (uma linha + a nota de recursao)");
-        TestContext.Check(fsMini.Contains("FS0037 nome definido duas vezes"), "tabela F# ensina nome unico (FS0037)");
-        TestContext.Check(fsMini.Contains("FS0001 no range"), "tabela F# ensina range de tipo unico (FS0001)");
+        TestContext.Check(fsMini.Split("FS0039").Length - 1 == 1,
+            "FS0039 aparece UMA vez (sem linha duplicada)");
+        TestContext.Check(fsMini.Contains("FS0037 nome repetido"), "tabela F# ensina nome unico (FS0037)");
+        TestContext.Check(fsMini.Contains("no range os dois limites sao do MESMO tipo"), "tabela F# ensina range de tipo unico (FS0001)");
+        TestContext.Check(fsMini.Contains("PRIMOS: divisores candidatos de 2"), "FsMini separa intervalo de entrada do de divisores");
+        // Sem duplicidade ambigua: cada codigo da tabela tem UMA unica linha.
+        foreach (var code in new[] { "FS0010", "FS0751", "FS0003", "FS0001", "FS0039", "FS0037", "FS0058", "FS0988", "FS0020", "FS3563" })
+            TestContext.Check(fsMini.Split(code).Length - 1 == 1, $"FsMini cita {code} uma unica vez");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
         TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
         TestContext.Check(!tail.Contains("CONCATENACAO DE COMANDOS"), "cauda nao duplica doc de shell");
