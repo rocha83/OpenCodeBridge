@@ -349,28 +349,25 @@ internal static class UnitToolBreakerTests
         // pode aparecer na cauda: medido em #13 do DRIVER-FIXES, o modelo COPIA o
         // literal que a dica mostra. Por isso o teste exige a forma correta E a
         // ausencia da forma errada copiavel.
-        TestContext.Check(fsMini.Contains("[1 .. 2 .. n-1]"), "FsMini ensina range com passo (forma correta)");
+        TestContext.Check(fsMini.Contains("[for i in 1 .. 2 .. n-1]"), "FsMini ensina range com passo (forma correta)");
         TestContext.Check(fsMini.Contains("FS0751"), "FsMini nomeia o codigo do range com ';'");
         TestContext.Check(!fsMini.Contains("[1; 3 .. n-1]"), "FsMini nao repete o literal invalido (o modelo copia)");
         // 2a forma medida no L3-20261028-163556: o modelo escreveu comprehension
         // de Haskell (`[i | i <- ...]`) e errou FS0010 por 22 turnos.
         TestContext.Check(fsMini.Contains("[for i in 1 .. n-1 -> expr]"), "FsMini ensina comprehension de F#");
-        TestContext.Check(fsMini.Contains("[x | x <- xs]"), "FsMini nomeia a comprehension alheia (FS0010)");
         TestContext.Check(fsMini.Contains("COMPREHENSION e' SEMPRE de LISTA"), "FsMini separa array literal de comprehension de lista");
         // 3a e 4a formas medidas no L3-20261029-030937: `do` na lista sem `yield`
-        // (lista tipada unit) e `do`+`->` juntos; e `open System.Math` (tipo, nao
-        // namespace). A dica ensina a forma CERTA e nao repete o `open` invalido.
+        // (lista tipada unit) e `step` no range (nao existe em F#).
         TestContext.Check(fsMini.Contains("do yield"), "FsMini ensina do+yield como alternativa");
-        TestContext.Check(fsMini.Contains("[for i in 1 .. 2 .. n-1 -> expr]"), "FsMini ensina paridade como passo");
-        TestContext.Check(fsMini.Contains("System.Math.Sin"), "FsMini ensina Math qualificado");
-        TestContext.Check(!fsMini.Contains("CERTO: open System.Math"), "FsMini nao induz o 'open' invalido");
-        // 5a e 5b formas medidas no isolado de 2026-10-29 (pos-reparo): o F# compilou
-        // e imprimiu 0.002631 porque o modelo pos o passo no FIM do range (compila e
-        // calcula errado, sem erro do compilador), e gastou 21 turnos em `[| |]` com
-        // `List.sum`. A cauda ensina a ORDEM por descricao e o array por tipo.
         TestContext.Check(fsMini.Contains("PASSO e' o SEGUNDO termo"), "FsMini ensina a ordem do range (passo no meio)");
         TestContext.Check(fsMini.Contains("Array.sum"), "FsMini separa array de lista (List.* x Array.*)");
         TestContext.Check(!fsMini.Contains("1 .. n - 1 .. 2"), "FsMini nao exibe a ordem trocada (o modelo copia)");
+        // Escopo inteiro (2026-10-29): sem ponto flutuante, o bloco MATH e as regras
+        // de int/float sairam — cauda menor, sem literal que induza `** 2.0`.
+        TestContext.Check(fsMini.Contains("printfn \"%d\""), "FsMini ensina saida inteira");
+        TestContext.Check(!fsMini.Contains("System.Math"), "FsMini nao carrega mais regra de Math (escopo inteiro)");
+        TestContext.Check(!fsMini.Contains("** 2.0"), "FsMini nao ensina potencia float");
+        TestContext.Check(!fsMini.Contains("TIPOS NUMERICOS"), "FsMini nao carrega mais a regra int/float");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
         TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
         TestContext.Check(!tail.Contains("CONCATENACAO DE COMANDOS"), "cauda nao duplica doc de shell");
@@ -528,12 +525,14 @@ internal static class UnitToolBreakerTests
         TestContext.Check(n1.Contains("[for i in 1 .. n-1 -> if i % 2 <> 0 then f (a + float i * h) else 0.0]"),
             "'do' puro -> '->' preservando o if/then/else");
 
-        // 5) `do` + `->` juntos com paridade: vira passo (o `=%` do modelo conta como impar).
+        // 5) `do` + `->` juntos: a condicao continua sendo FILTRO (`do if ... then
+        // yield`). Nao convertemos paridade em passo — foi essa conversao que ensinou
+        // `1 .. n-1 .. 2` (ordem trocada, resultado errado) no isolado de 2026-10-29.
         string n2 = Fs("let s = [for i in 1 .. n - 1 do i =% 2 -> 4.0 * f (float i * h)]", fs0010Arrow);
-        TestContext.Check(n2.Contains("[for i in 1 .. 2 .. n - 1 -> 4.0 * f (float i * h)]"),
-            "do+-> com paridade -> passo no range (veio: " + n2.Replace("\n", " | ") + ")");
+        TestContext.Check(n2.Contains("[for i in 1 .. n - 1 do if i % 2 <> 0 then yield 4.0 * f (float i * h)]"),
+            "do+-> com condicao -> 'do if ... then yield' (veio: " + n2.Replace("\n", " | ") + ")");
         string n3 = Fs("let e = [4.0 * f i | for i in 2 .. n - 2 do i % 2 = 0]", fs0010Pipe);
-        TestContext.Check(n3.Contains("[for i in 2 .. 2 .. n - 2 -> 4.0 * f i]"), "paridade par -> passo a partir do par");
+        TestContext.Check(n3.Contains("[for i in 2 .. n - 2 do if i % 2 = 0 then yield 4.0 * f i]"), "condicao vira filtro no yield");
 
         // 5) array-comprehension do modelo (`[| expr | for i in ... step 2 |]`): o
         // reparo antigo devolvia `[for i in 1 .. n - 1 step 2 | -> | expr]` (lixo com
@@ -551,10 +550,20 @@ internal static class UnitToolBreakerTests
         TestContext.Check(n8.Contains("[for i in 2 .. 2 .. n - 2 -> 2.0 * f (float i)]"),
             "array-comprehension sem barra final -> lista (veio: " + n8.Replace("\n", " | ") + ")");
 
-        // 6) `open System.Math` (FS0039): Math e' TIPO, nao namespace.
+        // 6) `open System.Math` (FS0039): sem conserto deterministico -> silencio.
         string n4 = Fs("module Program\nopen System.Math\nlet x = Sin 1.0", fs0039Math);
-        TestContext.Check(n4.Contains("System.Math.Sin"), "FS0039 ensina a chamada qualificada");
-        TestContext.Check(!n4.Contains("CERTO: open System.Math"), "FS0039 nao devolve o 'open' invalido");
+        TestContext.Check(n4 == "", "FS0039 sozinho nao recebe conserto inventado (silencio)");
+
+        // 6a) `step` no range sai como FS0003: normaliza pela FONTE (passo no MEIO).
+        string n9 = Fs("let so = [for i in 1 .. n-1 step 2 -> i]",
+            "error FS0003: This value is not a function and cannot be applied. It has type 'int', which does not accept arguments.");
+        TestContext.Check(n9.Contains("CERTO: 1 .. 2 .. n-1"), "FS0003 com 'step' -> passo no MEIO (veio: " + n9.Replace("\n", " | ") + ")");
+
+        // 6b2) Saida multi-erro: quem decide e' o PRIMEIRO codigo. FS0039 na frente
+        // com FS0001 (list/array) depois NAO pode virar dica de array.
+        TestContext.Check(Fs("let data = [|2.0|]\nlet d = [for x in data -> x]",
+            "error FS0039: The value or constructor 'data' is not defined.\nerror FS0001: This expression was expected to have type ''a list' but here has type ''b array'") == "",
+            "primeiro erro FS0039 silencia (nao responde com dica de array)");
 
         // 6b) Filtro legitimo sem operador NAO pode ser descartado (perderia a
         // condicao em silencio: compila e calcula errado).

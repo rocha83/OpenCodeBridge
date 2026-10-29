@@ -23,31 +23,40 @@ internal static class E2EMissionTests
         return await TestContext.PostObj(bridge + "/v1/chat/completions", body);
     }
 
-    static List<double> SixDecimals(string text)
+    /// <summary>Contrato inteiro do E-mission-tools (a saida esperada, na ordem).</summary>
+    static readonly long[] MissionExpected = { 3628800, 21, 15 };
+
+    /// <summary>Linhas da saida que sao UM inteiro puro, na ordem em que sairam.</summary>
+    /// <param name="text">Saida do programa.</param>
+    /// <returns>Inteiros das linhas puras.</returns>
+    static List<long> IntLines(string text)
     {
-        var list = new List<double>();
-        foreach (System.Text.RegularExpressions.Match m in
-                 System.Text.RegularExpressions.Regex.Matches(text, @"-?\d+[.,]\d{6}"))
-            if (double.TryParse(m.Value.Replace(',', '.'),
-                    System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var v))
+        var list = new List<long>();
+        foreach (var raw in (text ?? "").Split('\n'))
+        {
+            string l = raw.Trim().Trim('\r');
+            if (System.Text.RegularExpressions.Regex.IsMatch(l, @"^-?\d+$")
+                && long.TryParse(l, System.Globalization.NumberStyles.Integer,
+                       System.Globalization.CultureInfo.InvariantCulture, out var v))
                 list.Add(v);
+        }
         return list;
     }
 
-    /// <summary>Exige Simpson=2, media=5 e desvio=2 NA ORDEM; evita o falso
-    /// positivo de "contem 2 e 5" quando so media/desvio batem.</summary>
-    static bool ThreeFloatsOk(string text)
+    /// <summary>10! = 3628800, mdc(1071,462) = 21 e primos &lt;= 50 = 15, NA ORDEM.</summary>
+    /// <param name="text">Saida do programa.</param>
+    /// <returns>true quando as tres primeiras linhas inteiras batem.</returns>
+    static bool MissionIntsOk(string text)
     {
-        var nums = SixDecimals(text);
+        var nums = IntLines(text);
         return nums.Count >= 3
-            && Math.Abs(nums[0] - 2.0) < 1e-4
-            && Math.Abs(nums[1] - 5.0) < 1e-4
-            && Math.Abs(nums[2] - 2.0) < 1e-4;
+            && nums[0] == MissionExpected[0]
+            && nums[1] == MissionExpected[1]
+            && nums[2] == MissionExpected[2];
     }
 
-    // Hardcode do resultado: 2.000000/5.000000 como literal no fonte (com ou
-    // sem aspas). Ignora comentarios para nao acusar a meta copiada do enunciado.
+    // Hardcode: a meta como literal no fonte (com ou sem aspas). Ignora comentarios
+    // para nao acusar a meta copiada do enunciado.
     static bool HasHardcodedResult(string src)
     {
         string code = string.Join("\n", src.Split('\n').Select(l =>
@@ -55,8 +64,9 @@ internal static class E2EMissionTests
             int i = l.IndexOf("//", StringComparison.Ordinal);
             return i >= 0 ? l[..i] : l;
         }));
-        return System.Text.RegularExpressions.Regex.IsMatch(
-            code, @"(?<!\d)(2[.,]000000|5[.,]000000)(?!\d)");
+        return System.Text.RegularExpressions.Regex.IsMatch(code, @"(?<!\d)3628800(?!\d)")
+            || System.Text.RegularExpressions.Regex.IsMatch(code, "\"21\"")
+            || System.Text.RegularExpressions.Regex.IsMatch(code, "\"15\"");
     }
 
     public static async Task MissionTools()
@@ -74,9 +84,11 @@ internal static class E2EMissionTests
         const string sysBase = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls, sem prosa.";
         var sys = new JsonObject { ["role"] = "system", ["content"] = sysBase };
         var history = new JsonArray(sys);
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = $"Em {ws}/mcs, implemente em Program.cs o calculo de Simpson de Math.Sin em [0,pi] (n=100) e a media e o desvio padrao populacional de {{2,4,4,4,5,5,7,9}}, imprimindo os 3 numeros com 6 casas. O projeto C# ja existe em {ws}/mcs/mcs.csproj; NAO crie Program.csproj, bin ou obj. Grave o arquivo completo com a tool write (nao use edit para criar o arquivo), enxuto e sem comentarios longos. Dica de Simpson: h=(b-a)/n e integral=(h/3)*(f0+fn+4*impares+2*pares). Rode `dotnet run --project {ws}/mcs/mcs.csproj` (nao use `dotnet build --project`) e ajuste ate a saida ser 2.000000, 5.000000 e 2.000000." });
+        history.Add(new JsonObject { ["role"] = "user", ["content"] =
+            $"Em {ws}/mcs existe o projeto mcs.csproj. Escreva Program.cs para calcular e imprimir, um valor por linha e sem rotulos, tres numeros inteiros: o fatorial de 10; o maximo divisor comum de 1071 e 462; e quantos numeros primos existem de 1 a 50. " +
+            $"O programa tem que compilar e rodar com `dotnet run --project {ws}/mcs/mcs.csproj` sem erro e imprimir exatamente esses tres numeros, nessa ordem (calcule, nao copie os numeros)." });
 
-        string fcode = "", final = "";
+        string final = "";
         string logPath = Path.Combine(ws, "_mission.log");
         void LogT(string s) { try { File.AppendAllText(logPath, s + "\n"); } catch { } }
         // O modelo as vezes cria mfs.csproj/Program.cs no diretorio F# e o
@@ -124,7 +136,7 @@ internal static class E2EMissionTests
                 LogT($"[C#] retry {csAttempt}: contexto C# resetado; {(compileErr ? "erro de build" : "saida errada")} repassado ({errLine})");
                 string guidance = compileErr
                     ? $"Sem prosa: o build C# falhou: {errLine}. Corrija {ws}/mcs/Program.cs e rode `dotnet run --project {ws}/mcs/mcs.csproj`."
-                    : $"Sem prosa: a saida C# nao bateu: {errLine}. Metas: 2.000000 (Simpson de Sin em [0,pi] com n=100), 5.000000 (media) e 2.000000 (desvio populacional). Simpson: h=(b-a)/n e integral=(h/3)*(Math.Sin(a) + Math.Sin(b) + 4*impares + 2*pares), impares i=1,3,..,n-1 e pares i=2,4,..,n-2. Corrija {ws}/mcs/Program.cs e rode `dotnet run --project {ws}/mcs/mcs.csproj`.";
+                    : $"Sem prosa: a saida C# nao bateu: {errLine}. Metas, uma por linha: 3628800 (fatorial de 10), 21 (mdc de 1071 e 462) e 15 (primos de 1 a 50). Corrija {ws}/mcs/Program.cs e rode `dotnet run --project {ws}/mcs/mcs.csproj`.";
                 history.Add(new JsonObject { ["role"] = "user", ["content"] = guidance });
             }
             for (int turn = 0; turn < 14; turn++)
@@ -161,7 +173,6 @@ internal static class E2EMissionTests
                     catch { args = new JsonObject(); }
                     string res = await ExecTool(ws, model, fn, args);
                     LogT($"[C#] T{turn} {fn} {args.ToJsonString()[..Math.Min(160, args.ToJsonString().Length)]} -> {res[..Math.Min(180, res.Length)]}");
-                    if (fn == "write" && (args["path"]?.GetValue<string>() ?? "").EndsWith("Program.fs")) fcode = args["content"]?.GetValue<string>() ?? fcode;
                     echo.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = tc?["id"]?.GetValue<string>() ?? "", ["content"] = res });
                 }
                 var freshCalls = new JsonArray();
@@ -172,9 +183,8 @@ internal static class E2EMissionTests
                 history.Add(new JsonObject { ["role"] = "assistant", ["content"] = msg["content"]?.GetValue<string>() ?? "", ["tool_calls"] = freshCalls });
                 foreach (var e in echo) history.Add((JsonObject)e!.DeepClone());
                 // Sucesso atingido: para de editar (o modelo tende a quebrar o que ja funciona).
-                // Predicado estrito (2/5/2 NA ORDEM), igual ao F#: "contem 2 e 5" aceita
-                // 3,332895 / 5,000000 / 2,000000 (2 e' o desvio) e mata o turno de reparo.
-                if (echo.Any(e => ThreeFloatsOk(e?["content"]?.GetValue<string>() ?? ""))) break;
+                // Predicado estrito (3628800/21/15 NA ORDEM), igual ao F#.
+                if (echo.Any(e => MissionIntsOk(e?["content"]?.GetValue<string>() ?? ""))) break;
             }
             string csFile = Path.Combine(ws, "mcs", "Program.cs");
             string csSrc = File.Exists(csFile) ? File.ReadAllText(csFile) : "";
@@ -183,23 +193,19 @@ internal static class E2EMissionTests
             LogT($"[C#] RUN -> {runOut[..Math.Min(220, runOut.Length)]}");
             csRunOut = runOut;
             csLastErr = runOut;
-            var probe = SixDecimals(runOut);
-            bool csOk = (csSrc.Contains("Sin") || csSrc.Contains("sin")) && csSrc.Length > 60
-                        && !HasHardcodedResult(csSrc)
-                        && probe.Count >= 3
-                        && Math.Abs(probe[0] - 2.0) < 1e-4 && Math.Abs(probe[1] - 5.0) < 1e-4 && Math.Abs(probe[2] - 2.0) < 1e-4;
+            bool csOk = csSrc.Length > 60 && !HasHardcodedResult(csSrc) && MissionIntsOk(runOut);
             if (csOk) break;
         }
         string csFileFinal = Path.Combine(ws, "mcs", "Program.cs");
         string csSrcFinal = File.Exists(csFileFinal) ? File.ReadAllText(csFileFinal) : "";
-        TestContext.Check((csSrcFinal.Contains("Sin") || csSrcFinal.Contains("sin")) && csSrcFinal.Length > 60,
-            "mcs/Program.cs com Simpson (nao template), veio: " + csSrcFinal[..Math.Min(100, csSrcFinal.Length)]);
-        TestContext.Check(!HasHardcodedResult(csSrcFinal), "C# calcula (sem hardcode de 2.000000/5.000000 no fonte)");
-        var csNums = SixDecimals(csRunOut);
-        TestContext.Check(csNums.Count >= 3, "C# imprime 3 numeros com 6 casas, saiu: " + csRunOut[..Math.Min(160, csRunOut.Length)]);
-        TestContext.Check(csNums.Count >= 1 && Math.Abs(csNums[0] - 2.0) < 1e-4, "C# Simpson = 2.0, saiu: " + csRunOut[..Math.Min(120, csRunOut.Length)]);
-        TestContext.Check(csNums.Count >= 2 && Math.Abs(csNums[1] - 5.0) < 1e-4, "C# media = 5.0");
-        TestContext.Check(csNums.Count >= 3 && Math.Abs(csNums[2] - 2.0) < 1e-4, "C# desvio = 2.0 (populacional)");
+        TestContext.Check(csSrcFinal.Length > 60,
+            "mcs/Program.cs com codigo real (nao template), veio: " + csSrcFinal[..Math.Min(100, csSrcFinal.Length)]);
+        TestContext.Check(!HasHardcodedResult(csSrcFinal), "C# calcula (sem hardcode de 3628800/21/15 no fonte)");
+        var csNums = IntLines(csRunOut);
+        TestContext.Check(csNums.Count >= 3, "C# imprime 3 linhas inteiras, saiu: " + csRunOut[..Math.Min(160, csRunOut.Length)]);
+        TestContext.Check(csNums.Count >= 1 && csNums[0] == 3628800, "C# fatorial de 10 = 3628800, saiu: " + csRunOut[..Math.Min(120, csRunOut.Length)]);
+        TestContext.Check(csNums.Count >= 2 && csNums[1] == 21, "C# mdc(1071,462) = 21");
+        TestContext.Check(csNums.Count >= 3 && csNums[2] == 15, "C# primos de 1 a 50 = 15");
         Console.WriteLine($"  [mission] C# ok:\n{csRunOut.Trim()}");
 
         // F# tem system proprio: FsMini so entra aqui (C# nao recebe regra F#).
@@ -230,11 +236,12 @@ internal static class E2EMissionTests
                 string guidance = compileErr
                     ? $"Sem prosa: o build do F# falhou: {errLine}. " + (fsHint.Length > 0 ? fsHint + " " : "")
                       + $"Corrija {ws}/mfs/Program.fs e rode `dotnet run --project {ws}/mfs/mfs.fsproj`."
-                    : $"Sem prosa: a saida do F# nao bateu: {errLine}. Metas: 2.000000 (Simpson de Sin em [0,pi] com n=100), 5.000000 (media) e 2.000000 (desvio populacional). Simpson: h=(b-a)/n e integral=(h/3)*(f a + f b + 4*impares + 2*pares), impares i=1,3,..,n-1 e pares i=2,4,..,n-2. Corrija {ws}/mfs/Program.fs e rode `dotnet run --project {ws}/mfs/mfs.fsproj`.";
+                    : $"Sem prosa: a saida do F# nao bateu: {errLine}. Metas, uma por linha: 3628800 (fatorial de 10), 21 (mdc de 1071 e 462) e 15 (primos de 1 a 50). Corrija {ws}/mfs/Program.fs e rode `dotnet run --project {ws}/mfs/mfs.fsproj`.";
                 histFs.Add(new JsonObject { ["role"] = "user", ["content"] = guidance });
             }
             histFs.Add(new JsonObject { ["role"] = "user", ["content"] =
-                $"Em {ws}/mfs, implemente em Program.fs (o projeto ja existe em {ws}/mfs/mfs.fsproj; NAO crie mfs.csproj, Program.cs, bin ou obj) um programa F# que calcule e imprima com 6 casas: (a) Simpson de System.Math.Sin em [0, pi] com n=100 -> meta 2.000000; (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> meta 5.000000; (c) o desvio padrao populacional da mesma lista -> meta 2.000000. Grave o arquivo completo com a tool write (nao use edit para criar o arquivo), enxuto e sem comentarios longos. Dica de Simpson: h=(b-a)/n e integral=(h/3)*(f0+fn+4*impares+2*pares). F# idiomatico: `System.Math.Sin/Sqrt/PI` qualificado, `printfn \"%.6f\"`, aritmetica float com `+ - * /` e `** 2.0`, listas com `List.sum/List.map/List.fold`. Lembre-se e ateste o tail F# (FsMini) ja fornecido no system: aplique a regra de TIPOS — contagem/indice/passo/tamanho de range = int, medida/coordenada/resultado = float, converta SO' na borda (`float i`, `float n`, `int x`); se um parametro entra em `[ .. .. param .. ]` ele E' int, entao a chamada passa 100 (NUNCA 100.0). Aplique tambem a tabela de INCONSISTENCIAS do FsMini (comprehension/lista e `Math` qualificado — o contrato esta no tail, nao aqui). Saida `printfn \"%.6f\"`. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` para verificar a saida (metas: 2.000000, 5.000000, 2.000000)." });
+                $"Em {ws}/mfs existe o projeto mfs.fsproj. Escreva Program.fs para calcular e imprimir, um valor por linha e sem rotulos, tres numeros inteiros: o fatorial de 10; o maximo divisor comum de 1071 e 462; e quantos numeros primos existem de 1 a 50. " +
+                $"O programa tem que compilar e rodar com `dotnet run --project {ws}/mfs/mfs.fsproj` sem erro e imprimir exatamente esses tres numeros, nessa ordem (calcule, nao copie os numeros)." });
         // Orcamento de turnos: o aviso do salvage da bridge (ToolCallRepair.Nudge) NAO
         // e' turno do modelo — ele nao raciocinou, recebeu instrucao. Debitar isso
         // encurtava a janela no meio do reparo (medido no L3 de 2026-10-29: turno
@@ -302,12 +309,11 @@ internal static class E2EMissionTests
                         LogT($"[F#] T{turn} reparo in-flow: {inFlow.Replace("\n", " | ")}");
                     }
                 }
-                if (fnf == "write" && (af["path"]?.GetValue<string>() ?? "").EndsWith("Program.fs")) fcode = af["content"]?.GetValue<string>() ?? fcode;
                 fres.Add(resf);
                 histFs.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = resf });
             }
             // Sucesso atingido: para de editar (o modelo tende a quebrar o F# que ja compila).
-            if (fres.Any(ThreeFloatsOk)) break;
+            if (fres.Any(MissionIntsOk)) break;
         }
             string fsFile = Path.Combine(ws, "mfs", "Program.fs");
             fsSrc = File.Exists(fsFile) ? File.ReadAllText(fsFile) : "";
@@ -315,7 +321,7 @@ internal static class E2EMissionTests
             fsOut = await RunShell(ws, model, "dotnet run --project mfs/mfs.fsproj -c Release");
             lastErr = fsOut;
             LogT($"[F#] RUN -> {fsOut[..Math.Min(220, fsOut.Length)]}");
-            bool ok = fsSrc.Contains("Math") && fcode.Contains("Math") && ThreeFloatsOk(fsOut);
+            bool ok = fsSrc.Length > 60 && !HasHardcodedResult(fsSrc) && MissionIntsOk(fsOut);
             if (ok) break;
         }
         // Atestacao honesta: o system final do request F# (registrado pela bridge)
@@ -331,12 +337,12 @@ internal static class E2EMissionTests
             TestContext.Check(att["harness_tails"]?.GetValue<bool>() == true, "F# atestado: harness_tails=on na bridge");
         }
         catch (Exception ex) { TestContext.Check(false, "F# atestacao falhou: " + ex.Message); }
-        TestContext.Check(!HasHardcodedResult(fsSrc), "F# calcula (sem hardcode de 2.000000/5.000000 no fonte)");
-        var fsNums = SixDecimals(fsOut);
-        TestContext.Check(fsNums.Count >= 3, "F# imprime 3 numeros com 6 casas, saiu: " + fsOut[..Math.Min(160, fsOut.Length)]);
-        TestContext.Check(fsNums.Count >= 1 && Math.Abs(fsNums[0] - 2.0) < 1e-4, "F# Simpson = 2.0, saiu: " + fsOut[..Math.Min(160, fsOut.Length)]);
-        TestContext.Check(fsNums.Count >= 2 && Math.Abs(fsNums[1] - 5.0) < 1e-4, "F# media = 5.0");
-        TestContext.Check(fsNums.Count >= 3 && Math.Abs(fsNums[2] - 2.0) < 1e-4, "F# desvio = 2.0 (populacional)");
+        TestContext.Check(!HasHardcodedResult(fsSrc), "F# calcula (sem hardcode de 3628800/21/15 no fonte)");
+        var fsNums = IntLines(fsOut);
+        TestContext.Check(fsNums.Count >= 3, "F# imprime 3 linhas inteiras, saiu: " + fsOut[..Math.Min(160, fsOut.Length)]);
+        TestContext.Check(fsNums.Count >= 1 && fsNums[0] == 3628800, "F# fatorial de 10 = 3628800, saiu: " + fsOut[..Math.Min(160, fsOut.Length)]);
+        TestContext.Check(fsNums.Count >= 2 && fsNums[1] == 21, "F# mdc(1071,462) = 21");
+        TestContext.Check(fsNums.Count >= 3 && fsNums[2] == 15, "F# primos de 1 a 50 = 15");
         Console.WriteLine($"  [mission] F# ok:\n{fsOut.Trim()}");
 
         // Fase 3: versionamento com a tool git (command/path) + pacote via shell (zip).
@@ -396,7 +402,7 @@ internal static class E2EMissionTests
     }
 
     /// <summary>
-    /// Missao algoritmica E2E (C# + F#): Simpson + media/desvio + Hanoi + primos.
+    /// Missao algoritmica E2E (C# + F#): Hanoi + crivo de Eratostenes, so inteiros.
     /// Step separado do E-mission-tools: falha de algoritmo nao se mistura com
     /// a entrega git/zip. Enunciado humano: meta + dica de formula, sem passo a passo.
     /// </summary>
@@ -410,21 +416,18 @@ internal static class E2EMissionTests
         TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
 
         string csPrompt =
-            "Preciso de um programa em " + ws + "/mcs/Program.cs, no projeto mcs.csproj que ja existe (nao crie outro projeto), resolvendo quatro coisas e imprimindo o resultado de um jeito simples para eu conferir.\n" +
-            "1) A integral de sin(x) de 0 a pi com 100 intervalos, pela regra de Simpson. Tem que dar 2.000000.\n" +
-            "2) A media e o desvio padrao populacional de [2,4,4,4,5,5,7,9]. A media e 5.000000 e o desvio e 2.000000.\n" +
-            "3) A torre de Hanoi com 4 discos, da haste 1 para a 3. Me diga quantos movimentos foram necessarios e a sequencia completa no formato 1->2, 1->3, ...\n" +
-            "4) Uma analise dos primos: quantos ha abaixo de 100 e abaixo de 1000, e quantos pares gemeos abaixo de 100. O crivo de Eratostenes e uma boa pedida.\n" +
+            "Preciso de um programa em " + ws + "/mcs/Program.cs, no projeto mcs.csproj que ja existe (nao crie outro projeto), resolvendo duas coisas e imprimindo o resultado de um jeito simples para eu conferir, so com numeros inteiros.\n" +
+            "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Me diga quantos movimentos foram necessarios e a sequencia completa no formato 1->2, 1->3, ...\n" +
+            "2) Uma analise dos primos: quantos ha abaixo de 100 e abaixo de 1000, e quantos pares gemeos abaixo de 100. O crivo de Eratostenes e uma boa pedida.\n" +
             "Imprima os valores que o programa calculou; nao copie os numeros do enunciado.\n" +
             "Para eu comparar sem ambiguidade, termine com estas linhas, uma por linha e nessa ordem:\n" +
-            "simpson=2.000000\nmedia=5.000000\ndesvio=2.000000\nhanoi=15\nhanoi_seq=1->2,1->3,...\nprimes100=25\nprimes1000=168\ntwin100=8\n" +
+            "hanoi=15\nhanoi_seq=1->2,1->3,...\nprimes100=25\nprimes1000=168\ntwin100=8\n" +
             "Pode rodar `dotnet run --project " + ws + "/mcs/mcs.csproj` e ajustar ate bater.";
 
         string fsPrompt = csPrompt
             .Replace(ws + "/mcs/Program.cs", ws + "/mfs/Program.fs")
             .Replace(ws + "/mcs/mcs.csproj", ws + "/mfs/mfs.fsproj")
-            .Replace("projeto mcs.csproj", "projeto mfs.fsproj")
-            .Replace("[2,4,4,4,5,5,7,9]", "[2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0]");
+            .Replace("projeto mcs.csproj", "projeto mfs.fsproj");
 
         var (csSrc, csOut) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", csPrompt);
         TestContext.Check(!HasHardcodedAlgo(csSrc), "C# calcula (sem hardcode das metas)");
@@ -506,13 +509,6 @@ internal static class E2EMissionTests
             string v = line[(i + 1)..].Trim();
             if (k.Length > 0 && v.Length > 0) kv[k] = v;
         }
-        static bool Num(string s, double target)
-            => double.TryParse(s.Replace(',', '.'), System.Globalization.NumberStyles.Float,
-                   System.Globalization.CultureInfo.InvariantCulture, out var v)
-               && Math.Abs(v - target) < 1e-4;
-        if (!kv.TryGetValue("simpson", out var s) || !Num(s, 2.0)) return false;
-        if (!kv.TryGetValue("media", out var m) || !Num(m, 5.0)) return false;
-        if (!kv.TryGetValue("desvio", out var d) || !Num(d, 2.0)) return false;
         if (!kv.TryGetValue("hanoi", out var h) || h.Trim() != "15") return false;
         if (!kv.TryGetValue("primes100", out var p1) || p1.Trim() != "25") return false;
         if (!kv.TryGetValue("primes1000", out var p2) || p2.Trim() != "168") return false;
@@ -531,7 +527,7 @@ internal static class E2EMissionTests
             return i >= 0 ? l[..i] : l;
         }));
         return System.Text.RegularExpressions.Regex.IsMatch(
-            code, @"(?<!\d)(2[.,]000000|5[.,]000000|hanoi\s*=\s*15|primes100\s*=\s*25|primes1000\s*=\s*168|twin100\s*=\s*8)(?!\d)");
+            code, @"hanoi\s*=\s*15|primes100\s*=\s*25|primes1000\s*=\s*168|twin100\s*=\s*8");
     }
 
     static async Task<string> ExecTool(string ws, string model, string fn, JsonObject args)

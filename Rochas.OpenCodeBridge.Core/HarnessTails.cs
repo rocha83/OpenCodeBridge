@@ -55,27 +55,20 @@ public static class HarnessTails
     /// </summary>
     public const string FsMini =
         "F# MINI (sintaxe geral; os exemplos NAO sao o algoritmo do pedido). " +
-        "BASE: 1a linha `module Program`; `open System`; funcoes `let f (x: float) = ...`; saida `printfn \"%.6f\" valor`. " +
-        "MATH: `System.Math.Sin/Sqrt/PI` qualificados; potencia `** 2.0`. " +
-        "LISTAS: `List.sum xs`, `List.map (fun x -> x * x) xs`, `List.fold (fun acc x -> acc + x) 0.0 xs`, `List.length xs`, `List.init n (fun i -> ...)`. " +
-        "FS0001 `List.*` recebendo `[| a; b |]` -> `[| ... |]` e' ARRAY (tipo diferente de lista): use `[ a; b ]` com `List.sum/List.map/List.length`, ou `Array.sum/Array.map/Array.length` quando o valor precisa ser array. " +
+        "BASE: 1a linha `module Program`; `open System`; funcoes `let f x = ...`; saida inteira `printfn \"%d\" valor`. " +
+        "LISTAS: `List.sum xs`, `List.map (fun x -> x * x) xs`, `List.fold (fun acc x -> acc + x) 0 xs`, `List.filter (fun x -> x > 0) xs`, `List.length xs`, `List.init n (fun i -> ...)`. " +
         "TOOLS: `write` grava o arquivo inteiro (correcao pontual = `edit`); `shell` roda `dotnet run --project <dir>/<nome>.fsproj`. " +
+        "COMPREHENSION e' SEMPRE de LISTA (`[for x in xs -> expr]`); `[| a; b |]` e' literal de ARRAY de valores fixos e nao aceita `for` dentro. " +
+        "RANGE COM PASSO: sao TRES termos e a ordem e' inicio, PASSO, fim — o PASSO e' o SEGUNDO termo, entre os dois `..`, e o TERCEIRO e' o fim (`[for i in 1 .. 2 .. n-1]` = 1, 3, .., n-1). Passo e fim trocados ainda compilam e produzem resultado errado SEM erro do compilador. " +
+        "INTEIROS: `%` so em int; `/` entre dois int TRUNCA o resto (sem erro). " +
         "INCONSISTENCIAS PREVISTAS EM F# (codigo: causa -> sintaxe correta): " +
         "FS0010 `[expr | for i in ...]` ('|' nao existe em lista) -> `[for i in 1 .. n-1 -> expr]` ou `[for i in ... do yield expr]`. " +
-        "FS0010 `[x | x <- xs]` (comprehension de Haskell) -> `[for x in xs -> expr]`. " +
-        "COMPREHENSION e' SEMPRE de LISTA (`[for ...]`): `[| a; b |]` e' literal de ARRAY de valores fixos e nao aceita `for` dentro. " +
-        "FS0010/FS0001 `do` dentro de LISTA sem `yield` (a lista vira `unit`) -> declare o elemento com `->` ou com `do yield`; as duas formas sao validas, `do` sozinho nao. " +
-        "FS0010 `do` e `->` juntos na MESMA comprehension -> tire o `do` e mantenha o `->`; paridade vira passo no range: `[for i in 1 .. 2 .. n-1 -> expr]`. " +
-        "FS0039 `open System.Math` -> `Math` e' TIPO, nao namespace: `open System` e chame `System.Math.Sin` qualificado. " +
-        "FS0010/FS0751 `[a; b .. c]` (';' nao e' passo) -> `[a .. b .. c]`, DOIS `..` com o passo no MEIO (`[1 .. 2 .. n-1]` impares). " +
-        "RANGE COM PASSO: sao TRES termos e a ordem e' inicio, PASSO, fim — o PASSO e' o SEGUNDO termo, entre os dois `..`, e o TERCEIRO e' o fim (`[for i in 1 .. 2 .. n-1]` = 1, 3, .., n-1). Passo e fim trocados ainda compilam e produzem resultado errado SEM erro do compilador. " +
-        "FS0001 mistura int/float -> TIPOS NUMERICOS por PAPEL: contagem/indice/passo/tamanho = int; medida/coordenada/resultado = float; converta SO' na borda (`float i`, `int x`); um parametro = um tipo. " +
-        "FS0001 parametro em range ou `List.length` -> ele E' int: a chamada passa `100`, NUNCA `100.0`. " +
-        "FS0001 `x ** 2` -> potencia exige float dos dois lados: `x ** 2.0`. " +
-        "FS0001 `%` em float -> `%` so em int (use `int` ou `System.Math.IEEERemainder`). " +
+        "FS0010/FS0001 `do` dentro de LISTA sem `yield` (a lista vira `unit`) -> declare o elemento com `->` ou com `do yield`; `do` sozinho nao. " +
+        "FS0010/FS0751/FS0003 `step` no range -> `step` nao existe em F#: `a .. passo .. b`, com o passo no MEIO. " +
+        "FS0001 `List.*` recebendo `[| a; b |]` -> `[| ... |]` e' ARRAY (tipo diferente de lista): use `[ a; b ]` com `List.sum/List.map/List.length`, ou `Array.sum/Array.map/Array.length`. " +
+        "FS0039 valor nao definido -> o nome nao existe no arquivo: use o parametro ou o valor ja' declarado (nao invente nome). " +
         "FS0988 modulo vazio -> falta `[<EntryPoint>] let main argv = ...` com `0` no fim. " +
         "FS0020 resultado descartado -> `|> ignore` ou `printfn`. " +
-        "TRUNCA (sem erro) `/` entre dois int -> converta um lado: `float a / float b`. " +
         "SE O BUILD FALHAR: leia a linha `error`, aplique a correcao da tabela e edite SO' o trecho; NAO reescreva o arquivo igual.";
 
     /// <summary>

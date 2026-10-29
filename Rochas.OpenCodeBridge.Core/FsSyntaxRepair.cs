@@ -20,17 +20,13 @@ public static class FsSyntaxRepair
     public static string Suggest(string source, string compilerError)
     {
         if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(compilerError)) return "";
-
-        // FS0039 `open System.Math`: `Math` e' TIPO, nao namespace. O modelo copia
-        // o literal da dica, entao o CERTO mostra a chamada qualificada (nunca `open`).
-        if (compilerError.Contains("FS0039", StringComparison.Ordinal)
-            && Regex.IsMatch(source, @"\bopen\s+System\.Math\b"))
-            return "ERRADO: open System.Math\n" +
-                   "CERTO: open System   (Math e' TIPO, nao namespace: chame System.Math.Sin/Sqrt/PI qualificado)";
+        // Despacha pelo PRIMEIRO erro: a saida do `dotnet` traz varios, e decidir pelo
+        // blob fazia a dica de array/lista responder a um FS0039 (medido 2026-10-29).
+        string code = FirstCode(compilerError);
 
         // FS0001 `List.*` recebendo `[| ... |]`: o compilador diz lista esperada e
         // array recebido. A dica nomeia a lista (`[...]`) e o `Array.*` correto.
-        if (compilerError.Contains("FS0001", StringComparison.Ordinal)
+        if (code == "FS0001"
             && compilerError.Contains("list", StringComparison.OrdinalIgnoreCase)
             && compilerError.Contains("array", StringComparison.OrdinalIgnoreCase))
             return "CERTO: `[ a; b ]` (lista) com `List.sum/List.map/List.length`; " +
@@ -38,8 +34,7 @@ public static class FsSyntaxRepair
 
         // So' os codigos que este mapa cobre: erro alheio nao recebe conserto de
         // comprehension (evita "corrigir" a linha errada do fonte).
-        if (!new[] { "FS0010", "FS0001", "FS0020", "FS0751" }
-                .Any(code => compilerError.Contains(code, StringComparison.Ordinal)))
+        if (code is not ("FS0003" or "FS0010" or "FS0001" or "FS0020" or "FS0751"))
             return "";
 
         // Comprehension de lista: `|` de outra linguagem, `do` sem `yield` e
@@ -50,7 +45,30 @@ public static class FsSyntaxRepair
             if (fix.Length > 0)
                 return $"ERRADO: {m.Value}\nCERTO: {fix}";
         }
+
+        // `step N` fora de comprehension (ex.: sobra num `[for ...]` ja' com `->`):
+        // `step` nao existe em F#, mas o passo e' real — vai no MEIO do range. Vem
+        // DEPOIS da comprehension para nao perder a conversao `[| |]`/`|` no caminho.
+        if (code is "FS0003" or "FS0010" or "FS0001" or "FS0020" or "FS0751")
+        {
+            var stepOcc = Regex.Match(source, @"\S+\s*\.\.\s*[^\[\]\r\n]+?\s+step\s+\d+");
+            if (stepOcc.Success)
+            {
+                string fixedRange = StepToRange(stepOcc.Value);
+                if (fixedRange != stepOcc.Value)
+                    return $"ERRADO: {stepOcc.Value}\nCERTO: {fixedRange}";
+            }
+        }
         return "";
+    }
+
+    /// <summary>Codigo do PRIMEIRO erro do compilador (<c>FS0010</c>...) ou "" se nao houver.</summary>
+    /// <param name="compilerError">Saida do build (pode trazer varios erros).</param>
+    /// <returns>Ex.: <c>FS0003</c>.</returns>
+    static string FirstCode(string compilerError)
+    {
+        var m = Regex.Match(compilerError, @"error (FS\d{4})");
+        return m.Success ? m.Groups[1].Value : "";
     }
 
     /// <summary>Comprehension de lista com <c>for</c> dentro (uma por linha).</summary>
@@ -85,11 +103,11 @@ public static class FsSyntaxRepair
         if (pipe.Success)
         {
             string expr = pipe.Groups["expr"].Value.Trim().TrimEnd('|').Trim();
+            string pv = pipe.Groups["v"].Value;
             var (range, cond) = SplitDo(pipe.Groups["range"].Value.Trim());
-            string r = StepRange(range, cond) ?? range;
             // `step` nao existe em F#: sem forma conhecida, silencio (nunca ensina `step`).
-            if (Regex.IsMatch(r, @"\bstep\b")) return "";
-            return $"[for {pipe.Groups["v"].Value} in {r} -> {expr}]";
+            if (Regex.IsMatch(range, @"\bstep\b")) return "";
+            return cond is null ? $"[for {pv} in {range} -> {expr}]" : Filtered(pv, range, cond, expr);
         }
 
         // (2) `[for v in range do <tail>]` — `do` dentro de LISTA.
@@ -117,7 +135,7 @@ public static class FsSyntaxRepair
         return $"[for {v} in {rng} -> {tail}]";
     }
 
-    /// <summary>Condicao do comprehension: vira passo do range (paridade) ou `do if ... then yield`.</summary>
+    /// <summary>Condicao do comprehension vira <c>do if ... then yield</c> (forma valida).</summary>
     /// <param name="v">Variavel do `for`.</param>
     /// <param name="range">Range original.</param>
     /// <param name="cond">Condicao (com ou sem `if`).</param>
@@ -125,43 +143,14 @@ public static class FsSyntaxRepair
     /// <returns>Comprehension valida.</returns>
     static string Filtered(string v, string range, string cond, string expr)
     {
-        string? step = StepRange(range, cond);
-        if (step is not null) return $"[for {v} in {step} -> {expr}]";
         string c = cond.StartsWith("if ", StringComparison.Ordinal) ? cond[3..].Trim() : cond;
         // Residuo do proprio indice (`... do i`): nao e' teste booleano nem filtro,
-        // entao sai. Qualquer outra condicao (ex.: `isAdult x`) e' FILTRO legitimo
-        // e vira `do if ... then yield` — nunca descartar condicao em silencio.
+        // entao sai. Qualquer outra condicao (ex.: `isAdult x`) e' FILTRO legitimo e
+        // vira `do if ... then yield` — nunca descartar condicao em silencio.
         if (Regex.IsMatch(c, @"^\w+$")) return $"[for {v} in {range} -> {expr}]";
+        // `=%` e' typo conhecido do modelo (`i =% 2`): normaliza para o resto real.
+        c = Regex.Replace(c, @"(\w+)\s*=%\s*2\b", "$1 % 2 <> 0");
         return $"[for {v} in {range} do if {c} then yield {expr}]";
-    }
-
-    /// <summary>
-    /// Filtro de paridade sobre a variavel vira passo do range. `i % 2 = 1`,
-    /// `i % 2 &lt;&gt; 0` e `i =% 2` (digito perdido) = impar; `i % 2 = 0` e
-    /// `i % 2 &lt;&gt; 1` = par — com o inicio ajustado quando e' literal inteiro.
-    /// </summary>
-    /// <param name="range">Range sem a condicao (`1 .. n - 1`).</param>
-    /// <param name="cond">Condicao (com ou sem `if`).</param>
-    /// <returns>Range com passo, ou null quando nao e' paridade conhecida.</returns>
-    static string? StepRange(string range, string? cond)
-    {
-        if (string.IsNullOrWhiteSpace(cond)) return null;
-        string c = cond.Trim();
-        if (c.StartsWith("if ", StringComparison.Ordinal)) c = c[3..].Trim();
-
-        var m = Regex.Match(c, @"^(?<v>\w+)\s*(?<op>%|=%)\s*2\s*(?:(?<cmp>=|<>)\s*(?<k>\d+))?$");
-        if (!m.Success) return null;
-        bool even = m.Groups["cmp"].Success
-            ? (m.Groups["cmp"].Value == "=" ? m.Groups["k"].Value == "0" : m.Groups["k"].Value == "1")
-            : false;   // `i =% 2` sem comparacao: leitura de "resta 1" = impar
-
-        if (Regex.Matches(range, @"\.\.").Count >= 2) return null;   // ja' tem passo
-        var parts = Regex.Match(range, @"^(?<a>\S+)\s*\.\.\s*(?<b>.+)$");
-        if (!parts.Success) return null;
-        string a = parts.Groups["a"].Value.Trim();
-        string b = parts.Groups["b"].Value.Trim();
-        if (int.TryParse(a, out int ai) && (ai % 2 == 0) != even) a = (ai + 1).ToString();
-        return $"{a} .. 2 .. {b}";
     }
 
     /// <summary>Separa `range do cond` (paridade no fim do range) e normaliza `step`.</summary>
