@@ -590,14 +590,14 @@ internal static class E2EMissionTests
                 if (lang == "F#" && global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.HasDiagnostic(res))
                 {
                     string curFs = File.Exists(Path.Combine(ws, "mfs", file)) ? File.ReadAllText(Path.Combine(ws, "mfs", file)) : "";
-                    string hint = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(curFs, res);
-                    if (hint.Length > 0)
+                    // A contagem da MESMA dica e' do teste; a escalada (3a vez vira
+                    // "reescreva o arquivo com `write`") e' do Core, em Suggest(repeatCount).
+                    string baseHint = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(curFs, res);
+                    if (baseHint.Length > 0)
                     {
-                        if (hint == lastHint) hintRepeats++; else { lastHint = hint; hintRepeats = 0; }
+                        if (baseHint == lastHint) hintRepeats++; else { lastHint = baseHint; hintRepeats = 0; }
+                        string hint = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(curFs, res, hintRepeats);
                         res += "\n\n" + hint;
-                        if (hintRepeats >= 2)
-                            res += "\n\nA MESMA dica ja' veio " + (hintRepeats + 1)
-                                 + " vezes: pare de editar a mesma linha e reescreva o arquivo inteiro com a tool `write`, aplicando a forma acima.";
                         if (dump) Console.WriteLine($"  [algo:{lang}] T{turn} reparo: {hint.Replace("\n", " | ")}");
                     }
                 }

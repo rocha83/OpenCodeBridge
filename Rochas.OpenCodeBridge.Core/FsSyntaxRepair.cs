@@ -17,8 +17,20 @@ public static class FsSyntaxRepair
     /// </summary>
     /// <param name="source">Fonte F# atual (texto completo).</param>
     /// <param name="compilerError">Linha de erro do compilador.</param>
+    /// <param name="repeatCount">Quantas vezes ESTA MESMA dica ja' foi entregue antes
+    /// (0 na primeira). A partir da 3a (repeatCount &gt;= 2) o Core acrescenta a
+    /// instrucao de reescrever o arquivo inteiro — dica identica repetida nao ensina
+    /// (medido em 2026-10-29: 17 reparos iguais em 30 turnos).</param>
     /// <returns>"ERRADO: ...\nCERTO: ..." ou string vazia.</returns>
-    public static string Suggest(string source, string compilerError)
+    public static string Suggest(string source, string compilerError, int repeatCount = 0)
+    {
+        string hint = SuggestForCode(source, compilerError);
+        if (hint.Length == 0 || repeatCount < 2) return hint;
+        return hint + "\n\nA MESMA dica ja' veio " + (repeatCount + 1)
+             + " vezes: pare de editar a mesma linha e reescreva o arquivo inteiro com a tool `write`, aplicando a forma acima.";
+    }
+
+    static string SuggestForCode(string source, string compilerError)
     {
         if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(compilerError)) return "";
         // Despacha pelo PRIMEIRO erro: a saida do `dotnet` traz varios, e decidir pelo
@@ -35,6 +47,14 @@ public static class FsSyntaxRepair
                 return $"ERRADO: `{bt.Groups["w"].Value}`\n" +
                        $"CERTO: {bt.Groups["w"].Value}   (crase simples nao existe em F#: escreva o nome/operador sem crase)";
         }
+
+        // FS0010 "Unexpected type application in pattern": `ref` nao e' tipo prefixo
+        // (medido no isolado de 2026-10-29: `(moves: ref seq<string>)` e 26 turnos
+        // sem dica). Em F# o tipo e' pos-fixado e o valor se escreve com `:=`.
+        if (code == "FS0010" && compilerError.Contains("Unexpected type application", StringComparison.Ordinal))
+            return "CERTO: `ref` e' tipo POS-fixado e o valor se escreve com `:=` (le' com `!`):\n"
+                 + "let hanoi (moves: string list ref) =\n"
+                 + "    moves := !moves @ [ sprintf \"%d->%d\" 1 2 ]";
 
         // FS0010 `let`/`use` inesperado num arquivo de implementacao: a 1a linha
         // junta `module X` e `open Y`, o compilador le o resto como corpo do modulo

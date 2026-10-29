@@ -94,5 +94,9 @@ check "tipo do parametro anotado no lambda (FS0072)" (pares [ (1, 2); (1, 3) ] =
 let tudo = [ (1, 2) ] @ [ (2, 3) ]
 let tudo2 = [ (1, 2) ] |> List.append [ (2, 3) ]
 check "operador @ e List.append com os dois operandos (FS0193)" (List.sort tudo = List.sort tudo2 && List.length tudo = 2)
+let acumula (moves: string list ref) =
+    moves := !moves @ [ sprintf "%d->%d" 1 2 ]
+    !moves
+check "ref pos-fixado com := e ! (FS0010 Unexpected type application)" (acumula (ref []) = [ "1->2" ])
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."

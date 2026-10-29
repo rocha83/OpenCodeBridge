@@ -805,6 +805,39 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // 8a amostra (2026-10-29): `(moves: ref seq<string>)` — `ref` e' tipo
+    // POS-fixado; a mensagem FS0010 "Unexpected type application" nao tinha dica.
+    public static Task FsRepairRefType()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let rec hanoi (n: int) (moves: ref seq<string>) =\n    if n = 1 then ()\n",
+            "error FS0010: Unexpected type application  in pattern. Expected ')' or other token.");
+        TestContext.Check(p.Contains("string list ref"),
+            "FS0010 ref -> tipo pos-fixado (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains(":=") && p.Contains("!moves"),
+            "FS0010 ref -> escrita com `:=` e leitura com `!`");
+        TestContext.Check(!p.Contains("ref seq"), "a dica nao ecoa a forma prefixa errada");
+        return Task.CompletedTask;
+    }
+
+    // Dica identica repetida nao ensina: a escalada e' do Core (repeatCount), nao do teste.
+    public static Task FsRepairRepeatEscalation()
+    {
+        const string err = "error FS0010: Unexpected symbol '->' in expression. Expected ']' or other token.";
+        const string src = "let rec solve k =\n    if k = 1 then\n        [s->d]\n    else\n        [s->d]\n";
+        string first = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(src, err);
+        string third = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(src, err, 2);
+        TestContext.Check(first.Length > 0 && !first.Contains("reescreva o arquivo inteiro"),
+            "1a dica sem escalada (veio: " + first.Replace("\n", " | ") + ")");
+        TestContext.Check(third.StartsWith(first, StringComparison.Ordinal),
+            "3a dica mantem a forma certa e acrescenta a escalada");
+        TestContext.Check(third.Contains("reescreva o arquivo inteiro") && third.Contains("`write`"),
+            "3a dica manda reescrever o arquivo com write");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(src, "MSBUILD : error MSB1009", 5) == "",
+            "sem dica conhecida nao ha escalada (nao inventa instrucao)");
+        return Task.CompletedTask;
+    }
+
     // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
 
     public static Task AntiRepeatArgsWindowIsIndependent()
