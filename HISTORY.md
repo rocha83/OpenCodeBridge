@@ -39,6 +39,17 @@ compilava (`FS0001` nos ramos do `if`).
 3. `edit` sem `oldString` encontrado passou a ensinar o caminho que funciona
    (trecho curto copiado do `read`, ou `write` com o arquivo inteiro) e ancora a
    primeira linha real do arquivo, sem ecoar o trecho errado (commit `201c04d`).
+4. `FS0072` (tipo do parâmetro não inferido) também não tinha dica: na 4ª amostra
+   o programa de 58 linhas **já calculava** (`printfn "hanoi=%d" hanoi_count`,
+   `String.concat`/`List.map`) e a fase morreu na linha de formatação, com 30
+   turnos sem receber nada. Entra a anotação no lambda
+   (`fun (a: int, b: int) -> sprintf "%d->%d" a b`, ou `fst`/`snd`) — commit
+   `0c750ff`.
+
+**Progressão medida (cada vez mais longe, nunca com o aceite afrouxado):**
+15:54 cabeçalho colado (`FS0010`) → 16:08 hardcode das metas + `FS0001` com dica
+errada de range → 16:21 programa real calculando, travado em `FS0072` sem dica →
+medição seguinte com as três dicas no lugar.
 
 **Prova:** `units` 127 PASS / 0 FAIL; `scripts/diag/fs-repair-probe.fsx` compila
 as formas ensinadas (corpo com `let` local, `[| for i in 1 .. 3 -> i * i |]`,

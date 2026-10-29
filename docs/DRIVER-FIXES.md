@@ -687,3 +687,24 @@ a mensagem cita `float` **e** `int` (evidência de conversão no range).
 -> array junta com Array.append", "não recebe a dica de range" e "com mensagem de
 `if` vence o range mesmo com range no fonte" — e o caso compilado no
 `scripts/diag/fs-repair-probe.fsx`. Commit `19de20c`.
+
+## 27. FS0072 sem dica: programa completo morria na linha de formatação (2026-10-29)
+
+**Sintoma.** `E-mission-algo-fs`, 4ª amostra: o programa de 58 linhas já
+calculava (`printfn "hanoi=%d" hanoi_count`) e a fase morreu em
+`FS0072: The type of this expression cannot be determined`, na linha
+`List.map (fun move -> sprintf "%d->%d" move.Item1 move.Item2) hanoi_seq`. O
+`FsSyntaxRepair` devolvia vazio para esse código, então o modelo repetiu a mesma
+linha por 30 turnos.
+
+**Causa.** Lacuna de ensino: `FS0072` não estava na tabela `FsMini` nem no mapa
+do reparo. O modelo não tinha como saber que a inferência para porque o tipo do
+parâmetro do lambda não sai sozinho.
+
+**Correção.** `FsMini` + `FsSyntaxRepair` ensinam a forma que compila —
+`List.map (fun (a: int, b: int) -> sprintf "%d->%d" a b) movs` (ou `fst`/`snd`) —
+com o caso compilado no `scripts/diag/fs-repair-probe.fsx` e o pin
+`U-fs-repair-type-annotation`.
+
+**Prova.** `units` 128 PASS / 0 FAIL; probe OK na linha "tipo do parametro
+anotado no lambda (FS0072)". Commit `0c750ff`.
