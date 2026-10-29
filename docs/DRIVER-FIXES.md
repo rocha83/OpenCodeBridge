@@ -778,3 +778,26 @@ não carregar `FsMini` (guarda de fluxo), e o `Program.fs` inicial já compila
 e `U-fsmini-covers-repair-codes`), `U-fs-repair-partial-operator` verde, probe
 compilando `a @ b`/`List.append a b`, build `0 Aviso(s) / 0 Erro(s)`, commit
 `59deeaa`.
+
+## 31. Escalada da dica repetida estava no teste; `ref` sem dica (2026-10-29)
+
+**Sintoma.** 8ª amostra do `E-mission-algo-fs`: `Program.fs(6,89)` com
+`FS0010: Unexpected type application in pattern` em `(moves: ref seq<string>)`,
+**0 reparos** e 26 turnos × 2 etapas sem contrato. Nas amostras anteriores, a
+mesma dica saía 17 vezes sem o modelo aplicar.
+
+**Causa.** (a) Nenhuma regra casava `Unexpected type application` — `ref` não é
+tipo prefixo em F# (é `'a ref`, leitura `!`, escrita `:=`);
+(b) a escalada “3ª dica igual → reescreva o arquivo com `write`” vivia em
+`E2EMissionTests.RunAlgoPhase`, ou seja, mecânica de ensino no consumidor,
+contra a regra “Core é a fonte única”.
+
+**Correção.** `FsSyntaxRepair.Suggest(source, error, repeatCount)` — o Core
+acrescenta a escalada a partir da 3ª vez (e nunca quando não há dica conhecida);
+o teste só conta repetições. Regra nova `FS0010` + `Unexpected type application`
+ensina a forma que compila (`moves: string list ref`, `moves := !moves @ [ … ]`)
+e não ecoa `ref seq`.
+
+**Prova.** `units` **134 PASS / 0 FAIL** (pins `U-fs-repair-repeat-escalation` e
+`U-fs-repair-ref-type`), probe compilando `string list ref` + `:=` + `!`, build
+`0 Aviso(s) / 0 Erro(s)`, commit `1b14994`.
