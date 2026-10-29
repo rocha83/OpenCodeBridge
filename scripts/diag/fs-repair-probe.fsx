@@ -87,5 +87,7 @@ check "comprehension de array inteira entre [| e |] (FS0603)" (quadrados = [| 1;
 let junta movs = String.concat "," movs
 let rotulo movs = printfn "%s" (junta movs)
 check "argumento com chamada entre parenteses (FS0597)" (rotulo [ "1->2"; "1->3" ] = ())
+let juntos = if true then [| (1, 2) |] else Array.append [| (1, 2) |] [| (1, 3) |]
+check "ramos do if com o mesmo tipo: array junta com Array.append (FS0001)" (Array.length juntos = 1)
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."

@@ -598,6 +598,19 @@ internal static class UnitToolBreakerTests
             "error FS0001: This expression was expected to have type 'int' but here has type 'float'").Contains("int (Math.Sqrt(float n))"),
             "FS0001 no range -> converte o limite");
 
+        // 6b8) FS0001 com a MESMA mensagem de outro caso (ramos do `if`): a dica e'
+        //      a do `if` — array junta com Array.append — e nao a do range (medido no
+        //      isolado de 2026-10-29).
+        string ramos = Fs("let rec h n =\n    if n = 1 then [| (1, 3) |]\n    else let a = h (n - 1)\n         [| (1, 2) |] @ a",
+            "error FS0001: All branches of an 'if' expression must return values implicitly convertible to the type of the first branch, which here is '('a * 'a) array'. This branch returns a value of type ''b list'.");
+        TestContext.Check(ramos.Contains("Array.append"),
+            "FS0001 ramos do if -> array junta com Array.append (veio: " + ramos.Replace("\n", " | ") + ")");
+        TestContext.Check(!ramos.Contains("Math.Sqrt"),
+            "FS0001 ramos do if nao recebe a dica de range");
+        TestContext.Check(Fs("let ps = [1..System.Math.Sqrt(float n)]",
+            "error FS0001: All branches of an 'if' expression must return values implicitly convertible to the type of the first branch").Contains("Array.append"),
+            "FS0001 com mensagem de if vence o range mesmo com range no fonte");
+
         // 6b5) `let` aninhado na linha do `else` (FS0058): o auxiliar vai para o
         // nivel do modulo, recebendo por parametro o que usa de fora.
         string n12 = Fs("let isPrime n =\n    if n < 2 then false\n    else let rec check i = i * i > n\n    in check 5",

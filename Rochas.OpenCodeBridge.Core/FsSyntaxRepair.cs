@@ -127,10 +127,12 @@ public static class FsSyntaxRepair
                 return $"CERTO: defina '{dup.Groups[1].Value}' UMA vez: apague a definicao repetida (o arquivo ficou com duas)";
         }
 
-        // FS0001 no range: limite float num range int. Converte-se o LIMITE, nao o range.
+        // FS0001 "ramos do if" (medido em 2026-10-29): os dois ramos precisam do
+        // MESMO tipo — o modelo juntou arrays com `@`, que concatena LISTA.
         if (code == "FS0001"
-            && Regex.IsMatch(source, @"\[\s*-?\d+\s*\.\.\s*[^\]\r\n]*(Math\.Sqrt|float\s)"))
-            return "CERTO: `[2 .. int (Math.Sqrt(float n))]`   (os dois limites do range sao do MESMO tipo; converta o limite que sai float)";
+            && compilerError.Contains("branches of an 'if' expression", StringComparison.Ordinal))
+            return "CERTO: os dois ramos do `if` devolvem o MESMO tipo — para juntar ARRAY use `Array.append`:\n"
+                 + "if cond then [| (a, b) |] else Array.append antes depois";
 
         // FS0001 `List.*` recebendo `[| ... |]`: o compilador diz lista esperada e
         // array recebido. A dica nomeia a lista (`[...]`) e o `Array.*` correto.
@@ -139,6 +141,16 @@ public static class FsSyntaxRepair
             && compilerError.Contains("array", StringComparison.OrdinalIgnoreCase))
             return "CERTO: `[ a; b ]` (lista) com `List.sum/List.map/List.length`; " +
                    "`[| a; b |]` e' ARRAY: use `Array.sum/Array.map/Array.length`";
+
+        // FS0001 no range: limite float num range int. Converte-se o LIMITE, nao o
+        // range. A mensagem precisa citar os dois tipos: sem essa evidencia o codigo
+        // FS0001 e' outro caso (em 2026-10-29 a dica de range respondeu a um erro de
+        // ramos de `if` e o modelo repetiu a linha 4x).
+        if (code == "FS0001"
+            && compilerError.Contains("float", StringComparison.Ordinal)
+            && compilerError.Contains("int", StringComparison.Ordinal)
+            && Regex.IsMatch(source, @"\[\s*-?\d+\s*\.\.\s*[^\]\r\n]*(Math\.Sqrt|float\s)"))
+            return "CERTO: `[2 .. int (Math.Sqrt(float n))]`   (os dois limites do range sao do MESMO tipo; converta o limite que sai float)";
 
         // So' os codigos que este mapa cobre: erro alheio nao recebe conserto de
         // comprehension (evita "corrigir" a linha errada do fonte).
