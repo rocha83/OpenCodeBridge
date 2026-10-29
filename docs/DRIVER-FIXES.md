@@ -369,3 +369,23 @@ implementação só, sem mutar estado global e sem env var paralela.
 **Prova** — console da bateria com `OK: diagnostico zerado (sonda inclusa) ...
 /api/diag/reset?files=1&probe=1` na largada e `OK: ... ?files=1` por step;
 `GET /api/test/probe?limit=1000` traz ≥2 valores distintos de `step`.
+
+## 18. Belt caía em 1 s: workspace em path fixo colidia com sobras root (2026-10-29)
+
+**Sintoma** — L2 `belts-orch-bridge` FAIL em **1 segundo**:
+`FAIL E-belts-direct: Access to the path '/tmp/opencode/belts/azul/Services/ReembolsoService.cs' is denied.`
+Nenhuma chamada de modelo: o step morria antes da belt.
+
+**Causa** — o workspace era `/tmp/opencode/belts/<key>`, fixo entre runs, e a
+bridge roda como **root**: artefatos de uma rodada anterior ficam `root:root`
+dentro dele. O `Directory.Delete(ws, true)` estava **fora** do `try` da belt —
+a `UnauthorizedAccessException` escapava do laço e derrubava o teste inteiro.
+
+**Correção** (`E2EBeltsTests`) — (a) workspace único por execução
+`belts/<key>-<stamp>-<pid>` (`RunTag`), como o `belts-build` já fazia com
+`runTag`; (b) `FreshWorkspace(ws)` centraliza criar/limpar e, se a remoção
+falhar, segue no dir novo em vez de matar a belt. Assertivas intactas; `ws` só
+é usado dentro do próprio teste (verificado por grep).
+
+**Prova** — `--only E-belts-direct` isolado depois da correção (log
+`/tmp/opencode/belts-iso-*.log`) sem `is denied` e com as duas faixas rodando.

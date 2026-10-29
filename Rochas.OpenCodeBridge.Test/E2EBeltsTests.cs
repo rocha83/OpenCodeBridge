@@ -31,6 +31,12 @@ internal static class E2EBeltsTests
 
     const string OrchSystem = "Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada.";
 
+    /// <summary>
+    /// Reforco da retentativa do Orch: repete o contrato que a resposta anterior
+    /// nao cumpriu. Nada alem disso — o contrato exigido nao muda.
+    /// </summary>
+    const string OrchRetryAsk = "\n\nSUA RESPOSTA ANTERIOR NAO FOI O JSON ARRAY EXIGIDO (veio prosa). Responda SOMENTE com o JSON array de tarefas, sem texto antes ou depois.";
+
     /// <summary>System do role Orch igual ao opencode: corpo do agents/orch.md
     /// (sem frontmatter). Sem isso a bridge usa so o OrchSystem curto, o main
     /// harness generico fala em "tool nativa" e o modelo vaza call:shell em vez
@@ -195,6 +201,32 @@ internal static class E2EBeltsTests
 
     static void Log(string msg) { Console.WriteLine(msg); Console.Out.Flush(); }
 
+    // Tag do run: a pasta de trabalho de cada belt e unica por execucao. O path
+    // fixo /tmp/opencode/belts/<key> colidia com sobras escritas pela bridge
+    // (que roda como root) e o Directory.Delete estourava
+    // UnauthorizedAccessException fora do try — derrubava a belt inteira em 1 s
+    // (medido 2026-10-29 02:39, E-belts-direct em belts-orch-bridge).
+    static readonly string RunTag = DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Environment.ProcessId;
+
+    /// <summary>
+    /// Cria a pasta de trabalho vazia da belt: sobras de uma belt anterior
+    /// inflariam scriptsOk/execOk. Com path unico por run a colisao deixa de
+    /// existir; se ainda assim a remocao falhar, segue no dir novo (unico) em
+    /// vez de matar a belt por causa de lixo de outro dono.
+    /// </summary>
+    static void FreshWorkspace(string ws)
+    {
+        try
+        {
+            if (System.IO.Directory.Exists(ws)) System.IO.Directory.Delete(ws, true);
+        }
+        catch (Exception ex)
+        {
+            Log($"  [belt] cleanup ignorado em {ws}: {ex.GetType().Name}");
+        }
+        System.IO.Directory.CreateDirectory(ws);
+    }
+
     /// <summary>String tolerante: o modelo as vezes manda `false`/numero onde o contrato pede string.</summary>
     static string Str(JsonNode? n, string fallback = "")
         => n is JsonValue v && v.TryGetValue<string>(out var s) ? s : fallback;
@@ -230,37 +262,50 @@ internal static class E2EBeltsTests
             : Belts.Where(b => keysEnv.Split(',').Select(x=>x.Trim()).Contains(b.Key)).ToArray();
         foreach (var (key, prompt) in beltsToRun)
         {
-            string ws = System.IO.Path.Combine("/tmp/opencode/belts", key);
+            string ws = System.IO.Path.Combine("/tmp/opencode/belts", key + "-" + RunTag);
             // Workspace limpo: sobras de uma belt anterior inflariam scriptsOk/execOk.
-            if (System.IO.Directory.Exists(ws)) System.IO.Directory.Delete(ws, true);
-            System.IO.Directory.CreateDirectory(ws);
+            FreshWorkspace(ws);
             Log($"  [belt:{key}] START ws={ws}"); 
             try
             {
                 // 1) Orch (E4B) segmenta o enunciado em tarefas atomicas.
                 // No modo opencode o Orch roda pelo CLI real (agent=orch);
                 // no bridge, chamada direta /v1/chat/completions.
-                string orchContent;
-                if (TestContext.Mode == "opencode")
+                // A segmentacao e re-amostrada ate 3x quando a resposta vem em
+                // prosa em vez do JSON array do contrato (orch.md ja exige o
+                // array): o enunciado "arquitetura de ecossistema" (preta) puxa
+                // narrativa e temp 0.3 varia — medido 2026-10-29, 399 chars de
+                // prosa com zero tarefas. O contrato NAO muda entre tentativas.
+                string orchContent = "";
+                JsonArray tasks = new();
+                for (int attempt = 1; attempt <= 3; attempt++)
                 {
-                    Log($"  [belt:{key}] 1/3 Orch via opencode (agent=orch)...");
-                    string orchPrompt = OrchSystem + "\n\nENUNCIADO:\n" + prompt.Replace("{ws}", ws);
-                    orchContent = TestContext.OpencodeRun(orchPrompt, ws, agent: "orch");
-                }
-                else
-                {
-                    Log($"  [belt:{key}] 1/3 Orch via bridge...");
-                    var orchHistory = new JsonArray(
-                        new JsonObject { ["role"]="system", ["content"]=LoadOrchSystem() },
-                        new JsonObject { ["role"]="user", ["content"]="ENUNCIADO (na pasta atual):\n" + prompt.Replace("{ws}", ws) });
-                    var orchR = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                        new JsonObject { ["model"]=orchModel, ["temperature"]=0.3, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
-                    orchContent = Str(orchR["choices"]?[0]?["message"]?["content"]);
+                    string ask = prompt.Replace("{ws}", ws) + (attempt == 1 ? "" : OrchRetryAsk);
+                    if (TestContext.Mode == "opencode")
+                    {
+                        Log($"  [belt:{key}] 1/3 Orch via opencode (agent=orch, tentativa {attempt})...");
+                        string orchPrompt = OrchSystem + "\n\nENUNCIADO:\n" + ask;
+                        orchContent = TestContext.OpencodeRun(orchPrompt, ws, agent: "orch");
+                    }
+                    else
+                    {
+                        Log($"  [belt:{key}] 1/3 Orch via bridge (tentativa {attempt})...");
+                        var orchHistory = new JsonArray(
+                            new JsonObject { ["role"]="system", ["content"]=LoadOrchSystem() },
+                            new JsonObject { ["role"]="user", ["content"]="ENUNCIADO (na pasta atual):\n" + ask });
+                        var orchR = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
+                            new JsonObject { ["model"]=orchModel, ["temperature"]=0.3, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
+                        orchContent = Str(orchR["choices"]?[0]?["message"]?["content"]);
+                    }
                     string rawLog = orchContent.Replace("\r", " ").Replace("\n", "\\n");
                     Log($"  [belt:{key}] Orch raw: {rawLog[..Math.Min(400, rawLog.Length)]}");
+                    tasks = ExtractTaskArray(orchContent);
+                    if (tasks.Count > 0) break;
+                    Log($"  [belt:{key}] Orch tentativa {attempt}/3 sem JSON array (chars={orchContent.Length})");
                 }
-                var tasks = ExtractTaskArray(orchContent);
-                TestContext.Check(tasks.Count > 0, $"[{key}] Orch segmentou em JSON array");
+                TestContext.Check(tasks.Count > 0,
+                    $"[{key}] Orch segmentou em JSON array (chars={orchContent.Length}, " +
+                    $"amostra='{orchContent[..Math.Min(180, orchContent.Length)]}')");
                 Log($"  [belt:{key}] Orch: {tasks.Count} tarefas");
 
                 // Grounding: sem isso o Scripter escreve as cegas e inventa caminhos
