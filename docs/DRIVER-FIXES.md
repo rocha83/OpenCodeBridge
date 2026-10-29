@@ -755,3 +755,26 @@ passa a preferir `error` e, na ausência dele, aceitar `warning`.
 pipe sem o segundo operando"), caso compilado no `scripts/diag/fs-repair-probe.fsx`
 (`List.sort tudo = List.sort tudo2`), `units` **130 PASS / 0 FAIL**, build
 `0 Aviso(s) / 0 Erro(s)`, commit `f65f054`.
+
+## 30. Reparo F# gateado em `error`: o `warning FS0193` nunca virava dica (2026-10-29)
+
+**Sintoma.** `E-mission-algo-fs` (isolado 19:25) gastou 30 turnos com 17 reparos
+**idênticos** (`printfn "%s" (String.concat "," movs)`) e o modelo não aplicou
+nenhum; em outra amostra o build saiu só com `warning FS0193` e **zero** dica.
+
+**Causa.** Duas no mesmo fluxo: (a) `FirstCode` só reconhecia `error FSdddd`;
+(b) o teste gateava o reparo com `res.Contains("error FS")`, então um diagnóstico
+que chega como `warning` desligava o mecanismo inteiro. Dica repetida sem
+variação também não ensina — o modelo reedita a mesma linha.
+
+**Correção.** `FsSyntaxRepair.HasDiagnostic` (Core) aceita `error` **ou**
+`warning`; `FirstCode` prefere `error` e cai para `warning` quando é o único
+código; a 3ª repetição da MESMA dica acrescenta a instrução de reescrever o
+arquivo inteiro com `write`. A fase F# passou a **falhar na hora** se o `system`
+não carregar `FsMini` (guarda de fluxo), e o `Program.fs` inicial já compila
+(`module Program`/`open System`), eliminando o `FS0010` de cabeçalho.
+
+**Prova.** `units` **132 PASS / 0 FAIL** (pins `U-fs-repair-diagnostic-detection`
+e `U-fsmini-covers-repair-codes`), `U-fs-repair-partial-operator` verde, probe
+compilando `a @ b`/`List.append a b`, build `0 Aviso(s) / 0 Erro(s)`, commit
+`59deeaa`.

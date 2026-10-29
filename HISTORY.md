@@ -1,5 +1,44 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## `E-mission-algo-fs`: FsMini garantido no fluxo, reparo em `warning` e missão em 2 etapas (2026-10-29)
+
+**Pedido:** garantir, com teste, que a fase F# **lê o `FsMini` no fluxo antes de
+agir** e corrigir o erro real do `E-mission-algo-fs`.
+
+**Erro real medido (isolado 19:25, 7ª amostra).** O reparo in-flow era injetado
+só quando a saída do build continha `"error FS"`. O diagnóstico da vez era
+`warning FS0193` (operador `@`/`List.append` sem o segundo operando): `Suggest`
+nunca foi chamado e o modelo repetiu a MESMA linha em 4 builds. Somando as duas
+amostras anteriores, o padrão era sempre o mesmo — **dica genérica repetida 17
+vezes em 30 turnos** (`printfn "%s" (String.concat "," movs)`) sem o modelo
+aplicar, e programa F# de 95 linhas com construções inválidas
+(`char.TryParse c).AsSeq()`).
+
+**Correções (mecanismo no Core; aceite intacto).**
+1. `FsSyntaxRepair.HasDiagnostic` — `error` **ou** `warning` `FSdddd` dispara o
+   reparo; o teste deixou de comparar string (`res.Contains("error FS")`).
+   `FirstCode` prefere `error` e aceita `warning` quando é o único diagnóstico.
+2. **Guarda de fluxo**: a fase F# lança na hora se o `system` não carregar
+   `FsMini` (`"fase F# sem FsMini no system: o modelo agiria sem a tabela de
+   sintaxe"`) — nunca mais 30 turnos sem o contrato.
+3. `FS0193` entra no `FsMini` e no `FsSyntaxRepair` só com a forma que compila
+   (`a @ b`, `List.append a b`, `x |> List.append ys`).
+4. **Dica repetida 3×** vira instrução explícita de reescrever o arquivo inteiro
+   com `write`, em vez de reeditar a mesma linha.
+5. **Scaffold do `Program.fs`**: o template do `dotnet new` não traz diretiva de
+   módulo; o arquivo inicial (`module Program` + `open System`) já compila e o
+   modelo não gasta turnos em `FS0010` de cabeçalho.
+6. **Missão F# em duas etapas** sobre o MESMO arquivo (Hanoi → primos), 26 turnos
+   cada, com contexto novo e a saída real realimentada; o aceite final é o mesmo
+   (5 chaves, `hanoi_seq` com 15 movimentos) e `HasHardcodedAlgo` continua
+   reprovando meta copiada.
+
+**Pins novos.** `U-fs-repair-diagnostic-detection` (warning conta, error conta,
+`MSB1009` e saída vazia não contam) e `U-fsmini-covers-repair-codes` (o `FsMini`
+citado pela fase cobre as 16 regras que o reparo responde e começa com o marcador
+`F# MINI`). Prova: `units` **132 PASS / 0 FAIL**, build `0 Aviso(s) / 0 Erro(s)`,
+commit `59deeaa`, deploy + restart (`uptime=0`, `main_harness=True`, `tails=True`).
+
 ## `E-mission-algo` dividido em dois testes (C# e F#) e dicas que ensinavam o caso errado (2026-10-29)
 
 **Pedido:** o teste de algoritmos misturava C# e F# no mesmo veredito. Separação
