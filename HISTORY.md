@@ -4718,3 +4718,40 @@ Prova: units `U-fs-repair-comprehension`, `U-antirepeat-args-window`,
 `scripts/diag/fs-repair-probe.fsx` (formas compilam; `do` sem `yield` com tipo
 aberto quebra determinístico) e `scripts/diag/verify-antirepeat-args-window.py`
 (@256 True, @1024 False, loop @1024 True). Registro completo: `DRIVER-FIXES #20`.
+
+## FsMini sem duplicidade + reset de painel + scripts de bancada (2026-10-29)
+
+**FsMini (cauda de F#).** Duas correções de forma, medidas no `E-mission-tools`:
+
+1. o histórico do painel mostrou que a tabela tinha **duas linhas FS0039**
+   (`nome nao definido` e `mod`) e prosa repetindo a tabela (`RESTO E NOMES`,
+   `FATORIO/PRODUTO`) — instrução ambígua, exatamente o que o modelo copia.
+   Agora é **uma linha por código** (FS0010, FS0751/FS0003, FS0001, FS0039,
+   FS0037, FS0058, FS0988, FS0020, FS3563), cada uma com o **sintoma em prosa**
+   e a **forma correta com exemplo** (nenhum literal inválido aparece).
+2. a rodada `09:40-09:44` falhou com `F# primos de 1 a 50 = 15` porque o modelo
+   escreveu `[1 .. int (Math.Sqrt(float n))]` no range dos **divisores**: `1`
+   divide todo inteiro → contagem **0** (`RUN -> 3628800 / 21 / 0`). A linha
+   `PRIMOS` separa explicitamente o intervalo de **entrada** (`[1 .. 50]`) do de
+   **divisores** (começa em 2), e o exemplo de auxiliar já mostra
+   `[2 .. int (Math.Sqrt(float n))]`. O assert continua `15` — nada afrouxado.
+
+**Reset de painel (`?panel=1`).** O painel mostrava o enunciado de **07:57**
+(Simpson) mesmo depois de restart porque: (a) `/api/diag/reset` só zerava
+métricas/sonda/arquivos; (b) `SetEnunciado` só limpava o histórico quando o
+nome do step mudava — e run manual repete `manual-bridge`; (c) o estado é
+persistido em `/tmp/opencode/bridge-enunciado.json` e recarregado no boot.
+Agora o reset aceita `?panel=1` e zera enunciado (`step` → `n/d`), histórico,
+respostas do agente e `TestSteps`, regravando o estado limpo. Consumo: WAR zera
+o painel **uma vez por bateria**; o `step_start` continua só `?files=1`.
+
+Prova: `--only U-diag --api-key guest@123` → `PASS=2 FAIL=0` (`U-diag-reset`,
+`U-diag-reset-panel`: publica → reset sem panel preserva → reset com panel zera
+step/histórico/steps → publica de novo).
+
+**Scripts de bancada** (registrados em `docs/LAB-SETUP.md` §15 e
+`scripts/README.md`): `bridge-restart.sh` (restart + `/api/status` e
+`--print-flags` exigindo `main_harness`/`harness_tails`), `check-units.sh`,
+`run-isolated.sh` (log em `logs/isolated/` + trail do `_mission.log`),
+`push-persist.sh` (token fora do repo, conferido por `ls-remote`) e
+`prod-repair-ownership.sh` (recuperação do PROD, DRIVER-FIXES #21).
