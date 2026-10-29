@@ -40,7 +40,7 @@ internal static class E2EToolsFullTests
             "seguida do clima real, sem substituir nem apagar a data ja gravada; confirme com grep que a data continua no arquivo. " +
             "4. Faca o segundo commit com a mensagem 'Added sao paulo weather', confirme os 2 commits com git log e salve essa " +
             "saida num arquivo de historico dentro da pasta do repositorio; o arquivo de historico deve existir antes de terminar. " +
-            "Conforme as instrucoes previas da sessao (main harness e tails), execute uma acao por vez e siga o contrato das tools.";
+            "Execute uma tool por vez, de forma sequencial e sem chamadas em paralelo, conforme as instrucoes previas da sessao (main harness e tails).";
         // A retentativa recebe a FALHA do aceite (contrato observavel), nunca a
         // mecanica do teste; a 1a tentativa e o enunciado puro.
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;

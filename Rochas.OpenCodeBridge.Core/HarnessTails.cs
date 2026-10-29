@@ -47,6 +47,8 @@ public static class HarnessTails
         "DOTNET: com mais de um projeto na pasta, `--project <pasta>` e ambiguo: aponte o ARQUIVO (`<dir>/<nome>.fsproj` ou `.csproj`). " +
         "ARQUIVO: pedido que manda criar/gravar arquivo entrega via `write` (conteudo completo); devolver o codigo em prosa no chat NAO conclui o pedido. " +
         "PROJETO EXISTENTE: edite os arquivos do projeto; `dotnet new` so em pasta vazia (segundo .csproj/.fsproj na mesma pasta quebra `dotnet run --project <pasta>`). " +
+        "FLUXO ARQUIVO+REPO (exemplo; use os nomes do seu pedido): `mkdir` da pasta → `write` com o path da pasta (`<pasta>/<arquivo>`) → `git init`/`add`/`commit` com o mesmo `path` → `git log` e a saida colada no historico (passo a passo comentado no help da tool git). " +
+        "PROVA: depois de `write`/`edit`, `read` o arquivo — o conteudo dele e' o texto que a tool devolveu; historico de comando e' a saida literal colada (ex.: `git log`, com os hashes que vieram). " +
         "SUBAGENTE: o schema de cada tool viaja no array `tools` do request; preserve o array e o system do role ao delegar; nao troque schema por prosa.";
 
     /// <summary>

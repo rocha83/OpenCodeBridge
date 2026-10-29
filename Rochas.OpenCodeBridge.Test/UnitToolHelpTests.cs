@@ -49,6 +49,23 @@ internal static class UnitToolHelpTests
             "help do git explica o sintoma de identidade ausente");
         TestContext.Check(!git.Contains("user.user.name", StringComparison.Ordinal),
             "help do git nao exibe a chave errada (so o certo e' copiavel)");
+        // Receita comentada (exemplo generalizado de SUCESSO): o modelo copia a
+        // ordem certa — init, arquivos com a pasta, identidade, add, commit, log —
+        // em vez de encadear tudo numa chamada so'.
+        TestContext.Check(git.Contains("EXEMPLO DE SUCESSO", StringComparison.Ordinal)
+            && git.Contains("\"command\":\"init\"", StringComparison.Ordinal)
+            && git.Contains("\"command\":\"add .\"", StringComparison.Ordinal)
+            && git.Contains("commit -m", StringComparison.Ordinal)
+            && git.Contains("log --oneline", StringComparison.Ordinal),
+            "help do git traz o exemplo de sucesso do fluxo completo");
+        TestContext.Check(git.Contains("\"path\":\"<pasta>\"", StringComparison.Ordinal),
+            "exemplo do git marca os nomes como ficticios e usa o MESMO path");
+        TestContext.Check(!git.Contains("\"path\":\"projeto\"", StringComparison.Ordinal),
+            "exemplo do git nao fixa nome de pasta que o modelo copiaria ao pe' da letra");
+        TestContext.Check(!git.Contains("não encadeie", StringComparison.Ordinal),
+            "help do git ensina a forma certa (sem instrucao negativa de encadeamento)");
+        TestContext.Check(shell.Contains("cwd de cada chamada", StringComparison.Ordinal),
+            "help de shell diz o cwd real de cada chamada");
 
         // Path das tools de arquivo: RAIZ do workspace, nao o cwd do shell — o
         // modelo gravava `data.txt` na raiz achando que estava na subpasta.

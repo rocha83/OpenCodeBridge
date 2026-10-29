@@ -20,15 +20,33 @@ public static class ToolHelp
 
     static readonly Dictionary<string, string> Docs = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["shell"] = """USO: uma chamada = um comando; `cd` não persiste (use `cd dir && cmd`); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (o nome do .zip vem primeiro; erro `Zip file structure invalid` = o primeiro argumento não é um .zip válido — use um nome novo); não simule saída. Ex.: {"command":"ls -la"}.""",
-        ["bash"] = """USO: uma chamada = um comando; `cd` não persiste (use `cd dir && cmd`); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (o nome do .zip vem primeiro; erro `Zip file structure invalid` = o primeiro argumento não é um .zip válido — use um nome novo); não simule saída. Ex.: {"command":"ls -la"}.""",
-        ["sh"] = """USO: uma chamada = um comando; `cd` não persiste (use `cd dir && cmd`); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (o nome do .zip vem primeiro; erro `Zip file structure invalid` = o primeiro argumento não é um .zip válido — use um nome novo); não simule saída. Ex.: {"command":"ls -la"}.""",
+        ["shell"] = """USO: uma chamada = um comando; o cwd de cada chamada é a raiz do workspace (para rodar numa subpasta: `cd dir && cmd`, que vale nesta chamada); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (o nome do .zip vem primeiro; erro `Zip file structure invalid` = o primeiro argumento não é um .zip válido — use um nome novo); a saída real da tool é a prova. Ex.: {"command":"ls -la"}.""",
+        ["bash"] = """USO: uma chamada = um comando; o cwd de cada chamada é a raiz do workspace (para rodar numa subpasta: `cd dir && cmd`, que vale nesta chamada); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (o nome do .zip vem primeiro; erro `Zip file structure invalid` = o primeiro argumento não é um .zip válido — use um nome novo); a saída real da tool é a prova. Ex.: {"command":"ls -la"}.""",
+        ["sh"] = """USO: uma chamada = um comando; o cwd de cada chamada é a raiz do workspace (para rodar numa subpasta: `cd dir && cmd`, que vale nesta chamada); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (o nome do .zip vem primeiro; erro `Zip file structure invalid` = o primeiro argumento não é um .zip válido — use um nome novo); a saída real da tool é a prova. Ex.: {"command":"ls -la"}.""",
         ["write"] = """USO: `path` é relativo à RAIZ do workspace (o `cd` do shell NAO vale para tools): arquivo da subpasta = `sub/arquivo`; arquivo novo ou reescrita integral; mudança pontual = edit. Ex.: {"path":"a.txt","content":"..."}.""",
         ["read"] = """USO: `path` é relativo à RAIZ do workspace (o `cd` do shell NAO vale para tools): arquivo da subpasta = `sub/arquivo`; leia antes de editar; arquivo grande = offset/limit quando o schema expuser; binário = shell+python3. Ex.: {"path":"a.txt"}.""",
         ["edit"] = """USO: `path` é relativo à RAIZ do workspace (o `cd` do shell NAO vale para tools): arquivo da subpasta = `sub/arquivo` (não `arquivo`); `oldString` exato e único; para ACRESCENTAR, `newString` = oldString + trecho novo, e o `oldString` precisa reaparecer intacto dentro do `newString`; se a intenção era preservar um trecho, confirme com read/grep DEPOIS da edição. Ex.: {"path":"a.txt","oldString":"x","newString":"y"}.""",
         ["glob"] = """USO: `pattern` só glob (sem regex/alternância); diretório em `path`; 0 matches = `ls`/`find` no shell. Ex.: {"pattern":"**/*.cs","path":"src"}.""",
         ["grep"] = """USO: `pattern` é regex; restrinja com `path`/`include` quando houver; use read para contexto. Ex.: {"pattern":"TODO","path":"src"}.""",
-        ["git"] = """USO: `path` = diretório do repo (o que CONTÉM `.git`); `init` com dir explícito; uma suboperação por chamada; não encadeie `&&`. ANTES do primeiro `commit`, configure o autor em DUAS chamadas, nesta ordem, com o mesmo `path` do repo: 1) {"command":"config user.name \"Nome\"","path":"/repo"} 2) {"command":"config user.email \"voce@example.com\"","path":"/repo"}; erro `Author identity unknown` (ou `Please tell me who you are`) = essas duas chamadas ainda não rodaram. Ex.: {"command":"status","path":"/repo"}.""",
+        ["git"] = """
+            EXEMPLO DE SUCESSO (nomes entre `<>` são fictícios: troque pelos do seu pedido). Uma suboperação por chamada; o MESMO `path` em todas.
+             // 1) cria a pasta de trabalho
+             shell {"command":"mkdir -p <pasta>"}
+             // 2) inicia o repo, apontando a pasta
+             git {"command":"init","path":"<pasta>"}
+             // 3) grava os arquivos já com o nome da pasta no path
+             write {"path":"<pasta>/<arquivo>","content":"..."}
+             // 4) ANTES do primeiro `commit`: identidade local, DUAS chamadas nesta ordem, mesma pasta
+             git {"command":"config user.name \"<nome>\"","path":"<pasta>"}
+             git {"command":"config user.email \"<email>\"","path":"<pasta>"}
+             // 5) adiciona tudo
+             git {"command":"add .","path":"<pasta>"}
+             // 6) commita com a mensagem
+             git {"command":"commit -m \"<mensagem>\"","path":"<pasta>"}
+             // 7) confere: os commits aparecem no log (cole esta saída no histórico)
+             git {"command":"log --oneline","path":"<pasta>"}
+            LEITURA: status, log, diff, show, branch, ls-files, rev-parse. Erro `Author identity unknown` (ou `Please tell me who you are`) = o passo 4 ainda não rodou.
+            """,
         ["subagent"] = """USO: um micro-enunciado por call (OBJETIVO+ESCOPO+PROIBIDO+ACEITE); `prompt` completo; não aninhe JSON; use a tool nativa, nunca shell/execute. Ex.: {"agent":"build","description":"fix","prompt":"..."}.""",
         ["task"] = """USO: um micro-enunciado por call (OBJETIVO+ESCOPO+PROIBIDO+ACEITE); `prompt` completo; não aninhe JSON; use a tool nativa, nunca shell/execute. Ex.: {"agent":"build","description":"fix","prompt":"..."}.""",
         ["question"] = """USO: só para ambiguidade real, 1 rodada; 2–4 opções curtas; não use para confirmar ação já decidida. Ex.: {"questions":[{"question":"...","header":"...","options":[...]}]}.""",

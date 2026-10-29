@@ -50,10 +50,11 @@ public sealed class ShellToolHandler : IToolHandler
         if (parts.Count <= 1)
         {
             if (!TryBuildArgv(argumentsJson, out string[] argv, out string why))
-                return ToolResult.Fail(why);
+                return WithCwd(ToolResult.Fail(why), context.WorkspaceRoot, context.WorkspaceRoot);
             if (ProjectScaffoldBlocked(argv, context.WorkspaceRoot) is string blockedSingle)
-                return ToolResult.Fail(blockedSingle);
-            return ProcessRunner.Run(argv[0], argv[1..], context.WorkspaceRoot, context.TimeoutSeconds);
+                return WithCwd(ToolResult.Fail(blockedSingle), context.WorkspaceRoot, context.WorkspaceRoot);
+            return WithCwd(ProcessRunner.Run(argv[0], argv[1..], context.WorkspaceRoot, context.TimeoutSeconds),
+                context.WorkspaceRoot, context.WorkspaceRoot);
         }
         // Cadeia com semântica set -e: roda em sequência, para no 1º erro, cd persiste.
         string dir = context.WorkspaceRoot;
@@ -67,22 +68,48 @@ public sealed class ShellToolHandler : IToolHandler
                 string target = p.Length > 2 ? p[2..].Trim().Trim('"', '\'') : ".";
                 if (string.IsNullOrWhiteSpace(target)) target = ".";
                 if (!WorkspaceGuard.TryResolve(dir, target, out string nd, out string whyCd, context.ExtraRoots))
-                    return ToolResult.Fail(whyCd);
+                    return WithCwd(ToolResult.Fail(whyCd), dir, context.WorkspaceRoot);
                 if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, nd, out _, out _, context.ExtraRoots))
-                    return ToolResult.Fail("cd fora do workspace");
+                    return WithCwd(ToolResult.Fail("cd fora do workspace"), dir, context.WorkspaceRoot);
                 dir = nd;
                 continue;
             }
             if (!TryBuildArgvFromCommand(p, out string[] argv, out string why))
-                return ToolResult.Fail(sb.Length > 0 ? sb.ToString() + "\n" + why : why);
+                return WithCwd(ToolResult.Fail(sb.Length > 0 ? sb.ToString() + "\n" + why : why), dir, context.WorkspaceRoot);
             if (ProjectScaffoldBlocked(argv, dir) is string blockedStep)
-                return ToolResult.Fail(sb.Length > 0 ? sb.ToString() + "\n" + blockedStep : blockedStep);
+                return WithCwd(ToolResult.Fail(sb.Length > 0 ? sb.ToString() + "\n" + blockedStep : blockedStep), dir, context.WorkspaceRoot);
             var r = ProcessRunner.Run(argv[0], argv[1..], dir, context.TimeoutSeconds);
             if (!string.IsNullOrWhiteSpace(r.Output)) sb.AppendLine(r.Output.TrimEnd());
             if (!r.Success)
-                return ToolResult.Fail((sb.Length > 0 ? sb.ToString() + "\n" : "") + (r.Error ?? "falha"));
+                return WithCwd(ToolResult.Fail((sb.Length > 0 ? sb.ToString() + "\n" : "") + (r.Error ?? "falha")), dir, context.WorkspaceRoot);
         }
-        return ToolResult.Ok(sb.ToString().TrimEnd());
+        return WithCwd(ToolResult.Ok(sb.ToString().TrimEnd()), dir, context.WorkspaceRoot);
+    }
+
+    // O modelo precisa VER onde a chamada rodou: sem isso ele assume que o `cd`
+    // persistiu entre chamadas e grava `a.txt` na raiz achando que esta na
+    // subpasta. E' saida verdadeira (o diretorio efetivo), no formato que ensina
+    // a forma certa do path de arquivo.
+    private static ToolResult WithCwd(ToolResult r, string dir, string root)
+    {
+        string full, baseRoot;
+        try
+        {
+            full = Path.GetFullPath(dir);
+            baseRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch { return r; }
+        string rel = full.StartsWith(baseRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            ? full[(baseRoot.Length + 1)..]
+            : (full == baseRoot ? "." : full);
+        var sb = new StringBuilder();
+        if (r.Success && !string.IsNullOrWhiteSpace(r.Output)) sb.AppendLine(r.Output.TrimEnd());
+        if (!r.Success && !string.IsNullOrWhiteSpace(r.Error)) sb.AppendLine(r.Error.TrimEnd());
+        sb.Append("[shell] cwd desta chamada: " + rel);
+        if (rel != ".")
+            sb.Append(" | a proxima chamada comeca na raiz do workspace; arquivo desta pasta = path \"" + rel + "/arquivo\"");
+        string text = sb.ToString().TrimEnd();
+        return r.Success ? ToolResult.Ok(text) : ToolResult.Fail(text);
     }
 
     // Divide em comandos top-level por && e ; (respeita aspas e escapes \";

@@ -40,6 +40,12 @@ public sealed class GitToolHandler : IToolHandler
 
         string command = obj["command"]?.GetValue<string>() ?? "";
         if (string.IsNullOrWhiteSpace(command)) return ToolResult.Fail("command é obrigatório (ex.: 'git status')");
+        // Cadeia numa so chamada (`add . && commit -m x`) chega ao git como
+        // pathspec e o modelo abandona o passo. A resposta ensina a forma certa,
+        // suboperacao por suboperacao (mesmo padrao da DICA de identidade).
+        if (HasChain(command))
+            return ToolResult.Fail("uma suboperação por chamada: rode `git add .` agora e, na próxima, chame git de novo com " +
+                "`git commit -m \"sua mensagem\"`, no mesmo `path` do repo (a receita completa esta na descrição da tool).");
         string repoDir = context.WorkspaceRoot;
         string wantPath = obj["path"]?.GetValue<string>() ?? "";
         if (!string.IsNullOrWhiteSpace(wantPath))
@@ -111,6 +117,26 @@ public sealed class GitToolHandler : IToolHandler
         {
             return ToolResult.Fail($"falha ao rodar git: {ex.Message.Split('\n')[0]}");
         }
+    }
+
+    // Separador de cadeia FORA de aspas: `add . && commit -m "a; b"` tem `;`
+    // dentro da mensagem e continua valido como um unico passo.
+    private static bool HasChain(string command)
+    {
+        char quote = '\0';
+        for (int i = 0; i < command.Length; i++)
+        {
+            char c = command[i];
+            if (quote != '\0')
+            {
+                if (c == quote) quote = '\0';
+                continue;
+            }
+            if (c == '"' || c == '\'') { quote = c; continue; }
+            if (c == ';' || c == '|') return true;
+            if (c == '&' && i + 1 < command.Length && command[i + 1] == '&') return true;
+        }
+        return false;
     }
 
     private static string[] Split(string command)
