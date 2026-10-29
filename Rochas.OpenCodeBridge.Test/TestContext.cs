@@ -145,23 +145,37 @@ internal static class TestContext
     }
 
     /// <summary>
-    /// Zera os diagnosticos da bridge alvo (contadores de /api/metrics, amostras
-    /// da sonda e arquivos contados) por HTTP, sem restart. Usado no run isolado,
-    /// que e a propria rodada: nasce com sonda e contadores limpos. Na WAR o
-    /// reset por step limpa so contadores/arquivos — a sonda e zerada uma vez
-    /// por bateria (<c>WarTemplate.ResetDiagnosticsOnce</c>).
+    /// Fonte única do reset de diagnóstico no lado do teste: POST
+    /// /api/diag/reset na bridge alvo, sem restart. Contadores e arquivos caem
+    /// sempre; a sonda só com <paramref name="clearProbe"/> — na WAR a sonda é
+    /// zerada uma vez por bateria, para o painel não perder a curva dos steps
+    /// anteriores.
     /// </summary>
-    public static void ResetDiagnostics()
+    /// <param name="clearProbe">true zera também as amostras da sonda.</param>
+    /// <param name="bridge">URL alvo; null usa <see cref="Bridge"/>.</param>
+    /// <param name="required">true lança em falha (run isolado); false só avisa (WAR/painel).</param>
+    public static void ResetDiagnostics(bool clearProbe = true, string? bridge = null, bool required = true)
     {
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        string? cred = Jwt ?? ApiKey;
-        if (!string.IsNullOrWhiteSpace(cred))
-            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
-        using var res = http.PostAsync(Bridge + "/api/diag/reset?probe=1&files=1",
-            new StringContent("")).GetAwaiter().GetResult();
-        if (!res.IsSuccessStatusCode)
-            throw new Exception($"reset de diagnosticos falhou em {Bridge}: HTTP {(int)res.StatusCode} " +
-                res.Content.ReadAsStringAsync().GetAwaiter().GetResult().Trim());
+        string target = (bridge ?? Bridge).TrimEnd('/') +
+                        "/api/diag/reset?files=1" + (clearProbe ? "&probe=1" : "");
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            string? cred = Jwt ?? ApiKey;
+            if (!string.IsNullOrWhiteSpace(cred))
+                http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
+            using var res = http.PostAsync(target, new StringContent("")).GetAwaiter().GetResult();
+            if (!res.IsSuccessStatusCode)
+                throw new Exception($"HTTP {(int)res.StatusCode} " +
+                    res.Content.ReadAsStringAsync().GetAwaiter().GetResult().Trim());
+            if (!required)
+                Console.WriteLine($"OK: diagnostico zerado{(clearProbe ? " (sonda inclusa)" : "")} em {target}");
+        }
+        catch (Exception ex)
+        {
+            if (required) throw new Exception($"reset de diagnosticos falhou em {target}: {ex.Message}");
+            Console.WriteLine($"AVISO: reset de diagnostico falhou em {target}: {ex.Message}");
+        }
     }
 
     static string BridgeService()

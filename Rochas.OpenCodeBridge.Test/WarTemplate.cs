@@ -237,39 +237,10 @@ internal sealed class WarTemplate : CircuitTemplate
         if (o.Status) return PrintStatus(p);
         if (o.All || !string.IsNullOrWhiteSpace(o.Levels) || o.From != 1)
             return RunAll(o, p);
-        ResetDiagnosticsOnce(o, $"level {o.Level}");
+        TestContext.ResetDiagnostics(clearProbe: true, bridge: o.Bridge, required: false);
         return RunLevel(o, p, o.Level,
             o.Stamp ?? Env("LEVEL_STAMP") ?? NowStamp(),
             o.GateOnly, lockHeld: false, globalLog: null);
-    }
-
-    /// <summary>
-    /// Zera os diagnosticos da bridge alvo uma vez por bateria (contadores,
-    /// arquivos e AMOSTRAS DA SONDA). Chamado no inicio da bateria (RunAll) e no
-    /// run de nivel unico; por step o driver limpa so contadores/arquivos, para
-    /// o painel manter a curva dos steps anteriores. Sem restart: os numeros sao
-    /// por vida do processo e o binario em uso nao muda.
-    /// </summary>
-    private static void ResetDiagnosticsOnce(WarOptions o, string where)
-    {
-        string bridge = (o.Bridge ?? Env("BRIDGE_URL") ?? "http://127.0.0.1:4124").TrimEnd('/');
-        try
-        {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            string key = o.ApiKey ?? Env("BRIDGE_API_KEY") ?? "";
-            if (key.Length > 0)
-                http.DefaultRequestHeaders.Authorization =
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
-            using var res = http.PostAsync(bridge + "/api/diag/reset?probe=1&files=1",
-                new StringContent("")).GetAwaiter().GetResult();
-            Console.WriteLine(res.IsSuccessStatusCode
-                ? $"OK: diagnostico zerado no inicio da bateria ({where}) — probe on"
-                : $"AVISO: reset de diagnostico ({where}) -> HTTP {(int)res.StatusCode}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"AVISO: reset de diagnostico ({where}) falhou: {ex.Message}");
-        }
     }
 
     private static int RunLevel(
@@ -329,7 +300,8 @@ internal sealed class WarTemplate : CircuitTemplate
         }
 
         int failed = 0;
-        ResetDiagnosticsOnce(o, $"battery {string.Join(",", levels)}");
+        // Sonda zerada UMA vez por bateria (o run isolado ja faz o mesmo por ser a propria rodada).
+        TestContext.ResetDiagnostics(clearProbe: true, bridge: o.Bridge, required: false);
         LogGlobal(globalLog, $"=== run-all-levels {stamp} (levels: {string.Join(",", levels)}) ===");
         LogGlobal(globalLog, $"repo: {p.Root}");
         LogGlobal(globalLog, $"artefatos: {p.OutBase}");

@@ -410,36 +410,6 @@ internal sealed class TestCircuitDriver : IDisposable
         catch { }
     }
 
-    // Reset dos diagnosticos da bridge alvo no inicio de cada step, pela propria
-    // bridge (POST /api/diag/reset) e sem restart. Contadores e arquivos sao por
-    // step (o painel mede o step atual); a SONDA nao entra aqui — ela e por
-    // bateria (ResetDiagnosticsOnce), senao a curva dos steps anteriores some a
-    // cada step_start. A URL sai do proprio endpoint de eventos do painel
-    // (WAR_EVENT_URL -> mesma origem /api/diag/reset), sem variavel nova.
-    // Best-effort: sem painel, o circuito segue.
-    static readonly System.Net.Http.HttpClient DiagHttp = new() { Timeout = TimeSpan.FromSeconds(5) };
-    static void PostDiagReset(bool clearProbe = false)
-    {
-        try
-        {
-            string url = Environment.GetEnvironmentVariable("WAR_EVENT_URL") ?? "";
-            if (url.Length == 0 || !Uri.TryCreate(url, UriKind.Absolute, out var u)) return;
-            var reset = new UriBuilder(u.Scheme, u.Host, u.Port)
-            {
-                Path = "/api/diag/reset",
-                Query = clearProbe ? "probe=1&files=1" : "files=1"
-            }.Uri;
-            using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, reset);
-            // HttpListener responde 411 sem Content-Length: corpo vazio explicito.
-            req.Content = new System.Net.Http.StringContent("");
-            string key = Environment.GetEnvironmentVariable("WAR_EVENT_KEY") ?? "";
-            if (key.Length > 0)
-                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
-            using var _ = DiagHttp.Send(req);
-        }
-        catch { }
-    }
-
     // ------------------------------------------------------------------
     // Pausa / retomada
     // ------------------------------------------------------------------
@@ -571,10 +541,10 @@ internal sealed class TestCircuitDriver : IDisposable
         long totalSeconds = 0;
 
         // Painel por step: zera contadores e arquivos da bridge alvo antes de
-        // rodar o step. A sonda NAO e zerada aqui (ver ResetDiagnosticsOnce na
-        // WarTemplate: um reset por bateria), senao a curva dos steps anteriores
-        // desaparece a cada step_start.
-        PostDiagReset();
+        // rodar o step (fonte unica: TestContext.ResetDiagnostics). A sonda NAO
+        // e zerada aqui — ela e por bateria (WarTemplate), senao a curva dos
+        // steps anteriores desaparece a cada step_start.
+        TestContext.ResetDiagnostics(clearProbe: false, bridge: step.ProbeUrl, required: false);
 
         using var probe = StepProbe.Start(
             _o.RunDirectory,
