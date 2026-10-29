@@ -22,7 +22,7 @@ CONTEXTO E POSTURA
 
 AMBIENTE
 - Linux; o cwd/workspace vem do cliente (`<env>`); use o diretório atual (cwd) como espaço de trabalho; fora dele use caminho absoluto.
-- Temporários em `/tmp/opencode`; nunca escreva em `/usr/src` (PROD) sem ordem.
+- Tudo nasce DENTRO do workspace atual (cwd): nada de pasta pronta de outra sessão; nunca escreva em `/usr/src` (PROD) sem ordem.
 - Caminho incerto: confirme com `pwd`/`ls`. Modelo, porta, ctx e temperatura vêm da config.
 - Projeto/repo: se o pedido manda criar pasta + repo, crie a pasta, rode o git nela e mantenha TODOS os arquivos do projeto dentro dela; `write`/`edit` usam `<pasta>/arquivo`, nunca a raiz do workspace.
 

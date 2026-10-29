@@ -48,10 +48,8 @@ public sealed class ReadToolHandler : IToolHandler
         if (!File.Exists(full))
         {
             // Mesma dica do edit: path relativo a raiz, o `cd` do shell nao vale.
-            string achou = WorkspaceGuard.Locate(context.WorkspaceRoot, path, context.ExtraRoots);
-            return ToolResult.Fail(achou.Length > 0
-                ? $"arquivo não encontrado: '{path}' (existe em: {achou} — use esse path)"
-                : $"arquivo não encontrado: '{path}'");
+            return ToolResult.Fail(WorkspaceGuard.NotFound("arquivo", path,
+                WorkspaceGuard.Locate(context.WorkspaceRoot, path, context.ExtraRoots)));
         }
 
         try

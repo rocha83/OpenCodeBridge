@@ -30,6 +30,25 @@ internal static class UnitToolHelpTests
             "help de shell explica o sintoma do zip em prosa");
         TestContext.Check(chat[1]!["function"]!["description"]!.GetValue<string>() == "original",
             "tool sem help nao e alterada");
+
+        // Git: identidade e' passo do modelo, ensinado na ORDEM (name, email,
+        // commit) — o modelo escrevia `user.user.name` e o commit falhava em loop.
+        string git = global::Rochas.OpenCodeBridge.Core.ToolHelp.Apply(
+            JsonNode.Parse("""
+            [{"type":"function","function":{"name":"git","description":"git"}}]
+            """)!.AsArray())[0]!["function"]!["description"]!.GetValue<string>();
+        TestContext.Check(git.Contains("ANTES do primeiro `commit`", StringComparison.Ordinal),
+            "help do git situa a config antes do commit");
+        TestContext.Check(git.Contains("config user.name", StringComparison.Ordinal)
+            && git.Contains("config user.email", StringComparison.Ordinal),
+            "help do git ensina as DUAS chamadas de identidade");
+        TestContext.Check(git.IndexOf("config user.name", StringComparison.Ordinal)
+            < git.IndexOf("config user.email", StringComparison.Ordinal),
+            "help do git ensina name antes de email");
+        TestContext.Check(git.Contains("Author identity unknown", StringComparison.Ordinal),
+            "help do git explica o sintoma de identidade ausente");
+        TestContext.Check(!git.Contains("user.user.name", StringComparison.Ordinal),
+            "help do git nao exibe a chave errada (so o certo e' copiavel)");
         TestContext.Check(chat[0]!["function"]!["parameters"]!["properties"]!["command"] is not null,
             "schema nao e alterado");
 

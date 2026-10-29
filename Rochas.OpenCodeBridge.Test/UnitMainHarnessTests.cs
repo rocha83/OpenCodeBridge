@@ -29,6 +29,20 @@ internal static class UnitMainHarnessTests
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// O harness NAO pode apontar pasta de trabalho fora do cwd: o workspace vem
+    /// do cliente (`<env>`) e um path fixo no texto tira os artefatos do dir do
+    /// teste (medido no E-tools-full: redirecionava para /tmp/opencode).
+    /// </summary>
+    public static Task KeepsWorkspaceFromClient()
+    {
+        TestContext.Check(!Text.Contains("/tmp/opencode", StringComparison.OrdinalIgnoreCase),
+            "harness nao aponta /tmp/opencode (workspace vem do <env>)");
+        TestContext.Check(Text.Contains("DENTRO do workspace atual", StringComparison.Ordinal),
+            "harness manda trabalhar dentro do workspace atual");
+        return Task.CompletedTask;
+    }
+
     public static Task KeepsSkillsAndEnv()
     {
         TestContext.Check(Text.Contains("<available_skills>", StringComparison.OrdinalIgnoreCase), "main harness fala de skills");

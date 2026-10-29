@@ -39,6 +39,21 @@ public static class WorkspaceGuard
     }
 
     /// <summary>
+    /// Mensagem UNICA de "nao encontrado" das tools de arquivo: o tipo entra
+    /// como parametro ("arquivo", "diretorio", "caminho") e, quando a busca
+    /// achou o mesmo nome em outro lugar, a dica entra na mesma frase.
+    /// Fonte unica: `Edit`/`Read`/`Glob`/`Grep` nao repetem o texto.
+    /// </summary>
+    /// <param name="kind">Tipo do alvo (arquivo/diretorio/caminho).</param>
+    /// <param name="path">Path pedido pelo modelo.</param>
+    /// <param name="found">Path real quando <see cref="Locate"/> achou (opcional).</param>
+    /// <returns>Mensagem de erro pronta para o histórico.</returns>
+    public static string NotFound(string kind, string path, string? found = null) =>
+        found is { Length: > 0 }
+            ? $"{kind} não encontrado: '{path}' (existe em: {found} — use esse path)"
+            : $"{kind} não encontrado: '{path}'";
+
+    /// <summary>
     /// Dica quando o arquivo nao existe no path pedido: procura o MESMO nome de
     /// arquivo (BFS, depth 4, acha 3) e devolve o caminho relativo real; vazio
     /// quando nao ha achado util (o chamador entao responde o erro original).

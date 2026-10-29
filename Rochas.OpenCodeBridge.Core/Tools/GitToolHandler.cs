@@ -103,8 +103,8 @@ public sealed class GitToolHandler : IToolHandler
                 && (err.Contains("Author identity unknown", StringComparison.OrdinalIgnoreCase)
                     || err.Contains("Please tell me who you are", StringComparison.OrdinalIgnoreCase)
                     || err.Contains("unable to auto-detect email address", StringComparison.OrdinalIgnoreCase)))
-                err += "\nDICA: identidade local ausente. Chame a tool git DUAS vezes com `path` do repo: " +
-                       "`config user.name <nome>` e `config user.email <email>`; nao use `&&`.";
+                err += "\nDICA: identidade local ausente. Chame a tool git DUAS vezes com o `path` do repo, nesta ordem: " +
+                       "`config user.name <nome>` e depois `config user.email <email>`; nao use `&&`.";
             return ToolResult.Fail(err);
         }
         catch (Exception ex)

@@ -839,7 +839,13 @@ internal static class TestContext
                             ["ms"] = callSw.ElapsedMilliseconds
                         });
                         if (Environment.GetEnvironmentVariable("TCTX_DUMP") == "1")
-                            Console.WriteLine($"  [exec] {name} ok={exec["ok"]} out={(exec["output"]?.GetValue<string>() ?? exec["error"]?.GetValue<string>() ?? "")[..Math.Min(160, (exec["output"]?.GetValue<string>() ?? exec["error"]?.GetValue<string>() ?? "").Length)]}");
+                        {
+                            // Falha mostra o ERRO (output pode vir vazio e mascarar a causa).
+                            string seen = exec["ok"]?.GetValue<bool>() == true
+                                ? exec["output"]?.GetValue<string>() ?? ""
+                                : exec["error"]?.GetValue<string>() ?? "(sem erro)";
+                            Console.WriteLine($"  [exec] {name} ok={exec["ok"]} out={seen[..Math.Min(400, seen.Length)]}");
+                        }
                         input.Add(new JsonObject
                         {
                             ["type"] = "function_call_output", ["call_id"] = callId, ["output"] = outText

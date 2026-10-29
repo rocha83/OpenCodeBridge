@@ -164,6 +164,7 @@ internal static class Program
         TestContext.Run("U-main-harness-dynamic", UnitMainHarnessTests.PreservesDynamicBlocks);
         TestContext.Run("U-main-harness-master", UnitMainHarnessTests.DropsMasterButKeepsEnv);
         TestContext.Run("U-main-harness-tools-tail", UnitMainHarnessTests.TailsOnlyWithTools);
+        TestContext.Run("U-main-harness-workspace", UnitMainHarnessTests.KeepsWorkspaceFromClient);
         TestContext.Run("U-coding-journey", UnitCodingJourneyTests.AnalyzesBothModes);
         TestContext.Run("U-coding-journey-probe", UnitCodingJourneyTests.StepProbeWritesJourney);
         TestContext.Run("U-sampling-passthrough", UnitSamplingTests.CopiesKnownNumericKeys);

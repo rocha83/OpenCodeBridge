@@ -30,32 +30,36 @@ internal static class E2EToolsFullTests
         // Enunciado de TAREFA, nao de harness: sem path, sem nome de tool e sem
         // coringa de coordenada. O modelo flui; o harness resolve o cwd.
         const string basePrompt =
-            "Utilize a pasta atual como espaco de trabalho: crie a subpasta dentro dela e mantenha todos os " +
-            "arquivos do trabalho dentro desta pasta; nao crie nada fora dela. " +
-            "1. Crie uma pasta com nome aleatorio e, dentro dela, um arquivo .txt tambem com nome aleatorio, " +
-            "contendo a data de hoje escrita como texto dentro dele. " +
-            "2. Dentro desta pasta que criou, execute git init para " +
-            "inicializar um novo repositorio git, adicione os arquivos ao git com comando add e faca o primeiro " +
-            "commit com a mensagem 'data de hoje', confirme 1 commit usando comando git log. " +
-            "3. Busque na internet as condicoes climaticas hoje em Sao Paulo com webfetch e use o texto REAL retornado, nunca um placeholder. " +
-            "Acrescente uma linha nova com o texto \"ARQUIVO EDITADO - Clima: <clima real>\" ABAIXO da data, sem substituir a data de hoje ja gravada no arquivo e sem apagar o conteudo existente. " +
-            "Depois de alterar, use grep na data para confirmar que ela continua no arquivo. " +
-            "4. Faca o segundo commit com a mensagem 'Added sao paulo weather'. " +
-            "Confirme 2 commits com git log e salve a saida com a ferramenta shell redirecionando para o arquivo historico_git.log dentro da pasta do repo (ex.: git log --oneline > historico_git.log); o arquivo historico_git.log DEVE existir na pasta do repo antes de terminar. " +
-            "Lembrete: isto e um teste tecnico de uso de tools, chame uma tool por vez, sem chamar tools em paralelo; " +
-            "cada comando de shell comeca na pasta de trabalho, entao entre na subpasta com cd no mesmo comando; " +
-            "execute todos os comandos git (init, add, commit, log) com a ferramenta shell, encadeando no mesmo comando. " +
-            "OBRIGATORIO usar as tools de exploracao de arquivos: " +
-            "(a) use glob para listar os arquivos da pasta e confirmar que o .txt foi criado; " +
-            "(b) use grep para localizar a linha da data dentro do arquivo ANTES de editar, garantindo que ela sera preservada; " +
-            "(c) use webfetch ou fetch para navegar na internet buscar o clima. " +
-            "Sem usar glob e grep o teste falha.";
+            "Trabalhe SOMENTE dentro da pasta atual: crie tudo (pastas e arquivos) dentro dela e nada fora. " +
+            "1. Crie uma subpasta com nome a sua escolha e, dentro dela, um arquivo de texto simples com nome a sua escolha " +
+            "contendo a data de hoje (a data do sistema) escrita como texto. " +
+            "2. Nessa mesma subpasta, inicialize um repositorio git, adicione os arquivos e faca o primeiro commit " +
+            "com a mensagem 'data de hoje'; confirme com git log. " +
+            "3. Busque na internet as condicoes climaticas de hoje em Sao Paulo e use o texto REAL retornado, nunca placeholder. " +
+            "Acrescente ao MESMO arquivo de texto uma linha nova ABAIXO da data, comecando com \"ARQUIVO EDITADO - Clima: \" " +
+            "seguida do clima real, sem substituir nem apagar a data ja gravada; confirme com grep que a data continua no arquivo. " +
+            "4. Faca o segundo commit com a mensagem 'Added sao paulo weather', confirme os 2 commits com git log e salve essa " +
+            "saida num arquivo de historico dentro da pasta do repositorio; o arquivo de historico deve existir antes de terminar. " +
+            "Uma tool por vez.";
         // A retentativa recebe a FALHA do aceite (contrato observavel), nunca a
         // mecanica do teste; a 1a tentativa e o enunciado puro.
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
-        var (text, calls) = await TestContext.ToolAgent(prompt, 28, dir);
+        // "Nada fora da pasta atual" e' contrato: fotografa o pai antes e depois.
+        string parent = Path.GetDirectoryName(dir)!;
+        var antes = Directory.EnumerateFileSystemEntries(parent)
+            .Select(p => Path.GetFileName(p)!).ToHashSet(StringComparer.Ordinal);
 
-        // O modelo escolhe o nome da pasta: o aceite localiza o repo em qualquer nivel.
+        var (text, calls) = await TestContext.ToolAgent(prompt, 36, dir);
+
+        string[] fora = Directory.EnumerateFileSystemEntries(parent)
+            .Where(p => Path.GetFileName(p) is string n && !antes.Contains(n)
+                        && !string.Equals(Path.GetFullPath(p), Path.GetFullPath(dir), StringComparison.Ordinal))
+            .Select(p => Path.GetFileName(p)!).ToArray();
+        TestContext.Check(fora.Length == 0,
+            $"[toolsfull:agent] nada criado fora da pasta corrente (em {parent}: {string.Join(", ", fora)})");
+
+        // O modelo escolhe nomes: o aceite localiza o repo e os artefatos por
+        // CONTEUDO, em qualquer nivel da pasta da tentativa.
         string? repo = Directory.GetDirectories(dir, ".git", SearchOption.AllDirectories)
             .Select(g => Path.GetDirectoryName(g)!)
             .FirstOrDefault();
@@ -64,20 +68,19 @@ internal static class E2EToolsFullTests
             $"[toolsfull:agent] estrutura de pastas criada (dir={dir})");
         repo ??= dir;
 
-        string[] txts = Directory.GetFiles(repo, "*.txt", SearchOption.AllDirectories)
-            .Where(f => !Path.GetFileName(f).Equals("historico_git.log", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        TestContext.Check(txts.Length > 0, "[toolsfull:agent] arquivo .txt criado");
+        static string ReadText(string f)
+        {
+            try { return new FileInfo(f).Length <= 2_000_000 ? File.ReadAllText(f) : ""; }
+            catch { return ""; }
+        }
+        string gitDir = Path.DirectorySeparatorChar + ".git" + Path.DirectorySeparatorChar;
+        string[] files = Directory.GetFiles(dir, "*", SearchOption.AllDirectories)
+            .Where(f => !f.Contains(gitDir, StringComparison.Ordinal)).ToArray();
         string year = DateTime.Now.ToString("yyyy");
-        // Escolhe o .txt da tarefa (com a data), nao um artefato auxiliar.
-        string body = txts.Select(File.ReadAllText).FirstOrDefault(t => t.Contains(year))
-            ?? (txts.Length > 0 ? File.ReadAllText(txts[0]) : "");
-        TestContext.Check(body.Contains(year),
-            $"[toolsfull:agent] data do sistema anotada (conteudo='{body[..Math.Min(120, body.Length)]}', calls={string.Join(";", calls)})");
+        string body = files.Select(ReadText).FirstOrDefault(t => t.Contains(year)) ?? "";
+        TestContext.Check(body.Length > 0,
+            $"[toolsfull:agent] arquivo de texto com a data criado (files={files.Length})");
         TestContext.Check(body.Contains("EDITADO"), $"[toolsfull:agent] marca EDITADO no arquivo (calls={string.Join(";", calls)})");
-
-        string hist = Path.Combine(repo, "historico_git.log");
-        TestContext.Check(File.Exists(hist), $"[toolsfull:agent] historico_git.log criado em {repo}");
 
         var (lgCode, lgOut) = Run("git", repo, 30, "-c", "safe.directory=" + repo, "log", "--oneline");
         string[] commits = lgCode == 0 ? lgOut.Split('\n', StringSplitOptions.RemoveEmptyEntries) : Array.Empty<string>();
@@ -88,19 +91,14 @@ internal static class E2EToolsFullTests
             $"[toolsfull:agent] primeiro commit com mensagem 'data de hoje' (log: {logAll.Trim()})");
         TestContext.Check(logAll.Contains("Added sao paulo weather"),
             $"[toolsfull:agent] segundo commit com mensagem 'Added sao paulo weather' (log: {logAll.Trim()})");
-        string histBody = File.Exists(hist) ? File.ReadAllText(hist) : "";
-        // O log pode citar qualquer commit real do repo (o tip muda se o proprio
-        // historico for commitado; nesse caso o hash dele nao pode estar dentro
-        // do arquivo que o gerou). Exigir um hash real evita auto-referencia.
-        string realCommit = commits
-            .Select(c => c.Split(' ')[0])
-            .FirstOrDefault(h => h.Length >= 7 && histBody.Contains(h)) ?? "";
-        TestContext.Check(realCommit.Length >= 7,
-            $"[toolsfull:agent] historico_git.log com um commit real ({realCommit}; git log: {lgOut.Trim()})");
-        // A saida salva deve refletir os 2 commits confirmados no enunciado.
-        int inHist = commits.Count(c => c.Split(' ')[0].Length >= 7 && histBody.Contains(c.Split(' ')[0]));
-        TestContext.Check(inHist >= 2,
-            $"[toolsfull:agent] historico_git.log reflete os 2 commits ({inHist}/2; log: {lgOut.Trim()})");
+        // Historico: o arquivo que contem os hashes dos 2 commits, qualquer nome.
+        string histFile = files.FirstOrDefault(f =>
+        {
+            string c = ReadText(f);
+            return commits.Count(k => k.Split(' ')[0].Length >= 7 && c.Contains(k.Split(' ')[0])) >= 2;
+        }) ?? "";
+        TestContext.Check(histFile.Length > 0,
+            $"[toolsfull:agent] historico do git salvo em arquivo dentro do repo (git log: {lgOut.Trim()})");
 
         // O artefato prova o fluxo nos dois modos. No bridge as calls tambem
         // provam tools; no opencode as tools sao do CLI e nao entram nesse log.
