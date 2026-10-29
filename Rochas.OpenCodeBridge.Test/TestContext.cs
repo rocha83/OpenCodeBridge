@@ -156,7 +156,8 @@ internal static class TestContext
         string? cred = Jwt ?? ApiKey;
         if (!string.IsNullOrWhiteSpace(cred))
             http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
-        using var res = http.PostAsync(Bridge + "/api/diag/reset?probe=1&files=1", null).GetAwaiter().GetResult();
+        using var res = http.PostAsync(Bridge + "/api/diag/reset?probe=1&files=1",
+            new StringContent("")).GetAwaiter().GetResult();
         if (!res.IsSuccessStatusCode)
             throw new Exception($"reset de diagnosticos falhou em {Bridge}: HTTP {(int)res.StatusCode} " +
                 res.Content.ReadAsStringAsync().GetAwaiter().GetResult().Trim());

@@ -28,7 +28,8 @@ internal static class UnitStatusTests
     public static async Task DiagReset()
     {
         using var post = new HttpRequestMessage(HttpMethod.Post,
-            TestContext.Bridge + "/api/diag/reset?probe=1&files=1");
+            TestContext.Bridge + "/api/diag/reset?probe=1&files=1")
+        { Content = new StringContent("") };
         using var res = await TestContext.Http.SendAsync(post);
         string body = await res.Content.ReadAsStringAsync();
         TestContext.Check(res.IsSuccessStatusCode, $"reset responde {(int)res.StatusCode}: {body.Trim()}");

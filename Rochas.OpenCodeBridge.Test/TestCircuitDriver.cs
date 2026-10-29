@@ -428,6 +428,8 @@ internal sealed class TestCircuitDriver : IDisposable
                 Query = "probe=1&files=1"
             }.Uri;
             using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, reset);
+            // HttpListener responde 411 sem Content-Length: corpo vazio explicito.
+            req.Content = new System.Net.Http.StringContent("");
             string key = Environment.GetEnvironmentVariable("WAR_EVENT_KEY") ?? "";
             if (key.Length > 0)
                 req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
