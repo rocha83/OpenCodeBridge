@@ -372,7 +372,10 @@ internal static class UnitToolBreakerTests
         // funcao recursiva sem `rec` da FS0039 — as duas formas medidas no isolado.
         TestContext.Check(fsMini.Contains("ESTRUTURA"), "FsMini ensina onde vive a funcao auxiliar");
         TestContext.Check(fsMini.Contains("let rec"), "FsMini ensina recursao sem `rec` (FS0039)");
-        TestContext.Check(fsMini.Contains("FS0039 `mod` nao definido"), "tabela F# ensina resto real (FS0039 'mod')");
+        TestContext.Check(fsMini.Contains("FS0039 nome nao definido") && fsMini.Contains("se o nome for `mod`"),
+            "tabela F# ensina resto real na MESMA linha do FS0039");
+        TestContext.Check(fsMini.Split("FS0039").Length - 1 <= 2,
+            "FS0039 nao vira duas linhas de tabela (uma linha + a nota de recursao)");
         TestContext.Check(fsMini.Contains("FS0037 nome definido duas vezes"), "tabela F# ensina nome unico (FS0037)");
         TestContext.Check(fsMini.Contains("FS0001 no range"), "tabela F# ensina range de tipo unico (FS0001)");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");

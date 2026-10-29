@@ -62,7 +62,7 @@ public static class HarnessTails
         "RANGE COM PASSO: sao TRES termos e a ordem e' inicio, PASSO, fim — o PASSO e' o SEGUNDO termo, entre os dois `..`, e o TERCEIRO e' o fim (`[for i in 1 .. 2 .. n-1]` = 1, 3, .., n-1). Passo e fim trocados ainda compilam e produzem resultado errado SEM erro do compilador. " +
         "INTEIROS: `%` so em int; `/` entre dois int TRUNCA o resto (sem erro). " +
         "RECURSAO: funcao que chama a si mesma precisa `let rec f ...`; sem `rec` a auto-chamada sai como FS0039 `nao definido`. " +
-        "RESTO E NOMES: crase simples nao existe em F# (identificador com caractere especial usa CRASE DUPLA); resto e range estao na tabela abaixo (FS0039 `mod`, FS0037, FS0001). " +
+        "RESTO E NOMES: crase simples nao existe em F# (identificador com caractere especial usa CRASE DUPLA); resto, nome repetido e range estao na tabela abaixo. " +
         "FATORIAL/PRODUTO: nao exige recursao — `List.fold (fun acc x -> acc * x) 1 [1..10]`. " +
         "ESTRUTURA: funcao auxiliar vive no NIVEL DO MODULO, antes de quem a chama, recebendo como parametro os valores que usa de fora; `let` dentro de ramo `if/else` (na propria linha do `else`) quebra a indentacao (FS0058) — no ramo so' a CHAMADA. Para 'todo/existe' prefira `List.forall`/`List.exists` com lambda. " +
         "INCONSISTENCIAS PREVISTAS EM F# (codigo: causa -> sintaxe correta): " +
@@ -70,8 +70,7 @@ public static class HarnessTails
         "FS0010/FS0001 `do` dentro de LISTA sem `yield` (a lista vira `unit`) -> declare o elemento com `->` ou com `do yield`; `do` sozinho nao. " +
         "FS0010/FS0751/FS0003 `step` no range -> `step` nao existe em F#: `a .. passo .. b`, com o passo no MEIO. " +
         "FS0001 `List.*` recebendo `[| a; b |]` -> `[| ... |]` e' ARRAY (tipo diferente de lista): use `[ a; b ]` com `List.sum/List.map/List.length`, ou `Array.sum/Array.map/Array.length`. " +
-        "FS0039 valor nao definido -> o nome nao existe no arquivo: use o parametro ou o valor ja' declarado (nao invente nome). " +
-        "FS0039 `mod` nao definido -> resto em F# e' `%` (so' em inteiros): `a % b`. " +
+        "FS0039 nome nao definido -> o nome nao existe no arquivo: use o parametro ou o valor ja' declarado (nao invente nome); se o nome for `mod`, o resto em F# e' `%`, so' em inteiros: `a % b`. " +
         "FS0037 nome definido duas vezes -> defina o nome UMA vez: apague a definicao repetida. " +
         "FS0001 no range -> os dois limites sao do MESMO tipo: converta o limite que sai float, `[2 .. int (Math.Sqrt(float n))]`. " +
         "FS0988 modulo vazio -> falta `[<EntryPoint>] let main argv = ...` com `0` no fim. " +
