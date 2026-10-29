@@ -344,14 +344,18 @@ internal static class UnitToolBreakerTests
         TestContext.Check(tail.Contains("--project"), "cauda aponta o arquivo do projeto no dotnet");
         string fsMini = global::Rochas.OpenCodeBridge.Core.HarnessTails.FsMini;
         TestContext.Check(fsMini.Contains("module Program"), "FsMini explica o entrypoint de F#");
-        // Regra que derrubou E-mission-tools (L3-20261028-161849): `[1; 3 .. n-1]`
-        // nao existe em F#; o range com passo e `[start .. step .. finish]`.
-        TestContext.Check(fsMini.Contains("[start .. step .. finish]"), "FsMini ensina range com passo");
-        TestContext.Check(fsMini.Contains("[1; 3 .. n-1]"), "FsMini nomeia a sintaxe errada (FS0751)");
+        // Regra que derrubou E-mission-tools (L3-20261028-161849): `;` nao e' passo;
+        // o range com passo e' `[start .. step .. finish]`. O literal INVALIDO nao
+        // pode aparecer na cauda: medido em #13 do DRIVER-FIXES, o modelo COPIA o
+        // literal que a dica mostra. Por isso o teste exige a forma correta E a
+        // ausencia da forma errada copiavel.
+        TestContext.Check(fsMini.Contains("[1 .. 2 .. n-1]"), "FsMini ensina range com passo (forma correta)");
+        TestContext.Check(fsMini.Contains("FS0751"), "FsMini nomeia o codigo do range com ';'");
+        TestContext.Check(!fsMini.Contains("[1; 3 .. n-1]"), "FsMini nao repete o literal invalido (o modelo copia)");
         // 2a forma medida no L3-20261028-163556: o modelo escreveu comprehension
-        // de Haskell ([i | i <- ...]) e errou FS0010 22 turnos.
+        // de Haskell (`[i | i <- ...]`) e errou FS0010 por 22 turnos.
         TestContext.Check(fsMini.Contains("[for i in 1 .. n-1 -> expr]"), "FsMini ensina comprehension de F#");
-        TestContext.Check(fsMini.Contains("[i | i <- [1 .. n-1]; ...]"), "FsMini nomeia a comprehension alheia (FS0010)");
+        TestContext.Check(fsMini.Contains("[x | x <- xs]"), "FsMini nomeia a comprehension alheia (FS0010)");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
         TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
         TestContext.Check(!tail.Contains("CONCATENACAO DE COMANDOS"), "cauda nao duplica doc de shell");
