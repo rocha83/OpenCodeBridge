@@ -1639,3 +1639,31 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
 - Panels `TestData` (sondas Serilog) funcionam nativamente sem plugin.
 - Provisionamento versionado em `observation/grafana/` (dashboard JSON + YAMLs), copiado para
   `/var/lib/grafana/dashboards` e `/etc/grafana/provisioning` pelo `OpenCodeBridge.Observation`.
+
+## 15. Scripts operacionais de bancada (2026-10-29)
+
+Atalhos que substituem a sequência manual repetida em toda rodada. Todos derivam
+a raiz do repo da própria localização (`scripts/` → `..`) e usam
+`BRIDGE_API_KEY` (default `guest@123`) — nenhum guarda credencial no arquivo.
+
+| script | uso | o que faz |
+|---|---|---|
+| `scripts/bridge-restart.sh` | `bridge-restart.sh [4124\|4125\|4126] [--print-flags]` | reinicia a unit da bridge alvo (`bridge-gpu`/`bridge-gpu2`/`bridge-cpu-forced`), espera `/api/status` até 30 s e imprime modelo/mode/tails/uptime; com `--print-flags` imprime orçamento e janelas e **falha** se `main_harness`/`harness_tails` estiverem off |
+| `scripts/check-units.sh` | `check-units.sh [--only NOME] [--no-build]` | build Release + bateria de units (`--skip-e2e`), log em `/tmp/units-<hora>.log`, sai com o rc do runner (fail-fast vale) |
+| `scripts/run-isolated.sh` | `run-isolated.sh E-mission-tools [--no-restart] [--port N] [--key K]` | reinicia a bridge (regra de bateria), roda **um** teste isolado com log em `logs/isolated/<teste>-<stamp>.log` e imprime veredito + `[ws]` + últimos 12 turnos do `_mission.log` |
+| `scripts/push-persist.sh` | `GITHUB_TOKEN=... push-persist.sh [--branch main]` | push do persistente para o `origin`, com o token **fora** do repo (env ou 1º arg), mascarado no log e conferido por `ls-remote` (HEAD == origin/main) |
+| `scripts/prod-repair-ownership.sh` | `prod-repair-ownership.sh [--dry-run]` | conserta o PROD quando `.git`/worktree ficaram de root (DRIVER-FIXES #21): `chown -R` + `git checkout -- .` (deploy-only, nunca `reset --hard`) e valida worktree limpo |
+
+Fluxo canônico de uma rodada:
+
+```bash
+scripts/bridge-restart.sh 4124 --print-flags
+scripts/check-units.sh --only U-tails,U-fs-repair
+scripts/run-isolated.sh E-mission-tools          # log em logs/isolated
+GITHUB_TOKEN=... scripts/push-persist.sh
+bash scripts/deploy-pull.sh                       # PROD: pull --rebase + build + restart
+```
+
+Regra de ouro continua a mesma: **restart** é para binário/pool; **zerar
+contador/painel** é `POST /api/diag/reset` (`?probe=1&files=1&panel=1` no início
+da bateria; `?files=1` no `step_start`).

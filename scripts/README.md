@@ -27,6 +27,11 @@ clone (`/media/mint/78AA...`, `/media/mint/3686...`, `/usr/src/opencodebridge`).
 | script | o que faz |
 |---|---|
 | `run-bridge-stable.sh` | sobe a bridge com a cauda de comportamento e flags estáveis |
+| `bridge-restart.sh` | reinicia a bridge alvo (`4124/4125/4126`), espera `/api/status` e (com `--print-flags`) confere orçamento/tails |
+| `check-units.sh` | build Release + bateria de units (`--skip-e2e`), rc do runner |
+| `run-isolated.sh` | reinicia a bridge e roda **um** teste isolado, log em `logs/isolated/` + trail do modelo |
+| `push-persist.sh` | push do persistente com `GITHUB_TOKEN` fora do repo, conferido por `ls-remote` |
+| `prod-repair-ownership.sh` | conserta PROD com `.git`/worktree de root (DRIVER-FIXES #21) |
 | `health-check.sh` | smoke da Web UI (`/Account/Login`, `/Chat/Ping`) |
 | `bench-tok-s.sh` | tok/s do llama direto (média/mediana) |
 | `gate.sh` | gate de commit + build + suite web |
