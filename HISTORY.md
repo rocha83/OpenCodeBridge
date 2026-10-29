@@ -47,6 +47,23 @@ a correção #13 removeu de propósito; agora exige a forma correta
 `PASS E-tools-full (41.7s)` na primeira tentativa, com
 `temperature=0.1 / source=profile` (role Build) no log da bridge.
 
+**L2 — verde depois da correção.** `logs/levels/L2-20261029-005925` (640 s):
+`responses-tools-bridge` 3 s, `tools-full-bridge` 40 s, `belts-build-bridge`
+311 s, `belts-orch-bridge` 286 s = **4/4 PASS**, gate verde, sem PARADA. Os dois
+belts que o fail-fast tinha deixado SKIP foram medidos e passaram. O
+`tools-full` fechou na **primeira** tentativa (o ciclo de retry não foi
+exercido) — o orçamento de 3 tentativas fica como margem para a variância já
+medida, não como muleta.
+
+**Painel (Grafana) — apontado para a ponte única.** Os painéis consultavam
+`:4134` (encerrada) e por isso vinham vazios (`no response received` no log do
+Infinity). Corrigido em dois pontos: variável `bridge` do dashboard
+(`current`/`query`/`options` só `:4124`, `version` 4→5) e `allowedHosts` do
+datasource — este último exigiu subir o `version` do YAML acima do gravado no DB
+(estava `3`, editado pela UI), porque **provisionamento de datasource ignora em
+silêncio arquivo com versão menor**, mesmo após restart.
+
+
 ## WAR L1+L2 bridge-only: L1 verde, L2 corrigido e verde (2026-10-27)
 
 **Pedido:** reiniciar corretamente, rodar L1+L2 em bridge-only e fail-fast, com
