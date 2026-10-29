@@ -389,3 +389,24 @@ falhar, segue no dir novo em vez de matar a belt. Assertivas intactas; `ws` só
 
 **Prova** — `--only E-belts-direct` isolado depois da correção (log
 `/tmp/opencode/belts-iso-*.log`) sem `is denied` e com as duas faixas rodando.
+
+## 19. Faixa preta: Orch devolveu prosa em vez do JSON array (2026-10-29)
+
+**Sintoma** — `belts-orch-bridge` FAIL com
+`[preta] Orch segmentou em JSON array`, mas só **na faixa preta**; azul, verde e
+marrom cumpriram o contrato na mesma rodada.
+
+**Causa** — variância de instrução, não de harness: `Preta` pede seis áreas
+(domínio, banco, repositórios/serviços, API, bus, Big Data com ML) e o Orch
+(E4B, temp 0.3) respondeu **399 chars de prosa** com `[`=0 e `{`=0. O contrato
+estava no lugar certo (`Prompts/orch.md`: "Responda SOMENTE com JSON array",
+copiado para o output) e o lane bridge o usa como system.
+
+**Correção** (`E2EBeltsTests.Direct`) — a segmentação é re-amostrada até 3x
+**apenas quando a resposta não traz JSON array**, com `OrchRetryAsk` repetindo o
+contrato (nada além disso). O `Check` continua exigindo `tasks.Count > 0`; a
+mensagem passou a incluir `chars=` e os 180 primeiros caracteres, para o log
+distinguir prosa, JSON truncado e resposta vazia.
+
+**Prova** — `--only E-belts-direct --belts preta`: `Orch: 4 tarefas`, `PASS: 3
+scripts, 3 integros, 1 descartados`, `PASS E-belts-direct (300.2s)`.
