@@ -111,20 +111,27 @@ internal static class E2EEnterpriseTests
         Console.WriteLine($"  [info] worker retry={text.Contains("retry", StringComparison.OrdinalIgnoreCase)} deadletter={text.Contains("dead", StringComparison.OrdinalIgnoreCase)}");
     }
 
-    public static async Task RedisCircuit()
+    public static Task RedisCircuit()
     {
         // Circuito assincrono com Redis: cache-aside + invalidacao + antifalha.
         // Diferente dos demais E-ent (texto puro via /v1/responses), este pede
         // ARQUIVO escrito com a tool write — o modelo grava e a suite le o disco
         // (mesmo caminho do mission: ToolAgent + ToolCatalog do Core).
-        string dir = Path.Combine(Path.GetTempPath(), "e2e-redis-" + Environment.ProcessId);
-        if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        Directory.CreateDirectory(dir);
+        // 3 tentativas com a falha REAL realimentada (TestContext.AgentAttempts):
+        // o modelo as vezes entrega leitura/escrita no cache e encerra sem a
+        // invalidacao. Pasta nova por tentativa; as assertivas nao mudam.
+        return TestContext.AgentAttempts("redis", Path.Combine(Path.GetTempPath(), "e2e-redis"), 3,
+            RedisAttempt);
+    }
+
+    static async Task RedisAttempt(string dir, string feedback)
+    {
         var (_, calls) = await TestContext.ToolAgent(
             "C# .NET 9 + Redis (StackExchange.Redis): repositorio de Product com cache-aside (IDistributedCache, " +
             "sliding 5min), fallback Postgres + repopula; PUT/DELETE invalidam a chave com cache.RemoveAsync; " +
             "stampede controlado por lock por chave e circuit-breaker simples (3 falhas) quando o Redis cai. " +
-            "Grave os arquivos na raiz do workspace (repositorio de Product + registro no DI), APIs do .NET 8+. So tool calls, sem prosa.",
+            "Grave os arquivos na raiz do workspace (repositorio de Product + registro no DI), APIs do .NET 8+. So tool calls, sem prosa."
+            + feedback,
             // Orcamento medido (2026-10-29): o cenario entrega 2+ artefatos
             // (repositorio + registro no DI). Com 14 gastou 14/14 em exploracao
             // (git/shell/glob) e fechou o DI com mock; com 20 o registro real

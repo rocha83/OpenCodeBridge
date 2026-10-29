@@ -339,8 +339,8 @@ o Grafana subindo normalmente.
 estava certo, o cliente incompleto. (b) O script verificava `/api/health` 3 s
 após o restart; o deb do Grafana leva ~6 s para abrir a porta.
 
-**Correção** — clientes (`TestContext.ResetDiagnostics`,
-`TestCircuitDriver.PostDiagReset`, `U-diag-reset`) mandam `StringContent("")`;
+**Correção** — clientes (`TestContext.ResetDiagnostics`, hoje **fonte única** do
+reset no lado do teste, e `U-diag-reset`) mandam `StringContent("")`;
 `deploy-pull.sh` faz *polling* com teto (bridge 30 s, Grafana 60 s) e só então
 falha. Nenhum assert afrouxado.
 
@@ -348,3 +348,24 @@ falha. Nenhum assert afrouxado.
 `{"ok":true,"event":"diag-reset",...}`; `--only U-diag-reset` →
 `[test] PASS=1 FAIL=0 SKIP=0`; deploy posterior sobe bridge e Grafana com
 `/api/status` e `/api/health` 200.
+
+## 17. Reset de diagnóstico voltou 401 na WAR: credencial do argv não virava `TestContext.ApiKey` (2026-10-29)
+
+**Sintoma** — WAR L1→L3 na `:4124`: `AVISO: reset de diagnostico falhou ...
+HTTP 401 {"error":"nao autorizado (Bearer JWT ou ApiKey)"}` no início da bateria
+e em cada `step_start`. O painel seguia mostrando números acumulados.
+
+**Causa** — a WAR recebe `--war-api-key`, que popula `WarOptions.ApiKey`; o
+`TestContext.ApiKey` só é populado por `--api-key`. A versão anterior do reset
+morava no driver e lia `WAR_EVENT_KEY` do ambiente (por isso funcionava); ao
+consolidar tudo em `TestContext.ResetDiagnostics` a credencial deixou de chegar
+— e `required: false` engoliu o 401 em aviso.
+
+**Correção** — `TestContext.ResetDiagnostics(clearProbe, bridge, required,
+apiKey)`: a credencial é **parâmetro explícito** (`apiKey ?? Jwt ?? ApiKey`). A
+`WarTemplate` passa `o.ApiKey`; o driver passa `step.ProbeApiKey`. Uma
+implementação só, sem mutar estado global e sem env var paralela.
+
+**Prova** — console da bateria com `OK: diagnostico zerado (sonda inclusa) ...
+/api/diag/reset?files=1&probe=1` na largada e `OK: ... ?files=1` por step;
+`GET /api/test/probe?limit=1000` traz ≥2 valores distintos de `step`.

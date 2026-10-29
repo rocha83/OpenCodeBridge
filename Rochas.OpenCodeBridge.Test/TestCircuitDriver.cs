@@ -544,7 +544,8 @@ internal sealed class TestCircuitDriver : IDisposable
         // rodar o step (fonte unica: TestContext.ResetDiagnostics). A sonda NAO
         // e zerada aqui — ela e por bateria (WarTemplate), senao a curva dos
         // steps anteriores desaparece a cada step_start.
-        TestContext.ResetDiagnostics(clearProbe: false, bridge: step.ProbeUrl, required: false);
+        TestContext.ResetDiagnostics(clearProbe: false, bridge: step.ProbeUrl, required: false,
+            apiKey: step.ProbeApiKey);
 
         using var probe = StepProbe.Start(
             _o.RunDirectory,

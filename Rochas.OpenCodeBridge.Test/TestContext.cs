@@ -154,14 +154,16 @@ internal static class TestContext
     /// <param name="clearProbe">true zera também as amostras da sonda.</param>
     /// <param name="bridge">URL alvo; null usa <see cref="Bridge"/>.</param>
     /// <param name="required">true lança em falha (run isolado); false só avisa (WAR/painel).</param>
-    public static void ResetDiagnostics(bool clearProbe = true, string? bridge = null, bool required = true)
+    /// <param name="apiKey">Bearer explícito (ex.: o da WAR); null usa <see cref="Jwt"/> ou <see cref="ApiKey"/>.</param>
+    public static void ResetDiagnostics(bool clearProbe = true, string? bridge = null, bool required = true,
+        string? apiKey = null)
     {
         string target = (bridge ?? Bridge).TrimEnd('/') +
                         "/api/diag/reset?files=1" + (clearProbe ? "&probe=1" : "");
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            string? cred = Jwt ?? ApiKey;
+            string? cred = apiKey ?? Jwt ?? ApiKey;
             if (!string.IsNullOrWhiteSpace(cred))
                 http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
             using var res = http.PostAsync(target, new StringContent("")).GetAwaiter().GetResult();
@@ -639,6 +641,57 @@ internal static class TestContext
     /// <param name="prompt">Enunciado.</param>
     /// <param name="steps">Máximo de rodadas de tool no modo puro.</param>
     /// <returns>Texto final do assistente e as tools executadas.</returns>
+    /// <summary>
+    /// Roda um enunciado agentico com N tentativas: pasta nova por tentativa e,
+    /// quando o aceite falha, a mensagem REAL da falha entra no enunciado da
+    /// proxima. Fonte unica desse padrao (E-tools-full e E-ent-redis usam este
+    /// metodo): medir uma saida estocastica numa unica amostra mede sorte, nao
+    /// capacidade. As assertivas NAO mudam entre tentativas — a tentativa extra
+    /// re-amostra o modelo com a falha explicita, sem afrouxar o contrato.
+    /// </summary>
+    /// <param name="label">Rotulo do log (ex.: "redis").</param>
+    /// <param name="dirRoot">Raiz onde as pastas das tentativas sao criadas.</param>
+    /// <param name="attempts">Numero de tentativas (>=1).</param>
+    /// <param name="attempt">Recebe (pasta da tentativa, feedback da falha anterior).</param>
+    /// <param name="retryHint">Orientacao do cenario para a nova tentativa (opcional).</param>
+    public static async Task AgentAttempts(string label, string dirRoot, int attempts,
+        Func<string, string, Task> attempt, string? retryHint = null)
+    {
+        string feedback = "";
+        Exception? last = null;
+        for (int n = 1; n <= Math.Max(1, attempts); n++)
+        {
+            string dir = Path.Combine(dirRoot,
+                "agent-" + Environment.ProcessId + "-" + Mode + "-"
+                + DateTime.Now.ToString("HHmmss") + "-t" + n);
+            try
+            {
+                if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            }
+            catch (Exception ex)
+            {
+                // Conteudo criado pela bridge (root) pode nao ser removivel pelo
+                // teste: o dir novo e unico por horario, entao seguir sem apagar.
+                Console.WriteLine($"  [{label}] cleanup ignorado: {ex.GetType().Name}");
+            }
+            Directory.CreateDirectory(dir);
+            try
+            {
+                await attempt(dir, feedback);
+                return;
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+                Console.WriteLine($"  [{label}] tentativa {n} falhou: {ex.Message.Split('\n')[0]}");
+                feedback = "\n\nTENTATIVA ANTERIOR FALHOU: " + ex.Message
+                    + "\nRefaca do zero nesta pasta nova, cumprindo todos os requisitos do enunciado."
+                    + (retryHint is { Length: > 0 } ? "\n" + retryHint : "");
+            }
+        }
+        throw last!;
+    }
+
     public static Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps = 0)
         => ToolAgent(prompt, steps, null);
 

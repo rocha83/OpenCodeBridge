@@ -127,50 +127,14 @@ internal static class E2EToolsFullTests
     /// padrao do mission-tools — 3 tentativas com a falha do aceite realimentada e
     /// pasta nova por tentativa. As assertivas sao identicas em toda tentativa.
     /// </summary>
-    static async Task AgentScenario()
-    {
-        string feedback = "";
-        Exception? last = null;
-        for (int attempt = 1; attempt <= 3; attempt++)
-        {
-            string dir = NewAgentDir(attempt);
-            try
-            {
-                await AgentAttempt(dir, feedback);
-                return;
-            }
-            catch (Exception ex)
-            {
-                last = ex;
-                Console.WriteLine($"  [toolsfull:agent] tentativa {attempt} falhou: {ex.Message.Split('\n')[0]}");
-                feedback = "\n\nTENTATIVA ANTERIOR FALHOU: " + ex.Message
-                    + "\nRefaca do zero nesta pasta nova, na ORDEM dos passos 1..4 e sem pular nenhum passo.";
-            }
-        }
-        throw last!;
-    }
-
-    /// <summary>Pasta propria por tentativa (a bridge cria como root; nao apagar).</summary>
-    /// <param name="attempt">Numero da tentativa.</param>
-    /// <returns>Path da pasta criada.</returns>
-    static string NewAgentDir(int attempt)
-    {
-        string dir = Path.Combine("/tmp/opencode/toolsfull-agent",
-            "agent-" + Environment.ProcessId + "-" + TestContext.Mode + "-"
-            + DateTime.Now.ToString("HHmmss") + "-t" + attempt);
-        try
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
-        catch (Exception ex)
-        {
-            // Conteudo criado pela bridge (root) pode nao ser removivel pelo teste:
-            // o dir novo e unico por horario, entao seguir sem apagar e seguro.
-            Console.WriteLine($"  [toolsfull:agent] cleanup ignorado: {ex.GetType().Name}");
-        }
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    /// <summary>
+    /// 3 tentativas com a falha do aceite realimentada e pasta nova por tentativa
+    /// (<see cref="TestContext.AgentAttempts"/> — fonte unica do padrao). As
+    /// assertivas sao identicas em toda tentativa.
+    /// </summary>
+    static Task AgentScenario()
+        => TestContext.AgentAttempts("toolsfull:agent", "/tmp/opencode/toolsfull-agent", 3,
+            AgentAttempt, retryHint: "na ORDEM dos passos 1..4 e sem pular nenhum passo.");
 
     public static async Task FullTools()
     {
