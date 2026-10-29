@@ -4617,3 +4617,30 @@ pool HTTP) e deploy.
 
 **Regra atualizada** em `AGENTS.md` (`## Regra: diagnóstico zera por reset;
 restart é para binário/pool`) e comentário do `scripts/deploy-pull.sh`.
+
+### L1 vermelho duas vezes: variância de texto vs orçamento de passos (2026-10-29)
+
+**1ª queda — `E-ent-crud-saleinvoice` (`// ...`).** O assert anti-esqueleto
+(`CheckNoStub`) reprovou texto com marcador de elisão. Reprodução do **mesmo**
+pedido fora do teste, na mesma bridge/role: `completed`, 10.943 chars, zero
+ocorrências de `// ...` e `/* ... */`. Na medição seguinte o teste passou (58 s).
+Variância do 4B em artefato textual (role plan, 0.4), não regressão — nenhum
+assert tocado.
+
+**2ª queda — `E-ent-redis` (mock no DI).** Falhou com
+`AddSingleton<IDistributedCache, MockDistributedCache>()`, justificado no próprio
+arquivo por "não temos Redis rodando no ambiente de teste". Medição da janela do
+teste na `:4124`: **14 respostas = teto de 14 passos**, 13 tool calls, com
+`shell`×5 e `git`×1 antes dos 7 `write` — o registro real nunca coube no
+orçamento. Com 20 passos: **PASS 178.3 s, `calls=19`, `di=modern`**
+(`AddStackExchangeRedisCache`). Teto final **24** (medido + margem, faixa da
+suíte 16..28); assert e enunciado intactos, e a mensagem do DI passou a carregar
+`calls=` para diagnóstico. Nada de mock: o artefato é de produção.
+
+**Reset de diagnóstico em produção.** `POST /api/diag/reset?probe=1&files=1` na
+`:4124` devolve `{"ok":true,"event":"diag-reset","probe":true,"files":true,...}`;
+`--only U-diag-reset` → `[test] PASS=1 FAIL=0 SKIP=0`. Dois defeitos de mecânica
+apareceram na execução real e estão em `DRIVER-FIXES #16`: `HttpListener`
+responde **411** a POST sem `Content-Length` (clientes agora mandam corpo vazio)
+e `deploy-pull.sh` reprovava com o Grafana subindo (agora *polling* com teto:
+bridge 30 s, Grafana 60 s).
