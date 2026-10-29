@@ -801,3 +801,23 @@ e não ecoa `ref seq`.
 **Prova.** `units` **134 PASS / 0 FAIL** (pins `U-fs-repair-repeat-escalation` e
 `U-fs-repair-ref-type`), probe compilando `string list ref` + `:=` + `!`, build
 `0 Aviso(s) / 0 Erro(s)`, commit `1b14994`.
+
+## 32. `\count p1 ->` (lambda de Haskell) sem dica: FS0010 de caractere `\` (2026-10-29)
+
+**Sintoma.** 9ª amostra do `E-mission-algo-fs`: `Program.fs(44,16)` com
+`FS0010: Unexpected character '\' in expression` em
+`List.fold (\count p1 -> ...) 0 primes` — **0 reparos**, 26 turnos × 2 etapas.
+
+**Causa.** Nenhuma regra casava `Unexpected character '\'`; a forma de lambda do
+F# (`fun x -> expr`) não estava na tabela nem no reparo.
+
+**Correção.** Regra `FS0010` + `Unexpected character '\'` ensina só
+`List.fold (fun count p1 -> ...) 0 primes` (não ecoa a barra invertida). No
+`FsMini` a forma entra na **linha única** de `FS0010` — o pin
+`U-tails-path-simulation-rules` exige UMA ocorrência por código, e a primeira
+versão (linha separada) fez o teste falhar com 68 PASS / 1 FAIL antes de ir para
+a bancada.
+
+**Prova.** `units` **135 PASS / 0 FAIL**, pin `U-fs-repair-lambda-backslash`,
+probe compilando `List.fold (fun acc x -> ...)`, build `0 Aviso(s) / 0 Erro(s)`,
+commit `f642b91`.
