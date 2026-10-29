@@ -35,6 +35,19 @@ public static class FsSyntaxRepair
                        $"CERTO: {bt.Groups["w"].Value}   (crase simples nao existe em F#: escreva o nome/operador sem crase)";
         }
 
+        // FS0058 (offside): `let` na propria linha do `else` deixa o corpo fora da
+        // coluna permitida. Forma estrutural: auxiliar no nivel do modulo, recebendo
+        // por parametro o que ele usa de fora; no ramo, so' a chamada.
+        if (code == "FS0058")
+        {
+            var nested = Regex.Match(source, @"(?m)^[ \t]*else[ \t]+let[ \t]+\w+.*$");
+            if (nested.Success)
+                return $"ERRADO: {nested.Value.Trim()}\n" +
+                       "CERTO: declare o auxiliar no nivel do modulo, ANTES da funcao que o chama, " +
+                       "recebendo como parametro os valores que hoje vem de fora (ex.: `let rec check n i = ...`); " +
+                       "no ramo, so' a chamada com esses valores";
+        }
+
         // FS0039 com auto-referencia: funcao recursiva sem `rec`. O compilador nomeia
         // o valor que falta; se ele e' um `let` com parametro do proprio arquivo, o que
         // falta e' o `rec` (medido no isolado de 2026-10-29: `let factorial n = ...`).
@@ -62,7 +75,7 @@ public static class FsSyntaxRepair
 
         // So' os codigos que este mapa cobre: erro alheio nao recebe conserto de
         // comprehension (evita "corrigir" a linha errada do fonte).
-        if (code is not ("FS0003" or "FS0010" or "FS0001" or "FS0020" or "FS0751"))
+        if (code is not ("FS0003" or "FS0010" or "FS0001" or "FS0020" or "FS0751" or "FS0058"))
             return "";
 
         // Comprehension de lista: `|` de outra linguagem, `do` sem `yield` e

@@ -368,6 +368,11 @@ internal static class UnitToolBreakerTests
         TestContext.Check(!fsMini.Contains("System.Math"), "FsMini nao carrega mais regra de Math (escopo inteiro)");
         TestContext.Check(!fsMini.Contains("** 2.0"), "FsMini nao ensina potencia float");
         TestContext.Check(!fsMini.Contains("TIPOS NUMERICOS"), "FsMini nao carrega mais a regra int/float");
+        // Estrutura (2026-10-29): `let` aninhado no ramo quebra o offside (FS0058) e
+        // funcao recursiva sem `rec` da FS0039 — as duas formas medidas no isolado.
+        TestContext.Check(fsMini.Contains("ESTRUTURA"), "FsMini ensina onde vive a funcao auxiliar");
+        TestContext.Check(fsMini.Contains("let rec"), "FsMini ensina recursao sem `rec` (FS0039)");
+        TestContext.Check(fsMini.Contains("operador sem crase"), "FsMini ensina operador sem crase (FS3563)");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
         TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
         TestContext.Check(!tail.Contains("CONCATENACAO DE COMANDOS"), "cauda nao duplica doc de shell");
@@ -570,6 +575,13 @@ internal static class UnitToolBreakerTests
             "error FS3563: This is not a valid identifier");
         TestContext.Check(n11.Contains("CERTO: mod") && !n11.Contains("CERTO: `mod`"),
             "FS3563 -> operador sem crase (veio: " + n11.Replace("\n", " | ") + ")");
+
+        // 6b5) `let` aninhado na linha do `else` (FS0058): o auxiliar vai para o
+        // nivel do modulo, recebendo por parametro o que usa de fora.
+        string n12 = Fs("let isPrime n =\n    if n < 2 then false\n    else let rec check i = i * i > n\n    in check 5",
+            "error FS0058: Unexpected syntax or possible incorrect indentation: this token is offside of context started at position (20:10).");
+        TestContext.Check(n12.Contains("ERRADO: else let rec check i") && n12.Contains("nivel do modulo"),
+            "FS0058 -> auxiliar no nivel do modulo (veio: " + n12.Replace("\n", " | ") + ")");
 
         // 6b3) Auto-referencia sem `rec`: o nome que falta e' um `let` com parametro
         // do proprio arquivo -> falta `rec` (nao e' valor nem identificador inventado).

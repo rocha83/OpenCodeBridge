@@ -63,6 +63,7 @@ public static class HarnessTails
         "INTEIROS: `%` so em int; `/` entre dois int TRUNCA o resto (sem erro). " +
         "RECURSAO: funcao que chama a si mesma precisa `let rec f ...`; sem `rec` a auto-chamada sai como FS0039 `nao definido`. " +
         "RESTO E OPERADORES: `mod` e' operador sem crase (`a mod b`); crase simples em nome nao existe em F# (identificador com caractere especial usa CRASE DUPLA). " +
+        "ESTRUTURA: funcao auxiliar vive no NIVEL DO MODULO, antes de quem a chama, recebendo como parametro os valores que usa de fora; `let` dentro de ramo `if/else` (na propria linha do `else`) quebra a indentacao (FS0058) — no ramo so' a CHAMADA. Para 'todo/existe' prefira `List.forall`/`List.exists` com lambda. " +
         "INCONSISTENCIAS PREVISTAS EM F# (codigo: causa -> sintaxe correta): " +
         "FS0010 `[expr | for i in ...]` ('|' nao existe em lista) -> `[for i in 1 .. n-1 -> expr]` ou `[for i in ... do yield expr]`. " +
         "FS0010/FS0001 `do` dentro de LISTA sem `yield` (a lista vira `unit`) -> declare o elemento com `->` ou com `do yield`; `do` sozinho nao. " +
