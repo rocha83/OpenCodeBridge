@@ -22,6 +22,12 @@ internal static class UnitToolHelpTests
         TestContext.Check(shell.StartsWith("executa", StringComparison.Ordinal), "descricao original preservada");
         TestContext.Check(shell.Contains(ToolHelp.Marker, StringComparison.Ordinal), "help marcado no schema chat");
         TestContext.Check(shell.Contains("cd dir && cmd", StringComparison.Ordinal), "help de shell cobre cd");
+        // Pacote: a ordem e' o erro medido no E-mission-tools de 2026-10-29 (o
+        // modelo passou a origem no lugar do .zip e o zip recusou 4 vezes).
+        TestContext.Check(shell.Contains("zip -qr pacote.zip .", StringComparison.Ordinal),
+            "help de shell ensina a ordem do pacote (o .zip vem primeiro)");
+        TestContext.Check(shell.Contains("Zip file structure invalid", StringComparison.Ordinal),
+            "help de shell explica o sintoma do zip em prosa");
         TestContext.Check(chat[1]!["function"]!["description"]!.GetValue<string>() == "original",
             "tool sem help nao e alterada");
         TestContext.Check(chat[0]!["function"]!["parameters"]!["properties"]!["command"] is not null,

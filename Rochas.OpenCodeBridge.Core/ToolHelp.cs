@@ -20,9 +20,9 @@ public static class ToolHelp
 
     static readonly Dictionary<string, string> Docs = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["shell"] = """USO: uma chamada = um comando; `cd` não persiste (use `cd dir && cmd`); script = write + `bash arquivo`; não simule saída. Ex.: {"command":"ls -la"}.""",
-        ["bash"] = """USO: uma chamada = um comando; `cd` não persiste (use `cd dir && cmd`); script = write + `bash arquivo`; não simule saída. Ex.: {"command":"ls -la"}.""",
-        ["sh"] = """USO: uma chamada = um comando; `cd` não persiste (use `cd dir && cmd`); script = write + `bash arquivo`; não simule saída. Ex.: {"command":"ls -la"}.""",
+        ["shell"] = """USO: uma chamada = um comando; `cd` não persiste (use `cd dir && cmd`); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (o nome do .zip vem primeiro; erro `Zip file structure invalid` = o primeiro argumento não é um .zip válido — use um nome novo); não simule saída. Ex.: {"command":"ls -la"}.""",
+        ["bash"] = """USO: uma chamada = um comando; `cd` não persiste (use `cd dir && cmd`); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (o nome do .zip vem primeiro; erro `Zip file structure invalid` = o primeiro argumento não é um .zip válido — use um nome novo); não simule saída. Ex.: {"command":"ls -la"}.""",
+        ["sh"] = """USO: uma chamada = um comando; `cd` não persiste (use `cd dir && cmd`); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (o nome do .zip vem primeiro; erro `Zip file structure invalid` = o primeiro argumento não é um .zip válido — use um nome novo); não simule saída. Ex.: {"command":"ls -la"}.""",
         ["write"] = """USO: arquivo novo ou reescrita integral; mudança pontual = edit; conteúdo completo, sem stub. Ex.: {"path":"a.txt","content":"..."}.""",
         ["read"] = """USO: leia antes de editar; arquivo grande = offset/limit quando o schema expuser; binário = shell+python3. Ex.: {"path":"a.txt"}.""",
         ["edit"] = """USO: `oldString` exato e único; para ACRESCENTAR, `newString` = oldString + trecho novo, e o `oldString` precisa reaparecer intacto dentro do `newString`; se a intenção era preservar um trecho, confirme com read/grep DEPOIS da edição. Ex.: {"path":"a.txt","oldString":"x","newString":"y"}.""",
