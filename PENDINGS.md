@@ -47,7 +47,7 @@ fluxo (falha por instrumentação, não por assertiva semântica).
   atestação no log; um teste `opencode` **não** é afetado.
 - Prova no `events.jsonl`/log do run e no `[test] PASS/FAIL`.
 
-## P2. Guard de tool call idêntica ENTRE turnos (anti-repeat de no-progresso)
+## P2. Guard de tool call idêntica ENTRE turnos (anti-repeat de no-progresso) — FEITO 2026-10-29
 
 **Pedido** — o anti-repeat atual (`ContentAntiRepeat`) compara repetição *dentro
 do stream* (texto/args da mesma resposta). Chamada **idêntica entre turnos** —
@@ -74,3 +74,9 @@ detectada, e o modelo queima o orçamento de turnos.
 
 **Aceite** — unit que prova os dois ramos (com e sem `role: tool` anterior);
 `E-mission-tools` isolado sem par `edit`/`shell` repetido no trail do `_mission.log`.
+
+**Estado: implementado.** `Core/ToolCallRepeat` + hook em `BuildChatRequest`
+(evento `call-repeat-nudge`), unit `U-toolcall-repeat-notice`. Aceite parcial
+cumprido: unit cobrindo os dois ramos (com e sem `role: tool`); o trail do
+`E-mission-tools` segue sem par `edit`/`shell` repetido. Registro em
+`docs/DRIVER-FIXES.md` §22(b).

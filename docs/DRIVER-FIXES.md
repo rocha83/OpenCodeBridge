@@ -514,3 +514,56 @@ bridge-web grafana-server`, `/api/status` e `/api/health` (4800) respondendo e
 **Regra derivada.** Rebuild/deploy no PROD é do usuário dono do repo; rodar
 `dotnet build` como `root` ali envenena o próximo pull. Se acontecer, o conserto
 é `chown -R` + `git checkout -- .`, nunca `reset --hard`.
+
+## 22. Mission-tools: pacote saiu como `delivery.zip` e o laço entre turnos gastava o orçamento (2026-10-29)
+
+**Sintoma (a).** `E-mission-tools` FAIL em `assert: entrega.zip gerado` com o
+workspace contendo `delivery.zip` (4,4 MB) na raiz — entrega pronta, reprovada
+pelo **nome** do arquivo.
+
+**Causa (a).** O assert tratava o nome do pacote como contrato. Não é: o
+enunciado pede "gere entrega.zip" e o modelo traduziu para `delivery.zip`; medir
+tradução de palavra não diz nada sobre versionar/enpacotar. O nudge de "encerrou
+sem tool call" também só dizia "verifique o que falta".
+
+**Correção (a).** O pacote passa a ser o contrato, não o nome: o assert aceita
+**qualquer** `.zip` na raiz (`ws/*.zip` ou `ws/mfs/*.zip`) e imprime o nome que
+saiu; enunciado e nudge dizem "um pacote .zip, o nome não importa" (decisão de
+2026-10-29). O orçamento da fase foi 12 → 14 turnos (as 5 chamadas `git` com
+erro custavam 5) e o que continua exigido é o versionamento (`init`, `add`,
+`commit`) e o pacote com a tool `shell`.
+
+**Sintoma (b).** Duas rodadas do mission-tools queimaram 16–22 turnos em pares
+`edit`+`shell` com os MESMOS args e o mesmo `error FS0010` devolvido; o F# só
+fechava quando o retry (2ª tentativa) reescrevia o arquivo do zero.
+
+**Causa (b).** O anti-repeat compara repetição *dentro do stream* (texto/args da
+mesma resposta). Chamada idêntica **entre turnos** não é olhada por ninguém: cada
+request chega com histórico novo e a bridge repassa ao upstream sem avaliar se o
+modelo está parado.
+
+**Correção (b).** `Core/ToolCallRepeat` (P2 do `PENDINGS.md`): quando os dois
+últimos `assistant` do histórico têm a mesma assinatura (`name` + args
+canonicalizados) **e** o `role: tool` do turno anterior traz erro, a bridge anexa
+um aviso único (`BRIDGE (call repetida)`) antes de enviar. O aviso **não repete a
+descrição do erro** (o modelo já a tem em `role: tool`); aponta a ação que muda o
+estado (`read` do arquivo atual / trocar args). Sem `role: tool` (call cortada,
+salvage) nada é anexado — ali quem entrega o erro é o `ToolCallRepair`. Log:
+evento `call-repeat-nudge`.
+
+**Sintoma (c).** `U-diag-reset-panel` passou a FAILAR (`painel lista o step
+publicado`: contou 2) depois de um run isolado.
+
+**Causa (c).** O reset de painel só existia no `WarTemplate` (1× por bateria).
+Run manual/isolado não zerava nada, então a linha `E-mission-tools` do run
+anterior sobrevivia e entrava na contagem do teste seguinte.
+
+**Correção (c).** O runner (`Program.cs`) zera o painel no início de qualquer run
+fora do driver (`WAR_STEP` ausente → `?probe=1&files=1&panel=1`); o `step_start`
+continua só `?files=1`.
+
+**Prova.** `E-mission-tools` isolado **PASS 333,1 s** (com o `PRIMOS`/FsMini novo)
+e **PASS 160,6 s** (segunda rodada, 5 turnos de git/zip); units
+`PASS=121 FAIL=0 SKIP=6` com `U-toolcall-repeat-notice` (repetição+erro, resultado
+OK, args diferentes, primeiro turno, idempotência, canonicalização de espaçamento)
+e `U-diag-reset-panel` verdes.
