@@ -62,7 +62,9 @@ public static class HarnessTails
         "LISTA e ARRAY: `[ 1; 2; 3 ]` e' lista e combina com `List.sum`, `List.map (fun x -> x * x)`, `List.filter (fun x -> x > 0)`, `List.fold (fun acc x -> acc + x) 0`, `List.length`, `List.forall`, `List.exists`; `[| 1; 2; 3 |]` e' array de valores fixos e combina com `Array.sum`, `Array.map`, `Array.length`. " +
         "RANGE: `a .. b`; com passo, o PASSO e' o SEGUNDO termo. " +
         "INTEIROS: `%` e' resto; `/` entre dois int trunca. " +
-        "RECURSAO: `let rec f n = if n <= 1 then 1 else n * f (n - 1)`. " +
+        "IGUALDADE: `=` compara dois valores e `<>` testa a diferenca. " +
+        "LAYOUT: o recuo define o bloco; cada expressao do corpo fica alinhada sob o `=`. " +
+        "RETORNO: o valor da funcao e' a ULTIMA expressao do corpo (`printfn` so' imprime, nao devolve). " +        "RECURSAO: `let rec f n = if n <= 1 then 1 else n * f (n - 1)`. " +
         "AUXILIAR: vive no NIVEL DO MODULO, antes de quem a chama, e recebe por parametro o que usa de fora: `let isPrime n = n > 1 && List.forall (fun d -> n % d <> 0) [2 .. int (Math.Sqrt(float n))]`; no ramo `if/else` vai so' a chamada. " +
         "PRIMOS: divisores candidatos de 2 ate a raiz; o intervalo de ENTRADA pode comecar em 1. " +
         "FATORIAL/PRODUTO: `List.fold (fun acc x -> acc * x) 1 [1..10]`, sem recursao. " +

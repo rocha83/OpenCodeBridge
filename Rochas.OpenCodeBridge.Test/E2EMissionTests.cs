@@ -462,8 +462,18 @@ internal static class E2EMissionTests
         string sys = lang == "F#"
             ? sysBase + "\n\n" + global::Rochas.OpenCodeBridge.Core.HarnessTails.FsMini
             : sysBase;
+        bool dump = Environment.GetEnvironmentVariable("TCTX_DUMP") == "1";
+        if (dump)
+            Console.WriteLine($"  [algo:{lang}] system={sys.Length} chars; regras F# presentes={sys.Contains("F# MINI")}");
+        string feedback = "";
+        // Duas tentativas com contexto resetado e a falha REALIMENTADA, como no
+        // mission-tools: um programa inteiro em F# custa mais de uma rodada. O aceite
+        // (metas e formato) nao muda entre as tentativas.
+        for (int attempt = 1; attempt <= 2; attempt++)
+        {
         var hist = new JsonArray(new JsonObject { ["role"] = "system", ["content"] = sys });
-        hist.Add(new JsonObject { ["role"] = "user", ["content"] = prompt });
+        hist.Add(new JsonObject { ["role"] = "user", ["content"] = prompt + feedback });
+        int prosaSeguida = 0;
         for (int turn = 0; turn < turns; turn++)
         {
             JsonObject r;
@@ -479,13 +489,23 @@ internal static class E2EMissionTests
             }
             var m = r["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message (" + lang + ")");
             var calls = m["tool_calls"]?.AsArray();
+            if (dump)
+                Console.WriteLine($"  [algo:{lang}] T{turn}: calls={calls?.Count ?? 0} texto={(m["content"]?.GetValue<string>() ?? "").Trim().Length} chars");
             if (calls is null || calls.Count == 0)
             {
                 hist.Add(new JsonObject { ["role"] = "assistant", ["content"] = m["content"]?.GetValue<string>() ?? "" });
-                if (turn >= 4) break;
-                hist.Add(new JsonObject { ["role"] = "user", ["content"] = "Sem prosa: leia a saida e emita a proxima tool call." });
+                // Um turno sem tool call nao e' desistencia: pode ser o aviso mecanico
+                // da bridge (BRIDGE (...)) que o modelo repetiu. Antes o laco parava no
+                // T4 com 26 turnos sobrando (medido 2026-10-29); agora a cutucada volta
+                // e so' duas prosa seguida encerram a tentativa.
+                prosaSeguida++;
+                if (dump)
+                    Console.WriteLine($"  [algo:{lang}] T{turn} sem tool call ({prosaSeguida}): {(m["content"]?.GetValue<string>() ?? "").Replace("\n", " | ")[..Math.Min(200, (m["content"]?.GetValue<string>() ?? "").Replace("\n", " | ").Length)]}");
+                if (prosaSeguida >= 3) break;
+                hist.Add(new JsonObject { ["role"] = "user", ["content"] = "Sem prosa: emita UMA tool call valida (uma por vez)." });
                 continue;
             }
+            prosaSeguida = 0;
             var fc = new JsonArray();
             foreach (var c in calls)
                 fc.Add(new JsonObject { ["id"] = c?["id"]?.GetValue<string>() ?? "", ["type"] = "function",
@@ -500,6 +520,24 @@ internal static class E2EMissionTests
                 catch { a = new JsonObject(); }
                 string fn = c?["function"]?["name"]?.GetValue<string>() ?? "";
                 string res = await ExecTool(ws, model, fn, a);
+                // Reparo in-flow: erro de sintaxe F# volta com a forma correta concreta
+                // (mesma mecanica do mission-tools, texto no Core) para o modelo corrigir
+                // no MESMO turno, em vez de repetir o cabecalho colado (medido 2026-10-29).
+                if (lang == "F#" && res.Contains("error FS", StringComparison.Ordinal))
+                {
+                    string curFs = File.Exists(Path.Combine(ws, "mfs", file)) ? File.ReadAllText(Path.Combine(ws, "mfs", file)) : "";
+                    string hint = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(curFs, res);
+                    if (hint.Length > 0)
+                    {
+                        res += "\n\n" + hint;
+                        if (dump) Console.WriteLine($"  [algo:{lang}] T{turn} reparo: {hint.Replace("\n", " | ")}");
+                    }
+                }
+                if (dump)
+                {
+                    string seen = res.StartsWith("ERRO", StringComparison.Ordinal) ? res : "ok " + res;
+                    Console.WriteLine($"  [algo:{lang}] T{turn} {fn} args={a.ToJsonString()[..Math.Min(120, a.ToJsonString().Length)]} -> {seen.Replace("\n", " | ")[..Math.Min(300, seen.Replace("\n", " | ").Length)]}");
+                }
                 hist.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = res });
                 if (fn == "shell" && AlgoOk(res)) done = true;
             }
@@ -509,7 +547,14 @@ internal static class E2EMissionTests
         string srcPath = Path.Combine(ws, dir, file);
         string src = File.Exists(srcPath) ? File.ReadAllText(srcPath) : "";
         string output = await RunShell(ws, model, "dotnet run --project " + project + " -c Release");
-        return (src, output);
+        if (dump)
+            Console.WriteLine($"  [algo:{lang}] tentativa {attempt}: {(AlgoOk(output) ? "bateu as metas" : "fora das metas")} | {output.Replace("\n", " | ")[..Math.Min(180, output.Replace("\n", " | ").Length)]}");
+        if (AlgoOk(output) || attempt == 2) return (src, output);
+        // Falha realimentada para a tentativa seguinte: a saida real, sem dica de passo.
+        feedback = "\n\nA saida anterior nao bateu. Saida real:\n" + (output.Length > 900 ? output[..900] : output)
+                 + "\nCorrija " + Path.Combine(ws, dir, file) + " e rode de novo; as metas e o formato continuam os mesmos.";
+        }
+        return (string.Empty, string.Empty);
     }
 
     static bool AlgoOk(string output)

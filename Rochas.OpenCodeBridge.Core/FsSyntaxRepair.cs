@@ -40,7 +40,7 @@ public static class FsSyntaxRepair
         // junta `module X` e `open Y`, o compilador le o resto como corpo do modulo
         // e o topo vira expressao — o `let` seguinte fica fora da posicao (medido no
         // L4 de 2026-10-29, step algo-bridge). A dica mostra SO' a forma que compila.
-        if (code == "FS0010" && Regex.IsMatch(compilerError, @"'let'|'use'"))
+        if (code == "FS0010" && Regex.IsMatch(compilerError, @"'let'|'use'|'open'"))
         {
             var glued = Regex.Match(source,
                 @"(?m)^[ \t]*module[ \t]+(?<m>[\w\.]+)[ \t]+(?<rest>(?:open[ \t]+[\w\.]+[ \t]*(?:[;,][ \t]*)?)+)$");

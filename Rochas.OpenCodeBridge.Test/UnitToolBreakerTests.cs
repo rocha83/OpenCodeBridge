@@ -660,6 +660,14 @@ internal static class UnitToolBreakerTests
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
             "module Program\n\nopen System\n\nlet soma a b = a + b\n", err) == "",
             "cabecalho ja' correto nao recebe dica");
+        // O MESMO cabecalho colado reaparece como 'open' inesperado quando a linha de
+        // baixo tambem e' um open (medido no isolado de 2026-10-29, T2/T3).
+        string asOpen = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "module Program open System\nopen System.Linq\n\nlet x = 1\n",
+            "error FS0010: Unexpected keyword 'open' in implementation file");
+        TestContext.Check(asOpen.Contains("module Program\nopen System"),
+            "'open' inesperado no cabecalho colado -> mesma dica (veio: " + asOpen.Replace("\n", " | ") + ")");
+        TestContext.Check(!asOpen.Contains("module Program open"), "a dica do 'open' tambem nao repete a forma colada");
         return Task.CompletedTask;
     }
 
