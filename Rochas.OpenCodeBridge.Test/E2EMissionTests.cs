@@ -332,7 +332,7 @@ internal static class E2EMissionTests
             var att = await TestContext.GetObj(bridge + "/api/test/last-system");
             LogT($"[F#] atestacao system: {att.ToJsonString()}");
             TestContext.Check(att["fsmini"]?.GetValue<bool>() == true, "F# atestado: system final contem FsMini (modelo nao orfao)");
-            TestContext.Check(att["tipos_regra"]?.GetValue<bool>() == true, "F# atestado: regra TIPOS NUMERICOS no system enviado");
+            TestContext.Check(att["int_regra"]?.GetValue<bool>() == true, "F# atestado: regra INTEIROS no system enviado");
             TestContext.Check(att["tail_scope"]?.GetValue<string>() == "all", "F# atestado: tail_scope=all na bridge");
             TestContext.Check(att["harness_tails"]?.GetValue<bool>() == true, "F# atestado: harness_tails=on na bridge");
         }

@@ -24,6 +24,23 @@ public static class FsSyntaxRepair
         // blob fazia a dica de array/lista responder a um FS0039 (medido 2026-10-29).
         string code = FirstCode(compilerError);
 
+        // FS0039 com auto-referencia: funcao recursiva sem `rec`. O compilador nomeia
+        // o valor que falta; se ele e' um `let` com parametro do proprio arquivo, o que
+        // falta e' o `rec` (medido no isolado de 2026-10-29: `let factorial n = ...`).
+        if (code == "FS0039")
+        {
+            var miss = Regex.Match(compilerError, @"constructor '([^']+)' is not defined");
+            if (miss.Success)
+            {
+                string name = miss.Groups[1].Value;
+                bool fn = Regex.IsMatch(source, @"^\s*let\s+" + Regex.Escape(name) + @"\s+\w", RegexOptions.Multiline);
+                bool hasRec = Regex.IsMatch(source, @"^\s*let\s+rec\s+" + Regex.Escape(name) + @"\b", RegexOptions.Multiline);
+                if (fn && !hasRec)
+                    return $"ERRADO: let {name} ...\nCERTO: let rec {name} ...   (a auto-chamada exige `rec`)";
+            }
+            return "";
+        }
+
         // FS0001 `List.*` recebendo `[| ... |]`: o compilador diz lista esperada e
         // array recebido. A dica nomeia a lista (`[...]`) e o `Array.*` correto.
         if (code == "FS0001"

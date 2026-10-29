@@ -564,7 +564,7 @@ internal static partial class Program
             ["model"] = model ?? "",
             ["chars"] = systemText.Length,
             ["fsmini"] = systemText.Contains("F# MINI", StringComparison.Ordinal),
-            ["tipos_regra"] = systemText.Contains("TIPOS NUMERICOS", StringComparison.Ordinal),
+            ["int_regra"] = systemText.Contains("INTEIROS", StringComparison.Ordinal),
             ["env"] = systemText.Contains("<env>", StringComparison.Ordinal),
             ["tail_scope"] = TailScope,
             ["harness_tails"] = TailsEnabled,

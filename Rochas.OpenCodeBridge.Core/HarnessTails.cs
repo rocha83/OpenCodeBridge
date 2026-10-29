@@ -61,6 +61,7 @@ public static class HarnessTails
         "COMPREHENSION e' SEMPRE de LISTA (`[for x in xs -> expr]`); `[| a; b |]` e' literal de ARRAY de valores fixos e nao aceita `for` dentro. " +
         "RANGE COM PASSO: sao TRES termos e a ordem e' inicio, PASSO, fim — o PASSO e' o SEGUNDO termo, entre os dois `..`, e o TERCEIRO e' o fim (`[for i in 1 .. 2 .. n-1]` = 1, 3, .., n-1). Passo e fim trocados ainda compilam e produzem resultado errado SEM erro do compilador. " +
         "INTEIROS: `%` so em int; `/` entre dois int TRUNCA o resto (sem erro). " +
+        "RECURSAO: funcao que chama a si mesma precisa `let rec f ...`; sem `rec` a auto-chamada sai como FS0039 `nao definido`. " +
         "INCONSISTENCIAS PREVISTAS EM F# (codigo: causa -> sintaxe correta): " +
         "FS0010 `[expr | for i in ...]` ('|' nao existe em lista) -> `[for i in 1 .. n-1 -> expr]` ou `[for i in ... do yield expr]`. " +
         "FS0010/FS0001 `do` dentro de LISTA sem `yield` (a lista vira `unit`) -> declare o elemento com `->` ou com `do yield`; `do` sozinho nao. " +

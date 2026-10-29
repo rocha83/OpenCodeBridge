@@ -565,6 +565,14 @@ internal static class UnitToolBreakerTests
             "error FS0039: The value or constructor 'data' is not defined.\nerror FS0001: This expression was expected to have type ''a list' but here has type ''b array'") == "",
             "primeiro erro FS0039 silencia (nao responde com dica de array)");
 
+        // 6b3) Auto-referencia sem `rec`: o nome que falta e' um `let` com parametro
+        // do proprio arquivo -> falta `rec` (nao e' valor nem identificador inventado).
+        string n10 = Fs("let factorial n = if n = 0 then 1 else n * factorial (n - 1)\nlet x = factorial 10",
+            "error FS0039: The value or constructor 'factorial' is not defined.");
+        TestContext.Check(n10.Contains("CERTO: let rec factorial"), "FS0039 de auto-referencia -> `let rec` (veio: " + n10.Replace("\n", " | ") + ")");
+        TestContext.Check(Fs("let rec f n = if n = 0 then 1 else n * f (n - 1)",
+            "error FS0039: The value or constructor 'f' is not defined.") == "", "ja' com `rec` nao e' tocado");
+
         // 6b) Filtro legitimo sem operador NAO pode ser descartado (perderia a
         // condicao em silencio: compila e calcula errado).
         string n5 = Fs("let a = [for x in xs do isAdult x -> x]", fs0010Arrow);
