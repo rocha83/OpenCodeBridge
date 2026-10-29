@@ -25,27 +25,11 @@ internal static class E2EToolsFullTests
     /// buscar, editar, segundo commit e historico_git.log. O aceite e o artefato
     /// em disco; no bridge tambem confere as tools usadas.
     /// </summary>
-    static async Task AgentScenario()
+    static async Task AgentAttempt(string dir, string feedback)
     {
-        // Base propria do teste (mint): /tmp/opencode/toolsfull e criado pela
-        // bridge (root) e o teste nao pode criar subdiretorios la.
-        string dir = Path.Combine("/tmp/opencode/toolsfull-agent",
-            "agent-" + Environment.ProcessId + "-" + TestContext.Mode + "-" + DateTime.Now.ToString("HHmmss"));
-        try
-        {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
-        catch (Exception ex)
-        {
-            // Conteudo criado pela bridge (root) pode nao ser removivel pelo teste:
-            // o dir novo e unico por horario, entao seguir sem apagar e seguro.
-            Console.WriteLine($"  [toolsfull:agent] cleanup ignorado: {ex.GetType().Name}");
-        }
-        Directory.CreateDirectory(dir);
-
         // Enunciado de TAREFA, nao de harness: sem path, sem nome de tool e sem
         // coringa de coordenada. O modelo flui; o harness resolve o cwd.
-        const string prompt =
+        const string basePrompt =
             "Utilize a pasta atual como espaco de trabalho: crie a subpasta dentro dela e mantenha todos os " +
             "arquivos do trabalho dentro desta pasta; nao crie nada fora dela. " +
             "1. Crie uma pasta com nome aleatorio e, dentro dela, um arquivo .txt tambem com nome aleatorio, " +
@@ -66,6 +50,9 @@ internal static class E2EToolsFullTests
             "(b) use grep para localizar a linha da data dentro do arquivo ANTES de editar, garantindo que ela sera preservada; " +
             "(c) use webfetch ou fetch para navegar na internet buscar o clima. " +
             "Sem usar glob e grep o teste falha.";
+        // A retentativa recebe a FALHA do aceite (contrato observavel), nunca a
+        // mecanica do teste; a 1a tentativa e o enunciado puro.
+        string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
         var (text, calls) = await TestContext.ToolAgent(prompt, 28, dir);
 
         // O modelo escolhe o nome da pasta: o aceite localiza o repo em qualquer nivel.
@@ -133,6 +120,56 @@ internal static class E2EToolsFullTests
             TestContext.Check(web, $"[toolsfull:agent] busca web executada (calls={string.Join(";", calls)})");
         }
         Console.WriteLine($"  [toolsfull:agent] repo={repo} ({calls.Count} calls, texto={text.Length} chars)");
+    }
+
+    /// <summary>
+    /// Enunciado de 4 passos encadeados: o modelo erra a ORDEM ou pula passo. Mesmo
+    /// padrao do mission-tools — 3 tentativas com a falha do aceite realimentada e
+    /// pasta nova por tentativa. As assertivas sao identicas em toda tentativa.
+    /// </summary>
+    static async Task AgentScenario()
+    {
+        string feedback = "";
+        Exception? last = null;
+        for (int attempt = 1; attempt <= 3; attempt++)
+        {
+            string dir = NewAgentDir(attempt);
+            try
+            {
+                await AgentAttempt(dir, feedback);
+                return;
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+                Console.WriteLine($"  [toolsfull:agent] tentativa {attempt} falhou: {ex.Message.Split('\n')[0]}");
+                feedback = "\n\nTENTATIVA ANTERIOR FALHOU: " + ex.Message
+                    + "\nRefaca do zero nesta pasta nova, na ORDEM dos passos 1..4 e sem pular nenhum passo.";
+            }
+        }
+        throw last!;
+    }
+
+    /// <summary>Pasta propria por tentativa (a bridge cria como root; nao apagar).</summary>
+    /// <param name="attempt">Numero da tentativa.</param>
+    /// <returns>Path da pasta criada.</returns>
+    static string NewAgentDir(int attempt)
+    {
+        string dir = Path.Combine("/tmp/opencode/toolsfull-agent",
+            "agent-" + Environment.ProcessId + "-" + TestContext.Mode + "-"
+            + DateTime.Now.ToString("HHmmss") + "-t" + attempt);
+        try
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+        catch (Exception ex)
+        {
+            // Conteudo criado pela bridge (root) pode nao ser removivel pelo teste:
+            // o dir novo e unico por horario, entao seguir sem apagar e seguro.
+            Console.WriteLine($"  [toolsfull:agent] cleanup ignorado: {ex.GetType().Name}");
+        }
+        Directory.CreateDirectory(dir);
+        return dir;
     }
 
     public static async Task FullTools()
