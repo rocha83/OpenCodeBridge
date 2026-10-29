@@ -549,3 +549,17 @@ apenas `*.journey.json` e `*.opencode.meta.json` (sem raw) ou usar
   qualquer caminho de rede — mede uso de rede, nao a escolha da ferramenta.
 - `ToolAgent` (nudge x2): segunda cutucada pede conclusao dos passos quando o
   modelo para em prosa; nao responde a tarefa pelo modelo.
+
+## 9. Temperaturas dos perfis — tabela restaurada (2026-10-29)
+
+Base de medição da WAR/gate: **Build/Scripter/Exec 0.1** (thinking off),
+**Plan/Orch 0.3** (events), **MoE 0.5** (events); request sem sufixo cai no
+global **0.2**. É a escala anterior ao `50138b8`, que subiu a tabela inteira
+para 0.4/0.7/0.2 sem medição que a justificasse. Fonte única:
+`Core/RoleProfiles.cs`; espelho obrigatório: `appsettings.json` (sem rebuild do
+runtime a bridge continua no valor antigo). Atestação: `temperature_source=profile`
+no evento `response` do log da bridge.
+
+Efeito no bench: cenário com tools roda a 0.1 (menos variação de amostragem);
+texto puro (`-plan`, sem tools) roda a 0.3, que é onde a variação de elisão
+apareceu no `E-ent-crud-saleinvoice`.

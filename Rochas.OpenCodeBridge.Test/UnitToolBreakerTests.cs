@@ -419,7 +419,7 @@ internal static class UnitToolBreakerTests
         TestContext.Check(Math.Abs(t1 - 0.5) < 0.0001, $"temperatura do cliente preservada (veio {t1})");
         TestContext.Check(s1 == "request", $"procedencia request (veio '{s1}')");
 
-        // 2) cliente omite: vale o perfil do role (-build = 0.2)
+        // 2) cliente omite: vale o perfil do role (-build = 0.1)
         var semTemp = await TestContext.PostObj(TestContext.Bridge + "/api/translate", new JsonObject
         {
             ["model"] = model,

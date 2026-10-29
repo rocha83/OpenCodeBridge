@@ -12,7 +12,7 @@ expresso (componente, cenário de teste e harness) fica no `README.md`.
 | GPU2 `:4110` | `Gemma4-E4B-UD-Q3` — Huihui Gemma4 E4B **abliterated** `IQ3_XXS`, **text-only** | `-c 114688 -np 2` = **2×56k** | (medir no host; chroot sem CUDA) |
 | CPU `:4120` | `Gemma4-E4B-Q4` — mesmo E4B base, **CPU puro** (`-ngl 0`) | `-c 131072 -np 1` = **1×128k** | 0 (RAM) |
 
-Temperatura: CLI base **0.2**; perfis do runtime (`appsettings.json`) **plan 0.4 / build 0.2 / orch 0.4 / moe 0.7 / scripter 0.2 / exec 0.2** (escala baixa **0.2**, média **0.4**, alta **0.7**); o `temperature` do modelo no `opencode.json` segue a mesma escala.
+Temperatura: CLI base **0.2**; perfis do runtime (`appsettings.json`) **plan 0.3 / build 0.1 / orch 0.3 / moe 0.5 / scripter 0.1 / exec 0.1** (escala baixa **0.1**, média **0.3**, alta **0.5**); o `temperature` do modelo no `opencode.json` segue a mesma escala.
 Detalhes de remaster em `/media/mint/Linux/remaster-update6.md`.
 
 **Dev × produção.** O desenvolvimento acontece em
@@ -123,20 +123,20 @@ unit (`--temperature`/`--thinking`); id com sufixo **vence**.
 | id | temp | thinking | papel |
 |---|---|---|---|
 | `Gemma4-E4B-Q4` | 0.5 | events | global GPU1 (base da unit) |
-| `Gemma4-E4B-Q4-plan` | 0.4 | events | planeja |
-| `Gemma4-E4B-Q4-build` | 0.2 | off | executa |
-| `Gemma4-E4B-Q4-orch` | 0.4 | events | orquestra/delega |
-| `Gemma4-E4B-Q4-moe` | 0.7 | events | explora/generalista |
-| `Gemma4-E4B-Q4-scripter` | 0.2 | off | compõe scripts |
+| `Gemma4-E4B-Q4-plan` | 0.3 | events | planeja |
+| `Gemma4-E4B-Q4-build` | 0.1 | off | executa |
+| `Gemma4-E4B-Q4-orch` | 0.3 | events | orquestra/delega |
+| `Gemma4-E4B-Q4-moe` | 0.5 | events | explora/generalista |
+| `Gemma4-E4B-Q4-scripter` | 0.1 | off | compõe scripts |
 | `Gemma4-E4B-UD-Q3` | 0.5 | events | global GPU2 (base da unit) |
-| `Gemma4-E4B-UD-Q3-plan` | 0.4 | events | planeja |
-| `Gemma4-E4B-UD-Q3-build` | 0.2 | off | executa |
-| `Gemma4-E4B-UD-Q3-moe` | 0.7 | events | explora |
-| `Gemma4-E4B-UD-Q3-scripter` | 0.2 | off | compõe/valida scripts |
-| `Gemma4-E4B-UD-Q3-exec` | 0.2 | off | valida **e executa** scripts |
+| `Gemma4-E4B-UD-Q3-plan` | 0.3 | events | planeja |
+| `Gemma4-E4B-UD-Q3-build` | 0.1 | off | executa |
+| `Gemma4-E4B-UD-Q3-moe` | 0.5 | events | explora |
+| `Gemma4-E4B-UD-Q3-scripter` | 0.1 | off | compõe/valida scripts |
+| `Gemma4-E4B-UD-Q3-exec` | 0.1 | off | valida **e executa** scripts |
 
-Escala de temperatura: **0.2 baixa (execução) / 0.4 média (planejamento) / 0.7 alta (exploração)**;
-o global da unit é **0.2**. O `temperature` do `opencode.json` (0.4/0.2/0.4/0.7/0.2)
+Escala de temperatura: **0.1 baixa (execução) / 0.3 média (planejamento) / 0.5 alta (exploração)**;
+o global da unit é **0.2**. O `temperature` do `opencode.json` (0.3/0.1/0.3/0.5/0.1)
 segue a mesma escala.
 O thinking off vem do perfil (build/scripter/exec); as units atuais não usam
 `--thinking-off-roles`.
@@ -147,16 +147,16 @@ O thinking off vem do perfil (build/scripter/exec); as units atuais não usam
 
 | agent | model | temp |
 |---|---|---|
-| `plan.md` | `openai/Gemma4-E4B-Q4-plan` | 0.4 |
-| `build.md` | `openai/Gemma4-E4B-Q4-build` | 0.2 |
-| `orch.md` | `openai/Gemma4-E4B-Q4-orch` | 0.4 |
-| `moe.md` | `openai/Gemma4-E4B-Q4-moe` | 0.7 |
-| `scripter.md` | `openai/Gemma4-E4B-Q4-scripter` | 0.2 |
-| `exec.md` | `llama/Gemma4-E4B-UD-Q3-exec` | 0.2 |
-| subagente `task` | `llama/Gemma4-E4B-UD-Q3-exec` | 0.2 |
+| `plan.md` | `openai/Gemma4-E4B-Q4-plan` | 0.3 |
+| `build.md` | `openai/Gemma4-E4B-Q4-build` | 0.1 |
+| `orch.md` | `openai/Gemma4-E4B-Q4-orch` | 0.3 |
+| `moe.md` | `openai/Gemma4-E4B-Q4-moe` | 0.5 |
+| `scripter.md` | `openai/Gemma4-E4B-Q4-scripter` | 0.1 |
+| `exec.md` | `llama/Gemma4-E4B-UD-Q3-exec` | 0.1 |
+| subagente `task` | `llama/Gemma4-E4B-UD-Q3-exec` | 0.1 |
 
 As temps acima são as do `opencode.json`; no runtime o **perfil da bridge**
-(plan/orch 0.4, build/scripter/exec 0.2, moe 0.7) vence pelo sufixo do id.
+(plan/orch 0.3, build/scripter/exec 0.1, moe 0.5) vence pelo sufixo do id.
 
 O Exec é **só GPU2** (como Plan/Build/Orch são só GPU1). O Scripter **valida**
 (`bash -n`) sem executar; o Exec **executa** (`bash <arquivo>`). Subagente
@@ -839,7 +839,7 @@ irredutíveis e a concisão; nada de orquestração/temperatura/harness — no m
 modo `bridge` é `MainHarness` + tails (só as tails incrementam).
 
 MODELOS LOCAIS (OpenCode via bridges C# :4124/:4125 → llama TurboQuant, nada vai p/ nuvem). Apenas 2 modelos para as 6 roles:
-- `openai/Gemma4-E4B-Q4` (bridge GPU :4124 → llama :4100 Gemma4 E4B base Q4_K_M 128k, temp 0.3, thinking events): base das roles Plan, Build, Orch, MoE e Scripter — a temperatura por role fica no `agents/*.md` (Plan/Orch 0.4, Build/Scripter 0.2, MoE 0.7). Tool calling nativo (template peg-gemma4).
+- `openai/Gemma4-E4B-Q4` (bridge GPU :4124 → llama :4100 Gemma4 E4B base Q4_K_M 128k, temp 0.3, thinking events): base das roles Plan, Build, Orch, MoE e Scripter — a temperatura por role fica no `agents/*.md` (Plan/Orch 0.3, Build/Scripter 0.1, MoE 0.5). Tool calling nativo (template peg-gemma4).
 - `llama/Gemma4-E4B-UD-Q3` (bridge GPU2 :4125 → llama :4110 Huihui Gemma4 E4B abliterated i1-IQ3_XXS 128k, base temp 0.3, thinking off): role **Exec** (Exec temp 0.1/off) — cria, valida (`bash -n`) e **executa** (`bash <arquivo>`) os scripts — e subagentes de micro-enunciado. **Roda 100% GPU** na segunda instância (GPU2, E4B UD-Q3); Plan/Build/Orch/MoE/Scripter na GPU1 (E4B Q4). Harness: checkbox "Execução de scripts" = token `exec` no CSV do agente (o Scripter NÃO tem `exec`; só valida).
 - Sem CLI externa: removidos CLI serve, web, ícones e scripts. Atomic Agent também removido.
 
@@ -858,7 +858,7 @@ REGRAS DO SUBAGENTE GPU2 E4B (vale para `llama/Gemma4-E4B-UD-Q3`, inegociáveis)
 
 PIPELINE PADRÃO: role `plan` (0.3) elucida e fatia em micro-enunciados -> role `build` (0.1) executa -> plan verifica o ACEITE de cada um.
 
-TEMPERATURA (perfis na bridge, espelhados no `opencode.json`): Plan 0.4 (média, planejar), Build 0.2 (baixa, executar), Orch 0.4, MoE 0.7 (alta, exploração), Scripter 0.2 e Exec 0.2 (determinismo).
+TEMPERATURA (perfis na bridge, espelhados no `opencode.json`): Plan 0.3 (média, planejar), Build 0.1 (baixa, executar), Orch 0.3, MoE 0.5 (alta, exploração), Scripter 0.1 e Exec 0.1 (determinismo).
 
 SYSTEM PROMPT GERAL (GPU E4B, amplo, propósitos gerais):
 Você é um arquiteto desenvolvedor de software generalista de esferas globais: artes, biologia, ciências, química, física (inclusive quântica), matemática, filosofia, sociologia, tecnologia e demais assuntos globais — além de arquitetura e engenharia de software, backend C# (DDD/SOLID), frontend (React/Blazor/Angular), dados e SQL, redes e infra, IoT/ARM embarcado. Atende qualquer pedido direto, com profundidade sob demanda, sem enrolação. Roteie sozinho: atue nas tarefas por completo, porém, quando solicitado, resuma em tarefas menores em fases, esteja ciente que a execução será por subagentes Gemma4 E4B UD-Q3 (`llama/Gemma4-E4B-UD-Q3`) com menos capacidade, que você agrega e verifica. Responda no idioma do usuário, tool calls completas e código diff ao editar arquivos.
@@ -894,8 +894,8 @@ No deploy atual (pré-migração .NET 10), o `appsettings.json` do runtime fica 
 `/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net9.0`; depois do
 deploy do release `2.0.0`, o caminho passa a ser
 `/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0`. Os valores
-atuais são `profiles.plan.temperature = 0.4`, `profiles.orch.temperature = 0.4`,
-`build/scripter/exec = 0.2` e `moe = 0.7`; a unit passa `--temperature 0.2`
+atuais são `profiles.plan.temperature = 0.3`, `profiles.orch.temperature = 0.3`,
+`build/scripter/exec = 0.1` e `moe = 0.5`; a unit passa `--temperature 0.2`
 como base. As bridges foram reiniciadas depois do ajuste.
 
 Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `MAIN_HARNESS=0` e

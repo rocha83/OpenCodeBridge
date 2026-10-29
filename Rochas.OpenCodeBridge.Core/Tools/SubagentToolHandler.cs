@@ -36,7 +36,7 @@ public sealed class SubagentToolHandler : IToolHandler
 
         string system = args["system"]?.GetValue<string>() ?? "Voce e um agente desenvolvedor senior. Execute a tarefa usando as tools disponiveis e responda de forma concisa em pt-br.";
         string model = args["model"]?.GetValue<string>() ?? "";
-        double temp = args["temperature"]?.GetValue<double>() ?? 0.2;
+        double temp = args["temperature"]?.GetValue<double>() ?? 0.1;
 
         string ws = args["workspace"]?.GetValue<string>() ?? context.WorkspaceRoot;
         if (string.IsNullOrWhiteSpace(ws)) ws = context.WorkspaceRoot;

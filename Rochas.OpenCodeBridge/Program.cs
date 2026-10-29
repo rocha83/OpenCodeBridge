@@ -53,7 +53,7 @@ internal static partial class Program
     static string Upstream = "http://127.0.0.1:4100";              // vLLM
     static string Model = "Gemma4-E4B-Q4";                          // id servido pelo Llama
     static string Thinking = "events";                             // "events" = mostra | "off" = descarta
-    static double Temperature = 0.2;                                 // execucao/build (escala baixa 0.2 / media 0.4 / alta 0.7); tool calling continua deterministico via tool_choice
+    static double Temperature = 0.2;                                 // execucao/build (escala baixa 0.1 / media 0.3 / alta 0.5); tool calling continua deterministico via tool_choice
     static int MaxTokens;                                          // teto de saida da linha GPU: 0 = SEM TETO (a infra/llama controla via -c/--n-predict e o cliente decide via max_tokens); >0 = clamp
     static int CpuMaxTokens;                                       // teto da linha CPU: 0 = SEM TETO (deixa o llama controlar); >0 = clamp p/ conter divagacao em decode lento (~5 tok/s)
     static string ToolShimMode = "";                                // "json" = shim generico: remove tools, forca envelope JSON via grammar e converte de volta p/ tool_calls
@@ -393,7 +393,7 @@ internal static partial class Program
     // thinking ligado + temp media p/ planejar; build = thinking fundido +
     // temp media p/ executar; orch = coordena subagentes; moe = uso geral
     // hibrido; scripter = temp baixa (determinismo) e thinking off.
-    // Escala: 0.2 (baixa: build/scripter/exec) / 0.4 (média: plan/orch) / 0.7 (alta: moe).
+    // Escala: 0.1 (baixa: build/scripter/exec) / 0.3 (média: plan/orch) / 0.5 (alta: moe).
     // Request sem sufixo usa os
     // globais. O caminho Gemma 4 padrao (sem sufixo) fica byte-identico.
     // Dinamica dos roles (temp/thinking) mora no Core: RoleProfiles.

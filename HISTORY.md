@@ -4644,3 +4644,23 @@ apareceram na execução real e estão em `DRIVER-FIXES #16`: `HttpListener`
 responde **411** a POST sem `Content-Length` (clientes agora mandam corpo vazio)
 e `deploy-pull.sh` reprovava com o Grafana subindo (agora *polling* com teto:
 bridge 30 s, Grafana 60 s).
+
+## Temperaturas dos perfis restauradas: 0.1 / 0.3 / 0.5 (2026-10-29)
+
+Pedido do dono do lab: voltar à escala anterior — **0.1** (build/scripter/exec,
+thinking off), **0.3** (plan/orch, events), **0.5** (moe, events). O commit
+`50138b8` ("chore: scripter temperature 0.2 across profiles") subiu a tabela
+inteira para 0.4/0.7/0.2 sem medição que a justificasse e o `build` foi reduzido
+a 0.1 depois, em separado — deixando a tabela inconsistente (plan/orch 0.4,
+moe 0.7, build 0.1, scripter/exec 0.2).
+
+Alterado em todos os espelhos, para não gerar drift: `Core/RoleProfiles.cs`,
+`appsettings.json`, `appsettings.4124.gpu-example.json`,
+`appsettings.4125.cpu-example.json`, `Web/Data/AgentSeeder.cs` (comentários e
+`CASE` do seeder), `Web/Services/SubagentToolHandler.cs` (FixedTemperature 0.1),
+`Core/Tools/SubagentToolHandler.cs` (default 0.1), comentários de `Program.cs` e
+do `UnitToolBreakerTests`. O global sem sufixo continua **0.2**.
+
+Documentação: `docs/LAB-SETUP.md` (tabela por modelo, escala, agents e valores do
+runtime) e `docs/BENCHTESTS.md` §9. Atestação segue sendo
+`temperature_source=profile` no evento `response`.
