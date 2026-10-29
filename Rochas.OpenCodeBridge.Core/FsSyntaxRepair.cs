@@ -48,6 +48,12 @@ public static class FsSyntaxRepair
                        $"CERTO: {bt.Groups["w"].Value}   (crase simples nao existe em F#: escreva o nome/operador sem crase)";
         }
 
+        // FS0010 barra invertida: lambda em F# e' `fun`, nao `\` (9a amostra do
+        // isolado de 2026-10-29: `List.fold (\count p1 -> ...) 0 primes`, 0 reparo).
+        if (code == "FS0010" && compilerError.Contains("Unexpected character '\\'", StringComparison.Ordinal))
+            return "CERTO: lambda em F# se escreve com `fun`:\n"
+                 + "List.fold (fun count p1 -> if List.contains (p1 + 2) primes then count + 1 else count) 0 primes";
+
         // FS0010 "Unexpected type application in pattern": `ref` nao e' tipo prefixo
         // (medido no isolado de 2026-10-29: `(moves: ref seq<string>)` e 26 turnos
         // sem dica). Em F# o tipo e' pos-fixado e o valor se escreve com `:=`.

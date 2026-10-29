@@ -98,5 +98,7 @@ let acumula (moves: string list ref) =
     moves := !moves @ [ sprintf "%d->%d" 1 2 ]
     !moves
 check "ref pos-fixado com := e ! (FS0010 Unexpected type application)" (acumula (ref []) = [ "1->2" ])
+let conta2 xs = List.fold (fun acc x -> if x > 1 then acc + 1 else acc) 0 xs
+check "lambda com fun (FS0010 barra invertida)" (conta2 [ 0; 1; 2; 3 ] = 2)
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."

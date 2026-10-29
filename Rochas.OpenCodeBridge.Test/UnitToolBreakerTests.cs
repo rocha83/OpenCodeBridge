@@ -838,6 +838,20 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // 9a amostra (2026-10-29): lambda estilo Haskell (`\count p1 ->`) -> FS0010,
+    // 0 reparo. A dica ensina `fun` e nao ecoa a barra invertida.
+    public static Task FsRepairLambdaBackslash()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let twins = List.fold (\\count p1 -> if List.contains (p1 + 2) primes then count + 1 else count) 0 primes\n",
+            "error FS0010: Unexpected character '\\' in expression");
+        TestContext.Check(p.Contains("fun count p1 ->"),
+            "FS0010 barra invertida -> lambda com fun (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains("List.fold (fun") && !p.Contains("\\count"),
+            "a dica nao ecoa a barra invertida");
+        return Task.CompletedTask;
+    }
+
     // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
 
     public static Task AntiRepeatArgsWindowIsIndependent()

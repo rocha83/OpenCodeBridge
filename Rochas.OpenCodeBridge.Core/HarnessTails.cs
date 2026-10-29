@@ -69,7 +69,7 @@ public static class HarnessTails
         "PRIMOS: divisores candidatos de 2 ate a raiz; o intervalo de ENTRADA pode comecar em 1. " +
         "FATORIAL/PRODUTO: `List.fold (fun acc x -> acc * x) 1 [1..10]`, sem recursao. " +
         "TABELA DE ERROS (codigo: sintoma -> forma correta): " +
-        "FS0010 lista -> elemento com `-> expr` ou `do yield expr`: `[for i in 1 .. n-1 -> expr]` ou `[for i in 1 .. n-1 do yield expr]`. " +
+        "FS0010 lista -> elemento com `-> expr` ou `do yield expr`: `[for i in 1 .. n-1 -> expr]` ou `[for i in 1 .. n-1 do yield expr]`; lambda e' `fun x -> expr`: `List.fold (fun acc x -> acc + x) 0 xs`. " +
         "FS0751/FS0003 passo -> passo no MEIO dos dois `..`: `[for i in 1 .. 2 .. n-1]` percorre 1, 3, .., n-1. " +
         "FS0001 tipo -> lista com `List.sum [ 1; 2 ]` e array com `Array.sum [| 1; 2 |]`; no range os dois limites sao do MESMO tipo; nos dois ramos do `if` o tipo e' o mesmo (`@` concatena LISTA, array usa `Array.append a b`). " +
         "FS0039 nome nao definido -> parametro ou valor ja declarado; resto de inteiro e' `a % b`; auto-chamada pede `let rec f`. " +
