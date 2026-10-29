@@ -821,3 +821,51 @@ a bancada.
 **Prova.** `units` **135 PASS / 0 FAIL**, pin `U-fs-repair-lambda-backslash`,
 probe compilando `List.fold (fun acc x -> ...)`, build `0 Aviso(s) / 0 Erro(s)`,
 commit `f642b91`.
+
+## 33. 10ª amostra do `E-mission-algo-fs`: anotação de retorno com nome de campo, `else let` e 15 `edit` com `oldString` obsoleto (2026-10-29)
+
+**Sintoma.** Isolado `logs/isolated/E-mission-algo-fs_-20261029-195002.log`
+(750,6 s, `PASS=0 FAIL=1`), duas tentativas de 26 turnos e **1 reparo em 52
+turnos** — e o reparo caiu no `T25`, o **último** turno:
+
+1. tentativa 1 — `Program.fs(28,91)` `FS0010: Unexpected symbol ':' in binding.
+   Expected ')'`: `let rec hanoi_calc (…) : (count: int * string list) =`. Nome de
+   campo dentro da anotação de retorno não existe em F#; **0 reparo** em 5 builds
+   seguidos (T1, T10, T15, T20, T25).
+2. tentativa 2 — `Program.fs(3,10)` `FS0588: The block following this 'let' is
+   unfinished`: `else let limit = int (Math.Floor(float n / 2.0))` na mesma linha
+   do `else`. A regra genérica de corpo existia e só saiu no último turno.
+
+Além dos dois erros, o turno foi consumido por retry: **15** `oldString não
+encontrado` (9 `edit` + 4 `write` idênticos de 2437 chars com o mesmo defeito),
+`anti_repeat_content=4`, **0** `BRIDGE-BREAKER` no log.
+
+**Causa.** (a) nenhuma regra casava `Unexpected symbol ':' in binding`;
+(b) o `FS0588` só tinha a dica de corpo (let interno engolindo o resultado), não
+o ramo `else` + `let`; (c) a escalada de retry existia para *dica de compilador*
+(item 31), não para *args de tool* — e a fase E2E chama `POST /api/tools/execute`
+direto, então o breaker do stream (que mora no caminho de chat) nunca vê esse
+histórico.
+
+**Correção (mecanismo no Core; aceite intacto).**
+1. `FsSyntaxRepair` — regra `FS0010` + `Unexpected symbol ':' in binding` ensina
+   só a forma que compila (`: int * string list`, sem `nome:` dentro).
+2. `FsSyntaxRepair` — ramo `FS3118/FS0588/FS0528` **com `else let` na fonte**
+   ensina o `else` sozinho e o bloco indentado; o genérico continua para o resto.
+3. **Retry reusa o controle que já existe** — `ToolsBreaker`/`ToolsAntiRepeat`
+   (soft 3 / hard 6, os mesmos números da bridge): `RunAlgoPhase` passou a chamá-lo
+   depois de cada resultado de tool. O `POST /api/tools/execute` não passa pelo
+   caminho de chat, então o breaker nunca via esses 15 retries. Nada novo no Core:
+   o caso já era coberto por `U-breaker-compiler-loop` (agora com a asserção do
+   `oldString` obsoleto). A 3ª falha no mesmo alvo injeta o aviso no último
+   resultado e a 6ª encerra a tentativa — nudge/trip, nunca gate.
+4. `FsMini` — as duas formas entram nas linhas **únicas** de `FS0010` e de
+   `FS3118/FS0588/FS0528` (o pin `U-tails-path-simulation-rules` exige uma
+   ocorrência por código).
+
+**Prova.** `units` **137 PASS / 0 FAIL SKIP=6** (pins novos
+`U-fs-repair-return-tuple` e `U-fs-repair-else-let`; `U-breaker-compiler-loop`
+ganhou o caso do `oldString` obsoleto; `U-fs-repair-body-shape` e
+`U-tails-path-simulation-rules` seguem verdes), `scripts/diag/fs-repair-probe.fsx`
+compilando as duas formas novas (`anotacao de retorno so' o tipo (FS0010 ':')` e
+`else + let em linha propria (FS0588)` = OK), build `0 Aviso(s) / 0 Erro(s)`.

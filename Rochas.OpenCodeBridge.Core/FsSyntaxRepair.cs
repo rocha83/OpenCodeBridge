@@ -62,6 +62,15 @@ public static class FsSyntaxRepair
                  + "let hanoi (moves: string list ref) =\n"
                  + "    moves := !moves @ [ sprintf \"%d->%d\" 1 2 ]";
 
+        // FS0010 "Unexpected symbol ':' in binding": nome de campo DENTRO da anotacao
+        // de retorno (`: (count: int * string list)`). F# nao tem elemento nomeado em
+        // anotacao de tipo; medido na 10a amostra do isolado de 2026-10-29
+        // (Program.fs(28,91), 5 builds seguidos sem dica). O CERTO e' so' o tipo.
+        if (code == "FS0010" && compilerError.Contains("Unexpected symbol ':' in binding", StringComparison.Ordinal))
+            return "CERTO: a anotacao de retorno leva SO' o tipo, sem `nome:` dentro dos parenteses:\n"
+                 + "let rec hanoi (n: int) (moves: string list) : int * string list =\n"
+                 + "    if n = 0 then (0, moves) else hanoi (n - 1) moves";
+
         // FS0010 `let`/`use` inesperado num arquivo de implementacao: a 1a linha
         // junta `module X` e `open Y`, o compilador le o resto como corpo do modulo
         // e o topo vira expressao — o `let` seguinte fica fora da posicao (medido no
@@ -92,6 +101,19 @@ public static class FsSyntaxRepair
             return "CERTO: a lista de elementos leva `;` entre eles e a tupla entre parenteses:\n"
                  + "[ (1, 2); (1, 3) ]\n"
                  + "o `->` so' existe dentro de comprehension: `[ for i in 1 .. 3 -> i * i ]`";
+
+        // FS3118/FS0588/FS0528 com `else let` na MESMA linha: o `let` que segue o
+        // `else` abre um bloco e precisa da linha propria, com o corpo indentado
+        // (medido na 10a amostra do isolado de 2026-10-29: `else let limit = ...`
+        // -> FS0588 "The block following this 'let' is unfinished").
+        if ((code is "FS3118" or "FS0588" or "FS0528")
+            && Regex.IsMatch(source, @"(?m)^[ \t]*else[ \t]+let\b"))
+            return "CERTO: o `else` fica sozinho na linha e o `let` do ramo abre um bloco indentado:\n"
+                 + "let isPrime n =\n"
+                 + "    if n <= 1 then false\n"
+                 + "    else\n"
+                 + "        let limit = int (Math.Floor(float n / 2.0))\n"
+                 + "        List.forall (fun d -> n % d <> 0) [2 .. limit]";
 
         // FS3118/FS0588/FS0528: a funcao foi declarada com `=` e o corpo nao termina
         // numa expressao (let interno engole o resultado, ou o arquivo acaba antes).

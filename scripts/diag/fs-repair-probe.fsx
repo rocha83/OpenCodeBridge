@@ -100,5 +100,20 @@ let acumula (moves: string list ref) =
 check "ref pos-fixado com := e ! (FS0010 Unexpected type application)" (acumula (ref []) = [ "1->2" ])
 let conta2 xs = List.fold (fun acc x -> if x > 1 then acc + 1 else acc) 0 xs
 check "lambda com fun (FS0010 barra invertida)" (conta2 [ 0; 1; 2; 3 ] = 2)
+
+// 9) Anotacao de retorno leva SO' o tipo (10a amostra do isolado de 2026-10-29:
+//    FS0010 `Unexpected symbol ':' in binding` em `: (count: int * string list)`).
+let rec hanoiConta (n: int) (moves: string list) : int * string list =
+    if n = 0 then (0, moves) else hanoiConta (n - 1) moves
+check "anotacao de retorno so' o tipo (FS0010 ':')" (hanoiConta 2 [] = (0, []))
+
+// 10) `else` com `let`: o `let` abre bloco na linha de baixo (10a amostra: FS0588
+//     "The block following this 'let' is unfinished").
+let isPrimeElse n =
+    if n <= 1 then false
+    else
+        let limit = int (Math.Floor(float n / 2.0))
+        List.forall (fun d -> n % d <> 0) [2 .. limit]
+check "else + let em linha propria (FS0588)" (isPrimeElse 97 && not (isPrimeElse 9))
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."

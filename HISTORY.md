@@ -1,5 +1,30 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## `E-mission-algo-fs` 10ª amostra: dois gaps de ensino e retry de `edit` (2026-10-29)
+
+**Resultado medido.** Isolado `logs/isolated/E-mission-algo-fs_-20261029-195002.log`
+(750,6 s, `PASS=0 FAIL=1`), 2 tentativas × 26 turnos, **1 reparo em 52 turnos** —
+no último turno. Tentativa 1 morreu em `FS0010: Unexpected symbol ':' in binding`
+(`: (count: int * string list)`, nome de campo dentro da anotação de retorno);
+tentativa 2 em `FS0588` com `else let limit = …` na mesma linha do `else`. O
+turno também foi comido por retry: 15 `oldString não encontrado` (9 `edit` + 4
+`write` idênticos), sem `BRIDGE-BREAKER` no log.
+
+**Correções (mecanismo no Core).**
+1. `FsSyntaxRepair`: `FS0010` + `Unexpected symbol ':' in binding` ensina
+   `: int * string list` (só o tipo, sem `nome:`).
+2. `FsSyntaxRepair`: `FS3118/FS0588/FS0528` com `else let` na fonte ensina o
+   `else` sozinho e o bloco indentado.
+3. `RunAlgoPhase` passa a chamar o `ToolsBreaker` que a bridge já usa (soft 3 /
+   hard 6): o `/api/tools/execute` não passa pelo caminho de chat, então os 15
+   retries de `edit` nunca chegavam ao controle de loop. Nenhum mecanismo novo.
+4. `FsMini`: as duas formas entram nas linhas únicas de `FS0010` e de
+   `FS3118/FS0588/FS0528`.
+
+**Prova.** `units` **137 PASS / 0 FAIL SKIP=6** (pins `U-fs-repair-return-tuple` e
+`U-fs-repair-else-let`; `U-breaker-compiler-loop` ganhou o caso do `oldString`
+obsoleto), probe compilando as duas formas novas, build `0 Aviso(s) / 0 Erro(s)`.
+
 ## `E-mission-algo-fs`: FsMini garantido no fluxo, reparo em `warning` e missão em 2 etapas (2026-10-29)
 
 **Pedido:** garantir, com teste, que a fase F# **lê o `FsMini` no fluxo antes de

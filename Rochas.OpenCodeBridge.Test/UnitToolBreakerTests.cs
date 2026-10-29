@@ -193,6 +193,17 @@ internal static class UnitToolBreakerTests
 
         // Saidas que so citam exit no meio do texto nao viram falha.
         TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolSig.IsFailure("exit 0: build ok"), "exit 0 segue sem falha");
+
+        // 10a amostra do E-mission-algo-fs (2026-10-29): 15 `edit` com `oldString`
+        // obsoleto no MESMO arquivo. O controle de loop ja' cobre o caso (mesmo alvo,
+        // mensagem de falha) — o que faltava era o consumidor chamar. Aqui so' se
+        // prova que ele dispara: nenhuma mecanica nova.
+        string stale = "{\"path\":\"/tmp/e2e-mission/mfs/Program.fs\",\"oldString\":\"let rec hanoi (n: int)\",\"newString\":\"let rec hanoi n = ...\"}";
+        string naoAchou = "ERRO: oldString não encontrado no arquivo. Copie o trecho EXATO de um `read` (um trecho curto, de uma linha, e' mais facil de acertar) ou grave o arquivo inteiro com `write`. Primeira linha de '/tmp/e2e-mission/mfs/Program.fs': module Program";
+        var rStale3 = guard.Evaluate(Turnos(3, stale, naoAchou));
+        TestContext.Check(rStale3.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Nudge,
+            $"3 edits com oldString obsoleto no mesmo arquivo -> nudge (veio {rStale3.Verdict})");
+        TestContext.Check(rStale3.DistinctTargets == 1, $"o alvo e' o path do arquivo (veio {rStale3.DistinctTargets})");
         return Task.CompletedTask;
     }
 
@@ -849,6 +860,40 @@ internal static class UnitToolBreakerTests
             "FS0010 barra invertida -> lambda com fun (veio: " + p.Replace("\n", " | ") + ")");
         TestContext.Check(p.Contains("List.fold (fun") && !p.Contains("\\count"),
             "a dica nao ecoa a barra invertida");
+        return Task.CompletedTask;
+    }
+
+    // 10a amostra (2026-10-29): `: (count: int * string list)` — nome de campo
+    // dentro da anotacao de retorno; o FS0010 "Unexpected symbol ':'" nao tinha dica
+    // e o modelo repetiu o MESMO arquivo em 5 builds (0 reparo em 26 turnos).
+    public static Task FsRepairReturnTupleAnnotation()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let rec hanoi_calc (n: int) (source: int) : (count: int * string list) =\n    if n = 0 then (0, []) else hanoi_calc (n - 1) source\n",
+            "error FS0010: Unexpected symbol ':' in binding. Expected ')' or other token.");
+        TestContext.Check(p.Contains(": int * string list ="),
+            "FS0010 ':' em binding -> anotacao leva so' o tipo (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains("let rec hanoi (n: int)"), "a dica mostra a assinatura que compila");
+        TestContext.Check(!p.Contains("count:"), "a dica nao ecoa `nome:` dentro da anotacao");
+        return Task.CompletedTask;
+    }
+
+    // 10a amostra (2026-10-29): `else let limit = ...` na MESMA linha -> FS0588
+    // ("The block following this 'let' is unfinished"). A regra generica de corpo
+    // nao ensinava o `else`; a dica chega no turno da falha.
+    public static Task FsRepairElseLetBlock()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let isPrime n =\n    if n <= 1 then false\n    else let limit = int (Math.Floor(float n / 2.0))\n    List.forall (fun d -> n % d <> 0) [2 .. limit]\n",
+            "error FS0588: The block following this 'let' is unfinished. Every code block is an expression and must have a result.");
+        TestContext.Check(p.Contains("else\n        let limit"),
+            "FS0588 `else let` -> `else` sozinho e bloco indentado (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(!p.Contains("else let"), "a dica nao ecoa `else let` na mesma linha");
+        TestContext.Check(p.Contains("List.forall (fun d -> n % d <> 0)"), "a dica devolve o corpo completo que compila");
+        string corpo = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let f n =\n    let g = n\n",
+            "error FS0588: The block following this 'let' is unfinished. Every code block is an expression and must have a result.");
+        TestContext.Check(corpo.Contains("List.sum dobro"), "FS0588 sem `else let` mantem a dica de corpo (nada de regressao)");
         return Task.CompletedTask;
     }
 

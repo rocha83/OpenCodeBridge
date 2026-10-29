@@ -527,6 +527,12 @@ internal static class E2EMissionTests
         {
         var hist = new JsonArray(new JsonObject { ["role"] = "system", ["content"] = sys });
         hist.Add(new JsonObject { ["role"] = "user", ["content"] = stages[attempt - 1] + feedback });
+        // Retry de tool: o controle de loop que a bridge usa no caminho de chat
+        // (ToolsBreaker, soft/hard) vale aqui tambem — o POST /api/tools/execute nao
+        // passa por ele. Nenhuma mecanica nova: 3 falhas no MESMO alvo viram aviso no
+        // ultimo resultado e 6 encerram a tentativa. Medido em 2026-10-29 (10a amostra):
+        // 15 edits com o mesmo oldString obsoleto, ~20 dos 52 turnos em retry.
+        var loopGuard = new global::Rochas.OpenCodeBridge.Core.ToolsBreaker(3, 6);
         int prosaSeguida = 0;
         // Dica repetida nao ensina: medido em 2026-10-29 (17 reparos identicos, 30
         // turnos). Na 3a vez a mesma dica vira instrucao de reescrever o arquivo.
@@ -608,6 +614,17 @@ internal static class E2EMissionTests
                 }
                 hist.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = res });
                 if (fn == "shell" && AlgoOk(res)) done = true;
+            }
+            var verdict = loopGuard.Evaluate(hist);
+            if (verdict.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Nudge)
+            {
+                loopGuard.ApplyNudge(hist, verdict.Notice);
+                if (dump) Console.WriteLine($"  [algo:{lang}] T{turn} breaker: nudge ({verdict.Streak} falhas no mesmo alvo)");
+            }
+            else if (verdict.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Trip)
+            {
+                if (dump) Console.WriteLine($"  [algo:{lang}] T{turn} breaker: trip ({verdict.Streak} falhas no mesmo alvo)");
+                break;
             }
             if (done) break;
         }

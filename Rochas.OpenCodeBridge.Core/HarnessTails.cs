@@ -69,14 +69,14 @@ public static class HarnessTails
         "PRIMOS: divisores candidatos de 2 ate a raiz; o intervalo de ENTRADA pode comecar em 1. " +
         "FATORIAL/PRODUTO: `List.fold (fun acc x -> acc * x) 1 [1..10]`, sem recursao. " +
         "TABELA DE ERROS (codigo: sintoma -> forma correta): " +
-        "FS0010 lista -> elemento com `-> expr` ou `do yield expr`: `[for i in 1 .. n-1 -> expr]` ou `[for i in 1 .. n-1 do yield expr]`; lambda e' `fun x -> expr`: `List.fold (fun acc x -> acc + x) 0 xs`. " +
+        "FS0010 lista -> elemento com `-> expr` ou `do yield expr`: `[for i in 1 .. n-1 -> expr]` ou `[for i in 1 .. n-1 do yield expr]`; lambda e' `fun x -> expr`: `List.fold (fun acc x -> acc + x) 0 xs`; anotacao de retorno leva SO' o tipo, sem `nome:` dentro dos parenteses: `let hanoi (n: int) : int * string list =`. " +
         "FS0751/FS0003 passo -> passo no MEIO dos dois `..`: `[for i in 1 .. 2 .. n-1]` percorre 1, 3, .., n-1. " +
         "FS0001 tipo -> lista com `List.sum [ 1; 2 ]` e array com `Array.sum [| 1; 2 |]`; no range os dois limites sao do MESMO tipo; nos dois ramos do `if` o tipo e' o mesmo (`@` concatena LISTA, array usa `Array.append a b`). " +
         "FS0039 nome nao definido -> parametro ou valor ja declarado; resto de inteiro e' `a % b`; auto-chamada pede `let rec f`. " +
         "FS0037 nome repetido -> uma definicao por nome. " +
         "FS0058 offside -> auxiliar no nivel do modulo; no ramo, so' a chamada. " +
         "FS0988 modulo sem entrada -> a entrada da BASE (`[<EntryPoint>]`). " +
-        "FS3118/FS0588/FS0528 corpo -> toda funcao termina numa expressao, e a ultima linha do corpo e' o valor: `let total xs =` / `let dobro = List.map (fun x -> x * 2) xs` / `List.sum dobro` (as linhas do corpo alinhadas sob o `=`). " +
+        "FS3118/FS0588/FS0528 corpo -> toda funcao termina numa expressao, e a ultima linha do corpo e' o valor: `let total xs =` / `let dobro = List.map (fun x -> x * 2) xs` / `List.sum dobro` (as linhas do corpo alinhadas sob o `=`); quando o `else` abre ramo com `let`, o `let` vai na linha de baixo, indentado. " +
         "FS0603 array -> a comprehension de array envolve TUDO entre `[|` e `|]`: `[| for i in 1 .. 3 -> i * i |]`; lista de elementos leva `;` e tupla entre parenteses: `[ (1, 2); (1, 3) ]`. " +
         "FS0597 argumento -> quando o argumento e' chamada, pipe ou composicao, ele vai entre parenteses: `printfn \"%s\" (String.concat \",\" movs)`. " +
         "FS0072 tipo -> quando o tipo do parametro nao sai sozinho, anote no lambda: `List.map (fun (a: int, b: int) -> sprintf \"%d->%d\" a b) movs` (ou use `fst`/`snd`). " +
