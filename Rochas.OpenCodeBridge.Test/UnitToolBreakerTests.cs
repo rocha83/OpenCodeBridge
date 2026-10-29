@@ -356,6 +356,13 @@ internal static class UnitToolBreakerTests
         // de Haskell (`[i | i <- ...]`) e errou FS0010 por 22 turnos.
         TestContext.Check(fsMini.Contains("[for i in 1 .. n-1 -> expr]"), "FsMini ensina comprehension de F#");
         TestContext.Check(fsMini.Contains("[x | x <- xs]"), "FsMini nomeia a comprehension alheia (FS0010)");
+        // 3a e 4a formas medidas no L3-20261029-030937: `do` na lista sem `yield`
+        // (lista tipada unit) e `do`+`->` juntos; e `open System.Math` (tipo, nao
+        // namespace). A dica ensina a forma CERTA e nao repete o `open` invalido.
+        TestContext.Check(fsMini.Contains("do yield"), "FsMini ensina do+yield como alternativa");
+        TestContext.Check(fsMini.Contains("[for i in 1 .. 2 .. n-1 -> expr]"), "FsMini ensina paridade como passo");
+        TestContext.Check(fsMini.Contains("System.Math.Sin"), "FsMini ensina Math qualificado");
+        TestContext.Check(!fsMini.Contains("CERTO: open System.Math"), "FsMini nao induz o 'open' invalido");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
         TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
         TestContext.Check(!tail.Contains("CONCATENACAO DE COMANDOS"), "cauda nao duplica doc de shell");
@@ -477,5 +484,112 @@ internal static class UnitToolBreakerTests
             });
         }
         return items.ToArray();
+    }
+
+    // ---- reparo F#: o CERTO tem que compilar (medido no L3 de 2026-10-29) ----
+
+    // A versao anterior devolvia `[for i in 1 .. n-1 do i -> ...]`, que nao compila,
+    // e o modelo copia o literal da dica (DRIVER-FIXES #13). A tabela abaixo pina os
+    // casos que ja' venciavam (comprehension com '|', `step`) e proibe a regressao.
+    public static Task FsRepairComprehensionForms()
+    {
+        static string Fs(string src, string err)
+            => global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(src, err);
+        const string fs0010Pipe = "error FS0010: Unexpected symbol '|' in expression. Expected ']' or other token.";
+        const string fs0010Arrow = "error FS0010: Unexpected symbol '->' in expression.";
+        const string fs0001Unit = "error FS0001: The type 'unit' does not support the operator '+'";
+        const string fs0039Math = "error FS0039: The namespace 'Math' is not defined.";
+
+        // 1) Caso historico (#13): '|' de outra linguagem, com `do i` sobrando no range.
+        string h1 = Fs("let xs = [f (a + float i * h) | for i in 1 .. n - 1 do i]", fs0010Pipe);
+        TestContext.Check(h1.Contains("[for i in 1 .. n - 1 -> f (a + float i * h)]"),
+            "pipe -> forma com '->' (veio: " + h1.Replace("\n", " | ") + ")");
+        TestContext.Check(!h1.Contains("do i ->"), "CERTO nao mistura 'do' com '->'");
+
+        // 2) Caso historico: `step` no range vira passo no MEIO.
+        string h2 = Fs("let xs = [f i | for i in 1 .. n-1 step 2]", fs0010Pipe);
+        TestContext.Check(h2.Contains("[for i in 1 .. 2 .. n-1 -> f i]"),
+            "range com 'step' -> passo no meio (veio: " + h2.Replace("\n", " | ") + ")");
+
+        // 3) Caso historico: comprehension sem filtro, Haskell/Python puro.
+        string h3 = Fs("let sq = [ (x - mean) ** 2.0 | for x in data ]", fs0010Pipe);
+        TestContext.Check(h3.Contains("[for x in data -> (x - mean) ** 2.0]"), "pipe simples -> '->'");
+
+        // 4) `do` sem yield dentro de lista (FS0001 'unit') -> '->' com if/then/else.
+        string n1 = Fs("let s = [for i in 1 .. n-1 do if i % 2 <> 0 then f (a + float i * h) else 0.0]", fs0001Unit);
+        TestContext.Check(n1.Contains("[for i in 1 .. n-1 -> if i % 2 <> 0 then f (a + float i * h) else 0.0]"),
+            "'do' puro -> '->' preservando o if/then/else");
+
+        // 5) `do` + `->` juntos com paridade: vira passo (o `=%` do modelo conta como impar).
+        string n2 = Fs("let s = [for i in 1 .. n - 1 do i =% 2 -> 4.0 * f (float i * h)]", fs0010Arrow);
+        TestContext.Check(n2.Contains("[for i in 1 .. 2 .. n - 1 -> 4.0 * f (float i * h)]"),
+            "do+-> com paridade -> passo no range (veio: " + n2.Replace("\n", " | ") + ")");
+        string n3 = Fs("let e = [4.0 * f i | for i in 2 .. n - 2 do i % 2 = 0]", fs0010Pipe);
+        TestContext.Check(n3.Contains("[for i in 2 .. 2 .. n - 2 -> 4.0 * f i]"), "paridade par -> passo a partir do par");
+
+        // 6) `open System.Math` (FS0039): Math e' TIPO, nao namespace.
+        string n4 = Fs("module Program\nopen System.Math\nlet x = Sin 1.0", fs0039Math);
+        TestContext.Check(n4.Contains("System.Math.Sin"), "FS0039 ensina a chamada qualificada");
+        TestContext.Check(!n4.Contains("CERTO: open System.Math"), "FS0039 nao devolve o 'open' invalido");
+
+        // 6b) Filtro legitimo sem operador NAO pode ser descartado (perderia a
+        // condicao em silencio: compila e calcula errado).
+        string n5 = Fs("let a = [for x in xs do isAdult x -> x]", fs0010Arrow);
+        TestContext.Check(n5.Contains("[for x in xs do if isAdult x then yield x]"),
+            "condicao sem operador vira 'do if ... then yield' (veio: " + n5.Replace("\n", " | ") + ")");
+        // 6c) Erro fora do mapa nao recebe conserto de comprehension (linha errada).
+        TestContext.Check(Fs("let a = [x | for x in xs]", "error FS0410: The type 'int' is not compatible") == "",
+            "erro alheio nao recebe conserto de comprehension");
+
+        // 7) Negativos: forma JA' valida nao pode ser 'corrigida'.
+        TestContext.Check(Fs("let xs = [for i in 1 .. 3 -> float i]", fs0010Arrow) == "",
+            "arrow puro (valido) nao e' tocado");
+        TestContext.Check(Fs("let xs = [for i in 1 .. n do if i % 2 <> 0 then yield float i]", fs0010Arrow) == "",
+            "do + yield (valido) nao e' tocado");
+        TestContext.Check(Fs("let xs = [1 .. 2 .. 9]", "error FS0010: x") == "", "lista sem comprehension nao e' tocada");
+        return Task.CompletedTask;
+    }
+
+    // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
+
+    public static Task AntiRepeatArgsWindowIsIndependent()
+    {
+        // Payload de arquivo que se repete a DISTANCIA: a cauda de 256 chars ja'
+        // apareceu no inicio (janela do texto corta), a de 1024 nao (janela de args
+        // nao corta). O detector e' o mesmo — o que muda e' a janela.
+        var rnd = new Random(42);
+        string bloco = new string(Enumerable.Range(0, 260)
+            .Select(_ => (char)('a' + rnd.Next(0, 26))).ToArray());
+        string miolo = new string(Enumerable.Range(0, 2000)
+            .Select(_ => (char)('a' + rnd.Next(0, 26))).ToArray());
+        string payload = bloco + miolo + bloco;
+
+        int texto = global::Rochas.OpenCodeBridge.Core.ContentAntiRepeat.DefaultWindow;
+        int args = global::Rochas.OpenCodeBridge.Core.ToolArgsAntiRepeatReply.ArgsDefaultWindow;
+        TestContext.Check(args > texto, $"janela de args ({args}) maior que a de texto ({texto})");
+        TestContext.Check(new global::Rochas.OpenCodeBridge.Core.StreamAntiRepeatReply(texto).IsRepeat(payload),
+            "cauda de texto repetida dispara na janela do conteudo");
+        TestContext.Check(new global::Rochas.OpenCodeBridge.Core.ToolArgsAntiRepeatReply(texto).IsRepeat(payload),
+            "mesmo payload dispara na janela curta (prova que o corte era a janela)");
+        TestContext.Check(!new global::Rochas.OpenCodeBridge.Core.ToolArgsAntiRepeatReply(args).IsRepeat(payload),
+            "payload de arquivo NAO e' cortado na janela de args");
+        // Loop real de args continua detectado (a janela maior nao cega o detector).
+        string loop = string.Concat(Enumerable.Repeat("linha repetida demais no args\n", 80));
+        TestContext.Check(new global::Rochas.OpenCodeBridge.Core.ToolArgsAntiRepeatReply(args).IsRepeat(loop),
+            "loop real de args continua detectado na janela de args");
+        return Task.CompletedTask;
+    }
+
+    // ---- nudge de salvage nao e' turno do modelo (opcao C do L3 2026-10-29) ----
+
+    public static Task SalvageNoticeIsRecognizable()
+    {
+        string nudge = global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Nudge;
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolCallRepair.IsSalvageNotice("BRIDGE (edit): " + nudge),
+            "aviso do salvage reconhecido como instrucao da bridge");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolCallRepair.IsSalvageNotice("editei o arquivo e rodei o build"),
+            "prosa normal nao e' aviso de salvage");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolCallRepair.IsSalvageNotice(""), "vazio nao e' aviso");
+        return Task.CompletedTask;
     }
 }

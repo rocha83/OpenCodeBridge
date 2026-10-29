@@ -185,6 +185,10 @@ internal static partial class Program
         && (TailScope == "all" || !OpencodeClient.Value)
         && TailsAtivas();
     static int AntiRepeatWindow = ContentAntiRepeat.DefaultWindow; // janela (chars) da cauda comparada com o historico (64..2048); default unico no Core
+    // Janela PROPRIA dos argumentos de tool: `write`/`edit` carrega arquivo inteiro
+    // e repete trechos legitimos. Com a janela do texto o abort cortava a call no
+    // meio e o salvage recusava os args truncados (medido no L3 de 2026-10-29).
+    static int AntiRepeatArgsWindow = ToolArgsAntiRepeatReply.ArgsDefaultWindow;
     // Guarda de ctx (contextGuard): ao atingir o limiar do ctx, a bridge
     // devolve 413 pedindo compactacao em vez da resposta. Parametrizavel
     // via appsettings (contextGuard) ou CLI; ContextTokens=0 = inativo.
@@ -474,6 +478,7 @@ internal static partial class Program
                     if (rx.Count > 0) RiskToolsAlerts[kv.Key] = rx;
                 }
             if (cfg["antiRepeatWindow"]?.GetValue<int>() is int arw && arw >= ContentAntiRepeat.WindowMin && arw <= ContentAntiRepeat.WindowMax) AntiRepeatWindow = arw;
+            if (cfg["antiRepeatArgsWindow"]?.GetValue<int>() is int arwa && arwa >= ToolArgsAntiRepeatReply.ArgsWindowMin && arwa <= ToolArgsAntiRepeatReply.ArgsWindowMax) AntiRepeatArgsWindow = arwa;
             if (cfg["antiRepeatNotice"]?.GetValue<string>() is string arn && arn.Length >= 20) AntiRepeatNotice = arn;
             if (cfg["diagnostic"]?.GetValue<bool>() is bool dg) Diagnostic = dg;
             if (cfg["toolStrategy"]?.GetValue<bool>() is bool tstrat) ToolStrategy = tstrat;
@@ -1109,6 +1114,7 @@ internal static partial class Program
                 case "--anti-repeat-abort": AntiRepeatAbort = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-retry": AntiRepeatRetry = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
+                case "--anti-repeat-args-window": AntiRepeatArgsWindow = int.Parse(cliArgs[i + 1]); break;
                 case "--anti-repeat-notice": AntiRepeatNotice = cliArgs[i + 1]; break;
 
                 // ---------- G) orçamento/contexto ----------
@@ -1208,6 +1214,8 @@ internal static partial class Program
             errors.Add($"--upstream-parser '{UpstreamParser}' invalido (native|none)");
         if (AntiRepeatWindow < ContentAntiRepeat.WindowMin || AntiRepeatWindow > ContentAntiRepeat.WindowMax)
             errors.Add($"--anti-repeat-window {AntiRepeatWindow} fora da faixa {ContentAntiRepeat.WindowMin}..{ContentAntiRepeat.WindowMax}");
+        if (AntiRepeatArgsWindow < ToolArgsAntiRepeatReply.ArgsWindowMin || AntiRepeatArgsWindow > ToolArgsAntiRepeatReply.ArgsWindowMax)
+            errors.Add($"--anti-repeat-args-window {AntiRepeatArgsWindow} fora da faixa {ToolArgsAntiRepeatReply.ArgsWindowMin}..{ToolArgsAntiRepeatReply.ArgsWindowMax}");
         if (AntiRepeatNotice.Length < 20)
             errors.Add("--anti-repeat-notice precisa de >= 20 caracteres");
         if (ContextGuard && ContextTokens <= 0)
@@ -1257,7 +1265,8 @@ internal static partial class Program
             CoerceTextTools ? "coerce-text-tools" : "", CoerceNarrated ? "coerce-narrated" : "",
             ToolStrategy ? "tool-strategy" : "");
         Add("anti-repeat", AntiRepeat ? "anti-repeat" : "", AntiRepeatAbort ? "anti-repeat-abort" : "",
-            AntiRepeatRetry ? "anti-repeat-retry" : "", "window=" + AntiRepeatWindow);
+            AntiRepeatRetry ? "anti-repeat-retry" : "", "window=" + AntiRepeatWindow,
+            "args_window=" + AntiRepeatArgsWindow);
         Add("orcamento", MaxTokens > 0 ? "max-tokens=" + MaxTokens : "",
             CpuMaxTokens > 0 ? "coerced-max-tokens=" + CpuMaxTokens : "",
             ContextGuard ? "context-guard=" + ContextTokens : "");
@@ -1885,6 +1894,7 @@ WriteJson(ctx, 200, new JsonObject
         ["upstream_parser"] = UpstreamParser,
         ["anti_repeat"] = AntiRepeat, ["anti_repeat_abort"] = AntiRepeatAbort,
         ["anti_repeat_window"] = AntiRepeatWindow,
+        ["anti_repeat_args_window"] = AntiRepeatArgsWindow,
         ["sampling_passthrough"] = SamplingPassthrough,
         ["diagnostic_level"] = DiagnosticLevel,
         ["config_groups"] = ConfigGroups(),
@@ -3547,9 +3557,25 @@ var shape = new StringBuilder();
                             string? nm = tco["function"]?["name"]?.GetValue<string>();
                             string? ar = tco["function"]?["arguments"]?.GetValue<string>();
                             if (!string.IsNullOrEmpty(nm)) { cur.Name = nm; gotAnything = true; }
-                            if (!string.IsNullOrEmpty(ar)) { cur.Args.Append(ar); scan.Append(ar); gotAnything = true; }
+                            if (!string.IsNullOrEmpty(ar)) { cur.Args.Append(ar); gotAnything = true; }
                             calls[idx] = cur;
+                            // Args tem janela PROPRIA (AntiRepeatArgsWindow): arquivo
+                            // grande repete trechos legitimos e o corte no meio da call
+                            // derrubava o turno (o salvage recusa args truncado). O texto
+                            // (content/reasoning) segue na janela do conteudo.
+                            if (AntiRepeat && cur.Args.Length >= ToolArgsAntiRepeatReply.ProbeMinChars)
+                            {
+                                string argsSoFar = cur.Args.ToString();
+                                if (new ToolArgsAntiRepeatReply(AntiRepeatArgsWindow).IsRepeat(argsSoFar))
+                                {
+                                    Log(new JsonObject { ["event"] = "anti-repeat", ["where"] = "stream-abort-tool-args",
+                                        ["tool"] = cur.Name, ["window"] = AntiRepeatArgsWindow, ["chars"] = argsSoFar.Length });
+                                    tripped = true;
+                                    break;
+                                }
+                            }
                         }
+                    if (tripped) break;
                     if (scan.Length - checkedAt >= 512)
                     {
                         checkedAt = scan.Length;
@@ -4243,11 +4269,11 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                         if (AntiRepeat && acc.Args.Length >= ToolArgsAntiRepeatReply.ProbeMinChars && !argsProbeLogged.Contains(index))
                         {
                             string argsText = acc.Args.ToString();
-                            if (new ToolArgsAntiRepeatReply(AntiRepeatWindow).IsRepeat(argsText))
+                            if (new ToolArgsAntiRepeatReply(AntiRepeatArgsWindow).IsRepeat(argsText))
                             {
                                 argsProbeLogged.Add(index);
                                 Log(new JsonObject { ["event"] = "anti-repeat-args", ["tool"] = acc.Name,
-                                    ["chars"] = argsText.Length, ["window"] = AntiRepeatWindow });
+                                    ["chars"] = argsText.Length, ["window"] = AntiRepeatArgsWindow });
                             }
                         }
                     }
@@ -4866,9 +4892,9 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         // nao-stream: o texto do args pode crescer em loop sem tocar thinking/content.
         if (AntiRepeat)
             foreach (var (_, probeName, probeArgs) in toolCalls)
-                if (probeArgs.Length >= ToolArgsAntiRepeatReply.ProbeMinChars && new ToolArgsAntiRepeatReply(AntiRepeatWindow).IsRepeat(probeArgs))
+                if (probeArgs.Length >= ToolArgsAntiRepeatReply.ProbeMinChars && new ToolArgsAntiRepeatReply(AntiRepeatArgsWindow).IsRepeat(probeArgs))
                     Log(new JsonObject { ["event"] = "anti-repeat-args", ["tool"] = probeName,
-                        ["chars"] = probeArgs.Length, ["window"] = AntiRepeatWindow, ["mode"] = "probe" });
+                        ["chars"] = probeArgs.Length, ["window"] = AntiRepeatArgsWindow, ["mode"] = "probe" });
 
         // 4.6.3) Uso de tokens: chat usa prompt/completion, Responses usa input/output
         var chatUsage = chat["usage"]?.AsObject() ?? new JsonObject();

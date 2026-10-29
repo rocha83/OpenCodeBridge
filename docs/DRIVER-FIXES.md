@@ -410,3 +410,66 @@ distinguir prosa, JSON truncado e resposta vazia.
 
 **Prova** — `--only E-belts-direct --belts preta`: `Orch: 4 tarefas`, `PASS: 3
 scripts, 3 integros, 1 descartados`, `PASS E-belts-direct (300.2s)`.
+
+## 20. F# do mission-tools: o reparo ensinava forma inválida, o anti-repeat cortava o `edit` e o nudge gastava turno (2026-10-29)
+
+**Sintoma** — L3 `L3-20261029-030937-l3`, step `mission-tools-bridge`: FAIL em
+212 s. C# fechou (`2.000000 5.000000 2.000000`); o F# gastou as 3 tentativas em
+FS0010/FS0001 e terminou com `/tmp/e2e-mission/mfs/Program.fs(5,24): error
+FS0001: The type 'unit' does not support the operator '+'`.
+
+**Causa (três, independentes)**
+
+(a) **O reparo devolvia a forma errada.** `FsSyntaxRepair.Suggest` reconhecia só
+`[expr | for ...]` e montava o CERTO **preservando o `do` que já estava no
+fonte**: `ERRADO: [f (...) | for i in 1 .. n - 1 do i]` → `CERTO: [for i in 1 ..
+n - 1 do i -> f (...)]`. `do` + `->` na mesma comprehension não compila e o `do`
+sozinho numa lista tipa o elemento como `unit`. Como o modelo **copia o literal
+da dica**, os turnos seguintes aplicavam exatamente a forma inválida (12 de 22
+turnos em ping-pong de FS0010).
+
+(b) **Anti-repeat com janela única cortava a tool call no meio.** O stream
+acumulava content + reasoning + **arguments** num só buffer e comparava tudo com
+`window=512`. `edit`/`write` carrega arquivo inteiro e repete trechos legítimos
+(também em relação ao content do mesmo turno) → falso positivo:
+`{"event":"anti-repeat","where":"stream-abort","window":512,"chars":2050}`,
+`{"event":"salvage-args-rejected","tools":"edit"}`,
+`{"event":"anti-repeat-salvage","calls":0}`. A call que ia corrigir o arquivo foi
+cancelada no meio, o salvage recusou os args truncados (por desenho) e o turno
+virou "SEM CALLS".
+
+(c) **O aviso do salvage gastava turno.** `BRIDGE (edit): ...` chega como
+assistant sem tool call e o laço do teste contava isso no orçamento de 22: o
+modelo não raciocinou, recebeu instrução — e pagou o turno.
+
+**Determinismo (não é variância)** — `scripts/diag/fs-repair-probe.fsx` +
+`dotnet fsi` 10.0.402: `[for i in 1 .. 3 do if i%2<>0 then float i else 0.0]`
+tipa `float` (literal) e `[for i in 1 .. 3 do if i%2<>0 then f (float i) else
+0.0]` com `f` **aberto** tipa `unit` (FS0001) — 3 execuções idênticas. `->` e
+`do yield` declaram o elemento e são estáveis nos dois contextos.
+
+**Correção**
+
+- `Core/FsSyntaxRepair.cs` — reconhece `|`, `do` sem `yield` e `do`+`->`; emite
+  só forma válida (`->`, `do if ... then yield`, paridade virando passo
+  `a .. 2 .. b`); `open System.Math` (FS0039) vira chamada qualificada; gate por
+  código (`FS0010/FS0001/FS0020/FS0751`) para não "corrigir" linha errada; guards:
+  `yield` presente ou forma só com `->` **não** são tocadas; condição que não é
+  teste booleano nem filtro só sai quando é resíduo do índice (`do i`).
+- `Core/HarnessTails.cs` (`FsMini`) — ensina `do` sem `yield` e `do`+`->` **por
+  descrição**, sem exibir o literal inválido (regra em `AGENTS.md`), e `Math` como
+  tipo (`System.Math.Sin` qualificado).
+- `Rochas.OpenCodeBridge/Program.cs` — **janela própria dos args**
+  (`ToolArgsAntiRepeatReply.ArgsDefaultWindow = 1024`, faixa 256..8192, CLI
+  `--anti-repeat-args-window`, campo `anti_repeat_args_window` no `/api/status`);
+  texto (content/reasoning) e args saem em buffers separados no
+  `TryStreamAbortChat`; sonda não-stream e stream-responses usam a janela de args.
+- `Test/E2EMissionTests.cs` — orçamento de turnos do F# não debita o nudge de
+  salvage (`ToolCallRepair.IsSalvageNotice`, guard próprio contra loop) e o
+  enunciado aponta a tabela do FsMini sem duplicá-la.
+
+**Prova** — `--only U-fs-repair-comprehension,U-antirepeat-args-window,
+U-toolcall-salvage-notice,U-tails-path-simulation-rules --api-key guest@123`:
+`PASS=4 FAIL=0 SKIP=0`. Build `0 Aviso(s) / 0 Erro(s)`. Emulação independente
+(`scripts/diag/verify-antirepeat-args-window.py`): payload @256 `True`, @1024
+`False`, loop real @1024 `True`.

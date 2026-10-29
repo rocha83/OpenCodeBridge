@@ -236,9 +236,16 @@ internal static class E2EMissionTests
                 histFs.Add(new JsonObject { ["role"] = "user", ["content"] = guidance });
             }
             histFs.Add(new JsonObject { ["role"] = "user", ["content"] =
-                $"Em {ws}/mfs, implemente em Program.fs (o projeto ja existe em {ws}/mfs/mfs.fsproj; NAO crie mfs.csproj, Program.cs, bin ou obj) um programa F# que calcule e imprima com 6 casas: (a) Simpson de System.Math.Sin em [0, pi] com n=100 -> meta 2.000000; (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> meta 5.000000; (c) o desvio padrao populacional da mesma lista -> meta 2.000000. Grave o arquivo completo com a tool write (nao use edit para criar o arquivo), enxuto e sem comentarios longos. Dica de Simpson: h=(b-a)/n e integral=(h/3)*(f0+fn+4*impares+2*pares). F# idiomatico: `System.Math.Sin/Sqrt/PI` qualificado, `printfn \"%.6f\"`, aritmetica float com `+ - * /` e `** 2.0`, listas com `List.sum/List.map/List.fold`. Lembre-se e ateste o tail F# (FsMini) ja fornecido no system: aplique a regra de TIPOS — contagem/indice/passo/tamanho de range = int, medida/coordenada/resultado = float, converta SO' na borda (`float i`, `float n`, `int x`); se um parametro entra em `[ .. .. param .. ]` ele E' int, entao a chamada passa 100 (NUNCA 100.0). Saida `printfn \"%.6f\"`. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` para verificar a saida (metas: 2.000000, 5.000000, 2.000000)." });
-        for (int turn = 0; turn < 22; turn++)
+                $"Em {ws}/mfs, implemente em Program.fs (o projeto ja existe em {ws}/mfs/mfs.fsproj; NAO crie mfs.csproj, Program.cs, bin ou obj) um programa F# que calcule e imprima com 6 casas: (a) Simpson de System.Math.Sin em [0, pi] com n=100 -> meta 2.000000; (b) a media de [2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0] -> meta 5.000000; (c) o desvio padrao populacional da mesma lista -> meta 2.000000. Grave o arquivo completo com a tool write (nao use edit para criar o arquivo), enxuto e sem comentarios longos. Dica de Simpson: h=(b-a)/n e integral=(h/3)*(f0+fn+4*impares+2*pares). F# idiomatico: `System.Math.Sin/Sqrt/PI` qualificado, `printfn \"%.6f\"`, aritmetica float com `+ - * /` e `** 2.0`, listas com `List.sum/List.map/List.fold`. Lembre-se e ateste o tail F# (FsMini) ja fornecido no system: aplique a regra de TIPOS — contagem/indice/passo/tamanho de range = int, medida/coordenada/resultado = float, converta SO' na borda (`float i`, `float n`, `int x`); se um parametro entra em `[ .. .. param .. ]` ele E' int, entao a chamada passa 100 (NUNCA 100.0). Aplique tambem a tabela de INCONSISTENCIAS do FsMini (comprehension/lista e `Math` qualificado — o contrato esta no tail, nao aqui). Saida `printfn \"%.6f\"`. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` para verificar a saida (metas: 2.000000, 5.000000, 2.000000)." });
+        // Orcamento de turnos: o aviso do salvage da bridge (ToolCallRepair.Nudge) NAO
+        // e' turno do modelo — ele nao raciocinou, recebeu instrucao. Debitar isso
+        // encurtava a janela no meio do reparo (medido no L3 de 2026-10-29: turno
+        // gasto com `BRIDGE (edit)` logo apos o anti-repeat cortar a call). O guard
+        // separado impede laco infinito.
+        int fsUsed = 0, fsGuard = 0;
+        while (fsUsed < 22 && fsGuard++ < 44)
         {
+            int turn = fsUsed;
             JsonObject rf;
             try
             {
@@ -255,12 +262,20 @@ internal static class E2EMissionTests
             var cf = mf["tool_calls"]?.AsArray();
             if (cf is null || cf.Count == 0)
             {
-                LogT($"[F#] T{turn} SEM CALLS: {(mf["content"]?.GetValue<string>() ?? "")[..Math.Min(200, (mf["content"]?.GetValue<string>() ?? "").Length)]}");
-                histFs.Add(new JsonObject { ["role"] = "assistant", ["content"] = mf["content"]?.GetValue<string>() ?? "" });
-                if (turn >= 4) break;
+                string txtFs = mf["content"]?.GetValue<string>() ?? "";
+                LogT($"[F#] T{turn} SEM CALLS: {txtFs[..Math.Min(200, txtFs.Length)]}");
+                histFs.Add(new JsonObject { ["role"] = "assistant", ["content"] = txtFs });
+                if (global::Rochas.OpenCodeBridge.Core.ToolCallRepair.IsSalvageNotice(txtFs))
+                {
+                    LogT($"[F#] T{turn} aviso de salvage (nao consome turno)");
+                    continue;
+                }
+                fsUsed++;
+                if (fsUsed > 4) break;
                 histFs.Add(new JsonObject { ["role"] = "user", ["content"] = "Sem prosa: leia o erro de build (se houver) e emita ja a proxima tool call." });
                 continue;
             }
+            fsUsed++;   // turno com tool call consome o orcamento
             var ff = new JsonArray();
             foreach (var c in cf)
                 ff.Add(new JsonObject { ["id"] = c?["id"]?.GetValue<string>() ?? "", ["type"] = "function",

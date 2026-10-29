@@ -180,6 +180,23 @@ public sealed class ToolArgsAntiRepeatReply : AntiRepeatReply
     /// carrega o arquivo inteiro; arquivo pequeno tambem entra em loop).</summary>
     public const int ProbeMinChars = 256;
 
+    /// <summary>
+    /// Janela PADRAO dos argumentos, em caracteres normalizados. E' maior que a
+    /// do conteudo de proposito: `write`/`edit` carrega arquivo inteiro e trechos
+    /// legitimos se repetem (mesmo bloco de codigo, migration com 30 casos
+    /// iguais). Com a janela do texto o detector cortava a geracao no MEIO dos
+    /// args e o salvage recusava a call — medido no L3 de 2026-10-29
+    /// (`anti-repeat where=stream-abort window=512 chars=2050` seguido de
+    /// `salvage-args-rejected tools=edit`).
+    /// </summary>
+    public const int ArgsDefaultWindow = 1024;
+
+    /// <summary>Menor janela aceita para args (abaixo da janela de conteudo nao separa nada).</summary>
+    public const int ArgsWindowMin = 256;
+
+    /// <summary>Teto da janela de args no deployment.</summary>
+    public const int ArgsWindowMax = 8192;
+
     /// <summary>Cria o detector de argumentos.</summary>
     /// <param name="window">Janela em caracteres.</param>
     public ToolArgsAntiRepeatReply(int window) : base(window) { }

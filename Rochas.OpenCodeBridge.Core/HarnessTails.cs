@@ -62,6 +62,9 @@ public static class HarnessTails
         "INCONSISTENCIAS PREVISTAS EM F# (codigo: causa -> sintaxe correta): " +
         "FS0010 `[expr | for i in ...]` ('|' nao existe em lista) -> `[for i in 1 .. n-1 -> expr]` ou `[for i in ... do yield expr]`. " +
         "FS0010 `[x | x <- xs]` (comprehension de Haskell) -> `[for x in xs -> expr]`. " +
+        "FS0010/FS0001 `do` dentro de LISTA sem `yield` (a lista vira `unit`) -> declare o elemento com `->` ou com `do yield`; as duas formas sao validas, `do` sozinho nao. " +
+        "FS0010 `do` e `->` juntos na MESMA comprehension -> tire o `do` e mantenha o `->`; paridade vira passo no range: `[for i in 1 .. 2 .. n-1 -> expr]`. " +
+        "FS0039 `open System.Math` -> `Math` e' TIPO, nao namespace: `open System` e chame `System.Math.Sin` qualificado. " +
         "FS0010/FS0751 `[a; b .. c]` (';' nao e' passo) -> `[a .. b .. c]`, DOIS `..` com o passo no MEIO (`[1 .. 2 .. n-1]` impares). " +
         "FS0001 mistura int/float -> TIPOS NUMERICOS por PAPEL: contagem/indice/passo/tamanho = int; medida/coordenada/resultado = float; converta SO' na borda (`float i`, `int x`); um parametro = um tipo. " +
         "FS0001 parametro em range ou `List.length` -> ele E' int: a chamada passa `100`, NUNCA `100.0`. " +

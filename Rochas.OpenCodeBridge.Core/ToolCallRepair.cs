@@ -20,6 +20,21 @@ public static class ToolCallRepair
         "Reenvie UMA tool call valida: dentro do conteudo use `\\n` (barra + n) para quebra de linha e `\\\"` para aspas, " +
         "sem quebras cruas; se o arquivo for grande, grave um `write` curto e complete com `edit`.";
 
+    /// <summary>
+    /// O conteudo e' SO o aviso de salvage (nenhuma call aproveitavel)? Nesse
+    /// turno o modelo nao raciocinou sobre o problema — o cliente recebeu uma
+    /// instrucao —, entao o consumidor nao deve cobrar isso do orcamento de turnos.
+    /// </summary>
+    /// <remarks>Predicado unico: teste/belt nao comparam texto de aviso por conta propria.</remarks>
+    /// <param name="content">Conteudo da assistant recebida.</param>
+    /// <returns>True quando o turno e' apenas o nudge do salvage.</returns>
+    public static bool IsSalvageNotice(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return false;
+        return content.Contains("BRIDGE (", StringComparison.Ordinal)
+               && content.Contains(Nudge, StringComparison.Ordinal);
+    }
+
     /// <summary>O args e' JSON completo e parseavel?</summary>
     /// <param name="args">Texto dos argumentos da tool call.</param>
     /// <returns>True quando fecha e parseia.</returns>

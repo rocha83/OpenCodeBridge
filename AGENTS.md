@@ -206,6 +206,23 @@ conveniência manual, nunca fonte de verdade.
   de plano* e devolve "Plano de Implementação… aguardando confirmação" (medido
   em `E-ent-crud-product` e `E-ent-dashboard`, `:4134`).
 
+## Regra: a dica ensina a forma CERTA e nunca exibe a errada (primordial)
+
+Vale para **toda** superfície de indução: `HarnessTails` (behavior/tools/FsMini),
+tool-help (`Core/ToolHelp`), avisos/nudges (`ToolCallRepair`, breaker,
+anti-repeat) e o reparo de sintaxe (`FsSyntaxRepair`). O modelo **copia o literal**
+que a dica mostra — inclusive quando a dica mostra o literal *como exemplo do que
+não existe*. Medido duas vezes: `[1; 3 .. n-1]` (DRIVER-FIXES #13) e a forma
+`[for i in 1 .. n-1 do expr]` no L3 de 2026-10-29.
+
+- **Enuncie por descrição, não por literal errado**: "`do` dentro de LISTA sem
+  `yield` → use `->` ou `do yield`", e não "`[for i .. do expr]` está errado".
+- **O CERTO tem que ser válido e verificável**: forma emitida por dica/reparo
+  deve ter prova de compilação (`scripts/diag/fs-repair-probe.fsx`) — nada de
+  sugestão que preserve o defeito (`do` + `->` juntos, lista tipada `unit`).
+- **Asserts pinam a forma ensinada**: `U-tails-path-simulation-rules` exige
+  presença da forma correta **e** ausência do literal inválido copyável.
+
 ## Regra: fail-fast em TODA rodada de runner (não só no WAR)
 - `TestContext.Run` aborta a rodada no primeiro FAIL (`StopOnFail` default ON):
   imprime `[test] FAIL-FAST: rodada abortada no primeiro FAIL (<nome>)`, marca o

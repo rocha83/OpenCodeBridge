@@ -4691,3 +4691,30 @@ Corrigido sem mudar o servidor (o parâmetro já existia):
 Regra registrada em `AGENTS.md` e `docs/BENCHTESTS.md` §9.1. Aceite: após dois
 steps, `GET /api/test/probe?limit=1000` traz **≥2 valores distintos de `step`**
 e `/api/metrics` continua voltando a zero em cada `step_start`.
+
+## L3 `mission-tools`: reparo F# inválido, anti-repeat na tool call e turno do salvage (2026-10-29)
+
+Bateria `L1→L4` de 03:09: L1 3/3 PASS (651 s), L2 4/4 PASS (1677 s), **L3 vermelho**
+em `mission-tools-bridge` (FAIL 212 s, `causa=bridge`), com as duas roxas
+(`belts-build-roxa`, `belts-orch-roxa`) ainda **sem prova** — o fail-fast parou antes.
+
+Diagnóstico do artefato `logs/levels/L3-20261029-030937-l3/steps/mission-tools-bridge.{test,bridge}.log`:
+
+1. **o reparo ensinava forma inválida** — `CERTO: [for i in 1 .. n - 1 do i -> ...]`
+   (preservava o `do`); o modelo copia o literal da dica e ficou 12 turnos em FS0010;
+2. **anti-repeat com janela única** (`window=512`) cortou o `edit` no meio
+   (`window=512 chars=2050` → `salvage-args-rejected tools=edit` → `calls=0`);
+3. **nudge de salvage debitava turno** (`BRIDGE (edit): ...` contado no orçamento de 22).
+
+Correção: `FsSyntaxRepair` só emite forma compilável (paridade vira passo,
+`do if ... then yield`, `System.Math` qualificado, gate por código FS e guards
+para forma válida), `FsMini` ensina por **descrição** (regra nova em `AGENTS.md`:
+a dica nunca exibe o literal errado), **janela própria dos args** (1024, CLI
+`--anti-repeat-args-window`, campo no `/api/status`) com buffers separados no
+stream, e turno de salvage fora do orçamento (`ToolCallRepair.IsSalvageNotice`).
+
+Prova: units `U-fs-repair-comprehension`, `U-antirepeat-args-window`,
+`U-toolcall-salvage-notice`, `U-tails-path-simulation-rules` = `PASS=4 FAIL=0`;
+`scripts/diag/fs-repair-probe.fsx` (formas compilam; `do` sem `yield` com tipo
+aberto quebra determinístico) e `scripts/diag/verify-antirepeat-args-window.py`
+(@256 True, @1024 False, loop @1024 True). Registro completo: `DRIVER-FIXES #20`.
