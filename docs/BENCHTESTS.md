@@ -570,7 +570,7 @@ Duas granularidades, de propósito:
 
 | dado | quando zera | por quê |
 |---|---|---|
-| contadores de `/api/metrics`, `files_generated` | **por step** (`step_start`, `?files=1`) | o painel de números mede o step atual, não a vida da bridge |
+| contadores de `/api/metrics`, `files_generated` | **por bateria** (`WarTemplate`, `?files=1`) | o painel de números mede a rodada da esteira inteira; zerar por step apagava a leitura a cada linha |
 | amostras da sonda (`ProbeSamples`) | **por bateria** (`WarTemplate.ResetDiagnosticsOnce`, `?probe=1`) | a curva de throughput/VRAM/tools precisa cobrir L1→L2→L3; o campo `step` da amostra já separa os passos |
 
 Antes disso o driver mandava `probe=1` em cada `step_start` e a curva dos steps

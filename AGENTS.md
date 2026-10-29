@@ -265,14 +265,13 @@ não existe*. Medido duas vezes: `[1; 3 .. n-1]` (DRIVER-FIXES #13) e a forma
   de steps, e regrava o estado em disco. Sem isso o painel arrasta o enunciado
   da execução anterior (o arquivo de estado sobrevive ao restart) e a mesma
   linha de `step` não limpa nada porque o nome se repete entre runs.
-- **Granularidade**: `step_start` zera **contadores/arquivos** (`?files=1`) e a
-  **sonda** é zerada **uma vez por bateria** (`WarTemplate.ResetDiagnosticsOnce`,
-  `?probe=1&files=1`) — a curva de throughput/VRAM fica da rodada inteira (o
-  campo `step` da amostra distingue cada passo). O reset de bateria leva também
-  `?panel=1` (enunciado/histórico/activity/steps → limpos); o `step_start` **não**
-  leva `panel=1`, senão apagaria o enunciado do step em execução. O run isolado
-  (`TestContext.ResetDiagnostics`) é a própria rodada: limpa sonda e contadores,
-  e o início de um run manual também zera o painel.
+- **Granularidade**: a bateria limpa **uma vez**, no start (`WarTemplate`,
+  `?probe=1&files=1&panel=1`). O `step_start` **não zera nada**: zerar contadores
+  a cada step reiniciava o painel (throughput/arquivos/tools voltavam a zero a
+  cada linha da esteira) e a leitura do run ficava picada. A curva da sonda e os
+  contadores enchem a rodada inteira; o campo `step` da amostra distingue cada
+  passo. O run isolado (`TestContext.ResetDiagnostics`) é a própria rodada: limpa
+  sonda, contadores e painel no início dele.
 - Toda bateria E2E, em ambos os modos (`bridge` e `opencode`), **ainda** começa
   com o restart da bridge alvo: `sudo systemctl restart bridge-gpu` (`:4124`),
   `bridge-gpu2` (`:4125`) ou `bridge-cpu-forced` (`:4126`). Ali o binário em uso

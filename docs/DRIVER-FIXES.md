@@ -580,3 +580,52 @@ frases. Nada de nudge/guard no teste: a mecânica é do Core.
 
 **Prova.** Build `0 Aviso(s)/0 Erro(s)`, `PASS U-tool-help`; aceite reaberto com
 3 rodadas isoladas verdes consecutivas antes da WAR L1→L3.
+
+## 24. Tools-full: `cd` do shell parecia persistir, `git add . && commit` e histórico inventado (2026-10-29)
+
+**Sintoma.** `E-tools-full` isolado FAIL 3 tentativas seguidas, cada uma por um
+motivo diferente:
+
+| tentativa | FAIL | causa real |
+|---|---|---|
+| t1 | `2 commits no repo` (log com 1) | 2º commit tentado como `git add . && commit -m "…"`: a tool `git` recebe a cadeia e o git a lê como pathspec (`pathspec '&&' did not match`); o modelo abandona o passo e **inventa** o commit 2 no histórico (`[HASH_DO_SEGUNDO_COMMIT]`) |
+| t2 | `marca EDITADO no MESMO arquivo da data` | `data.txt` ficou só com a data (passo 3 nunca executado) e o histórico saiu fabricado (`[HASH_DO_PRIMEIRO_COMMIT]`, `[HASH_DO_SEGUNDO_COMMIT]`) |
+| t3 | `2 commits no repo` (`does not have any commits yet`) | `mkdir <pasta> && cd <pasta>` no shell e depois `write path=<arquivo>` → arquivo na **raiz**, repo na subpasta **vazio**; `commit` falha "nothing to commit", `git add <arquivo>` falha pathspec e os 36 steps acabam sem recuperação |
+
+**Causa.** O enunciado (4 passos + uma tool por vez) não era o gargalo; dois
+contratos do Core davam feedback incompleto:
+
+1. `shell` devolvia só o stdout. Em `mkdir X && cd X` a saída é vazia e o modelo
+   conclui que o `cd` persistiu — mas cada chamada começa na raiz do workspace e
+   o `path` das tools de arquivo é root-relative. O erro é invisível até o
+   `commit` falhar.
+2. `git` recusava cadeia com erro de pathspec, sem ensinar a forma certa (o help
+   antigo só dizia "não encadeie `&&`" — instrução negativa, sem exemplo
+   copiável).
+3. Nada ligava "conteúdo do arquivo" à "saída real da tool": com o passo falho,
+   o modelo fabricava histórico com hash fictício.
+
+**Correção (Core, geral — nada específico do teste).**
+
+- `ShellToolHandler`: toda saída (ok e fail) termina com
+  `[shell] cwd desta chamada: <dir>`; quando a chamada entrou numa pasta, a
+  mesma linha diz que a próxima começa na raiz e que o arquivo dessa pasta usa
+  `path "<pasta>/<arquivo>"`.
+- `GitToolHandler`: `command` com `&&`, `;` ou `|` **fora de aspas** devolve
+  `uma suboperação por chamada: rode git add . agora e, na próxima, chame git
+  de novo com git commit -m "..."`, mesmo `path` (aspas e `;` dentro da
+  mensagem seguem valendo como passo único).
+- `ToolHelp[git]`: **exemplo de sucesso comentado** (passos 1..7: `mkdir` →
+  `init` → `write` com a pasta → `user.name` → `user.email` → `add .` →
+  `commit -m` → `log --oneline`), com os nomes marcados como fictícios
+  (`<pasta>`, `<arquivo>`, `<nome>`, `<email>`, `<mensagem>`); o help de
+  `shell`/`bash`/`sh` passa a dizer "o cwd de cada chamada é a raiz do
+  workspace" em vez de "`cd` não persiste".
+- `HarnessTails.DefaultTools`: `FLUXO ARQUIVO+REPO (exemplo; use os nomes do seu
+  pedido)` + `PROVA: depois de write/edit, read o arquivo — o conteúdo é o texto
+  que a tool devolveu; histórico é a saída literal colada`.
+
+**Prova.** Build `0 Aviso(s)/0 Erro(s)`; units `PASS=124 FAIL=0 SKIP=6`
+(inclui `U-tool-feedback-shell-cwd`, `U-tool-feedback-git-chain` e os pins do
+exemplo em `U-tool-help`); `E-tools-full` isolado **3/3 PASS** (25,7 s / 42,5 s
+/ 35,9 s) contra o binário deployado no PROD (`b17f180`).

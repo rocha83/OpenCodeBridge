@@ -540,12 +540,9 @@ internal sealed class TestCircuitDriver : IDisposable
         CircuitStepResult result = default!;
         long totalSeconds = 0;
 
-        // Painel por step: zera contadores e arquivos da bridge alvo antes de
-        // rodar o step (fonte unica: TestContext.ResetDiagnostics). A sonda NAO
-        // e zerada aqui — ela e por bateria (WarTemplate), senao a curva dos
-        // steps anteriores desaparece a cada step_start.
-        TestContext.ResetDiagnostics(clearProbe: false, bridge: step.ProbeUrl, required: false,
-            apiKey: step.ProbeApiKey);
+        // Diagnostico: UMA limpeza por bateria (WarTemplate, no start) — o step
+        // nao zera mais nada. Zerar por step reiniciava os contadores do painel
+        // a cada linha da esteira e a serie de throughput/arquivos do run sumia.
 
         using var probe = StepProbe.Start(
             _o.RunDirectory,
