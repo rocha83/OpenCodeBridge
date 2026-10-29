@@ -897,6 +897,42 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // 11a amostra (2026-10-29): `let rec hanoi (n: int)` chamado como `hanoi n 1 3 2`
+    // -> FS0003 "This value is not a function and cannot be applied". A dica MEDE a
+    // aridade na fonte (declaracao x chamada) e ensina a forma que compila; sem
+    // posicao/medida ela se cala (nunca chuta).
+    public static Task FsRepairArityMismatch()
+    {
+        string src = string.Join("\n", new[]
+        {
+            "module Program", "", "open System", "",
+            "let rec hanoi (n: int) : int * string list =",
+            "    if n = 0 then (0, [])",
+            "    else",
+            "        let (m1, s1) = hanoi n 1 3 2",
+            "        (m1 + 1, s1)",
+            "",
+            "printfn \"%A\" (hanoi 4)"
+        });
+        string err = "/tmp/e2e-mission-algo-fs/mfs/Program.fs(8,24): error FS0003: "
+                   + "This value is not a function and cannot be applied. It has type '(int * string list)'";
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(src, err);
+        TestContext.Check(p.Contains("'hanoi' foi declarada com 1 parametro") && p.Contains("passa 4"),
+            "FS0003 aridade -> a dica mede declaracao x chamada (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains("let rec soma (a: int) (b: int) (c: int)"), "a dica mostra a forma que compila");
+        TestContext.Check(!p.Contains("hanoi n 1 3 2"), "a dica nao ecoa a chamada errada");
+
+        string ok = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let rec soma a b = a + b\nlet r = soma 1 2\n",
+            "/tmp/p.fs(2,9): error FS0003: This value is not a function and cannot be applied.");
+        TestContext.Check(ok.Length == 0, "aridade coerente nao recebe dica de aridade (veio: " + ok.Replace("\n", " | ") + ")");
+
+        string semPos = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            src, "error FS0003: This value is not a function and cannot be applied. It has type '(int * string list)'");
+        TestContext.Check(semPos.Length == 0, "FS0003 sem linha/coluna se cala (nao chuta aridade)");
+        return Task.CompletedTask;
+    }
+
     // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
 
     public static Task AntiRepeatArgsWindowIsIndependent()

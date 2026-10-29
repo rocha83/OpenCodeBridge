@@ -210,6 +210,7 @@ internal static class Program
         TestContext.Run("U-fs-repair-list-literal-arrow", UnitToolBreakerTests.FsRepairListLiteralArrow);
         TestContext.Run("U-fs-repair-return-tuple", UnitToolBreakerTests.FsRepairReturnTupleAnnotation);
         TestContext.Run("U-fs-repair-else-let", UnitToolBreakerTests.FsRepairElseLetBlock);
+        TestContext.Run("U-fs-repair-arity", UnitToolBreakerTests.FsRepairArityMismatch);
         TestContext.Run("U-antirepeat-args-window", UnitToolBreakerTests.AntiRepeatArgsWindowIsIndependent);
         TestContext.Run("U-toolcall-salvage-notice", UnitToolBreakerTests.SalvageNoticeIsRecognizable);
         TestContext.Run("U-bridge-notice", UnitToolBreakerTests.BridgeNoticeFormatIsSingleSource);

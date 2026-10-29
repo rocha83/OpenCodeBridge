@@ -115,5 +115,12 @@ let isPrimeElse n =
         let limit = int (Math.Floor(float n / 2.0))
         List.forall (fun d -> n % d <> 0) [2 .. limit]
 check "else + let em linha propria (FS0588)" (isPrimeElse 97 && not (isPrimeElse 9))
+
+// 11) A chamada e a declaracao usam a MESMA quantidade de parametros (11a amostra:
+//     FS0003 "This value is not a function and cannot be applied" em `hanoi n 1 3 2`
+//     com a funcao declarada so' com `(n: int)`).
+let rec somaTres (a: int) (b: int) (c: int) : int =
+    if c = 0 then a + b else somaTres a b (c - 1)
+check "declaracao e chamada com a mesma aridade (FS0003)" (somaTres 1 2 3 = 3)
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."

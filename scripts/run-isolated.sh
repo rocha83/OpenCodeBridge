@@ -37,6 +37,10 @@ if [ "$RESTART" -eq 1 ]; then
 fi
 
 set +e
+# Rastro da fase com tools (turno, reparo, breaker) vai para o log: sem TCTX_DUMP
+# a rodada isolada fica sem evidencia de mecanica (medido em 2026-10-29: 11a
+# amostra sem `[algo:*]`, sem `reparo:` e sem `breaker:` no log).
+export TCTX_DUMP=1
 timeout 2400 dotnet run --project Rochas.OpenCodeBridge.Test/Rochas.OpenCodeBridge.Test.csproj \
   -c Release --no-build -- --only "$NAME" --bridge "http://127.0.0.1:${PORT}" --api-key "$KEY" \
   >"$LOG" 2>&1

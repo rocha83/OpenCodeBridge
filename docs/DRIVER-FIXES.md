@@ -869,3 +869,36 @@ ganhou o caso do `oldString` obsoleto; `U-fs-repair-body-shape` e
 `U-tails-path-simulation-rules` seguem verdes), `scripts/diag/fs-repair-probe.fsx`
 compilando as duas formas novas (`anotacao de retorno so' o tipo (FS0010 ':')` e
 `else + let em linha propria (FS0588)` = OK), build `0 Aviso(s) / 0 Erro(s)`.
+
+## 34. `E-mission-algo-fs` 11ª amostra: FS0003 de aridade e rastro do isolado (2026-10-29)
+
+**Sintoma.** Isolado `logs/isolated/E-mission-algo-fs_-20261029-202053.log`
+(704 s, `PASS=0 FAIL=1`): `Program.fs(10,24) FS0003: This value is not a function
+and cannot be applied. It has type '(int * string list)'`. O programa estava
+completo (crivo, `countPrimes`, `countTwins`, `[<EntryPoint>]`), mas o modelo
+declarou `let rec hanoi (n: int) : int * string list` e chamou `hanoi n 1 3 2`
+(linhas 10, 15 e 23). O log **não** tinha `[algo:F#]`, `reparo:` nem `breaker:` —
+sem rastro, nenhuma mecânica é observável.
+
+**Causa.** (a) O mapa de `FsSyntaxRepair` tratava `FS0003` só como `step` no range;
+aridade (declaração com menos parâmetros que a chamada) não tinha dica. (b)
+`scripts/run-isolated.sh` não exportava `TCTX_DUMP=1`, então a fase com tools
+rodava muda.
+
+**Correção.**
+1. `FsSyntaxRepair` — ramo `FS0003` + `not a function and cannot be applied`,
+   **depois** do `step` (para não roubar o caso do range): mede na fonte a
+   aridade declarada e a quantidade de argumentos da chamada da linha do erro
+   (`FindArityMismatch`/`CountParams`/`CountArgs`) e ensina a forma que compila
+   (`let rec soma (a: int) (b: int) (c: int) : int = …` chamado `soma 1 2 3`).
+   Sem posição/medida a dica se **cala** — nunca chuta aridade.
+2. `FsMini` — a regra entra na linha **única** `FS0751/FS0003` (o pin
+   `U-tails-path-simulation-rules` exige uma ocorrência por código).
+3. `scripts/run-isolated.sh` — `export TCTX_DUMP=1`: todo isolado passa a gravar
+   turno, `reparo:` e `breaker:` no log.
+
+**Prova.** `units` **138 PASS / 0 FAIL SKIP=6** (pin novo `U-fs-repair-arity`:
+caso medido + aridade coerente em silêncio + sem linha/coluna em silêncio),
+`scripts/diag/fs-repair-probe.fsx` com `declaracao e chamada com a mesma aridade
+(FS0003)` = OK, build `0 Aviso(s) / 0 Erro(s)`.
+

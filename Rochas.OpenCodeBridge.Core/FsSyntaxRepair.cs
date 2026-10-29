@@ -253,7 +253,114 @@ public static class FsSyntaxRepair
                     return $"ERRADO: {stepOcc.Value}\nCERTO: {fixedRange}";
             }
         }
+        // FS0003 "This value is not a function and cannot be applied": a chamada passa
+        // mais argumentos do que a declaracao do PROPRIO arquivo aceita (medido na 11a
+        // amostra de 2026-10-29: `let rec hanoi (n: int) : int * string list` chamado
+        // como `hanoi n 1 3 2`). Vem DEPOIS do `step` para nao roubar o caso do range e
+        // so' responde quando a divergencia e' MEDIDA na fonte — sem medida, silencio.
+        if (code == "FS0003"
+            && compilerError.Contains("not a function and cannot be applied", StringComparison.Ordinal))
+        {
+            var arity = FindArityMismatch(source, compilerError);
+            if (arity is not null)
+                return $"ERRADO: '{arity.Value.Name}' foi declarada com {arity.Value.Declared} parametro(s) "
+                     + $"e a chamada da linha {arity.Value.Line} passa {arity.Value.Passed}\n"
+                     + "CERTO: a declaracao e a chamada usam a MESMA quantidade de parametros — "
+                     + "se a chamada passa 3 valores, a funcao declara 3:\n"
+                     + "let rec soma (a: int) (b: int) (c: int) : int =\n"
+                     + "    if c = 0 then a + b else soma a b (c - 1)\n"
+                     + "let r = soma 1 2 3";
+        }
         return "";
+    }
+
+    /// <summary>
+    /// Divergencia de aridade entre a declaracao (no proprio fonte) e a chamada da
+    /// linha do erro. Devolve <c>null</c> quando nao consegue MEDIR — nunca chuta.
+    /// </summary>
+    /// <param name="source">Fonte F# atual.</param>
+    /// <param name="compilerError">Saida do build (traz <c>arquivo(linha,coluna)</c>).</param>
+    static (string Name, int Declared, int Passed, int Line)? FindArityMismatch(string source, string compilerError)
+    {
+        var where = Regex.Match(compilerError, @"\((\d+),(\d+)\)");
+        if (!where.Success || !int.TryParse(where.Groups[1].Value, out int lineNo)) return null;
+        var lines = source.Replace("\r\n", "\n").Split('\n');
+        if (lineNo < 1 || lineNo > lines.Length) return null;
+        string line = lines[lineNo - 1];
+        foreach (Match cand in Regex.Matches(line, @"[A-Za-z_]\w*"))
+        {
+            string name = cand.Value;
+            var decl = Regex.Match(source,
+                @"(?m)^[ \t]*let[ \t]+(?:rec[ \t]+)?" + Regex.Escape(name) + @"\b(?<params>[^\r\n=]*)");
+            if (!decl.Success) continue;
+            int declared = CountParams(decl.Groups["params"].Value);
+            if (declared == 0) continue;                    // valor, nao funcao
+            int passed = CountArgs(line, cand.Index + name.Length);
+            if (passed > declared) return (name, declared, passed, lineNo);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Parametros declarados: um por grupo entre parenteses ou por nome solto antes de
+    /// <c>:</c> (anotacao de retorno) ou do fim do trecho.
+    /// </summary>
+    static int CountParams(string text)
+    {
+        int count = 0, depth = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            char ch = text[i];
+            if (ch == '(') { if (depth == 0) count++; depth++; continue; }
+            if (ch == ')') { if (depth > 0) depth--; continue; }
+            if (depth > 0) continue;
+            if (ch == ':') break;                            // `: tipo` e' o retorno
+            if (ch == '<') { while (i + 1 < text.Length && text[i + 1] != '>') i++; i++; continue; }
+            if (char.IsLetter(ch) || ch == '_')
+            {
+                count++;
+                while (i + 1 < text.Length
+                       && (char.IsLetterOrDigit(text[i + 1]) || text[i + 1] == '_' || text[i + 1] == '\'')) i++;
+            }
+        }
+        return count;
+    }
+
+    /// <summary>Argumentos da chamada a partir de <c>from</c> (um por atomo, grupo conta 1).</summary>
+    static int CountArgs(string line, int from)
+    {
+        int count = 0, depth = 0;
+        for (int i = from; i < line.Length; i++)
+        {
+            char ch = line[i];
+            if (ch == '/' && i + 1 < line.Length && line[i + 1] == '/') break;
+            if (ch == '(' || ch == '[' || ch == '{') { if (depth == 0) count++; depth++; continue; }
+            if (ch == ')' || ch == ']' || ch == '}') { if (depth == 0) break; depth--; continue; }
+            if (depth > 0) continue;
+            if (ch == '|' || ch == ';' || ch == ',' || ch == '=') break;
+            if (ch == '"')
+            {
+                count++;
+                for (i++; i < line.Length && line[i] != '"'; i++) if (line[i] == '\\') i++;
+                continue;
+            }
+            if (char.IsLetter(ch) || ch == '_')
+            {
+                int start = i;
+                while (i + 1 < line.Length
+                       && (char.IsLetterOrDigit(line[i + 1]) || line[i + 1] == '_' || line[i + 1] == '\'')) i++;
+                string word = line.Substring(start, i - start + 1);
+                if (word is "then" or "else" or "in" or "let" or "do" or "match" or "with" or "fun" or "if" or "of") break;
+                count++;
+                continue;
+            }
+            if (char.IsDigit(ch))
+            {
+                count++;
+                while (i + 1 < line.Length && (char.IsLetterOrDigit(line[i + 1]) || line[i + 1] == '.')) i++;
+            }
+        }
+        return count;
     }
 
     /// <summary>Codigo do PRIMEIRO erro do compilador (<c>FS0010</c>...) ou "" se nao houver.</summary>

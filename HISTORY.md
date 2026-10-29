@@ -1,5 +1,26 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## `E-mission-algo-fs` 11ª amostra: FS0003 de aridade + rastro do isolado (2026-10-29)
+
+**Resultado medido.** `logs/isolated/E-mission-algo-fs_-20261029-202053.log`
+(704 s, `PASS=0 FAIL=1`): `Program.fs(10,24)` **FS0003** — `let rec hanoi (n: int)
+: int * string list` chamado como `hanoi n 1 3 2` (linhas 10, 15 e 23). Programa
+completo (crivo, `countPrimes`, `countTwins`, `[<EntryPoint>]`): o vermelho é a
+aridade da própria função, não sintaxe solta. Log **sem** `[algo:F#]`, `reparo:`
+e `breaker:` — `run-isolated.sh` não exportava `TCTX_DUMP`.
+
+**Correções.**
+1. `FsSyntaxRepair`: `FS0003` + `not a function and cannot be applied` mede a
+   aridade na fonte (declaração × chamada) e ensina a forma que compila; sem
+   posição/medida, silêncio (nunca chuta).
+2. `FsMini`: a regra entra na linha única de `FS0751/FS0003`.
+3. `scripts/run-isolated.sh`: `export TCTX_DUMP=1` — turno, reparo e breaker
+   passam a ficar no log do isolado.
+
+**Prova.** `units` **138 PASS / 0 FAIL SKIP=6** (`U-fs-repair-arity` novo),
+probe com `declaracao e chamada com a mesma aridade (FS0003)` = OK, build
+`0 Aviso(s) / 0 Erro(s)`.
+
 ## `E-mission-algo-fs` 10ª amostra: dois gaps de ensino e retry de `edit` (2026-10-29)
 
 **Resultado medido.** Isolado `logs/isolated/E-mission-algo-fs_-20261029-195002.log`
