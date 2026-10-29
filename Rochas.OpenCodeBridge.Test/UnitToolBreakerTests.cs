@@ -565,6 +565,12 @@ internal static class UnitToolBreakerTests
             "error FS0039: The value or constructor 'data' is not defined.\nerror FS0001: This expression was expected to have type ''a list' but here has type ''b array'") == "",
             "primeiro erro FS0039 silencia (nao responde com dica de array)");
 
+        // 6b4) Crase simples em nome/operador (FS3563): `mod` e' operador puro.
+        string n11 = Fs("let rec gcd a b = if b = 0 then a else gcd b (a `mod` b)",
+            "error FS3563: This is not a valid identifier");
+        TestContext.Check(n11.Contains("CERTO: mod") && !n11.Contains("CERTO: `mod`"),
+            "FS3563 -> operador sem crase (veio: " + n11.Replace("\n", " | ") + ")");
+
         // 6b3) Auto-referencia sem `rec`: o nome que falta e' um `let` com parametro
         // do proprio arquivo -> falta `rec` (nao e' valor nem identificador inventado).
         string n10 = Fs("let factorial n = if n = 0 then 1 else n * factorial (n - 1)\nlet x = factorial 10",

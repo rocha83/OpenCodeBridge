@@ -23,7 +23,7 @@ fluxo (falha por instrumentação, não por assertiva semântica).
   - **tools tail** presente no system final quando o request declara `tools`
     (é a cauda que carrega o contrato `read/write/edit/glob`);
   - FsMini (quando a fase é F#) presente no system final — já coberto pelo
-    endpoint `GET /api/test/last-system` (`fsmini`, `tipos_regra`).
+    endpoint `GET /api/test/last-system` (`fsmini`, `int_regra`).
 - Refutação: FAIL com mensagem do tipo
   `fluxo bridge incompleto: ausente main_harness` / `ausente tools_tail`, com o
   dump do que existe (path, tail_scope, harness_tails, tools=N).
@@ -33,7 +33,7 @@ fluxo (falha por instrumentação, não por assertiva semântica).
 **Estado atual (parcial)**
 - Já existe `GET /api/test/last-system` + `RecordSystemSent` na bridge
   (`Program.cs`), que registra o system final e sinaliza `fsmini` /
-  `tipos_regra` / `tail_scope` / `harness_tails`. É a **base** do portão, mas
+  `int_regra` / `tail_scope` / `harness_tails`. É a **base** do portão, mas
   hoje só é consultado dentro de `E-mission-tools`.
 - Falta: (a) incluir **tools tail** (`DefaultTools` presente ou
   `hasTools`+tail aplicada) no registro; (b) promover a checagem a **portão

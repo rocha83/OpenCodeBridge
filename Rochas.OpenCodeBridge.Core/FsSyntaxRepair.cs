@@ -24,6 +24,17 @@ public static class FsSyntaxRepair
         // blob fazia a dica de array/lista responder a um FS0039 (medido 2026-10-29).
         string code = FirstCode(compilerError);
 
+        // FS3563 identificador invalido: crase SIMPLES nao existe em F#. `mod` e'
+        // operador puro; escrever `a `mod` b` gera FS3563 e o modelo repete o mesmo
+        // edit (medido no isolado de 2026-10-29). O CERTO sai sem crase.
+        if (code == "FS3563" || compilerError.Contains("not a valid identifier", StringComparison.Ordinal))
+        {
+            var bt = Regex.Match(source, @"`(?<w>\w+)`");
+            if (bt.Success)
+                return $"ERRADO: `{bt.Groups["w"].Value}`\n" +
+                       $"CERTO: {bt.Groups["w"].Value}   (crase simples nao existe em F#: escreva o nome/operador sem crase)";
+        }
+
         // FS0039 com auto-referencia: funcao recursiva sem `rec`. O compilador nomeia
         // o valor que falta; se ele e' um `let` com parametro do proprio arquivo, o que
         // falta e' o `rec` (medido no isolado de 2026-10-29: `let factorial n = ...`).
