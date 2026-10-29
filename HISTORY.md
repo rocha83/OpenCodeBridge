@@ -1,5 +1,50 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## `E-mission-algo` dividido em dois testes (C# e F#) e dicas que ensinavam o caso errado (2026-10-29)
+
+**Pedido:** o teste de algoritmos misturava C# e F# no mesmo veredito. Separação
+em dois testes, com o aceite intacto, e conserto de mecânica só no Core.
+
+**Diagnóstico.** No mesmo teste, a metade C# oscilou entre PASS e FAIL em quatro
+amostras (15:08, 15:25, 15:29, 15:37) e a metade F# nunca chegou a compilar; um
+único veredito escondia qual metade rompeu e as tentativas de uma contaminavam as
+da outra (o histórico da fase C# seguia no contexto da fase F#). O `ALGO_FROM=F#`
+existia só para fugir disso — diagnóstico, não conserto.
+
+**Separação (mecânica de teste, aceite inalterado).**
+`E-mission-algo-cs` (`MissionAlgoCs`, só `mcs/Program.cs`) e
+`E-mission-algo-fs` (`MissionAlgoFs`, só `mfs/Program.fs`), ambos com o MESMO
+enunciado de missão (`AlgoPrompt(ws, dir)`) e o MESMO aceite (`hanoi=15`,
+`primes100=25`, `primes1000=168`, `twin100=8`, `hanoi_seq` com 15 movimentos,
+primeiro `1->2` e último `2->3`, e `HasHardcodedAlgo` sobre a fonte). `ALGO_FROM`
+removido; `WarTemplate` e `run-levels.sh` do L4 passam a ter `algo-cs-$mode` e
+`algo-fs-$mode`; `AGENTS.md`, `docs/BENCHTESTS.md` e `docs/DRIVER-FIXES.md`
+atualizados. Commit `507c9cf`.
+
+**Resultado da primeira medição isolada.** `E-mission-algo-cs` **PASS** (29,2 s).
+`E-mission-algo-fs` **FAIL**, e o veredito é honesto: o modelo hardcodou as metas
+(`printfn "hanoi=15"`, `printfn "hanoi_seq=1->2,1->3,..."`) e o programa não
+compilava (`FS0001` nos ramos do `if`).
+
+**Defeitos de mecânica medidos e corrigidos (Core, nunca no aceite).**
+1. `FS0597` (argumento com chamada/pipe sem parênteses) não tinha dica: 3 builds
+   na MESMA linha. Entra na tabela `FsMini` e no `FsSyntaxRepair` só com a forma
+   que compila (`printfn "%s" (String.concat "," movs)`) — commit `507c9cf`.
+2. `FS0001` respondia pela **forma do fonte**, não pela mensagem: diante de
+   “All branches of an 'if' expression ... array ... list” a dica ensinou a forma
+   do RANGE (`[2 .. int (Math.Sqrt(float n))]`) 4 vezes seguidas. Agora a regra
+   dos ramos do `if` vem antes de qualquer heurística de fonte e ensina o que
+   compila (mesmo tipo nos dois ramos; array junta com `Array.append`), e a dica
+   de range só dispara com `float` E `int` na mensagem — commit `19de20c`.
+3. `edit` sem `oldString` encontrado passou a ensinar o caminho que funciona
+   (trecho curto copiado do `read`, ou `write` com o arquivo inteiro) e ancora a
+   primeira linha real do arquivo, sem ecoar o trecho errado (commit `201c04d`).
+
+**Prova:** `units` 127 PASS / 0 FAIL; `scripts/diag/fs-repair-probe.fsx` compila
+as formas ensinadas (corpo com `let` local, `[| for i in 1 .. 3 -> i * i |]`,
+`printfn "%s" (junta movs)`, `Array.append`); build `0 Aviso(s) / 0 Erro(s)`;
+deploy + restart a cada commit (`uptime=0`, `main_harness=True`, `tails=True`).
+
 ## WAR L1+L2 bridge com harness on: L1 verde, L2 e `tools-full` corrigidos (2026-10-29)
 
 **Pedido:** reiniciar o WAR em **L1 + L2**, modo `bridge`, `main harness` e

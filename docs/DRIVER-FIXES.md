@@ -664,3 +664,26 @@ intacto: units `PASS=125 FAIL=0 SKIP=6`; `dotnet fsi scripts/diag/fs-repair-prob
 com os dois casos novos OK (`cabecalho colado -> compilador recusa`,
 `cabecalho ensinado (module sozinho + open) -> compila`); build
 `0 Aviso(s)/0 Erro(s)`.
+
+## 26. Dica de FS0001 respondia pela forma do fonte, não pela mensagem (2026-10-29)
+
+**Sintoma.** `E-mission-algo-fs`: o modelo recebeu 4 vezes a dica
+`CERTO: [2 .. int (Math.Sqrt(float n))]` enquanto o erro real era
+`FS0001: All branches of an 'if' expression ... first branch is '('a * 'a) array',
+this branch returns a value of type ''b list'`. Ele repetiu a mesma linha em 4
+builds seguidos.
+
+**Causa.** A regra de range em `FsSyntaxRepair` era disparada por regex no
+**fonte** (`[ ... Math.Sqrt ...`), não pela mensagem do compilador. Qualquer
+FS0001 do arquivo recebia a mesma dica, mesmo quando o defeito era o `@` entre
+arrays (que concatena lista).
+
+**Correção.** (a) Regra nova, antes de qualquer heurística de fonte, quando a
+mensagem contém `branches of an 'if' expression`: os dois ramos devolvem o MESMO
+tipo e array junta com `Array.append a b`. (b) A dica de range só dispara quando
+a mensagem cita `float` **e** `int` (evidência de conversão no range).
+
+**Prova.** `units` 127 PASS / 0 FAIL com três checks novos — "FS0001 ramos do if
+-> array junta com Array.append", "não recebe a dica de range" e "com mensagem de
+`if` vence o range mesmo com range no fonte" — e o caso compilado no
+`scripts/diag/fs-repair-probe.fsx`. Commit `19de20c`.
