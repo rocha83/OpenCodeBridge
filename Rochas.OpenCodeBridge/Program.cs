@@ -2689,11 +2689,6 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             if (kw?["enable_thinking"] is JsonValue ev && ev.TryGetValue<bool>(out bool b)) wantThinking = b;
         }
         catch { }
-        // Progresso entre turnos: mesma tool call repetida depois de erro nao
-        // muda o estado — o aviso aponta a repeticao sem repetir o erro (o
-        // modelo ja' o tem na mensagem `role: tool`).
-        if (ToolCallRepeat.Apply(messages))
-            Log(new JsonObject { ["event"] = "call-repeat-nudge", ["messages"] = messages.Count });
         var chat = new JsonObject
         {
             ["model"] = Model,
@@ -3649,7 +3644,7 @@ var shape = new StringBuilder();
             if (brokenArgs.Count > 0)
             {
                 cbody = (cbody.Length > 0 ? cbody + "\n\n" : "")
-                        + "BRIDGE (" + string.Join(", ", brokenArgs) + "): " + ToolCallRepair.Nudge;
+                        + ToolCallRepair.Notice(brokenArgs);
                 Log(new JsonObject { ["event"] = "salvage-args-rejected", ["tools"] = string.Join(",", brokenArgs) });
             }
             // Sem nada recebido (stream vazio) e sem trip: cai no caminho normal.

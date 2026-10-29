@@ -12,13 +12,22 @@ namespace Rochas.OpenCodeBridge.Core;
 public static class ToolCallRepair
 {
     /// <summary>
-    /// Nudge de reparo (regra JSON + arquivo grande). Curto de proposito: o alvo e'
-    /// o parser, nao a sintaxe da linguagem do artefato.
+    /// Corpo do nudge de reparo (regra JSON + arquivo grande). Curto de proposito: o
+    /// alvo e' o parser, nao a sintaxe da linguagem do artefato. O envelope
+    /// (<c>BRIDGE (escopo):</c>) vem de <see cref="BridgeNotice"/>.
     /// </summary>
     public const string Nudge =
         "A tool call anterior veio com JSON invalido/truncado e o parser recusou o turno. " +
         "Reenvie UMA tool call valida: dentro do conteudo use `\\n` (barra + n) para quebra de linha e `\\\"` para aspas, " +
         "sem quebras cruas; se o arquivo for grande, grave um `write` curto e complete com `edit`.";
+
+    /// <summary>
+    /// Aviso do salvage para as tools recusadas (ex.: <c>BRIDGE (edit, write): ...</c>).
+    /// </summary>
+    /// <param name="tools">Nomes das calls com args quebrados.</param>
+    /// <returns>Texto do aviso no formato unico da bridge.</returns>
+    public static string Notice(IEnumerable<string>? tools) =>
+        BridgeNotice.Notice(tools is null ? null : string.Join(", ", tools), Nudge);
 
     /// <summary>
     /// O conteudo e' SO o aviso de salvage (nenhuma call aproveitavel)? Nesse
@@ -28,12 +37,8 @@ public static class ToolCallRepair
     /// <remarks>Predicado unico: teste/belt nao comparam texto de aviso por conta propria.</remarks>
     /// <param name="content">Conteudo da assistant recebida.</param>
     /// <returns>True quando o turno e' apenas o nudge do salvage.</returns>
-    public static bool IsSalvageNotice(string? content)
-    {
-        if (string.IsNullOrWhiteSpace(content)) return false;
-        return content.Contains("BRIDGE (", StringComparison.Ordinal)
-               && content.Contains(Nudge, StringComparison.Ordinal);
-    }
+    public static bool IsSalvageNotice(string? content) =>
+        BridgeNotice.Is(content) && content!.Contains(Nudge, StringComparison.Ordinal);
 
     /// <summary>O args e' JSON completo e parseavel?</summary>
     /// <param name="args">Texto dos argumentos da tool call.</param>
@@ -72,13 +77,14 @@ public static class ToolCallRepair
         return false;
     }
 
-    /// <summary>Aplica o reparo: poda a assistant quebrada e anexa o nudge.</summary>
+    /// <summary>Aplica o reparo: poda a assistant quebrada e anexa o aviso.</summary>
     /// <param name="history">Historico no formato chat (mutado).</param>
+    /// <param name="tools">Nomes das calls quebradas (so' para a tag do aviso).</param>
     /// <returns>True quando havia assistant quebrada (o contexto mudou de fato).</returns>
-    public static bool Apply(JsonArray history)
+    public static bool Apply(JsonArray history, IEnumerable<string>? tools = null)
     {
         bool dropped = DropBrokenAssistant(history);
-        history.Add(new JsonObject { ["role"] = "user", ["content"] = Nudge });
+        BridgeNotice.Append(history, Notice(tools));
         return dropped;
     }
 }

@@ -679,81 +679,56 @@ internal static class UnitToolBreakerTests
         TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolCallRepair.IsSalvageNotice("editei o arquivo e rodei o build"),
             "prosa normal nao e' aviso de salvage");
         TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolCallRepair.IsSalvageNotice(""), "vazio nao e' aviso");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Notice(new[] { "edit", "write" })
+                .StartsWith("BRIDGE (edit, write): ", StringComparison.Ordinal),
+            "aviso do salvage usa a tag unica com as tools recusadas");
+
+        // Apply: poda a assistant quebrada e anexa UMA copia (segunda chamada nao empilha).
+        var hist = new JsonArray
+        {
+            new JsonObject { ["role"] = "user", ["content"] = "pedido" },
+            new JsonObject { ["role"] = "assistant", ["content"] = "", ["tool_calls"] = new JsonArray(new JsonObject
+            {
+                ["id"] = "c1", ["type"] = "function",
+                ["function"] = new JsonObject { ["name"] = "edit", ["arguments"] = "{\"path\": " }
+            }) }
+        };
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Apply(hist, new[] { "edit" }),
+            "apply poda a assistant com args invalido");
+        int afterFirst = hist.Count;
+        global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Apply(hist, new[] { "edit" });
+        TestContext.Check(hist.Count == afterFirst, "apply nao empilha aviso repetido (dedupe unico)");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolCallRepair.IsSalvageNotice(
+                hist[^1]!["content"]!.GetValue<string>()),
+            "aviso anexado pelo apply e' reconhecido como salvage");
         return Task.CompletedTask;
     }
 
-    // ---- chamada identica ENTRE turnos (no-progresso) ----
+    // ---- aviso da bridge: prefixo, tag e dedupe num lugar so' ----
 
-    public static Task ToolCallRepeatNotice()
+    public static Task BridgeNoticeFormatIsSingleSource()
     {
-        static JsonArray Hist(string name, string args, string firstResult,
-            string? secondArgs = null, string? secondResult = null)
+        string notice = global::Rochas.OpenCodeBridge.Core.BridgeNotice.Notice("edit, write", "corpo");
+        TestContext.Check(notice == "BRIDGE (edit, write): corpo", "tag do aviso: " + notice);
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.BridgeNotice.Is(notice),
+            "aviso reconhecido pelo prefixo unico");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.BridgeNotice.Is("editei o arquivo"),
+            "prosa normal nao e' aviso");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.BridgeNotice.Notice(null, "x") == "BRIDGE (tool): x",
+            "escopo vazio cai na tag generica (nunca BRIDGE ())");
+
+        var hist = new JsonArray
         {
-            var m = new JsonArray
-            {
-                new JsonObject { ["role"] = "system", ["content"] = "sys" },
-                new JsonObject { ["role"] = "user", ["content"] = "pedido" }
-            };
-            void Turn(string a, string res)
-            {
-                m.Add(new JsonObject
-                {
-                    ["role"] = "assistant", ["content"] = "",
-                    ["tool_calls"] = new JsonArray(new JsonObject
-                    {
-                        ["id"] = "call_" + Guid.NewGuid().ToString("N")[..6], ["type"] = "function",
-                        ["function"] = new JsonObject { ["name"] = name, ["arguments"] = a }
-                    })
-                });
-                m.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = "x", ["content"] = res });
-            }
-            Turn(args, firstResult);
-            Turn(secondArgs ?? args, secondResult ?? "");
-            return m;
-        }
-
-        var rep = Hist("edit", "{\"path\":\"a.fs\",\"oldString\":\"x\",\"newString\":\"y\"}",
-            "ERRO: exit 1: a.fs(16,23): error FS0010: Unexpected keyword 'end'", secondResult: "ERRO: igual");
-        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolCallRepeat.Apply(rep),
-            "mesh args + erro anterior -> aviso de chamada repetida");
-        string last = rep[^1]!["content"]!.GetValue<string>();
-        TestContext.Check(last.Contains(global::Rochas.OpenCodeBridge.Core.ToolCallRepeat.Marker),
-            "aviso carrega o marcador BRIDGE (call repetida)");
-        TestContext.Check(!last.Contains("FS0010") && !last.Contains("Unexpected"),
-            "aviso NAO repete a descricao do erro (o modelo ja' a tem em role=tool)");
-        TestContext.Check(last.Contains("`read`"), "aviso aponta a acao que muda o estado");
-        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolCallRepeat.Apply(rep),
-            "aviso e' idempotente (nao empilha copia)");
-
-        var okResult = Hist("edit", "{\"path\":\"a.fs\"}", "1 substituicao em 'a.fs'");
-        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolCallRepeat.Apply(okResult),
-            "chamada repetida com resultado OK nao e' no-progresso");
-
-        var changed = Hist("edit", "{\"path\":\"a.fs\"}", "ERRO: exit 1", secondArgs: "{\"path\":\"b.fs\"}");
-        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolCallRepeat.Apply(changed),
-            "args diferentes = progresso (sem aviso)");
-
-        var single = new JsonArray
-        {
-            new JsonObject { ["role"] = "assistant", ["content"] = "", ["tool_calls"] = new JsonArray(
-                new JsonObject { ["id"] = "c1", ["type"] = "function",
-                    ["function"] = new JsonObject { ["name"] = "edit", ["arguments"] = "{}" } }) },
-            new JsonObject { ["role"] = "tool", ["tool_call_id"] = "c1", ["content"] = "ERRO: exit 1" }
+            new JsonObject { ["role"] = "user", ["content"] = "pedido" },
+            new JsonObject { ["role"] = "assistant", ["content"] = "", ["tool_calls"] = new JsonArray() }
         };
-        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ToolCallRepeat.Apply(single),
-            "primeiro turno (sem repeticao) nao recebe aviso");
-
-        TestContext.Check(
-            global::Rochas.OpenCodeBridge.Core.ToolCallRepeat.Signature(new JsonArray(new JsonObject
-            {
-                ["type"] = "function",
-                ["function"] = new JsonObject { ["name"] = "edit", ["arguments"] = "{ \"path\" : \"a\" }" }
-            })) == global::Rochas.OpenCodeBridge.Core.ToolCallRepeat.Signature(new JsonArray(new JsonObject
-            {
-                ["type"] = "function",
-                ["function"] = new JsonObject { ["name"] = "edit", ["arguments"] = "{\"path\":\"a\"}" }
-            })),
-            "assinatura canonicaliza o espacamento dos args");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.BridgeNotice.Append(hist, notice),
+            "anexa o aviso uma vez");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.BridgeNotice.Append(hist, notice),
+            "aviso identico nao empilha copia");
+        TestContext.Check(hist.Count == 3, "historico com uma unica copia do aviso");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.BridgeNotice.Append(hist, "BRIDGE (tool): outro"),
+            "aviso diferente apos o mesmo lugar ainda entra (nao suprime por prefixo)");
         return Task.CompletedTask;
     }
 }

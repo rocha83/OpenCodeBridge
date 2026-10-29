@@ -195,7 +195,7 @@ internal static class Program
         TestContext.Run("U-fs-repair-comprehension", UnitToolBreakerTests.FsRepairComprehensionForms);
         TestContext.Run("U-antirepeat-args-window", UnitToolBreakerTests.AntiRepeatArgsWindowIsIndependent);
         TestContext.Run("U-toolcall-salvage-notice", UnitToolBreakerTests.SalvageNoticeIsRecognizable);
-        TestContext.Run("U-toolcall-repeat-notice", UnitToolBreakerTests.ToolCallRepeatNotice);
+        TestContext.Run("U-bridge-notice", UnitToolBreakerTests.BridgeNoticeFormatIsSingleSource);
         TestContext.Run("U-tails-tool-first", UnitToolBreakerTests.BehaviorTailForcesToolFirst);
         TestContext.Run("U-translate-temp-respeita-tunel", UnitToolBreakerTests.TranslateTempRespeitaTunel);
         TestContext.Run("U-translate-breaker-verdicts", UnitToolBreakerTests.TranslateBreakerVerdicts);

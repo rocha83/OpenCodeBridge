@@ -533,24 +533,6 @@ saiu; enunciado e nudge dizem "um pacote .zip, o nome não importa" (decisão de
 erro custavam 5) e o que continua exigido é o versionamento (`init`, `add`,
 `commit`) e o pacote com a tool `shell`.
 
-**Sintoma (b).** Duas rodadas do mission-tools queimaram 16–22 turnos em pares
-`edit`+`shell` com os MESMOS args e o mesmo `error FS0010` devolvido; o F# só
-fechava quando o retry (2ª tentativa) reescrevia o arquivo do zero.
-
-**Causa (b).** O anti-repeat compara repetição *dentro do stream* (texto/args da
-mesma resposta). Chamada idêntica **entre turnos** não é olhada por ninguém: cada
-request chega com histórico novo e a bridge repassa ao upstream sem avaliar se o
-modelo está parado.
-
-**Correção (b).** `Core/ToolCallRepeat` (P2 do `PENDINGS.md`): quando os dois
-últimos `assistant` do histórico têm a mesma assinatura (`name` + args
-canonicalizados) **e** o `role: tool` do turno anterior traz erro, a bridge anexa
-um aviso único (`BRIDGE (call repetida)`) antes de enviar. O aviso **não repete a
-descrição do erro** (o modelo já a tem em `role: tool`); aponta a ação que muda o
-estado (`read` do arquivo atual / trocar args). Sem `role: tool` (call cortada,
-salvage) nada é anexado — ali quem entrega o erro é o `ToolCallRepair`. Log:
-evento `call-repeat-nudge`.
-
 **Sintoma (c).** `U-diag-reset-panel` passou a FAILAR (`painel lista o step
 publicado`: contou 2) depois de um run isolado.
 
@@ -564,6 +546,13 @@ continua só `?files=1`.
 
 **Prova.** `E-mission-tools` isolado **PASS 333,1 s** (com o `PRIMOS`/FsMini novo)
 e **PASS 160,6 s** (segunda rodada, 5 turnos de git/zip); units
-`PASS=121 FAIL=0 SKIP=6` com `U-toolcall-repeat-notice` (repetição+erro, resultado
-OK, args diferentes, primeiro turno, idempotência, canonicalização de espaçamento)
-e `U-diag-reset-panel` verdes.
+`PASS=121 FAIL=0 SKIP=6`, com `U-diag-reset-panel` verde e `U-bridge-notice`
+provando que o aviso da bridge tem **um** formato (`BRIDGE (escopo): corpo`,
+tag genérica quando o escopo é vazio) e que `Apply` não empilha cópia.
+
+**Dedup do formato (mesma data).** O literal `"BRIDGE ("` vivia em três pontos
+(chamada do salvage em `Program.cs`, `ToolCallRepair.IsSalvageNotice` e o marcador
+de um guard novo de repetição entre turnos, descartado). Agora vive em
+`Core/BridgeNotice` (`Prefix`/`Tag`/`Notice`/`Is`/`Append`), o `Apply` do salvage
+anexa por `BridgeNotice.Append` (uma cópia, não empilha) e a tag sai com as tools
+recusadas (`BRIDGE (edit, write): …`).

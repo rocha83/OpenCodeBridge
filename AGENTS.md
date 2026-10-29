@@ -223,23 +223,6 @@ não existe*. Medido duas vezes: `[1; 3 .. n-1]` (DRIVER-FIXES #13) e a forma
 - **Asserts pinam a forma ensinada**: `U-tails-path-simulation-rules` exige
   presença da forma correta **e** ausência do literal inválido copyável.
 
-## Regra: no-progresso entre turnos = ação, sem eco do erro (primordial)
-
-- O anti-repeat de **stream** (`ContentAntiRepeat`/`ToolArgsAntiRepeatReply`)
-  cobre repetição dentro de uma resposta. Chamada **idêntica entre turnos**
-  (mesmo `name` + args) com resultado de erro é detectada por
-  `Core.ToolCallRepeat` no `BuildChatRequest` (evento `call-repeat-nudge`).
-- O aviso **não repete a descrição do erro**: o modelo já a tem em `role: tool`.
-  Só constata a repetição e aponta a ação que muda o estado (`read` atual /
-  trocar args). Eco do erro é o que ele copia.
-- **Sem** `role: tool` da call (cortada/salvage) nada é anexado: ali o erro
-  ainda não apareceu para o modelo, quem o entrega é `ToolCallRepair.Nudge`
-  (`IsSalvageNotice`).
-- Um aviso por vez, idempotente (o marcador `BRIDGE (call repetida)` impede
-  empilhar cópias); repetição com resultado **OK** não é no-progresso.
-- Prova: `U-toolcall-repeat-notice` (2 ramos + idempotência + canonicalização
-  de espaçamento) e `E-mission-tools` sem par `edit`/`shell` repetido.
-
 ## Regra: fail-fast em TODA rodada de runner (não só no WAR)
 - `TestContext.Run` aborta a rodada no primeiro FAIL (`StopOnFail` default ON):
   imprime `[test] FAIL-FAST: rodada abortada no primeiro FAIL (<nome>)`, marca o
