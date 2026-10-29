@@ -126,10 +126,12 @@ internal static class E2EEnterpriseTests
             "stampede controlado por lock por chave e circuit-breaker simples (3 falhas) quando o Redis cai. " +
             "Grave os arquivos na raiz do workspace (repositorio de Product + registro no DI), APIs do .NET 8+. So tool calls, sem prosa.",
             // Orcamento medido (2026-10-29): o cenario entrega 2+ artefatos
-            // (repositorio + registro no DI) e, com 14 passos, gastou 14/14 em
-            // exploracao (git/shell/glob) e fechou o DI com mock. Mesma faixa dos
-            // demais cenarios multi-artefato (16..28). O aceite nao muda.
-            20, dir);
+            // (repositorio + registro no DI). Com 14 gastou 14/14 em exploracao
+            // (git/shell/glob) e fechou o DI com mock; com 20 o registro real
+            // saiu em 19 chamadas (di=modern). Teto 24 = medido + margem de
+            // variacao, ainda na faixa dos demais cenarios multi-artefato
+            // (16..28). O aceite nao muda.
+            24, dir);
         // O modelo pode inventar outros nomes de artefato; localiza por CONTEUDO,
         // nao por nomenclatura fixa (contrato e o codigo, nao o nome do arquivo).
         string repo = "", startup = "";
