@@ -558,12 +558,15 @@ internal sealed class WarTemplate : CircuitTemplate
                 }
                 break;
 
-            // L4: mission algo + belts marrom/preta + frontend e Web UI.
+            // L4: mission algo (C# e F# em testes separados) + belts marrom/preta
+            // + frontend e Web UI.
             case 4:
                 foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"algo-{mode}", mode,
-                        new[] { "--only", "E-mission-algo" });
+                    yield return StepBridge(driver, $"algo-cs-{mode}", mode,
+                        new[] { "--only", "E-mission-algo-cs" });
+                    yield return StepBridge(driver, $"algo-fs-{mode}", mode,
+                        new[] { "--only", "E-mission-algo-fs" });
                     yield return StepBridge(driver, $"belts-build-final-{mode}", mode,
                         new[] { "--only", "E-belts-build-direct", "--belts", "marrom,preta" });
                     yield return StepBridge(driver, $"belts-orch-final-{mode}", mode,

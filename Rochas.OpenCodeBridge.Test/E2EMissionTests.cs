@@ -420,42 +420,56 @@ internal static class E2EMissionTests
     /// Step separado do E-mission-tools: falha de algoritmo nao se mistura com
     /// a entrega git/zip. Enunciado humano: meta + dica de formula, sem passo a passo.
     /// </summary>
-    public static async Task MissionAlgo()
+    /// <summary>Missao de algoritmos em C#: metas e formato conferidos pela saida real.</summary>
+    public static async Task MissionAlgoCs()
     {
         string bridge = TestContext.Bridge;
-        string model = TestContext.SuiteModel;
-        if (!model.EndsWith("-build")) model += "-build";
-        string ws = TestContext.FreshWorkspace("e2e-mission-algo");
+        string model = AlgoModel();
+        string ws = TestContext.FreshWorkspace("e2e-mission-algo-cs");
         TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
+
+        string csPrompt = AlgoPrompt(ws, "mcs");
+        var (src, output) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", csPrompt);
+        TestContext.Check(!HasHardcodedAlgo(src), "C# calcula (sem hardcode das metas)");
+        TestContext.Check(AlgoOk(output), "C# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
+        Console.WriteLine($"  [algo] C# ok:\n{output.Trim()}");
+    }
+
+    /// <summary>Missao de algoritmos em F#: mesmo aceite, fonte e projeto proprios.</summary>
+    public static async Task MissionAlgoFs()
+    {
+        string bridge = TestContext.Bridge;
+        string model = AlgoModel();
+        string ws = TestContext.FreshWorkspace("e2e-mission-algo-fs");
         TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
 
-        string csPrompt =
-            "Preciso de um programa em " + ws + "/mcs/Program.cs, no projeto mcs.csproj que ja existe (nao crie outro projeto), resolvendo duas coisas e imprimindo o resultado de um jeito simples para eu conferir, so com numeros inteiros.\n" +
-            "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Me diga quantos movimentos foram necessarios e a sequencia completa no formato 1->2, 1->3, ...\n" +
-            "2) Uma analise dos primos: quantos ha abaixo de 100 e abaixo de 1000, e quantos pares gemeos abaixo de 100. O crivo de Eratostenes e uma boa pedida.\n" +
-            "Imprima os valores que o programa calculou; nao copie os numeros do enunciado.\n" +
-            "Para eu comparar sem ambiguidade, termine com estas linhas, uma por linha e nessa ordem:\n" +
-            "hanoi=15\nhanoi_seq=1->2,1->3,...\nprimes100=25\nprimes1000=168\ntwin100=8\n" +
-            "Pode rodar `dotnet run --project " + ws + "/mcs/mcs.csproj` e ajustar ate bater.";
+        string fsPrompt = AlgoPrompt(ws, "mfs");
+        var (src, output) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", fsPrompt);
+        TestContext.Check(!HasHardcodedAlgo(src), "F# calcula (sem hardcode das metas)");
+        TestContext.Check(AlgoOk(output), "F# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
+        Console.WriteLine($"  [algo] F# ok:\n{output.Trim()}");
+    }
 
-        string fsPrompt = csPrompt
-            .Replace(ws + "/mcs/Program.cs", ws + "/mfs/Program.fs")
-            .Replace(ws + "/mcs/mcs.csproj", ws + "/mfs/mfs.fsproj")
-            .Replace("projeto mcs.csproj", "projeto mfs.fsproj");
+    static string AlgoModel()
+    {
+        string model = TestContext.SuiteModel;
+        return model.EndsWith("-build") ? model : model + "-build";
+    }
 
-        // Diagnostico: ALGO_FROM=F# pula a metade C# (ela e' medida no run normal).
-        if (Environment.GetEnvironmentVariable("ALGO_FROM") != "F#")
-        {
-            var (csSrc, csOut) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", csPrompt);
-            TestContext.Check(!HasHardcodedAlgo(csSrc), "C# calcula (sem hardcode das metas)");
-            TestContext.Check(AlgoOk(csOut), "C# entrega as chaves esperadas, saiu: " + csOut[..Math.Min(240, csOut.Length)]);
-            Console.WriteLine($"  [algo] C# ok:\n{csOut.Trim()}");
-        }
-
-        var (fsSrc, fsOut) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", fsPrompt);
-        TestContext.Check(!HasHardcodedAlgo(fsSrc), "F# calcula (sem hardcode das metas)");
-        TestContext.Check(AlgoOk(fsOut), "F# entrega as chaves esperadas, saiu: " + fsOut[..Math.Min(240, fsOut.Length)]);
-        Console.WriteLine($"  [algo] F# ok:\n{fsOut.Trim()}");
+    /// <summary>Mesmo enunciado de missao para o projeto C# (mcs) e o F# (mfs).</summary>
+    static string AlgoPrompt(string ws, string dir)
+    {
+        bool cs = dir == "mcs";
+        string ext = cs ? "cs" : "fs";
+        string proj = dir + (cs ? ".csproj" : ".fsproj");
+        return "Preciso de um programa em " + ws + "/" + dir + "/Program." + ext + ", no projeto " + proj
+            + " que ja existe (nao crie outro projeto), resolvendo duas coisas e imprimindo o resultado de um jeito simples para eu conferir, so com numeros inteiros.\n"
+            + "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Me diga quantos movimentos foram necessarios e a sequencia completa no formato 1->2, 1->3, ...\n"
+            + "2) Uma analise dos primos: quantos ha abaixo de 100 e abaixo de 1000, e quantos pares gemeos abaixo de 100. O crivo de Eratostenes e uma boa pedida.\n"
+            + "Imprima os valores que o programa calculou; nao copie os numeros do enunciado.\n"
+            + "Para eu comparar sem ambiguidade, termine com estas linhas, uma por linha e nessa ordem:\n"
+            + "hanoi=15\nhanoi_seq=1->2,1->3,...\nprimes100=25\nprimes1000=168\ntwin100=8\n"
+            + "Pode rodar `dotnet run --project " + ws + "/" + dir + "/" + proj + "` e ajustar ate bater.";
     }
 
     /// <summary>Roda uma fase C#/F# de um agente com tools e devolve fonte + saida final.</summary>

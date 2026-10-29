@@ -73,6 +73,13 @@ public static class FsSyntaxRepair
             return "CERTO: a comprehension de array fica inteira entre `[|` e `|]`:\n"
                    + "[| for i in 1 .. 3 -> i * i |]";
 
+        // FS0597: o argumento que e' chamada/pipe precisa de parenteses; sem eles o
+        // parser le a expressao como mais um argumento (medido no isolado de
+        // 2026-10-29: o modelo repetiu a MESMA linha em 3 builds seguidos).
+        if (code == "FS0597")
+            return "CERTO: argumento com chamada, pipe ou composicao vai entre parenteses:\n"
+                   + "printfn \"%s\" (String.concat \",\" movs)";
+
         // FS0058 (offside): `let` na propria linha do `else` deixa o corpo fora da
         // coluna permitida. Forma estrutural: auxiliar no nivel do modulo, recebendo
         // por parametro o que ele usa de fora; no ramo, so' a chamada.

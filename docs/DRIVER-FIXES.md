@@ -282,7 +282,7 @@ repetia para sempre. `HISTORY.md:3761` já registrava que o parse quebrado é ar
 `arguments` **parseia**; as truncadas acumulam o nome e o corpo recebe o nudge de
 reparo com `finish_reason="stop"` (evento `salvage-args-rejected`); (b) no consumidor,
 `ToolCallRepair.Apply(history)` **poda** a assistant quebrada antes de anexar o nudge —
-sem isso o 500 volta igual. `E2EMissionTests` (C# e F#), `MissionAlgo` e
+sem isso o 500 volta igual. `E2EMissionTests` (C# e F#), `MissionAlgoCs`/`MissionAlgoFs` e
 `E2EBeltsTests` (scripter e gate) passaram a chamar o mesmo helper em vez de repetir o
 texto. FsMini foi reorganizado como tabela **INCONSISTENCIAS PREVISTAS EM F#**
 (código do erro → sintaxe correta), preservando o anchor `TIPOS NUMERICOS` que a

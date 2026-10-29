@@ -695,6 +695,20 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // Isolado de 2026-10-29: o modelo repetiu a MESMA linha em 3 builds seguidos
+    // (FS0597) porque o codigo nao tinha dica — cada build custa minutos de GPU.
+    public static Task FsRepairCallArgumentParens()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let rotulo movs = printfn \"%s\" String.concat \",\" movs\n",
+            "error FS0597: This argument expression needs parentheses. Expressions involving function or method calls must be parenthesized when passed as arguments, e.g. 'printfn \"%s\" (arg.Trim())'.");
+        TestContext.Check(p.Contains("(String.concat \",\" movs)"),
+            "FS0597 -> argumento entre parenteses (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains("printfn \"%s\" (") && !p.Contains("\" String.concat"),
+            "FS0597 -> a dica mostra so a forma que compila");
+        return Task.CompletedTask;
+    }
+
     // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
 
     public static Task AntiRepeatArgsWindowIsIndependent()

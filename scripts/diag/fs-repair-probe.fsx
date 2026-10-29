@@ -84,5 +84,8 @@ let total xs =
 check "corpo com let local + ultima expressao (FS3118/FS0588)" (total [1; 2; 3] = 12)
 let quadrados = [| for i in 1 .. 3 -> i * i |]
 check "comprehension de array inteira entre [| e |] (FS0603)" (quadrados = [| 1; 4; 9 |])
+let junta movs = String.concat "," movs
+let rotulo movs = printfn "%s" (junta movs)
+check "argumento com chamada entre parenteses (FS0597)" (rotulo [ "1->2"; "1->3" ] = ())
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."

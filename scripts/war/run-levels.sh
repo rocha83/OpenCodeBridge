@@ -421,7 +421,8 @@ case "$LEVEL" in
     echo "$HSTATUS" | grep -q '"main_harness":true' \
       || log "AVISO: main_harness nao esta true — Level 4 pede harness ligado (--main-harness 1 --harness-tails 1)"
     for mode in $MODES; do
-      step_bridge "algo-$mode" --only E-mission-algo --mode "$mode"
+      step_bridge "algo-cs-$mode" --only E-mission-algo-cs --mode "$mode"
+      step_bridge "algo-fs-$mode" --only E-mission-algo-fs --mode "$mode"
       step_bridge "belts-build-final-$mode" --only E-belts-build-direct --belts marrom,preta --mode "$mode"
       step_bridge "belts-orch-final-$mode" --only E-belts-direct --belts marrom,preta --mode "$mode"
       step_bridge "front-$mode" --only E-front --mode "$mode"

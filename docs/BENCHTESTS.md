@@ -198,7 +198,7 @@ step pode ser filtrado por `--only`.
 | **L1** | `units` (uma vez, bridge) → `integração` → `tópicos` |
 | **L2** | `E-responses-tools` → `E-tools-full` → belts **azul e verde** (build + orch) |
 | **L3** | `E-science-gpu` → `E-mission-tools` → belt **roxa** (build + orch) |
-| **L4** | `E-mission-algo` → belts **marrom e preta** (build + orch) → frontend `E-front-*` → `webui-integracao-topicos` |
+| **L4** | `E-mission-algo-cs` → `E-mission-algo-fs` → belts **marrom e preta** (build + orch) → frontend `E-front-*` → `webui-integracao-topicos` |
 
 - **L1 integração**: `E-stream-architect`, `E-review-architect`,
   `E-iot-event-queue`, `E-error-mitigation`,
@@ -358,9 +358,14 @@ isolada com `--only E-science-cpu` quando a Q3 estiver dedicada.
 `LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 4`
 
 Roda, em `--mode bridge` (default), nesta ordem:
-`E-mission-algo` → `belts-build` marrom+preta →
+`E-mission-algo-cs` → `E-mission-algo-fs` → `belts-build` marrom+preta →
 `belts-orch` marrom+preta → `E-front-*` (Gen/Edit CSS/Razor/React/Verify)
 → `webui-integracao-topicos` (Web.Test: integração + tópicos).
+
+`E-mission-algo-cs` e `E-mission-algo-fs` são testes **separados** (mesmo
+enunciado de missão, cada um no seu projeto/fonte). Misturar as duas linguagens
+num teste só mede duas capacidades com um veredito — o vermelho esconde qual
+metade falhou e as tentativas de uma contaminam as da outra.
 
 L3 e L4 exigem **harness ligado** na bridge; o runner consulta `/api/harness`
 e loga aviso se `main_harness` não estiver `true`:
