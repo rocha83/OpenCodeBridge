@@ -1471,3 +1471,50 @@ aplicados.
 **Prova.** `front-bridge` verde com `[front] sonda estatica (Razor/CSS/TSX),
 sem webdriver` no log do step, e a janela headed aparecendo apenas no
 `webui-integracao-topicos` (`[webui] Playwright em ... headed=1`).
+
+## 55. Web UI: janela Plan recebia enunciado de implementação e a Web rodava sem o harness da esteira (2026-10-30)
+
+**Sintoma.** L4 `webui-integracao-topicos` vermelho (attempt 4, run `ff076b5`,
+490s) com duas causas somadas:
+
+```
+[ui] azul: agente Plan (reasoning na UI) = 2|Engenheiro de Software - Plan (GPU) — Gemma4-E4B-Q4 sub=nenhum
+[ui] FAIL azul: conversa 2794 chars, msgs=1, toolcalls=10, toolsUi=True, raciocinio=0 chars, cobertura 3/8
+[simple] FAIL harness: TargetClosedException Target page, context or browser has been closed
+```
+
+**Causa 1 (perfil errado na janela).** A face "cognitiva" da faixa reenviava o
+`belt.Prompt` — o enunciado de *implementação* do Orch ("divida a tarefa de
+implementacao usando subagent tool"). O perfil Plan não executa: com tools no
+array ele gastou 10 tool calls, o raciocínio não apareceu (o turno virou
+execução) e a matéria nunca foi respondida como texto. Regra do harness: pedido
+sem tools termina com `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`.
+
+**Causa 2 (harness da Web diferente da esteira).** O `ChatController` montava as
+opções do turno com `Harness = false`: sem `MainHarness` e sem as caudas, o
+caminho Web não era o caminho medido pelo WAR (main harness + tails +
+anti-repeat). Medido no `status` da ponte e no evento `main-harness` da raia
+bridge (que a Web não emitia).
+
+**Correção.**
+
+1. `BeltUiTests.PlanTextFor`: enunciado TEXTO PURO por faixa (mesma matéria,
+   sem tool, sem delegação) com o fecho canônico; o aceite da face Plan exige
+   `calls == 0`, texto ≥ 2000 chars e o bloco "Raciocínio" na bolha.
+2. `ChatController.BridgeOptionsFor`: `Harness = true` (paridade com a raia
+   bridge). `Core/BridgeProxy` passou a decidir a cauda de tools pelo corpo
+   (`tools` presente), nos dois formatos — pedido texto-puro recebe só a cauda
+   de comportamento. `ToolCallRepair.ArgsOk` (tools salvage) entrou nos dois
+   laços: args truncado não chega ao executor, a call recebe o aviso canônico.
+3. Faixa `moe` nova: tópicos gerais (NASA / esoterismo Mesopotâmia / cordas),
+   um subagente por tema, composição final; aceite exige ≥2 `subagent` e ≥2
+   temas na conversa. Subagente segue a regra do projeto: **mesmo tipo do
+   chamador e mesma linha** (MoE→MoE Q4, Build→Build Q4, Plan→Plan);
+   **só o Orch delega ao Scripter** — nenhuma preferência cruza Q4 (:4124) com
+   GPU2/Q3 (:4125).
+4. `WarTemplate.StepWeb`: faixas default `azul,moe` (`--war-webui-belts`).
+
+**Prova (sonda direta na Web, sessão agentId=2 com o enunciado texto-puro).**
+`POST /Chat/Stream` → 282 deltas de `reasoning_content`, 1141 de `content`,
+**0** `tool_calls` (`/tmp/opencode/sse.txt`) — a bolha recebe o raciocínio e o
+turno sai em texto, que é o comportamento medido pela faixa.
