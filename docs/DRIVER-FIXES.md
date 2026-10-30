@@ -1348,3 +1348,35 @@ verify, tarde e com mensagem de "modelo não cumpriu".
 `delta 2: antes=18 depois=20`, `rect_w eq 320: antes=240 depois=320`,
 `padding-left eq 16: antes=8 depois=16`; webui `ToolExecutor 77/77`,
 `Chat Integration 10/10`.
+
+## 51. Hanoi do L4: contrato da sequência não estava enunciado (e o guard de rebuild barrou o re-run) (2026-10-30)
+
+**Sintoma.** L4 completo: `algo-cs-hanoi-bridge` FAIL em 177s, com
+`hanoi=15` correto e `hanoi_seq=1->3,1->3,3->3,...` — contagem certa, movimentos
+ilegais (`3->3`, disco saindo do lugar errado). O modelo hardcodou a haste auxiliar
+como 3 ("Assuming destination=3 is the auxiliary peg"). Os 7 steps seguintes foram
+SKIP por fail-fast.
+
+**Causa.** O enunciado pedia "a sequencia completa ... no formato 1->2,1->3,..." mas
+não declarava o contrato que o teste confere: a sequência canônica é a de movimentos
+LEGAIS (origem ≠ destino, disco do topo, torre inteira na haste 3). O modelo validou
+o próprio resultado só pela contagem (`hanoi=15`).
+
+**Correção (enunciado, sem receita).** Estágio 1 do hanoi passa a declarar o contrato
+observável: "cada item move o disco do topo de uma haste para OUTRA (origem e destino
+nunca iguais) e a torre termina inteira na haste 3 — o teste confere movimento por
+movimento". Nada de passo a passo de recursão; o aceite (`AlgoOk`) é o mesmo.
+
+**Guard de rebuild (comportamento correto, registrado para não confundir).** Depois
+do FAIL, `--war-only algo-cs-hanoi` com o MESMO binário foi BLOCKED no preflight
+(`rerun_sha512`/`guard_ativo_fail_fast`): re-rodar binário idêntico após vermelho é
+proibido. A rodada válida é depois de mudança real + rebuild.
+
+**Prova.** Com o enunciado novo e binário novo: `algo-cs-hanoi-bridge PASS (84s)`,
+`hanoi=15 · primes100=25 · primes1000=168 · twin100=8`.
+
+**Resíduo de dono (limpo).** `/tmp/e2e-mission-*` com `obj/` root-owned fazia
+`FreshWorkspace` cair em `<dir>-<stamp>-<pid>` (`cleanup ignorado ... UnauthorizedAccess`).
+Os diretórios canônicos foram removidos; a herança de dono do §45 evita a recorrência
+para o que as tools escrevem (artefatos de `dotnet build` via shell ainda nascem root
+— o fallback segue como rede de segurança e é logado).
