@@ -1445,3 +1445,29 @@ julgado com o aceite literal (main_harness, tails, tools_tail, lane, idade).
 
 **Prova.** `U-flow-gate` + `U-flow-gate-no-request` + `U-flow-gate-applies` +
 `U-cs-repair-missing-brace` → `[test] PASS=4 FAIL=0`.
+
+## 54. `--war-webdriver` vazava para o `front-bridge`: janela aberta sem demonstrar nada e baseline em `Timeout 30000ms` (2026-10-30)
+
+**Sintoma.** L4 `front-bridge` vermelho em 53s com a app respondendo 200 em
+`http://127.0.0.1:5199/`:
+`[front] measure exit=1: ... status=200 titulo= quadro_w= erro=TimeoutException: Timeout 30000ms exceeded`.
+Antes disso o step abria uma janela de navegador que não acompanhava nada do
+teste (o "demonstrar" só faz sentido no step de Web UI).
+
+**Causa.** O commit que ligou o WebDriver na esteira (3ea6887) passou
+`--webdriver --webdriver-url` também para o `E-front`, e o
+`E2EFrontPipeTests.Gen` troca a sonda estática (`StaticSnapshot` de
+Razor/CSS/TSX) pela medição de navegador (`Measure`) quando
+`TestContext.WebDriver` está ligado. Com `HEADED=1` isso virava Chromium
+headed no meio da esteira; o `#root` não montava dentro dos 30s e o aceite
+"React montou no #root" caía por motivo errado.
+
+**Correção (escopo da flag, sem afrouxar aceite).** O `--webdriver` pertence
+**só** ao último step (`webui-integracao-topicos`). O `front-bridge` voltou a
+`--only E-front` (sonda estática, a mesma das rodadas verdes). O aceite do
+front não mudou: continua exigindo build + baseline com `#titulo`/`#quadro`
+aplicados.
+
+**Prova.** `front-bridge` verde com `[front] sonda estatica (Razor/CSS/TSX),
+sem webdriver` no log do step, e a janela headed aparecendo apenas no
+`webui-integracao-topicos` (`[webui] Playwright em ... headed=1`).

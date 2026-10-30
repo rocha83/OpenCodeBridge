@@ -32,6 +32,7 @@ public static class PlaywrightSetup
     /// um perfil que não é o da esteira — medido em 2026-10-30: turno sem tool e
     /// nota falsa de "sem executar nada". Seleção por rótulo+modelo (Build Q4 :4124,
     /// o mesmo bridge dos units), nunca por id: o id do banco dev/PROD diverge.
+    /// A preferência descarta o par GPU2/Q3 — o perfil da esteira é o Q4.
     /// Executor vai para o perfil Exec (Q3) quando existe; sem ele, fica "nenhum".
     /// </summary>
     /// <param name="page">Página em <c>/Chat</c> com os dropdowns renderizados.</param>
@@ -40,7 +41,7 @@ public static class PlaywrightSetup
     public static Task<string> SelectBuildAgentAsync(IPage page, string label) =>
         SelectAgentAsync(page, label, "Build (mode=build com a tool write)",
             "(o) => (o.dataset.mode || '').toLowerCase() === 'build' && (o.dataset.tools || '').includes('write')",
-            "(o) => /Build/i.test(o.textContent) && !/Q3/i.test(o.textContent)",
+            "(o) => /Build/i.test(o.textContent) && !/Q3|GPU2/i.test(o.textContent)",
             pickExec: true);
 
     /// <summary>
@@ -54,7 +55,7 @@ public static class PlaywrightSetup
     public static Task<string> SelectPlanAgentAsync(IPage page, string label) =>
         SelectAgentAsync(page, label, "Plan (reasoning na UI)",
             "(o) => (o.dataset.mode || '').toLowerCase() === 'plan'",
-            "(o) => /Plan/i.test(o.textContent) && !/Q3/i.test(o.textContent)",
+            "(o) => /Plan/i.test(o.textContent) && !/Q3|GPU2/i.test(o.textContent)",
             pickExec: false);
 
     /// <summary>
@@ -69,7 +70,7 @@ public static class PlaywrightSetup
     public static Task<string> SelectOrchAgentAsync(IPage page, string label) =>
         SelectAgentAsync(page, label, "Orch (delegação, sem escrita)",
             "(o) => (o.dataset.mode || '').toLowerCase() === 'build' && (o.dataset.tools || '').includes('subagent') && !(o.dataset.tools || '').includes('write')",
-            "(o) => /Orch/i.test(o.textContent) && !/Q3/i.test(o.textContent)",
+            "(o) => /Orch/i.test(o.textContent) && !/Q3|GPU2/i.test(o.textContent)",
             pickExec: true);
 
     // Núcleo da seleção: filtro + preferência declarados como JS, sem id do banco.
