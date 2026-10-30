@@ -738,8 +738,8 @@ internal static class E2EMissionTests
         return i >= 0 ? l[..i] : l;
     }));
 
-    static bool AlgoOkBin(string output) => ParseKeyValues(output).TryGetValue("binsearch_idx", out var v) && v.Replace(" ", "") == "5";
-    static bool HasHardcodedBin(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"binsearch_idx\s*=\s*5");
+    static bool AlgoOkBin(string output) => ParseKeyValues(output).TryGetValue("binsearch_idx", out var v) && v.Replace(" ", "") == "6";
+    static bool HasHardcodedBin(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"binsearch_idx\s*=\s*6");
 
     static bool AlgoOkBTree(string output)
     {

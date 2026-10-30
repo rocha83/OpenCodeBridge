@@ -17,7 +17,7 @@
       "type": "table",
       "title": "Modo / Main Harness",
       "gridPos": {
-        "h": 3,
+        "h": 6,
         "w": 6,
         "x": 18,
         "y": 0
@@ -66,7 +66,7 @@
       "title": "Fluxo principal",
       "type": "text",
       "gridPos": {
-        "h": 3,
+        "h": 6,
         "w": 18,
         "x": 0,
         "y": 0
@@ -84,7 +84,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 3
+        "y": 6
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -177,7 +177,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 3
+        "y": 6
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -270,7 +270,7 @@
         "h": 4,
         "w": 5,
         "x": 0,
-        "y": 11
+        "y": 14
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -305,7 +305,7 @@
         "h": 4,
         "w": 5,
         "x": 10,
-        "y": 11
+        "y": 14
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -340,7 +340,7 @@
         "h": 4,
         "w": 4,
         "x": 15,
-        "y": 11
+        "y": 14
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -395,7 +395,7 @@
         "h": 4,
         "w": 5,
         "x": 19,
-        "y": 11
+        "y": 14
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -430,7 +430,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 15
+        "y": 18
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -470,7 +470,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 15
+        "y": 18
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -510,7 +510,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 26
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -579,7 +579,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 32
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -638,7 +638,8 @@
               "wrapText": true
             },
             "inspect": false
-          }
+          },
+          "noValue": "sem steps publicados ainda"
         },
         "overrides": [
           {
@@ -720,7 +721,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 37
+        "y": 40
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -815,7 +816,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 37
+        "y": 40
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -931,7 +932,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 45
+        "y": 48
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -1021,7 +1022,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 45
+        "y": 48
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -1086,7 +1087,7 @@
         "h": 4,
         "w": 5,
         "x": 5,
-        "y": 11
+        "y": 14
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
