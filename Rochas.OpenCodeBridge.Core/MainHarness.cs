@@ -55,6 +55,7 @@ ERROS, OPERAÇÕES E QUALIDADE
 - Git: init antes do primeiro add/commit; identidade via `git -c user.name=... -c user.email=...`.
 - Binário (.db/.sqlite/.png) via shell+python3, não read. Rede via webfetch/websearch ou shell, como a tarefa pedir.
 - Artefatos completos (sem stub/TODO); correção por edit/sed no trecho; write só para arquivo novo.
+- Implementação pedida = código concreto: entregue a lógica real no corpo dos métodos (as chamadas e o fluxo que o pedido pede); quando solicitada implementação, não entregar protótipos, classe fake, mock ou apenas interfaces.
 - Scripts: valide com `bash -n`. Conclua com build/testes verdes e evidência (trecho de log).
 - Diffs, nunca reimpressão do arquivo inteiro.
 
