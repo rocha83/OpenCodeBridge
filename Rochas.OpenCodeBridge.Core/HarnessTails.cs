@@ -87,6 +87,7 @@ public static class HarnessTails
         "FS0193 funcao -> `@` e `List.append` exigem os DOIS operandos: `a @ b` ou `List.append a b` (no pipe, o segundo vem explicito: `x |> List.append ys`). " +
         "FS0020 resultado descartado -> `|> ignore` ou `printfn \"%d\" v`. " +
         "FS3563 identificador invalido -> crase dupla no nome (``mdc``). " +
+        "FS3373 texto -> a interpolacao nao aceita aspas dentro da `{...}`: separe num `let` e imprima com formato: `let rotulo = String.concat \",\" movs` / `printfn \"hanoi_seq=%s\" rotulo`. " +
         "SE O BUILD FALHAR: leia a linha `error`, aplique a forma da tabela e edite SO' o trecho; nao reescreva o arquivo igual.";
 
     /// <summary>

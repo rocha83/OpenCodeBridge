@@ -9,7 +9,7 @@ set -uo pipefail
 ROOT="${WAR_ROOT:-/usr/src/opencodebridge}"
 API="${WAR_API_KEY:-guest@123}"
 MAX="${WAR_MAX_ATTEMPTS:-5}"
-LOG_DIR="${WAR_LOG_DIR:-/tmp/opencode}"
+LOG_DIR="${WAR_LOG_DIR:-$ROOT/logs/war}"
 BRIDGE="${WAR_BRIDGE:-http://127.0.0.1:4124}"
 
 mkdir -p "$LOG_DIR"

@@ -35,7 +35,7 @@ ARGS=(--skip-e2e --api-key "$API_KEY")
 echo "== units =="
 set +e
 dotnet run --project Rochas.OpenCodeBridge.Test/Rochas.OpenCodeBridge.Test.csproj \
-  -c Release --no-build -- "${ARGS[@]}" 2>&1 | tee /tmp/units-$(date +%H%M%S).log | grep -E '^\[test\] (PASS=|FAIL|ABORT)|^FAIL |^PASS '
+  -c Release --no-build -- "${ARGS[@]}" 2>&1 | tee "$ROOT/logs/units-$(date +%Y%m%d-%H%M%S).log" | grep -E '^\[test\] (PASS=|FAIL|ABORT)|^FAIL |^PASS '
 RC=${PIPESTATUS[0]}
 set -e
 [ "$RC" -eq 0 ] || { echo "ERRO: units falharam (rc=$RC)" >&2; exit "$RC"; }

@@ -80,6 +80,15 @@ public static class FsSyntaxRepair
                  + "let tabela: int array = [| 0; 0 |]\n"
                  + "let rec passos n = if n = 0 then [] else passos (n - 1) @ [ n ]";
 
+        // FS3373 interpolacao com aspas dentro da expressao: F# recusa aspas dentro
+        // do `{...}` quando o literal externo tambem e' string (17a amostra do isolado
+        // de 2026-10-29: `printfn $"hanoi_seq={String.concat "," seq}"`). O CERTO
+        // separa a expressao num `let` e imprime com formato posicional.
+        if (code == "FS3373")
+            return "CERTO: monte a expressao num `let` e imprima com formato posicional:\n"
+                 + "let rotulo = String.concat \",\" movs\n"
+                 + "printfn \"hanoi_seq=%s\" rotulo";
+
         // FS0010 em `seq { ... }` com operador: a comprehension de sequencia exige
         // `yield` (mesma amostra: `sequencia <- seq {+ source, dest}`). Acumular
         // movimento e' LISTA, sem `mutable`/`ref`.

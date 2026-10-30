@@ -1632,6 +1632,17 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
 
 ## Dependência Grafana — painel Observation
 
+- **Acesso:** `http://127.0.0.1:4800` (proxy Caddy `:4150`), credenciais do lab
+  **`admin` / `guest@123`** (mesma senha da bridge e dos testes). Senha mexer:
+  `sudo grafana cli --homepath /usr/share/grafana admin reset-admin-password guest@123`.
+- **Bloqueio de tentativas (encontrado 2026-10-29):** depois de erros de login o
+  Grafana responde `401` com *"too many consecutive incorrect login attempts …
+  temporarily blocked"* — **não** é a senha que mudou. Limpar a janela:
+  `sudo python3 -c "import sqlite3; c=sqlite3.connect('/var/lib/grafana/grafana.db'); c.execute('delete from login_attempt'); c.commit()"`.
+- **Dashboard:** `OpenCodeBridge Observation` (uid `opencodebridge`), 16 painéis
+  apontando para `${bridge}` — `mode=bridge`, `main_harness`, `tails`, métricas,
+  probes, steps e enunciado. Todo target usa `source: "url"` (sem isso o Infinity
+  **devolve 200 sem dados** — medição: mesmo payload sem `source` = 0 linhas).
 - Plugin **`yesoreyeram-infinity-datasource`** é obrigatório para o dashboard `opencodebridge`
   (panels consultam `http://127.0.0.1:4124/api/metrics` e `/api/status` via Infinity).
   Instalar: `sudo grafana-cli --homepath /usr/share/grafana plugins install yesoreyeram-infinity-datasource`
@@ -1639,6 +1650,9 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
 - Panels `TestData` (sondas Serilog) funcionam nativamente sem plugin.
 - Provisionamento versionado em `observation/grafana/` (dashboard JSON + YAMLs), copiado para
   `/var/lib/grafana/dashboards` e `/etc/grafana/provisioning` pelo `OpenCodeBridge.Observation`.
+  Conferência de painel: `GET /api/datasources/uid/opencodebridge-infinity/health` e
+  `POST /api/ds/query` (um target por payload) — o próprio `scripts/deploy-pull.sh`
+  já reinicia `grafana-server` junto com a bridge para reaplicar o provisioning.
 
 ## 15. Scripts operacionais de bancada (2026-10-29)
 
@@ -1649,7 +1663,7 @@ a raiz do repo da própria localização (`scripts/` → `..`) e usam
 | script | uso | o que faz |
 |---|---|---|
 | `scripts/bridge-restart.sh` | `bridge-restart.sh [4124\|4125\|4126] [--print-flags]` | reinicia a unit da bridge alvo (`bridge-gpu`/`bridge-gpu2`/`bridge-cpu-forced`), espera `/api/status` até 30 s e imprime modelo/mode/tails/uptime; com `--print-flags` imprime orçamento e janelas e **falha** se `main_harness`/`harness_tails` estiverem off |
-| `scripts/check-units.sh` | `check-units.sh [--only NOME] [--no-build]` | build Release + bateria de units (`--skip-e2e`), log em `/tmp/units-<hora>.log`, sai com o rc do runner (fail-fast vale) |
+| `scripts/check-units.sh` | `check-units.sh [--only NOME] [--no-build]` | build Release + bateria de units (`--skip-e2e`), log em `logs/units-<stamp>.log`, sai com o rc do runner (fail-fast vale) |
 | `scripts/run-isolated.sh` | `run-isolated.sh E-mission-tools [--no-restart] [--port N] [--key K]` | reinicia a bridge (regra de bateria), roda **um** teste isolado com log em `logs/isolated/<teste>-<stamp>.log` e imprime veredito + `[ws]` + últimos 12 turnos do `_mission.log` |
 | `scripts/push-persist.sh` | `GITHUB_TOKEN=... push-persist.sh [--branch main]` | push do persistente para o `origin`, com o token **fora** do repo (env ou 1º arg), mascarado no log e conferido por `ls-remote` (HEAD == origin/main) |
 | `scripts/prod-repair-ownership.sh` | `prod-repair-ownership.sh [--dry-run]` | conserta o PROD quando `.git`/worktree ficaram de root (DRIVER-FIXES #21): `chown -R` + `git checkout -- .` (deploy-only, nunca `reset --hard`) e valida worktree limpo |

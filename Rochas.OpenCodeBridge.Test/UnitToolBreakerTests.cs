@@ -1020,6 +1020,21 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // 17a amostra (2026-10-29): `printfn $"hanoi_seq={String.concat "," seq}"` ->
+    // FS3373 "Invalid interpolated string". O CERTO separa num `let` e usa formato.
+    public static Task FsRepairInterpolatedString()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let rotulo = String.concat \",\" sequencia\nprintfn $\"hanoi_seq={String.concat \",\" sequencia}\"\n",
+            "/tmp/x/Program.fs(21,40): error FS3373: Invalid interpolated string. Single quote or verbatim string literals may not be used in interpolated expressions in single quote or verbatim strings.");
+        TestContext.Check(p.Contains("printfn \"hanoi_seq=%s\" rotulo"),
+            "FS3373 -> dica ensina formato posicional com `let` (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(!p.Contains("String.concat \",\" sequencia}\""),
+            "a dica nao ecoa a interpolacao que nao compila");
+        TestContext.Check(p.Contains("linha 21"), "a dica aponta a linha do erro");
+        return Task.CompletedTask;
+    }
+
     // Ponteiro da linha do erro: o compilador diz `arquivo(linha,coluna)` e o modelo
     // editava a linha vizinha (17a amostra). Sem linha na saida, nada muda.
     public static Task FsRepairErrorLinePointer()

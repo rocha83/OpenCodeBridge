@@ -154,5 +154,10 @@ check "lista vazia com tipo pos-fixado (FS3156)" (vazia.Length = 0 && tabela.Len
 //     `sequencia <- seq {+ source, dest}` -> FS0010). Forma valida e verificavel.
 let rec passos n = if n = 0 then [] else passos (n - 1) @ [ n ]
 check "acumular lista com @ (FS0010 seq)" (passos 3 = [ 1; 2; 3 ])
+
+// 18) Interpolacao com aspas dentro da expressao (17a amostra: FS3373). O CERTO
+//     separa num `let` e usa formato posicional.
+let rotuloFS = String.concat "," [ "1->2"; "1->3" ]
+check "texto com formato posicional (FS3373)" (sprintf "hanoi_seq=%s" rotuloFS = "hanoi_seq=1->2,1->3")
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."
