@@ -1416,3 +1416,32 @@ repetições e o Core devolve a forma.
 `[test] PASS=2 FAIL=0` — dica com "1 bloco(s) aberto(s) sem fechar", "3 abre-chave e
 2 fecha-chave", ponteiro "linha 10", escalada na 3ª, fonte balanceada sem dica e erro
 sem código CS sem reparo.
+
+## 53. Portão P1 julgava teste de CAMINHO DE ERRO (nenhum `system-sent` a conferir) (2026-10-30)
+
+**Sintoma.** L1: `units` PASS (8s), `integration-bridge` **FAIL em 10s** e
+`topics-bridge` SKIP. No log do step, depois de `E-iot-event-queue` PASS:
+
+```
+FAIL E-error-mitigation: fluxo bridge incompleto: registro anterior ao teste
+(nenhum request deste teste chegou a bridge) [path=responses ... main_harness=true]
+```
+
+**Causa.** `E-error-mitigation` é o caminho de ERRO por definição: manda corpo sem
+`input` e exige 4xx. A bridge responde antes de montar o system, então **não grava
+`system-sent`** — só conta a tentativa em `model_requests`. O delta do contador
+(§47) subiu, o portão julgou, e o único registro da bridge era do teste anterior →
+"registro anterior ao teste". Falso negativo: não havia fluxo a conferir.
+
+**Correção (declaração do teste, sem heurística).** `TestContext.NoModelFlow`:
+o teste declara que não serviu request de modelo (caminho de erro ou só leitura de
+`/api/status`), o `Run` zera a marca antes de cada teste e o portão sai do
+julgamento. A decisão virou função pura `BridgeFlowGate.Applies(mode, name,
+noModelFlow)` — testável, sem espalhar condição pelo laço. Aplicado em
+`E-error-mitigation` e `E-healthy-concurrency`.
+
+**Nada afrouxado:** todo E2E em modo bridge que serve request de modelo continua
+julgado com o aceite literal (main_harness, tails, tools_tail, lane, idade).
+
+**Prova.** `U-flow-gate` + `U-flow-gate-no-request` + `U-flow-gate-applies` +
+`U-cs-repair-missing-brace` → `[test] PASS=4 FAIL=0`.

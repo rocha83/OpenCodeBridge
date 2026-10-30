@@ -99,6 +99,21 @@ internal static class BridgeFlowGate
         return Probe(bridge, testStartMs);
     }
 
+    /// <summary>
+    /// O portao roda para E2E em modo bridge que NAO declararam ausencia de request de
+    /// modelo (<see cref="TestContext.NoModelFlow"/>). Teste de caminho de erro
+    /// (`E-error-mitigation`, corpo sem input) e teste so' de leitura nao tem fluxo a
+    /// conferir: julgar ali era falso negativo (medido em 2026-10-30).
+    /// </summary>
+    /// <param name="mode">Modo do runner (bridge/opencode).</param>
+    /// <param name="name">Nome do teste.</param>
+    /// <param name="noModelFlow">O teste declarou que nao serviu request de modelo.</param>
+    /// <returns>True quando o portao deve julgar este teste.</returns>
+    public static bool Applies(string mode, string name, bool noModelFlow)
+        => mode == "bridge"
+           && name.StartsWith("E-", StringComparison.Ordinal)
+           && !noModelFlow;
+
     /// <summary>Contador de requests de modelo da bridge (0 quando indisponivel).</summary>
     /// <param name="bridge">Base da bridge alvo.</param>
     /// <returns>model_requests da vida do processo.</returns>

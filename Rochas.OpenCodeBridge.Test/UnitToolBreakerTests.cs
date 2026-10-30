@@ -1195,6 +1195,24 @@ internal static class UnitToolBreakerTests
     /// teste so' de leitura (E-front-verify) caem aqui — o registro da rodada
     /// anterior nao pode virar vermelho (medido no front-bridge de 2026-10-30).
     /// </summary>
+    /// <summary>
+    /// Quem o portao P1 julga: E2E em modo bridge que serviu request de modelo. Teste
+    /// de caminho de erro/leitura declara `NoModelFlow` e sai do julgamento — nao e'
+    /// afrouxar o aceite, e' nao julgar fluxo que nao existe (2026-10-30).
+    /// </summary>
+    public static Task FlowGateApplies()
+    {
+        TestContext.Check(BridgeFlowGate.Applies("bridge", "E-error-mitigation", false),
+            "E- em modo bridge sem declaracao entra no portao");
+        TestContext.Check(!BridgeFlowGate.Applies("bridge", "E-error-mitigation", true),
+            "teste que declara NoModelFlow sai do portao");
+        TestContext.Check(!BridgeFlowGate.Applies("opencode", "E-tools-full", false),
+            "modo opencode nao tem portao de fluxo da bridge");
+        TestContext.Check(!BridgeFlowGate.Applies("bridge", "U-status", false),
+            "U-* nao entra no portao (sem request de modelo)");
+        return Task.CompletedTask;
+    }
+
     public static Task FlowGateNoRequest()
     {
         var (noRequest, dump) = BridgeFlowGate.Probe(TestContext.Bridge, 0, long.MaxValue);

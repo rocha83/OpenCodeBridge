@@ -23,6 +23,16 @@ internal static class TestContext
 
     public static string? ApiKey;
 
+    /// <summary>
+    /// Teste declara que NAO serviu request de modelo (caminho de erro ou so' de
+    /// leitura): o portao de fluxo P1 nao tem o que conferir e nao julga. Zerado
+    /// pelo <see cref="Run"/> antes de cada teste, entao nao vaza para o proximo.
+    /// Caso medido (2026-10-30): `E-error-mitigation` manda corpo sem `input` e
+    /// espera 4xx — a bridge conta a tentativa mas nao grava `system-sent`, e o
+    /// portao acusava "registro anterior ao teste".
+    /// </summary>
+    public static bool NoModelFlow;
+
     // Stream history: o driver injeta WAR_JOURNEY_DIR por step. Sem a variavel
     // (unit/manual) nada e gravado, para nao poluir o disco nem o repo.
     static string? JourneyDir => Environment.GetEnvironmentVariable("WAR_JOURNEY_DIR") is { Length: > 0 } dir
@@ -263,6 +273,7 @@ internal static class TestContext
             // Portao de fluxo (PENDINGS P1): vale para QUALQUER E2E em modo bridge.
             // O delta de model_requests diz se ESTA bridge recebeu request no run —
             // sem request nao ha fluxo a conferir (fase que usa bridge secundaria).
+            NoModelFlow = false;
             long flowBefore = Mode == "bridge" && name.StartsWith("E-", StringComparison.Ordinal)
                 ? BridgeFlowGate.ModelRequests(Bridge)
                 : 0;
@@ -270,7 +281,7 @@ internal static class TestContext
             // Portao de fluxo (PENDINGS P1): vale para QUALQUER E2E em modo bridge,
             // com a mesma mensagem e o mesmo dump. Em opencode nao roda (o cliente
             // se auto-gerencia) e nos U-* nao ha request de modelo para conferir.
-            if (Mode == "bridge" && name.StartsWith("E-", StringComparison.Ordinal))
+            if (BridgeFlowGate.Applies(Mode, name, NoModelFlow))
             {
                 var (missing, dump) = BridgeFlowGate.Probe(Bridge,
                     new DateTimeOffset(t0).ToUnixTimeMilliseconds(), flowBefore);
