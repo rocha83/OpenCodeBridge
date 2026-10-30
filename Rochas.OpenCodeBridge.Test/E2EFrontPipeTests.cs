@@ -416,10 +416,12 @@ internal static class E2EFrontPipeTests
         double tokensOut = 0, secs = 0;
         string final = "";
         int exit = 3;
+        int nudges = 0;
         Directory.CreateDirectory(Path.GetDirectoryName(dumpAbs)!);
 
         for (int turn = 1; turn <= maxTurns; turn++)
         {
+            string lastToolError = "";
             var t0 = DateTime.UtcNow;
             var r = await Chat(bridge, model, (JsonArray)history.DeepClone(), tools);
             double dt = (DateTime.UtcNow - t0).TotalSeconds;
@@ -443,6 +445,23 @@ internal static class E2EFrontPipeTests
 
             if (calls is null || calls.Count == 0)
             {
+                // Tool falhou no turno anterior e o modelo encerrou sem corrigir: o
+                // artefato continua no estado anterior. Um empurrao com o erro exato
+                // (a mensagem da tool ja' ensina a forma certa) antes de aceitar o
+                // "OK" — o Q3 fechava a fase sem aplicar nada (E-front-edit-react,
+                // `oldString ocorre 2x`, 2026-10-30).
+                if (lastToolError.Length > 0 && nudges < 1)
+                {
+                    nudges++;
+                    Console.WriteLine($"  [front:{label}] tool falhou e o modelo encerrou: empurrao com o erro exato");
+                    history.Add(new JsonObject
+                    {
+                        ["role"] = "user",
+                        ["content"] = "A ultima tool FALHOU: " + lastToolError
+                            + "\nAplique a correcao agora e so' entao responda OK."
+                    });
+                    continue;
+                }
                 final = content;
                 exit = Regex.IsMatch(content, @"\[tool_call\]|tool_call>|(?m)^\s*(read|write|edit|glob)\s*\(") ? 4 : 0;
                 break;
@@ -473,6 +492,7 @@ internal static class E2EFrontPipeTests
                 string res = exec["ok"]?.GetValue<bool>() == true
                     ? (exec["output"]?.GetValue<string>() ?? "")
                     : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
+                if (res.StartsWith("ERRO", StringComparison.Ordinal)) lastToolError = res;
                 results.Add(new JsonObject { ["name"] = name, ["args"] = Clip(a.ToJsonString(), 400), ["result"] = Clip(res, 800) });
                 history.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = Clip(res) });
             }

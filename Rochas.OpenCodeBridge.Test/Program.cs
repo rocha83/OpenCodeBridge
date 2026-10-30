@@ -198,6 +198,7 @@ internal static class Program
         TestContext.Run("U-breaker-same-error", UnitToolBreakerTests.TripsRepeatedSameError);
         TestContext.Run("U-breaker-interleaved-loop", UnitToolBreakerTests.CountsInterleavedLoop);
         TestContext.Run("U-content-antireply-scopes", UnitToolBreakerTests.ContentScopeUsesHelperSubclasses);
+        TestContext.Run("U-flow-gate-no-request", UnitToolBreakerTests.FlowGateNoRequest);
         TestContext.Run("U-tools-antireply-helpers", UnitToolBreakerTests.ToolScopeUsesHelperSubclasses);
         TestContext.Run("U-toolargs-literal-newline", UnitToolBreakerTests.FixesLiteralNewlineEscape);
         TestContext.Run("U-tails-path-simulation-rules", UnitToolBreakerTests.ToolsTailCarriesPathAndSimulationRules);

@@ -260,13 +260,20 @@ internal static class TestContext
         }
         try
         {
+            // Portao de fluxo (PENDINGS P1): vale para QUALQUER E2E em modo bridge.
+            // O delta de model_requests diz se ESTA bridge recebeu request no run —
+            // sem request nao ha fluxo a conferir (fase que usa bridge secundaria).
+            long flowBefore = Mode == "bridge" && name.StartsWith("E-", StringComparison.Ordinal)
+                ? BridgeFlowGate.ModelRequests(Bridge)
+                : 0;
             fn().GetAwaiter().GetResult();
             // Portao de fluxo (PENDINGS P1): vale para QUALQUER E2E em modo bridge,
             // com a mesma mensagem e o mesmo dump. Em opencode nao roda (o cliente
             // se auto-gerencia) e nos U-* nao ha request de modelo para conferir.
             if (Mode == "bridge" && name.StartsWith("E-", StringComparison.Ordinal))
             {
-                var (missing, dump) = BridgeFlowGate.Probe(Bridge, new DateTimeOffset(t0).ToUnixTimeMilliseconds());
+                var (missing, dump) = BridgeFlowGate.Probe(Bridge,
+                    new DateTimeOffset(t0).ToUnixTimeMilliseconds(), flowBefore);
                 if (missing.StartsWith("INCONCLUSIVO", StringComparison.Ordinal))
                     Console.WriteLine($"  [flow] {name}: {missing} [{dump}]");
                 else if (missing.Length > 0)

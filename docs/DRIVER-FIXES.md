@@ -1249,3 +1249,46 @@ do pin (reset sem `panel` preserva enunciado/histórico; reset com `panel` zera
 enunciado, histórico e lista) continua igual.
 
 **Prova.** `--only U-diag-reset-panel,U-diag-reset,U-status` → `[test] PASS=3 FAIL=0`.
+
+## 47. Portão de fluxo acusava "registro anterior ao teste" em fase que usa a bridge secundária (2026-10-30)
+
+**Sintoma.** `front-bridge` FAIL em 34s com o painel de edição todo verde:
+`fluxo bridge incompleto: registro anterior ao teste (nenhum request deste teste
+chegou a bridge)`. `E-front-gen` PASS, `E-front-edit` aplicou os 3 enunciados de CSS
+(`linhas alteradas=1` cada) e o step morreu no portão P1.
+
+**Causa.** O portão confere `GET /api/test/last-system` na bridge **do gate**
+(4124). As fases de edição do front mandam o modelo para o **Q3 (4125)** por
+projeto; a 4124 só tinha o registro do `gen`, mais velho que o início do teste →
+"registro anterior". Teste só de leitura (`E-front-verify`) cairia no mesmo erro.
+
+**Correção.** `BridgeFlowGate.Probe(bridge, testStartMs, modelRequestsBefore)`:
+o `TestContext.Run` lê `model_requests` antes do teste e o portão só julga quando o
+contador SUBIU no run. Sem request na bridge do gate ⇒ `INCONCLUSIVO: nenhum
+request de modelo nesta bridge durante o teste` (fase em bridge secundária ou teste
+de leitura). Com request, o aceite é literal o de antes (main_harness, tails,
+tools_tail, lane, idade do registro) — nada afrouxado.
+
+**Prova.** `U-flow-gate` + `U-flow-gate-no-request` → `PASS=2 FAIL=0`; rodada do
+front com `[flow] E-front-edit-razor: INCONCLUSIVO: ... [model_requests 5 -> 5]`.
+
+## 48. `oldString` repetido: a dica não dizia o literal certo e o Q3 fechou a fase com "OK" (2026-10-30)
+
+**Sintoma.** `E-front-edit-react` FAIL: `react-painel-2026: react contem Painel de
+vendas 2026`. O modelo fez `read` e depois `edit` com `oldString: "Painel de
+vendas"`; a tool recusou (`ocorre 2x; use replaceAll ou refine o trecho`) e a
+resposta seguinte foi `OK`, sem nenhuma edição.
+
+**Causa (duas).** 1) A dica de duplicidade não enunciava a chamada válida — o modelo
+copia o literal da mensagem e ali não havia nenhum (`replaceAll` citado de passagem).
+2) O loop do front aceitava "OK" logo após uma tool que falhou: encerrava a fase com
+o artefato intacto.
+
+**Correção.** (a) `EditToolHandler`: mensagem passa a trazer a forma certa —
+`repita a mesma chamada com "replaceAll": true para trocar as N ocorrencias de uma
+vez` (ou trecho maior de uma só ocorrência). (b) `E2EFrontPipeTests.AgentLoop`: se o
+turno encerra sem tool call e a última tool falhou, injeta UM empurrão com o erro
+exato ("Aplique a correcao agora e so' entao responda OK") antes de aceitar o final.
+
+**Prova.** `U-tools-elision-refused` continua verde; rodada do front reexecutada com
+as quatro fases (`gen`, `edit`, `edit-razor`, `edit-react`) + `E-front-verify`.

@@ -84,7 +84,17 @@ public sealed class EditToolHandler : IToolHandler
                     + "(um trecho curto, de uma linha, e' mais facil de acertar) ou grave o arquivo inteiro com `write`. "
                     + $"Primeira linha de '{path}': {first}");
             }
-            if (count > 1 && !replaceAll) return ToolResult.Fail($"oldString ocorre {count}x; use replaceAll ou refine o trecho");
+            if (count > 1 && !replaceAll)
+            {
+                // A forma CERTA vai na mensagem (o modelo copia o literal): a mesma
+                // chamada com `replaceAll: true` troca TODAS as ocorrencias. Antes a
+                // mensagem dizia so' "use replaceAll ou refine o trecho" e o Q3 deu
+                // o turno por encerrado com "OK" sem aplicar nada (medido em
+                // E-front-edit-react, 2026-10-30).
+                return ToolResult.Fail($"oldString ocorre {count}x em '{path}'. CERTO: repita a mesma chamada com "
+                    + "\"replaceAll\": true para trocar as " + count + " ocorrencias de uma vez; "
+                    + "se quiser trocar SO' uma, copie um trecho maior (que exista uma vez) do ultimo `read`.");
+            }
 
             string updated = replaceAll ? text.Replace(oldString, newString) : ReplaceFirst(text, oldString, newString);
             File.WriteAllText(full, updated);

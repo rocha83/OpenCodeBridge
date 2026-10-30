@@ -78,6 +78,40 @@ internal static class BridgeFlowGate
         return (Check(rec, testStartMs), rec is null ? "registro vazio" : Describe(rec));
     }
 
+    /// <summary>
+    /// Probe que sabe se o teste mandou request para ESTA bridge: o contador
+    /// <c>model_requests</c> nao subiu no run ⇒ nao ha fluxo a conferir aqui (fase
+    /// que usa bridge secundaria, ex. Q3 4125 na edicao do front, ou teste so' de
+    /// leitura como <c>E-front-verify</c>). O registro velho da rodada anterior
+    /// deixa de ser FAIL: era falso negativo — medido em 2026-10-30 (front-bridge
+    /// FAIL em 34s com o painel de edicao todo verde).
+    /// </summary>
+    /// <param name="bridge">Base da bridge alvo.</param>
+    /// <param name="testStartMs">Inicio do teste (epoch ms).</param>
+    /// <param name="modelRequestsBefore">model_requests lido ANTES do teste.</param>
+    /// <returns>(causa faltante ou INCONCLUSIVO, dump).</returns>
+    public static (string Missing, string Dump) Probe(string bridge, long testStartMs, long modelRequestsBefore)
+    {
+        long after = ModelRequests(bridge);
+        if (after <= modelRequestsBefore)
+            return ("INCONCLUSIVO: nenhum request de modelo nesta bridge durante o teste (nada a conferir)",
+                $"model_requests {modelRequestsBefore} -> {after}");
+        return Probe(bridge, testStartMs);
+    }
+
+    /// <summary>Contador de requests de modelo da bridge (0 quando indisponivel).</summary>
+    /// <param name="bridge">Base da bridge alvo.</param>
+    /// <returns>model_requests da vida do processo.</returns>
+    public static long ModelRequests(string bridge)
+    {
+        try
+        {
+            JsonObject? m = TestContext.GetObj(bridge + "/api/metrics").GetAwaiter().GetResult();
+            return m?["model_requests"]?.GetValue<long>() ?? 0;
+        }
+        catch (Exception) { return 0; }
+    }
+
     /// <summary>Campo numerico (0 quando ausente/nao-numero).</summary>
     /// <param name="o">Registro.</param>
     /// <param name="key">Chave.</param>

@@ -1157,6 +1157,22 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Portao de fluxo SEM request na bridge do gate: INCONCLUSIVO, nunca FAIL.
+    /// Fase que manda o modelo para a bridge secundaria (Q3 na edicao do front) ou
+    /// teste so' de leitura (E-front-verify) caem aqui — o registro da rodada
+    /// anterior nao pode virar vermelho (medido no front-bridge de 2026-10-30).
+    /// </summary>
+    public static Task FlowGateNoRequest()
+    {
+        var (noRequest, dump) = BridgeFlowGate.Probe(TestContext.Bridge, 0, long.MaxValue);
+        TestContext.Check(noRequest.StartsWith("INCONCLUSIVO", StringComparison.Ordinal),
+            "sem request no run o portao e' INCONCLUSIVO (veio: '" + noRequest + "')");
+        TestContext.Check(dump.Contains("model_requests", StringComparison.Ordinal),
+            "dump do INCONCLUSIVO traz o contador (veio: '" + dump + "')");
+        return Task.CompletedTask;
+    }
+
     // 17a amostra (2026-10-29): `printfn $"hanoi_seq={String.concat "," seq}"` ->
     // FS3373 "Invalid interpolated string". O CERTO separa num `let` e usa formato.
     public static Task FsRepairInterpolatedString()
