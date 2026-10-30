@@ -1,5 +1,28 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## `E-mission-algo-fs` 12ª amostra: FS0039 de ordem e aviso de salvage com exemplos (2026-10-29)
+
+**Resultado medido.** `logs/isolated/E-mission-algo-fs_-20261029-203932.log`
+(`PASS=0 FAIL=1`, 2 × 26 turnos): 13 builds com 15 ocorrências do **mesmo**
+`FS0039: The value or constructor 'dest_aux' is not defined` — usado nas linhas 11
+e 15, declarado na linha 19. **`reparo=0` em 52 turnos** (o ramo `FS0039` só cobria
+`mod` e `let` sem `rec`). Ainda: 13 turnos sem tool call (12 = `BRIDGE (edit): JSON
+invalido/truncado`), 6 `oldString não encontrado`, breaker nudge 11× / trip 0.
+
+**Correções.**
+1. `FsSyntaxRepair`: `FS0039` com uso ANTES da declaração no módulo — mede a linha
+   da declaração e a do primeiro uso e ensina `let auxiliar = 3` acima de quem usa
+   (ou receber por parâmetro); sem declaração no fonte, silêncio.
+2. `ToolCallRepair`: aviso de salvage **composto** — cabeçalho + 3 exemplos de args
+   JSON válidos + help curado da tool recusada (`ToolHelp.For`, fonte única). Sem
+   nome de tool, cita `write/edit/read/shell`.
+3. `ToolHelp`: `For(string)`/`For(IEnumerable)` expõem o mesmo texto do schema.
+4. `FsMini`: regra de ordem na linha única de `FS0039`.
+
+**Prova.** `units` **139 PASS / 0 FAIL SKIP=6** (`U-fs-repair-use-before-def`;
+`U-toolcall-salvage-notice` com exemplos parseados e help da tool), probe com
+`valor declarado antes do primeiro uso (FS0039)` = OK, build `0 Aviso(s) / 0 Erro(s)`.
+
 ## `E-mission-algo-fs` 11ª amostra: FS0003 de aridade + rastro do isolado (2026-10-29)
 
 **Resultado medido.** `logs/isolated/E-mission-algo-fs_-20261029-202053.log`

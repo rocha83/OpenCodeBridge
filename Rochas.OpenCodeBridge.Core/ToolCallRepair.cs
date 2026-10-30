@@ -12,22 +12,54 @@ namespace Rochas.OpenCodeBridge.Core;
 public static class ToolCallRepair
 {
     /// <summary>
-    /// Corpo do nudge de reparo (regra JSON + arquivo grande). Curto de proposito: o
-    /// alvo e' o parser, nao a sintaxe da linguagem do artefato. O envelope
-    /// (<c>BRIDGE (escopo):</c>) vem de <see cref="BridgeNotice"/>.
+    /// Cabecalho estavel do nudge de reparo (o consumidor reconhece o aviso por ele).
+    /// Os EXEMPLOS ficam em <see cref="Examples"/> e o help curado por tool vem de
+    /// <see cref="ToolHelp"/> — nada de texto de schema duplicado aqui.
     /// </summary>
     public const string Nudge =
         "A tool call anterior veio com JSON invalido/truncado e o parser recusou o turno. " +
-        "Reenvie UMA tool call valida: dentro do conteudo use `\\n` (barra + n) para quebra de linha e `\\\"` para aspas, " +
-        "sem quebras cruas; se o arquivo for grande, grave um `write` curto e complete com `edit`.";
+        "Reenvie UMA tool call valida, com o JSON COMPLETO e fechado: quebra de linha dentro do " +
+        "conteudo e' `\\n` (barra + n), nunca quebra crua; aspas dentro do conteudo sao `\\\"`.";
+
+    /// <summary>
+    /// Exemplos VALIDOS de argumentos (JSON completo, fecha e parseia). O modelo copia
+    /// o literal do aviso, entao cada um e' verificado pelo pin (`JsonNode.Parse`).
+    /// </summary>
+    public static readonly string[] Examples =
+    {
+        """{"path":"Program.fs","content":"module Program\n\nopen System\n\nprintfn \"ok\""}""",
+        """{"path":"Program.fs","oldString":"printfn \"ok\"","newString":"printfn \"%d\" 15\nprintfn \"%d\" 25"}""",
+        """{"command":"dotnet run --project mfs/mfs.fsproj"}""",
+    };
+
+    /// <summary>
+    /// Corpo do aviso: cabecalho + exemplos numerados + help curado das tools que
+    /// quebraram (mesmo texto do schema). Sem nome de tool, cita o help de arquivo.
+    /// </summary>
+    /// <param name="tools">Nomes das calls recusadas (pode vir vazio).</param>
+    /// <returns>Texto do corpo (sem a tag da bridge).</returns>
+    static string Body(IEnumerable<string>? tools)
+    {
+        var sb = new System.Text.StringBuilder(Nudge);
+        sb.Append("\nEXEMPLOS DE ARGS VALIDOS (copie a forma):");
+        for (int i = 0; i < Examples.Length; i++)
+            sb.Append("\n  ").Append(i + 1).Append(") ").Append(Examples[i]);
+        string docs = ToolHelp.For(tools);
+        if (docs.Length == 0) docs = ToolHelp.For(new[] { "write", "edit", "read", "shell" });
+        if (docs.Length > 0) sb.Append("\n\n").Append(docs);
+        return sb.ToString();
+    }
 
     /// <summary>
     /// Aviso do salvage para as tools recusadas (ex.: <c>BRIDGE (edit, write): ...</c>).
     /// </summary>
     /// <param name="tools">Nomes das calls com args quebrados.</param>
     /// <returns>Texto do aviso no formato unico da bridge.</returns>
-    public static string Notice(IEnumerable<string>? tools) =>
-        BridgeNotice.Notice(tools is null ? null : string.Join(", ", tools), Nudge);
+    public static string Notice(IEnumerable<string>? tools)
+    {
+        var list = tools?.ToList();
+        return BridgeNotice.Notice(list is null || list.Count == 0 ? null : string.Join(", ", list), Body(list));
+    }
 
     /// <summary>
     /// O conteudo e' SO o aviso de salvage (nenhuma call aproveitavel)? Nesse

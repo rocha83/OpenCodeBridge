@@ -189,6 +189,32 @@ public static class FsSyntaxRepair
                 bool hasRec = Regex.IsMatch(source, @"^\s*let\s+rec\s+" + Regex.Escape(name) + @"\b", RegexOptions.Multiline);
                 if (fn && !hasRec)
                     return $"ERRADO: let {name} ...\nCERTO: let rec {name} ...   (a auto-chamada exige `rec`)";
+
+                // Valor usado ANTES da definicao no nivel do modulo (medido na 12a
+                // amostra de 2026-10-29: `dest_aux` na linha 11 e `let dest_aux = 3` na
+                // linha 19). F# le de cima para baixo: mover a definicao para cima do
+                // primeiro uso ou receber o valor por parametro.
+                var def = Regex.Match(source, @"(?m)^[ \t]*let[ \t]+(?:rec[ \t]+)?" + Regex.Escape(name) + @"\b");
+                if (def.Success)
+                {
+                    int defLine = source.Take(def.Index).Count(ch => ch == '\n') + 1;
+                    string[] lines = source.Replace("\r\n", "\n").Split('\n');
+                    var useRx = new Regex(@"\b" + Regex.Escape(name) + @"\b");
+                    for (int i = 0; i < lines.Length; i++)
+                    {
+                        if (i + 1 == defLine) continue;
+                        if (lines[i].TrimStart().StartsWith("//", StringComparison.Ordinal)) continue;
+                        if (!useRx.IsMatch(lines[i])) continue;
+                        if (i + 1 < defLine)
+                            return $"ERRADO: '{name}' e' usado na linha {i + 1} e declarado na linha {defLine}\n"
+                                 + "CERTO: no modulo a declaracao vem ANTES do primeiro uso (o F# le de cima para baixo) — "
+                                 + "mova o `let` para cima ou receba o valor por parametro:\n"
+                                 + "let auxiliar = 3\n\n"
+                                 + "let rec soma n =\n"
+                                 + "    if n = 0 then auxiliar else n + soma (n - 1)";
+                        break;
+                    }
+                }
             }
             return "";
         }

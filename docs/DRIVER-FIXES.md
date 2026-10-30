@@ -902,3 +902,39 @@ caso medido + aridade coerente em silêncio + sem linha/coluna em silêncio),
 `scripts/diag/fs-repair-probe.fsx` com `declaracao e chamada com a mesma aridade
 (FS0003)` = OK, build `0 Aviso(s) / 0 Erro(s)`.
 
+## 35. 12ª amostra do `E-mission-algo-fs`: FS0039 de uso antes da declaração e aviso de salvage com exemplos (2026-10-29)
+
+**Sintoma.** `logs/isolated/E-mission-algo-fs_-20261029-203932.log` (`PASS=0 FAIL=1`,
+2 × 26 turnos): 13 builds com **15 ocorrências do MESMO** `FS0039: The value or
+constructor 'dest_aux' is not defined` — `dest_aux` usado nas linhas 11 e 15 e
+declarado na linha 19 (`let dest_aux = 3`). F# lê o arquivo de cima para baixo.
+**`reparo=0` em 52 turnos**: o ramo `FS0039` só cobria `mod` e `let` sem `rec`, então
+a dica ficou muda a rodada inteira. Junto: 13 turnos sem tool call (12 deles
+`BRIDGE (edit): JSON invalido/truncado`), 6 `oldString não encontrado`, breaker
+`nudge` 11× / `trip` 0.
+
+**Causa.** (a) Ordem de declaração no nível do módulo não tinha regra. (b) O aviso
+de salvage era uma frase única: dizia "use `\n`" mas não mostrava nenhum args
+válido — o modelo copia o literal que vê.
+
+**Correção.**
+1. `FsSyntaxRepair` — ramo `FS0039` "valor usado antes da declaração no módulo":
+   mede a linha da declaração (`let [rec] nome`) e a do **primeiro uso** (fora de
+   comentário) e, quando uso < declaração, ensina a forma que compila
+   (`let auxiliar = 3` acima de quem usa; ou receber por parâmetro). Sem declaração
+   no fonte, silêncio.
+2. `ToolCallRepair` — o aviso de salvage passou a **compor**: cabeçalho + **3
+   exemplos de args JSON válidos** (`write` multilinha, `edit` com `oldString`, `shell`)
+   + o **help curado da tool recusada** via `ToolHelp.For` (fonte única — nada de
+   schema duplicado). Sem nome de tool, cita `write/edit/read/shell`. Vale para a
+   bridge (`Program.cs` no salvage), o teste E2E e os belts: todos chamam `Notice`.
+3. `ToolHelp` — `For(string)` / `For(IEnumerable)`: o mesmo texto do schema,
+   acessível fora do array de tools.
+4. `FsMini` — a regra de ordem entra na linha **única** de `FS0039`.
+
+**Prova.** `units` **139 PASS / 0 FAIL SKIP=6** (`U-fs-repair-use-before-def` novo;
+`U-toolcall-salvage-notice` agora exige os exemplos — cada um parseado — e o help
+curado da tool), `fs-repair-probe.fsx` com `valor declarado antes do primeiro uso
+(FS0039)` = OK, build `0 Aviso(s) / 0 Erro(s)`.
+
+

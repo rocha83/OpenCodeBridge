@@ -122,5 +122,13 @@ check "else + let em linha propria (FS0588)" (isPrimeElse 97 && not (isPrimeElse
 let rec somaTres (a: int) (b: int) (c: int) : int =
     if c = 0 then a + b else somaTres a b (c - 1)
 check "declaracao e chamada com a mesma aridade (FS0003)" (somaTres 1 2 3 = 3)
+
+// 12) A declaracao vem ANTES do primeiro uso no modulo (12a amostra: FS0039 em
+//     `dest_aux`, usado na linha 11 e declarado na linha 19).
+let auxiliar = 3
+
+let rec somaAte n =
+    if n = 0 then auxiliar else n + somaAte (n - 1)
+check "valor declarado antes do primeiro uso (FS0039)" (somaAte 4 = 13)
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."

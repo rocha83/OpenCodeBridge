@@ -60,6 +60,31 @@ public static class ToolHelp
         ["install"] = """USO: instalação de dependência; exige role/permissão; não use para contornar bloqueio. Ex.: {"command":"dotnet restore"}.""",
     };
 
+    /// <summary>
+    /// Help curado de UMA tool (o mesmo texto que vai na descricao do schema) ou "".
+    /// Fonte unica: quem precisa repetir a instrucao FORA do array de tools (ex.: o
+    /// aviso de salvage do <see cref="ToolCallRepair"/>) chama aqui — nao copia texto.
+    /// </summary>
+    /// <param name="name">Nome canonico da tool.</param>
+    /// <returns>Texto do help (sem o marcador) ou "".</returns>
+    public static string For(string? name) =>
+        !string.IsNullOrWhiteSpace(name) && Docs.TryGetValue(name, out string? doc) ? doc.Trim() : "";
+
+    /// <summary>Help curado de varias tools, sem repetir o mesmo texto.</summary>
+    /// <param name="names">Nomes canonicos (pode vir nulo/vazio).</param>
+    /// <returns>Blocos de help separados por linha em branco.</returns>
+    public static string For(IEnumerable<string>? names)
+    {
+        if (names is null) return "";
+        var docs = new List<string>();
+        foreach (string name in names)
+        {
+            string doc = For(name);
+            if (doc.Length > 0 && !docs.Contains(doc)) docs.Add(doc);
+        }
+        return string.Join("\n\n", docs);
+    }
+
     /// <summary>Aplica o help ao array e devolve o mesmo array (mutado no lugar).</summary>
     /// <param name="tools">Array de tools nos shapes chat, Responses ou namespace.</param>
     /// <returns>O próprio array, para encadear no construtor do catálogo.</returns>

@@ -933,6 +933,39 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // 12a amostra (2026-10-29): `dest_aux` usado na linha 11 e declarado na linha 19 ->
+    // FS0039 "The value or constructor 'dest_aux' is not defined". F# le de cima para
+    // baixo: a dica manda mover a declaracao para cima (ou receber por parametro).
+    public static Task FsRepairUseBeforeDef()
+    {
+        string src = string.Join("\n", new[]
+        {
+            "module Program", "", "open System", "",
+            "let rec hanoi n source dest =",
+            "    if n = 1 then [ (source, dest) ]",
+            "    else",
+            "        let movimentosAux = hanoi n source dest_aux",
+            "        let movimentosDest = hanoi n dest_aux source",
+            "        movimentosAux @ [ (source, dest) ] @ movimentosDest",
+            "",
+            "let dest_aux = 3"
+        });
+        string err = "/tmp/p/Program.fs(8,44): error FS0039: The value or constructor 'dest_aux' is not defined. "
+                   + "Maybe you want one of the following: dest";
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(src, err);
+        TestContext.Check(p.Contains("'dest_aux' e' usado na linha 8") && p.Contains("declarado na linha 12"),
+            "FS0039 uso antes da declaracao -> dica com as duas linhas (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains("let auxiliar = 3\n\nlet rec soma n ="), "a dica mostra a forma que compila");
+        TestContext.Check(!p.Contains("dest_aux = 3\n"), "a dica nao manda copiar o bloco errado");
+
+        string ok = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let dest_aux = 3\n\nlet rec f n = if n = 0 then dest_aux else f (n - 1)\n",
+            "/tmp/p/Program.fs(3,20): error FS0039: The value or constructor 'outro' is not defined.");
+        TestContext.Check(ok.Length == 0,
+            "nome sem declaracao no fonte -> silencio (veio: " + ok.Replace("\n", " | ") + ")");
+        return Task.CompletedTask;
+    }
+
     // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
 
     public static Task AntiRepeatArgsWindowIsIndependent()
@@ -976,6 +1009,24 @@ internal static class UnitToolBreakerTests
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Notice(new[] { "edit", "write" })
                 .StartsWith("BRIDGE (edit, write): ", StringComparison.Ordinal),
             "aviso do salvage usa a tag unica com as tools recusadas");
+
+        // 12a amostra (2026-10-29): 13 turnos perdidos em args truncados. O aviso cita
+        // VARIOS exemplos validos (cada um parseia) + o help curado da tool recusada.
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Examples.Length >= 3,
+            "o aviso cita varios exemplos de args");
+        foreach (string ex in global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Examples)
+        {
+            bool parses;
+            try { parses = JsonNode.Parse(ex) is not null; } catch { parses = false; }
+            TestContext.Check(parses, "exemplo do aviso e' JSON valido: " + ex);
+        }
+        string aviso = global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Notice(new[] { "edit" });
+        TestContext.Check(aviso.Contains("EXEMPLOS DE ARGS VALIDOS"), "o aviso traz a secao de exemplos");
+        TestContext.Check(aviso.Contains("oldString"), "o aviso repete o help curado da tool recusada (ToolHelp)");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolCallRepair.IsSalvageNotice(aviso),
+            "o aviso composto continua reconhecido como salvage");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Notice(null).Contains("path"),
+            "sem nome de tool o aviso cita o help de arquivo (write/edit/read)");
 
         // Apply: poda a assistant quebrada e anexa UMA copia (segunda chamada nao empilha).
         var hist = new JsonArray
