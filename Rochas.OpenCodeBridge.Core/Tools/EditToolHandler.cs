@@ -24,8 +24,13 @@ public sealed class EditToolHandler : IToolHandler
         if (string.IsNullOrEmpty(oldString)) return ToolResult.Fail("oldString é obrigatório");
         if (ToolContentGuard.Elided(newString, "edit") is string elided)
             return ToolResult.Fail(elided);
-        if (ToolContentGuard.WholeFileRewrite(oldString, newString) is string rewrite)
-            return ToolResult.Fail(rewrite);
+        // Reescrita total disfarcada de edit (arquivo inteiro no newString + ancora
+        // de uma linha): aplicar como `edit` normal duplicaria o resto do arquivo
+        // (CS1022). Em vez de recusar e esperar o modelo trocar para `write` (o que
+        // gerava 3+ edits identicos e loop; medido no kmeans de 2026-10-30), a
+        // intencao e' aplicada como reescrita total. Se a ancora nao existir, a
+        // mensagem aponta o caminho real e a forma certa.
+        string? rewrite = ToolContentGuard.WholeFileRewrite(oldString, newString);
 
         if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why, context.ExtraRoots))
             return ToolResult.Fail(why);
@@ -41,6 +46,23 @@ public sealed class EditToolHandler : IToolHandler
         {
             string text = File.ReadAllText(full);
             if (text.Length > MaxChars) return ToolResult.Fail($"arquivo grande demais ({text.Length} chars, teto {MaxChars})");
+
+            if (rewrite is not null)
+            {
+                if (!text.Contains(oldString, StringComparison.Ordinal))
+                    return ToolResult.Fail(rewrite + " A ancora '" + oldString + "' nao existe em '" + path + "'.");
+                if (newString.Length > MaxChars)
+                    return ToolResult.Fail($"arquivo grande demais ({newString.Length} chars, teto {MaxChars})");
+                File.WriteAllText(full, newString);
+                context.Log?.Invoke(new JsonObject
+                {
+                    ["event"] = "edit-whole-file-as-write",
+                    ["path"] = path,
+                    ["chars"] = newString.Length
+                });
+                return ToolResult.Ok($"edit aplicado como reescrita total de '{path}' ({newString.Length} chars): "
+                    + "a ancora de uma linha foi encontrada e o newString e' o arquivo inteiro.");
+            }
 
             int count = CountOccurrences(text, oldString);
             if (count == 0)

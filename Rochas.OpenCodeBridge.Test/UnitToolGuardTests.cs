@@ -95,8 +95,10 @@ public static class UnitToolGuardTests
 
     /// <summary>
     /// `edit` com o arquivo inteiro no `newString` e uma linha curta no `oldString`
-    /// e' reescrita total disfarcada: aplica e duplica a declaracao (CS1022 medido no
-    /// algo-cs-sort). Recusa com a tool certa; o edit de TRECHO continua passando.
+    /// e' reescrita total disfarcada: aplicar como edit normal duplicaria a
+    /// declaracao (CS1022 medido no algo-cs-sort). A intencao e' aplicada como
+    /// reescrita total (write), sem loop de recusa; o edit de TRECHO continua
+    /// passando.
     /// </summary>
     public static Task WholeFileRewriteRefused()
     {
@@ -114,11 +116,12 @@ public static class UnitToolGuardTests
                 ["oldString"] = "}",
                 ["newString"] = inteiro
             }.ToJsonString(), ctx);
-            TestContext.Check(!r.Success && r.Error.Contains("write", StringComparison.Ordinal),
-                $"edit com arquivo inteiro deveria mandar usar write (saiu: '{r.Error}')");
-            TestContext.Check(File.ReadAllText(Path.Combine(ws, "A.cs")).Contains("static void Main", StringComparison.Ordinal)
-                && !File.ReadAllText(Path.Combine(ws, "A.cs")).Contains("using System.Linq", StringComparison.Ordinal),
-                "recusa nao altera o arquivo");
+            TestContext.Check(r.Success && r.Output.Contains("reescrita total", StringComparison.Ordinal),
+                $"edit com arquivo inteiro deveria aplicar como reescrita total (saiu: ok={r.Success} err='{r.Error}')");
+            string depois = File.ReadAllText(Path.Combine(ws, "A.cs"));
+            TestContext.Check(depois.Contains("using System.Linq", StringComparison.Ordinal)
+                && depois.Split("static void Main").Length - 1 == 1,
+                "reescrita total grava o arquivo uma vez (sem duplicar a declaracao)");
             var ok = edit.Handle(new JsonObject
             {
                 ["path"] = "A.cs",

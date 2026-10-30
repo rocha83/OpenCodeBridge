@@ -1168,3 +1168,28 @@ comando procurando `--project`/`-p`; `mkdir -p sub` casava o `-p` e tratava
 
 **Prova.** `U-tool-feedback-shell-cwd` PASS (cadeia roda, cwd `sub` reportado,
 aviso de raiz e path `sub/arquivo` presentes); units `PASS=153 FAIL=0 SKIP=6`.
+
+## 44. `edit` de arquivo inteiro recusado virava 3 edits idênticos e CS1513 (2026-10-30)
+
+**Sintoma.** `E-mission-algo-cs-kmeans` falhou com `CS1513: } expected` na linha
+122. O `/tmp/bridge-gpu.log` mostra o modelo emitindo **três** `edit` de 8.410
+chars (o arquivo inteiro no `newString`, âncora de uma linha), todos com
+`tool_exec edit ok:false`, intercalados por `shell` que também falhava; depois
+um `HTTP 500` do upstream. O `Program.cs` em disco tinha 3.746 chars e terminava
+no `}` do `Main`, sem fechar classe/namespace.
+
+**Causa.** A guarda `WholeFileRewrite` recusava o `edit` e mandava usar `write`.
+O modelo não trocava de tool: repetia o mesmo `edit` (a isenção de anti-repeat
+para `edit`/`write` não o impedia) e o arquivo truncado nunca era regravado. A
+recusa era segura contra duplicação (CS1022), mas criava loop quando o modelo
+insistia na mesma forma.
+
+**Correção.** `EditToolHandler` aplica a intenção como **reescrita total** quando
+a âncora de uma linha existe no arquivo: grava `newString` inteiro (mesma
+semântica de `write`), registra `edit-whole-file-as-write` e devolve sucesso. Se
+a âncora não existir, a mensagem aponta o caminho real. O `edit` de trecho
+continua igual.
+
+**Prova.** `U-tools-whole-file-rewrite` PASS (arquivo regravado uma vez, sem
+duplicar `static void Main`); `U-tools-elision-refused` PASS; build
+`0 Warning(s)/0 Error(s)`.
