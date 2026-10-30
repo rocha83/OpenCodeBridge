@@ -1,3 +1,5 @@
+using Microsoft.Playwright;
+
 namespace Rochas.OpenCodeBridge.Web.Test.Ui;
 
 // Garante navegador p/ webdriver sem depender de pwsh/manual.
@@ -22,6 +24,80 @@ public static class PlaywrightSetup
     /// </summary>
     /// <returns>True quando o operador pediu para segurar a janela no fim.</returns>
     public static bool Hold() => Environment.GetEnvironmentVariable("PW_HOLD") == "1";
+
+    /// <summary>
+    /// Perfil BUILD no dropdown <c>select#agentId</c> — o perfil dos units da
+    /// esteira, obrigatório nos testes da Web UI que EXECUTAM tools. A UI nasce no
+    /// primeiro agente do seed (MoE/Plan, só fetch/display/subagent) e o WAR mediria
+    /// um perfil que não é o da esteira — medido em 2026-10-30: turno sem tool e
+    /// nota falsa de "sem executar nada". Seleção por rótulo+modelo (Build Q4 :4124,
+    /// o mesmo bridge dos units), nunca por id: o id do banco dev/PROD diverge.
+    /// Executor vai para o perfil Exec (Q3) quando existe; sem ele, fica "nenhum".
+    /// </summary>
+    /// <param name="page">Página em <c>/Chat</c> com os dropdowns renderizados.</param>
+    /// <param name="label">Rótulo do passo no log (faixa/smoke).</param>
+    /// <returns><c>id|rótulo</c> do agente escolhido, para a evidência do teste.</returns>
+    public static Task<string> SelectBuildAgentAsync(IPage page, string label) =>
+        SelectAgentAsync(page, label, "Build (mode=build com a tool write)",
+            "(o) => (o.dataset.mode || '').toLowerCase() === 'build' && (o.dataset.tools || '').includes('write')",
+            "(o) => /Build/i.test(o.textContent) && !/Q3/i.test(o.textContent)",
+            pickExec: true);
+
+    /// <summary>
+    /// Perfil PLAN no dropdown — para os testes da Web UI que NÃO usam tools: é o
+    /// perfil com <c>thinking=events</c>, então o teste comprova o raciocínio
+    /// aparecendo na bolha (reasoning na UI). Sem executor: chat simples.
+    /// </summary>
+    /// <param name="page">Página em <c>/Chat</c> com os dropdowns renderizados.</param>
+    /// <param name="label">Rótulo do passo no log (faixa/smoke).</param>
+    /// <returns><c>id|rótulo</c> do agente escolhido, para a evidência do teste.</returns>
+    public static Task<string> SelectPlanAgentAsync(IPage page, string label) =>
+        SelectAgentAsync(page, label, "Plan (reasoning na UI)",
+            "(o) => (o.dataset.mode || '').toLowerCase() === 'plan'",
+            "(o) => /Plan/i.test(o.textContent) && !/Q3/i.test(o.textContent)",
+            pickExec: false);
+
+    /// <summary>
+    /// Perfil ORCH no dropdown — para os testes da Web UI cujo enunciado pede
+    /// DELEGAÇÃO (dividir em fases e compor com subagent). Orch é Build sem escrita
+    /// (sem <c>write</c>/<c>exec</c>): planeja, delega e agrega, que é o comportamento
+    /// medido na faixa. Executor vai para o Exec (Q3) quando existe.
+    /// </summary>
+    /// <param name="page">Página em <c>/Chat</c> com os dropdowns renderizados.</param>
+    /// <param name="label">Rótulo do passo no log (faixa/smoke).</param>
+    /// <returns><c>id|rótulo</c> do agente escolhido, para a evidência do teste.</returns>
+    public static Task<string> SelectOrchAgentAsync(IPage page, string label) =>
+        SelectAgentAsync(page, label, "Orch (delegação, sem escrita)",
+            "(o) => (o.dataset.mode || '').toLowerCase() === 'build' && (o.dataset.tools || '').includes('subagent') && !(o.dataset.tools || '').includes('write')",
+            "(o) => /Orch/i.test(o.textContent) && !/Q3/i.test(o.textContent)",
+            pickExec: true);
+
+    // Núcleo da seleção: filtro + preferência declarados como JS, sem id do banco.
+    private static async Task<string> SelectAgentAsync(IPage page, string label, string what,
+        string filterJs, string preferJs, bool pickExec)
+    {
+        string js = @"() => {
+          const sel = document.getElementById('agentId');
+          const opts = [...sel.options].filter(o => o.value);
+          const want = opts.filter(FILTER);
+          const pick = want.find(PREFER) || want[0];
+          if (!pick) return '';
+          sel.value = pick.value;
+          sel.dispatchEvent(new Event('change'));
+          const ex = document.getElementById('executorId');
+          if (ex && PICKEXEC) {
+            const exOpt = [...ex.options].find(o => /Exec/i.test(o.textContent || ''));
+            if (exOpt) { ex.value = exOpt.value; ex.dispatchEvent(new Event('change')); }
+          }
+          return pick.value + '|' + pick.textContent.trim();
+        }".Replace("FILTER", filterJs).Replace("PREFER", preferJs)
+          .Replace("PICKEXEC", pickExec ? "true" : "false");
+        string picked = await page.EvaluateAsync<string>(js);
+        if (string.IsNullOrEmpty(picked))
+            throw new InvalidOperationException($"dropdown sem perfil {what}");
+        Console.WriteLine($"[ui] {label}: agente {what} = {picked}");
+        return picked;
+    }
 
     /// <summary>
     /// Navegador a usar: <c>PW_BROWSER=chrome|firefox</c> força; senão prefere o

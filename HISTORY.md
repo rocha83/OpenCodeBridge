@@ -1,5 +1,46 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Web UI: turno em texto encerra o request + nota honesta + perfil da faixa (2026-10-30, sessão 37)
+
+**Sintoma medido (sessão 27/28 do `web.db` de PROD).** Enunciado "Crie um script
+hello world em C#… delegue ao subagente": o subagente **gravou** `Program.cs`
+(`[write] ok`) e a bolha final do agente foi a nota
+"caímos numa espiral de saudações/despedidas **sem executar nada**". Duas
+mentiras no mesmo pixel: houve execução, e a espiral não era de saudação.
+
+**Causa.** No `StreamResponsesBypass` (caminho de produção, `Chat:UseResponsesBypass`
+= true) o laço só terminava por teto de **4 turnos de prosa**. O perfil do
+dropdown era o **MoE/Plan** (id 1, só `fetch/display/subagent`) e, com
+`thinking=events`, os turnos voltaram **sem content e sem tool** — o laço
+reenviava o **mesmo input** quatro vezes (nada de novo entrava) e o epílogo
+trocava tudo pela `ChatterGuard.StopNote`.
+
+**Correção (Core + Web, sem novo mecanismo).**
+- **Turno sem tool call encerra o request**: o modelo não tem mais o que executar,
+  então o texto é a resposta. Antes de qualquer execução, reenviar o mesmo input
+  só produzia a mesma saudação (a espiral medida).
+- **Prosa DEPOIS de executar** continua permitida (declaração por ação), com teto
+  curto de 2 turnos e o `ChatterGuard` do Core cortando repetição.
+- **`ChatterGuard.StopNoteFor(anyToolRan)`**: nota honesta — com tools/subs
+  executados, `StopNoteAfterWork` ("nova etapa, os cards ficam na sessão") em vez
+  de "sem executar nada". Pin: `U-chatter-note-apos-execucao` +
+  `U-chatter-note-sem-mentira`.
+- **Nudge de turno vazio no bypass** (paridade com o loop chat): 1 cutucada
+  "responda em texto agora" em vez de gastar os 4 turnos no mesmo input.
+
+**Perfil do dropdown nos testes da Web UI (era mecânica de teste errada).**
+`UiChatSendAsync` fixava `agentId=1`/`executorId=2` (MoE/Plan) — o WAR media um
+perfil que **não** é o da esteira. Agora a faixa declara o perfil e o seletor
+escolhe por **rótulo+modelo** (id do banco dev/PROD diverge):
+`orch` para enunciado de **delegação/composição** (divide em fases e compõe com
+`subagent`; é Build sem `write`), `build` para execução direta ("faça tudo você
+mesmo com suas tools"), `plan` para o caminho **sem tools** (é o perfil com
+`thinking=events`, o teste comprova o **reasoning na UI** — assert novo
+`raciocinio=N chars` sobre o bloco "Raciocínio" da bolha). Fase `--phase full`
+(que era referenciada e caía em "fase desconhecida") passou a existir: roda as
+duas faces na mesma faixa; o step `webui-integracao-topicos` do WAR usa `full`.
+Smoke `--simple` (PASS estável) **não** foi tocado.
+
 ## Missão F# trocada por 4 algoritmos separados + portão de fluxo bridge (P1) (2026-10-30)
 
 **Decisão.** Hanoi + crivo em F# acumulou 17 amostras sem PASS (a variância do

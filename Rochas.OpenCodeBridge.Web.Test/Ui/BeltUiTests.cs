@@ -22,7 +22,11 @@ public static class BeltUiTests
     private const int BuildExecutorId = 4;
     private static int BuildGpuExecutor(string key) => 4;
 
-    internal sealed record Belt(string Key, string Title, string Prompt, int ExecutorId, int TimeoutMin);
+    // Perfil do dropdown que a faixa mede: o enunciado decide (não o id do banco).
+    // orch = pede delegação/composição por subagente; build = executa as tools
+    // sozinho ("faça tudo você mesmo"); plan = só texto (reasoning na bolha).
+    internal sealed record Belt(string Key, string Title, string Prompt, int ExecutorId, int TimeoutMin,
+        string Profile = "build");
 
     // Selecao por chave (reuso pelo runner headless `--opencode-run`).
     internal static Belt[] Select(string[] only) =>
@@ -32,22 +36,22 @@ public static class BeltUiTests
     {
         new("azul", "Faixa AZUL E2E",
             "Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Divida em fases por escopo de backend e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
-            4, 30),
+            4, 30, "orch"),
         new("verde", "Faixa VERDE E2E",
             "Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ como regras de dominio persistidas: digitos verificadores, rejeicao de sequencias repetidas, obrigatoriedade por tipo de pessoa (PF exige CPF, PJ exige CNPJ). Escopo: dominio + banco SQL (sem API). Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados) e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
-            4, 30),
+            4, 30, "orch"),
         new("roxa", "Faixa ROXA E2E",
             "Especifique o dominio backend C# de cadastro de clientes e fornecedores, o banco de dados SQL (DDL, indices, constraints) e os repositorios e servicos: repositorio generico Dapper, servicos de aplicacao, validacao e mascaras de e-mail, telefone BR com DDD e CEP como servicos (regras, regex de cada um e 2 exemplos validos de cada). Escopo: dominio + banco SQL + repositorios e servicos (sem API). Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados; repositorios e servicos) e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
-            5, 30),
+            5, 30, "orch"),
         new("marrom", "Faixa MARROM E2E",
             "Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, regras de aprovacao por faixa de valor), o banco de dados SQL (DDL, indices, constraints), os repositorios e servicos (Dapper, servicos de aplicacao) e a API REST: controllers, DTOs, autenticacao, frontend do portal em React.js consumindo a API e pipeline CI/CD com Docker (Dockerfile multi-stage e compose para subir api+db). Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados; repositorios e servicos; API; frontend React) e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
-            4, 90),
+            4, 90, "orch"),
         new("preta", "Faixa PRETA E2E",
             "Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador (ponto eletronico, reembolsos, organograma), banco de dados SQL (DDL, indices, constraints), repositorios e servicos (Dapper, servicos de aplicacao), API REST do portal e servicos bus: barramento de eventos assincrono integrando portal, folha e ERP; pipeline de Big Data com ML: regressao para previsao de gastos e classificacao de reembolsos suspeitos apenas com algoritmos ML classicos (sem redes neurais), e rede neural (perceptron multicamadas) para deteccao de anomalias em ponto eletronico, com scripts de treino e avaliacao para cada modelo. Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados; repositorios e servicos; API; servicos bus; redes neurais) e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
-            5, 120),
+            5, 120, "orch"),
         // Cognitivo standalone: plano completo em texto puro, sem citar segmentacao.
         new("preta-alone", "Faixa PRETA-ALONE",
-            PretaAlonePrompt, 5, 30),
+            PretaAlonePrompt, 5, 30, "plan"),
         new("tools-full", "Faixa TOOLS-FULL",
             "Navegue até https://example.com com a tool fetch e anote o conteúdo de referência. " +
             "Depois, usando as tools, crie um repositório git novo em tooltest/ dentro do workspace, " +
@@ -57,7 +61,7 @@ public static class BeltUiTests
             "com uma linha e faça um segundo commit, para que o histórico registre a criação e a edição do " +
             "mesmo arquivo. Ao final rode 'git log --oneline --stat' e cole a saída na resposta. " +
             "Faça tudo você mesmo com as suas tools, sem delegar. Diálogo em pt-br.",
-            0, 30),
+            0, 30, "build"),
         // Pipeline de tools por enunciado (10 passos: subpasta, git, write, commit,
         // edit, commit, read, grep, edit, fetch clima SP, append, zip).
         new("tools-dev-pipe", "Faixa TOOLS-DEV-PIPE",
@@ -72,7 +76,7 @@ public static class BeltUiTests
             "arquivo .txt deve ter seu proprio commit, de modo que o " +
             "historico registre a criacao e cada edicao. Ao final rode 'git log --oneline --stat' e cole a " +
             "saida na resposta. teste finalizado",
-            0, 30),
+            0, 30, "build"),
     };
 
     // Enunciado cognitivo: plano completo em texto, sem mencionar segmentacao,
@@ -93,7 +97,9 @@ public static class BeltUiTests
     }
 
     // Fases do build (respeito ao swap unico): decompose (8B) -> execute (3B) -> review (8B).
-    // --phase decompose|execute|review; full = plan-descritivo ou build com 8B+3B coabitando (nao usado em swap).
+    // --ui/--phase ui|batch|decompose|plan|cognitive|...; full = as duas faces da UI
+    // para a faixa: "ui" no perfil BUILD (usa tools) + "cognitive" no perfil PLAN
+    // (sem tools, reasoning renderizado na bolha).
     public static async Task<int> RunAsync(string web, string[] only, string mode, string phase)
     {
         int failures = 0;
@@ -161,6 +167,18 @@ public static class BeltUiTests
                         await upage.WaitForSelectorAsync("#conv, #prompt, select#agentId",
                             new PageWaitForSelectorOptions { Timeout = 15000 });
                         failures += await UiChatSendAsync(api, upage, belt);
+                        break;
+                    }
+                    // full: as duas faces da UI na MESMA faixa — Build com tools
+                    // (perfil da esteira) e Plan sem tools (reasoning na bolha).
+                    case "full":
+                    {
+                        var fpage = await context.NewPageAsync();
+                        await fpage.GotoAsync(web + "/Chat");
+                        await fpage.WaitForSelectorAsync("#conv, #prompt, select#agentId",
+                            new PageWaitForSelectorOptions { Timeout = 15000 });
+                        failures += await UiChatSendAsync(api, fpage, belt);
+                        failures += await CognitiveUiAsync(api, fpage, belt);
                         break;
                     }
                     case "batch":
@@ -300,7 +318,20 @@ public static class BeltUiTests
         }
     }
 
-    // Envio mínimo via UI: agente plan, enunciado puro; a UI mostra diálogo + tools.
+    // Despacha o perfil declarado na faixa para o seletor do utilitário (ORCH para
+    // delegação, BUILD para execução direta, PLAN para texto/reasoning).
+    private static Task<string> SelectProfileAsync(IPage page, string label, string profile) =>
+        profile.ToLowerInvariant() switch
+        {
+            "orch" => PlaywrightSetup.SelectOrchAgentAsync(page, label),
+            "plan" => PlaywrightSetup.SelectPlanAgentAsync(page, label),
+            "build" => PlaywrightSetup.SelectBuildAgentAsync(page, label),
+            _ => throw new InvalidOperationException($"perfil desconhecido na faixa: {profile}"),
+        };
+
+    // Envio mínimo via UI: perfil declarado na FAIXA (orch para enunciado de
+    // delegação/composição, build para execução direta), enunciado puro; a UI
+    // mostra diálogo + tools.
     // Certifica: tools na conversa (UI) + diálogo persistido (Messages) + calls (ToolCalls).
     private static async Task<int> UiChatSendAsync(HttpClient api, IPage page, Belt belt)
     {
@@ -309,10 +340,7 @@ public static class BeltUiTests
             Console.WriteLine($"[ui] {belt.Key}: goto chat");
             await page.GotoAsync(page.Url.Split("/Chat")[0] + "/Chat");
             await page.WaitForSelectorAsync("#conv, #prompt, select#agentId", new PageWaitForSelectorOptions { Timeout = 15000 });
-            Console.WriteLine($"[ui] {belt.Key}: agente plan");
-            await page.SelectOptionAsync("select#agentId", "1");
-            Console.WriteLine($"[ui] {belt.Key}: executor 8B-exec");
-            await page.SelectOptionAsync("select#executorId", "2");
+            await SelectProfileAsync(page, belt.Key, belt.Profile);
             Console.WriteLine($"[ui] {belt.Key}: nova sessao");
             await page.ClickAsync("#newSession");
             // Nova sessão vazia antes de enviar (sem isso o prompt cai na antiga).
@@ -518,8 +546,9 @@ public static class BeltUiTests
     }
 
     // Fase cognitive-ui: mesmo enunciado pela UI headed (acompanha o stream pintando).
-    // Agente 9B Plan (id 1), sem forçar executor; observacional: PASS = concluiu +
-    // texto >= 2000 (calls e cobertura só reportados — o teste quer VER se usa tools).
+    // Perfil PLAN (thinking=events): o teste quer ver o RACIOCÍNIO na UI e uma
+    // resposta só-texto — por isso é o único caminho da Web que não usa tools.
+    // PASS = concluiu + texto >= 2000 (calls e cobertura só reportados).
     private static async Task<int> CognitiveUiAsync(HttpClient api, IPage page, Belt belt)
     {
         try
@@ -527,8 +556,7 @@ public static class BeltUiTests
             Console.WriteLine($"[ui] {belt.Key}: goto chat");
             await page.GotoAsync(page.Url.Split("/Chat")[0] + "/Chat");
             await page.WaitForSelectorAsync("#conv, #prompt, select#agentId", new PageWaitForSelectorOptions { Timeout = 15000 });
-            Console.WriteLine($"[ui] {belt.Key}: agente 9B plan");
-            await page.SelectOptionAsync("select#agentId", "1");
+            await PlaywrightSetup.SelectPlanAgentAsync(page, belt.Key);
             Console.WriteLine($"[ui] {belt.Key}: nova sessao");
             await page.ClickAsync("#newSession");
             try
@@ -590,8 +618,22 @@ public static class BeltUiTests
             string[] nuclei = ["reembolso", "entidade", "sql", "dapper", "api", "evento", "regress", "neural"];
             int hit = nuclei.Count(k => low.Contains(k));
             bool toolsUi = conv.Contains("executado com sucesso") || conv.Contains("falhou");
-            bool ok = done && conv.Length >= 2000;
-            Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: conversa {conv.Length} chars, msgs={msgs}, toolcalls={calls}, toolsUi={toolsUi}, cobertura {hit}/{nuclei.Length} ({file})");
+            // Reasoning na UI: o perfil Plan (thinking=events) tem de renderizar o
+            // bloco "Raciocínio" com conteúdo — é o comportamento que esta faixa
+            // comprova (sem tools, só texto + raciocínio na bolha).
+            int thinkChars = 0;
+            try
+            {
+                thinkChars = await page.EvaluateAsync<int>(@"() => {
+                  const dets = [...document.querySelectorAll('#conv details')]
+                    .filter(d => /Racioc/i.test(d.querySelector('summary')?.textContent || ''));
+                  return dets.map(d => (d.querySelector('p')?.textContent || '')).join('').trim().length;
+                }");
+            }
+            catch { }
+            bool thinkUi = thinkChars >= 40;
+            bool ok = done && conv.Length >= 2000 && thinkUi;
+            Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: conversa {conv.Length} chars, msgs={msgs}, toolcalls={calls}, toolsUi={toolsUi}, raciocinio={thinkChars} chars, cobertura {hit}/{nuclei.Length} ({file})");
             return ok ? 0 : 1;
         }
         catch (Exception ex)

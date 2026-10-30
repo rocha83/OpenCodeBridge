@@ -955,6 +955,9 @@ public sealed class ChatController(
         // sem tools, ou texto igual 2x, encerram com nota honesta.
         var chatter = new ChatterGuard();
         bool chatterAbort = false;
+        // Declarações seguidas DEPOIS de executar: teto curto (2). Antes de
+        // executar, texto sem tool é a própria resposta e encerra o turno.
+        int prosaTurns = 0;
         // Flag mestra na bridge (fonte unica): sem ela, tubo puro.
         bool harness = true;
         // Vínculo tool->bolha: ids de tools gravadas sem mensagem dona (turno sem
@@ -1490,13 +1493,20 @@ public sealed class ChatController(
                 }
             }
 
-            // Corta-espiral de prosa (loop boa-noite/encerrando): 3 turnos curtos
-            // sem tools, ou texto igual 2x, encerra com nota honesta.
-            // Inibivel (harness): sem ele, a prosa segue pura.
-            if (harness && chatter.Note(turnText, toolCalls.Count))
+            // Turno SEM tool call = o modelo já respondeu (não há o que executar).
+            // Sem nada executado no request, reenviar o MESMO input só produzia
+            // saudação de novo — espiral medida na Web em 2026-10-30. Depois de
+            // executar, a declaração pode continuar, com teto curto e corte de
+            // prosa repetida (ChatterGuard do Core).
+            if (toolCalls.Count == 0)
             {
-                chatterAbort = true;
-                break;
+                if (!anyToolRan) break;
+                prosaTurns++;
+                if (harness && (chatter.Note(turnText, 0) || prosaTurns >= 2))
+                {
+                    chatterAbort = true;
+                    break;
+                }
             }
 
             // Reseta para próxima iteração
@@ -1523,7 +1533,9 @@ public sealed class ChatController(
         if (chatterAbort)
         {
             assistantContent.Clear();
-            assistantContent.Append(ChatterGuard.StopNote);
+            // Nota honesta: com tools/subs executados, a antiga "sem executar
+            // nada" mentia (sessão 27/28 da Web, 2026-10-30).
+            assistantContent.Append(ChatterGuard.StopNoteFor(anyToolRan));
             assistantThinking.Clear();
         }
         string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
@@ -1647,11 +1659,15 @@ public sealed class ChatController(
         bool toolLoopAbort = false;
         // Flag mestra na bridge (fonte unica): sem ela, tubo puro.
         bool harness = true;
-        // Teto de prosa sem tool no bypass: sem isto o loop fica sem teto
-        // (MaxTurns<=0) e o stream nunca fecha quando o modelo entra em
-        // espiral de conversa (medido: I-chat-stream-sse preso >120s).
+        // Prosa DEPOIS de executar: teto curto (2) + corte por repetição. Antes
+        // de qualquer tool executar, texto sem call é a própria resposta e
+        // encerra o request (o reenvio do mesmo input só repetia saudação).
         int prosaTurns = 0;
+        var chatter = new ChatterGuard();
         bool chatterAbort = false;
+        // Turno só-raciocínio (sem content e sem tool): 1 cutucada por resposta,
+        // paridade com o loop chat (sem isso o loop reenvia o mesmo input).
+        int emptyNudges = 0;
         // Fechamento com nota quando tools rodaram mas o modelo não devolveu
         // texto (sem isto a sessão termina sem bolha: "fez mas não falou nada").
         bool anyToolRan = false;
@@ -1837,9 +1853,28 @@ public sealed class ChatController(
 
             if (accum.Calls.Count == 0)
             {
+                // Turno só-raciocínio (sem texto e sem tool): o usuário não veria
+                // nada e o loop repetiria o MESMO input até o teto. Paridade com o
+                // loop chat: cutuca uma vez pedindo texto.
+                if (harness && emptyNudges < 1
+                    && StripThinkTags(assistantContent.ToString(), assistantThinking).Trim().Length == 0)
+                {
+                    emptyNudges++;
+                    LoopTrace("empty-nudge", session?.Id, turn, "");
+                    input.Add(new JsonObject
+                    {
+                        ["type"] = "message", ["role"] = "user",
+                        ["content"] = new JsonArray(new JsonObject
+                        {
+                            ["type"] = "input_text",
+                            ["text"] = "[harness] responda em texto agora: o raciocínio não é exibido ao usuário.",
+                        }),
+                    });
+                    continue;
+                }
+                // Só conta prosa de verdade (turno vazio foi cutucado acima): o
+                // teto não pode comer a resposta que veio depois da cutucada.
                 prosaTurns++;
-                // Sem corte de prosa: o sufixo pede declaração verbosa por ação;
-                // o loop segue até o teto de turnos (prosa conversa ou declara).
                 LoopTrace("turno-prosa", session?.Id, turn, "");
                 // AntiRepeat do lado do MODELO: repetição no acumulado = aviso
                 // de contenção no input + retry do turno (o veneno sai da bolha).
@@ -1882,10 +1917,13 @@ public sealed class ChatController(
                             ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = CutForContext(turnText) }),
                         });
                 }
-                // Teto de prosa: 4 turnos seguidos sem tool e sem progresso
-                // encerram com nota honesta (o modelo Q4 entrava em espiral
-                // "Entendido..." e o stream ficava aberto indefinidamente).
-                if (harness && prosaTurns >= 4)
+                // Turno SEM tool: nada mais a EXECUTAR → o texto é a resposta.
+                // Sem nada executado no request, reenviar o mesmo input só repetia
+                // saudação (espiral medida em 2026-10-30). Depois de executar, uma
+                // declaração segue no máximo 1 turno extra, e prosa curta repetida
+                // é cortada pelo ChatterGuard (nota honesta: houve execução).
+                if (!anyToolRan) break;
+                if (harness && (chatter.Note(turnText, 0) || prosaTurns >= 2))
                 {
                     chatterAbort = true;
                     LoopTrace("prosa-abort", session?.Id, turn, $"prosaTurns={prosaTurns}");
@@ -2086,7 +2124,9 @@ public sealed class ChatController(
         if (chatterAbort)
         {
             assistantContent.Clear();
-            assistantContent.Append(ChatterGuard.StopNote);
+            // Nota honesta: com tools/subs executados, a antiga "sem executar
+            // nada" mentia (sessão 27/28 da Web, 2026-10-30).
+            assistantContent.Append(ChatterGuard.StopNoteFor(anyToolRan));
             assistantThinking.Clear();
         }
         string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();

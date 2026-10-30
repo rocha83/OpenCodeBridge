@@ -678,7 +678,9 @@ internal sealed class WarTemplate : CircuitTemplate
                 "exec", _p.WebTestDll, "--web", WebUrl(),
                 // phase "ui": uma janela por faixa, enviando o enunciado pela propria
                 // tela do /Chat (fase "full" nao existe no switch da BeltUiTests).
-                "--ui", "--phase", "ui", "--belts", webUiBelts,
+                // phase "full": as duas faces da UI na mesma faixa — perfil Build
+                // (usa tools) e perfil Plan (sem tools, reasoning na bolha).
+                "--ui", "--phase", "full", "--belts", webUiBelts,
                 // smoke deterministico do hello (login + /Chat + engine) na mesma janela.
                 "--simple"
             }
