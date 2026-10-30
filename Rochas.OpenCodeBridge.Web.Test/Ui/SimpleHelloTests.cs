@@ -13,7 +13,39 @@ public static class SimpleHelloTests
 
     public static async Task<int> RunAsync(string web)
     {
-        try
+        // A janela headed pode ser fechada no meio (operador encerrando a janela ou
+        // crash do renderer): o Playwright devolve TargetClosedException e o smoke
+        // morria por motivo que nao e' o produto (medido em 2026-10-30, attempt 4 do
+        // webui-integracao-topicos). Relanca UMA vez com o MESMO aceite; qualquer
+        // outra falha continua sendo FAIL.
+        for (int attempt = 1; attempt <= 2; attempt++)
+        {
+            try
+            {
+                return await RunOnceAsync(web);
+            }
+            catch (PlaywrightException ex) when (ex.GetType().Name.Contains("TargetClosed", StringComparison.Ordinal))
+            {
+                // TargetClosedException e' interno nesta versao do Playwright: o tipo
+                // chega pelo nome (o filtro nao captura outras PlaywrightException).
+                if (attempt == 2)
+                {
+                    Console.WriteLine("[simple] FAIL harness: navegador fechou 2x (janela encerrada)");
+                    return 1;
+                }
+                Console.WriteLine("[simple] janela fechada no meio: relanco o navegador (1x)");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[simple] FAIL harness: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+                return 1;
+            }
+        }
+        return 1;
+    }
+
+    private static async Task<int> RunOnceAsync(string web)
+    {
         {
             string browserKind = PlaywrightSetup.EnsureBrowser();
             using var playwright = await Playwright.CreateAsync();
@@ -100,11 +132,6 @@ public static class SimpleHelloTests
                 await Task.Delay(Timeout.InfiniteTimeSpan);
             }
             return ok ? 0 : 1;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[simple] FAIL harness: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
-            return 1;
         }
     }
 }
