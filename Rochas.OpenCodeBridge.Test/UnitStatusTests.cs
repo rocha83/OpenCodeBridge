@@ -83,7 +83,15 @@ internal static class UnitStatusTests
             TestContext.Check(stepRes.IsSuccessStatusCode, $"/api/test/step aceita a linha ({(int)stepRes.StatusCode})");
         }
         var steps = await Get(TestContext.Bridge + "/api/test/steps?war=1");
-        TestContext.Check(steps!.AsArray().Count == 1, "painel lista o step publicado");
+        // Dentro da bateria o painel JA tem a linha RUN do step corrente (o driver
+        // publica step_start), entao o contrato e' ESTRUTURAL: o step publicado
+        // aparece na lista e toda linha listada tem `mode` (o filtro war=1).
+        // Contar ==1 era verdade so' fora de um run e derrubou o L1 de 2026-10-30.
+        var listed = steps!.AsArray();
+        TestContext.Check(listed.Any(x => x?["step"]?.GetValue<string>() == "U-panel-probe"),
+            $"painel lista o step publicado (linhas: {string.Join(",", listed.Select(x => x?["step"]?.GetValue<string>()))})");
+        TestContext.Check(listed.All(x => !string.IsNullOrWhiteSpace(x?["mode"]?.GetValue<string>())),
+            "toda linha de war=1 tem mode (filtro do painel)");
 
         // Reset por step (sem panel): nada do painel pode ser apagado no meio do run.
         using (var keep = new HttpRequestMessage(HttpMethod.Post, TestContext.Bridge + "/api/diag/reset?files=1")

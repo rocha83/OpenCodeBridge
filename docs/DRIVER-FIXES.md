@@ -1230,3 +1230,22 @@ restauração de baseline do `E-front-edit`.
 `OwnerDir` = workspace, dono consegue sobrescrever o artefato. Pins vizinhos verdes
 na mesma rodada: `U-tools-elision-refused`, `U-tools-whole-file-rewrite`,
 `U-tools-project-path-hint` → `[test] PASS=4 FAIL=0`.
+
+## 46. L1 vermelho em `U-diag-reset-panel`: assert contava linhas do painel de OUTRO step (2026-10-30)
+
+**Sintoma.** Retomada por `--war-resume-stamp` caiu no L1 e o step `units` falhou em
+1s: `FAIL U-diag-reset-panel: assert: painel lista o step publicado`
+(`PASS=4 FAIL=1`), parando a bateria antes de qualquer nível útil.
+
+**Causa.** O pin publicava `U-panel-probe` e exigia `GET /api/test/steps?war=1`
+com **exatamente 1** linha. Dentro da bateria o driver publica `step_start` do step
+corrente (`verdict=RUN`) — regra do painel "mostrar o step em EXECUÇÃO" —, então a
+lista já tinha a linha `units` e o assert virava falso negativo. Fora de um run
+(só o pin) o número coincidia, e o defeito ficou escondido.
+
+**Correção.** Assert ESTRUTURAL no mesmo contrato: (a) a lista contém a linha do
+step publicado, (b) toda linha de `war=1` tem `mode` (o filtro do painel). O resto
+do pin (reset sem `panel` preserva enunciado/histórico; reset com `panel` zera
+enunciado, histórico e lista) segue literal.
+
+**Prova.** `--only U-diag-reset-panel,U-diag-reset,U-status` → `[test] PASS=3 FAIL=0`.
