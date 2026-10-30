@@ -64,6 +64,13 @@ internal sealed class WarTemplate : CircuitTemplate
         public bool Rebuild;
         public bool NoBuild;
         public bool StopOnFirstFailure = true;
+        // Web UI pelo navegador: front mede com Playwright (--webdriver) e o step
+        // webui roda a UI (--web URL --ui). Headed abre a janela (HEADED=1).
+        public bool WebDriver;
+        public string? WebDriverUrl;
+        public bool WebHeaded;
+        // Faixas exercitadas pela Web UI (Playwright) no step webui-integracao-topicos.
+        public string? WebUiBelts;
         public bool Pause;
         public bool Resume;
         public bool Status;
@@ -580,7 +587,9 @@ internal sealed class WarTemplate : CircuitTemplate
                     yield return StepBridge(driver, $"belts-orch-final-{mode}", mode,
                         new[] { "--only", "E-belts-direct", "--belts", "marrom,preta" });
                     yield return StepBridge(driver, $"front-{mode}", mode,
-                        new[] { "--only", "E-front" });
+                        _o.WebDriver
+                            ? new[] { "--only", "E-front", "--webdriver", "--webdriver-url", WebUrl() }
+                            : new[] { "--only", "E-front" });
                 }
                 yield return StepWeb(driver);
                 break;
@@ -649,16 +658,39 @@ internal sealed class WarTemplate : CircuitTemplate
             Verdict: run => VerdictForTest(driver, run));
     }
 
+    /// <summary>URL da Web UI do step de integracao (<c>--war-webdriver-url</c>).</summary>
+    private string WebUrl() => string.IsNullOrWhiteSpace(_o.WebDriverUrl)
+        ? "http://127.0.0.1:4130"
+        : _o.WebDriverUrl!;
+
     private CircuitStepSpec StepWeb(TestCircuitDriver driver)
     {
         const string name = "webui-integracao-topicos";
         if (!File.Exists(_p.WebTestDll))
             driver.Log("ERRO: Web.Test nao buildado");
+        // --war-webdriver: a Web UI e' exercitada pelo navegador (Playwright), com a
+        // janela aberta quando --war-headed. Sem a flag o step roda so' unit+integracao
+        // HTTP, como antes.
+        string webUiBelts = string.IsNullOrWhiteSpace(_o.WebUiBelts) ? "azul" : _o.WebUiBelts!;
+        var webArgs = _o.WebDriver
+            ? new[]
+            {
+                "exec", _p.WebTestDll, "--web", WebUrl(),
+                // phase "ui": uma janela por faixa, enviando o enunciado pela propria
+                // tela do /Chat (fase "full" nao existe no switch da BeltUiTests).
+                "--ui", "--phase", "ui", "--belts", webUiBelts,
+                // smoke deterministico do hello (login + /Chat + engine) na mesma janela.
+                "--simple"
+            }
+            : new[] { "exec", _p.WebTestDll };
+        driver.Log(_o.WebDriver
+            ? $"[webui] Playwright em {WebUrl()} (headed={(_o.WebHeaded ? "1" : "0")}, belts={webUiBelts})"
+            : "[webui] sem --war-webdriver: so' unit + integracao HTTP");
         return new CircuitStepSpec(
             Name: name,
             Command: new CircuitCommand(
                 Execution.Resolve("dotnet"),
-                new[] { "exec", _p.WebTestDll }, _p.Root, ChildEnv()),
+                webArgs, _p.Root, ChildEnv()),
             TimeoutSeconds: _p.StepTimeout,
             Mode: "web",
             RunTag: _hashGit,
@@ -1028,6 +1060,8 @@ internal sealed class WarTemplate : CircuitTemplate
             ["BRIDGE_UNDER_DRIVER"] = "1"
         };
         if (!string.IsNullOrWhiteSpace(_p.BridgeQ3)) env["WAR_CPU_BRIDGE"] = _p.BridgeQ3!;
+        // Playwright: HEADED=1 e' lido por PlaywrightSetup.Headless() no Web.Test.
+        if (_o.WebHeaded) env["HEADED"] = "1";
         return env;
     }
 
@@ -1339,6 +1373,10 @@ internal sealed class WarTemplate : CircuitTemplate
                 case "--war-modes": o.Modes = Next(); break;
                 case "--war-pause-file": o.PauseFile = Next(); break;
                 case "--war-root": o.Root = Next(); break;
+                case "--war-webdriver": o.WebDriver = true; break;
+                case "--war-webdriver-url": o.WebDriverUrl = Next(); break;
+                case "--war-headed": o.WebHeaded = true; break;
+                case "--war-webui-belts": o.WebUiBelts = Next(); break;
                 case "--war-step-timeout": o.StepTimeout = ParseInt(Next(), 7200); break;
                 case "--war-retries": o.Retries = ParseInt(Next(), 1); break;
                 case "--war-retry-delay": o.RetryDelay = ParseInt(Next(), 5); break;

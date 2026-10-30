@@ -193,9 +193,9 @@ public static class BeltUiTests
                 }
             }
             Console.WriteLine($"[ui] faixas: {wanted.Length - failures}/{wanted.Length} PASS");
-            if (!PlaywrightSetup.Headless())
+            if (PlaywrightSetup.Hold())
             {
-                // Janela aberta ao fim (HEAD): encerre o processo p/ fechar.
+                // PW_HOLD=1: janela fica aberta ao fim; encerre o processo p/ fechar.
                 Console.WriteLine("[ui] HOLD: janelas abertas; mate o processo para encerrar.");
                 await Task.Delay(Timeout.InfiniteTimeSpan);
             }
