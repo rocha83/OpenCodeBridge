@@ -406,7 +406,7 @@ internal static class E2EFrontPipeTests
     }
 
     static async Task<JsonObject> AgentLoop(string bridge, string model, string system, string prompt,
-        string[] toolNames, int maxTurns, string dumpAbs, string label)
+        string[] toolNames, int maxTurns, string dumpAbs, string label, Func<bool>? stillPending = null)
     {
         var tools = CatalogFor(toolNames);
         var history = new JsonArray(
@@ -454,15 +454,27 @@ internal static class E2EFrontPipeTests
                 // (a mensagem da tool ja' ensina a forma certa) antes de aceitar o
                 // "OK" — o Q3 fechava a fase sem aplicar nada (E-front-edit-react,
                 // `oldString ocorre 2x`, 2026-10-30).
-                if (pendingError.Length > 0 && nudges < 1)
+                // Turno vazio depois de um `read` (1 token, sem tool call) tambem
+                // encerrava a fase sem aplicar nada: o Q3 de 2026-10-30 respondeu
+                // vazio e o CSS ficou intacto (delta 2 virava antes=18 depois=18).
+                bool stalled = pendingError.Length == 0
+                    && content.Trim().Length == 0
+                    && stillPending?.Invoke() == true;
+                if ((pendingError.Length > 0 || stalled) && nudges < 1)
                 {
                     nudges++;
-                    Console.WriteLine($"  [front:{label}] tool falhou e o modelo encerrou: empurrao com o erro exato");
+                    Console.WriteLine(pendingError.Length > 0
+                        ? $"  [front:{label}] tool falhou e o modelo encerrou: empurrao com o erro exato"
+                        : $"  [front:{label}] turno vazio e o artefato intacto: empurrao para aplicar a mudanca");
                     history.Add(new JsonObject
                     {
                         ["role"] = "user",
-                        ["content"] = "A ultima tool FALHOU: " + pendingError
-                            + "\nAplique a correcao agora e so' entao responda OK."
+                        ["content"] = pendingError.Length > 0
+                            ? "A ultima tool FALHOU: " + pendingError
+                                + "\nAplique a correcao agora e so' entao responda OK."
+                            : "Sua resposta veio vazia e o arquivo NAO foi alterado. "
+                                + "Aplique a mudanca pedida com uma tool call (`edit` no trecho exato, "
+                                + "ou `write` com o arquivo inteiro) e so' entao responda OK."
                     });
                     continue;
                 }
@@ -676,7 +688,8 @@ internal static class E2EFrontPipeTests
             var sum = TestContext.Standalone
                 ? await StandalonePhase("exec", prompt, dump, id)
                 : await AgentLoop(CpuBridge, model, sys, prompt,
-                    new[] { "read", "write", "edit" }, 8, dump, id);
+                    new[] { "read", "write", "edit" }, 8, dump, id,
+                    stillPending: () => File.ReadAllText(target) == pre);
 
             string post = File.ReadAllText(target);
             string editDir = Path.Combine(Ws, "edit", id);
@@ -684,6 +697,7 @@ internal static class E2EFrontPipeTests
             File.Copy(target, Path.Combine(editDir, baselineName), true);
             File.WriteAllText(Path.Combine(editDir, "enunciado.md"), prompt);
             int diff = DiffLines(pre, post);
+            TestContext.Check(diff >= 1, $"{id}: aplicou a mudanca pedida (0 linha(s) alterada(s) — artefato intacto)");
             TestContext.Check(diff <= 3, $"{id}: mexeu so no trecho do enunciado ({diff} linha(s) alterada(s), max 3)");
             foreach (var mc in rule["must_contain"]?.AsArray() ?? new JsonArray())
                 TestContext.Check(post.Contains(mc!.GetValue<string>()), $"{id}: {kind} contem {mc}");

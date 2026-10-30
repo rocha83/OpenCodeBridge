@@ -1322,3 +1322,29 @@ verificada pelo pin próprio dela.
 
 **Prova.** front: `PASS=5 FAIL=0` (`E-front-gen/edit/edit-razor/edit-react/verify`);
 webui: `ToolExecutor Unit: 77/77 PASS, 0 FAIL`.
+
+## 50. Turno VAZIO do Q3 encerrava a fase de edição e o `E-front-edit` aceitava `diff=0` (2026-10-30)
+
+**Sintoma.** L4 completo: 7 steps verdes (hanoi/bin/btree/kmeans/sort + belts build e
+orch) e `front-bridge` FAIL em 38s, desta vez em `E-front-verify`:
+`titulo-2px #titulo font-size delta 2 antes=18 depois=18`.
+
+**Causa.** No `titulo-2px` o Q3 fez `read` e, no turno seguinte, respondeu **vazio**
+(1 token, sem tool call) — artefato intacto. O `E-front-edit` aceitava, porque para
+`kind=css` a fase só conferia `diff <= 3` (0 linhas passava) e não havia
+`must_contain` (o valor alvo é relativo ao gen, que varia). O delta só aparecia no
+verify, tarde e com mensagem de "modelo não cumpriu".
+
+**Correção (duas, sem afrouxar o aceite).**
+1. `E-front-edit`: `diff >= 1` (aplicou a mudança pedida) **e** `diff <= 3` (só o
+   trecho do enunciado). Artefato intacto é falha explícita na fase, não no verify.
+2. `AgentLoop`: além do caso "tool falhou", empurra também quando o turno vem
+   vazio/sem tool call e o alvo continua igual (`stillPending`), com a instrução
+   fechada ("aplique a mudanca com `edit` no trecho exato ou `write` com o arquivo
+   inteiro e so' entao responda OK"). Um empurrão por fase.
+
+**Prova.** `--war-level 4 --war-only front,webui` → `exit=0`:
+`front-bridge PASS (40s)`, `webui-integracao-topicos PASS (55s)`; verify com
+`delta 2: antes=18 depois=20`, `rect_w eq 320: antes=240 depois=320`,
+`padding-left eq 16: antes=8 depois=16`; webui `ToolExecutor 77/77`,
+`Chat Integration 10/10`.
