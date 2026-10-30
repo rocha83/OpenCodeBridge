@@ -98,8 +98,9 @@ public static class BeltUiTests
 
     // Fases do build (respeito ao swap unico): decompose (8B) -> execute (3B) -> review (8B).
     // --ui/--phase ui|batch|decompose|plan|cognitive|...; full = as duas faces da UI
-    // para a faixa: "ui" no perfil BUILD (usa tools) + "cognitive" no perfil PLAN
-    // (sem tools, reasoning renderizado na bolha).
+    // para a faixa: "ui" no perfil declarado na FAIXA (orch quando o enunciado pede
+    // delegação, build quando executa as tools) + "cognitive" no perfil PLAN (sem
+    // tools, com o raciocínio renderizado na bolha).
     public static async Task<int> RunAsync(string web, string[] only, string mode, string phase)
     {
         int failures = 0;

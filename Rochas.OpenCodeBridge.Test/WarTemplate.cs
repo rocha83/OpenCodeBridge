@@ -64,8 +64,9 @@ internal sealed class WarTemplate : CircuitTemplate
         public bool Rebuild;
         public bool NoBuild;
         public bool StopOnFirstFailure = true;
-        // Web UI pelo navegador: front mede com Playwright (--webdriver) e o step
-        // webui roda a UI (--web URL --ui). Headed abre a janela (HEADED=1).
+        // Web UI pelo navegador: SO' o ultimo step (webui-integracao-topicos) roda a UI
+        // (--web URL --ui --phase full). O front mede por snapshot estatico. Headed
+        // abre a janela (--war-headed / HEADED=1).
         public bool WebDriver;
         public string? WebDriverUrl;
         public bool WebHeaded;
@@ -586,10 +587,12 @@ internal sealed class WarTemplate : CircuitTemplate
                         new[] { "--only", "E-belts-build-direct", "--belts", "marrom,preta" });
                     yield return StepBridge(driver, $"belts-orch-final-{mode}", mode,
                         new[] { "--only", "E-belts-direct", "--belts", "marrom,preta" });
+                    // Front mede pelo snapshot estatico (Razor/CSS/TSX) — o navegador
+                    // do --war-webdriver e' SO' do ultimo step (webui-integracao-topicos).
+                    // Medido 2026-10-30: com --webdriver aqui a sonda abria janela headed,
+                    // nao demonstrava nada e o baseline estourava Timeout 30000ms.
                     yield return StepBridge(driver, $"front-{mode}", mode,
-                        _o.WebDriver
-                            ? new[] { "--only", "E-front", "--webdriver", "--webdriver-url", WebUrl() }
-                            : new[] { "--only", "E-front" });
+                        new[] { "--only", "E-front" });
                 }
                 yield return StepWeb(driver);
                 break;
@@ -676,10 +679,9 @@ internal sealed class WarTemplate : CircuitTemplate
             ? new[]
             {
                 "exec", _p.WebTestDll, "--web", WebUrl(),
-                // phase "ui": uma janela por faixa, enviando o enunciado pela propria
-                // tela do /Chat (fase "full" nao existe no switch da BeltUiTests).
-                // phase "full": as duas faces da UI na mesma faixa — perfil Build
-                // (usa tools) e perfil Plan (sem tools, reasoning na bolha).
+                // phase "full": as duas faces da UI na mesma faixa — perfil declarado
+                // na faixa (orch/build, usa tools) + perfil Plan (sem tools, reasoning
+                // renderizado na bolha).
                 "--ui", "--phase", "full", "--belts", webUiBelts,
                 // smoke deterministico do hello (login + /Chat + engine) na mesma janela.
                 "--simple"
