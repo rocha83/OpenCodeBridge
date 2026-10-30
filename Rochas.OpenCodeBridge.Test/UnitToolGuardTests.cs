@@ -92,4 +92,45 @@ public static class UnitToolGuardTests
             try { Directory.Delete(ws, true); } catch { }
         }
     }
+
+    /// <summary>
+    /// `edit` com o arquivo inteiro no `newString` e uma linha curta no `oldString`
+    /// e' reescrita total disfarcada: aplica e duplica a declaracao (CS1022 medido no
+    /// algo-cs-sort). Recusa com a tool certa; o edit de TRECHO continua passando.
+    /// </summary>
+    public static Task WholeFileRewriteRefused()
+    {
+        string ws = Path.Combine(Path.GetTempPath(), "tool-rewrite", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(ws);
+        try
+        {
+            var ctx = new ToolContext { WorkspaceRoot = ws, ExtraRoots = Array.Empty<string>() };
+            var edit = new EditToolHandler();
+            File.WriteAllText(Path.Combine(ws, "A.cs"), "using System;\n\nclass A\n{\n    static void Main() { }\n}\n");
+            string inteiro = "using System;\nusing System.Linq;\n\nclass A\n{\n    static void Main() { }\n}\n";
+            var r = edit.Handle(new JsonObject
+            {
+                ["path"] = "A.cs",
+                ["oldString"] = "}",
+                ["newString"] = inteiro
+            }.ToJsonString(), ctx);
+            TestContext.Check(!r.Success && r.Error.Contains("write", StringComparison.Ordinal),
+                $"edit com arquivo inteiro deveria mandar usar write (saiu: '{r.Error}')");
+            TestContext.Check(File.ReadAllText(Path.Combine(ws, "A.cs")).Contains("static void Main", StringComparison.Ordinal)
+                && !File.ReadAllText(Path.Combine(ws, "A.cs")).Contains("using System.Linq", StringComparison.Ordinal),
+                "recusa nao altera o arquivo");
+            var ok = edit.Handle(new JsonObject
+            {
+                ["path"] = "A.cs",
+                ["oldString"] = "static void Main() { }",
+                ["newString"] = "static void Main() { System.Console.WriteLine(\"ok\"); }"
+            }.ToJsonString(), ctx);
+            TestContext.Check(ok.Success, $"edit de trecho continua passando (saiu: '{ok.Error}')");
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            try { Directory.Delete(ws, true); } catch { }
+        }
+    }
 }

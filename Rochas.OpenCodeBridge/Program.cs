@@ -3607,7 +3607,14 @@ var shape = new StringBuilder();
                             // grande repete trechos legitimos e o corte no meio da call
                             // derrubava o turno (o salvage recusa args truncado). O texto
                             // (content/reasoning) segue na janela do conteudo.
-                            if (AntiRepeat && cur.Args.Length >= ToolArgsAntiRepeatReply.ProbeMinChars)
+                            // `edit`/`write` NAO abortam por args: o args e' o arquivo
+                            // inteiro e a repeticao pode ser trecho legitimo; cortar a
+                            // call gera JSON invalido, o salvage recusa e o modelo repete
+                            // o aviso em prosa (medido 2026-10-30 no algo-cs-sort, 6x).
+                            // O loop dessas tools e' contido pelo ToolsBreaker + guardas
+                            // (conteudo elidido/reescrita total) e pelo compilador.
+                            if (AntiRepeat && cur.Args.Length >= ToolArgsAntiRepeatReply.ProbeMinChars
+                                && cur.Name is not ("edit" or "write"))
                             {
                                 string argsSoFar = cur.Args.ToString();
                                 if (new ToolArgsAntiRepeatReply(AntiRepeatArgsWindow).IsRepeat(argsSoFar))

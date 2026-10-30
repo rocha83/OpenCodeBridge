@@ -142,6 +142,7 @@ internal static class Program
         TestContext.Run("U-tools-path-hint", UnitToolsExecuteTests.PathHintApontaCaminhoReal);
         TestContext.Run("U-tools-project-path-hint", UnitToolGuardTests.ProjectPathHint);
         TestContext.Run("U-tools-elision-refused", UnitToolGuardTests.ElisionRefused);
+        TestContext.Run("U-tools-whole-file-rewrite", UnitToolGuardTests.WholeFileRewriteRefused);
         TestContext.Run("U-tool-help", UnitToolHelpTests.Run);
         TestContext.Run("U-tool-feedback-shell-cwd", UnitToolFeedbackTests.ShellReportsCwd);
         TestContext.Run("U-tool-feedback-git-chain", UnitToolFeedbackTests.GitChainTeaching);
@@ -217,6 +218,7 @@ internal static class Program
         TestContext.Run("U-fs-repair-use-before-def", UnitToolBreakerTests.FsRepairUseBeforeDef);
         TestContext.Run("U-fs-repair-if-branches-string", UnitToolBreakerTests.FsRepairIfBranchesString);
         TestContext.Run("U-fs-repair-list-contains-order", UnitToolBreakerTests.FsRepairListContainsOrder);
+        TestContext.Run("U-fs-repair-equality-operator", UnitToolBreakerTests.FsRepairEqualityOperator);
         TestContext.Run("U-fs-repair-power-operator", UnitToolBreakerTests.FsRepairPowerOperator);
         TestContext.Run("U-fs-repair-indexer", UnitToolBreakerTests.FsRepairIndexerAnnotation);
         TestContext.Run("U-fs-repair-param-semicolon", UnitToolBreakerTests.FsRepairParamSemicolon);

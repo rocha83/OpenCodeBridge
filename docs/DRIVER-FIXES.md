@@ -1056,3 +1056,97 @@ rodou **cinco** testes: `PASS=4 FAIL=1` dentro do step errado
 **Prova.** `--only =E-mission-algo-cs-sort` roda um teste só; bateria isolada
 nova em `logs/isolated/algo-batch2-*.summary` (o breaker cortou o laço em
 `trip (6 falhas)` em vez dos 26 turnos da rodada anterior).
+
+## 40. "Aguardando instruções." no painel era o PROBE do preflight, não um agente travado (2026-10-30)
+
+**Sintoma.** O operador viu a linha `00:56:16 Aguardando instruções. assistant`
+e suspeitou de cliente externo mandando mensagem ou de gate estimulando o modelo
+a "esperar".
+
+**Causa (medida no `/tmp/bridge-gpu.log`, não é palpite).** Nenhum teste da
+bateria manda request sem `tools`; todas as entradas `"has_tools":false` com
+exatamente `chars=5042` de system saem em **um por start de runner**: `00:52:06`,
+`00:52:53`, `00:53:11` e a rajada `00:56:15/17/18/20/21` (as cinco execuções
+abortadas pelo rerun-guard). Essa é a assinatura do **probe de liveness do
+`StackPreflight`**: `messages:[{role:user, content:"ok"}]`, `max_tokens:8`, sem
+tools. Como a bridge está em `--mode bridge`, ela injeta o MainHarness (que manda
+agir com tools); recebendo "ok" sem tarefa, o modelo responde exatamente
+`Aguardando instruções.`.
+
+Reprodução literal na bridge de produção:
+
+```bash
+curl -s localhost:4124/v1/chat/completions -H 'Authorization: Bearer guest@123' \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"Gemma4-E4B-Q4","max_tokens":8,"messages":[{"role":"user","content":"ok"}]}'
+# -> {"content":"Aguardando instruções."}
+```
+
+**Correção.** `StackPreflight.Probe` passa a mandar instrução fechada
+(`Liveness check. Responda apenas: PONG`) — a mesma chamada devolve `PONG`. O
+probe continua medindo o que importa (o modelo responde) e deixa de fabricar
+texto de espera no console/painel do operador.
+
+**Prova.** `curl` acima antes/depois; `U-preflight-go` e `U-preflight-model-fail`
+PASS. O log deixa de ter o texto: a linha `system-sent` do probe segue idêntica
+(`has_tools=false`, 5042 chars), mas a resposta é `PONG`.
+
+## 41. `--project` inexistente e conteúdo elidido: as duas causas reais do loop de compilação (2026-10-30)
+
+**Sintoma.** `E-mission-algo-cs-btree` gastou 26+13 turnos (`logs/isolated/_E-mission-algo-cs-btree_-20261030-005310.log`)
+alternando `shell` com erro e `edit` recusado, e fechou FAIL.
+
+**Causas (duas, lidas no log).**
+1. O modelo chamava `dotnet run --project <ws>/mcs.csproj` (sem o diretório
+   `mcs/`) e a tool respondia só `The provided file path does not exist` — sem o
+   caminho real. Repetiu 5 vezes, alternando com a forma certa.
+2. O modelo emitiu `// ... (restante do código)` como `newString` de `edit`; o
+   arquivo passou a ter o marcador no lugar do corpo, o build quebrou e os
+   turnos seguintes queimaram em `oldString não encontrado`.
+
+**Correção (Core, fonte única).**
+- `ShellToolHandler.ProjectPathBlocked`: `--project`/`-p`/`--project=` com alvo
+  inexistente responde `projeto não encontrado: '<p>' (existe em: <real> — use
+  esse path)`, reaproveitando `WorkspaceGuard.NotFound` + `WorkspaceGuard.Locate`
+  (mesma regra de `read`/`edit`, sem texto novo por tool).
+- `ToolContentGuard.Elided` (novo, em `Core/Tools`): `write` (`content`) e `edit`
+  (`newString`) recusam texto com marcador de continuação no lugar do corpo e
+  ensinam a forma certa (trecho completo, linha por linha), sem exibir o literal
+  proibido.
+
+**Prova.** `U-tools-project-path-hint` e `U-tools-elision-refused` PASS (com
+negativo: caminho existente não é recusado; conteúdo completo grava o artefato).
+
+## 42. Anti-repeat de args cortava `edit`/`write` no meio e o salvage virava loop de prosa (2026-10-30)
+
+**Sintoma.** `E-mission-algo-cs-sort` gastou 22 turnos: 6 `edit` abortados no
+meio do stream, o salvage recusava o args e o modelo repetia o aviso
+`BRIDGE (edit): ...` como texto (3 prosas seguidas encerram a tentativa).
+
+**Causa (lida no `/tmp/bridge-gpu.log`).**
+```
+{"event":"anti-repeat","where":"stream-abort-tool-args","tool":"edit","window":1024,"chars":3957}
+{"event":"salvage-args-rejected","tools":"edit"}
+{"event":"anti-repeat-salvage","where":"stream-abort","calls":0}
+```
+O args era o **arquivo inteiro** (o modelo usou `edit` como `write`, com
+`oldString` de uma linha). A cauda de 1024 chars já aparecia antes (o próprio
+conteúdo duplicado), o anti-repeat abortava no meio, o JSON ficava inválido e o
+salvage não podia entregar a call. O modelo recebia o aviso genérico de "JSON
+inválido", copiava o texto e repetia.
+
+**Correção (mecanismo, não afrouxamento de aceite).**
+- Bridge (`Program.cs`): `edit`/`write` **não abortam** por anti-repeat de args.
+  O args dessas tools é o arquivo inteiro e repetir trecho é legítimo; o loop
+  delas é contido pelo `ToolsBreaker` (soft 3 / hard 6), pelas guardas de
+  conteúdo e pelo compilador. O log `anti-repeat-args` continua (sonda), só não
+  corta a call.
+- `ToolContentGuard.WholeFileRewrite`: `edit` com `newString` de arquivo inteiro
+  (várias declarações) e `oldString` de uma linha é recusado com a tool certa
+  (`write`), antes de duplicar cabeçalho/declaração (CS1022).
+
+**Prova.** `U-tools-whole-file-rewrite` e `U-antirepeat-args-window` PASS; no
+`/tmp/bridge-gpu.log` o evento `stream-abort-tool-args` deixa de aparecer para
+`edit`/`write` (só o probe `anti-repeat-args`). Bateria `logs/isolated/algo-batch4-*.log`
+mostra `PASS E-mission-algo-cs`/`cs-bin`/`cs-btree`/`cs-kmeans` antes da correção;
+`cs-sort` é o caso medido.

@@ -1059,6 +1059,26 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // FS0043 medido em 2026-10-30 (E-mission-algo-fs-btree): o modelo escreveu
+    // `if value == node.Value then` (C#-ismo) e o compilador recusou o operador.
+    // A dica ensina o `=` de F# e aponta a linha; erro alheio nao recebe a dica.
+    public static Task FsRepairEqualityOperator()
+    {
+        const string src = "let rec search (node: Node option) (value: int) : bool =\n    match node with\n    | Some n -> if value == n.Value then true else false\n    | None -> false\n";
+        const string err = "Program.fs(3,22): error FS0043: The type 'int' does not support the operator '=='";
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(src, err);
+        TestContext.Check(p.Contains("if value = node.Value then true"),
+            "FS0043 '==' -> dica ensina `=` (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains("linha 3"),
+            "a dica aponta a linha do erro (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(!p.Contains("=="),
+            "a dica nao repete o operador que nao existe em F# (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let x = 1\n", "error FS0001: This expression was expected to have type 'int' but here has type 'string'") == "",
+            "erro alheio nao recebe a dica de igualdade");
+        return Task.CompletedTask;
+    }
+
     // 19a amostra (2026-10-30, suite algo-fs): `^` usado como potencia sai como
     // FS0101 "deprecated ... Use the '+' operator instead" e nao havia mapa.
     public static Task FsRepairPowerOperator()

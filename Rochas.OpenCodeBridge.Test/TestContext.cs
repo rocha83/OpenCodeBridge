@@ -244,10 +244,11 @@ internal static class TestContext
         // alimenta o painel (evita 100+ U-* no dicionario de steps).
         bool panelStep = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAR_STEP"))
                          && name.StartsWith("E-", StringComparison.Ordinal);
-        // Diagnostico: a limpeza e' do runner, UMA por nivel/run (o step nao zera
-        // contador — zerar por step apagava a leitura do run no painel). Aqui so'
-        // o run isolado de E2E, que e' a propria rodada, limpa antes de comecar.
-        if (panelStep && Environment.GetEnvironmentVariable("WAR_NO_RESET") is null) ResetDiagnostics();
+        // Diagnostico: a limpeza e' UMA por bateria, no inicio (junto do rebuild +
+        // redeploy/restart): Program.cs limpa no run isolado e o WarTemplate limpa
+        // no inicio de cada nivel. O step NAO zera contador/sonda/painel — zerar
+        // por step apagava a leitura do run no Grafana e nao deixava ver os PASS
+        // acumulados (medido 2026-10-30).
         // Run isolado tambem alimenta a sonda de 5s (tps/VRAM/GPU/tools). No WAR
         // o driver e' o dono da sonda; aqui ela morre junto com o step.
         StepProbe? probe = null;

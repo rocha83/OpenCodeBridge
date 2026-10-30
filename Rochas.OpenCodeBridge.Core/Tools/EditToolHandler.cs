@@ -24,6 +24,8 @@ public sealed class EditToolHandler : IToolHandler
         if (string.IsNullOrEmpty(oldString)) return ToolResult.Fail("oldString é obrigatório");
         if (ToolContentGuard.Elided(newString, "edit") is string elided)
             return ToolResult.Fail(elided);
+        if (ToolContentGuard.WholeFileRewrite(oldString, newString) is string rewrite)
+            return ToolResult.Fail(rewrite);
 
         if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why, context.ExtraRoots))
             return ToolResult.Fail(why);

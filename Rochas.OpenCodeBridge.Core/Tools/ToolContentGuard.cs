@@ -39,4 +39,28 @@ public static class ToolContentGuard
              + "O arquivo em disco fica exatamente com o texto enviado: reenvie a chamada com o trecho COMPLETO, "
              + "linha por linha, escrevendo cada declaracao por inteiro.";
     }
+
+    /// <summary>
+    /// `edit` com o ARQUIVO INTEIRO no <c>newString</c> e uma linha curta no
+    /// <c>oldString</c>: e' reescrita total disfarcada de edicao. Aplicar duplica o
+    /// cabecalho/declaracao e o build quebra (CS1022; medido 2026-10-30 no
+    /// <c>E-mission-algo-cs-sort</c>, 6 turnos em loop). A recusa manda a tool certa.
+    /// </summary>
+    /// <param name="oldString">Trecho a substituir.</param>
+    /// <param name="newString">Texto novo.</param>
+    /// <returns>Mensagem pronta para o historico, ou <c>null</c>.</returns>
+    public static string? WholeFileRewrite(string? oldString, string? newString)
+    {
+        if (string.IsNullOrEmpty(oldString) || string.IsNullOrEmpty(newString)) return null;
+        // So' quando o oldString e' UM trecho curto (1 linha): um bloco grande no
+        // oldString e' edicao de bloco legitima.
+        if (oldString.Contains('\n') || oldString.Trim().Length > 40) return null;
+        if (newString.Count(c => c == '\n') < 6) return null;
+        bool fileShape = Regex.IsMatch(newString,
+            @"(?:^|\n)\s*(?:using\s+[\w.]+;|namespace\s+[\w.]+|(?:public|internal|static|sealed|partial)?\s*class\s+\w+|module\s+\w+)");
+        if (!fileShape) return null;
+        return "edit: o `newString` traz o ARQUIVO INTEIRO (varias declaracoes) e o `oldString` e' uma linha curta. "
+             + "`edit` substitui um TRECHO, nao regrava o arquivo: para o arquivo completo use `write` "
+             + "(content com o texto inteiro) ou refaca o `edit` com o trecho exato a trocar.";
+    }
 }

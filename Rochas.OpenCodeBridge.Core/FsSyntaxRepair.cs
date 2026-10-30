@@ -387,6 +387,15 @@ public static class FsSyntaxRepair
             return "CERTO: `List.contains` recebe o VALOR e depois a LISTA (`List.contains valor lista`) — a lista e' o ULTIMO argumento:\n"
                  + "let existe = List.contains key node.Keys";
 
+        // FS0043 `==` em F#: F# usa `=` para igualdade (um sinal). `==` nao existe
+        // em F# (C#-ismo). Medido em 2026-10-30 (E-mission-algo-fs-btree, linha 65
+        // `if value == node.Value then`). Dica estreita: so' quando a mensagem cita
+        // o operador '=='.
+        if (code == "FS0043"
+            && compilerError.Contains("operator '=='", StringComparison.Ordinal))
+            return "CERTO: em F# igualdade e' um sinal so' - `=` (o operador duplo e' de outra linguagem):\\n"
+                 + "if value = node.Value then true else ...";
+
         // So' os codigos que este mapa cobre: erro alheio nao recebe conserto de
         // comprehension (evita "corrigir" a linha errada do fonte).
         if (code is not ("FS0003" or "FS0010" or "FS0001" or "FS0020" or "FS0751" or "FS0058"))
