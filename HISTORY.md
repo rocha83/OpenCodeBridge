@@ -1,5 +1,38 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Missão F# trocada por 4 algoritmos separados + portão de fluxo bridge (P1) (2026-10-30)
+
+**Decisão.** Hanoi + crivo em F# acumulou 17 amostras sem PASS (a variância do
+turno e a sintaxe F# dominavam o veredito, não o algoritmo). Hanoi fica **só no
+C#** (`E-mission-algo-cs`) e a missão F# virou **quatro testes distintos**, cada
+um com projeto/fonte e aceite próprios — o vermelho passa a dizer QUAL algoritmo
+falhou:
+
+| teste | enunciado (natural, sem receita) | aceite |
+|---|---|---|
+| `E-mission-algo-fs-bin` | busca binária em array ordenado, alvo 13 | `binsearch_idx=5` |
+| `E-mission-algo-fs-btree` | B-tree com `[10;20;5;6;12;30;7;17]`, busca 6 | `btree_found=true`, `btree_count=8` |
+| `E-mission-algo-fs-kmeans` | K-Means k=2 em 6 pontos | `kmeans_c1=`/`kmeans_c2=` com 1 casa, c1<c2 e separados |
+| `E-mission-algo-fs-sort` | quick sort e bubble sort em `[5;2;9;1;5;6]` | `quicksort=1,2,5,5,6,9`, `bubblesort=1,2,5,5,6,9` |
+
+Harness/tails/FsMini **não** foram tocados: a mudança é só no enunciado e no
+aceite (regra "apenas mude o teste"). `WarTemplate`, `scripts/war/run-levels.sh`,
+`docs/BENCHTESTS.md` e `AGENTS.md` (tabela L4) passaram a listar os quatro steps.
+
+**Portão de fluxo bridge (PENDINGS P1) implementado.** `RecordSystemSent` grava
+`main_harness` (retorno real de `MainHarness.Apply`), `has_tools`, `tools_tail`,
+`lane` e `ts`; `TestContext.Run` chama `BridgeFlowGate.Probe` ao fim de todo
+`E-*` em modo bridge e recusa com `fluxo bridge incompleto: ausente
+<main_harness|tails|tools_tail>` + dump. Registro anterior ao teste recusa com
+causa própria e registro de outro cliente (`lane != bridge`) sai como
+`INCONCLUSIVO` — a bridge guarda só o último system, então acusar o teste ali
+seria mentira. Prova: `U-flow-gate` (feliz + 6 negativos).
+
+**Nota de bancada.** O `rerun-guard` estava travando a reexecução com o hash de
+um FAIL de *unit* (`U-flow-gate`, já verde no mesmo binário); o estado foi movido
+para `logs/.rerun-guard.json.cleared-20261029-233507` com esta justificativa e a
+suíte completa seguia `PASS=146 FAIL=0 SKIP=6`.
+
 ## `E-mission-algo-fs` 14ª amostra: FS0001 com ramo `string` e dica de array (2026-10-29)
 
 **Resultado medido.** `logs/isolated/E-mission-algo-fs_-20261029-215110.log`
