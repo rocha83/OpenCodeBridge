@@ -436,67 +436,60 @@ internal static class E2EMissionTests
     }
 
     /// <summary>Missao algoritmica em F# (1/4): busca binaria.</summary>
-    public static async Task MissionAlgoFsBin()
-    {
-        string bridge = TestContext.Bridge;
-        string model = AlgoModel();
-        string ws = TestContext.FreshWorkspace("e2e-mission-algo-fs-bin");
-        TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
-        File.WriteAllText(Path.Combine(ws, "mfs", "Program.fs"),
-            "module Program\n\nopen System\n\n// resolva o pedido aqui\nprintfn \"ok\"\n");
-        string[] stages = new[] { "Programa F# em " + ws + "/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). Dado o array ordenado [1;3;5;7;9;11;13;15;17;19] e alvo 13, implemente busca binaria e imprima `binsearch_idx=<indice 0-based>` (ou -1 se nao achar). Imprima o valor calculado pelo programa, nao copie do enunciado. Rode `dotnet run --project " + ws + "/mfs/mfs.fsproj` e ajuste ate imprimir." };
-        var (src, output) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", stages);
-        TestContext.Check(!HasHardcodedBin(src), "F# calcula (sem hardcode da meta)");
-        TestContext.Check(AlgoOkBin(output), "F# entrega a chave esperada, saiu: " + output[..Math.Min(240, output.Length)]);
-        Console.WriteLine($"  [algo] F# bin ok:\n{output.Trim()}");
-    }
+    public static Task MissionAlgoFsBin() => RunFsMission("e2e-mission-algo-fs-bin",
+        "Programa F# em {ws}/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). "
+        + "Dado o array ordenado [1;3;5;7;9;11;13;15;17;19] e alvo 13, implemente busca binaria e imprima "
+        + "`binsearch_idx=<indice 0-based>` (ou -1 se nao achar). Imprima o valor calculado pelo programa, "
+        + "nao copie do enunciado. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` e ajuste ate imprimir.",
+        AlgoOkBin, HasHardcodedBin);
 
     /// <summary>Missao algoritmica em F# (2/4): B-tree (insercao + busca).</summary>
-    public static async Task MissionAlgoFsBTree()
-    {
-        string bridge = TestContext.Bridge;
-        string model = AlgoModel();
-        string ws = TestContext.FreshWorkspace("e2e-mission-algo-fs-btree");
-        TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
-        File.WriteAllText(Path.Combine(ws, "mfs", "Program.fs"),
-            "module Program\n\nopen System\n\n// resolva o pedido aqui\nprintfn \"ok\"\n");
-        string[] stages = new[] { "Programa F# em " + ws + "/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). Implemente uma B-tree (ou arvore de busca) com insercao de [10;20;5;6;12;30;7;17] e busca do valor 6. Imprima `btree_found=<true|false>` e `btree_count=<total de chaves>`. Imprima valores calculados pelo programa, nao copie do enunciado. Rode `dotnet run --project " + ws + "/mfs/mfs.fsproj` e ajuste ate imprimir." };
-        var (src, output) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", stages);
-        TestContext.Check(!HasHardcodedBTree(src), "F# calcula (sem hardcode da meta)");
-        TestContext.Check(AlgoOkBTree(output), "F# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
-        Console.WriteLine($"  [algo] F# btree ok:\n{output.Trim()}");
-    }
+    public static Task MissionAlgoFsBTree() => RunFsMission("e2e-mission-algo-fs-btree",
+        "Programa F# em {ws}/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). "
+        + "Implemente uma B-tree (ou arvore de busca) com insercao de [10;20;5;6;12;30;7;17] e busca do valor 6. "
+        + "Imprima `btree_found=<true|false>` e `btree_count=<total de chaves>`. Imprima valores calculados pelo "
+        + "programa, nao copie do enunciado. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` e ajuste ate imprimir.",
+        AlgoOkBTree, HasHardcodedBTree);
 
     /// <summary>Missao algoritmica em F# (3/4): K-Means.</summary>
-    public static async Task MissionAlgoFsKMeans()
-    {
-        string bridge = TestContext.Bridge;
-        string model = AlgoModel();
-        string ws = TestContext.FreshWorkspace("e2e-mission-algo-fs-kmeans");
-        TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
-        File.WriteAllText(Path.Combine(ws, "mfs", "Program.fs"),
-            "module Program\n\nopen System\n\n// resolva o pedido aqui\nprintfn \"ok\"\n");
-        string[] stages = new[] { "Programa F# em " + ws + "/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). Implemente K-Means com k=2 sobre os pontos (1,1),(1,2),(2,1),(8,8),(8,9),(9,8). Imprima os 2 centroides finais com 1 casa decimal em `kmeans_c1=<x>,<y>` e `kmeans_c2=<x>,<y>` (ordem crescente por x). Imprima valores calculados pelo programa, nao copie do enunciado. Rode `dotnet run --project " + ws + "/mfs/mfs.fsproj` e ajuste ate imprimir." };
-        var (src, output) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", stages);
-        TestContext.Check(!HasHardcodedKMeans(src), "F# calcula (sem hardcode da meta)");
-        TestContext.Check(AlgoOkKMeans(output), "F# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
-        Console.WriteLine($"  [algo] F# kmeans ok:\n{output.Trim()}");
-    }
+    public static Task MissionAlgoFsKMeans() => RunFsMission("e2e-mission-algo-fs-kmeans",
+        "Programa F# em {ws}/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). "
+        + "Implemente K-Means com k=2 sobre os pontos (1,1),(1,2),(2,1),(8,8),(8,9),(9,8). "
+        + "Imprima os 2 centroides finais com 1 casa decimal em `kmeans_c1=<x>,<y>` e `kmeans_c2=<x>,<y>` "
+        + "(ordem crescente por x). Imprima valores calculados pelo programa, nao copie do enunciado. "
+        + "Rode `dotnet run --project {ws}/mfs/mfs.fsproj` e ajuste ate imprimir.",
+        AlgoOkKMeans, HasHardcodedKMeans);
 
     /// <summary>Missao algoritmica em F# (4/4): quick sort + bubble sort.</summary>
-    public static async Task MissionAlgoFsSort()
+    public static Task MissionAlgoFsSort() => RunFsMission("e2e-mission-algo-fs-sort",
+        "Programa F# em {ws}/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). "
+        + "Implemente quick sort e bubble sort sobre [5;2;9;1;5;6]. Imprima `quicksort=1,2,5,5,6,9` e "
+        + "`bubblesort=1,2,5,5,6,9` (valores que o programa calculou). Rode `dotnet run --project "
+        + "{ws}/mfs/mfs.fsproj` e ajuste ate imprimir.",
+        AlgoOkSort, HasHardcodedSort);
+
+    /// <summary>
+    /// Fase F# de uma missao: workspace novo, projeto scaffold e DUAS etapas sobre o
+    /// MESMO arquivo (a 2a recebe a saida real da 1a como correcao — o laco de 26
+    /// turnos sozinho nao garante convergencia). Aceite e hardcode sao do teste.
+    /// </summary>
+    /// <param name="name">Nome do workspace/step.</param>
+    /// <param name="prompt">Enunciado com {ws} para o caminho do workspace.</param>
+    /// <param name="accept">Confere a saida final.</param>
+    /// <param name="hardcoded">Recusa fonte com a meta fixada.</param>
+    static async Task RunFsMission(string name, string prompt,
+        Func<string, bool> accept, Func<string, bool> hardcoded)
     {
-        string bridge = TestContext.Bridge;
-        string model = AlgoModel();
-        string ws = TestContext.FreshWorkspace("e2e-mission-algo-fs-sort");
+        string ws = TestContext.FreshWorkspace(name);
         TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
         File.WriteAllText(Path.Combine(ws, "mfs", "Program.fs"),
             "module Program\n\nopen System\n\n// resolva o pedido aqui\nprintfn \"ok\"\n");
-        string[] stages = new[] { "Programa F# em " + ws + "/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). Implemente quick sort e bubble sort sobre [5;2;9;1;5;6]. Imprima `quicksort=1,2,5,5,6,9` e `bubblesort=1,2,5,5,6,9` (valores que o programa calculou). Rode `dotnet run --project " + ws + "/mfs/mfs.fsproj` e ajuste ate imprimir." };
-        var (src, output) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", stages);
-        TestContext.Check(!HasHardcodedSort(src), "F# calcula (sem hardcode da meta)");
-        TestContext.Check(AlgoOkSort(output), "F# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
-        Console.WriteLine($"  [algo] F# sort ok:\n{output.Trim()}");
+        string full = prompt.Replace("{ws}", ws);
+        var (src, output) = await RunAlgoPhase(TestContext.Bridge, AlgoModel(), ws, "F#",
+            "mfs/mfs.fsproj", "Program.fs", new[] { full, full }, accept: accept);
+        TestContext.Check(!hardcoded(src), "F# calcula (sem hardcode da meta)");
+        TestContext.Check(accept(output), "F# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
+        Console.WriteLine($"  [algo] {name} ok:\n{output.Trim()}");
     }
 
     static string AlgoModel()
@@ -550,7 +543,8 @@ internal static class E2EMissionTests
     /// inteiro num laco so'; o aceite final e' o mesmo).
     /// </summary>
     static async Task<(string Src, string Out)> RunAlgoPhase(
-        string bridge, string model, string ws, string lang, string project, string file, string[] stages, int turns = 26)
+        string bridge, string model, string ws, string lang, string project, string file, string[] stages,
+        int turns = 26, Func<string, bool>? accept = null)
     {
         string sysBase = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls, sem prosa.";
         string sys = lang == "F#"
@@ -657,7 +651,7 @@ internal static class E2EMissionTests
                     Console.WriteLine($"  [algo:{lang}] T{turn} {fn} args={a.ToJsonString()[..Math.Min(120, a.ToJsonString().Length)]} -> {seen.Replace("\n", " | ")[..Math.Min(300, seen.Replace("\n", " | ").Length)]}");
                 }
                 hist.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = res });
-                if (fn == "shell" && AlgoOk(res)) done = true;
+                if (fn == "shell" && (accept ?? AlgoOk)(res)) done = true;
             }
             var verdict = loopGuard.Evaluate(hist);
             if (verdict.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Nudge)
@@ -678,7 +672,7 @@ internal static class E2EMissionTests
         string output = await RunShell(ws, model, "dotnet run --project " + project + " -c Release");
         if (dump)
             Console.WriteLine($"  [algo:{lang}] tentativa {attempt}: {(AlgoOk(output) ? "bateu as metas" : "fora das metas")} | {output.Replace("\n", " | ")[..Math.Min(180, output.Replace("\n", " | ").Length)]}");
-        if (AlgoOk(output) || attempt == stages.Length) return (src, output);
+        if ((accept ?? AlgoOk)(output) || attempt == stages.Length) return (src, output);
         // Saida real alimenta a etapa seguinte junto do enunciado dela (sem dica de passo).
         feedback = "\n\nA saida anterior nao bateu. Saida real:\n" + (output.Length > 900 ? output[..900] : output)
                  + "\nCorrija " + Path.Combine(ws, dir, file) + " e rode de novo; as metas e o formato continuam os mesmos.";
@@ -752,14 +746,15 @@ internal static class E2EMissionTests
 
     static bool AlgoOkKMeans(string output)
     {
-        // Aceita qualquer precisao decimal (o enunciado pede 1 casa; o modelo pode
-        // imprimir 1.33), exige c1 < c2 (ordem do enunciado) e clusters separados.
-        var m1 = System.Text.RegularExpressions.Regex.Match(output, @"kmeans_c1=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)");
-        var m2 = System.Text.RegularExpressions.Regex.Match(output, @"kmeans_c2=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)");
+        // k=2 nos pontos do enunciado: o cluster da esquerda tem centroide x~1.3 e o
+        // da direita x~8.3. Compara o inteiro mais proximo (1 e 8) para nao brigar
+        // com a precisao que o modelo escolher imprimir.
+        var m1 = System.Text.RegularExpressions.Regex.Match(output, @"kmeans_c1=\(?(-?\d+(?:\.\d+)?)");
+        var m2 = System.Text.RegularExpressions.Regex.Match(output, @"kmeans_c2=\(?(-?\d+(?:\.\d+)?)");
         if (!m1.Success || !m2.Success) return false;
         double x1 = double.Parse(m1.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
         double x2 = double.Parse(m2.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
-        return x1 < x2 && x2 - x1 > 1.0;
+        return Math.Round(x1) == 1 && Math.Round(x2) == 8;
     }
     static bool HasHardcodedKMeans(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"kmeans_c1\s*=\s*-?\d+\.\d+,\s*-?\d+\.\d+");
 

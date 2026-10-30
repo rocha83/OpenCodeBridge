@@ -196,6 +196,11 @@
           "format": "table",
           "columns": [
             {
+              "selector": "step",
+              "text": "step",
+              "type": "string"
+            },
+            {
               "selector": "time",
               "text": "hora",
               "type": "string"
