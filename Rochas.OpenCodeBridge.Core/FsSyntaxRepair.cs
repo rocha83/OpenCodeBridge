@@ -102,6 +102,14 @@ public static class FsSyntaxRepair
                  + "[ (1, 2); (1, 3) ]\n"
                  + "o `->` so' existe dentro de comprehension: `[ for i in 1 .. 3 -> i * i ]`";
 
+        // FS0752: `expr.[idx]` sobre valor de tipo indeterminado (medido na 15a amostra
+        // de 2026-10-29: 7 ocorrencias e ZERO dicas — o modelo indexava o parametro da
+        // funcao recursiva sem anotacao). A anotacao do parametro/binding resolve.
+        if (code == "FS0752")
+            return "CERTO: o valor indexado precisa de tipo CONHECIDO — anote o parametro (ou o binding) antes do `.[i]`:\n"
+                 + "let marca (xs: bool array) i = xs.[i]\n"
+                 + "let zeros: int array = Array.create 10 0";
+
         // FS3118/FS0588/FS0528 com `else let` na MESMA linha: o `let` que segue o
         // `else` abre um bloco e precisa da linha propria, com o corpo indentado
         // (medido na 10a amostra do isolado de 2026-10-29: `else let limit = ...`

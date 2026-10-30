@@ -391,7 +391,7 @@ internal static class UnitToolBreakerTests
         TestContext.Check(fsMini.Contains("no range os dois limites sao do MESMO tipo"), "tabela F# ensina range de tipo unico (FS0001)");
         TestContext.Check(fsMini.Contains("PRIMOS: divisores candidatos de 2"), "FsMini separa intervalo de entrada do de divisores");
         // Sem duplicidade ambigua: cada codigo da tabela tem UMA unica linha.
-        foreach (var code in new[] { "FS0010", "FS0751", "FS0003", "FS0001", "FS0039", "FS0037", "FS0058", "FS0988", "FS0020", "FS3563" })
+        foreach (var code in new[] { "FS0010", "FS0751", "FS0003", "FS0001", "FS0039", "FS0037", "FS0058", "FS0988", "FS0020", "FS3563", "FS0752" })
             TestContext.Check(fsMini.Split(code).Length - 1 == 1, $"FsMini cita {code} uma unica vez");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
         TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
@@ -984,6 +984,20 @@ internal static class UnitToolBreakerTests
             "error FS0001: All branches of an 'if' expression must return values implicitly convertible to the type of the first branch, which here is ''a list'. This branch returns a value of type 'int'.");
         TestContext.Check(q.Contains("para juntar LISTA use `@`"),
             "ramo lista -> dica de `@` (veio: " + q.Replace("\n", " | ") + ")");
+        return Task.CompletedTask;
+    }
+
+    // 15a amostra (2026-10-29): `currentPrimes.[p]` com o parametro sem anotacao ->
+    // FS0752 "operator 'expr.[idx]' has been used on an object of indeterminate type".
+    // Sete ocorrencias e nenhuma dica; a forma que compila e' a anotada.
+    public static Task FsRepairIndexerAnnotation()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let rec sieveRec p currentPrimes =\n    if currentPrimes.[p] then sieveRec (p + 1) currentPrimes else currentPrimes\n",
+            "error FS0752: The operator 'expr.[idx]' has been used on an object of indeterminate type based on information prior to this program point. Consider adding further type constraints");
+        TestContext.Check(p.Contains("(xs: bool array)") && p.Contains("xs.[i]"),
+            "FS0752 -> dica anota o parametro indexado (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(!p.Contains("currentPrimes.[p]"), "a dica nao ecoa a linha sem anotacao");
         return Task.CompletedTask;
     }
 
