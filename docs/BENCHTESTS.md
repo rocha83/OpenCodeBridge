@@ -209,6 +209,13 @@ step pode ser filtrado por `--only`.
 - **L4 frontend/web**: `E-front-gen`, `E-front-edit` (CSS),
   `E-front-edit-razor`, `E-front-edit-react`, `E-front-verify` e
   `webui-integracao-topicos` (Web.Test).
+- **`webui-integracao-topicos` (Web UI por navegador)**: com
+  `--war-webdriver` o step abre a janela (headed com `--war-headed`) e roda as
+  faixas `azul,moe` (`--war-webui-belts`): `azul` = perfil **Orch** executando/
+  delegando + face **Plan** com enunciado TEXTO PURO (zero tool call, raciocínio
+  na bolha); `moe` = tópicos gerais com **um subagente MoE por tema** (NASA,
+  esoterismo, cordas) e composição final. Sem a flag, o step roda só unit +
+  integração HTTP.
 
 ### Rodar um nível sozinho
 

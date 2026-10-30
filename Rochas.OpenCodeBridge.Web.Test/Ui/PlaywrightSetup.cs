@@ -32,9 +32,8 @@ public static class PlaywrightSetup
     /// um perfil que não é o da esteira — medido em 2026-10-30: turno sem tool e
     /// nota falsa de "sem executar nada". Seleção por rótulo+modelo (Build Q4 :4124,
     /// o mesmo bridge dos units), nunca por id: o id do banco dev/PROD diverge.
-    /// A preferência descarta o par GPU2/Q3 — o perfil da esteira é o Q4.
-    /// Subagente vai para o perfil Scripter Q4 (o executor real da esteira); o Exec
-    /// da GPU2 é fallback e o MoE nunca é usado. Sem nenhum, fica "sub=nenhum".
+    /// Subagente = MESMO tipo do chamador (Build Q4), mesma linha: só o Orch delega
+    /// ao Scripter. Q4 nunca cruza com a GPU2/Q3 — a preferência descarta o par Q3.
     /// </summary>
     /// <param name="page">Página em <c>/Chat</c> com os dropdowns renderizados.</param>
     /// <param name="label">Rótulo do passo no log (faixa/smoke).</param>
@@ -43,7 +42,8 @@ public static class PlaywrightSetup
         SelectAgentAsync(page, label, "Build (mode=build com a tool write)",
             "(o) => (o.dataset.mode || '').toLowerCase() === 'build' && (o.dataset.tools || '').includes('write')",
             "(o) => /Build/i.test(o.textContent) && !/Q3|GPU2/i.test(o.textContent)",
-            pickSubagent: true);
+            pickSubagent: true,
+            subPreferJs: "(o) => /Build/i.test(o.textContent || '') && !/Q3|GPU2/i.test(o.textContent || '')");
 
     /// <summary>
     /// Perfil PLAN no dropdown — para os testes da Web UI que NÃO usam tools: é o
@@ -63,8 +63,8 @@ public static class PlaywrightSetup
     /// Perfil ORCH no dropdown — para os testes da Web UI cujo enunciado pede
     /// DELEGAÇÃO (dividir em fases e compor com subagent). Orch é Build sem escrita
     /// (sem <c>write</c>/<c>exec</c>): planeja, delega e agrega, que é o comportamento
-    /// medido na faixa. O subagente vai para o Scripter (Q4) — o mesmo que a
-    /// esteira usa para executar as fases; Exec (GPU2) é fallback, MoE nunca.
+    /// medido na faixa. Orch é a ÚNICA exceção da regra de subagente: delega ao
+    /// Scripter (Q4, mesma linha) — nunca à GPU2/Q3.
     /// </summary>
     /// <param name="page">Página em <c>/Chat</c> com os dropdowns renderizados.</param>
     /// <param name="label">Rótulo do passo no log (faixa/smoke).</param>
@@ -73,12 +73,14 @@ public static class PlaywrightSetup
         SelectAgentAsync(page, label, "Orch (delegação, sem escrita)",
             "(o) => (o.dataset.mode || '').toLowerCase() === 'build' && (o.dataset.tools || '').includes('subagent') && !(o.dataset.tools || '').includes('write')",
             "(o) => /Orch/i.test(o.textContent) && !/Q3|GPU2/i.test(o.textContent)",
-            pickSubagent: true);
+            pickSubagent: true,
+            subPreferJs: "(o) => /Scripter/i.test(o.textContent || '') && !/Q3|GPU2/i.test(o.textContent || '')");
 
     /// <summary>
     /// Perfil MOE no dropdown — para o teste de TÓPICOS GERAIS, em que o generalista
-    /// delega cada tema a um subagente dele mesmo. O subagente preferido é o MoE da
-    /// GPU2 (execução paralela), com a cadeia normal (Scripter Q4 → Exec) de reserva.
+    /// delega cada tema a um subagente DELE MESMO (MoE → MoE, mesma linha Q4). A
+    /// cadeia de reserva (Scripter Q4 → Exec) só entra se não houver MoE na lista;
+    /// Q4 nunca cruza com a GPU2/Q3.
     /// </summary>
     /// <param name="page">Página em <c>/Chat</c> com os dropdowns renderizados.</param>
     /// <param name="label">Rótulo do passo no log (faixa/smoke).</param>
@@ -88,11 +90,14 @@ public static class PlaywrightSetup
             "(o) => (o.dataset.mode || '').toLowerCase() === 'plan' && /MoE/i.test(o.textContent || '')",
             "(o) => /MoE/i.test(o.textContent) && !/GPU2|Q3/i.test(o.textContent)",
             pickSubagent: true,
-            subPreferJs: "(o) => /MoE/i.test(o.textContent || '') && /GPU2/i.test(o.textContent || '')");
+            subPreferJs: "(o) => /MoE/i.test(o.textContent || '') && !/Q3|GPU2/i.test(o.textContent || '')");
 
     // Núcleo da seleção: filtro + preferência declarados como JS, sem id do banco.
     // O agente é escolhido, o campo fica realçado pelo compasso do espectador e só
     // então o subagente é escolhido no segundo dropdown (mesmo compasso).
+    // REGRA DO SUBAGENTE: mesmo tipo do chamador (Build→Build, Plan→Plan, MoE→MoE),
+    // mesma linha (Q4 com Q4); a ÚNICA exceção é Orch→Scripter. A cadeia de reserva
+    // (Scripter Q4 → Scripter → Exec) só cobre perfil sem par na lista.
     private static async Task<string> SelectAgentAsync(IPage page, string label, string what,
         string filterJs, string preferJs, bool pickSubagent, string? subPreferJs = null)
     {
@@ -113,8 +118,9 @@ public static class PlaywrightSetup
         string sub = "nenhum";
         if (pickSubagent && await page.QuerySelectorAsync("select#executorId") is not null)
         {
-            // Subagente da esteira = Scripter Q4 (quem executa as fases); o Exec da
-            // GPU2 e' fallback. Nunca o MoE: ele so' fetch/display/subagent.
+            // Subagente: preferência do perfil (mesmo tipo do chamador; Orch→Scripter),
+            // depois a cadeia da esteira (Scripter Q4 → Scripter → Exec). Q3 só entra
+            // como Exec de última reserva — nunca cruza a linha Q4 com a GPU2.
             string subJs = @"() => {
               const ex = document.getElementById('executorId');
               const all = [...ex.options].filter(o => o.value);

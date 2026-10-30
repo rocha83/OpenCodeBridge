@@ -50,16 +50,16 @@ public static class BeltUiTests
         new("preta", "Faixa PRETA E2E",
             "Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador (ponto eletronico, reembolsos, organograma), banco de dados SQL (DDL, indices, constraints), repositorios e servicos (Dapper, servicos de aplicacao), API REST do portal e servicos bus: barramento de eventos assincrono integrando portal, folha e ERP; pipeline de Big Data com ML: regressao para previsao de gastos e classificacao de reembolsos suspeitos apenas com algoritmos ML classicos (sem redes neurais), e rede neural (perceptron multicamadas) para deteccao de anomalias em ponto eletronico, com scripts de treino e avaliacao para cada modelo. Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados; repositorios e servicos; API; servicos bus; redes neurais) e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
             5, 120, "orch"),
-        // Tópicos gerais (MoE): o generalista delega CADA tema a um subagente dele
-        // mesmo (MoE da GPU2) e compõe a resposta final. O perfil MoE é chat-only
-        // (fetch/display/subagent) — delegar é o comportamento medido na faixa.
+        // Tópicos gerais (MoE): o generalista delega CADA tema a um subagente DELE
+        // MESMO (MoE Q4, mesma linha) e compõe a resposta final. O perfil MoE é
+        // chat-only (fetch/display/subagent) — delegar é o comportamento medido.
         new("moe", "Faixa MOE TÓPICOS",
             "Cubra os tres temas gerais a seguir, um tema por subagente: chame a tool subagent uma vez para " +
             "cada tema, e cada subagente e' do seu proprio perfil MoE. Tema 1: resuma as missoes Apollo a Lua " +
             "(NASA) em 5 linhas. Tema 2: cite 2 misterios esotericos da Mesopotamia em 5 linhas. Tema 3: " +
             "explique a teoria das cordas e a fisica quantica em 5 linhas. Depois componha a resposta final " +
             "juntando os tres resumos, diálogo em pt-br.",
-            5, 20, "moe"),
+            1, 20, "moe"),
         // Cognitivo standalone: plano completo em texto puro, sem citar segmentacao.
         new("preta-alone", "Faixa PRETA-ALONE",
             PretaAlonePrompt, 5, 30, "plan"),
