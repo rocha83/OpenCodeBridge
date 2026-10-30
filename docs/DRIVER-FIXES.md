@@ -1150,3 +1150,21 @@ inválido", copiava o texto e repetia.
 `edit`/`write` (só o probe `anti-repeat-args`). Bateria `logs/isolated/algo-batch4-*.log`
 mostra `PASS E-mission-algo-cs`/`cs-bin`/`cs-btree`/`cs-kmeans` antes da correção;
 `cs-sort` é o caso medido.
+
+## 43. `mkdir -p` era lido como `--project` do dotnet e matava a cadeia no `cd` (2026-10-30)
+
+**Sintoma.** `U-tool-feedback-shell-cwd` falhou com `cadeia mkdir && cd roda
+(err: projeto não encontrado: 'sub' ...)`; a cadeia `mkdir -p sub && cd sub`
+morria antes de executar, e a mensagem falava de projeto `.csproj`/`.fsproj` no
+meio de um `mkdir`.
+
+**Causa.** `ShellToolHandler.ProjectPathBlocked` varria o argv de **qualquer**
+comando procurando `--project`/`-p`; `mkdir -p sub` casava o `-p` e tratava
+`sub` como caminho de projeto. O `-p` só é alias de `--project` no `dotnet`.
+
+**Correção.** `ProjectPathBlocked` só examina argv quando `argv[0]` é `dotnet`
+(`Path.GetFileName(argv[0]).Equals("dotnet", OrdinalIgnoreCase)`); `mkdir -p`,
+`cp -p` e `tar -p` deixam de ser confundidos com projeto.
+
+**Prova.** `U-tool-feedback-shell-cwd` PASS (cadeia roda, cwd `sub` reportado,
+aviso de raiz e path `sub/arquivo` presentes); units `PASS=153 FAIL=0 SKIP=6`.

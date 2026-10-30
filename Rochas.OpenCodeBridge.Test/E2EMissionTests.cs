@@ -8,7 +8,7 @@ namespace Rochas.OpenCodeBridge.Test;
 
 internal static class E2EMissionTests
 {
-    static async Task<string> RunShell(string ws, string model, string command)
+    internal static async Task<string> RunShell(string ws, string model, string command)
     {
         var r = await TestContext.ExecuteTool("shell", new JsonObject { ["command"] = command }, ws, model);
         return r["ok"]?.GetValue<bool>() == true
@@ -16,7 +16,7 @@ internal static class E2EMissionTests
             : "ERRO: " + (r["error"]?.GetValue<string>() ?? "falha");
     }
 
-    static async Task<JsonObject> Chat(string bridge, string model, JsonArray messages, JsonArray? tools)
+    internal static async Task<JsonObject> Chat(string bridge, string model, JsonArray messages, JsonArray? tools)
     {
         var body = new JsonObject { ["model"] = model, ["messages"] = messages };
         if (tools is not null) body["tools"] = tools;
@@ -29,7 +29,7 @@ internal static class E2EMissionTests
     /// <summary>Linhas da saida que sao UM inteiro puro, na ordem em que sairam.</summary>
     /// <param name="text">Saida do programa.</param>
     /// <returns>Inteiros das linhas puras.</returns>
-    static List<long> IntLines(string text)
+    internal static List<long> IntLines(string text)
     {
         var list = new List<long>();
         foreach (var raw in (text ?? "").Split('\n'))
@@ -46,7 +46,7 @@ internal static class E2EMissionTests
     /// <summary>10! = 3628800, mdc(1071,462) = 21 e primos &lt;= 50 = 15, NA ORDEM.</summary>
     /// <param name="text">Saida do programa.</param>
     /// <returns>true quando as tres primeiras linhas inteiras batem.</returns>
-    static bool MissionIntsOk(string text)
+    internal static bool MissionIntsOk(string text)
     {
         var nums = IntLines(text);
         return nums.Count >= 3
@@ -57,7 +57,7 @@ internal static class E2EMissionTests
 
     // Hardcode: a meta como literal no fonte (com ou sem aspas). Ignora comentarios
     // para nao acusar a meta copiada do enunciado.
-    static bool HasHardcodedResult(string src)
+    internal static bool HasHardcodedResult(string src)
     {
         string code = string.Join("\n", src.Split('\n').Select(l =>
         {
@@ -78,10 +78,9 @@ internal static class E2EMissionTests
         // Scaffold dos projetos e' do harness (template `dotnet new`, estilo Visual Studio):
         // o modelo so escreve o fonte e roda; elimina a variabilidade do `dotnet new` no modelo.
         TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
-        TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
 
         ResetCsScaffold();
-        const string sysBase = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls, sem prosa.";
+        const string sysBase = "Voce e engenheiro senior C#. Responda SOMENTE com tool calls, sem prosa.";
         var sys = new JsonObject { ["role"] = "system", ["content"] = sysBase };
         var history = new JsonArray(sys);
         history.Add(new JsonObject { ["role"] = "user", ["content"] =
@@ -92,22 +91,6 @@ internal static class E2EMissionTests
         string final = "";
         string logPath = Path.Combine(ws, "_mission.log");
         void LogT(string s) { try { File.AppendAllText(logPath, s + "\n"); } catch { } }
-        // O modelo as vezes cria mfs.csproj/Program.cs no diretorio F# e o
-        // `dotnet run --project mfs` fica ambiguo. O scaffold e mfs.fsproj;
-        // limpa so os artefatos estranhos, preservando Program.fs.
-        void ResetFsScaffold()
-        {
-            string dir = Path.Combine(ws, "mfs");
-            if (!Directory.Exists(dir)) return;
-            foreach (var f in Directory.GetFiles(dir, "*.csproj")) { try { File.Delete(f); } catch { } }
-            string pc = Path.Combine(dir, "Program.cs");
-            if (File.Exists(pc)) { try { File.Delete(pc); } catch { } }
-            foreach (var d in new[] { "bin", "obj" })
-            {
-                string p = Path.Combine(dir, d);
-                if (Directory.Exists(p)) { try { Directory.Delete(p, true); } catch { } }
-            }
-        }
         // Mesmo problema no C#: o modelo cria Program.csproj ao lado do mcs.csproj.
         // O scaffold e mcs.csproj; limpa os csproj extras e bin/obj, preserva Program.cs.
         void ResetCsScaffold()
@@ -209,154 +192,22 @@ internal static class E2EMissionTests
         TestContext.Check(csNums.Count >= 3 && csNums[2] == 15, "C# primos de 1 a 50 = 15");
         Console.WriteLine($"  [mission] C# ok:\n{csRunOut.Trim()}");
 
-        // F# tem system proprio: FsMini so entra aqui (C# nao recebe regra F#).
-        var histFs = new JsonArray(new JsonObject { ["role"] = "system", ["content"] = sysBase + "\n\n" + global::Rochas.OpenCodeBridge.Core.HarnessTails.FsMini });
-
-        // Fase 2: portabilidade para F# (mesma teoria inteira, sem ponto flutuante).
-        // O E4B Q4 nao infere F# de forma estavel: o enunciado entrega a META
-        // (3628800 / 21 / 15) e as restricoes de sintaxe, sem ditar o algoritmo.
-        // O retry nao "ensina" sintaxe: reseta o contexto F# e repassa so a linha
-        // real do erro, para o modelo corrigir com o proprio codigo em vista.
-        int historyBeforeFs = histFs.Count;
-        string fsOut = "";
-        string fsSrc = "";
-        string lastErr = "";
-        for (int attempt = 1; attempt <= 3; attempt++)
-        {
-            ResetFsScaffold();
-            if (attempt > 1)
-            {
-                while (histFs.Count > historyBeforeFs) histFs.RemoveAt(histFs.Count - 1);
-                string errLine = ErrLine(lastErr);
-                bool compileErr = errLine.Contains("error", StringComparison.OrdinalIgnoreCase);
-                LogT($"[F#] retry {attempt}: contexto F# resetado; {(compileErr ? "erro de build" : "saida errada")} repassado ({errLine})");
-                string fsSrcNow = File.Exists(Path.Combine(ws, "mfs", "Program.fs"))
-                    ? File.ReadAllText(Path.Combine(ws, "mfs", "Program.fs")) : "";
-                string fsHint = compileErr
-                    ? global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(fsSrcNow, errLine) : "";
-                string guidance = compileErr
-                    ? $"Sem prosa: o build do F# falhou: {errLine}. " + (fsHint.Length > 0 ? fsHint + " " : "")
-                      + $"Corrija {ws}/mfs/Program.fs e rode `dotnet run --project {ws}/mfs/mfs.fsproj`."
-                    : $"Sem prosa: a saida do F# nao bateu: {errLine}. Metas, uma por linha: 3628800 (fatorial de 10), 21 (mdc de 1071 e 462) e 15 (primos de 1 a 50). Corrija {ws}/mfs/Program.fs e rode `dotnet run --project {ws}/mfs/mfs.fsproj`.";
-                histFs.Add(new JsonObject { ["role"] = "user", ["content"] = guidance });
-            }
-            histFs.Add(new JsonObject { ["role"] = "user", ["content"] =
-                $"Em {ws}/mfs existe o projeto mfs.fsproj. Escreva Program.fs para calcular e imprimir, um valor por linha e sem rotulos, tres numeros inteiros: o fatorial de 10; o maximo divisor comum de 1071 e 462; e quantos numeros primos existem de 1 a 50. " +
-                $"O programa tem que compilar e rodar com `dotnet run --project {ws}/mfs/mfs.fsproj` sem erro e imprimir exatamente esses tres numeros, nessa ordem (calcule, nao copie os numeros)." });
-        // Orcamento de turnos: o aviso do salvage da bridge (ToolCallRepair.Nudge) NAO
-        // e' turno do modelo — ele nao raciocinou, recebeu instrucao. Debitar isso
-        // encurtava a janela no meio do reparo (medido no L3 de 2026-10-29: turno
-        // gasto com `BRIDGE (edit)` logo apos o anti-repeat cortar a call). O guard
-        // separado impede laco infinito.
-        int fsUsed = 0, fsGuard = 0;
-        while (fsUsed < 22 && fsGuard++ < 44)
-        {
-            int turn = fsUsed;
-            JsonObject rf;
-            try
-            {
-                rf = await Chat(bridge, model, (JsonArray)histFs.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
-            }
-            catch (Exception ex)
-            {
-                LogT($"[F#] T{turn} HTTP falhou: {ex.Message.Split('\n')[0]}");
-                bool dropped = global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Apply(histFs);
-                LogT($"[F#] T{turn} reparo: assistant quebrada podada={dropped}; nudge JSON anexado");
-                continue;
-            }
-            var mf = rf["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message (F#)");
-            var cf = mf["tool_calls"]?.AsArray();
-            if (cf is null || cf.Count == 0)
-            {
-                string txtFs = mf["content"]?.GetValue<string>() ?? "";
-                LogT($"[F#] T{turn} SEM CALLS: {txtFs[..Math.Min(200, txtFs.Length)]}");
-                histFs.Add(new JsonObject { ["role"] = "assistant", ["content"] = txtFs });
-                if (global::Rochas.OpenCodeBridge.Core.ToolCallRepair.IsSalvageNotice(txtFs))
-                {
-                    LogT($"[F#] T{turn} aviso de salvage (nao consome turno)");
-                    continue;
-                }
-                fsUsed++;
-                if (fsUsed > 4) break;
-                histFs.Add(new JsonObject { ["role"] = "user", ["content"] = "Sem prosa: leia o erro de build (se houver) e emita ja a proxima tool call." });
-                continue;
-            }
-            fsUsed++;   // turno com tool call consome o orcamento
-            var ff = new JsonArray();
-            foreach (var c in cf)
-                ff.Add(new JsonObject { ["id"] = c?["id"]?.GetValue<string>() ?? "", ["type"] = "function",
-                    ["function"] = new JsonObject { ["name"] = c?["function"]?["name"]?.GetValue<string>() ?? "",
-                        ["arguments"] = c?["function"]?["arguments"]?.GetValue<string>() ?? "{}" } });
-            histFs.Add(new JsonObject { ["role"] = "assistant", ["content"] = mf["content"]?.GetValue<string>() ?? "", ["tool_calls"] = ff });
-            var fres = new List<string>();
-            foreach (var c in cf)
-            {
-                JsonObject af;
-                try { af = JsonNode.Parse(c?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject(); }
-                catch { af = new JsonObject(); }
-                string fnf = c?["function"]?["name"]?.GetValue<string>() ?? "";
-                string resf = await ExecTool(ws, model, fnf, af);
-                LogT($"[F#] T{turn} {fnf} {af.ToJsonString()[..Math.Min(160, af.ToJsonString().Length)]} -> {resf[..Math.Min(180, resf.Length)]}");
-                // Reparo in-flow: erro de sintaxe volta com ERRO->CERTO concreto (mesma
-                // mecanica do retry, no Core) para o modelo corrigir no MESMO turno.
-                if (resf.Contains("error FS", StringComparison.Ordinal))
-                {
-                    string curFs = File.Exists(Path.Combine(ws, "mfs", "Program.fs"))
-                        ? File.ReadAllText(Path.Combine(ws, "mfs", "Program.fs")) : "";
-                    string inFlow = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(curFs, resf);
-                    if (inFlow.Length > 0)
-                    {
-                        resf += "\n\n" + inFlow;
-                        LogT($"[F#] T{turn} reparo in-flow: {inFlow.Replace("\n", " | ")}");
-                    }
-                }
-                fres.Add(resf);
-                histFs.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = resf });
-            }
-            // Sucesso atingido: para de editar (o modelo tende a quebrar o F# que ja compila).
-            if (fres.Any(MissionIntsOk)) break;
-        }
-            string fsFile = Path.Combine(ws, "mfs", "Program.fs");
-            fsSrc = File.Exists(fsFile) ? File.ReadAllText(fsFile) : "";
-            ResetFsScaffold();
-            fsOut = await RunShell(ws, model, "dotnet run --project mfs/mfs.fsproj -c Release");
-            lastErr = fsOut;
-            LogT($"[F#] RUN -> {fsOut[..Math.Min(220, fsOut.Length)]}");
-            bool ok = fsSrc.Length > 60 && !HasHardcodedResult(fsSrc) && MissionIntsOk(fsOut);
-            if (ok) break;
-        }
-        // Atestacao honesta: o system final do request F# (registrado pela bridge)
-        // realmente carregou o FsMini? Roda ANTES dos asserts semanticos para o
-        // log provar o fluxo mesmo quando o modelo erra a matematica/sintaxe.
-        try
-        {
-            var att = await TestContext.GetObj(bridge + "/api/test/last-system");
-            LogT($"[F#] atestacao system: {att.ToJsonString()}");
-            TestContext.Check(att["fsmini"]?.GetValue<bool>() == true, "F# atestado: system final contem FsMini (modelo nao orfao)");
-            TestContext.Check(att["int_regra"]?.GetValue<bool>() == true, "F# atestado: regra INTEIROS no system enviado");
-            TestContext.Check(att["tail_scope"]?.GetValue<string>() == "all", "F# atestado: tail_scope=all na bridge");
-            TestContext.Check(att["harness_tails"]?.GetValue<bool>() == true, "F# atestado: harness_tails=on na bridge");
-        }
-        catch (Exception ex) { TestContext.Check(false, "F# atestacao falhou: " + ex.Message); }
-        TestContext.Check(!HasHardcodedResult(fsSrc), "F# calcula (sem hardcode de 3628800/21/15 no fonte)");
-        var fsNums = IntLines(fsOut);
-        TestContext.Check(fsNums.Count >= 3, "F# imprime 3 linhas inteiras, saiu: " + fsOut[..Math.Min(160, fsOut.Length)]);
-        TestContext.Check(fsNums.Count >= 1 && fsNums[0] == 3628800, "F# fatorial de 10 = 3628800, saiu: " + fsOut[..Math.Min(160, fsOut.Length)]);
-        TestContext.Check(fsNums.Count >= 2 && fsNums[1] == 21, "F# mdc(1071,462) = 21");
-        TestContext.Check(fsNums.Count >= 3 && fsNums[2] == 15, "F# primos de 1 a 50 = 15");
-        Console.WriteLine($"  [mission] F# ok:\n{fsOut.Trim()}");
+        // Fase 2 (F#) ARQUIVADA em 2026-10-30: ver
+        // Rochas.OpenCodeBridge.Test/Archived/FsMissionToolsPhase.cs. A missão
+        // ativa mede só C# (escrita, execução e entrega git/zip); a fase F# tinha
+        // PASS/FAIL intermitente e derrubava o L3 inteiro pelo fail-fast.
 
         // Fase 3: versionamento com a tool git (command/path) + pacote via shell (zip).
         // O nome do pacote NAO e' contrato (decisao de 2026-10-29): o que vale e'
         // existir um .zip na raiz. Em 10:18 o modelo gerou `delivery.zip` e o
         // assert por nome reprovou uma entrega que estava pronta.
-        histFs.Add(new JsonObject { ["role"] = "user", ["content"] =
+        history.Add(new JsonObject { ["role"] = "user", ["content"] =
             $"Conclua a entrega em duas partes, so' tool calls, sem texto. " +
-            $"1) Versione com a tool git (command/path: init, config, add, commit) — vale a raiz {ws} ou a pasta do projeto {ws}/mfs. " +
+            $"1) Versione com a tool git (command/path: init, config, add, commit) — vale a raiz {ws} ou a pasta do projeto {ws}/mcs. " +
             $"2) Gere um pacote .zip na raiz {ws} com a tool shell (zip -qr); o nome do arquivo nao importa." });
         for (int turn = 0; turn < 14; turn++)
         {
-            var r2 = await Chat(bridge, model, (JsonArray)histFs.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
+            var r2 = await Chat(bridge, model, (JsonArray)history.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
             var m2 = r2["choices"]?[0]?["message"]?.AsObject() ?? throw new Exception("sem message (git/zip)");
             var c2 = m2["tool_calls"]?.AsArray();
             if (c2 is null || c2.Count == 0)
@@ -364,7 +215,7 @@ internal static class E2EMissionTests
                 // Modelo encerrou sem tool call: se a entrega ja existe, ok; senao cutuca so o que falta.
                 if (Directory.GetFiles(ws, "*.zip").Length >= 1) break;
                 LogT($"[git/zip] T{turn + 1} sem tool call e sem .zip; pedindo shell com zip");
-                histFs.Add(new JsonObject { ["role"] = "user",
+                history.Add(new JsonObject { ["role"] = "user",
                     ["content"] =
                         $"Ainda falta o pacote: gere um arquivo .zip na raiz {ws} com a tool shell " +
                         $"(qualquer nome, ex.: `zip -qr pacote.zip .` a partir de {ws})." });
@@ -375,7 +226,7 @@ internal static class E2EMissionTests
                 f2.Add(new JsonObject { ["id"] = c?["id"]?.GetValue<string>() ?? "", ["type"] = "function",
                     ["function"] = new JsonObject { ["name"] = c?["function"]?["name"]?.GetValue<string>() ?? "",
                         ["arguments"] = c?["function"]?["arguments"]?.GetValue<string>() ?? "{}" } });
-            histFs.Add(new JsonObject { ["role"] = "assistant", ["content"] = m2["content"]?.GetValue<string>() ?? "", ["tool_calls"] = f2 });
+            history.Add(new JsonObject { ["role"] = "assistant", ["content"] = m2["content"]?.GetValue<string>() ?? "", ["tool_calls"] = f2 });
             foreach (var c in c2)
             {
                 JsonObject a2;
@@ -384,17 +235,17 @@ internal static class E2EMissionTests
                 string fnName = c?["function"]?["name"]?.GetValue<string>() ?? "";
                 string res2 = await ExecTool(ws, model, fnName, a2);
                 LogT($"[git/zip] T{turn + 1} {fnName} -> {res2.Split('\n')[0]}");
-                histFs.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = res2 });
+                history.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = res2 });
             }
         }
         // Entrega robusta: o modelo pode versionar a raiz do workspace ou a pasta
-        // do projeto (ele trabalhou em mfs/). Nao fixar onde — so que exista.
-        bool gitOk = Directory.Exists(Path.Combine(ws, ".git")) || Directory.Exists(Path.Combine(ws, "mfs", ".git"));
+        // do projeto (ele trabalhou em mcs/). Nao fixar onde — so que exista.
+        bool gitOk = Directory.Exists(Path.Combine(ws, ".git")) || Directory.Exists(Path.Combine(ws, "mcs", ".git"));
         TestContext.Check(gitOk, "git init executado (raiz ou pasta do projeto)");
-        bool headOk = File.Exists(Path.Combine(ws, ".git", "HEAD")) || File.Exists(Path.Combine(ws, "mfs", ".git", "HEAD"));
+        bool headOk = File.Exists(Path.Combine(ws, ".git", "HEAD")) || File.Exists(Path.Combine(ws, "mcs", ".git", "HEAD"));
         TestContext.Check(headOk, "repo git criado");
         // Entrega e' o pacote, nao o nome: qualquer .zip na raiz (ou no projeto).
-        string projectDir = Path.Combine(ws, "mfs");
+        string projectDir = Path.Combine(ws, "mcs");
         string[] zipFiles = Directory.GetFiles(ws, "*.zip")
             .Concat(Directory.Exists(projectDir) ? Directory.GetFiles(projectDir, "*.zip") : Array.Empty<string>())
             .ToArray();
@@ -405,7 +256,7 @@ internal static class E2EMissionTests
     /// <summary>Linha de erro real do build (ignora `warning` e linhas de resumo).</summary>
     /// <param name="log">Saida do build/run.</param>
     /// <returns>Linha com `: error` (ou a primeira nao vazia).</returns>
-    static string ErrLine(string log)
+    internal static string ErrLine(string log)
     {
         var lines = (log ?? "").Split('\n').Select(l => l.Trim()).ToList();
         return lines.FirstOrDefault(l => l.Contains(": error", StringComparison.OrdinalIgnoreCase)
@@ -420,12 +271,12 @@ internal static class E2EMissionTests
     /// Step separado do E-mission-tools: falha de algoritmo nao se mistura com
     /// a entrega git/zip. Enunciado humano: meta + dica de formula, sem passo a passo.
     /// </summary>
-    /// <summary>Missao de algoritmos em C#: metas e formato conferidos pela saida real.</summary>
-    public static async Task MissionAlgoCs()
+    /// <summary>Missao de algoritmos em C# (Hanoi + crivo): metas e formato conferidos pela saida real.</summary>
+    public static async Task MissionAlgoCsHanoi()
     {
         string bridge = TestContext.Bridge;
         string model = AlgoModel();
-        string ws = TestContext.FreshWorkspace("e2e-mission-algo-cs");
+        string ws = TestContext.FreshWorkspace("e2e-mission-algo-cs-hanoi");
         TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
 
         string csPrompt = AlgoPrompt(ws, "mcs");
@@ -435,16 +286,12 @@ internal static class E2EMissionTests
         Console.WriteLine($"  [algo] C# ok:\n{output.Trim()}");
     }
 
-    /// <summary>Missao algoritmica em F# (1/3): busca binaria.</summary>
-    public static Task MissionAlgoFsBin() => RunAlgoMission("e2e-mission-algo-fs-bin", "F#", "bin", AlgoOkBin, HasHardcodedBin);
+    // A trilha F# (bin/btree/sort) foi ARQUIVADA em 2026-10-30: ver
+    // Rochas.OpenCodeBridge.Test/Archived/FsAlgoMissions.cs. O modelo local
+    // alterna PASS/FAIL no mesmo enunciado e o FAIL de F# bloqueia o L4. Os
+    // mesmos algoritmos seguem cobertos em C# abaixo.
 
-    /// <summary>Missao algoritmica em F# (2/3): arvore de busca (insercao + busca).</summary>
-    public static Task MissionAlgoFsBTree() => RunAlgoMission("e2e-mission-algo-fs-btree", "F#", "btree", AlgoOkBTree, HasHardcodedBTree);
-
-    /// <summary>Missao algoritmica em F# (3/3): quick sort + bubble sort.</summary>
-    public static Task MissionAlgoFsSort() => RunAlgoMission("e2e-mission-algo-fs-sort", "F#", "sort", AlgoOkSort, HasHardcodedSort);
-
-    /// <summary>Missao algoritmica em C# (1/4): busca binaria (mesmo contrato do F#).</summary>
+    /// <summary>Missao algoritmica em C# (1/4): busca binaria.</summary>
     public static Task MissionAlgoCsBin() => RunAlgoMission("e2e-mission-algo-cs-bin", "C#", "bin", AlgoOkBin, HasHardcodedBin);
 
     /// <summary>Missao algoritmica em C# (2/4): arvore de busca (insercao + busca).</summary>
@@ -498,7 +345,7 @@ internal static class E2EMissionTests
     /// <param name="alg">Algoritmo pedido (<c>bin</c>, <c>btree</c>, <c>kmeans</c>, <c>sort</c>).</param>
     /// <param name="accept">Confere a saida final.</param>
     /// <param name="hardcoded">Recusa fonte com a meta fixada.</param>
-    static async Task RunAlgoMission(string name, string lang, string alg,
+    internal static async Task RunAlgoMission(string name, string lang, string alg,
         Func<string, bool> accept, Func<string, bool> hardcoded)
     {
         bool cs = lang == "C#";
@@ -578,7 +425,7 @@ internal static class E2EMissionTests
     {
         string sysBase = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls, sem prosa.";
         string sys = lang == "F#"
-            ? sysBase + "\n\n" + global::Rochas.OpenCodeBridge.Core.HarnessTails.FsMini
+            ? sysBase + "\n\n" + global::Rochas.OpenCodeBridge.Test.Archived.ArchivedFsMini.FsMini
             : sysBase;
         // Guarda de fluxo: a fase F# so' age com a tabela de sintaxe no system. Se o
         // enunciado/scaffold mudar e a tabela sair, a fase falha com a causa certa em
@@ -762,19 +609,19 @@ internal static class E2EMissionTests
         return i >= 0 ? l[..i] : l;
     }));
 
-    static bool AlgoOkBin(string output) => ParseKeyValues(output).TryGetValue("binsearch_idx", out var v) && v.Replace(" ", "") == "6";
-    static bool HasHardcodedBin(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"binsearch_idx\s*=\s*6");
+    internal static bool AlgoOkBin(string output) => ParseKeyValues(output).TryGetValue("binsearch_idx", out var v) && v.Replace(" ", "") == "6";
+    internal static bool HasHardcodedBin(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"binsearch_idx\s*=\s*6");
 
-    static bool AlgoOkBTree(string output)
+    internal static bool AlgoOkBTree(string output)
     {
         var kv = ParseKeyValues(output);
         if (!kv.TryGetValue("btree_found", out var f)) return false;
         if (!f.Trim().Equals("true", StringComparison.OrdinalIgnoreCase)) return false;
         return kv.TryGetValue("btree_count", out var c) && c.Replace(" ", "") == "8";
     }
-    static bool HasHardcodedBTree(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"btree_found\s*=\s*(true|True)|btree_count\s*=\s*8");
+    internal static bool HasHardcodedBTree(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"btree_found\s*=\s*(true|True)|btree_count\s*=\s*8");
 
-    static bool AlgoOkKMeans(string output)
+    internal static bool AlgoOkKMeans(string output)
     {
         // k=2 nos pontos do enunciado: o cluster da esquerda tem centroide x~1.3 e o
         // da direita x~8.3. Compara o inteiro mais proximo (1 e 8) para nao brigar
@@ -786,18 +633,18 @@ internal static class E2EMissionTests
         double x2 = double.Parse(m2.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
         return Math.Round(x1) == 1 && Math.Round(x2) == 8;
     }
-    static bool HasHardcodedKMeans(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"kmeans_c1\s*=\s*-?\d+\.\d+,\s*-?\d+\.\d+");
+    internal static bool HasHardcodedKMeans(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"kmeans_c1\s*=\s*-?\d+\.\d+,\s*-?\d+\.\d+");
 
-    static bool AlgoOkSort(string output)
+    internal static bool AlgoOkSort(string output)
     {
         var kv = ParseKeyValues(output);
         static string Norm(string s) => s.Replace(" ", "");
         return kv.TryGetValue("quicksort", out var q) && Norm(q) == "1,2,5,5,6,9"
             && kv.TryGetValue("bubblesort", out var b) && Norm(b) == "1,2,5,5,6,9";
     }
-    static bool HasHardcodedSort(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"quicksort\s*=\s*1,2,5,5,6,9|bubblesort\s*=\s*1,2,5,5,6,9");
+    internal static bool HasHardcodedSort(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"quicksort\s*=\s*1,2,5,5,6,9|bubblesort\s*=\s*1,2,5,5,6,9");
 
-    static async Task<string> ExecTool(string ws, string model, string fn, JsonObject args)
+    internal static async Task<string> ExecTool(string ws, string model, string fn, JsonObject args)
     {
         JsonObject r = await TestContext.ExecuteTool(fn, args, ws, model);
         return r["ok"]?.GetValue<bool>() == true

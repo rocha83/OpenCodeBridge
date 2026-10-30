@@ -198,7 +198,7 @@ step pode ser filtrado por `--only`.
 | **L1** | `units` (uma vez, bridge) → `integração` → `tópicos` |
 | **L2** | `E-responses-tools` → `E-tools-full` → belts **azul e verde** (build + orch) |
 | **L3** | `E-science-gpu` → `E-mission-tools` → belt **roxa** (build + orch) |
-| **L4** | `E-mission-algo-cs` → `E-mission-algo-fs-{bin,btree,kmeans,sort}` → belts **marrom e preta** (build + orch) → frontend `E-front-*` → `webui-integracao-topicos` |
+| **L4** | `E-mission-algo-cs-hanoi` → `E-mission-algo-cs-{bin,btree,kmeans,sort}` → belts **marrom e preta** (build + orch) → frontend `E-front-*` → `webui-integracao-topicos` |
 
 - **L1 integração**: `E-stream-architect`, `E-review-architect`,
   `E-iot-event-queue`, `E-error-mitigation`,
@@ -247,7 +247,7 @@ frentes). Para exigir o nome **exato**, o token vai com `=` na frente:
 ```bash
 # só a missão base; sem o '=', roda também -cs-bin/-cs-btree/-cs-kmeans/-cs-sort
 dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
-  --only =E-mission-algo-cs --mode bridge
+  --only =E-mission-algo-cs-hanoi --mode bridge
 ```
 
 ### Scripts e trilha completa
@@ -367,21 +367,28 @@ isolada com `--only E-science-cpu` quando a Q3 estiver dedicada.
 `LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 4`
 
 Roda, em `--mode bridge` (default), nesta ordem:
-`E-mission-algo-cs` → `E-mission-algo-cs-{bin,btree,kmeans,sort}` →
-`E-mission-algo-fs-{bin,btree,sort}` → `belts-build` marrom+preta →
-`belts-orch` marrom+preta → `E-front-*` (Gen/Edit CSS/Razor/React/Verify)
-→ `webui-integracao-topicos` (Web.Test: integração + tópicos).
+`E-mission-algo-cs-hanoi` → `E-mission-algo-cs-{bin,btree,kmeans,sort}` →
+`belts-build` marrom+preta → `belts-orch` marrom+preta →
+`E-front-*` (Gen/Edit CSS/Razor/React/Verify) → `webui-integracao-topicos`
+(Web.Test: integração + tópicos).
 
-`E-mission-algo-cs` (Hanoi + crivo, C#) e as missões de algoritmo — as **quatro
-em C#** (`E-mission-algo-cs-bin` busca binária, `-btree` árvore de busca,
-`-kmeans` K-Means e `-sort` quick sort + bubble sort) e **três em F#**
-(`E-mission-algo-fs-bin`, `-btree`, `-sort`) — são testes **separados**, cada um
-no seu projeto/fonte e com aceite próprio. Misturar linguagens ou algoritmos num
-teste só mede capacidades diferentes com um veredito: o vermelho esconde qual
-metade falhou e as tentativas de uma contaminam as da outra.
+`E-mission-algo-cs-hanoi` (Hanoi + crivo, C#) e as quatro missões de algoritmo
+em C# (`E-mission-algo-cs-bin` busca binária, `-btree` árvore de busca,
+`-kmeans` K-Means e `-sort` quick sort + bubble sort) são testes **separados**,
+cada um no seu projeto/fonte e com aceite próprio. Misturar algoritmos num teste
+só mede capacidades diferentes com um veredito: o vermelho esconde qual metade
+falhou e as tentativas de uma contaminam as da outra.
 
-O K-Means em F# foi **removido** (2026-10-30): a mesma missão em C# cobre o
-algoritmo, e o F# ficou com as três em que o modelo converge.
+### Trilha F# arquivada (2026-10-30)
+
+Os três testes F# (`E-mission-algo-fs-bin`, `-btree`, `-sort`) saíram do gate e
+do `Program.cs` do projeto de teste: o modelo local alterna PASS/FAIL no **mesmo**
+enunciado e o FAIL de um F# bloqueava o L4 inteiro pelo fail-fast. O código, os
+aceites e a cauda de sintaxe (`FsMini`) ficam preservados em
+`Rochas.OpenCodeBridge.Test/Archived/` (`FsAlgoMissions.cs`, `FsMiniTail.cs`) —
+o cenário completo, o motivo e o roteiro de reativação estão no `README.md`
+daquela pasta. A trilha F# também não tem mais `kmeans`: esse algoritmo foi
+removido antes (2026-10-30) e segue coberto em C#.
 
 L3 e L4 exigem **harness ligado** na bridge; o runner consulta `/api/harness`
 e loga aviso se `main_harness` não estiver `true`:

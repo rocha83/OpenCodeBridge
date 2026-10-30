@@ -207,7 +207,8 @@ internal static class Program
         TestContext.Run("U-fs-repair-type-annotation", UnitToolBreakerTests.FsRepairInferredTypeAnnotation);
         TestContext.Run("U-fs-repair-partial-operator", UnitToolBreakerTests.FsRepairPartialOperator);
         TestContext.Run("U-fs-repair-diagnostic-detection", UnitToolBreakerTests.FsRepairDiagnosticDetection);
-        TestContext.Run("U-fsmini-covers-repair-codes", UnitToolBreakerTests.FsMiniCoversRepairCodes);
+        // U-fsmini-covers-repair-codes ARQUIVADO em 2026-10-30 junto da trilha F#:
+        // o pin segue em UnitToolBreakerTests (compila), mas nao roda no placar ativo.
         TestContext.Run("U-fs-repair-ref-type", UnitToolBreakerTests.FsRepairRefType);
         TestContext.Run("U-fs-repair-repeat-escalation", UnitToolBreakerTests.FsRepairRepeatEscalation);
         TestContext.Run("U-fs-repair-lambda-backslash", UnitToolBreakerTests.FsRepairLambdaBackslash);
@@ -317,14 +318,13 @@ internal static class Program
         if (TestContext.RunCpu) TestContext.Run("E-science-cpu", E2EScienceTests.ScienceCpu);
         else Console.WriteLine("[test] skip E-science-cpu (--skip-cpu)");
         TestContext.Run("E-mission-tools", E2EMissionTests.MissionTools);
-        TestContext.Run("E-mission-algo-cs", E2EMissionTests.MissionAlgoCs);
+        TestContext.Run("E-mission-algo-cs-hanoi", E2EMissionTests.MissionAlgoCsHanoi);
         TestContext.Run("E-mission-algo-cs-bin", E2EMissionTests.MissionAlgoCsBin);
         TestContext.Run("E-mission-algo-cs-btree", E2EMissionTests.MissionAlgoCsBTree);
         TestContext.Run("E-mission-algo-cs-kmeans", E2EMissionTests.MissionAlgoCsKMeans);
         TestContext.Run("E-mission-algo-cs-sort", E2EMissionTests.MissionAlgoCsSort);
-        TestContext.Run("E-mission-algo-fs-bin", E2EMissionTests.MissionAlgoFsBin);
-        TestContext.Run("E-mission-algo-fs-btree", E2EMissionTests.MissionAlgoFsBTree);
-        TestContext.Run("E-mission-algo-fs-sort", E2EMissionTests.MissionAlgoFsSort);
+        // Trilha F# ARQUIVADA em 2026-10-30: ver Archived/FsAlgoMissions.cs.
+        // Nao registrar aqui: teste arquivado nao consome GPU nem entra no placar.
             // Sonda direta do parser hermes no vLLM: so faz sentido no parser nativo.
             if (!TestContext.ServedIsCoder) TestContext.Run("E-vllm-tool-hermes", E2EToolTests.VllmToolHermes);
             else Console.WriteLine("[test] skip E-vllm-tool-hermes (perfil coder)");

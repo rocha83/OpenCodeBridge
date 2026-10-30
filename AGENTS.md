@@ -251,7 +251,7 @@ conveniência manual, nunca fonte de verdade.
 
 ## Regra: a dica ensina a forma CERTA e nunca exibe a errada (primordial)
 
-Vale para **toda** superfície de indução: `HarnessTails` (behavior/tools/FsMini),
+Vale para **toda** superfície de indução: `HarnessTails` (behavior/tools),
 tool-help (`Core/ToolHelp`), avisos/nudges (`ToolCallRepair`, breaker,
 anti-repeat) e o reparo de sintaxe (`FsSyntaxRepair`). O modelo **copia o literal**
 que a dica mostra — inclusive quando a dica mostra o literal *como exemplo do que
@@ -349,7 +349,7 @@ A esteira WAR tem quatro níveis, nesta ordem, tanto no `WarTemplate`
 | **L1** | `units` (uma vez, bridge) → `integração` → `tópicos` |
 | **L2** | `E-responses-tools` → `E-tools-full` → belts **azul e verde** (build + orch) |
 | **L3** | `E-science-gpu` → `E-mission-tools` → belt **roxa** (build + orch) |
-| **L4** | `E-mission-algo-cs` → `E-mission-algo-cs-{bin,btree,kmeans,sort}` → `E-mission-algo-fs-{bin,btree,sort}` → belts **marrom e preta** (build + orch) → `E-front-*` → `webui-integracao-topicos` |
+| **L4** | `E-mission-algo-cs-hanoi` → `E-mission-algo-cs-{bin,btree,kmeans,sort}` → belts **marrom e preta** (build + orch) → `E-front-*` → `webui-integracao-topicos` |
 
 - **L1 integração**: `E-stream-*`, `E-review-*`, `E-iot-*`, `E-error-*`,
   `E-full-cycle-*`, `E-healthy-*`.

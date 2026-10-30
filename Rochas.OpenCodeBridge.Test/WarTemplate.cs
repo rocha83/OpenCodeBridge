@@ -558,13 +558,15 @@ internal sealed class WarTemplate : CircuitTemplate
                 }
                 break;
 
-            // L4: mission algo (C# e F# em testes separados) + belts marrom/preta
-            // + frontend e Web UI.
+            // L4: mission algo em C# (hanoi + bin/btree/kmeans/sort) + belts
+            // marrom/preta + frontend e Web UI. A trilha F# (bin/btree/sort) foi
+            // ARQUIVADA em 2026-10-30 (ver Archived/FsAlgoMissions.cs): o modelo
+            // alternava PASS/FAIL no mesmo enunciado e o FAIL bloqueava o L4.
             case 4:
                 foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"algo-cs-{mode}", mode,
-                        new[] { "--only", "=E-mission-algo-cs" });
+                    yield return StepBridge(driver, $"algo-cs-hanoi-{mode}", mode,
+                        new[] { "--only", "=E-mission-algo-cs-hanoi" });
                     yield return StepBridge(driver, $"algo-cs-bin-{mode}", mode,
                         new[] { "--only", "E-mission-algo-cs-bin" });
                     yield return StepBridge(driver, $"algo-cs-btree-{mode}", mode,
@@ -573,12 +575,6 @@ internal sealed class WarTemplate : CircuitTemplate
                         new[] { "--only", "E-mission-algo-cs-kmeans" });
                     yield return StepBridge(driver, $"algo-cs-sort-{mode}", mode,
                         new[] { "--only", "E-mission-algo-cs-sort" });
-                    yield return StepBridge(driver, $"algo-fs-bin-{mode}", mode,
-                        new[] { "--only", "E-mission-algo-fs-bin" });
-                    yield return StepBridge(driver, $"algo-fs-btree-{mode}", mode,
-                        new[] { "--only", "E-mission-algo-fs-btree" });
-                    yield return StepBridge(driver, $"algo-fs-sort-{mode}", mode,
-                        new[] { "--only", "E-mission-algo-fs-sort" });
                     yield return StepBridge(driver, $"belts-build-final-{mode}", mode,
                         new[] { "--only", "E-belts-build-direct", "--belts", "marrom,preta" });
                     yield return StepBridge(driver, $"belts-orch-final-{mode}", mode,
@@ -1297,7 +1293,7 @@ internal sealed class WarTemplate : CircuitTemplate
                 Console.WriteLine("Level 3 -> science-gpu, mission-tools, belts build/orch roxa, bridge (default)");
                 break;
             case 4:
-                Console.WriteLine("Level 4 -> mission-algo, belts build/orch marrom+preta, frontend pipeline (E-front), webui-integracao-topicos");
+                Console.WriteLine("Level 4 -> mission-algo C# (hanoi,bin,btree,kmeans,sort), belts build/orch marrom+preta, frontend pipeline (E-front), webui-integracao-topicos");
                 break;
             default:
                 Console.WriteLine($"Level {_level} invalido");

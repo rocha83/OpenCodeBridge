@@ -285,6 +285,11 @@ public sealed class ShellToolHandler : IToolHandler
     // Mesma regra das tools de arquivo: a resposta traz o caminho REAL.
     static string? ProjectPathBlocked(string[] argv, string dir, string root)
     {
+        // `-p` so' e' alias de `--project` no dotnet. Sem este filtro, `mkdir -p
+        // sub && cd sub` era lido como projeto "sub" e a cadeia morria antes do
+        // `cd` (medido em U-tool-feedback-shell-cwd, 2026-10-30).
+        if (argv.Length == 0 || !Path.GetFileName(argv[0]).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+            return null;
         string? value = null;
         for (int i = 0; i < argv.Length; i++)
         {

@@ -5093,3 +5093,28 @@ Continuação da série `E-mission-algo-*` depois de a infra voltar:
 `U-fs-repair-list-contains-order`, `U-fs-repair-power-operator`,
 `U-fs-repair-generic-syntax`, `U-fsmini-covers-repair-codes` — PASS; bateria
 isolada das oito missões em `logs/isolated/algo-batch-*.summary`.
+
+## Trilha F# arquivada e L4 reposicionado (2026-10-30)
+
+O `E-mission-algo-fs-bin` regrediu de novo e o operador decidiu arquivar **toda**
+a trilha F#, inclusive as amostras que já tinham PASS (a fase F# de
+`E-mission-tools` inclusive):
+
+1. **Arquivados** em `Rochas.OpenCodeBridge.Test/Archived/`: as três missões
+   `fs-{bin,btree,sort}` (`FsAlgoMissions.cs`), a fase F# de `E-mission-tools`
+   (`FsMissionToolsPhase.cs`), a cauda `FsMini` (`FsMiniTail.cs`) e o pin
+   `U-fsmini-covers-repair-codes` (`FsMiniPin.cs`). O `README.md` da pasta
+   registra o cenário medido, o motivo e o roteiro de reativação.
+2. **Ativos** ficam só em C#: `E-mission-tools` (escrita + execução + git/zip,
+   sem a fase F#) e as cinco missões `E-mission-algo-cs-*`.
+3. **Hanoi renomeado** para `E-mission-algo-cs-hanoi` (sufixo igual aos demais;
+   o `--only =` continua exigindo o nome exato).
+4. **L4** (`WarTemplate` + `scripts/war/run-levels.sh`) passa a rodar
+   `algo-cs-hanoi` → `algo-cs-{bin,btree,kmeans,sort}` → belts marrom/preta →
+   `E-front-*` → `webui-integracao-topicos`; nenhum step `algo-fs-*`.
+5. **Core**: `HarnessTails` perdeu a const `FsMini` (o texto vive no arquivado);
+   `FsSyntaxRepair` continua no Core por ser reparo de produção para arquivo F#.
+
+**Prova:** build Release `0 Warning(s) / 0 Error(s)`; units
+`PASS=153 FAIL=0 SKIP=6` (inclui o fix do `mkdir -p`); `U-tool-feedback-shell-cwd`
+PASS. Bateria C#/WAR a rodar depois do redeploy.

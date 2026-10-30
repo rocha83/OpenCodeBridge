@@ -408,7 +408,7 @@ case "$LEVEL" in
     done
     ;;
   4)
-    STEPS_DESC="mission-algo; belts build/orch marrom,preta (bridge default); frontend E-front; webui-integracao-topicos"
+    STEPS_DESC="mission-algo C# (hanoi,bin,btree,kmeans,sort); belts build/orch marrom,preta (bridge default); frontend E-front; webui-integracao-topicos"
     if [ "$LIST" = "1" ]; then
       echo "Level 4 -> $STEPS_DESC"; exit 0
     fi
@@ -421,14 +421,13 @@ case "$LEVEL" in
     echo "$HSTATUS" | grep -q '"main_harness":true' \
       || log "AVISO: main_harness nao esta true — Level 4 pede harness ligado (--main-harness 1 --harness-tails 1)"
     for mode in $MODES; do
-      step_bridge "algo-cs-$mode" --only E-mission-algo-cs --mode "$mode"
+      step_bridge "algo-cs-hanoi-$mode" --only =E-mission-algo-cs-hanoi --mode "$mode"
       step_bridge "algo-cs-bin-$mode" --only E-mission-algo-cs-bin --mode "$mode"
       step_bridge "algo-cs-btree-$mode" --only E-mission-algo-cs-btree --mode "$mode"
       step_bridge "algo-cs-kmeans-$mode" --only E-mission-algo-cs-kmeans --mode "$mode"
       step_bridge "algo-cs-sort-$mode" --only E-mission-algo-cs-sort --mode "$mode"
-      step_bridge "algo-fs-bin-$mode" --only E-mission-algo-fs-bin --mode "$mode"
-      step_bridge "algo-fs-btree-$mode" --only E-mission-algo-fs-btree --mode "$mode"
-      step_bridge "algo-fs-sort-$mode" --only E-mission-algo-fs-sort --mode "$mode"
+      # Trilha F# (algo-fs-*) ARQUIVADA em 2026-10-30: ver
+      # Rochas.OpenCodeBridge.Test/Archived/FsAlgoMissions.cs. Nao roda no gate.
       step_bridge "belts-build-final-$mode" --only E-belts-build-direct --belts marrom,preta --mode "$mode"
       step_bridge "belts-orch-final-$mode" --only E-belts-direct --belts marrom,preta --mode "$mode"
       step_bridge "front-$mode" --only E-front --mode "$mode"
