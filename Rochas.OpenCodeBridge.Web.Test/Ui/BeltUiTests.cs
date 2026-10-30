@@ -24,7 +24,8 @@ public static class BeltUiTests
 
     // Perfil do dropdown que a faixa mede: o enunciado decide (não o id do banco).
     // orch = pede delegação/composição por subagente; build = executa as tools
-    // sozinho ("faça tudo você mesmo"); plan = só texto (reasoning na bolha).
+    // sozinho ("faça tudo você mesmo"); plan = só texto (reasoning na bolha);
+    // moe = tópicos gerais, cada tema delegado a um subagente do próprio perfil.
     internal sealed record Belt(string Key, string Title, string Prompt, int ExecutorId, int TimeoutMin,
         string Profile = "build");
 
@@ -49,6 +50,16 @@ public static class BeltUiTests
         new("preta", "Faixa PRETA E2E",
             "Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador (ponto eletronico, reembolsos, organograma), banco de dados SQL (DDL, indices, constraints), repositorios e servicos (Dapper, servicos de aplicacao), API REST do portal e servicos bus: barramento de eventos assincrono integrando portal, folha e ERP; pipeline de Big Data com ML: regressao para previsao de gastos e classificacao de reembolsos suspeitos apenas com algoritmos ML classicos (sem redes neurais), e rede neural (perceptron multicamadas) para deteccao de anomalias em ponto eletronico, com scripts de treino e avaliacao para cada modelo. Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida em fases por escopo (dominio; banco de dados; repositorios e servicos; API; servicos bus; redes neurais) e divida a tarefa de implementacao usando subagent tool, diálogo em pt-br.",
             5, 120, "orch"),
+        // Tópicos gerais (MoE): o generalista delega CADA tema a um subagente dele
+        // mesmo (MoE da GPU2) e compõe a resposta final. O perfil MoE é chat-only
+        // (fetch/display/subagent) — delegar é o comportamento medido na faixa.
+        new("moe", "Faixa MOE TÓPICOS",
+            "Cubra os tres temas gerais a seguir, um tema por subagente: chame a tool subagent uma vez para " +
+            "cada tema, e cada subagente e' do seu proprio perfil MoE. Tema 1: resuma as missoes Apollo a Lua " +
+            "(NASA) em 5 linhas. Tema 2: cite 2 misterios esotericos da Mesopotamia em 5 linhas. Tema 3: " +
+            "explique a teoria das cordas e a fisica quantica em 5 linhas. Depois componha a resposta final " +
+            "juntando os tres resumos, diálogo em pt-br.",
+            5, 20, "moe"),
         // Cognitivo standalone: plano completo em texto puro, sem citar segmentacao.
         new("preta-alone", "Faixa PRETA-ALONE",
             PretaAlonePrompt, 5, 30, "plan"),
@@ -90,6 +101,57 @@ public static class BeltUiTests
         "regressao para previsao de gastos e classificacao de reembolsos suspeitos apenas com algoritmos " +
         "classicos, e rede neural perceptron multicamadas para deteccao de anomalias em ponto eletronico, " +
         "com scripts de treino e avaliacao para cada modelo. Premissas: backend .NET C#. Diálogo em pt-br.";
+
+    // Fecho canônico do enunciado SEM tools (Core/DefaultBehaviorNoTools): o turno
+    // tem de sair em texto com o entregável completo, nunca em plano/espera.
+    private const string TextOnlyTail =
+        " Diálogo em pt-br. ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS.";
+
+    // Face PLAN do teste da Web UI: MESMA matéria da faixa, em TEXTO puro. O perfil
+    // Plan não é o executor da esteira — pedir tools/implementação a ele abre a
+    // janela errada (medido em 2026-10-30: 10 tool calls, zero raciocínio na bolha
+    // e cobertura 3/8). O enunciado texto-puro é o próprio comportamento medido.
+    /// <param name="belt">Faixa cuja matéria o Plan deve descrever.</param>
+    /// <returns>Enunciado sem tool, com o fecho canônico de texto.</returns>
+    private static string PlanTextFor(Belt belt) => belt.Key switch
+    {
+        "azul" => "MODO TEXTO: responda apenas em texto corrido, sem chamar nenhuma tool. "
+            + "Descreva a solução completa de uma consulta de dados em uma tabela (ex.: reembolsos "
+            + "corporativos) no backend .NET C# com repositório genérico e ORM: entidades, interface do "
+            + "repositório, implementação, mapeamento e a consulta com filtros e paginação. Escopo SOMENTE "
+            + "backend de dados (sem frontend, sem API). Premissas: backend .NET C#." + TextOnlyTail,
+        "verde" => "MODO TEXTO: responda apenas em texto corrido, sem chamar nenhuma tool. "
+            + "Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value "
+            + "objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, "
+            + "indices, constraints e seeds, com validacao de CPF e CNPJ (digitos verificadores, rejeicao de "
+            + "sequencias repetidas, obrigatoriedade por tipo de pessoa). Escopo: dominio + banco SQL (sem "
+            + "API). Premissas: backend .NET C#." + TextOnlyTail,
+        "roxa" => "MODO TEXTO: responda apenas em texto corrido, sem chamar nenhuma tool. "
+            + "Especifique o dominio backend C# de cadastro de clientes e fornecedores, o banco de dados SQL "
+            + "(DDL, indices, constraints) e os repositorios e servicos: repositorio generico Dapper, servicos "
+            + "de aplicacao, validacao e mascaras de e-mail, telefone BR com DDD e CEP, com a regex de cada um "
+            + "e 2 exemplos validos. Escopo: dominio + banco SQL + repositorios e servicos (sem API). "
+            + "Premissas: backend .NET C#." + TextOnlyTail,
+        "marrom" => "MODO TEXTO: responda apenas em texto corrido, sem chamar nenhuma tool. "
+            + "Especifique o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL "
+            + "(DDL, indices, constraints), os repositorios e servicos Dapper, a API REST (controllers, DTOs, "
+            + "autenticacao), o frontend do portal em React.js consumindo a API e o pipeline CI/CD com Docker "
+            + "(Dockerfile multi-stage e compose para api+db). Premissas: backend .NET C#." + TextOnlyTail,
+        "preta" or "preta-alone" => PretaAlonePrompt,
+        "moe" => "MODO TEXTO: responda apenas em texto corrido, sem chamar nenhuma tool. "
+            + "Cubra os tres temas gerais a seguir, um bloco de 5 linhas para cada: (1) resumo das missoes "
+            + "Apollo a Lua (NASA); (2) 2 misterios esotericos da Mesopotamia; (3) teoria das cordas e fisica "
+            + "quantica. Componha a resposta final juntando os tres blocos." + TextOnlyTail,
+        "tools-full" => "MODO TEXTO: responda apenas em texto corrido, sem chamar nenhuma tool. "
+            + "Descreva, passo a passo, o pipeline que produziria o repositorio tooltest/ dentro do workspace: "
+            + "subpasta docs, resumo da referencia de example.com, plano.md, commit inicial, edicao do plano.md "
+            + "com a secao 'Execucao' e segundo commit." + TextOnlyTail,
+        "tools-dev-pipe" => "MODO TEXTO: responda apenas em texto corrido, sem chamar nenhuma tool. "
+            + "Descreva, passo a passo, o pipeline de tools (write, git, edit, read, grep, webfetch, zip) que "
+            + "produziria a subpasta com um .txt 'A' -> 'ABC' -> 'AWC', cada alteracao com seu commit, o clima "
+            + "de Sao Paulo no fim do arquivo e o zip da pasta." + TextOnlyTail,
+        _ => "MODO TEXTO: responda apenas em texto corrido, sem chamar nenhuma tool. " + belt.Prompt + TextOnlyTail,
+    };
 
     public static async Task<int> RunAsync(string web, string[] only, string mode)
     {
@@ -172,7 +234,8 @@ public static class BeltUiTests
                     }
                     // full: as duas faces da UI na MESMA faixa — o perfil declarado na
                     // faixa (orch/build, usa tools) e o Plan (sem tools, com o
-                    // raciocínio renderizado na bolha).
+                    // raciocínio renderizado na bolha). MoE e Plan puros já são a
+                    // própria face de texto/delegação: não repetem o cognitivo.
                     case "full":
                     {
                         var fpage = await context.NewPageAsync();
@@ -180,7 +243,8 @@ public static class BeltUiTests
                         await fpage.WaitForSelectorAsync("#conv, #prompt, select#agentId",
                             new PageWaitForSelectorOptions { Timeout = 15000 });
                         failures += await UiChatSendAsync(api, fpage, belt);
-                        failures += await CognitiveUiAsync(api, fpage, belt);
+                        if (belt.Profile is not ("moe" or "plan"))
+                            failures += await CognitiveUiAsync(api, fpage, belt);
                         break;
                     }
                     case "batch":
@@ -321,13 +385,15 @@ public static class BeltUiTests
     }
 
     // Despacha o perfil declarado na faixa para o seletor do utilitário (ORCH para
-    // delegação, BUILD para execução direta, PLAN para texto/reasoning).
+    // delegação, BUILD para execução direta, PLAN para texto/reasoning, MOE para
+    // tópicos gerais com subagentes do próprio perfil).
     private static Task<string> SelectProfileAsync(IPage page, string label, string profile) =>
         profile.ToLowerInvariant() switch
         {
             "orch" => PlaywrightSetup.SelectOrchAgentAsync(page, label),
             "plan" => PlaywrightSetup.SelectPlanAgentAsync(page, label),
             "build" => PlaywrightSetup.SelectBuildAgentAsync(page, label),
+            "moe" => PlaywrightSetup.SelectMoeAgentAsync(page, label),
             _ => throw new InvalidOperationException($"perfil desconhecido na faixa: {profile}"),
         };
 
@@ -358,8 +424,11 @@ public static class BeltUiTests
                 return 1;
             }
             await page.WaitForTimeoutAsync(1500);
+            // Perfil Plan não executa: o enunciado dele é a matéria em texto puro
+            // (pedir tools a ele abria a janela errada e o turno virava tool call).
+            string prompt = belt.Profile == "plan" ? PlanTextFor(belt) : belt.Prompt;
             Console.WriteLine($"[ui] {belt.Key}: enviando enunciado");
-            await page.FillAsync("#prompt", belt.Prompt);
+            await page.FillAsync("#prompt", prompt);
             await page.ClickAsync("#send");
             Console.WriteLine($"[ui] {belt.Key}: aguardando engine");
             bool done = false;
@@ -380,7 +449,7 @@ public static class BeltUiTests
             string file = $"/tmp/opencode/conv_{belt.Key}_{DateTime.Now:HHmmss}.txt";
             try { await File.WriteAllTextAsync(file, conv); } catch { }
             bool toolsUi = conv.Contains("executado com sucesso") || conv.Contains("falhou");
-            int msgs = 0, calls = 0;
+            int msgs = 0, calls = 0, subCalls = 0;
             try
             {
                 using var sres = await api.GetAsync("Chat/Sessions");
@@ -396,14 +465,30 @@ public static class BeltUiTests
                 using var tres = await api.GetAsync($"Chat/Sessions/{sid}/ToolCalls?limit=200");
                 if (tres.IsSuccessStatusCode)
                     using (var tdoc = JsonDocument.Parse(await tres.Content.ReadAsStringAsync()))
-                        calls = tdoc.RootElement.EnumerateArray().Count();
+                    {
+                        var arr = tdoc.RootElement.EnumerateArray().ToArray();
+                        calls = arr.Length;
+                        subCalls = arr.Count(e =>
+                            e.TryGetProperty("name", out var n) && n.GetString() == "subagent");
+                    }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[ui] {belt.Key}: sem API ({ex.Message.Split('\n')[0]})");
             }
-            bool ok = done && conv.Length > 0 && toolsUi && msgs > 0 && calls > 0;
-            Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: conversa {conv.Length} chars, toolsUi={toolsUi}, msgs={msgs}, toolcalls={calls} ({file})");
+            // Perfil Plan: o aceite é TEXTO puro (zero tool) e o raciocínio na bolha.
+            // Perfil MoE: delegação por tema — um subagent por tema e composição.
+            bool planProfile = belt.Profile == "plan";
+            string[] moeTopics = ["apollo", "mesopot", "corda"];
+            string lowConv = conv.ToLowerInvariant();
+            int moeHits = moeTopics.Count(k => lowConv.Contains(k));
+            bool moeOk = belt.Profile != "moe" || (subCalls >= 2 && moeHits >= 2);
+            bool ok = planProfile
+                ? done && conv.Length >= 2000 && calls == 0 && msgs > 0
+                : done && conv.Length > 0 && toolsUi && msgs > 0 && calls > 0 && moeOk;
+            Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: perfil {belt.Profile}, "
+                + $"conversa {conv.Length} chars, toolsUi={toolsUi}, msgs={msgs}, toolcalls={calls}, "
+                + $"subagentes={subCalls}, temas {moeHits}/{moeTopics.Length} ({file})");
             // Link do zip no quadro da direita (artefato gravado ao fim do turno).
             try
             {
@@ -573,8 +658,8 @@ public static class BeltUiTests
                 return 1;
             }
             await page.WaitForTimeoutAsync(1500);
-            Console.WriteLine($"[ui] {belt.Key}: enviando enunciado");
-            await page.FillAsync("#prompt", belt.Prompt);
+            Console.WriteLine($"[ui] {belt.Key}: enviando enunciado (texto puro)");
+            await page.FillAsync("#prompt", PlanTextFor(belt));
             await page.ClickAsync("#send");
             Console.WriteLine($"[ui] {belt.Key}: aguardando engine (acompanhe no navegador)");
             bool done = false;
@@ -634,7 +719,8 @@ public static class BeltUiTests
             }
             catch { }
             bool thinkUi = thinkChars >= 40;
-            bool ok = done && conv.Length >= 2000 && thinkUi;
+            // Plan = texto puro: tool call na sessão é a própria falha do perfil.
+            bool ok = done && conv.Length >= 2000 && thinkUi && calls == 0;
             Console.WriteLine($"[ui] {(ok ? "PASS" : "FAIL")} {belt.Key}: conversa {conv.Length} chars, msgs={msgs}, toolcalls={calls}, toolsUi={toolsUi}, raciocinio={thinkChars} chars, cobertura {hit}/{nuclei.Length} ({file})");
             return ok ? 0 : 1;
         }

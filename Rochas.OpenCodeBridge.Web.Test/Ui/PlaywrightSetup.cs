@@ -75,11 +75,26 @@ public static class PlaywrightSetup
             "(o) => /Orch/i.test(o.textContent) && !/Q3|GPU2/i.test(o.textContent)",
             pickSubagent: true);
 
+    /// <summary>
+    /// Perfil MOE no dropdown — para o teste de TÓPICOS GERAIS, em que o generalista
+    /// delega cada tema a um subagente dele mesmo. O subagente preferido é o MoE da
+    /// GPU2 (execução paralela), com a cadeia normal (Scripter Q4 → Exec) de reserva.
+    /// </summary>
+    /// <param name="page">Página em <c>/Chat</c> com os dropdowns renderizados.</param>
+    /// <param name="label">Rótulo do passo no log (faixa/smoke).</param>
+    /// <returns><c>id|rótulo sub=id|rótulo</c> do agente e do subagente escolhidos.</returns>
+    public static Task<string> SelectMoeAgentAsync(IPage page, string label) =>
+        SelectAgentAsync(page, label, "MoE (tópicos gerais, delega a si mesmo)",
+            "(o) => (o.dataset.mode || '').toLowerCase() === 'plan' && /MoE/i.test(o.textContent || '')",
+            "(o) => /MoE/i.test(o.textContent) && !/GPU2|Q3/i.test(o.textContent)",
+            pickSubagent: true,
+            subPreferJs: "(o) => /MoE/i.test(o.textContent || '') && /GPU2/i.test(o.textContent || '')");
+
     // Núcleo da seleção: filtro + preferência declarados como JS, sem id do banco.
     // O agente é escolhido, o campo fica realçado pelo compasso do espectador e só
     // então o subagente é escolhido no segundo dropdown (mesmo compasso).
     private static async Task<string> SelectAgentAsync(IPage page, string label, string what,
-        string filterJs, string preferJs, bool pickSubagent)
+        string filterJs, string preferJs, bool pickSubagent, string? subPreferJs = null)
     {
         string agentJs = @"() => {
           const sel = document.getElementById('agentId');
@@ -104,14 +119,15 @@ public static class PlaywrightSetup
               const ex = document.getElementById('executorId');
               const all = [...ex.options].filter(o => o.value);
               const chosen =
-                   all.find(o => /Scripter/i.test(o.textContent || '') && !/GPU2|Q3/i.test(o.textContent || ''))
+                   all.find(SUBPREFER)
+                || all.find(o => /Scripter/i.test(o.textContent || '') && !/GPU2|Q3/i.test(o.textContent || ''))
                 || all.find(o => /Scripter/i.test(o.textContent || ''))
                 || all.find(o => /Exec/i.test(o.textContent || ''));
               if (!chosen) return '';
               ex.value = chosen.value;
               ex.dispatchEvent(new Event('change'));
               return chosen.value + '|' + chosen.textContent.trim();
-            }";
+            }".Replace("SUBPREFER", subPreferJs ?? "(() => false)");
             string subPicked = await SelectWithPaceAsync(page, "select#executorId", subJs);
             if (!string.IsNullOrEmpty(subPicked))
                 sub = subPicked;

@@ -47,8 +47,11 @@ public sealed class ChatController(
             Temperature = temperature ?? a.Temperature,
             MaxTokens = maxTokens ?? 16384,
             EnableThinking = thinking ?? (a.Thinking != "off"),
-            // MainHarness (Core) e a fonte no caminho Web; tails legadas off.
-            Harness = false,
+            // Paridade com a raia bridge do WAR: MainHarness (Core) + caudas
+            // (comportamento e tools). O BridgeProxy só injeta a cauda de tools
+            // quando o corpo leva tools — pedido texto-puro fica com a de
+            // comportamento. Salvar/anti-repeat da bridge ficam no processo dela.
+            Harness = true,
             LegacyHarness = false,
             CoerceTextTools = false,
             CoerceNarrated = false,
@@ -1048,8 +1051,11 @@ public sealed class ChatController(
         }
         try
         {
+        // Contador do laço legado (o rastro de telemetria recebe o número do turno).
+        int turnNo = 0;
         while (!ct.IsCancellationRequested)
         {
+            turnNo++;
             // Opções do turno: no caminho Web o main harness vem do Core e as
             // estratégias legadas (coerção texto->tool) ficam desligadas.
             var bridgeOptions = BridgeOptionsFor(agent);
@@ -1367,6 +1373,19 @@ public sealed class ChatController(
             // repetir a mesma verificacao em cada uso.
             foreach ((string id, string name, string args) in toolCalls)
             {
+                // Tools salvage (Core): args truncado/não-JSON não chega ao executor —
+                // a call devolve o aviso canônico e o modelo refaz, em vez de virar erro
+                // de tool repetido. Mesmo critério da raia bridge (ToolCallRepair).
+                if (!ToolCallRepair.ArgsOk(args))
+                {
+                    string salvage = ToolCallRepair.Notice([name]);
+                    if (session?.Id is int sidSalv)
+                        await sessionService.LogToolAsync(sidSalv, agent.Name, name, args, false, salvage, 0);
+                    await WriteProgressAsync(outputStream, "tool_done", name, false, ct, salvage, 0, "", args);
+                    messages.Add(ToolLoopContext.ChatTool(id, salvage));
+                    LoopTrace("salvage-args", session?.Id, turnNo, name);
+                    continue;
+                }
                 anyToolRan = true;
                 if (name == "subagent") anySubRan = true;
                 // Call vazia (sem prompt): nem anuncia (evita label fantasma).
@@ -1941,6 +1960,23 @@ public sealed class ChatController(
                 // possivelmente nulo. Afirma-se na fronteira do laco, uma vez, em vez
                 // de repetir a verificacao em cada uso.
                 string id = call.Id, name = call.Name, args = call.Args!;
+                // Tools salvage (Core): idem loop chat — o args que não fecha não
+                // executa; a call recebe o aviso canônico e o modelo refaz.
+                if (!ToolCallRepair.ArgsOk(args))
+                {
+                    string salvage = ToolCallRepair.Notice([name]);
+                    if (session?.Id is int sidSalv2)
+                        await sessionService.LogToolAsync(sidSalv2, agent.Name, name, args, false, salvage, 0);
+                    await WriteProgressAsync(outputStream, "tool_done", name, false, ct, salvage, 0, "", args);
+                    input.Add(new JsonObject
+                    {
+                        ["type"] = "function_call", ["id"] = id, ["call_id"] = id,
+                        ["name"] = name, ["arguments"] = args,
+                    });
+                    input.Add(ToolLoopContext.ResponsesOutput(id, salvage));
+                    LoopTrace("salvage-args", session?.Id, turn, name);
+                    continue;
+                }
                 // Trava de call idêntica (ping-pong): 3x mesma tool+args
                 // seguidas = controle no input + retry do turno (a repetida
                 // não executa, sem nota na bolha). Após 2 controles, disjuntor.

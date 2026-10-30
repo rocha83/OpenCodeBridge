@@ -674,7 +674,9 @@ internal sealed class WarTemplate : CircuitTemplate
         // --war-webdriver: a Web UI e' exercitada pelo navegador (Playwright), com a
         // janela aberta quando --war-headed. Sem a flag o step roda so' unit+integracao
         // HTTP, como antes.
-        string webUiBelts = string.IsNullOrWhiteSpace(_o.WebUiBelts) ? "azul" : _o.WebUiBelts!;
+        // Faixas do step: azul (Orch executa/delega + face Plan em texto puro com o
+        // raciocínio na bolha) e moe (tópicos gerais, cada tema num subagente MoE).
+        string webUiBelts = string.IsNullOrWhiteSpace(_o.WebUiBelts) ? "azul,moe" : _o.WebUiBelts!;
         var webArgs = _o.WebDriver
             ? new[]
             {
