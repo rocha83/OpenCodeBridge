@@ -23,6 +23,7 @@
 //  Linux. Testes adaptam-se a bridge; a bridge nao muda para o teste.
 // ===========================================================================
 
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -282,6 +283,43 @@ internal sealed class WarTemplate : CircuitTemplate
         return template.RequireGreen && !gate.Green ? 1 : 0;
     }
 
+    /// <summary>
+    /// Reinicia o <c>grafana-server</c> no começo da esteira inteira: o painel
+    /// recarrega as séries do <c>/api/test/probe</c> e a lista de steps do zero,
+    /// sem herdar cache da rodada anterior. Observabilidade não decide PASS/FAIL —
+    /// falha aqui vira linha de aviso no log global, nunca BLOCKED.
+    /// </summary>
+    /// <param name="globalLog">Log global da bateria (console de níveis).</param>
+    private static void RestartGrafana(TextWriter? globalLog)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("sudo", "-n systemctl restart grafana-server")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            using var proc = Process.Start(psi);
+            if (proc is null)
+            {
+                LogGlobal(globalLog, "[grafana] restart nao iniciado (sudo indisponivel)");
+                return;
+            }
+            string err = proc.StandardError.ReadToEnd();
+            if (!proc.WaitForExit(90000) || proc.ExitCode != 0)
+            {
+                LogGlobal(globalLog, $"[grafana] restart falhou (exit={proc.ExitCode}): {err.Trim()}");
+                return;
+            }
+            LogGlobal(globalLog, "[grafana] restart ok — painel recarrega a rodada do zero");
+        }
+        catch (Exception ex)
+        {
+            LogGlobal(globalLog, $"[grafana] restart indisponivel: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+        }
+    }
+
     private static int RunAll(WarOptions o, WarPaths p)
     {
         var levels = LevelsToRun(o);
@@ -312,6 +350,10 @@ internal sealed class WarTemplate : CircuitTemplate
         // Sonda zerada UMA vez por bateria (o run isolado ja faz o mesmo por ser a propria rodada).
         TestContext.ResetDiagnostics(clearProbe: true, bridge: o.Bridge, required: false, apiKey: o.ApiKey,
             clearPanel: true);
+        // Esteira INTEIRA (L1..L4) recomeça também o Grafana: o painel relê as séries
+        // e o plugin Infinity do zero, sem arrastar cache/estado da rodada anterior.
+        // Nível isolado (`--war-level N`) não mexe no painel de quem está olhando.
+        if (levels.Count > 1) RestartGrafana(globalLog);
         LogGlobal(globalLog, $"=== run-all-levels {stamp} (levels: {string.Join(",", levels)}) ===");
         LogGlobal(globalLog, $"repo: {p.Root}");
         LogGlobal(globalLog, $"artefatos: {p.OutBase}");
