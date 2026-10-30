@@ -39,6 +39,7 @@ public static class HarnessTails
     public const string DefaultTools =
         "MODO DE USO DAS TOOLS (regras transversais; o contrato de cada tool vai no schema): " +
         "Prefira a tool dedicada: read/write/edit para arquivo, glob/grep para descobrir, webfetch/websearch para rede, shell para executar. " +
+        "WEB/UA: ao navegar na web use sempre o User-Agent de Firefox 133 em Windows 11 (a bridge ja envia esse UA no webfetch); nao invente outro UA nem mude o padrao. " +
         "Um passo = uma acao; argumentos JSON completos; leia o resultado antes de repetir. " +
         "JSON DO ARGS: o conteudo de `write`/`edit` e' string JSON — quebra de linha = `\\n` (barra + n, dois caracteres) e aspas = `\\\"`; nunca quebre a linha crua dentro da string (o parser recusa). " +
         "EDITAR ACRESCENTANDO: o `oldString` e' o trecho que CONTINUA no arquivo; o `newString` traz esse mesmo trecho + o texto novo, para o arquivo terminar com os dois. " +
