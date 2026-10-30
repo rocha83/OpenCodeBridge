@@ -30,15 +30,23 @@ fluxo (falha por instrumentação, não por assertiva semântica).
 - Deve valer para **qualquer** teste, não só `E-mission-tools` (por isso
   "genérico"): um check único no runner/driver, não copy-paste por teste.
 
-**Estado atual (parcial)**
-- Já existe `GET /api/test/last-system` + `RecordSystemSent` na bridge
-  (`Program.cs`), que registra o system final e sinaliza `fsmini` /
-  `int_regra` / `tail_scope` / `harness_tails`. É a **base** do portão, mas
-  hoje só é consultado dentro de `E-mission-tools`.
-- Falta: (a) incluir **tools tail** (`DefaultTools` presente ou
-  `hasTools`+tail aplicada) no registro; (b) promover a checagem a **portão
-  único** no runner (`TestContext.Run` / driver) para todo teste em `--mode
-  bridge`; (c) mensagem de refutação nomeando a ausência.
+**Estado: implementado (2026-10-30)**
+- Bridge: `RecordSystemSent` passou a registrar `main_harness` (retorno real de
+  `MainHarness.Apply`, não a flag de CLI), `has_tools`, `tools_tail` (cauda de
+  tools presente no system final quando o request declara `tools`), `lane`
+  (`bridge`/`opencode`) e `ts` — tudo em `GET /api/test/last-system`.
+- Runner: `TestContext.Run` chama `BridgeFlowGate.Probe` ao fim de **todo**
+  teste `E-*` em `Mode == "bridge"`; a checagem vive num lugar só
+  (`Rochas.OpenCodeBridge.Test/BridgeFlowGate.cs`), sem copy-paste por teste.
+- Refutação: `fluxo bridge incompleto: ausente <main_harness|tails|tools_tail>`
+  + dump (`path`, `model`, `chars`, `tail_scope`, `harness_tails`, `has_tools`,
+  `tools_tail`, `lane`).
+- Honestidade do portão: registro anterior ao início do teste (`ts`) recusa com
+  causa própria; registro de outro cliente (`lane != bridge`) sai como
+  `INCONCLUSIVO` (não acusa o teste) porque a bridge guarda só o último system.
+- Prova unitária: `U-flow-gate` (caso feliz + negativos: sem harness, sem cauda,
+  request sem tools, `tail_scope=off`, registro ausente, registro de outro
+  cliente, registro velho).
 
 **Aceite**
 - Um teste `bridge` sem harness/tail no fluxo falha com

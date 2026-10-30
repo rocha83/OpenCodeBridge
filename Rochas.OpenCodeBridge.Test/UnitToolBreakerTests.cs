@@ -1020,6 +1020,58 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // Portao de fluxo bridge (PENDINGS P1): um unico check, com a causa exata,
+    // recusa o run sem harness/tails/cauda e deixa passar o fluxo completo.
+    // Um caso feliz + negativos — nao se cria camada de teste para testar o teste.
+    public static Task BridgeFlowGateCases()
+    {
+        static JsonObject Valid() => new()
+        {
+            ["event"] = "system-sent", ["path"] = "chat", ["model"] = "Gemma4-E4B-Q4-build",
+            ["chars"] = 4096, ["main_harness"] = true, ["has_tools"] = true, ["tools_tail"] = true,
+            ["tail_scope"] = "all", ["harness_tails"] = true, ["fsmini"] = false
+        };
+        TestContext.Check(BridgeFlowGate.Check(Valid()) == "",
+            "fluxo completo passa (veio: '" + BridgeFlowGate.Check(Valid()) + "')");
+
+        var noHarness = Valid();
+        noHarness["main_harness"] = false;
+        TestContext.Check(BridgeFlowGate.Check(noHarness) == "ausente main_harness",
+            "sem main_harness recusa com a causa certa (veio: '" + BridgeFlowGate.Check(noHarness) + "')");
+
+        var noToolsTail = Valid();
+        noToolsTail["tools_tail"] = false;
+        TestContext.Check(BridgeFlowGate.Check(noToolsTail).StartsWith("ausente tools_tail", StringComparison.Ordinal),
+            "request com tools e sem cauda recusa (veio: '" + BridgeFlowGate.Check(noToolsTail) + "')");
+
+        var noToolsRequest = Valid();
+        noToolsRequest["has_tools"] = false;
+        noToolsRequest["tools_tail"] = false;
+        TestContext.Check(BridgeFlowGate.Check(noToolsRequest) == "",
+            "request sem tools nao exige cauda (a cauda sai de proposito)");
+
+        var opencodeNoScope = Valid();
+        opencodeNoScope["tail_scope"] = "off";
+        TestContext.Check(BridgeFlowGate.Check(opencodeNoScope).Contains("tail_scope=off"),
+            "tail_scope=off recusa (veio: '" + BridgeFlowGate.Check(opencodeNoScope) + "')");
+
+        TestContext.Check(BridgeFlowGate.Check(null).Length > 0,
+            "sem registro na bridge recusa (instrumentacao ausente)");
+
+        var otherClient = Valid();
+        otherClient["lane"] = "opencode";
+        TestContext.Check(BridgeFlowGate.Check(otherClient).StartsWith("INCONCLUSIVO", StringComparison.Ordinal),
+            "registro de outro cliente nao acusa o teste (veio: '" + BridgeFlowGate.Check(otherClient) + "')");
+
+        var stale = Valid();
+        stale["ts"] = 1000;
+        TestContext.Check(BridgeFlowGate.Check(stale, 2000).StartsWith("registro anterior ao teste", StringComparison.Ordinal),
+            "registro anterior ao teste recusa (veio: '" + BridgeFlowGate.Check(stale, 2000) + "')");
+        TestContext.Check(BridgeFlowGate.Check(stale, 500) == "",
+            "registro dentro da janela do teste passa");
+        return Task.CompletedTask;
+    }
+
     // 17a amostra (2026-10-29): `printfn $"hanoi_seq={String.concat "," seq}"` ->
     // FS3373 "Invalid interpolated string". O CERTO separa num `let` e usa formato.
     public static Task FsRepairInterpolatedString()

@@ -554,7 +554,8 @@ internal static partial class Program
     // GET /api/test/last-system. Nao inventa: e' o texto final do request.
     static JsonObject? LastSystemSent;
     static void RecordSystemSent(string path, string? role, string model, string systemText,
-        double? temperature = null, bool hasProfile = false)
+        double? temperature = null, bool hasProfile = false,
+        bool mainHarness = false, bool hasTools = false)
     {
         LastSystemSent = new JsonObject
         {
@@ -568,6 +569,16 @@ internal static partial class Program
             ["env"] = systemText.Contains("<env>", StringComparison.Ordinal),
             ["tail_scope"] = TailScope,
             ["harness_tails"] = TailsEnabled,
+            ["lane"] = BridgeLane.Value == true ? "bridge" : "opencode",
+            ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            // Portao de fluxo (PENDINGS P1): prova do que ESTE request carregou.
+            // main_harness vem de MainHarness.Apply (a prova, nao a flag de CLI);
+            // tools_tail so existe quando o request declarou `tools` (sem tools a
+            // cauda sai de proposito — sem ela o modelo emite JSON de tool como texto).
+            ["main_harness"] = mainHarness,
+            ["has_tools"] = hasTools,
+            ["tools_tail"] = hasTools && HarnessToolsTail.Length > 0
+                             && systemText.Contains(HarnessToolsTail, StringComparison.Ordinal),
             // Temperatura que vai no corpo do upstream + se o model id carrega role
             // (has_profile=true + valor == perfil do role = prova de "rodou a 0.1").
             ["temperature"] = temperature.HasValue ? JsonValue.Create(temperature.Value) : null,
@@ -2034,10 +2045,14 @@ WriteJson(ctx, 200, new JsonObject
             // Main harness no caminho chat (o WAR usa /v1/chat/completions
             // direto). So na raia bridge; opencode se auto-gerencia. O array
             // `tools` NAO e tocado: o schema continua sendo a fonte do request.
+            // mhChat: prova para o portao de fluxo (PENDINGS P1) de que ESTE
+            // request passou pelo harness — registrado em GET /api/test/last-system.
+            bool mhChat = false;
             if (node is not null && node["messages"] is JsonArray chatHarness
                 && BridgeLane.Value == true)
             {
                 bool applied = MainHarness.Apply(chatHarness, true, reqRole);
+                mhChat = applied;
                 if (applied)
                 {
                     outBody = node.ToJsonString(SerOpts);
@@ -2095,7 +2110,8 @@ WriteJson(ctx, 200, new JsonObject
                     .FirstOrDefault(x => x["role"]?.GetValue<string>() is "system" or "developer")
                     ?["content"]?.GetValue<string>() ?? "";
                 if (sysSentChat.Length > 0) RecordSystemSent("chat", reqRole, fmodel, sysSentChat,
-                    node["temperature"]?.GetValue<double>(), TryProfile(fmodel, out _, out _));
+                    node["temperature"]?.GetValue<double>(), TryProfile(fmodel, out _, out _),
+                    mhChat, fHasTools);
             }
             // QwenStandard: tools OpenAI -> Alibaba + re-serializa p/ upstream.
             // Sem tool_choice explícito: força "required" (VL só emite calls assim).
@@ -2583,7 +2599,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             .FirstOrDefault(x => x["role"]?.GetValue<string>() is "system" or "developer")
             ?["content"]?.GetValue<string>() ?? "";
         if (sysSentR.Length > 0) RecordSystemSent("responses", RoleOfModel(requestedModel), requestedModel, sysSentR,
-            temperature, hasProfile);
+            temperature, hasProfile, mainHarness, reqHasTools);
         if (Diagnostic)
             Log(new JsonObject
             {

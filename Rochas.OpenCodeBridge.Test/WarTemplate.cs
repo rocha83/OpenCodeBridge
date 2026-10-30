@@ -565,8 +565,14 @@ internal sealed class WarTemplate : CircuitTemplate
                 {
                     yield return StepBridge(driver, $"algo-cs-{mode}", mode,
                         new[] { "--only", "E-mission-algo-cs" });
-                    yield return StepBridge(driver, $"algo-fs-{mode}", mode,
-                        new[] { "--only", "E-mission-algo-fs" });
+                    yield return StepBridge(driver, $"algo-fs-bin-{mode}", mode,
+                        new[] { "--only", "E-mission-algo-fs-bin" });
+                    yield return StepBridge(driver, $"algo-fs-btree-{mode}", mode,
+                        new[] { "--only", "E-mission-algo-fs-btree" });
+                    yield return StepBridge(driver, $"algo-fs-kmeans-{mode}", mode,
+                        new[] { "--only", "E-mission-algo-fs-kmeans" });
+                    yield return StepBridge(driver, $"algo-fs-sort-{mode}", mode,
+                        new[] { "--only", "E-mission-algo-fs-sort" });
                     yield return StepBridge(driver, $"belts-build-final-{mode}", mode,
                         new[] { "--only", "E-belts-build-direct", "--belts", "marrom,preta" });
                     yield return StepBridge(driver, $"belts-orch-final-{mode}", mode,

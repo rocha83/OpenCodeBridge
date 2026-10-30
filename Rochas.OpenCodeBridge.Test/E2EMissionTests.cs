@@ -435,24 +435,68 @@ internal static class E2EMissionTests
         Console.WriteLine($"  [algo] C# ok:\n{output.Trim()}");
     }
 
-    /// <summary>Missao de algoritmos em F#: mesmo aceite, fonte e projeto proprios.</summary>
-    public static async Task MissionAlgoFs()
+    /// <summary>Missao algoritmica em F# (1/4): busca binaria.</summary>
+    public static async Task MissionAlgoFsBin()
     {
         string bridge = TestContext.Bridge;
         string model = AlgoModel();
-        string ws = TestContext.FreshWorkspace("e2e-mission-algo-fs");
+        string ws = TestContext.FreshWorkspace("e2e-mission-algo-fs-bin");
         TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
-        // O template do `dotnet new` para F# nao traz diretiva de modulo, e o modelo
-        // gastava turnos no cabecalho (FS0010 `let` fora de posicao). O arquivo inicial
-        // ja' compila — o pedido (algoritmo e metas) continua inteiro.
         File.WriteAllText(Path.Combine(ws, "mfs", "Program.fs"),
             "module Program\n\nopen System\n\n// resolva o pedido aqui\nprintfn \"ok\"\n");
+        string[] stages = new[] { "Programa F# em " + ws + "/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). Dado o array ordenado [1;3;5;7;9;11;13;15;17;19] e alvo 13, implemente busca binaria e imprima `binsearch_idx=<indice 0-based>` (ou -1 se nao achar). Imprima o valor calculado pelo programa, nao copie do enunciado. Rode `dotnet run --project " + ws + "/mfs/mfs.fsproj` e ajuste ate imprimir." };
+        var (src, output) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", stages);
+        TestContext.Check(!HasHardcodedBin(src), "F# calcula (sem hardcode da meta)");
+        TestContext.Check(AlgoOkBin(output), "F# entrega a chave esperada, saiu: " + output[..Math.Min(240, output.Length)]);
+        Console.WriteLine($"  [algo] F# bin ok:\n{output.Trim()}");
+    }
 
-        string[] fsStages = AlgoStages(ws, "mfs");
-        var (src, output) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", fsStages);
-        TestContext.Check(!HasHardcodedAlgo(src), "F# calcula (sem hardcode das metas)");
-        TestContext.Check(AlgoOk(output), "F# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
-        Console.WriteLine($"  [algo] F# ok:\n{output.Trim()}");
+    /// <summary>Missao algoritmica em F# (2/4): B-tree (insercao + busca).</summary>
+    public static async Task MissionAlgoFsBTree()
+    {
+        string bridge = TestContext.Bridge;
+        string model = AlgoModel();
+        string ws = TestContext.FreshWorkspace("e2e-mission-algo-fs-btree");
+        TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
+        File.WriteAllText(Path.Combine(ws, "mfs", "Program.fs"),
+            "module Program\n\nopen System\n\n// resolva o pedido aqui\nprintfn \"ok\"\n");
+        string[] stages = new[] { "Programa F# em " + ws + "/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). Implemente uma B-tree (ou arvore de busca) com insercao de [10;20;5;6;12;30;7;17] e busca do valor 6. Imprima `btree_found=<true|false>` e `btree_count=<total de chaves>`. Imprima valores calculados pelo programa, nao copie do enunciado. Rode `dotnet run --project " + ws + "/mfs/mfs.fsproj` e ajuste ate imprimir." };
+        var (src, output) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", stages);
+        TestContext.Check(!HasHardcodedBTree(src), "F# calcula (sem hardcode da meta)");
+        TestContext.Check(AlgoOkBTree(output), "F# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
+        Console.WriteLine($"  [algo] F# btree ok:\n{output.Trim()}");
+    }
+
+    /// <summary>Missao algoritmica em F# (3/4): K-Means.</summary>
+    public static async Task MissionAlgoFsKMeans()
+    {
+        string bridge = TestContext.Bridge;
+        string model = AlgoModel();
+        string ws = TestContext.FreshWorkspace("e2e-mission-algo-fs-kmeans");
+        TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
+        File.WriteAllText(Path.Combine(ws, "mfs", "Program.fs"),
+            "module Program\n\nopen System\n\n// resolva o pedido aqui\nprintfn \"ok\"\n");
+        string[] stages = new[] { "Programa F# em " + ws + "/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). Implemente K-Means com k=2 sobre os pontos (1,1),(1,2),(2,1),(8,8),(8,9),(9,8). Imprima os 2 centroides finais com 1 casa decimal em `kmeans_c1=<x>,<y>` e `kmeans_c2=<x>,<y>` (ordem crescente por x). Imprima valores calculados pelo programa, nao copie do enunciado. Rode `dotnet run --project " + ws + "/mfs/mfs.fsproj` e ajuste ate imprimir." };
+        var (src, output) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", stages);
+        TestContext.Check(!HasHardcodedKMeans(src), "F# calcula (sem hardcode da meta)");
+        TestContext.Check(AlgoOkKMeans(output), "F# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
+        Console.WriteLine($"  [algo] F# kmeans ok:\n{output.Trim()}");
+    }
+
+    /// <summary>Missao algoritmica em F# (4/4): quick sort + bubble sort.</summary>
+    public static async Task MissionAlgoFsSort()
+    {
+        string bridge = TestContext.Bridge;
+        string model = AlgoModel();
+        string ws = TestContext.FreshWorkspace("e2e-mission-algo-fs-sort");
+        TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
+        File.WriteAllText(Path.Combine(ws, "mfs", "Program.fs"),
+            "module Program\n\nopen System\n\n// resolva o pedido aqui\nprintfn \"ok\"\n");
+        string[] stages = new[] { "Programa F# em " + ws + "/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). Implemente quick sort e bubble sort sobre [5;2;9;1;5;6]. Imprima `quicksort=1,2,5,5,6,9` e `bubblesort=1,2,5,5,6,9` (valores que o programa calculou). Rode `dotnet run --project " + ws + "/mfs/mfs.fsproj` e ajuste ate imprimir." };
+        var (src, output) = await RunAlgoPhase(bridge, model, ws, "F#", "mfs/mfs.fsproj", "Program.fs", stages);
+        TestContext.Check(!HasHardcodedSort(src), "F# calcula (sem hardcode da meta)");
+        TestContext.Check(AlgoOkSort(output), "F# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
+        Console.WriteLine($"  [algo] F# sort ok:\n{output.Trim()}");
     }
 
     static string AlgoModel()
@@ -673,6 +717,60 @@ internal static class E2EMissionTests
         return System.Text.RegularExpressions.Regex.IsMatch(
             code, @"hanoi\s*=\s*15|primes100\s*=\s*25|primes1000\s*=\s*168|twin100\s*=\s*8");
     }
+
+    static Dictionary<string, string> ParseKeyValues(string output)
+    {
+        var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in output.Split('\n'))
+        {
+            int i = line.IndexOf('=');
+            if (i <= 0) continue;
+            string k = line[..i].Trim();
+            string v = line[(i + 1)..].Trim();
+            if (k.Length > 0 && v.Length > 0) kv[k] = v;
+        }
+        return kv;
+    }
+
+    static string StripComments(string src) => string.Join("\n", src.Split('\n').Select(l =>
+    {
+        int i = l.IndexOf("//", StringComparison.Ordinal);
+        return i >= 0 ? l[..i] : l;
+    }));
+
+    static bool AlgoOkBin(string output) => ParseKeyValues(output).TryGetValue("binsearch_idx", out var v) && v.Replace(" ", "") == "5";
+    static bool HasHardcodedBin(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"binsearch_idx\s*=\s*5");
+
+    static bool AlgoOkBTree(string output)
+    {
+        var kv = ParseKeyValues(output);
+        if (!kv.TryGetValue("btree_found", out var f)) return false;
+        if (!f.Trim().Equals("true", StringComparison.OrdinalIgnoreCase)) return false;
+        return kv.TryGetValue("btree_count", out var c) && c.Replace(" ", "") == "8";
+    }
+    static bool HasHardcodedBTree(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"btree_found\s*=\s*(true|True)|btree_count\s*=\s*8");
+
+    static bool AlgoOkKMeans(string output)
+    {
+        // Aceita qualquer precisao decimal (o enunciado pede 1 casa; o modelo pode
+        // imprimir 1.33), exige c1 < c2 (ordem do enunciado) e clusters separados.
+        var m1 = System.Text.RegularExpressions.Regex.Match(output, @"kmeans_c1=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)");
+        var m2 = System.Text.RegularExpressions.Regex.Match(output, @"kmeans_c2=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)");
+        if (!m1.Success || !m2.Success) return false;
+        double x1 = double.Parse(m1.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        double x2 = double.Parse(m2.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        return x1 < x2 && x2 - x1 > 1.0;
+    }
+    static bool HasHardcodedKMeans(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"kmeans_c1\s*=\s*-?\d+\.\d+,\s*-?\d+\.\d+");
+
+    static bool AlgoOkSort(string output)
+    {
+        var kv = ParseKeyValues(output);
+        static string Norm(string s) => s.Replace(" ", "");
+        return kv.TryGetValue("quicksort", out var q) && Norm(q) == "1,2,5,5,6,9"
+            && kv.TryGetValue("bubblesort", out var b) && Norm(b) == "1,2,5,5,6,9";
+    }
+    static bool HasHardcodedSort(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"quicksort\s*=\s*1,2,5,5,6,9|bubblesort\s*=\s*1,2,5,5,6,9");
 
     static async Task<string> ExecTool(string ws, string model, string fn, JsonObject args)
     {

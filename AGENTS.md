@@ -120,6 +120,20 @@ uma segunda versão da mesma responsabilidade.
   enunciado, preparar fixture, controlar serviço, checar saída) não é Core;
   ainda assim, não duplique uma responsabilidade que o Core já tem.
 
+## Regra: identificadores em en-US, comentários e docs em pt-BR (primordial)
+
+Vale para **todo** código novo (Core, bridge, testes, scripts, JSON de dashboard):
+
+1. **Nomes de tipos, métodos, propriedades, variáveis, parâmetros, constantes e
+   campos em en-US** (`missing`, `noToolsTail`, `staleRecord`, `ParseKeyValues`).
+   Nunca `falta`, `semCauda`, `velho`, `outroCliente`, `prosaSeguida`.
+2. **Comentários, XML docs, mensagens de log voltadas ao operador e docs em
+   pt-BR** (com acentuação quando o arquivo já usa).
+3. **Mensagem de assertiva/refutação em pt-BR** (é o que o operador lê no
+   `FAIL`), mas o **nome do teste** e as chaves de JSON/API em en-US.
+4. Código existente com nome em pt-BR **não** se renomeia de passagem: corrige
+   só o trecho tocado pelo enunciado (evita diff gigante e conflito no PROD).
+
 ## Regra: DRY antes de criar — procure o artefato existente e complete-o (primordial)
 
 Vale para **todo** artefato novo: arquivo, classe, método, tool, pin, script,
@@ -335,7 +349,7 @@ A esteira WAR tem quatro níveis, nesta ordem, tanto no `WarTemplate`
 | **L1** | `units` (uma vez, bridge) → `integração` → `tópicos` |
 | **L2** | `E-responses-tools` → `E-tools-full` → belts **azul e verde** (build + orch) |
 | **L3** | `E-science-gpu` → `E-mission-tools` → belt **roxa** (build + orch) |
-| **L4** | `E-mission-algo-cs` → `E-mission-algo-fs` → belts **marrom e preta** (build + orch) → `E-front-*` → `webui-integracao-topicos` |
+| **L4** | `E-mission-algo-cs` → `E-mission-algo-fs-{bin,btree,kmeans,sort}` → belts **marrom e preta** (build + orch) → `E-front-*` → `webui-integracao-topicos` |
 
 - **L1 integração**: `E-stream-*`, `E-review-*`, `E-iot-*`, `E-error-*`,
   `E-full-cycle-*`, `E-healthy-*`.

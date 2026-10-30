@@ -218,6 +218,7 @@ internal static class Program
         TestContext.Run("U-fs-repair-generic-syntax", UnitToolBreakerTests.FsRepairGenericSyntax);
         TestContext.Run("U-fs-repair-error-line", UnitToolBreakerTests.FsRepairErrorLinePointer);
         TestContext.Run("U-fs-repair-interpolated", UnitToolBreakerTests.FsRepairInterpolatedString);
+        TestContext.Run("U-flow-gate", UnitToolBreakerTests.BridgeFlowGateCases);
         TestContext.Run("U-antirepeat-args-window", UnitToolBreakerTests.AntiRepeatArgsWindowIsIndependent);
         TestContext.Run("U-toolcall-salvage-notice", UnitToolBreakerTests.SalvageNoticeIsRecognizable);
         TestContext.Run("U-bridge-notice", UnitToolBreakerTests.BridgeNoticeFormatIsSingleSource);
@@ -309,7 +310,10 @@ internal static class Program
         else Console.WriteLine("[test] skip E-science-cpu (--skip-cpu)");
         TestContext.Run("E-mission-tools", E2EMissionTests.MissionTools);
         TestContext.Run("E-mission-algo-cs", E2EMissionTests.MissionAlgoCs);
-        TestContext.Run("E-mission-algo-fs", E2EMissionTests.MissionAlgoFs);
+        TestContext.Run("E-mission-algo-fs-bin", E2EMissionTests.MissionAlgoFsBin);
+        TestContext.Run("E-mission-algo-fs-btree", E2EMissionTests.MissionAlgoFsBTree);
+        TestContext.Run("E-mission-algo-fs-kmeans", E2EMissionTests.MissionAlgoFsKMeans);
+        TestContext.Run("E-mission-algo-fs-sort", E2EMissionTests.MissionAlgoFsSort);
             // Sonda direta do parser hermes no vLLM: so faz sentido no parser nativo.
             if (!TestContext.ServedIsCoder) TestContext.Run("E-vllm-tool-hermes", E2EToolTests.VllmToolHermes);
             else Console.WriteLine("[test] skip E-vllm-tool-hermes (perfil coder)");
