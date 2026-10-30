@@ -68,8 +68,11 @@ internal static class Program
         // (o lock e dele); fora do driver, runner concorrente e NO-GO.
         if (!TestContext.SkipPreflight)
         {
-            string q3 = Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE")
-                        ?? "http://127.0.0.1:4125";
+            // Linha GPU2 (diagnostico) e' OPCIONAL: pode ser a bridge GPU2
+            // (:4125) ou a CPU-forced (:4126). Nome semantico WAR_GPU2_BRIDGE;
+            // WAR_CPU_BRIDGE segue aceito como legado. Sem env = rodada Q4-only.
+            string? q3 = Environment.GetEnvironmentVariable("WAR_GPU2_BRIDGE")
+                         ?? Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE");
             var preflight = StackPreflight.Run(new StackPreflightOptions
             {
                 BridgeUrl = TestContext.Bridge,

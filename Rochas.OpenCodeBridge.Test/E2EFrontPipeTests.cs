@@ -21,7 +21,10 @@ namespace Rochas.OpenCodeBridge.Test;
 
 internal static class E2EFrontPipeTests
 {
-    static string CpuBridge => Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125";
+    // Fase de EDICAO do front roda na GPU2 (role exec). Nome semantico do env:
+    // WAR_GPU2_BRIDGE (WAR_CPU_BRIDGE segue como legado). Sem a linha na rodada
+    // (esteira Q4-only) o teste e' SKIP explicito — nunca :4125 por default.
+    static string CpuBridge => TestContext.RequireGpu2("front:edit");
     static string Url => (Environment.GetEnvironmentVariable("FRONT_WEBDRIVER_URL") ?? "http://127.0.0.1:5199").TrimEnd('/') + "/";
     const string AppName = "FrontApp";
     const string CssRel = "app/wwwroot/css/app.css";
@@ -751,6 +754,11 @@ internal static class E2EFrontPipeTests
     // =============================================================== E-front-verify
     public static Task Verify()
     {
+        // A cadeia de verificacao consome os `after.json` das fases de edicao, que
+        // rodam na GPU2. Sem a linha na rodada (esteira Q4-only) o verify nao tem
+        // o que comparar: SKIP honesto, em vez de FAIL por artefato ausente.
+        if (TestContext.Gpu2Bridge is null)
+            TestContext.Skip("front:verify depende das fases de edicao (GPU2) — fora desta rodada");
         var edits = LoadEdits();
         string reports = Path.Combine(Ws, "reports");
         Directory.CreateDirectory(reports);

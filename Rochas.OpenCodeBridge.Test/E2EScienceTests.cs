@@ -9,7 +9,6 @@ namespace Rochas.OpenCodeBridge.Test;
 
 internal static class E2EScienceTests
 {
-    static string CpuBridge => Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125";
     const string SystemPrompt = "Voce e um professor universitario de exatas. Responda com rigor tecnico, "
         + "derive quando pedido e corrija premissas falsas em vez de aceita-las. "
         + "Responda apenas em TEXTO: proibido emitir tool calls ou templates; so prosa tecnica.";

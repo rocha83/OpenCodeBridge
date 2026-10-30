@@ -632,6 +632,18 @@ Consequências diretas (proibido para obter PASS):
 PASS que só existe depois de mudar a bridge, o schema do teste ou a instância é
 **PASS indevido**. O resultado honesto é FAIL, com a evidência.
 
+**Estadiamento das linhas (2026-10-30) — Q4 primeiro, GPU2 só no fim.** A esteira
+roda **Q4-only** (`:4124`, o gate). A linha **GPU2** (Q3 `:4125` ou CPU-forced
+`:4126`) entra apenas numa **rodada completa própria, no final**, publicada por
+`--war-bridge-q3 <url>` ou pela variável **`WAR_GPU2_BRIDGE`**
+(`WAR_CPU_BRIDGE` segue aceito como legado). Sem essa variável, as fases que
+dependem da GPU2 — `E-front-edit`, `E-front-edit-razor`, `E-front-edit-react`,
+`E-front-verify` (a cadeia consome os `after.json` da edição) e o companion do
+`E-scripter-gen` — saem **SKIP** com motivo explícito. Nunca se cai em `:4125`
+por default: falar com a GPU2 numa rodada Q4 é exatamente o cruzamento proibido
+acima. `--war-no-cpu` mantém a rodada Q4-only mesmo com `--war-bridge-q3`
+presente (a linha não vai para os filhos).
+
 **Horizonte estável de ctx/saída (não oscilar):**
 
 | item | valor estável | fonte |

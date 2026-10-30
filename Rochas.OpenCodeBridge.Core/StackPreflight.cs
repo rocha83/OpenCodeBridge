@@ -15,8 +15,8 @@ public sealed record StackPreflightOptions
     /// <summary>Llama da GPU (upstream do gate). Default <c>http://127.0.0.1:4100</c>.</summary>
     public string LlamaUrl { get; init; } = "http://127.0.0.1:4100";
 
-    /// <summary>Bridge espelho/CPU (Q3). Default <c>http://127.0.0.1:4125</c>.</summary>
-    public string? Q3BridgeUrl { get; init; } = "http://127.0.0.1:4125";
+    /// <summary>Bridge da linha GPU2 (diagnostico/bancada). Nula = rodada Q4-only.</summary>
+    public string? Q3BridgeUrl { get; init; }
 
     /// <summary>Llama do espelho (Q3). Default <c>http://127.0.0.1:4110</c>.</summary>
     public string? Q3LlamaUrl { get; init; } = "http://127.0.0.1:4110";

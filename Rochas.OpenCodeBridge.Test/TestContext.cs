@@ -88,6 +88,32 @@ internal static class TestContext
     /// <summary>Bridge com --legacy-harness 1: unico modo em que ha coercao de tools.</summary>
     public static bool ServedLegacy;
 
+    /// <summary>
+    /// Bridge da linha GPU2 (Q3, diagnostico/bancada), OPCIONAL. Nome semantico:
+    /// <c>WAR_GPU2_BRIDGE</c>; <c>WAR_CPU_BRIDGE</c> segue aceito como legado.
+    /// Vazio = esteira Q4-only (o gate): quem depende da GPU2 passa por
+    /// <see cref="RequireGpu2"/> e recebe SKIP — nunca cai em <c>:4125</c> por default.
+    /// </summary>
+    public static string? Gpu2Bridge
+    {
+        get
+        {
+            string? v = Environment.GetEnvironmentVariable("WAR_GPU2_BRIDGE")
+                        ?? Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE");
+            return string.IsNullOrWhiteSpace(v) ? null : v.TrimEnd('/');
+        }
+    }
+
+    /// <summary>Bridge da linha GPU2 ou SKIP explicito (a esteira Q4 nao cruza linha).</summary>
+    /// <param name="phase">Fase que exige a GPU2 (vai na mensagem do SKIP).</param>
+    public static string RequireGpu2(string phase)
+    {
+        string? url = Gpu2Bridge;
+        if (url is null)
+            Skip($"{phase}: linha GPU2 fora desta rodada (defina WAR_GPU2_BRIDGE para a esteira completa)");
+        return url!;
+    }
+
     /// <summary>Coercao de tool call so existe no modo legacy; fora dele e SKIP.</summary>
     public static void RequireCoercion()
     {

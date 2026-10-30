@@ -12,7 +12,9 @@ namespace Rochas.OpenCodeBridge.Test;
 //   3) Exec (role exec) — backlog: le o companion .md e EXECUTA os scripts.
 internal static class E2EScripterTests
 {
-    static string CpuBridge => Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125";
+    // Linha GPU2 (WAR_GPU2_BRIDGE): companion so existe com a GPU2 na rodada;
+    // sem ela o teste e' SKIP explicito, nunca um request para :4125 por default.
+    static string CpuBridge => TestContext.RequireGpu2("companion:gen");
 
     public static async Task ScripterGen()
     {
