@@ -15,14 +15,14 @@
 #
 #  Cada grupo grava seu log e uma linha de resumo; o resumo geral fica em
 #  <out>/SUMMARY.txt. Roda em background:
-#     nohup ./run-battery-dual.sh > /tmp/opencode/battery.out 2>&1 &
+#     nohup ./run-battery-dual.sh > logs/battery.out 2>&1 &
 #
 #  Nada aqui altera as units: a suite fala HTTP com as bridges ja rodando.
 # =============================================================================
 set -uo pipefail
 
 REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-OUT="/tmp/opencode/battery/$(date +%Y%m%d-%H%M%S)"
+OUT="$REPO/logs/battery/$(date +%Y%m%d-%H%M%S)"
 API_KEY="guest@123"
 mkdir -p "$OUT"
 

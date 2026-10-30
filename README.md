@@ -185,6 +185,12 @@ The Core is a plain class library; the snippets below compile against
 
 #### `BridgeProxy` + `BridgeOptions`
 
+`BridgeProxy` is the same HTTP client the bridge uses to talk to llama.cpp: chat
+completions, native Responses passthrough and the health probe. `BridgeOptions`
+is the plain settings record (upstream URL, served model id, api key). Every call
+is async, takes a `CancellationToken` and holds no static state, so a test can
+drive several upstreams in the same process.
+
 ```csharp
 var options = new BridgeOptions
 {
@@ -212,6 +218,13 @@ bool alive = await BridgeProxy.PingAsync(options, default);
 
 #### `MainHarness`
 
+`MainHarness` owns the system prompt of the managed path: it replaces whatever
+system the client sent with the bridge base prompt, keeping the client `<env>`,
+the skills block and the current date. `LooksLikeOpencodeMaster` is the
+discriminator used to decide whether the client already self-manages its prompt;
+when it does, the opencode lane keeps its own harness and the bridge only passes
+the request through.
+
 ```csharp
 // Managed path: replace the client system, keeping <env>, skills and date.
 bool replaced = MainHarness.Apply(messages, enabled: true);
@@ -225,6 +238,12 @@ string system = MainHarness.BuildSystem(clientSystem);
 
 #### `HarnessTails`
 
+`HarnessTails` appends the bridge deltas on top of the harness base: behavior,
+tool mechanics and the F# mini table. `Compose` is pure — it returns a new
+string and never mutates the request — and it swaps the behavior tail for
+`DefaultBehaviorNoTools` when the request carries no `tools` array (otherwise the
+model would answer with tool JSON as text).
+
 ```csharp
 string system = HarnessTails.Compose(
     clientSystem,
@@ -234,6 +253,12 @@ string system = HarnessTails.Compose(
 ```
 
 #### `ContentAntiRepeat` (content loops)
+
+`ContentAntiRepeat` detects verbatim loops in streamed text: the window is how
+many trailing characters are compared. `StreamAntiRepeatReply` is the stateful
+detector for one response; the static helpers are the same math for offline
+checks (normalize, similarity ratio, tail repetition and the index where the
+duplicate starts).
 
 ```csharp
 var detector = new StreamAntiRepeatReply(window: 512);
@@ -247,6 +272,11 @@ int at = ContentAntiRepeat.TailDuplicateAt(text, window: 512);   // -1 when abse
 ```
 
 #### `ToolsAntiRepeat` (tool loops)
+
+`ToolsAntiRepeat` covers tool loops. `ToolsBreaker` counts consecutive failures
+on the same target: soft inserts a nudge into the history and hard ends the
+attempt. `RepeatedCall` finds identical calls. `ToolSig` normalizes the arguments so
+two calls that differ only in digits or separators count as the same target.
 
 ```csharp
 var breaker = new ToolsBreaker(soft: 3, hard: 6);
@@ -265,6 +295,12 @@ bool failed = ToolSig.IsFailure(toolOutput);
 
 #### `RoleProfiles`
 
+`RoleProfiles` maps a model suffix (`-plan`, `-build`, `-orch`, `-moe`, `-scripter`,
+`-exec`) to the sampling settings of that role: temperature and thinking mode.
+The bridge resolves the profile per request, so one process can serve every role;
+`Apply` writes the table into configuration at boot and `RoleOf` tells which role
+a model id belongs to.
+
 ```csharp
 var profiles = RoleProfiles.DefaultCopy();
 if (RoleProfiles.TryResolve("Gemma4-E4B-Q4-build", profiles, out var profile))
@@ -278,6 +314,11 @@ int applied = RoleProfiles.Apply(profiles, configNode, globalTemp: 0.3, globalTh
 
 #### `ToolCoercion` / `ToolCatalog`
 
+`ToolCatalog` is the single source of tool schemas for both chat and Responses
+(consumers never redeclare them). `ToolCoercion` repairs models that emit a tool
+call as text: it extracts the call from the content, coerces it into the request
+and strips control tags from the visible answer.
+
 ```csharp
 var known = ToolCatalog.Chat().Select(t => t?["function"]?["name"]?.GetValue<string>()).ToList();
 var calls = ToolCoercion.ExtractTextToolCalls(content, known);
@@ -286,6 +327,12 @@ string clean = ToolCoercion.StripControlTags(text, removed);
 ```
 
 #### `ContextGuard`, `PermissionPolicy`, `Metrics`
+
+Three small cross-cutting services. `ContextGuard` trips when the prompt
+approaches the context budget (threshold over the model window) and reports the
+measured fraction. `PermissionPolicy` decides `allow` / `ask` / `deny` from the
+role and the tool being called. `Metrics` keeps the counters served by
+`/api/metrics` (requests, tokens, throughput, tools, files).
 
 ```csharp
 bool trips = ContextGuard.Tripped(requestJson,
@@ -475,6 +522,12 @@ Flags booleanas aceitam `true/false` e `1/0`.
 
 #### `BridgeProxy` + `BridgeOptions`
 
+`BridgeProxy` é o mesmo cliente HTTP que a bridge usa para falar com o llama.cpp:
+chat completions, passthrough nativo de Responses e a sonda de saúde.
+`BridgeOptions` é o registro de configuração (URL do upstream, modelo servido,
+api key). Toda chamada é assíncrona, recebe `CancellationToken` e não guarda
+estado estático — um teste pode conduzir vários upstreams no mesmo processo.
+
 ```csharp
 var options = new BridgeOptions
 {
@@ -502,6 +555,12 @@ bool alive = await BridgeProxy.PingAsync(options, default);
 
 #### `MainHarness`
 
+`MainHarness` é dono do system prompt do caminho gerido: troca o system que o
+cliente mandou pelo prompt base da bridge, preservando o `<env>` do cliente, o
+bloco de skills e a data atual. `LooksLikeOpencodeMaster` é o discriminador: se o
+cliente já se auto-gerencia, a raia opencode mantém o harness próprio e a bridge
+só repassa o pedido.
+
 ```csharp
 // Caminho gerido: troca o system do cliente preservando <env>, skills e data.
 bool replaced = MainHarness.Apply(messages, enabled: true);
@@ -515,6 +574,12 @@ string system = MainHarness.BuildSystem(clientSystem);
 
 #### `HarnessTails`
 
+`HarnessTails` acrescenta os deltas da bridge sobre a base do harness:
+comportamento, mecânica de tools e a tabela F# mini. `Compose` é puro — devolve
+uma string nova e nunca muta o request — e troca a cauda de comportamento por
+`DefaultBehaviorNoTools` quando o pedido não traz array `tools` (senão o modelo
+responde com o JSON da tool como texto).
+
 ```csharp
 string system = HarnessTails.Compose(
     clientSystem,
@@ -524,6 +589,12 @@ string system = HarnessTails.Compose(
 ```
 
 #### `ContentAntiRepeat` (loop de conteúdo)
+
+`ContentAntiRepeat` detecta loop verbatim em texto transmitido: a janela é
+quantos caracteres finais são comparados. `StreamAntiRepeatReply` é o detector
+com estado de uma resposta; os helpers estáticos são a mesma matemática para
+conferência offline (normalizar, razão de similaridade, repetição de cauda e o
+índice onde a duplicata começa).
 
 ```csharp
 var detector = new StreamAntiRepeatReply(window: 512);
@@ -536,6 +607,11 @@ int at = ContentAntiRepeat.TailDuplicateAt(texto, window: 512);   // -1 se ausen
 ```
 
 #### `ToolsAntiRepeat` (loop de tools)
+
+`ToolsAntiRepeat` cobre o loop de tools. `ToolsBreaker` conta falhas seguidas no
+mesmo alvo: soft insere um aviso no histórico e hard encerra a tentativa.
+`RepeatedCall` acha chamadas idênticas. `ToolSig` normaliza os argumentos, então
+duas chamadas que diferem só em dígitos/separadores contam como o mesmo alvo.
 
 ```csharp
 var breaker = new ToolsBreaker(soft: 3, hard: 6);
@@ -554,6 +630,12 @@ bool failed = ToolSig.IsFailure(toolOutput);
 
 #### `RoleProfiles`
 
+`RoleProfiles` mapeia o sufixo do modelo (`-plan`, `-build`, `-orch`, `-moe`,
+`-scripter`, `-exec`) para a amostragem daquela role: temperatura e modo de
+thinking. A bridge resolve o perfil por request, então um processo serve todas as
+roles; `Apply` grava a tabela na configuração no boot e `RoleOf` diz a que role
+um id de modelo pertence.
+
 ```csharp
 var profiles = RoleProfiles.DefaultCopy();
 if (RoleProfiles.TryResolve("Gemma4-E4B-Q4-build", profiles, out var profile))
@@ -567,6 +649,11 @@ int applied = RoleProfiles.Apply(profiles, configNode, globalTemp: 0.3, globalTh
 
 #### `ToolCoercion` / `ToolCatalog`
 
+`ToolCatalog` é a fonte única do schema de tools para chat e Responses
+(consumidor não redeclara). `ToolCoercion` conserta o modelo que emite a tool
+call como texto: extrai a chamada do conteúdo, converte para o request e remove
+as tags de controle da resposta visível.
+
 ```csharp
 var known = ToolCatalog.Chat()
     .Select(t => t?["function"]?["name"]?.GetValue<string>()).ToList();
@@ -576,6 +663,12 @@ string clean = ToolCoercion.StripControlTags(text, removed);
 ```
 
 #### `ContextGuard`, `PermissionPolicy`, `Metrics`
+
+Três serviços transversais pequenos. `ContextGuard` dispara quando o prompt se
+aproxima do orçamento de contexto (limiar sobre a janela do modelo) e informa a
+fração medida. `PermissionPolicy` decide `allow` / `ask` / `deny` pela role e
+pela tool chamada. `Metrics` mantém os contadores servidos em `/api/metrics`
+(requests, tokens, throughput, tools, arquivos).
 
 ```csharp
 bool trips = ContextGuard.Tripped(requestJson,

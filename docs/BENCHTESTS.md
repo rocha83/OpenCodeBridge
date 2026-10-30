@@ -113,10 +113,10 @@ foi trazido para o código).
   `U-translate-profile-temp-wins`, `U-translate-breaker-verdicts`.
 
 ### Bateria
-`./scripts/run-battery-dual.sh` (background: `nohup ./scripts/run-battery-dual.sh > /tmp/opencode/battery.out 2>&1 &`)
+`./scripts/run-battery-dual.sh` (background: `nohup ./scripts/run-battery-dual.sh > logs/battery.out 2>&1 &`)
 roda Q4 e Q3 em paralelo; por modelo: unit → tools-dual → tópicos → tools-full/responses/devpipe/
 mitigação → belts → 1 pipe puro → opencode implícito (`--standalone`) → senior/enterprise/front/
-scripter/orch/arquitetura. Logs e `SUMMARY.txt` em `/tmp/opencode/battery/<stamp>/`.
+scripter/orch/arquitetura. Logs e `SUMMARY.txt` em `<repo>/logs/battery/<stamp>/` (nunca `/tmp`).
 
 ## 9. Bateria WAR v2 (3 sessões simultâneas, A/B de flags, retomada)
 

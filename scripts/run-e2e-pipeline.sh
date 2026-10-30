@@ -15,7 +15,7 @@ CFG_USER="${SUDO_USER:-$(id -un)}"
 CFG_HOME="$(getent passwd "$CFG_USER" | cut -d: -f6)"
 [[ -n "$CFG_HOME" ]] && export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$CFG_HOME/.config}"
 LOG="$REPO/logs/pipeline.log"
-mkdir -p "$REPO/logs" /tmp/opencode
+mkdir -p "$REPO/logs"
 exec > >(tee -a "$LOG") 2>&1
 
 echo "=== Pipeline E2E - $(date) - phase=$PHASE ==="
