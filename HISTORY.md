@@ -714,6 +714,47 @@ propósito: binário e flags mudariam em seguida.
 **Bateria nova.** `20261025-195625` (L1+L2) com o binário e as flags finais; units
 locais 97 PASS/0 FAIL e Web.Test 177/177 antes do disparo.
 
+## Release: wrapper root/mint, OpenCode Web direto e kit sincronizado (2026-10-25, sessão 22)
+
+**Wrapper `zenity` root × mint.** O wrapper agora detecta a sessão por `SUDO_USER`,
+`logname`, `loginctl` ou `who` e, quando root, reexecuta como o dono da sessão passando
+`HOME`, `DISPLAY`, `XAUTHORITY`, `DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`,
+`GTK_THEME`, `WAYLAND_DISPLAY`, `XDG_CURRENT_DESKTOP`, `NO_AT_BRIDGE=1` e
+`ZENITY_REAL`; sem sessão, usa root com `Mint-Y-Dark-Aqua`. Os blocos root de
+`start-llama-cpu-forced.sh`, `start-llama-gpu.sh` e `start-llama-gpu2.sh` passaram a
+chamar `/usr/local/bin/zenity` absoluto, porque o `secure_path` do sudo pode não incluir
+`/usr/local/bin`. Teste por stub: `SUDO_USER=mint` → `user=mint`, `HOME=/home/mint`,
+`DISPLAY=:0`, DBUS/XDG e tema escuro; root sem sessão → `user=root`, tema escuro.
+
+**OpenCode Web sem diálogo.** `start-opencodeweb.sh` foi reescrito: não chama zenity,
+sobe 4200 em `0.0.0.0`, usa `sudo -n -H -u mint /usr/local/bin/opencode` e
+`sudo -n /usr/bin/tee /run/opencodeweb.pid` (NOPASSWD de `/etc/sudoers.d/opencode`).
+Se `:4200` já responde HTTP, só abre o navegador; não reinicia o servidor. As instâncias
+dev/moe usam `sudo -n systemctl start` com o novo `/etc/sudoers.d/opencode-web`
+(NOPASSWD para `opencode-web`, `opencode-web-dev` e `opencode-web-moe`). Teste direto em
+`:4299` como `dev-agent`: `rc=0`, log `server listening`, sem zenity; `:4200` existente
+respondeu HTTP 200 e o script fechou `rc=0`.
+
+**Kit estava defasado.** O kit do Desktop foi sincronizado do live (bin, units, SSH,
+LightDM, Caddy, configs OpenCode, agentes, `service.json`, `AgentSeeder.cs`, `AGENTS.md`,
+desktops e sudoers); `cmp` final: **ALL ARTIFACTS MATCH LIVE**. Backup do kit antigo em
+`/root/remaster-kit-backup-20261025-193350.tgz`. O 4200 ficou `0.0.0.0` nos dois lugares
+(unit e script); o processo live existente ainda estava em `127.0.0.1`, mas o remaster
+sobe `0.0.0.0`.
+
+**Contexto Q3 e delegação.** A GPU2 roda `-c 114688 -np 2` (2×56k; 57344/slot) e a bridge
+`--context-tokens 57344`. As cláusulas dos agentes Q3 foram alinhadas para
+`>=51k de 57344` (90% do slot): dev-agent (6 papéis, todos Q3; inclusive os que ainda
+herdavam `>=118k de 131072` do template Q4), `mint/exec` e `moe/moe`; os Q4 seguem
+`>=118k de 131072`. O `AGENTS.md` foi corrigido de “128k” para
+“2×56k (114688; 57344/slot)” e os docs `04`, `09`, `LAB-SETUP` e `PENDENCIAS` foram
+alinhados. O `AgentSeeder.PromoteRoleTemperatures` (plan/orch 0.5, moe 0.8,
+build/scripter/exec 0.2) está no kit; o DB live só será promovido no próximo boot do Web.
+
+**Validação.** `bash -n` em todos os bin; `visudo -cf` do sudoers novo; `jq` dos JSONs;
+`sshd -t`; `caddy validate`; `opencode --version` = `v2.0.21`; `sudo -n /usr/bin/tee` OK.
+Pendente: teste visual do zenity (sem `DISPLAY` no chroot) e start real das units
+(sem systemd PID 1); o restante está pronto para o staging/zip do remaster.
 
 ## Acesso local e SSH: só `mint` no LightDM; `dev-agent` cai no TUI (2026-10-25, sessão 21)
 

@@ -82,9 +82,15 @@ dobro do centro lógico. A conferência é **visual**, por screenshot, não pelo
 
 Scripts que se reexecutam com `sudo` (ex.: `share-samba.sh`) desenhavam a janela
 **branca**: o GTK do root não herda o tema escuro da sessão (`Mint-Y-Dark-Aqua`) e cai
-no Adwaita claro. O wrapper resolve na origem: se `id -u` = 0, ele se reexecuta como o
-dono da sessão (`SUDO_USER` / `logname`), passando `DISPLAY` e `XAUTHORITY`. O zenity só
-desenha — não precisa de root — e o valor volta normalmente para o script root.
+no Adwaita claro. O wrapper resolve na origem: se `id -u` = 0, ele detecta o dono da
+sessão (`SUDO_USER`, `logname`, `loginctl` ou `who`) e se reexecuta como esse usuário,
+passando `HOME`, `DISPLAY`, `XAUTHORITY`, `DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`,
+`GTK_THEME`, `WAYLAND_DISPLAY` e `XDG_CURRENT_DESKTOP`; fixa `NO_AT_BRIDGE=1` e
+`ZENITY_REAL` para o binário real. Sem sessão detectável, usa `root` com
+`GTK_THEME=Mint-Y-Dark-Aqua`. O zenity só desenha — não precisa de root — e o valor
+volta normalmente para o script root. Nos blocos `sudo` dos launchers, chamar
+`/usr/local/bin/zenity` por caminho absoluto: o `secure_path` do sudo pode não incluir
+`/usr/local/bin`.
 
 ## Como testar sem clicar
 
@@ -107,6 +113,10 @@ PATH=/tmp/zstub:$PATH ZSTUB_OUT='4125|http://127.0.0.1:4110|k|M|65536|mint|s|lig
 
 Validado nesta sessão: `--question`, `--forms` (Caddy) e form de 8 campos (bridge)
 apareceram **centralizados e escuros**; `sudo zenity` saiu escuro (antes: branco).
+Nesta rodada, sem `DISPLAY`, a reexecução root foi validada por stub: `SUDO_USER=mint`
+resultou em `user=mint`, `HOME=/home/mint`, `DISPLAY=:0`, DBUS/XDG e
+`GTK_THEME=Mint-Y-Dark-Aqua`; root sem sessão caiu em `user=root` com tema escuro. O
+teste visual continua pendente de sessão gráfica.
 
 ## Limites
 

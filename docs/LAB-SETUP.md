@@ -1099,7 +1099,7 @@ antes do build** (lock de PDB) e rode com `--no-build`.
 ### 8.3 OpenCode
 
 - `~/.config/opencode/opencode.json` (root e mint): `limit.output = 16384`;
-  ctx `131072` (provider `openai`/`:4124`) e `131072` (provider `llama`/`:4125`).
+  ctx `131072` (provider `openai`/`:4124`) e `57344` (provider `llama`/`:4125`, Q3).
 
 ### 8.4 Ícones de desktop
 
@@ -1173,7 +1173,7 @@ sem estar na imagem.
 | **GPU2** (segunda instância, **GPU**) | `llama-gpu2.service` | 4110 | `/usr/local/bin/start-llama-gpu2.sh` | E4B UD-Q3, sem mmproj, `-ot` com embd/per-layer no host |
 | CPU puro (bancada) | `llama-cpu-forced.service` | 4120 | `/usr/local/bin/start-llama-cpu-forced.sh` | E4B Q4 base, `-ngl 0` |
 | bridge GPU1 | `bridge-gpu.service` | 4124 | `/usr/local/bin/start-bridge-gpu.sh` | Q4, guard 131072 |
-| **bridge GPU2** | `bridge-gpu2.service` | 4125 | `/usr/local/bin/start-bridge-gpu2.sh` | Q3, guard 131072 |
+| **bridge GPU2** | `bridge-gpu2.service` | 4125 | `/usr/local/bin/start-bridge-gpu2.sh` | Q3, guard 57344 |
 | bridge CPU puro | `bridge-cpu-forced.service` | 4126 | `/usr/local/bin/start-bridge-cpu-forced.sh` | Q4 CPU, guard 131072 |
 
 - **Removidos** em 2026-10-23: `llama-cpu.service` e `bridge-cpu.service`
@@ -1192,6 +1192,11 @@ sem estar na imagem.
   (como `start-nginx.sh`, `start-garnet.sh`, `start-mariadb.sh`).
   Não usar `SUDO_ASKPASS`/`pkexec` nos novos launchers (o `pkexec` existe só em
   `start-docker*.sh`/`start-portainer.sh`, por legado).
+- **Exceção — OpenCode Web:** `start-opencodeweb.sh` e `start-ocagent-web.sh` abrem
+  direto, **sem zenity**. O principal usa `sudo -n -H -u mint` com NOPASSWD de
+  `/etc/sudoers.d/opencode`; dev/moe usam `sudo -n systemctl start` com NOPASSWD de
+  `/etc/sudoers.d/opencode-web`. O formulário/`sudo -S` continua nos launchers de
+  llama, bridge, Caddy, Samba etc.
 - `start-models-default.sh` — sobe/valida o **par principal sem diálogo**
   (`--restart` regenera as 4 units; sem flag só sobe o que estiver fora do ar).
   Pede a senha do sudo no zenity e reexecuta com `sudo -n`.
@@ -1308,7 +1313,7 @@ Args gravados nas units (as três, `bridge-gpu`, `bridge-gpu2` e `bridge-cpu-for
 
 ### 9.7 Medições desta rodada (live, RTX 3060 12 GB)
 
-- `n_ctx` real conferido nas duas portas: **131072** (`/v1/models` → `meta.n_ctx`).
+- `n_ctx` real conferido nas duas portas: **131072** (`:4100`, Q4) e **57344** (`:4110`, Q3) (`/v1/models` → `meta.n_ctx`).
 - VRAM com os dois residentes: **10759 MiB usados / 1277 livres**
   (GPU1 `:4100` 7643 MiB, GPU2 `:4110` 2755 MiB) — `-ot` do GPU2 devolve ~400 MiB
   ao host sem offload de CPU.
@@ -1324,7 +1329,7 @@ Args gravados nas units (as três, `bridge-gpu`, `bridge-gpu2` e `bridge-cpu-for
    automático; hoje estão `disabled` e sobem pelos ícones/launcher).
 3. Ícones `.desktop` em `/home/mint/Desktop` com `chmod +x` e dono `mint`,
    incluindo `draw.io.desktop` → `/opt/drawio/drawio`.
-4. `~/.config/opencode/opencode.json` com `131072/16384` nos dois providers.
+4. `~/.config/opencode/opencode.json` com `131072/16384` (Q4) e `57344/16384` (Q3) nos providers.
    draw.io desktop 32.6.1 instalado (`.deb` oficial) e ícone
    `com.jgraph.drawio.desktop` disponível.
 5. `/etc/samba/share-zenity.conf` + a linha `include` no `smb.conf` (se já

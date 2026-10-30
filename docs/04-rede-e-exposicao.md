@@ -1,4 +1,4 @@
-# 04 — Rede, exposição e o 2×64k da GPU2
+# 04 — Rede, exposição e o 2×56k da GPU2
 
 ## 4.1 Mapa de portas
 
@@ -114,37 +114,38 @@ curl -sk --resolve rocha26.ddns.net:4240:127.0.0.1 \
 
 Firewall: `ufw allow 4230/tcp`, `4240/tcp` e `4250/tcp` (aplicado na live; 4147/4152/4153 fechadas).
 
-## 4.3 GPU2 em 2×64k
+## 4.3 GPU2 em 2×56k
 
 Antes: `-c 131072 -np 1` (1 sessão de 128k). Agora:
 
 ```bash
 # /usr/local/bin/start-llama-gpu2.sh  (linha do ExecStart gerado)
-... -c 131072 -np 2 ...
+... -c 114688 -np 2 ...
 ```
 
 ```bash
 # /usr/local/bin/start-bridge-gpu2.sh
-SVC_CTX=65536
+SVC_CTX=57344
 ```
 
-E no `opencode.json` (provedor `llama`), **todos** os modelos com:
+E no `opencode.json` (provedor `llama`), os modelos Q3 com:
 
 ```json
-"limit": { "context": 65536, "output": 16384 }
+"limit": { "context": 57344, "output": 16384 }
 ```
 
-Consequência prática: duas sessões simultâneas de 64k na GPU2 (antes uma de 128k). A
-cláusula de delegação dos agentes Q3 fala em `>=58k de 65536 tokens` (90%).
+Consequência prática: duas sessões simultâneas de 56k na GPU2 (antes uma de 128k). A
+cláusula de delegação dos agentes Q3 fala em `>=51k de 57344 tokens` (90%). Os modelos
+Q4 (`openai`/`:4124`) continuam com `131072`.
 
 **ACEITE**
 
 ```bash
-grep -o '\-c 131072 -np 2' /etc/systemd/system/llama-gpu2.service
-grep -o 'SVC_CTX=65536' /usr/local/bin/start-bridge-gpu2.sh
+grep -o '\-c 114688 -np 2' /etc/systemd/system/llama-gpu2.service
+grep -o 'SVC_CTX=57344' /usr/local/bin/start-bridge-gpu2.sh
 curl -s -H 'Authorization: Bearer guest@123' http://127.0.0.1:4125/api/status \
   | python3 -c 'import json,sys;print(json.load(sys.stdin).get("context_tokens"))'
-# esperado: 65536
+# esperado: 57344
 ```
 
 ## 4.4 `opencode serve` — Basic auth nativo

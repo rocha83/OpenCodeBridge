@@ -13,7 +13,6 @@ aqui ou automação em `../scripts/`.
 | `09-dialogos-zenity.md` | diálogos dos ícones (zenity house style) |
 | `10-icones-scripts-units.md` | inventário operacional: ícone → script → unit, binds, harness por lane e armadilhas |
 | `11-FIX-ICONES-UNITS.md` | **runbook de aplicação no chroot/live**: instalador único com scripts, units, env files e ícones exatos |
-| `PENDENCIAS-CHROOT-CUBIC.md` | checklist do remaster Cubic (chroot) |
 
 ## Testes e baterias
 
