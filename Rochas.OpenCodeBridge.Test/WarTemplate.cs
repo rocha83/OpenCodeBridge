@@ -639,8 +639,14 @@ internal sealed class WarTemplate : CircuitTemplate
                     // do --war-webdriver e' SO' do ultimo step (webui-integracao-topicos).
                     // Medido 2026-10-30: com --webdriver aqui a sonda abria janela headed,
                     // nao demonstrava nada e o baseline estourava Timeout 30000ms.
-                    yield return StepBridge(driver, $"front-{mode}", mode,
-                        new[] { "--only", "E-front" });
+                    // Front: a fase de EDICAO (E-front-edit) exige a GPU2 (role exec).
+                    // Na trilha Q4-only (sem GPU2) ela viraria FAIL apos o STOP do front-gen.
+                    // Igual a E-front-edit: so' entra quando ha linha na rodada.
+                    if (TestContext.Gpu2Bridge is not null)
+                    {
+                        yield return StepBridge(driver, $"front-{mode}", mode,
+                            new[] { "--only", "E-front" });
+                    }
                 }
                 yield return StepWeb(driver);
                 break;
@@ -959,17 +965,23 @@ internal sealed class WarTemplate : CircuitTemplate
             string.IsNullOrEmpty(nctx) || string.IsNullOrEmpty(bctx) || nctx == bctx,
             new JsonObject { ["context_tokens"] = bctx, ["n_ctx_slot"] = nctx });
 
-        // Q3 nao faz parte do gate do Q4: checagem apenas informativa. A belt
-        // belts-orch chama :4125 por design, mas Q3 fora nao bloqueia o run.
-        string q3Bridge = (_p.BridgeQ3 ?? "http://127.0.0.1:4125").TrimEnd('/');
-        if (!string.Equals(q3Bridge, _p.Bridge.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+        // Linha GPU2 (Q3) NAO faz parte do gate do Q4: quando configurada
+        // (`--war-bridge-q3` / WAR_GPU2_BRIDGE) a checagem e' informativa; quando
+        // nao esta, a rodada e' Q4-only e as fases que dependem dela saem SKIP.
+        string? q3Bridge = _p.Cpu && !string.IsNullOrWhiteSpace(_p.BridgeQ3)
+            ? _p.BridgeQ3!.TrimEnd('/')
+            : null;
+        if (q3Bridge is not null && !string.Equals(q3Bridge, _p.Bridge.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
         {
             var q3status = HttpGet($"{q3Bridge}/api/status", _p.Api);
             var q3j = q3status.Code == 200 ? TryJson(q3status.Body) : null;
             string q3model = Str(q3j, "model");
             string q3up = Str(q3j, "upstream");
-            driver.Log($"AVISO: Q3 {q3Bridge} http={q3status.Code} model={q3model} upstream={q3up}"
-                + (string.IsNullOrEmpty(q3model) ? " (fora: belts-orch pode falhar)" : ""));
+            driver.Log($"GPU2 {q3Bridge} (diagnostico, fora do gate) http={q3status.Code} model={q3model} upstream={q3up}");
+        }
+        else if (q3Bridge is null)
+        {
+            driver.Log("GPU2 nao configurada nesta rodada (Q4-only): fases de edicao/companion saem SKIP");
         }
 
         Pf(driver, "test_binario", File.Exists(_p.TestDll),
@@ -1113,7 +1125,10 @@ internal sealed class WarTemplate : CircuitTemplate
             // deve tratar o lock do proprio driver como runner concorrente.
             ["BRIDGE_UNDER_DRIVER"] = "1"
         };
-        if (!string.IsNullOrWhiteSpace(_p.BridgeQ3)) env["WAR_CPU_BRIDGE"] = _p.BridgeQ3!;
+        // Linha GPU2 (diagnostico/bancada). Nome semantico: WAR_GPU2_BRIDGE; o
+        // legado WAR_CPU_BRIDGE continua aceito pelos consumidores. `--war-no-cpu`
+        // mantem a rodada Q4-only e nao publica a linha para os filhos.
+        if (_p.Cpu && !string.IsNullOrWhiteSpace(_p.BridgeQ3)) env["WAR_GPU2_BRIDGE"] = _p.BridgeQ3!;
         // Playwright: HEADED=1 e' lido por PlaywrightSetup.Headless() no Web.Test.
         if (_o.WebHeaded) env["HEADED"] = "1";
         return env;

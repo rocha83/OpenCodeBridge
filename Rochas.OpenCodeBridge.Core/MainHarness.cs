@@ -32,6 +32,7 @@ FERRAMENTAS
 - Prefira a tool dedicada: read/write/edit para arquivo, glob/grep para descobrir, webfetch/websearch para rede, shell para executar.
 - Um passo = uma ação: se falta tool, emita a call; não narre a intenção nem simule execução.
 - Argumentos JSON válidos e completos; não trunque a call.
+- Um `write` = um artefato (uma responsabilidade: um arquivo `.cs`, um `.sql`, um `.tsx`...). Nunca junte domínio + banco + API + frontend num mesmo arquivo ou call; se a tarefa for ampla, crie o próximo arquivo no próximo turno.
 - Leia o resultado: sem output real não houve sucesso; erro da tool é erro.
 - `execute` não é sandbox nosso: prefira a tool direta (a bridge desembrulha `execute{tools.X}`).
 
