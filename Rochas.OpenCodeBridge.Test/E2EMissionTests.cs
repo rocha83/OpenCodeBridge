@@ -469,10 +469,10 @@ internal static class E2EMissionTests
         string proj = dir + (cs ? ".csproj" : ".fsproj");
         return "Preciso de um programa em " + ws + "/" + dir + "/Program." + ext + ", no projeto " + proj
             + " que ja existe (nao crie outro projeto), resolvendo duas coisas e imprimindo o resultado de um jeito simples para eu conferir, so com numeros inteiros.\n"
-            + "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Me diga quantos movimentos foram necessarios e a sequencia completa no formato 1->2, 1->3, ...\n"
+            + "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Em `hanoi=` quero o NUMERO DE MOVIMENTOS que a solucao executou (quantos movimentos — nao o numero de discos) e em `hanoi_seq=` a sequencia completa numa UNICA linha, com os movimentos separados por virgula, no formato 1->2,1->3,...\n"
             + "2) Uma analise dos primos: quantos ha abaixo de 100 e abaixo de 1000, e quantos pares gemeos abaixo de 100. O crivo de Eratostenes e uma boa pedida.\n"
             + "Imprima os valores que o programa calculou; nao copie os numeros do enunciado.\n"
-            + "Para eu comparar sem ambiguidade, termine com estas linhas, uma por linha e nessa ordem:\n"
+            + "Para eu comparar sem ambiguidade, termine com estas cinco linhas, uma por linha, nessa ordem e com cada chave UMA vez:\n"
             + "hanoi=15\nhanoi_seq=1->2,1->3,...\nprimes100=25\nprimes1000=168\ntwin100=8\n"
             + "Pode rodar `dotnet run --project " + ws + "/" + dir + "/" + proj + "` e ajustar ate bater.";
     }
@@ -490,10 +490,10 @@ internal static class E2EMissionTests
         string run = "`dotnet run --project " + ws + "/" + dir + "/" + proj + "`";
         string head = "Preciso de um programa em " + ws + "/" + dir + "/Program." + ext + ", no projeto " + proj
             + " que ja existe (nao crie outro projeto), imprimindo o resultado de um jeito simples para eu conferir, so com numeros inteiros.\n";
-        string hanoi = "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Imprima quantos movimentos foram necessarios em `hanoi=<n>` e a sequencia completa em `hanoi_seq=`, no formato 1->2,1->3,...\n"
+        string hanoi = "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Em `hanoi=` imprima o NUMERO DE MOVIMENTOS que a solucao executou (quantos movimentos — nao o numero de discos) e em `hanoi_seq=` a sequencia completa numa UNICA linha, com os movimentos separados por virgula, no formato 1->2,1->3,...\n"
             + "Rode " + run + " e ajuste ate imprimir as duas linhas com os valores que o programa calculou (nao copie numeros do enunciado).";
         string primes = "2) No MESMO programa, acrescente a analise dos primos: quantos ha abaixo de 100 (`primes100=`), abaixo de 1000 (`primes1000=`) e quantos pares gemeos abaixo de 100 (`twin100=`). O crivo de Eratostenes e uma boa pedida.\n"
-            + "Mantenha as duas linhas de Hanoi ja' corretas e termine com estas cinco linhas, uma por linha e nessa ordem:\n"
+            + "Mantenha as duas linhas de Hanoi ja' corretas (`hanoi=` continua sendo o numero de movimentos e `hanoi_seq=` continua numa unica linha) e termine com estas cinco linhas, uma por linha, nessa ordem e com cada chave UMA vez:\n"
             + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\nprimes100=<n>\nprimes1000=<n>\ntwin100=<n>\n"
             + "Rode " + run + " e ajuste ate bater; nao copie os numeros do enunciado.";
         return new[] { head + hanoi, head + primes };
