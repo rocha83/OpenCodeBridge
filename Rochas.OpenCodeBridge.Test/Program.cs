@@ -140,6 +140,8 @@ internal static class Program
         TestContext.Run("U-convert-coerced-narrated-loose", UnitConvertTests.ConvertCoercedNarratedLooseQuotes);
         TestContext.Run("U-tools-execute", UnitToolsExecuteTests.ToolsExecute);
         TestContext.Run("U-tools-path-hint", UnitToolsExecuteTests.PathHintApontaCaminhoReal);
+        TestContext.Run("U-tools-project-path-hint", UnitToolGuardTests.ProjectPathHint);
+        TestContext.Run("U-tools-elision-refused", UnitToolGuardTests.ElisionRefused);
         TestContext.Run("U-tool-help", UnitToolHelpTests.Run);
         TestContext.Run("U-tool-feedback-shell-cwd", UnitToolFeedbackTests.ShellReportsCwd);
         TestContext.Run("U-tool-feedback-git-chain", UnitToolFeedbackTests.GitChainTeaching);
@@ -191,6 +193,7 @@ internal static class Program
         TestContext.Run("U-breaker-normalize-collapses", UnitToolBreakerTests.NormalizeCollapsesMutations);
         TestContext.Run("U-breaker-failure-markers", UnitToolBreakerTests.DetectsFailureMarkers);
         TestContext.Run("U-breaker-compiler-loop", UnitToolBreakerTests.BreaksCompilerEditLoop);
+        TestContext.Run("U-breaker-same-error", UnitToolBreakerTests.TripsRepeatedSameError);
         TestContext.Run("U-breaker-interleaved-loop", UnitToolBreakerTests.CountsInterleavedLoop);
         TestContext.Run("U-content-antireply-scopes", UnitToolBreakerTests.ContentScopeUsesHelperSubclasses);
         TestContext.Run("U-tools-antireply-helpers", UnitToolBreakerTests.ToolScopeUsesHelperSubclasses);
@@ -213,9 +216,12 @@ internal static class Program
         TestContext.Run("U-fs-repair-arity", UnitToolBreakerTests.FsRepairArityMismatch);
         TestContext.Run("U-fs-repair-use-before-def", UnitToolBreakerTests.FsRepairUseBeforeDef);
         TestContext.Run("U-fs-repair-if-branches-string", UnitToolBreakerTests.FsRepairIfBranchesString);
+        TestContext.Run("U-fs-repair-list-contains-order", UnitToolBreakerTests.FsRepairListContainsOrder);
+        TestContext.Run("U-fs-repair-power-operator", UnitToolBreakerTests.FsRepairPowerOperator);
         TestContext.Run("U-fs-repair-indexer", UnitToolBreakerTests.FsRepairIndexerAnnotation);
         TestContext.Run("U-fs-repair-param-semicolon", UnitToolBreakerTests.FsRepairParamSemicolon);
         TestContext.Run("U-fs-repair-generic-syntax", UnitToolBreakerTests.FsRepairGenericSyntax);
+        TestContext.Run("U-fs-repair-record-array-close", UnitToolBreakerTests.FsRepairRecordArrayClose);
         TestContext.Run("U-fs-repair-error-line", UnitToolBreakerTests.FsRepairErrorLinePointer);
         TestContext.Run("U-fs-repair-interpolated", UnitToolBreakerTests.FsRepairInterpolatedString);
         TestContext.Run("U-flow-gate", UnitToolBreakerTests.BridgeFlowGateCases);
@@ -310,9 +316,12 @@ internal static class Program
         else Console.WriteLine("[test] skip E-science-cpu (--skip-cpu)");
         TestContext.Run("E-mission-tools", E2EMissionTests.MissionTools);
         TestContext.Run("E-mission-algo-cs", E2EMissionTests.MissionAlgoCs);
+        TestContext.Run("E-mission-algo-cs-bin", E2EMissionTests.MissionAlgoCsBin);
+        TestContext.Run("E-mission-algo-cs-btree", E2EMissionTests.MissionAlgoCsBTree);
+        TestContext.Run("E-mission-algo-cs-kmeans", E2EMissionTests.MissionAlgoCsKMeans);
+        TestContext.Run("E-mission-algo-cs-sort", E2EMissionTests.MissionAlgoCsSort);
         TestContext.Run("E-mission-algo-fs-bin", E2EMissionTests.MissionAlgoFsBin);
         TestContext.Run("E-mission-algo-fs-btree", E2EMissionTests.MissionAlgoFsBTree);
-        TestContext.Run("E-mission-algo-fs-kmeans", E2EMissionTests.MissionAlgoFsKMeans);
         TestContext.Run("E-mission-algo-fs-sort", E2EMissionTests.MissionAlgoFsSort);
             // Sonda direta do parser hermes no vLLM: so faz sentido no parser nativo.
             if (!TestContext.ServedIsCoder) TestContext.Run("E-vllm-tool-hermes", E2EToolTests.VllmToolHermes);

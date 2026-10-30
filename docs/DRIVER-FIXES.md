@@ -965,3 +965,94 @@ continua com `@`), probe com `texto junta com + e lista com @ (FS0001 ramo strin
 
 
 
+
+## 37. K-Means F#: `|]` sem `}`, dica de `<...>` fora de contexto e o breaker que nunca fechava (2026-10-30)
+
+**Sintoma.** `logs/isolated/E-mission-algo-fs-kmeans_20261030-001948.log`: 26
+turnos, `FS0010 Unexpected symbol '|]' … Expected '}'` em **todas** as reescritas
+e o log mostrando `breaker: nudge (4 falhas)` / `nudge (5 falhas)` dezenas de
+vezes — **ZERO trip**. O mesmo aconteceu no btree (`FS0001` pedindo
+`'int list list'`, 8 turnos, fonte nunca corrigido).
+
+**Causas (três, medidas).**
+1. **Furo do gate**: `EvaluateFailureLoop` contava falhas na janela de `2*hard`
+   resultados. No loop real cada falha vem cercada de sucessos cosméticos
+   (`write ok`, `read ok`, `ls ok`), então a janela de 12 nunca guardava 6 falhas:
+   o contador parava em 4-5 e o `hard` nunca era atingido.
+2. **Dica errada fora de contexto**: o ramo `FS3156/FS0010 <...>` disparava com
+   qualquer `<` no fonte (`list<Point>` é legítimo) e respondia a um erro de
+   **outra** linha — e a escalada da dica repetida mandava reescrever o arquivo
+   com a mesma falha.
+3. **Sem mapa** para os dois erros reais: `List.contains lista valor`
+   (argumento invertido) e `^` como potência (FS0101).
+
+**Correção.**
+- `ToolsAntiRepeat.FailureKey`: assinatura da falha sem posição (`(linha,col)`) e
+  com espaço colapsado; o código `FS####` **fica** (erro diferente = progresso).
+  `EvaluateFailureLoop` conta a assinatura no **histórico inteiro** e usa
+  `max(streak, doAlvo, mesmaFalha)` — 6 builds com o mesmo diagnóstico cortam o
+  turno mesmo com `write` ok intercalado.
+- `FsSyntaxRepair.SourceLineAt/SourceLineNumber`: leitura única da linha do erro
+  (usada também pelo `FindArityMismatch`, sem duplicar o parse).
+  O ramo `<...>` só responde quando a **linha do erro** tem `<` (ou quando o erro
+  não traz posição, como nos pins antigos).
+- Regras novas, gateadas pela linha do erro: `FS0010 '|]' + '}'` →
+  cada registro fecha com `}` antes do `|]`; `FS0001 '... list list'` +
+  `List.contains` na linha → valor antes, lista depois; `FS0101` + `^ <n>` →
+  `**` float / `pown`.
+
+**Prova.** `U-breaker-same-error` (3 falhas iguais avisam, 6 cortam, erros
+distintos não cortam), `U-fs-repair-record-array-close`,
+`U-fs-repair-list-contains-order`, `U-fs-repair-power-operator` e
+`U-fs-repair-generic-syntax` (negativo: `<` legitimo fora da linha não puxa a
+dica) — todos PASS; build `0 Erro(s)`.
+
+## 38. Missões de algoritmo: quatro em C#, três em F# (2026-10-30)
+
+**Decisão.** As quatro missões (busca binária, árvore de busca, K-Means, quick +
+bubble sort) passam a existir **em C#** (`E-mission-algo-cs-bin`,
+`-cs-btree`, `-cs-kmeans`, `-cs-sort`) e o **K-Means F# foi removido**
+(`E-mission-algo-fs-kmeans`): o algoritmo segue coberto em C#, e o F# fica com
+as três missões em que o modelo converge (`-fs-bin`, `-fs-btree`, `-fs-sort`).
+
+**Mecânica.** Um único `RunAlgoMission(name, lang, alg, accept, hardcoded)` e um
+único `AlgoTaskPrompt(alg, ws, lang)` — o enunciado é o mesmo para as duas
+linguagens; só caminho de arquivo/projeto muda. Aceite e recusa de hardcode são
+os mesmos helpers (`AlgoOkBin/BTree/KMeans/Sort`, `HasHardcoded*`), sem cópia por
+linguagem. O `done` do laço e o corte entre etapas usam o aceite da missão
+(`accept ?? AlgoOk`), com o aceite do Hanoi só como default do `E-mission-algo-cs`.
+
+**Prova.** `E-mission-algo-fs-btree` **PASS 27,9 s** (3 turnos: read, edit, shell)
+e a bateria isolada das oito missões em `logs/isolated/algo-batch-*.summary`.
+
+## 39. `--only` por prefixo rodava as cinco missões; semente C# colidia com `public class` (2026-10-30)
+
+**Sintoma.** O step `algo-cs-bridge` do WAR (que pedia só `E-mission-algo-cs`)
+rodou **cinco** testes: `PASS=4 FAIL=1` dentro do step errado
+(`logs/isolated/algo-batch-20261030-004221.summary`), e o FAIL do
+`E-mission-algo-cs-sort` bloqueou os steps seguintes pelo rerun-guard.
+
+**Causas (duas, medidas).**
+1. `TestContext.MatchesOnly` casa por **substring**: `E-mission-algo-cs` é
+   prefixo de `-cs-bin`, `-cs-btree`, `-cs-kmeans` e `-cs-sort`. Com as quatro
+   missões novas em C#, o step da missão base passou a ser a bateria inteira.
+2. A semente do fonte C# era `Console.WriteLine("ok");` (top-level statement).
+   No `E-mission-algo-cs-sort` o modelo escreveu `public class Program` no mesmo
+   arquivo → `CS0106: The modifier 'public' is not valid for this item`, e ainda
+   rodou `--project <ws>/mcs.csproj` (sem o diretório `mcs/`). O enunciado citava
+   o projeto como `mcs.csproj` no cabeçalho e com caminho completo só no comando:
+   o modelo copiou a forma curta.
+
+**Correção.**
+- Token com `=` na frente em `--only` exige o nome **exato**
+  (`--only =E-mission-algo-cs`); substring continua valendo para o resto.
+  `WarTemplate` passa a usar `=E-mission-algo-cs` no step da missão base.
+- Semente C# da missão passa a ser só o comentário `// resolva o pedido aqui`
+  (sem top-level statement para colidir com `public class Program`); o F# segue
+  com `module Program` + `printfn "ok"`.
+- `AlgoTaskPrompt` cita o projeto **sempre** com caminho completo
+  (`<ws>/mcs/mcs.csproj`, `<ws>/mfs/mfs.fsproj`), no cabeçalho e no comando.
+
+**Prova.** `--only =E-mission-algo-cs-sort` roda um teste só; bateria isolada
+nova em `logs/isolated/algo-batch2-*.summary` (o breaker cortou o laço em
+`trip (6 falhas)` em vez dos 26 turnos da rodada anterior).

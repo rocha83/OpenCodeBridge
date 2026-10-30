@@ -196,11 +196,24 @@ internal static class TestContext
     }
 
     /// <summary>--only aceita nome unico ou lista separada por virgula (substring).</summary>
+    /// <remarks>
+    /// Token com `=` na frente exige o nome EXATO. Necessario desde 2026-10-30:
+    /// `E-mission-algo-cs` e' prefixo de `-cs-bin/-cs-btree/-cs-kmeans/-cs-sort`, e o
+    /// step do WAR que queria SO' a missao base rodava as cinco (4 PASS + 1 FAIL
+    /// dentro do step errado).
+    /// </remarks>
     private static bool MatchesOnly(string name)
     {
         foreach (string token in Only.Split(',',
                      StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (token.StartsWith('='))
+            {
+                if (name.Equals(token[1..], StringComparison.OrdinalIgnoreCase)) return true;
+                continue;
+            }
             if (name.Contains(token, StringComparison.OrdinalIgnoreCase)) return true;
+        }
         return false;
     }
 

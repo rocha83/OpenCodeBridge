@@ -435,60 +435,90 @@ internal static class E2EMissionTests
         Console.WriteLine($"  [algo] C# ok:\n{output.Trim()}");
     }
 
-    /// <summary>Missao algoritmica em F# (1/4): busca binaria.</summary>
-    public static Task MissionAlgoFsBin() => RunFsMission("e2e-mission-algo-fs-bin",
-        "Programa F# em {ws}/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). "
-        + "Dado o array ordenado [1;3;5;7;9;11;13;15;17;19] e alvo 13, implemente busca binaria e imprima "
-        + "`binsearch_idx=<indice 0-based>` (ou -1 se nao achar). Imprima o valor calculado pelo programa, "
-        + "nao copie do enunciado. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` e ajuste ate imprimir.",
-        AlgoOkBin, HasHardcodedBin);
+    /// <summary>Missao algoritmica em F# (1/3): busca binaria.</summary>
+    public static Task MissionAlgoFsBin() => RunAlgoMission("e2e-mission-algo-fs-bin", "F#", "bin", AlgoOkBin, HasHardcodedBin);
 
-    /// <summary>Missao algoritmica em F# (2/4): B-tree (insercao + busca).</summary>
-    public static Task MissionAlgoFsBTree() => RunFsMission("e2e-mission-algo-fs-btree",
-        "Programa F# em {ws}/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). "
-        + "Implemente uma B-tree (ou arvore de busca) com insercao de [10;20;5;6;12;30;7;17] e busca do valor 6. "
-        + "Imprima `btree_found=<true|false>` e `btree_count=<total de chaves>`. Imprima valores calculados pelo "
-        + "programa, nao copie do enunciado. Rode `dotnet run --project {ws}/mfs/mfs.fsproj` e ajuste ate imprimir.",
-        AlgoOkBTree, HasHardcodedBTree);
+    /// <summary>Missao algoritmica em F# (2/3): arvore de busca (insercao + busca).</summary>
+    public static Task MissionAlgoFsBTree() => RunAlgoMission("e2e-mission-algo-fs-btree", "F#", "btree", AlgoOkBTree, HasHardcodedBTree);
 
-    /// <summary>Missao algoritmica em F# (3/4): K-Means.</summary>
-    public static Task MissionAlgoFsKMeans() => RunFsMission("e2e-mission-algo-fs-kmeans",
-        "Programa F# em {ws}/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). "
-        + "Implemente K-Means com k=2 sobre os pontos (1,1),(1,2),(2,1),(8,8),(8,9),(9,8). "
-        + "Imprima os 2 centroides finais com 1 casa decimal em `kmeans_c1=<x>,<y>` e `kmeans_c2=<x>,<y>` "
-        + "(ordem crescente por x). Imprima valores calculados pelo programa, nao copie do enunciado. "
-        + "Rode `dotnet run --project {ws}/mfs/mfs.fsproj` e ajuste ate imprimir.",
-        AlgoOkKMeans, HasHardcodedKMeans);
+    /// <summary>Missao algoritmica em F# (3/3): quick sort + bubble sort.</summary>
+    public static Task MissionAlgoFsSort() => RunAlgoMission("e2e-mission-algo-fs-sort", "F#", "sort", AlgoOkSort, HasHardcodedSort);
 
-    /// <summary>Missao algoritmica em F# (4/4): quick sort + bubble sort.</summary>
-    public static Task MissionAlgoFsSort() => RunFsMission("e2e-mission-algo-fs-sort",
-        "Programa F# em {ws}/mfs/Program.fs, projeto mfs/mfs.fsproj ja existente (nao crie outro). "
-        + "Implemente quick sort e bubble sort sobre [5;2;9;1;5;6]. Imprima `quicksort=1,2,5,5,6,9` e "
-        + "`bubblesort=1,2,5,5,6,9` (valores que o programa calculou). Rode `dotnet run --project "
-        + "{ws}/mfs/mfs.fsproj` e ajuste ate imprimir.",
-        AlgoOkSort, HasHardcodedSort);
+    /// <summary>Missao algoritmica em C# (1/4): busca binaria (mesmo contrato do F#).</summary>
+    public static Task MissionAlgoCsBin() => RunAlgoMission("e2e-mission-algo-cs-bin", "C#", "bin", AlgoOkBin, HasHardcodedBin);
+
+    /// <summary>Missao algoritmica em C# (2/4): arvore de busca (insercao + busca).</summary>
+    public static Task MissionAlgoCsBTree() => RunAlgoMission("e2e-mission-algo-cs-btree", "C#", "btree", AlgoOkBTree, HasHardcodedBTree);
+
+    /// <summary>Missao algoritmica em C# (3/4): K-Means.</summary>
+    public static Task MissionAlgoCsKMeans() => RunAlgoMission("e2e-mission-algo-cs-kmeans", "C#", "kmeans", AlgoOkKMeans, HasHardcodedKMeans);
+
+    /// <summary>Missao algoritmica em C# (4/4): quick sort + bubble sort.</summary>
+    public static Task MissionAlgoCsSort() => RunAlgoMission("e2e-mission-algo-cs-sort", "C#", "sort", AlgoOkSort, HasHardcodedSort);
 
     /// <summary>
-    /// Fase F# de uma missao: workspace novo, projeto scaffold e DUAS etapas sobre o
-    /// MESMO arquivo (a 2a recebe a saida real da 1a como correcao — o laco de 26
-    /// turnos sozinho nao garante convergencia). Aceite e hardcode sao do teste.
+    /// Enunciado de uma das missoes algoritmicas tradicionais. O TEXTO e' o mesmo
+    /// para C# e F#: so' o caminho do arquivo/projeto muda. Sem receita de codigo —
+    /// problema, chaves de saida e a ordem que o teste confere.
+    /// </summary>
+    /// <param name="alg">Algoritmo: <c>bin</c>, <c>btree</c>, <c>kmeans</c> ou <c>sort</c>.</param>
+    /// <param name="ws">Workspace da missao.</param>
+    /// <param name="lang">Linguagem do teste (<c>C#</c> ou <c>F#</c>).</param>
+    static string AlgoTaskPrompt(string alg, string ws, string lang)
+    {
+        bool cs = lang == "C#";
+        string dir = cs ? "mcs" : "mfs";
+        string proj = dir + "/" + dir + (cs ? ".csproj" : ".fsproj");
+        string file = cs ? "Program.cs" : "Program.fs";
+        string head = "Programa em " + lang + " no arquivo " + ws + "/" + dir + "/" + file
+            + " (o projeto " + ws + "/" + proj + " ja existe; nao crie outro). ";
+        string ask = alg switch
+        {
+            "bin" => "Dado o array ordenado 1, 3, 5, 7, 9, 11, 13, 15, 17, 19 e o alvo 13, implemente busca binaria "
+                     + "e imprima `binsearch_idx=<indice 0-based do alvo>` (ou -1 se nao achar). ",
+            "btree" => "Implemente uma arvore de busca com insercao de 10, 20, 5, 6, 12, 30, 7, 17 e busca do valor 6. "
+                       + "Imprima `btree_found=<true|false>` e `btree_count=<total de chaves da arvore>`. ",
+            "kmeans" => "Implemente K-Means com k=2 sobre os pontos (1,1), (1,2), (2,1), (8,8), (8,9), (9,8). "
+                        + "Imprima os dois centroides finais com 1 casa decimal em `kmeans_c1=<x>,<y>` e "
+                        + "`kmeans_c2=<x>,<y>`, na ordem crescente de x. ",
+            _ => "Implemente quick sort e bubble sort sobre 5, 2, 9, 1, 5, 6. "
+                 + "Imprima `quicksort=<lista ordenada>` e `bubblesort=<lista ordenada>`, os valores separados por virgula. "
+        };
+        return head + ask + "Imprima os valores CALCULADOS pelo programa, nao copie do enunciado. "
+            + "Rode `dotnet run --project " + ws + "/" + proj + "` e ajuste ate imprimir.";
+    }
+
+    /// <summary>
+    /// Fase de uma missao algoritmica (C# ou F#): workspace novo, projeto scaffold e
+    /// DUAS etapas sobre o MESMO arquivo (a 2a recebe a saida real da 1a como correcao —
+    /// o laco de 26 turnos sozinho nao garante convergencia). Aceite e hardcode sao do teste.
     /// </summary>
     /// <param name="name">Nome do workspace/step.</param>
-    /// <param name="prompt">Enunciado com {ws} para o caminho do workspace.</param>
+    /// <param name="lang">Linguagem do teste (<c>C#</c> ou <c>F#</c>).</param>
+    /// <param name="alg">Algoritmo pedido (<c>bin</c>, <c>btree</c>, <c>kmeans</c>, <c>sort</c>).</param>
     /// <param name="accept">Confere a saida final.</param>
     /// <param name="hardcoded">Recusa fonte com a meta fixada.</param>
-    static async Task RunFsMission(string name, string prompt,
+    static async Task RunAlgoMission(string name, string lang, string alg,
         Func<string, bool> accept, Func<string, bool> hardcoded)
     {
+        bool cs = lang == "C#";
+        string dir = cs ? "mcs" : "mfs";
+        string file = cs ? "Program.cs" : "Program.fs";
         string ws = TestContext.FreshWorkspace(name);
-        TestContext.ScaffoldProject("mfs", Path.Combine(ws, "mfs"), "F#");
-        File.WriteAllText(Path.Combine(ws, "mfs", "Program.fs"),
-            "module Program\n\nopen System\n\n// resolva o pedido aqui\nprintfn \"ok\"\n");
-        string full = prompt.Replace("{ws}", ws);
-        var (src, output) = await RunAlgoPhase(TestContext.Bridge, AlgoModel(), ws, "F#",
-            "mfs/mfs.fsproj", "Program.fs", new[] { full, full }, accept: accept);
-        TestContext.Check(!hardcoded(src), "F# calcula (sem hardcode da meta)");
-        TestContext.Check(accept(output), "F# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
+        TestContext.ScaffoldProject(dir, Path.Combine(ws, dir), lang);
+        // Fonte inicial vazio de proposito. Em C# a semente com `Console.WriteLine("ok");`
+        // (top-level statement) colide com `public class Program` na mesma unidade
+        // (`CS0106: The modifier 'public' is not valid for this item`, medido em
+        // 2026-10-30 no `E-mission-algo-cs-sort`): o modelo nao sabe se completa o
+        // rascunho ou troca por classe, e o erro e' do scaffold, nao do algoritmo.
+        File.WriteAllText(Path.Combine(ws, dir, file), cs
+            ? "// resolva o pedido aqui\n"
+            : "module Program\n\nopen System\n\n// resolva o pedido aqui\nprintfn \"ok\"\n");
+        string full = AlgoTaskPrompt(alg, ws, lang);
+        var (src, output) = await RunAlgoPhase(TestContext.Bridge, AlgoModel(), ws, lang,
+            dir + "/" + dir + (cs ? ".csproj" : ".fsproj"), file, new[] { full, full }, accept: accept);
+        TestContext.Check(!hardcoded(src), lang + " calcula (sem hardcode da meta)");
+        TestContext.Check(accept(output), lang + " entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
         Console.WriteLine($"  [algo] {name} ok:\n{output.Trim()}");
     }
 
@@ -671,7 +701,7 @@ internal static class E2EMissionTests
         string src = File.Exists(srcPath) ? File.ReadAllText(srcPath) : "";
         string output = await RunShell(ws, model, "dotnet run --project " + project + " -c Release");
         if (dump)
-            Console.WriteLine($"  [algo:{lang}] tentativa {attempt}: {(AlgoOk(output) ? "bateu as metas" : "fora das metas")} | {output.Replace("\n", " | ")[..Math.Min(180, output.Replace("\n", " | ").Length)]}");
+            Console.WriteLine($"  [algo:{lang}] tentativa {attempt}: {((accept ?? AlgoOk)(output) ? "bateu as metas" : "fora das metas")} | {output.Replace("\n", " | ")[..Math.Min(180, output.Replace("\n", " | ").Length)]}");
         if ((accept ?? AlgoOk)(output) || attempt == stages.Length) return (src, output);
         // Saida real alimenta a etapa seguinte junto do enunciado dela (sem dica de passo).
         feedback = "\n\nA saida anterior nao bateu. Saida real:\n" + (output.Length > 900 ? output[..900] : output)

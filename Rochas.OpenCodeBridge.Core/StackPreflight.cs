@@ -215,10 +215,17 @@ public static class StackPreflight
             ["model"] = model,
             ["max_tokens"] = 8,
             ["stream"] = false,
+            // O prompt do liveness NAO pode ser vazio de tarefa: a bridge injeta o
+            // MainHarness (que manda agir com tools) e o modelo, recebendo so' "ok",
+            // responde "Aguardando instruções." — texto de espera que parece agente
+            // travado no log/console do operador (medido em 2026-10-30: cada runner
+            // abortado pelo rerun-guard deixava essa linha no painel). Com uma
+            // instrucao fechada a resposta e' deterministica ("PONG") e o probe
+            // continua medindo o mesmo: o modelo respondeu.
             ["messages"] = new JsonArray(new JsonObject
             {
                 ["role"] = "user",
-                ["content"] = "ok"
+                ["content"] = "Liveness check. Responda apenas: PONG"
             })
         };
         var (code, body) = PostJson(http, bridgeUrl.TrimEnd('/') + "/v1/chat/completions", apiKey, payload);

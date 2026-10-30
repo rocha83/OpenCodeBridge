@@ -73,12 +73,30 @@ public static class FsSyntaxRepair
         // isolado de 2026-10-29: `let mutable sequencia = []<string list>` -> FS3156
         // "Unexpected token '>'" na coluna do `>`; o modelo editou OUTRA linha 6 vezes
         // e o erro ficou no lugar). Em F# o tipo vem depois de `:` e e' pos-fixado.
+        // Gate pela LINHA do erro (2026-10-30, kmeans: `list<Point>` legitimo no fonte
+        // fazia esta dica responder a um `|]` inesperado e o modelo reescrevia o arquivo
+        // inteiro com a mesma falha). Sem posicao no erro, a dica segue valendo.
         if ((code == "FS3156" || code == "FS0010")
             && (Regex.IsMatch(source, @"\[\s*\]\s*<") || Regex.IsMatch(source, @":\s*[A-Za-z_][\w.]*\s*<")))
-            return "CERTO: F# nao usa `<...>`; a anotacao de tipo vem DEPOIS de `:` e o tipo e' pos-fixado:\n"
-                 + "let vazia: string list = []\n"
-                 + "let tabela: int array = [| 0; 0 |]\n"
-                 + "let rec passos n = if n = 0 then [] else passos (n - 1) @ [ n ]";
+        {
+            string errLine = SourceLineAt(source, compilerError);
+            if (errLine.Length == 0 || errLine.Contains('<'))
+                return "CERTO: F# nao usa `<...>`; a anotacao de tipo vem DEPOIS de `:` e o tipo e' pos-fixado:\n"
+                     + "let vazia: string list = []\n"
+                     + "let tabela: int array = [| 0; 0 |]\n"
+                     + "let rec passos n = if n = 0 then [] else passos (n - 1) @ [ n ]";
+        }
+
+        // FS0010 `|]` inesperado pedindo `}`: elemento de array de REGISTRO sem o
+        // `}` de fechamento (medido no isolado de 2026-10-30 na missao K-Means F#,
+        // que saiu do suite depois — a regra fica: e' sintaxe F#, nao algoritmo:
+        // `[| {X=1.0; Y=1.0}; ... {X=9.0; Y=8.0 |]` — 10 turnos, o modelo reescrevia
+        // o arquivo inteiro e repetia a falta). O `|]` fecha o ARRAY, depois dos `}`.
+        if (code == "FS0010"
+            && compilerError.Contains("Unexpected symbol '|]'", StringComparison.Ordinal)
+            && compilerError.Contains("'}'", StringComparison.Ordinal))
+            return "CERTO: cada registro do array fecha com `}` ANTES do `|]` (o `|]` fecha o ARRAY):\n"
+                 + "let points = [| { X = 1.0; Y = 1.0 }; { X = 1.0; Y = 2.0 } |]";
 
         // FS3373 interpolacao com aspas dentro da expressao: F# recusa aspas dentro
         // do `{...}` quando o literal externo tambem e' string (17a amostra do isolado
@@ -88,6 +106,17 @@ public static class FsSyntaxRepair
             return "CERTO: monte a expressao num `let` e imprima com formato posicional:\n"
                  + "let rotulo = String.concat \",\" movs\n"
                  + "printfn \"hanoi_seq=%s\" rotulo";
+
+        // FS0101 `^` como POTENCIA: `^` e' concatenacao (obsoleta) e o compilador so'
+        // diz "deprecated ... Use the '+' operator instead". Medido no isolado de
+        // 2026-10-30 (missao K-Means F#: `(fst p - fst c) ^ 2` em 8 turnos, ZERO
+        // dica, porque FS0101 nao tinha mapa). Potencia e' `**` com os dois lados
+        // float; inteiro usa `pown`. So' responde com o `^` MEDIDO na linha do erro
+        // — outro construto obsoleto nao recebe esta dica.
+        if (code == "FS0101" && Regex.IsMatch(SourceLineAt(source, compilerError), @"\^\s*\d"))
+            return "CERTO: potencia se escreve `**` e os DOIS lados sao float (o `^` e' concatenacao de texto, obsoleta):\n"
+                 + "let distancia (a: int) (b: float) = (float a - b) ** 2.0\n"
+                 + "let cubo = pown 2 3   // inteiro: pown base expoente";
 
         // FS0010 em `seq { ... }` com operador: a comprehension de sequencia exige
         // `yield` (mesma amostra: `sequencia <- seq {+ source, dest}`). Acumular
@@ -346,6 +375,18 @@ public static class FsSyntaxRepair
             && Regex.IsMatch(source, @"\[\s*-?\d+\s*\.\.\s*[^\]\r\n]*(Math\.Sqrt|float\s)"))
             return "CERTO: `[2 .. int (Math.Sqrt(float n))]`   (os dois limites do range sao do MESMO tipo; converta o limite que sai float)";
 
+        // FS0001 ORDEM de argumento de `List.contains`: a assinatura e'
+        // `'T -> 'T list -> bool`, entao `List.contains lista valor` faz o compilador
+        // pedir `'T list list`. Medido no isolado de 2026-10-30 (E-mission-algo-fs-btree:
+        // `List.contains node.Keys key`, 8 turnos sem dica e o fonte nunca corrigido).
+        // Gate ESTREITO: o tipo esperado precisa terminar em `list list` E a linha do
+        // erro precisa chamar `List.contains` — sem os dois nao ha medida.
+        if (code == "FS0001"
+            && Regex.IsMatch(compilerError, @"expected to have type\s+'[^']*\blist\s+list'\s")
+            && SourceLineAt(source, compilerError).Contains("List.contains", StringComparison.Ordinal))
+            return "CERTO: `List.contains` recebe o VALOR e depois a LISTA (`List.contains valor lista`) — a lista e' o ULTIMO argumento:\n"
+                 + "let existe = List.contains key node.Keys";
+
         // So' os codigos que este mapa cobre: erro alheio nao recebe conserto de
         // comprehension (evita "corrigir" a linha errada do fonte).
         if (code is not ("FS0003" or "FS0010" or "FS0001" or "FS0020" or "FS0751" or "FS0058"))
@@ -395,6 +436,31 @@ public static class FsSyntaxRepair
     }
 
     /// <summary>
+    /// Numero da linha que o compilador aponta (<c>arquivo(linha,coluna)</c>) ou 0
+    /// quando a saida nao traz posicao.
+    /// </summary>
+    /// <param name="compilerError">Saida do build.</param>
+    static int SourceLineNumber(string compilerError)
+    {
+        var where = Regex.Match(compilerError, @"\((\d+),(\d+)\)");
+        return where.Success && int.TryParse(where.Groups[1].Value, out int lineNo) ? lineNo : 0;
+    }
+
+    /// <summary>
+    /// Texto da linha que o compilador aponta (vazio quando nao ha linha no erro).
+    /// Fonte unica da leitura: as regras que dependem da LINHA medem por aqui.
+    /// </summary>
+    /// <param name="source">Fonte F# atual.</param>
+    /// <param name="compilerError">Saida do build (traz <c>arquivo(linha,coluna)</c>).</param>
+    static string SourceLineAt(string source, string compilerError)
+    {
+        int lineNo = SourceLineNumber(compilerError);
+        if (lineNo < 1) return "";
+        var lines = source.Replace("\r\n", "\n").Split('\n');
+        return lineNo <= lines.Length ? lines[lineNo - 1] : "";
+    }
+
+    /// <summary>
     /// Divergencia de aridade entre a declaracao (no proprio fonte) e a chamada da
     /// linha do erro. Devolve <c>null</c> quando nao consegue MEDIR — nunca chuta.
     /// </summary>
@@ -402,11 +468,9 @@ public static class FsSyntaxRepair
     /// <param name="compilerError">Saida do build (traz <c>arquivo(linha,coluna)</c>).</param>
     static (string Name, int Declared, int Passed, int Line)? FindArityMismatch(string source, string compilerError)
     {
-        var where = Regex.Match(compilerError, @"\((\d+),(\d+)\)");
-        if (!where.Success || !int.TryParse(where.Groups[1].Value, out int lineNo)) return null;
-        var lines = source.Replace("\r\n", "\n").Split('\n');
-        if (lineNo < 1 || lineNo > lines.Length) return null;
-        string line = lines[lineNo - 1];
+        int lineNo = SourceLineNumber(compilerError);
+        string line = SourceLineAt(source, compilerError);
+        if (lineNo < 1 || line.Length == 0) return null;
         foreach (Match cand in Regex.Matches(line, @"[A-Za-z_]\w*"))
         {
             string name = cand.Value;

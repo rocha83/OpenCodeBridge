@@ -144,6 +144,23 @@ public abstract class ToolsAntiRepeat
     public static bool LooksLikeFailure(string? content)
         => !string.IsNullOrWhiteSpace(content) && FailureMarkers.IsMatch(content);
 
+    /// <summary>
+    /// Assinatura de uma falha: o conteudo sem posicao (linha/coluna) e com espaco
+    /// colapsado. Dois builds que devolvem o MESMO diagnostico em linhas diferentes
+    /// sao a mesma falha (o modelo so' empurrou o codigo adiante) — e' o sinal do
+    /// loop de compilacao que nao avanca. O CODIGO (`FS0010`) fica: erro diferente
+    /// e' progresso, nao loop.
+    /// </summary>
+    /// <param name="content">Resultado da tool.</param>
+    /// <returns>Chave da falha (240 chars) ou vazio quando nao e' falha.</returns>
+    static string FailureKey(string? content)
+    {
+        if (!LooksLikeFailure(content)) return "";
+        string key = Regex.Replace(content!, @"\([^)\r\n]*\)", "()");
+        key = Regex.Replace(key, @"\s+", " ").Trim();
+        return key.Length <= 240 ? key : key[..240];
+    }
+
     /// <summary>Chamadas de tool do historico: call_id -> (tool, argumentos).</summary>
     /// <param name="messages">Mensagens no formato chat.</param>
     /// <returns>Mapa por call_id.</returns>
@@ -238,7 +255,27 @@ public abstract class ToolsAntiRepeat
         var tools = new HashSet<string>(falhas.Select(f => f.Tool).Where(t => t.Length > 0),
                                         StringComparer.OrdinalIgnoreCase);
 
-        int contagem = Math.Max(streak, doAlvo);
+        // MESMA falha repetida: e' o loop de compilacao que nao avanca. Cada build
+        // devolve o mesmo diagnostico (so' a linha muda) e o modelo reescreve o
+        // arquivo; o sucesso cosmetico do `write` intercalado zera o `streak` e o
+        // alvo alternado (path do arquivo x comando do build) segura `doAlvo` em
+        // 4-5 para sempre. Medido em 2026-10-30 (missao K-Means F#: 10 turnos,
+        // nudge 4/5 alternados, ZERO trip e o mesmo `error FS0010 ... '|]'` em
+        // todos). Aqui a contagem e' do HISTORICO INTEIRO, nao da janela: na janela
+        // de 2*hard resultados o loop intercalado com `write`/`ls` de sucesso nunca
+        // chega a hard (era o furo). Assinatura = erro sem caminho/posicao/numero,
+        // entao erro DIFERENTE (progresso) nao soma.
+        var assinaturas = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var r in results)
+        {
+            string key = FailureKey(r.Content);
+            if (key.Length == 0) continue;
+            assinaturas[key] = assinaturas.TryGetValue(key, out int n) ? n + 1 : 1;
+        }
+        int mesmaFalha = 0;
+        foreach (int n in assinaturas.Values) mesmaFalha = Math.Max(mesmaFalha, n);
+
+        int contagem = Math.Max(streak, Math.Max(doAlvo, mesmaFalha));
         if (contagem < soft) return new BreakerResult(BreakerVerdict.None, contagem, targets.Count, "");
         if (contagem >= hard && hard > 0)
             return new BreakerResult(BreakerVerdict.Trip, contagem, targets.Count, TripNotice.Replace("{N}", contagem.ToString()));

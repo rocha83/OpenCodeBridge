@@ -241,6 +241,15 @@ dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
   --only E-senior-erp --mode bridge
 ```
 
+`--only` casa por **substring** (é o que faz `--only E-front` pegar todas as
+frentes). Para exigir o nome **exato**, o token vai com `=` na frente:
+
+```bash
+# só a missão base; sem o '=', roda também -cs-bin/-cs-btree/-cs-kmeans/-cs-sort
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --only =E-mission-algo-cs --mode bridge
+```
+
 ### Scripts e trilha completa
 
 ```bash
@@ -358,17 +367,21 @@ isolada com `--only E-science-cpu` quando a Q3 estiver dedicada.
 `LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 4`
 
 Roda, em `--mode bridge` (default), nesta ordem:
-`E-mission-algo-cs` → `E-mission-algo-fs-bin` → `E-mission-algo-fs-btree` →
-`E-mission-algo-fs-kmeans` → `E-mission-algo-fs-sort` → `belts-build` marrom+preta →
+`E-mission-algo-cs` → `E-mission-algo-cs-{bin,btree,kmeans,sort}` →
+`E-mission-algo-fs-{bin,btree,sort}` → `belts-build` marrom+preta →
 `belts-orch` marrom+preta → `E-front-*` (Gen/Edit CSS/Razor/React/Verify)
 → `webui-integracao-topicos` (Web.Test: integração + tópicos).
 
-`E-mission-algo-cs` (Hanoi + crivo, C#) e as quatro missões F# —
-`E-mission-algo-fs-bin` (busca binária), `-btree` (B-tree), `-kmeans` (K-Means) e
-`-sort` (quick sort + bubble sort) — são testes **separados**, cada um no seu
-projeto/fonte e com aceite próprio. Misturar linguagens ou algoritmos num teste
-só mede capacidades diferentes com um veredito: o vermelho esconde qual metade
-falhou e as tentativas de uma contaminam as da outra.
+`E-mission-algo-cs` (Hanoi + crivo, C#) e as missões de algoritmo — as **quatro
+em C#** (`E-mission-algo-cs-bin` busca binária, `-btree` árvore de busca,
+`-kmeans` K-Means e `-sort` quick sort + bubble sort) e **três em F#**
+(`E-mission-algo-fs-bin`, `-btree`, `-sort`) — são testes **separados**, cada um
+no seu projeto/fonte e com aceite próprio. Misturar linguagens ou algoritmos num
+teste só mede capacidades diferentes com um veredito: o vermelho esconde qual
+metade falhou e as tentativas de uma contaminam as da outra.
+
+O K-Means em F# foi **removido** (2026-10-30): a mesma missão em C# cobre o
+algoritmo, e o F# ficou com as três em que o modelo converge.
 
 L3 e L4 exigem **harness ligado** na bridge; o runner consulta `/api/harness`
 e loga aviso se `main_harness` não estiver `true`:

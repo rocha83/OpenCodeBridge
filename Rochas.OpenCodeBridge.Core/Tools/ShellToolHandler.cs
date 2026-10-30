@@ -53,6 +53,8 @@ public sealed class ShellToolHandler : IToolHandler
                 return WithCwd(ToolResult.Fail(why), context.WorkspaceRoot, context.WorkspaceRoot);
             if (ProjectScaffoldBlocked(argv, context.WorkspaceRoot) is string blockedSingle)
                 return WithCwd(ToolResult.Fail(blockedSingle), context.WorkspaceRoot, context.WorkspaceRoot);
+            if (ProjectPathBlocked(argv, context.WorkspaceRoot, context.WorkspaceRoot) is string missingProject)
+                return WithCwd(ToolResult.Fail(missingProject), context.WorkspaceRoot, context.WorkspaceRoot);
             return WithCwd(ProcessRunner.Run(argv[0], argv[1..], context.WorkspaceRoot, context.TimeoutSeconds),
                 context.WorkspaceRoot, context.WorkspaceRoot);
         }
@@ -78,6 +80,8 @@ public sealed class ShellToolHandler : IToolHandler
                 return WithCwd(ToolResult.Fail(sb.Length > 0 ? sb.ToString() + "\n" + why : why), dir, context.WorkspaceRoot);
             if (ProjectScaffoldBlocked(argv, dir) is string blockedStep)
                 return WithCwd(ToolResult.Fail(sb.Length > 0 ? sb.ToString() + "\n" + blockedStep : blockedStep), dir, context.WorkspaceRoot);
+            if (ProjectPathBlocked(argv, dir, context.WorkspaceRoot) is string missingStep)
+                return WithCwd(ToolResult.Fail(sb.Length > 0 ? sb.ToString() + "\n" + missingStep : missingStep), dir, context.WorkspaceRoot);
             var r = ProcessRunner.Run(argv[0], argv[1..], dir, context.TimeoutSeconds);
             if (!string.IsNullOrWhiteSpace(r.Output)) sb.AppendLine(r.Output.TrimEnd());
             if (!r.Success)
@@ -272,6 +276,32 @@ public sealed class ShellToolHandler : IToolHandler
         return $"'{target}' ja tem projeto ({proj}): nao crie outro. Edite o fonte existente e rode " +
                $"`dotnet build --project {full}` ou `dotnet run --project {full}` " +
                $"(com mais de um .csproj, passe o arquivo: --project {Path.Combine(full, proj)}).";
+    }
+
+    // `dotnet run --project <arquivo>` com caminho que NAO existe: o console
+    // devolve so' "The provided file path does not exist" e o modelo repete a
+    // mesma chamada errada (medido no `E-mission-algo-cs-btree` de 2026-10-30:
+    // `<ws>/mcs.csproj` em vez de `<ws>/mcs/mcs.csproj`, 5 turnos seguidos).
+    // Mesma regra das tools de arquivo: a resposta traz o caminho REAL.
+    static string? ProjectPathBlocked(string[] argv, string dir, string root)
+    {
+        string? value = null;
+        for (int i = 0; i < argv.Length; i++)
+        {
+            if (argv[i] is "--project" or "-p" && i + 1 < argv.Length) { value = argv[i + 1]; break; }
+            if (argv[i].StartsWith("--project=", StringComparison.Ordinal)) { value = argv[i]["--project=".Length..]; break; }
+        }
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        string wanted = value!;
+        string full;
+        try { full = Path.GetFullPath(Path.IsPathRooted(wanted) ? wanted : Path.Combine(dir, wanted)); }
+        catch { return null; }
+        if (File.Exists(full) || Directory.Exists(full)) return null;
+        string found = WorkspaceGuard.Locate(root, wanted);
+        return found.Length > 0
+            ? WorkspaceGuard.NotFound("projeto", wanted, found) + " (rode de novo com esse caminho)"
+            : WorkspaceGuard.NotFound("projeto", wanted)
+              + " (o caminho do projeto sai da raiz do workspace: '<dir>/<nome>.csproj' ou '.fsproj')";
     }
 
     // Devolve só o fora-de-aspas (para checagem de metacaracteres; o citado vai literal).

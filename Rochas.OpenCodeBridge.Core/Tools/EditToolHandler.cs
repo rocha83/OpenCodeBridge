@@ -22,6 +22,8 @@ public sealed class EditToolHandler : IToolHandler
         bool replaceAll = obj["replaceAll"]?.GetValue<bool>() ?? false;
         if (string.IsNullOrWhiteSpace(path)) return ToolResult.Fail("path é obrigatório");
         if (string.IsNullOrEmpty(oldString)) return ToolResult.Fail("oldString é obrigatório");
+        if (ToolContentGuard.Elided(newString, "edit") is string elided)
+            return ToolResult.Fail(elided);
 
         if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why, context.ExtraRoots))
             return ToolResult.Fail(why);

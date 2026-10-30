@@ -5065,3 +5065,31 @@ Sequência do dia, do sintoma ao aceite:
 **Prova do aceite:** `PASS 87,9 s`, `PASS 74,6 s`, `PASS 69,6 s` — três rodadas
 isoladas consecutivas, cada uma com restart da bridge, após o help do zip.
 Build `0 Aviso(s)/0 Erro(s)`; units `PASS=121 FAIL=0 SKIP=6`.
+
+## Algo-F# x Algo-C# e o gate do loop de compilação (2026-10-30)
+
+Continuação da série `E-mission-algo-*` depois de a infra voltar:
+
+1. **btree F# PASS (27,9 s)** — 3 turnos (`read`, `edit`, `shell`), sem reparo.
+   O laço já parava no aceite da missão desde o `RunAlgoPhase(accept)`.
+2. **K-Means F# não fecha** — em duas rodadas o modelo repetiu o mesmo
+   `FS0010 '|]' … Expected '}'` (array de registros sem o `}` do último item) e
+   o `list<Point>` legítimo fazia o ramo `<...>` do reparo responder à linha
+   errada. Medido também no btree: `List.contains node.Keys key` (argumento
+   invertido) sem dica.
+3. **Gate corrigido no Core** — o breaker contava falhas só na janela de `2*hard`;
+   com `write ok`/`read ok` intercalados o contador parava em 4-5 e nunca
+   chegava ao `hard`. Agora a assinatura da falha (sem linha/coluna, com o código
+   `FS####`) é contada no histórico inteiro: 6 builds com o **mesmo** erro cortam
+   o turno; erros distintos seguem como progresso.
+4. **Reparo F#** — `SourceLineAt` como leitura única da linha do erro, gate do
+   `<...>` pela linha, e três mapas novos: `|]` sem `}`, `List.contains` com
+   argumentos trocados e `^` como potência (FS0101 → `**`/`pown`).
+5. **Missões em C#** — as quatro (bin, btree, kmeans, sort) passam a rodar em C#
+   com o MESMO enunciado e os MESMOS aceites; o K-Means **F#** foi removido por
+   decisão do operador (o algoritmo segue coberto em C#).
+
+**Prova:** units `U-breaker-same-error`, `U-fs-repair-record-array-close`,
+`U-fs-repair-list-contains-order`, `U-fs-repair-power-operator`,
+`U-fs-repair-generic-syntax`, `U-fsmini-covers-repair-codes` — PASS; bateria
+isolada das oito missões em `logs/isolated/algo-batch-*.summary`.

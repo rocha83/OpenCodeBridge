@@ -158,9 +158,54 @@ internal static class UnitToolBreakerTests
     /// porque o marcador cobria so "exited with code" (formato morto). Com o
     /// marcador real: 3 falhas avisam, 6 cortam o turno.
     /// </summary>
-    public static Task BreaksCompilerEditLoop()
+    // 2026-10-30 (missao K-Means F#): o loop de compilacao alterna `write` (que
+    // "da certo") e `shell` (que repete o MESMO erro em outra linha). O streak
+    // zerava no sucesso e o alvo alternado segurava em 4-5 — nudge eterno, ZERO
+    // trip. A assinatura do erro (sem path/linha/numero) e' que conta o loop.
+    public static Task TripsRepeatedSameError()
     {
-        static JsonArray Turnos(int n, string edit, string erro)
+        static JsonArray Turnos(int n, Func<int, string> erro)
+        {
+            var passos = new List<(string, string, string, string)>();
+            for (int i = 0; i < n; i++)
+            {
+                // Turno real do loop medido: `write` ok, `read` ok e o build falhando
+                // — os sucessos cosmeticos intercalados sao o que zerava o streak.
+                passos.Add(("assistant", "write", "{\"path\":\"/ws/mfs/Program.fs\",\"content\":\"module Program\"}", ""));
+                passos.Add(("tool", "", "", "ok atualizado 2866 chars em '/ws/mfs/Program.fs'"));
+                passos.Add(("assistant", "read", "{\"path\":\"/ws/mfs/Program.fs\"}", ""));
+                passos.Add(("tool", "", "", "ok module Program"));
+                passos.Add(("assistant", "shell", "{\"command\":\"dotnet run --project /ws/mfs/mfs.fsproj\"}", ""));
+                passos.Add(("tool", "", "", erro(i)));
+            }
+            return Chat(passos.ToArray());
+        }
+
+        // O MESMO diagnostico, so' a linha muda a cada reescrita do arquivo.
+        static string MesmoErro(int i) =>
+            $"ERRO: exit 1: /ws/mfs/Program.fs({55 + i},115): error FS0010: Unexpected symbol '|]' in expression. Expected '}}' or other token.";
+        var guard = new global::Rochas.OpenCodeBridge.Core.ToolsBreaker(3, 6);
+
+        var r3 = guard.Evaluate(Turnos(3, MesmoErro));
+        TestContext.Check(r3.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Nudge,
+            $"3 builds com o mesmo erro ja' avisam (veio {r3.Verdict})");
+        TestContext.Check(r3.Streak >= 3, $"streak conta o loop intercalado com `write` ok (veio {r3.Streak})");
+
+        var r6 = guard.Evaluate(Turnos(6, MesmoErro));
+        TestContext.Check(r6.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Trip,
+            $"6 builds com o MESMO erro cortam o turno (veio {r6.Verdict})");
+
+        // Erros DIFERENTES (progresso real, o modelo corrige e cai no proximo):
+        // nao somam como loop — no maximo o aviso, nunca o curto-circuito.
+        var progride = guard.Evaluate(Turnos(6, i =>
+            $"ERRO: exit 1: /ws/mfs/Program.fs({10 + i},3): error FS00{i + 1}{i}: diagnostico distinto numero {i}"));
+        TestContext.Check(progride.Verdict != global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Trip,
+            $"erros distintos sao progresso e nao cortam (veio {progride.Verdict})");
+        return Task.CompletedTask;
+    }
+
+    public static Task BreaksCompilerEditLoop()
+    {    static JsonArray Turnos(int n, string edit, string erro)
         {
             var passos = new List<(string, string, string, string)>();
             for (int i = 0; i < n; i++)
@@ -987,6 +1032,51 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // 18a/19a amostra (2026-10-30, suite algo-fs): `List.contains node.Keys key`
+    // inverte a assinatura (`'T -> 'T list`) e o compilador pede `'T list list`;
+    // sem dica o fonte nunca foi corrigido (btree: 8 turnos no mesmo erro).
+    public static Task FsRepairListContainsOrder()
+    {
+        const string src = "type Node = { Keys: int list }\nlet node = { Keys = [1; 2] }\nlet key = 2\nlet ok = List.contains node.Keys key\n";
+        const string err = "Program.fs(4,34): error FS0001: This expression was expected to have type\n    'int list list'    \nbut here has type\n    'int'";
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(src, err);
+        TestContext.Check(p.Contains("List.contains key node.Keys"),
+            "FS0001 'list list' -> valor antes, lista depois (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains("linha 4"),
+            "a dica aponta a linha do erro (veio: " + p.Replace("\n", " | ") + ")");
+        // Mesmo tipo esperado SEM `List.contains` na linha: sem medida, sem dica.
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let total xs = List.sum xs\n",
+            "Program.fs(1,16): error FS0001: This expression was expected to have type\n    'int list list'    \nbut here has type\n    'int'") == "",
+            "'list list' sem List.contains nao recebe a dica de ordem");
+        // `List.contains` com a ordem CERTA nao gera esse erro: a dica de ORDEM nao entra
+        // (outra regra pode responder ao proprio erro — o pin olha a dica de ordem).
+        string outro = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let ok = List.contains 2 [1; 2]\n",
+            "error FS0001: All branches of an 'if' expression must return values implicitly convertible to the type of the first branch, which here is 'string'. This branch returns a value of type 'int'.");
+        TestContext.Check(!outro.Contains("List.contains key node.Keys"),
+            "erro de ramos do if nao vira dica de ordem de List.contains (veio: " + outro.Replace("\n", " | ") + ")");
+        return Task.CompletedTask;
+    }
+
+    // 19a amostra (2026-10-30, suite algo-fs): `^` usado como potencia sai como
+    // FS0101 "deprecated ... Use the '+' operator instead" e nao havia mapa.
+    public static Task FsRepairPowerOperator()
+    {
+        const string src = "let distanceSq (p: (int * int)) (c: (float * float)) : float =\n    (fst p - fst c) ^ 2 + (snd p - snd c) ^ 2\n";
+        const string err = "Program.fs(2,5): error FS0101: This construct is deprecated. This construct is deprecated. Use the '+' operator instead.";
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(src, err);
+        TestContext.Check(p.Contains("** 2.0") && p.Contains("pown"),
+            "FS0101 `^` -> `**` float e `pown` inteiro (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(!p.Contains("^ 2"),
+            "a dica nao repete o operador obsoleto como exemplo");
+        // FS0101 sem `^ <numero>` na linha do erro: outro construto obsoleto, silencio.
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "#light \"off\"\nlet x = 1\n", err) == "",
+            "FS0101 sem potencia na linha nao recebe a dica de `**`");
+        return Task.CompletedTask;
+    }
+
     // 16a amostra (2026-10-29): `(n: int; source: string; ...)` -> FS0010
     // "Unexpected symbol ';' in pattern". O `;` so' separa itens de lista/array.
     public static Task FsRepairParamSemicolon()
@@ -1017,6 +1107,32 @@ internal static class UnitToolBreakerTests
         TestContext.Check(seq.Contains("yield") && seq.Contains("@ [ n ]"),
             "FS0010 `seq {+` -> comprehension exige yield; acumular e' lista com `@` (veio: " + seq.Replace("\n", " | ") + ")");
         TestContext.Check(!seq.Contains("seq {+"), "a dica nao ecoa a comprehension invalida");
+        // 2026-10-30 (kmeans): `list<Point>` (generico LEGITIMO no fonte) nao pode
+        // puxar a dica de `<...>` quando o erro aponta OUTRA linha — a dica errada
+        // saiu 4 vezes e o modelo reescrevia o arquivo inteiro com a mesma falha.
+        string outroErro = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let a (xs: list<Point>) = xs\nlet ps = [| { X = 1.0; Y = 1.0 } |]\n",
+            "/tmp/x/Program.fs(2,44): error FS0010: Unexpected symbol '|]' in expression. Expected '}' or other token.");
+        TestContext.Check(!outroErro.Contains("let vazia: string list"),
+            "generico no fonte fora da linha do erro nao vira dica de `<...>` (veio: " + outroErro.Replace("\n", " | ") + ")");
+        return Task.CompletedTask;
+    }
+
+    // 20a amostra (2026-10-30, missao K-Means F# — saiu do suite, a regra fica):
+    // o array de registros ficou
+    // sem o `}` do ultimo elemento e o compilador pediu `}` antes do `|]`.
+    public static Task FsRepairRecordArrayClose()
+    {
+        const string src = "type Point = { X: float; Y: float }\nlet points = [| { X = 1.0; Y = 1.0 }; { X = 9.0; Y = 8.0 |]\n";
+        const string err = "Program.fs(2,59): error FS0010: Unexpected symbol '|]' in expression. Expected '}' or other token.";
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(src, err);
+        TestContext.Check(p.Contains("{ X = 1.0; Y = 2.0 } |]"),
+            "FS0010 `|]` -> cada registro fecha com `}` antes do `|]` (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains("linha 2"), "a dica aponta a linha do erro");
+        // Outro FS0010 (nao o `|]`) segue sem esta dica.
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let xs = [ 1 2 ]\n", "Program.fs(1,12): error FS0010: Unexpected integer literal in binding") == "",
+            "FS0010 sem `|]` nao recebe a dica de registro");
         return Task.CompletedTask;
     }
 

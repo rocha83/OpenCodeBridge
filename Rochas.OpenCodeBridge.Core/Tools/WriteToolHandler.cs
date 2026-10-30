@@ -20,6 +20,8 @@ public sealed class WriteToolHandler : IToolHandler
         string content = obj["content"]?.GetValue<string>() ?? "";
         if (string.IsNullOrWhiteSpace(path)) return ToolResult.Fail("path é obrigatório");
         if (content.Length > MaxChars) return ToolResult.Fail($"conteúdo grande demais ({content.Length} chars, teto {MaxChars})");
+        if (ToolContentGuard.Elided(content, "write") is string elided)
+            return ToolResult.Fail(elided);
 
         if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why, context.ExtraRoots))
             return ToolResult.Fail(why);
