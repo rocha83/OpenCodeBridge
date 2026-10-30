@@ -144,5 +144,15 @@ check "indice com parametro anotado (FS0752)" (marcaIndice [| true; false |] 1 =
 let rec somaCurried (n: int) (a: int) (b: int) =
     if n = 0 then a + b else somaCurried (n - 1) a b
 check "parametros curried compilam (FS0010 ';')" (somaCurried 2 3 4 = 7)
+
+// 16) Lista vazia com anotacao pos-fixada (17a amostra: FS3156 em `[]<string list>`).
+let vazia: string list = []
+let tabela: int array = [| 0; 0 |]
+check "lista vazia com tipo pos-fixado (FS3156)" (vazia.Length = 0 && tabela.Length = 2)
+
+// 17) Acumular movimento devolvendo lista com `@`, sem mutable/ref/seq (17a amostra:
+//     `sequencia <- seq {+ source, dest}` -> FS0010). Forma valida e verificavel.
+let rec passos n = if n = 0 then [] else passos (n - 1) @ [ n ]
+check "acumular lista com @ (FS0010 seq)" (passos 3 = [ 1; 2; 3 ])
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."

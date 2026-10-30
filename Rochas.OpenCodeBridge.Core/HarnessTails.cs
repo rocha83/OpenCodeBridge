@@ -64,7 +64,9 @@ public static class HarnessTails
         "INTEIROS: `%` e' resto; `/` entre dois int trunca. " +
         "IGUALDADE: `=` compara dois valores e `<>` testa a diferenca. " +
         "LAYOUT: o recuo define o bloco; cada expressao do corpo fica alinhada sob o `=`. " +
-        "RETORNO: o valor da funcao e' a ULTIMA expressao do corpo (`printfn` so' imprime, nao devolve). " +        "RECURSAO: `let rec f n = if n <= 1 then 1 else n * f (n - 1)`. " +
+        "RETORNO: o valor da funcao e' a ULTIMA expressao do corpo (`printfn` so' imprime, nao devolve). " +
+        "ACUMULAR: a funcao devolve a lista do ramo e junta com `@` — sem `mutable`, `ref` nem `seq {}`: `let rec passos n = if n = 0 then [] else passos (n - 1) @ [ n ]`; rotulo do movimento `sprintf \"%d->%d\" a b` e a linha inteira `String.concat \",\" movs`. " +
+        "RECURSAO: `let rec f n = if n <= 1 then 1 else n * f (n - 1)`. " +
         "AUXILIAR: vive no NIVEL DO MODULO, antes de quem a chama, e recebe por parametro o que usa de fora: `let isPrime n = n > 1 && List.forall (fun d -> n % d <> 0) [2 .. int (Math.Sqrt(float n))]`; no ramo `if/else` vai so' a chamada. " +
         "PRIMOS: divisores candidatos de 2 ate a raiz; o intervalo de ENTRADA pode comecar em 1. " +
         "FATORIAL/PRODUTO: `List.fold (fun acc x -> acc * x) 1 [1..10]`, sem recursao. " +
@@ -73,6 +75,7 @@ public static class HarnessTails
         "FS0751/FS0003 passo -> passo no MEIO dos dois `..`: `[for i in 1 .. 2 .. n-1]` percorre 1, 3, .., n-1; aplicacao -> a chamada e a declaracao usam a MESMA quantidade de parametros: `let rec soma a b c = ...` chamado `soma 1 2 3`. " +
         "FS0001 tipo -> lista com `List.sum [ 1; 2 ]` e array com `Array.sum [| 1; 2 |]`; no range os dois limites sao do MESMO tipo; nos dois ramos do `if` o tipo e' o mesmo e cada tipo tem seu jeito de juntar — TEXTO com `+` (`a + \",\" + b`), LISTA com `@` (`xs @ [ y ]`), ARRAY com `Array.append a b`; nao misture lista com texto. " +
         "FS0752 indice -> o valor indexado precisa de tipo conhecido: anote o parametro ou o binding (`let marca (xs: bool array) i = xs.[i]`, `let zeros: int array = Array.create 10 0`). " +
+        "FS3156 tipo -> F# nao tem `<...>`: anote com `:` e o tipo pos-fixado: `let vazia: string list = []`, `let tabela: int array = [| 0; 0 |]`. " +
         "FS0039 nome nao definido -> parametro ou valor ja declarado; a declaracao vem ANTES do primeiro uso (o modulo e' lido de cima para baixo): `let auxiliar = 3` acima de quem o usa, ou receba por parametro; resto de inteiro e' `a % b`; auto-chamada pede `let rec f`. " +
         "FS0037 nome repetido -> uma definicao por nome. " +
         "FS0058 offside -> auxiliar no nivel do modulo; no ramo, so' a chamada. " +

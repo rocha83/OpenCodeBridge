@@ -215,6 +215,8 @@ internal static class Program
         TestContext.Run("U-fs-repair-if-branches-string", UnitToolBreakerTests.FsRepairIfBranchesString);
         TestContext.Run("U-fs-repair-indexer", UnitToolBreakerTests.FsRepairIndexerAnnotation);
         TestContext.Run("U-fs-repair-param-semicolon", UnitToolBreakerTests.FsRepairParamSemicolon);
+        TestContext.Run("U-fs-repair-generic-syntax", UnitToolBreakerTests.FsRepairGenericSyntax);
+        TestContext.Run("U-fs-repair-error-line", UnitToolBreakerTests.FsRepairErrorLinePointer);
         TestContext.Run("U-antirepeat-args-window", UnitToolBreakerTests.AntiRepeatArgsWindowIsIndependent);
         TestContext.Run("U-toolcall-salvage-notice", UnitToolBreakerTests.SalvageNoticeIsRecognizable);
         TestContext.Run("U-bridge-notice", UnitToolBreakerTests.BridgeNoticeFormatIsSingleSource);

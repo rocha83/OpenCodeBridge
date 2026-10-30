@@ -1000,6 +1000,42 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // 17a amostra (2026-10-29): `let mutable sequencia = []<string list>` -> FS3156 no
+    // `>`; o modelo editou OUTRA linha 6 vezes. A forma que compila anota com `:`.
+    public static Task FsRepairGenericSyntax()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let mutable sequencia = []<string list>\n",
+            "/tmp/x/Program.fs(34,43): error FS3156: Unexpected token '>' or incomplete expression");
+        TestContext.Check(p.Contains("let vazia: string list = []"),
+            "FS3156 generico -> anotacao pos-fixada com `:` (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(!p.Contains("[]<string list>"), "a dica nao ecoa o generico que nao compila");
+        TestContext.Check(p.Contains("linha 34"), "a dica aponta a linha do erro (o modelo editava outra)");
+        string seq = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let mutable sequencia = []\nsequencia <- seq {+ source, dest}\n",
+            "/tmp/x/Program.fs(37,24): error FS0010: Unexpected symbol '+' in expression");
+        TestContext.Check(seq.Contains("yield") && seq.Contains("@ [ n ]"),
+            "FS0010 `seq {+` -> comprehension exige yield; acumular e' lista com `@` (veio: " + seq.Replace("\n", " | ") + ")");
+        TestContext.Check(!seq.Contains("seq {+"), "a dica nao ecoa a comprehension invalida");
+        return Task.CompletedTask;
+    }
+
+    // Ponteiro da linha do erro: o compilador diz `arquivo(linha,coluna)` e o modelo
+    // editava a linha vizinha (17a amostra). Sem linha na saida, nada muda.
+    public static Task FsRepairErrorLinePointer()
+    {
+        const string err = "/tmp/x/Program.fs(12,5): error FS0010: Unexpected symbol '->' in expression.";
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let xs = [ a -> b ]\n", err);
+        TestContext.Check(p.Contains("linha 12"), "a dica nomeia a linha do compilador (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Split("linha 12").Length - 1 == 1, "a linha aparece UMA vez na dica");
+        string semLinha = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let xs = [ a -> b ]\n", "error FS0010: Unexpected symbol '->' in expression.");
+        TestContext.Check(!semLinha.Contains("O erro esta na linha"),
+            "sem (linha,coluna) na saida nao inventa ponteiro");
+        return Task.CompletedTask;
+    }
+
     // 15a amostra (2026-10-29): `currentPrimes.[p]` com o parametro sem anotacao ->
     // FS0752 "operator 'expr.[idx]' has been used on an object of indeterminate type".
     // Sete ocorrencias e nenhuma dica; a forma que compila e' a anotada.

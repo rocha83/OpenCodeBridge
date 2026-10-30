@@ -25,9 +25,30 @@ public static class FsSyntaxRepair
     public static string Suggest(string source, string compilerError, int repeatCount = 0)
     {
         string hint = SuggestForCode(source, compilerError);
-        if (hint.Length == 0 || repeatCount < 2) return hint;
+        if (hint.Length == 0) return hint;
+        hint = WithErrorLine(hint, compilerError);
+        if (repeatCount < 2) return hint;
         return hint + "\n\nA MESMA dica ja' veio " + (repeatCount + 1)
              + " vezes: pare de editar a mesma linha e reescreva o arquivo inteiro com a tool `write`, aplicando a forma acima.";
+    }
+
+    /// <summary>
+    /// Acrescenta a LINHA que o compilador aponta. Medido na 17a amostra do isolado de
+    /// 2026-10-29: o erro estava na linha 34 (`[]&lt;string list&gt;`) e o modelo editou
+    /// a linha 48 seis vezes — a dica ensinava a forma, mas nao dizia ONDE. Aponta o
+    /// numero, nunca o literal errado (o modelo copia o literal que a dica mostra).
+    /// </summary>
+    /// <param name="hint">Dica ja' montada.</param>
+    /// <param name="compilerError">Saida do build com <c>arquivo(linha,coluna)</c>.</param>
+    /// <returns>Dica com o ponteiro de linha (ou a propria dica quando nao ha linha).</returns>
+    static string WithErrorLine(string hint, string compilerError)
+    {
+        var where = Regex.Match(compilerError, @"\((\d+),(\d+)\)");
+        if (!where.Success) return hint;
+        string line = where.Groups[1].Value;
+        if (Regex.IsMatch(hint, @"linha " + line + @"\b")) return hint;
+        return hint + "\n\nO erro esta na linha " + line
+             + " do arquivo: edite ESSA linha (o compilador aponta o lugar exato).";
     }
 
     static string SuggestForCode(string source, string compilerError)
@@ -47,6 +68,24 @@ public static class FsSyntaxRepair
                 return $"ERRADO: `{bt.Groups["w"].Value}`\n" +
                        $"CERTO: {bt.Groups["w"].Value}   (crase simples nao existe em F#: escreva o nome/operador sem crase)";
         }
+
+        // FS3156/FS0010 com tipo generico `<...>`: C#-ismo de tipo (17a amostra do
+        // isolado de 2026-10-29: `let mutable sequencia = []<string list>` -> FS3156
+        // "Unexpected token '>'" na coluna do `>`; o modelo editou OUTRA linha 6 vezes
+        // e o erro ficou no lugar). Em F# o tipo vem depois de `:` e e' pos-fixado.
+        if ((code == "FS3156" || code == "FS0010")
+            && (Regex.IsMatch(source, @"\[\s*\]\s*<") || Regex.IsMatch(source, @":\s*[A-Za-z_][\w.]*\s*<")))
+            return "CERTO: F# nao usa `<...>`; a anotacao de tipo vem DEPOIS de `:` e o tipo e' pos-fixado:\n"
+                 + "let vazia: string list = []\n"
+                 + "let tabela: int array = [| 0; 0 |]\n"
+                 + "let rec passos n = if n = 0 then [] else passos (n - 1) @ [ n ]";
+
+        // FS0010 em `seq { ... }` com operador: a comprehension de sequencia exige
+        // `yield` (mesma amostra: `sequencia <- seq {+ source, dest}`). Acumular
+        // movimento e' LISTA, sem `mutable`/`ref`.
+        if (code == "FS0010" && Regex.IsMatch(source, @"seq\s*\{[^}]*[+*]"))
+            return "CERTO: `seq { ... }` so' devolve item com `yield`; para acumular use LISTA e `@`:\n"
+                 + "let rec passos n = if n = 0 then [] else passos (n - 1) @ [ n ]";
 
         // FS0010 barra invertida: lambda em F# e' `fun`, nao `\` (9a amostra do
         // isolado de 2026-10-29: `List.fold (\count p1 -> ...) 0 primes`, 0 reparo).
