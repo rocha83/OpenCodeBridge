@@ -170,8 +170,9 @@ public static class BeltUiTests
                         failures += await UiChatSendAsync(api, upage, belt);
                         break;
                     }
-                    // full: as duas faces da UI na MESMA faixa — Build com tools
-                    // (perfil da esteira) e Plan sem tools (reasoning na bolha).
+                    // full: as duas faces da UI na MESMA faixa — o perfil declarado na
+                    // faixa (orch/build, usa tools) e o Plan (sem tools, com o
+                    // raciocínio renderizado na bolha).
                     case "full":
                     {
                         var fpage = await context.NewPageAsync();

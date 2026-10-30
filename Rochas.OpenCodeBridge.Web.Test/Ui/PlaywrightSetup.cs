@@ -33,7 +33,8 @@ public static class PlaywrightSetup
     /// nota falsa de "sem executar nada". Seleção por rótulo+modelo (Build Q4 :4124,
     /// o mesmo bridge dos units), nunca por id: o id do banco dev/PROD diverge.
     /// A preferência descarta o par GPU2/Q3 — o perfil da esteira é o Q4.
-    /// Executor vai para o perfil Exec (Q3) quando existe; sem ele, fica "nenhum".
+    /// Subagente vai para o perfil Scripter Q4 (o executor real da esteira); o Exec
+    /// da GPU2 é fallback e o MoE nunca é usado. Sem nenhum, fica "sub=nenhum".
     /// </summary>
     /// <param name="page">Página em <c>/Chat</c> com os dropdowns renderizados.</param>
     /// <param name="label">Rótulo do passo no log (faixa/smoke).</param>
@@ -42,7 +43,7 @@ public static class PlaywrightSetup
         SelectAgentAsync(page, label, "Build (mode=build com a tool write)",
             "(o) => (o.dataset.mode || '').toLowerCase() === 'build' && (o.dataset.tools || '').includes('write')",
             "(o) => /Build/i.test(o.textContent) && !/Q3|GPU2/i.test(o.textContent)",
-            pickExec: true);
+            pickSubagent: true);
 
     /// <summary>
     /// Perfil PLAN no dropdown — para os testes da Web UI que NÃO usam tools: é o
@@ -56,13 +57,14 @@ public static class PlaywrightSetup
         SelectAgentAsync(page, label, "Plan (reasoning na UI)",
             "(o) => (o.dataset.mode || '').toLowerCase() === 'plan'",
             "(o) => /Plan/i.test(o.textContent) && !/Q3|GPU2/i.test(o.textContent)",
-            pickExec: false);
+            pickSubagent: false);
 
     /// <summary>
     /// Perfil ORCH no dropdown — para os testes da Web UI cujo enunciado pede
     /// DELEGAÇÃO (dividir em fases e compor com subagent). Orch é Build sem escrita
     /// (sem <c>write</c>/<c>exec</c>): planeja, delega e agrega, que é o comportamento
-    /// medido na faixa. Executor vai para o Exec (Q3) quando existe.
+    /// medido na faixa. O subagente vai para o Scripter (Q4) — o mesmo que a
+    /// esteira usa para executar as fases; Exec (GPU2) é fallback, MoE nunca.
     /// </summary>
     /// <param name="page">Página em <c>/Chat</c> com os dropdowns renderizados.</param>
     /// <param name="label">Rótulo do passo no log (faixa/smoke).</param>
@@ -71,11 +73,11 @@ public static class PlaywrightSetup
         SelectAgentAsync(page, label, "Orch (delegação, sem escrita)",
             "(o) => (o.dataset.mode || '').toLowerCase() === 'build' && (o.dataset.tools || '').includes('subagent') && !(o.dataset.tools || '').includes('write')",
             "(o) => /Orch/i.test(o.textContent) && !/Q3|GPU2/i.test(o.textContent)",
-            pickExec: true);
+            pickSubagent: true);
 
     // Núcleo da seleção: filtro + preferência declarados como JS, sem id do banco.
     private static async Task<string> SelectAgentAsync(IPage page, string label, string what,
-        string filterJs, string preferJs, bool pickExec)
+        string filterJs, string preferJs, bool pickSubagent)
     {
         string js = @"() => {
           const sel = document.getElementById('agentId');
@@ -85,14 +87,25 @@ public static class PlaywrightSetup
           if (!pick) return '';
           sel.value = pick.value;
           sel.dispatchEvent(new Event('change'));
+          let sub = '';
           const ex = document.getElementById('executorId');
-          if (ex && PICKEXEC) {
-            const exOpt = [...ex.options].find(o => /Exec/i.test(o.textContent || ''));
-            if (exOpt) { ex.value = exOpt.value; ex.dispatchEvent(new Event('change')); }
+          if (ex && PICKSUB) {
+            const all = [...ex.options].filter(o => o.value);
+            // Subagente da esteira = Scripter Q4 (quem executa as fases); o Exec da
+            // GPU2 e' fallback. Nunca o MoE: ele so' fetch/display/subagent.
+            const chosen =
+                 all.find(o => /Scripter/i.test(o.textContent || '') && !/GPU2|Q3/i.test(o.textContent || ''))
+              || all.find(o => /Scripter/i.test(o.textContent || ''))
+              || all.find(o => /Exec/i.test(o.textContent || ''));
+            if (chosen) {
+              ex.value = chosen.value;
+              ex.dispatchEvent(new Event('change'));
+              sub = chosen.textContent.trim();
+            }
           }
-          return pick.value + '|' + pick.textContent.trim();
+          return pick.value + '|' + pick.textContent.trim() + ' sub=' + (sub || 'nenhum');
         }".Replace("FILTER", filterJs).Replace("PREFER", preferJs)
-          .Replace("PICKEXEC", pickExec ? "true" : "false");
+          .Replace("PICKSUB", pickSubagent ? "true" : "false");
         string picked = await page.EvaluateAsync<string>(js);
         if (string.IsNullOrEmpty(picked))
             throw new InvalidOperationException($"dropdown sem perfil {what}");
