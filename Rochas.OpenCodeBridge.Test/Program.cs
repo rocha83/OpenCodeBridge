@@ -209,6 +209,7 @@ internal static class Program
         TestContext.Run("U-fs-repair-type-annotation", UnitToolBreakerTests.FsRepairInferredTypeAnnotation);
         TestContext.Run("U-fs-repair-partial-operator", UnitToolBreakerTests.FsRepairPartialOperator);
         TestContext.Run("U-fs-repair-diagnostic-detection", UnitToolBreakerTests.FsRepairDiagnosticDetection);
+        TestContext.Run("U-cs-repair-missing-brace", UnitToolBreakerTests.CsRepairMissingBrace);
         // U-fsmini-covers-repair-codes ARQUIVADO em 2026-10-30 junto da trilha F#:
         // o pin segue em UnitToolBreakerTests (compila), mas nao roda no placar ativo.
         TestContext.Run("U-fs-repair-ref-type", UnitToolBreakerTests.FsRepairRefType);

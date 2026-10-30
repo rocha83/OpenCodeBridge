@@ -506,16 +506,31 @@ internal static class E2EMissionTests
                 // Reparo in-flow: erro de sintaxe F# volta com a forma correta concreta
                 // (mesma mecanica do mission-tools, texto no Core) para o modelo corrigir
                 // no MESMO turno, em vez de repetir o cabecalho colado (medido 2026-10-29).
-                if (lang == "F#" && global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.HasDiagnostic(res))
+                // Reparo in-flow: F# na forma do FsMini, C# pelo diagnostico do Roslyn
+                // (bloco sem fechar, ';'/')' faltando). Mesma mecanica nos dois — o Core
+                // devolve a forma certa e o teste so' conta a repeticao da MESMA dica.
+                // Sem o ramo C# o `btree` de 2026-10-30 gastou 26 turnos e fechou com
+                // `CS1513: } expected` (26 abre-chave, 25 fecha-chave).
+                Func<string, string, int, string>? repair = lang switch
                 {
-                    string curFs = File.Exists(Path.Combine(ws, "mfs", file)) ? File.ReadAllText(Path.Combine(ws, "mfs", file)) : "";
+                    "F#" when global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.HasDiagnostic(res)
+                        => global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest,
+                    "C#" when global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.HasDiagnostic(res)
+                        => global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest,
+                    _ => null
+                };
+                if (repair is not null)
+                {
+                    string srcDir = lang == "F#" ? "mfs" : "mcs";
+                    string srcPathNow = Path.Combine(ws, srcDir, file);
+                    string curSrc = File.Exists(srcPathNow) ? File.ReadAllText(srcPathNow) : "";
                     // A contagem da MESMA dica e' do teste; a escalada (3a vez vira
                     // "reescreva o arquivo com `write`") e' do Core, em Suggest(repeatCount).
-                    string baseHint = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(curFs, res);
+                    string baseHint = repair(curSrc, res, 0);
                     if (baseHint.Length > 0)
                     {
                         if (baseHint == lastHint) hintRepeats++; else { lastHint = baseHint; hintRepeats = 0; }
-                        string hint = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(curFs, res, hintRepeats);
+                        string hint = repair(curSrc, res, hintRepeats);
                         res += "\n\n" + hint;
                         if (dump) Console.WriteLine($"  [algo:{lang}] T{turn} reparo: {hint.Replace("\n", " | ")}");
                     }

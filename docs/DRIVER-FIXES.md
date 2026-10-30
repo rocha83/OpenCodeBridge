@@ -1380,3 +1380,39 @@ proibido. A rodada válida é depois de mudança real + rebuild.
 Os diretórios canônicos foram removidos; a herança de dono do §45 evita a recorrência
 para o que as tools escrevem (artefatos de `dotnet build` via shell ainda nascem root
 — o fallback segue como rede de segurança e é logado).
+
+## 52. Trilha C# não tinha reparo de sintaxe in-flow: `btree` gastou 26 turnos e fechou com `}` faltando (2026-10-30)
+
+**Sintoma.** L4 completo: `algo-cs-hanoi` PASS (118s), `algo-cs-bin` PASS (16s) e
+`algo-cs-btree` **FAIL em 345s** (`causa=bridge`), com o aceite lendo:
+`ERRO: exit 1: .../Program.cs(101,6): error CS1513: } expected`. Arquivo entregue com
+**26 abre-chave e 25 fecha-chave** (a classe mais externa ficou aberta). Os 6 steps
+seguintes SKIP por fail-fast.
+
+**Causa.** O reparo in-flow de sintaxe existia **só** para F# (`FsSyntaxRepair`, com a
+tabela FsMini). A trilha F# foi arquivada em 2026-10-30 e a C# é a válida — mas o laço
+de missão não tinha nenhum mapa C#: o modelo recebia o texto cru do compilador a cada
+turno, repetia `edit` no mesmo alvo e terminava o orçamento de 26 turnos com o bloco
+aberto.
+
+**Correção (Core, fonte única).** `Core/CsSyntaxRepair` com o MESMO contrato do
+`FsSyntaxRepair` (`Suggest(source, compilerError, repeatCount)` +
+`HasDiagnostic(output)`) e o ponteiro de linha compartilhado
+(`FsSyntaxRepair.WithErrorLine`, agora `internal`):
+
+- `CS1513` (`} expected`): conta `{` e `}` do arquivo e enuncia quantos blocos faltam
+  fechar, com a forma sempre válida ("acrescente N linhas contendo só `}` no fim, a
+  última fecha a declaração mais externa"). Fonte já balanceada não gera dica.
+- `CS1026`/`CS1002`: fecha o parêntese / termina a instrução **na linha apontada**.
+- `HasDiagnostic` aceita `error` e `warning` (`CS0168`/`CS0219` saem como warning).
+- A partir da 3ª vez da MESMA dica o Core manda reescrever o arquivo com `write`
+  (mesma escalada do F#: dica idêntica repetida não ensina).
+
+`E2EMissionTests.RunAlgoPhase` passou a escolher o provedor por linguagem
+(`lang switch`), sem duplicar a mecânica de contagem de dica: o teste só conta
+repetições e o Core devolve a forma.
+
+**Prova.** `U-cs-repair-missing-brace` (novo) + `U-fs-repair-diagnostic-detection`:
+`[test] PASS=2 FAIL=0` — dica com "1 bloco(s) aberto(s) sem fechar", "3 abre-chave e
+2 fecha-chave", ponteiro "linha 10", escalada na 3ª, fonte balanceada sem dica e erro
+sem código CS sem reparo.

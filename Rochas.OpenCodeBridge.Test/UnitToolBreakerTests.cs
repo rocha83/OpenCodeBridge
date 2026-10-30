@@ -806,6 +806,38 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// CS1513 (`} expected`) nao tinha dica in-flow: o `btree` do L4 de 2026-10-30
+    /// gastou 26 turnos e terminou com 26 abre-chave e 25 fecha-chave. A dica diz
+    /// QUANTOS blocos faltam (contagem real do arquivo) e a forma sempre valida.
+    /// </summary>
+    public static Task CsRepairMissingBrace()
+    {
+        string src = "namespace mcs\n{\n    public class Program\n    {\n        static void Main()\n        {\n"
+                   + "            var x = 1;\n        }\n    }\n"; // falta o `}` do namespace
+        string err = "ERRO: exit 1: /tmp/mcs/Program.cs(10,2): error CS1513: } expected [/tmp/mcs/mcs.csproj]";
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.HasDiagnostic(err),
+            "error CSdddd conta como diagnostico C#");
+        string hint = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(src, err);
+        TestContext.Check(hint.Contains("1 bloco(s) aberto(s) sem fechar", StringComparison.Ordinal),
+            "a dica diz QUANTOS blocos faltam fechar (saiu: '" + hint.Replace("\n", " | ") + "')");
+        TestContext.Check(hint.Contains("3 abre-chave e 2 fecha-chave", StringComparison.Ordinal),
+            "a dica usa a contagem real do arquivo (saiu: '" + hint.Replace("\n", " | ") + "')");
+        TestContext.Check(hint.Contains("linha 10", StringComparison.Ordinal),
+            "a dica aponta a linha que o compilador citou");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(src, err, 2)
+                .Contains("reescreva o arquivo inteiro", StringComparison.Ordinal),
+            "na 3a mesma dica o Core manda reescrever o arquivo com `write`");
+        // Arquivo balanceado nao recebe contagem inventada.
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
+                "class A { void M() { } }\n", err).Length == 0,
+            "fonte balanceada nao gera dica de bloco (sem inventar correcao)");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.HasDiagnostic(
+                "ERRO: exit 1: MSBUILD : error MSB1009: Project file does not exist."),
+            "erro sem codigo CS nao dispara reparo de sintaxe C#");
+        return Task.CompletedTask;
+    }
+
     // O pin da cauda F# (FsMini) foi ARQUIVADO em 2026-10-30 junto da trilha
     // F#: ver Archived/FsMiniPin.cs. Ele compila lá, mas não é registrado no
     // Program.cs — teste arquivado não entra no placar ativo.

@@ -41,7 +41,7 @@ public static class FsSyntaxRepair
     /// <param name="hint">Dica ja' montada.</param>
     /// <param name="compilerError">Saida do build com <c>arquivo(linha,coluna)</c>.</param>
     /// <returns>Dica com o ponteiro de linha (ou a propria dica quando nao ha linha).</returns>
-    static string WithErrorLine(string hint, string compilerError)
+    internal static string WithErrorLine(string hint, string compilerError)
     {
         var where = Regex.Match(compilerError, @"\((\d+),(\d+)\)");
         if (!where.Success) return hint;
