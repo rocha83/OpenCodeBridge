@@ -279,8 +279,13 @@ internal static class E2EMissionTests
         string ws = TestContext.FreshWorkspace("e2e-mission-algo-cs-hanoi");
         TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
 
-        string csPrompt = AlgoPrompt(ws, "mcs");
-        var (src, output) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", new[] { csPrompt });
+        // Duas etapas no MESMO arquivo (Hanoi, depois primos), como as demais
+        // missões C#: um programa inteiro em um turno só é a amostra em que o
+        // modelo local devolve o scaffold (`Hello, World!`) sem editar. O aceite
+        // final é o mesmo (cinco chaves); a segmentação só reduz o que ele
+        // precisa acertar de uma vez (regra de micro-runs).
+        string[] stages = AlgoStages(ws, "mcs");
+        var (src, output) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", stages);
         TestContext.Check(!HasHardcodedAlgo(src), "C# calcula (sem hardcode das metas)");
         TestContext.Check(AlgoOk(output), "C# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
         Console.WriteLine($"  [algo] C# ok:\n{output.Trim()}");
@@ -328,8 +333,14 @@ internal static class E2EMissionTests
             "kmeans" => "Implemente K-Means com k=2 sobre os pontos (1,1), (1,2), (2,1), (8,8), (8,9), (9,8). "
                         + "Imprima os dois centroides finais com 1 casa decimal em `kmeans_c1=<x>,<y>` e "
                         + "`kmeans_c2=<x>,<y>`, na ordem crescente de x. ",
-            _ => "Implemente quick sort e bubble sort sobre 5, 2, 9, 1, 5, 6. "
-                 + "Imprima `quicksort=<lista ordenada>` e `bubblesort=<lista ordenada>`, os valores separados por virgula. "
+            _ => "Implemente DOIS algoritmos distintos, cada um na sua propria funcao: "
+                 + "(1) quick sort — escolha um pivo, particione e ordene RECURSIVAMENTE as sublistas menores e maiores; "
+                 + "(2) bubble sort — compare e troque vizinhos ate a lista ficar ordenada. "
+                 + "Aplique os dois sobre a MESMA entrada 5, 2, 9, 1, 5, 6. "
+                 + "Imprima `quicksort=<lista ordenada>` com o resultado do quick sort e "
+                 + "`bubblesort=<lista ordenada>` com o resultado do bubble sort, os valores separados por virgula. "
+                 + "As duas listas tem que estar COMPLETAMENTE em ordem crescente; nao use a saida de um algoritmo "
+                 + "para preencher a chave do outro. "
         };
         return head + ask + "Imprima os valores CALCULADOS pelo programa, nao copie do enunciado. "
             + "Rode `dotnet run --project " + ws + "/" + proj + "` e ajuste ate imprimir.";
@@ -337,8 +348,9 @@ internal static class E2EMissionTests
 
     /// <summary>
     /// Fase de uma missao algoritmica (C# ou F#): workspace novo, projeto scaffold e
-    /// DUAS etapas sobre o MESMO arquivo (a 2a recebe a saida real da 1a como correcao —
-    /// o laco de 26 turnos sozinho nao garante convergencia). Aceite e hardcode sao do teste.
+    /// ate TRES etapas sobre o MESMO arquivo (a seguinte recebe a saida real da anterior
+    /// como correcao — o laco de 26 turnos sozinho nao garante convergencia). Aceite e
+    /// hardcode sao do teste.
     /// </summary>
     /// <param name="name">Nome do workspace/step.</param>
     /// <param name="lang">Linguagem do teste (<c>C#</c> ou <c>F#</c>).</param>
@@ -363,7 +375,7 @@ internal static class E2EMissionTests
             : "module Program\n\nopen System\n\n// resolva o pedido aqui\nprintfn \"ok\"\n");
         string full = AlgoTaskPrompt(alg, ws, lang);
         var (src, output) = await RunAlgoPhase(TestContext.Bridge, AlgoModel(), ws, lang,
-            dir + "/" + dir + (cs ? ".csproj" : ".fsproj"), file, new[] { full, full }, accept: accept);
+            dir + "/" + dir + (cs ? ".csproj" : ".fsproj"), file, new[] { full, full, full }, accept: accept);
         TestContext.Check(!hardcoded(src), lang + " calcula (sem hardcode da meta)");
         TestContext.Check(accept(output), lang + " entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
         Console.WriteLine($"  [algo] {name} ok:\n{output.Trim()}");
@@ -376,21 +388,6 @@ internal static class E2EMissionTests
     }
 
     /// <summary>Mesmo enunciado de missao para o projeto C# (mcs) e o F# (mfs).</summary>
-    static string AlgoPrompt(string ws, string dir)
-    {
-        bool cs = dir == "mcs";
-        string ext = cs ? "cs" : "fs";
-        string proj = dir + (cs ? ".csproj" : ".fsproj");
-        return "Preciso de um programa em " + ws + "/" + dir + "/Program." + ext + ", no projeto " + proj
-            + " que ja existe (nao crie outro projeto), resolvendo duas coisas e imprimindo o resultado de um jeito simples para eu conferir, so com numeros inteiros.\n"
-            + "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Em `hanoi=` quero o NUMERO DE MOVIMENTOS que a solucao executou (quantos movimentos — nao o numero de discos) e em `hanoi_seq=` a sequencia completa numa UNICA linha, com os movimentos separados por virgula, no formato 1->2,1->3,...\n"
-            + "2) Uma analise dos primos: quantos ha abaixo de 100 e abaixo de 1000, e quantos pares gemeos abaixo de 100. O crivo de Eratostenes e uma boa pedida.\n"
-            + "Imprima os valores que o programa calculou; nao copie os numeros do enunciado.\n"
-            + "Para eu comparar sem ambiguidade, termine com estas cinco linhas, uma por linha, nessa ordem e com cada chave UMA vez:\n"
-            + "hanoi=15\nhanoi_seq=1->2,1->3,...\nprimes100=25\nprimes1000=168\ntwin100=8\n"
-            + "Pode rodar `dotnet run --project " + ws + "/" + dir + "/" + proj + "` e ajustar ate bater.";
-    }
-
     /// <summary>
     /// Enunciado da missao em duas etapas sobre o MESMO arquivo: Hanoi primeiro,
     /// primos depois. O aceite final (as cinco chaves) e' o mesmo; a segmentacao so'

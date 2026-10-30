@@ -5118,3 +5118,15 @@ a trilha F#, inclusive as amostras que já tinham PASS (a fase F# de
 **Prova:** build Release `0 Warning(s) / 0 Error(s)`; units
 `PASS=153 FAIL=0 SKIP=6` (inclui o fix do `mkdir -p`); `U-tool-feedback-shell-cwd`
 PASS. Bateria C#/WAR a rodar depois do redeploy.
+
+## Sort C#: quick sort e bubble sort declarados como DOIS algoritmos (2026-10-30)
+
+O `E-mission-algo-cs-sort` falhou com `quicksort=5,2,1,5,6,9` (partição única,
+sem ordenar as sublistas) enquanto o `bubblesort` saía correto. O enunciado
+dizia "Implemente quick sort e bubble sort" numa frase só; o modelo tratou o
+quick sort como uma partição e não recursou. O enunciado agora separa
+explicitamente os dois algoritmos (cada um na sua função), exige a ordenação
+recursiva das sublistas no quick sort e proíbe usar a saída de um para preencher
+a chave do outro. O aceite não mudou: as duas listas completas em ordem
+crescente. Prova: `E-mission-algo-cs-sort` PASS 48,9 s
+(`logs/isolated/cs-sort3-*.log`).
