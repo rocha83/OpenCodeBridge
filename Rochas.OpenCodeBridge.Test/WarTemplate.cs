@@ -246,7 +246,10 @@ internal sealed class WarTemplate : CircuitTemplate
         if (o.Status) return PrintStatus(p);
         if (o.All || !string.IsNullOrWhiteSpace(o.Levels) || o.From != 1)
             return RunAll(o, p);
-        TestContext.ResetDiagnostics(clearProbe: true, bridge: o.Bridge, required: false, apiKey: o.ApiKey,
+        // Credencial RESOLVIDA (p.Api) e nao a opcao crua: com o.ApiKey nulo o
+        // reset ia sem Authorization e a bridge respondia 401, deixando sonda,
+        // contadores e painel da rodada anterior no lugar.
+        TestContext.ResetDiagnostics(clearProbe: true, bridge: p.Bridge, required: false, apiKey: p.Api,
             clearPanel: true);
         return RunLevel(o, p, o.Level,
             o.Stamp ?? Env("LEVEL_STAMP") ?? NowStamp(),
@@ -348,7 +351,10 @@ internal sealed class WarTemplate : CircuitTemplate
 
         int failed = 0;
         // Sonda zerada UMA vez por bateria (o run isolado ja faz o mesmo por ser a propria rodada).
-        TestContext.ResetDiagnostics(clearProbe: true, bridge: o.Bridge, required: false, apiKey: o.ApiKey,
+        // Credencial RESOLVIDA (p.Api) e nao a opcao crua: com o.ApiKey nulo o
+        // reset ia sem Authorization e a bridge respondia 401, deixando sonda,
+        // contadores e painel da rodada anterior no lugar.
+        TestContext.ResetDiagnostics(clearProbe: true, bridge: p.Bridge, required: false, apiKey: p.Api,
             clearPanel: true);
         // Esteira INTEIRA (L1..L4) recomeça também o Grafana: o painel relê as séries
         // e o plugin Infinity do zero, sem arrastar cache/estado da rodada anterior.
