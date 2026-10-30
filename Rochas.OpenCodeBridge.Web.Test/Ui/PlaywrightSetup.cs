@@ -91,10 +91,9 @@ public static class PlaywrightSetup
           sel.dispatchEvent(new Event('change'));
           return pick.value + '|' + pick.textContent.trim();
         }".Replace("FILTER", filterJs).Replace("PREFER", preferJs);
-        string picked = await page.EvaluateAsync<string>(agentJs);
+        string picked = await SelectWithPaceAsync(page, "select#agentId", agentJs);
         if (string.IsNullOrEmpty(picked))
             throw new InvalidOperationException($"dropdown sem perfil {what}");
-        await PaceAsync(page, "select#agentId");
 
         string sub = "nenhum";
         if (pickSubagent && await page.QuerySelectorAsync("select#executorId") is not null)
@@ -113,54 +112,71 @@ public static class PlaywrightSetup
               ex.dispatchEvent(new Event('change'));
               return chosen.value + '|' + chosen.textContent.trim();
             }";
-            string subPicked = await page.EvaluateAsync<string>(subJs);
+            string subPicked = await SelectWithPaceAsync(page, "select#executorId", subJs);
             if (!string.IsNullOrEmpty(subPicked))
-            {
                 sub = subPicked;
-                await PaceAsync(page, "select#executorId");
-            }
         }
         Console.WriteLine($"[ui] {label}: agente {what} = {picked} sub={sub}");
         return $"{picked} sub={sub}";
     }
 
     /// <summary>
-    /// Compasso de tela: realça o campo já selecionado, segura o tempo de leitura e
-    /// limpa o realce. Existe para o <b>espectador</b> da janela aberta ver a escolha
-    /// acontecendo; em headless não roda (nada a assistir).
+    /// Escolhe a opção com compasso de tela: ABRE a lista (o popup nativo do
+    /// <c>&lt;select&gt;</c> não abre por script — expandir <c>size</c> mostra todas as
+    /// opções e a marcada, que é o que o espectador precisa ver), espera, aplica a
+    /// escolha, espera de novo e fecha a lista. Em headless apenas escolhe (0 ms).
     /// </summary>
     /// <param name="page">Página em <c>/Chat</c>.</param>
-    /// <param name="selector">Campo que acabou de mudar de valor.</param>
-    private static async Task PaceAsync(IPage page, string selector)
+    /// <param name="selector">Dropdown alvo (<c>select#agentId</c>/<c>select#executorId</c>).</param>
+    /// <param name="pickJs">JS que escolhe a opção e devolve <c>id|rótulo</c> (ou vazio).</param>
+    /// <returns><c>id|rótulo</c> da opção escolhida, ou vazio quando não há perfil.</returns>
+    private static async Task<string> SelectWithPaceAsync(IPage page, string selector, string pickJs)
     {
         int ms = PaceMs();
-        if (ms <= 0) return;
+        if (ms <= 0) return await page.EvaluateAsync<string>(pickJs);
+
+        // 1) lista aberta: size > 1 imita o popup e não fecha sozinho.
         await page.EvaluateAsync(@"sel => {
             const e = document.querySelector(sel);
-            if (!e) return;
+            if (!e || e.tagName !== 'SELECT') return;
+            e.dataset.paceSize = String(e.size);
+            e.size = Math.max(2, Math.min(e.options.length, 9));
+            e.style.height = 'auto';
             e.style.outline = '3px solid #f59e0b';
             e.style.outlineOffset = '2px';
             e.style.boxShadow = '0 0 0 4px rgba(245,158,11,.35)';
             e.scrollIntoView({ block: 'center' });
         }", selector);
-        await page.WaitForTimeoutAsync(ms);
+        await page.WaitForTimeoutAsync(ms / 2);          // tempo para LER a lista
+
+        string picked = await page.EvaluateAsync<string>(pickJs);
+        await page.WaitForTimeoutAsync(ms);              // tempo para ver a MARCADA
+
+        // 2) fecha a lista e limpa o realce (o app pode ter re-renderizado: tolera).
         await page.EvaluateAsync(@"sel => {
             const e = document.querySelector(sel);
-            if (!e) return;
-            e.style.outline = ''; e.style.outlineOffset = ''; e.style.boxShadow = '';
+            if (!e || e.tagName !== 'SELECT') return;
+            const orig = parseInt(e.dataset.paceSize || '1', 10);
+            e.size = orig > 1 ? orig : 1;
+            e.style.height = '';
+            e.style.outline = '';
+            e.style.outlineOffset = '';
+            e.style.boxShadow = '';
         }", selector);
+        return picked;
     }
 
     /// <summary>
-    /// Tempo do compasso em ms: <c>UI_PACE_MS</c> manda; sem a variável, 1500 com a
-    /// janela aberta (espectador) e 0 em headless (CI sem plateia).
+    /// Tempo do compasso em ms: <c>UI_PACE_MS</c> manda; sem a variável, 2500 com a
+    /// janela aberta (espectador — a lista fica ~1,25 s aberta e a opção marcada
+    /// ~2,5 s) e 0 em headless (CI sem plateia).
     /// </summary>
     /// <returns>Milissegundos de espera por campo (0 = sem compasso).</returns>
     public static int PaceMs()
     {
         string? env = Environment.GetEnvironmentVariable("UI_PACE_MS");
         if (int.TryParse(env, out int v)) return Math.Clamp(v, 0, 10000);
-        return Headless() ? 0 : 1500;
+        return Headless() ? 0 : 2500;
     }
 
     /// <summary>
