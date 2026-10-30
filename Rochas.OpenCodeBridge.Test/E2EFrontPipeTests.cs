@@ -417,6 +417,10 @@ internal static class E2EFrontPipeTests
         string final = "";
         int exit = 3;
         int nudges = 0;
+        // Erro da tool no FIM do ultimo turno: o turno sem tool call precisa dele
+        // para nao aceitar "OK" com o artefato intacto (reset no topo do laco
+        // zerava o valor antes da checagem e o empurrao nunca disparava).
+        string pendingError = "";
         Directory.CreateDirectory(Path.GetDirectoryName(dumpAbs)!);
 
         for (int turn = 1; turn <= maxTurns; turn++)
@@ -450,14 +454,14 @@ internal static class E2EFrontPipeTests
                 // (a mensagem da tool ja' ensina a forma certa) antes de aceitar o
                 // "OK" — o Q3 fechava a fase sem aplicar nada (E-front-edit-react,
                 // `oldString ocorre 2x`, 2026-10-30).
-                if (lastToolError.Length > 0 && nudges < 1)
+                if (pendingError.Length > 0 && nudges < 1)
                 {
                     nudges++;
                     Console.WriteLine($"  [front:{label}] tool falhou e o modelo encerrou: empurrao com o erro exato");
                     history.Add(new JsonObject
                     {
                         ["role"] = "user",
-                        ["content"] = "A ultima tool FALHOU: " + lastToolError
+                        ["content"] = "A ultima tool FALHOU: " + pendingError
                             + "\nAplique a correcao agora e so' entao responda OK."
                     });
                     continue;
@@ -496,6 +500,7 @@ internal static class E2EFrontPipeTests
                 results.Add(new JsonObject { ["name"] = name, ["args"] = Clip(a.ToJsonString(), 400), ["result"] = Clip(res, 800) });
                 history.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = Clip(res) });
             }
+            pendingError = lastToolError;
             rec["tools"] = results;
         }
 
@@ -631,16 +636,21 @@ internal static class E2EFrontPipeTests
         string genFile = Path.Combine(Ws, "gen", baselineName);
         if (File.Exists(genFile)) Replace(genFile, target);
 
+        // Baseline da FASE (nao do gen): gravar em `gen/before.json` sobrescrevia o
+        // retrato do gen a cada fase e a cadeia do E-front-verify passava a comparar
+        // o edit contra o estado JA editado — "delta 2 antes=20 depois=20" e
+        // "no-regressao rect_w antes=320 depois=240" (medido 2026-10-30).
+        string baselinePath = Path.Combine(Ws, "gen", $"before-{kind}.json");
         JsonObject before;
         if (WebDriver)
         {
             EnsureServer();
-            before = Measure(Path.Combine(Ws, "gen", "before.json"));
+            before = Measure(baselinePath);
         }
         else
         {
-            before = StaticSnapshot("baseline");
-            File.WriteAllText(Path.Combine(Ws, "gen", "before.json"), before.ToJsonString(Indented));
+            before = StaticSnapshot(kind);
+            File.WriteAllText(baselinePath, before.ToJsonString(Indented));
         }
         CheckSnapshot("baseline", before, requireQuadro: true);
 

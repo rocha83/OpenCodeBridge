@@ -1292,3 +1292,33 @@ exato ("Aplique a correcao agora e so' entao responda OK") antes de aceitar o fi
 
 **Prova.** `U-tools-elision-refused` continua verde; rodada do front reexecutada com
 as quatro fases (`gen`, `edit`, `edit-razor`, `edit-react`) + `E-front-verify`.
+
+## 49. `E-front-verify` compara o edit com o estado JÁ editado, e pins do shell exigem stdout exato (2026-10-30)
+
+**Sintoma (front).** Com as quatro fases verdes, `E-front-verify` FAIL:
+`#titulo font-size delta 2 antes=20 depois=20 (tol 0.5)` e
+`no-regressao #quadro rect_w antes=320 depois=240`.
+
+**Causa.** `EditKind` gravava o retrato da fase em `Ws/gen/before.json` — o MESMO
+arquivo que é o baseline do `E-front-gen` e o primeiro elo da cadeia do verify. As
+fases rodam em sequência (css → razor → react) e cada uma regravava o arquivo com o
+estado corrente, então o "baseline" da cadeia passou a ser o estado DEPOIS dos edits
+de CSS: delta 2 virava "antes=20 depois=20" e o quadro "regredia" de 320 para 240.
+
+**Correção.** Baseline por fase em `gen/before-<kind>.json`; `gen/before.json` volta a
+ser escrito só pelo `E-front-gen`.
+
+**Sintoma (webui).** `webui-integracao-topicos` FAIL: `U-tool-shell-echo` e
+`U-tool-bash-alias` (ToolExecutor 75/77), com o resto da suíte verde.
+
+**Causa.** Os dois pins exigiam `r.Output == "ola"` / `== "via-bash"`, mas o `shell` do
+Core anexa a linha `[shell] cwd desta chamada: <rel>` em toda resposta (contrato
+pinado por `U-tool-feedback-shell-cwd`, regra "a falha de path devolve o caminho
+real"). O pin era anterior à cauda de cwd.
+
+**Correção.** Contrato estrutural: o STDOUT do comando inicia a resposta
+(`Output.StartsWith("ola")` / `StartsWith("via-bash")`); a linha de cwd continua sendo
+verificada pelo pin próprio dela.
+
+**Prova.** front: `PASS=5 FAIL=0` (`E-front-gen/edit/edit-razor/edit-react/verify`);
+webui: `ToolExecutor Unit: 77/77 PASS, 0 FAIL`.
