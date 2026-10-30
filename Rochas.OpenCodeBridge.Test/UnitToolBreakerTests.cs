@@ -966,6 +966,27 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // 14a amostra (2026-10-29): `subSeq @ "," + nextMove` — ramo `string` e ramo lista no
+    // mesmo `if`. A dica antiga mandava `Array.append` para qualquer ramo; agora ela le o
+    // tipo NOMEADO na mensagem e ensina o jeito de juntar de cada um.
+    public static Task FsRepairIfBranchesString()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let hanoi_seq n =\n    if n <= 0 then \"\"\n    else\n        let subSeq = \"1->2\"\n        subSeq @ \",\" + \"1->3\"\n",
+            "error FS0001: All branches of an 'if' expression must return values implicitly convertible to the type of the first branch, which here is 'string'. This branch returns a value of type ''a list'.");
+        TestContext.Check(p.Contains("TEXTO com `+`") && p.Contains("LISTA com `@`"),
+            "FS0001 ramo string -> dica ensina + para texto e @ para lista (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(p.Contains("let texto = a + \",\" + b"), "a dica mostra a forma que compila");
+        TestContext.Check(!p.Contains("Array.append antes depois"), "ramo string nao recebe a dica de array");
+
+        string q = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let f xs = if xs = [] then [] else xs\n",
+            "error FS0001: All branches of an 'if' expression must return values implicitly convertible to the type of the first branch, which here is ''a list'. This branch returns a value of type 'int'.");
+        TestContext.Check(q.Contains("para juntar LISTA use `@`"),
+            "ramo lista -> dica de `@` (veio: " + q.Replace("\n", " | ") + ")");
+        return Task.CompletedTask;
+    }
+
     // ---- janela de args separada da janela de texto (opcao B do L3 2026-10-29) ----
 
     public static Task AntiRepeatArgsWindowIsIndependent()

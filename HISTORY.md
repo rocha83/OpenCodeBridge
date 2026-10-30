@@ -1,5 +1,30 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## `E-mission-algo-fs` 14ª amostra: FS0001 com ramo `string` e dica de array (2026-10-29)
+
+**Resultado medido.** `logs/isolated/E-mission-algo-fs_-20261029-215110.log`
+(`PASS=0 FAIL=1`): 11 × `FS0001` e **9 reparos** injetados, sem convergir. O fonte
+misturou lista e texto no mesmo `if` (`subSeq @ "," + nextMove`), e o erro nomeado
+era `which here is 'string'. This branch returns a value of type ''a list'`. A 13ª
+amostra (mesmo modelo) tinha compilado e acertado a sequência — a variância do turno
+importa: aqui o modelo escreveu F# com cara de OCaml/C# e nunca saiu.
+
+**Causa.** O ramo `FS0001` "branches of an 'if'" devolvia **sempre** a dica de array
+(`Array.append`), qualquer que fosse o tipo nomeado. Com ramo `string` a dica não
+falava do defeito real (texto × lista) e o modelo repetia a linha.
+
+**Correção** (nos ramos que já existiam):
+1. `branches of an 'if'` lê o tipo do **primeiro** ramo em `which here is '...'`
+   (`string` → TEXTO com `+`, LISTA com `@`, ARRAY com `Array.append`; "nao misture
+   lista com texto"); `list` → `@`; resto → `Array.append`.
+2. `FS0001` com `''a list'` + `'string'` → "`@` junta LISTA e `+` junta TEXTO".
+3. `FsMini`: a linha única de `FS0001` cita os três jeitos de juntar.
+
+**Prova.** `units` **140 PASS / 0 FAIL SKIP=6** (`U-fs-repair-if-branches-string`
+novo; `U-fs-repair-comprehension` segue exigindo `Array.append` para ramo array),
+probe com `texto junta com + e lista com @ (FS0001 ramo string)` = OK, build
+`0 Aviso(s) / 0 Erro(s)`.
+
 ## `E-mission-algo-fs` 12ª amostra: FS0039 de ordem e aviso de salvage com exemplos (2026-10-29)
 
 **Resultado medido.** `logs/isolated/E-mission-algo-fs_-20261029-203932.log`

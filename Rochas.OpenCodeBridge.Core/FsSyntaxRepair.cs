@@ -227,12 +227,40 @@ public static class FsSyntaxRepair
                 return $"CERTO: defina '{dup.Groups[1].Value}' UMA vez: apague a definicao repetida (o arquivo ficou com duas)";
         }
 
-        // FS0001 "ramos do if" (medido em 2026-10-29): os dois ramos precisam do
-        // MESMO tipo — o modelo juntou arrays com `@`, que concatena LISTA.
+        // FS0001 "ramos do if": os dois ramos devolvem o MESMO tipo, e o conserto
+        // depende do tipo que o compilador NOMEIA na mensagem. A dica de array respondia
+        // a um ramo `string` e o modelo repetia a linha (14a amostra de 2026-10-29:
+        // `subSeq @ "," + nextMove` misturou lista com texto).
         if (code == "FS0001"
             && compilerError.Contains("branches of an 'if' expression", StringComparison.Ordinal))
+        {
+            // O tipo que decide e' o do PRIMEIRO ramo (o que o compilador nomeia em
+            // `which here is '...'`); o segundo pode ser de outro tipo e nao serve de
+            // criterio (medido: array x list caia na dica de lista).
+            var first = Regex.Match(compilerError, @"which here is '(?<t>.*?)'\.(?:\s|$)");
+            string branchType = first.Success ? first.Groups["t"].Value : "";
+            if (branchType.Contains("string", StringComparison.Ordinal)
+                || (branchType.Length == 0 && compilerError.Contains("'string'", StringComparison.Ordinal)))
+                return "CERTO: os dois ramos do `if` devolvem o MESMO tipo, e cada tipo tem o seu jeito de juntar — "
+                     + "TEXTO com `+`, LISTA com `@`, ARRAY com `Array.append` (nao misture lista com texto):\n"
+                     + "let texto = a + \",\" + b\n"
+                     + "let lista = xs @ [ y ]\n"
+                     + "let arr = Array.append a b";
+            if (branchType.Contains("list", StringComparison.Ordinal))
+                return "CERTO: os dois ramos do `if` devolvem o MESMO tipo — para juntar LISTA use `@`:\n"
+                     + "if cond then [ (a, b) ] else xs @ [ (a, b) ]";
             return "CERTO: os dois ramos do `if` devolvem o MESMO tipo — para juntar ARRAY use `Array.append`:\n"
                  + "if cond then [| (a, b) |] else Array.append antes depois";
+        }
+
+        // FS0001 lista x texto: `@` concatena LISTA e `+` concatena TEXTO — misturar os
+        // dois e' o mesmo defeito visto por outro angulo (14a amostra de 2026-10-29).
+        if (code == "FS0001"
+            && compilerError.Contains("''a list'", StringComparison.Ordinal)
+            && compilerError.Contains("'string'", StringComparison.Ordinal))
+            return "CERTO: `@` junta LISTA e `+` junta TEXTO — nao misture os dois:\n"
+                 + "let texto = a + \",\" + b\n"
+                 + "let lista = xs @ [ y ]";
 
         // FS0001 `List.*` recebendo `[| ... |]`: o compilador diz lista esperada e
         // array recebido. A dica nomeia a lista (`[...]`) e o `Array.*` correto.

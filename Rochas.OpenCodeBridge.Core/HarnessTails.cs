@@ -71,7 +71,7 @@ public static class HarnessTails
         "TABELA DE ERROS (codigo: sintoma -> forma correta): " +
         "FS0010 lista -> elemento com `-> expr` ou `do yield expr`: `[for i in 1 .. n-1 -> expr]` ou `[for i in 1 .. n-1 do yield expr]`; lambda e' `fun x -> expr`: `List.fold (fun acc x -> acc + x) 0 xs`; anotacao de retorno leva SO' o tipo, sem `nome:` dentro dos parenteses: `let hanoi (n: int) : int * string list =`. " +
         "FS0751/FS0003 passo -> passo no MEIO dos dois `..`: `[for i in 1 .. 2 .. n-1]` percorre 1, 3, .., n-1; aplicacao -> a chamada e a declaracao usam a MESMA quantidade de parametros: `let rec soma a b c = ...` chamado `soma 1 2 3`. " +
-        "FS0001 tipo -> lista com `List.sum [ 1; 2 ]` e array com `Array.sum [| 1; 2 |]`; no range os dois limites sao do MESMO tipo; nos dois ramos do `if` o tipo e' o mesmo (`@` concatena LISTA, array usa `Array.append a b`). " +
+        "FS0001 tipo -> lista com `List.sum [ 1; 2 ]` e array com `Array.sum [| 1; 2 |]`; no range os dois limites sao do MESMO tipo; nos dois ramos do `if` o tipo e' o mesmo e cada tipo tem seu jeito de juntar — TEXTO com `+` (`a + \",\" + b`), LISTA com `@` (`xs @ [ y ]`), ARRAY com `Array.append a b`; nao misture lista com texto. " +
         "FS0039 nome nao definido -> parametro ou valor ja declarado; a declaracao vem ANTES do primeiro uso (o modulo e' lido de cima para baixo): `let auxiliar = 3` acima de quem o usa, ou receba por parametro; resto de inteiro e' `a % b`; auto-chamada pede `let rec f`. " +
         "FS0037 nome repetido -> uma definicao por nome. " +
         "FS0058 offside -> auxiliar no nivel do modulo; no ramo, so' a chamada. " +

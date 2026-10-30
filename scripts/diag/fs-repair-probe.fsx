@@ -130,5 +130,10 @@ let auxiliar = 3
 let rec somaAte n =
     if n = 0 then auxiliar else n + somaAte (n - 1)
 check "valor declarado antes do primeiro uso (FS0039)" (somaAte 4 = 13)
+
+// 13) Texto junta com `+` e lista com `@` (14a amostra: FS0001 em `subSeq @ "," + nextMove`).
+let juntaTexto (a: string) (b: string) = a + "," + b
+let juntaLista (xs: int list) (y: int) = xs @ [ y ]
+check "texto junta com + e lista com @ (FS0001 ramo string)" (juntaTexto "1->2" "1->3" = "1->2,1->3" && juntaLista [ 1 ] 2 = [ 1; 2 ])
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."

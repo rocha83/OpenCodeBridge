@@ -937,4 +937,31 @@ válido — o modelo copia o literal que vê.
 curado da tool), `fs-repair-probe.fsx` com `valor declarado antes do primeiro uso
 (FS0039)` = OK, build `0 Aviso(s) / 0 Erro(s)`.
 
+## 36. 14ª amostra do `E-mission-algo-fs`: FS0001 com ramo `string` e dica de array (2026-10-29)
+
+**Sintoma.** `logs/isolated/E-mission-algo-fs_-20261029-215110.log` (`PASS=0 FAIL=1`):
+11 × `FS0001` e **9 reparos** injetados, mas o programa não converge. O erro central
+é `Program.fs(23,17)`: `All branches of an 'if' expression … which here is 'string'.
+This branch returns a value of type ''a list'` — o fonte tinha
+`subSeq @ "," + nextMove + "," + finalSubSeq` (lista e texto misturados no mesmo `if`).
+
+**Causa.** O ramo `FS0001` "branches of an 'if'" devolvia **sempre** a dica de array
+(`Array.append`), qualquer que fosse o tipo nomeado na mensagem. Com ramo `string` a
+dica mandava usar `Array.append` — não ensinava nada do defeito real (texto × lista),
+e o modelo repetia a linha. Segundo buraco: `FS0001` com `''a list'` × `'string'`
+caía na regra genérica de lista/array, que também não fala de texto.
+
+**Correção** (nos dois ramos que já existiam — nada de regra nova):
+1. `branches of an 'if'` lê o tipo NOMEADO na mensagem: `'string'` → TEXTO com `+`,
+   LISTA com `@`, ARRAY com `Array.append` (e "nao misture lista com texto"); `list`
+   → `@`; resto → `Array.append` (como antes).
+2. `FS0001` com `''a list'` + `'string'` → "`@` junta LISTA e `+` junta TEXTO".
+3. `FsMini`: a linha única de `FS0001` passa a citar os três jeitos de juntar.
+
+**Prova.** `units` **140 PASS / 0 FAIL SKIP=6** (pin novo
+`U-fs-repair-if-branches-string`: ramo string não recebe dica de array + ramo lista
+continua com `@`), probe com `texto junta com + e lista com @ (FS0001 ramo string)`
+= OK, build `0 Aviso(s) / 0 Erro(s)`.
+
+
 
