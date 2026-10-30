@@ -5201,6 +5201,45 @@ a trilha F#, inclusive as amostras que já tinham PASS (a fase F# de
 `PASS=153 FAIL=0 SKIP=6` (inclui o fix do `mkdir -p`); `U-tool-feedback-shell-cwd`
 PASS. Bateria C#/WAR a rodar depois do redeploy.
 
+## Painel Observation: icone no fluxo, linha 1 em h=5 e Steps acima de Tools (2026-10-30)
+
+Ajuste de leitura do painel, sem tocar em dado nem em aceite:
+
+1. **Icone a esquerda no primeiro quadro** — o título passou a ser
+   `🔀 Fluxo principal` (o painel é desenho de fluxo, não série; era o único da
+   primeira linha sem marca visual).
+2. **Altura 5, não 6** — `Fluxo principal` e `Modo / Main Harness` tinham
+   crescido para `h=6` no ajuste de 0-based da busca binária; voltaram a `h=5` e
+   as linhas de baixo subiram **1 célula** (sem faixa vazia entre a linha 1 e as
+   tabelas de Enunciado/Respostas).
+3. **Ordem invertida de propósito** — `Steps concluidos` sobe para `y=25`
+   (`h=8`) e `Tools calls por step` desce para `y=33` (`h=6`); a soma fecha
+   `39`, exatamente onde começa `Throughput/VRAM`. Quem olha o painel vê
+   **primeiro o que já terminou** e depois a distribuição de tools.
+
+Fonte única continua `observation/grafana/dashboards/opencodebridge.json`;
+`scripts/lab/install-grafana-observation.sh` copia para
+`/var/lib/grafana/dashboards`, recria o provisioning e reinicia o
+`grafana-server`. Prova: `GET /api/dashboards/uid/opencodebridge` devolve os 17
+painéis com `Fluxo principal` em `h=5`, `Steps concluidos` em `y=25` e
+`Tools calls` em `y=33`.
+
+**Infra desta rodada** (mesmo dia): reboot deixou `llama-gpu2`, `bridge-gpu2`,
+`bridge-web` **disabled** e o Grafana **sem datasource/dashboard** (só
+`sample.yaml` em `/etc/grafana/provisioning`); o redeploy reinstalou o painel
+(`install-grafana-observation.sh` + `systemctl enable grafana-server`) e a
+bancada voltou com `llama :4100` apontando para o Q4 **uncensored**
+(`/media/.../llama-models/gemma-4-E4B-it-uncensored`) e `bridge :4124` em
+`--mode bridge --main-harness 1` (tails `all`, anti-repeat 1/1, salvage
+intrínseco do Core).
+
+**Falha medida na UI (Sessão 38) fechada no harness:** a rodada isolada morria
+em `I-chat-calibrate` com `TaskCanceledException` do `HttpClient` (100 s) — a
+calibragem faz vários turnos no modelo vivo e já se limitava por CTS de 150 s.
+O cliente do teste subiu para 200 s e cada teste passou a rodar por
+`CheckAsync` (exceção vira `FAIL <nome>` em vez de matar o processo e esconder
+o veredito dos seguintes).
+
 ## Sort C#: quick sort e bubble sort declarados como DOIS algoritmos (2026-10-30)
 
 O `E-mission-algo-cs-sort` falhou com `quicksort=5,2,1,5,6,9` (partição única,

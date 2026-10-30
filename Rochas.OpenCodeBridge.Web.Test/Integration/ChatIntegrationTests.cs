@@ -84,7 +84,15 @@ internal static class ChatIntegrationTests
     internal static async Task<int> RunAsync(string webBase)
     {
         WebBase = webBase;
-        Http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, CookieContainer = Cookies });
+        // O cliente padrao corta em 100 s e a calibragem faz varios turnos no
+        // modelo vivo (o proprio teste ja limita por CTS em 150 s), entao o teto
+        // do cliente precisa ser MAIOR que o CTS da chamada: com os 100 s o
+        // TaskCanceledException nao tratado derrubava a rodada inteira em
+        // I-chat-calibrate (medido em 2026-10-30, webui-isolado 10:45).
+        Http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, CookieContainer = Cookies })
+        {
+            Timeout = TimeSpan.FromSeconds(200)
+        };
 
         // Login admin
         await LoginAdmin();
@@ -92,16 +100,16 @@ internal static class ChatIntegrationTests
         // Cookie antiforgery gira no login: reler o token pós-login.
         await FetchAfToken();
 
-        Check(await AnonRedirectsToLogin(), "I-chat-login-redirect");
-        Check(await AdminSeesAgentsUsersLinks(), "I-chat-admin-sees-agents-users");
-        Check(await SessionsCrud(), "I-chat-sessions-crud");
-        Check(await StreamSseWithSession(), "I-chat-stream-sse");
-        Check(await AbortKeepsMessageThenResume(), "I-chat-abort-resume");
-        Check(await ClientLogAcceptsBatch(), "I-chat-clientlog");
-        Check(await PingEngine(), "I-chat-ping-engine");
-        Check(await CalibrateEndpoint(), "I-chat-calibrate");
-        Check(await DiagnosticsEndpoint(), "I-chat-diagnostics");
-        Check(await ToolProgressEvents(), "I-chat-tool-progress");
+        await CheckAsync("I-chat-login-redirect", AnonRedirectsToLogin);
+        await CheckAsync("I-chat-admin-sees-agents-users", AdminSeesAgentsUsersLinks);
+        await CheckAsync("I-chat-sessions-crud", SessionsCrud);
+        await CheckAsync("I-chat-stream-sse", StreamSseWithSession);
+        await CheckAsync("I-chat-abort-resume", AbortKeepsMessageThenResume);
+        await CheckAsync("I-chat-clientlog", ClientLogAcceptsBatch);
+        await CheckAsync("I-chat-ping-engine", PingEngine);
+        await CheckAsync("I-chat-calibrate", CalibrateEndpoint);
+        await CheckAsync("I-chat-diagnostics", DiagnosticsEndpoint);
+        await CheckAsync("I-chat-tool-progress", ToolProgressEvents);
 
         // Não suja a UI real: apaga as sessões criadas pelos testes.
         foreach (int sid in CreatedSessions.Distinct())
@@ -117,6 +125,22 @@ internal static class ChatIntegrationTests
     {
         Console.WriteLine((ok ? "PASS " : "FAIL ") + name);
         if (!ok) Failures++;
+    }
+
+    // Excecao nao tratada matava o processo e escondia o veredito dos demais
+    // testes (medido em 2026-10-30). Aqui ela vira FAIL com o nome do teste,
+    // no mesmo formato do Check.
+    private static async Task CheckAsync(string name, Func<Task<bool>> body)
+    {
+        try
+        {
+            Check(await body(), name);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"FAIL {name} (excecao {ex.GetType().Name})");
+            Failures++;
+        }
     }
 
     private static async Task<bool> LoginAdmin()

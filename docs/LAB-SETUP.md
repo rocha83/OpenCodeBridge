@@ -1644,10 +1644,23 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
   Grafana responde `401` com *"too many consecutive incorrect login attempts …
   temporarily blocked"* — **não** é a senha que mudou. Limpar a janela:
   `sudo python3 -c "import sqlite3; c=sqlite3.connect('/var/lib/grafana/grafana.db'); c.execute('delete from login_attempt'); c.commit()"`.
-- **Dashboard:** `OpenCodeBridge Observation` (uid `opencodebridge`), 16 painéis
+- **Dashboard:** `OpenCodeBridge Observation` (uid `opencodebridge`), 17 painéis
   apontando para `${bridge}` — `mode=bridge`, `main_harness`, `tails`, métricas,
   probes, steps e enunciado. Todo target usa `source: "url"` (sem isso o Infinity
   **devolve 200 sem dados** — medição: mesmo payload sem `source` = 0 linhas).
+- **Layout (contrato de leitura, 2026-10-30):** primeira linha em `h=5`
+  (`🔀 Fluxo principal` à esquerda, `Modo / Main Harness` à direita), linhas de
+  baixo compactadas em 1 célula, e `Steps concluidos` (`y=25`, `h=8`) **acima**
+  de `Tools calls por step` (`y=33`, `h=6`) — a soma fecha `39`, onde começa a
+  linha de `Throughput/VRAM`. Mudou o JSON do repo? Rode
+  `sudo bash scripts/lab/install-grafana-observation.sh` (copia + provisioning +
+  restart + validação por API) e confira
+  `GET /api/dashboards/uid/opencodebridge`.
+- **Depois de reboot/limpeza do Grafana:** `/etc/grafana/provisioning` pode
+  voltar a ter **só `sample.yaml`** e `/var/lib/grafana/dashboards` ficar vazio
+  (painel sem datasource e sem dashboard, `/api/search` = `[]`). O mesmo
+  `install-grafana-observation.sh` é idempotente e resolve — ele também faz
+  `systemctl enable grafana-server` (medido 2026-10-30).
 - Plugin **`yesoreyeram-infinity-datasource`** é obrigatório para o dashboard `opencodebridge`
   (panels consultam `http://127.0.0.1:4124/api/metrics` e `/api/status` via Infinity).
   Instalar: `sudo grafana-cli --homepath /usr/share/grafana plugins install yesoreyeram-infinity-datasource`
