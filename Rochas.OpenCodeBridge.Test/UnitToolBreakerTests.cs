@@ -987,6 +987,19 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // 16a amostra (2026-10-29): `(n: int; source: string; ...)` -> FS0010
+    // "Unexpected symbol ';' in pattern". O `;` so' separa itens de lista/array.
+    public static Task FsRepairParamSemicolon()
+    {
+        string p = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(
+            "let rec hanoi (n: int; source: string; destination: string; auxiliary: string) =\n    if n = 0 then [] else []\n",
+            "error FS0010: Unexpected symbol ';' in pattern. Expected ')' or other token.");
+        TestContext.Check(p.Contains("(n: int) (source: int)"),
+            "FS0010 ';' -> dica ensina parametros curried (veio: " + p.Replace("\n", " | ") + ")");
+        TestContext.Check(!p.Contains("(n: int;"), "a dica nao ecoa a lista de parametros com `;`");
+        return Task.CompletedTask;
+    }
+
     // 15a amostra (2026-10-29): `currentPrimes.[p]` com o parametro sem anotacao ->
     // FS0752 "operator 'expr.[idx]' has been used on an object of indeterminate type".
     // Sete ocorrencias e nenhuma dica; a forma que compila e' a anotada.

@@ -62,6 +62,16 @@ public static class FsSyntaxRepair
                  + "let hanoi (moves: string list ref) =\n"
                  + "    moves := !moves @ [ sprintf \"%d->%d\" 1 2 ]";
 
+        // FS0010 "Unexpected symbol ';' in pattern": C#-ismo na lista de parametros
+        // (medido na 16a amostra do isolado de 2026-10-29: `(n: int; source: string;
+        // ...)` repetido em 4 edits seguidos, ZERO reparo). Em F# o `;` so' separa
+        // itens de lista/array/registro; parametros sao curried (espaco) ou tupla (virgula).
+        if (code == "FS0010" && compilerError.Contains("Unexpected symbol ';' in pattern", StringComparison.Ordinal))
+            return "CERTO: na lista de parametros nao vai `;` — separe por ESPACO (curried) ou por VIRGULA dentro de UM parenteses (tupla):\n"
+                 + "let rec hanoi (n: int) (source: int) (destination: int) (auxiliary: int) =\n"
+                 + "    if n = 0 then ...   // chamada: hanoi (n - 1) source auxiliary destination\n"
+                 + "o `;` so' separa itens de lista, array e registro: `[ 1; 2 ]`, `[| 1; 2 |]`";
+
         // FS0010 "Unexpected symbol ':' in binding": nome de campo DENTRO da anotacao
         // de retorno (`: (count: int * string list)`). F# nao tem elemento nomeado em
         // anotacao de tipo; medido na 10a amostra do isolado de 2026-10-29

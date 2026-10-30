@@ -139,5 +139,10 @@ check "texto junta com + e lista com @ (FS0001 ramo string)" (juntaTexto "1->2" 
 // 14) Indice exige tipo conhecido (15a amostra: FS0752 em `currentPrimes.[p]`).
 let marcaIndice (xs: bool array) i = xs.[i]
 check "indice com parametro anotado (FS0752)" (marcaIndice [| true; false |] 1 = false)
+
+// 15) Parametros curried, sem `;` (16a amostra: FS0010 em `(n: int; ...)`).
+let rec somaCurried (n: int) (a: int) (b: int) =
+    if n = 0 then a + b else somaCurried (n - 1) a b
+check "parametros curried compilam (FS0010 ';')" (somaCurried 2 3 4 = 7)
 printfn ""
 printfn "Se 'do' sem yield com tipo aberto compilar, revise FsSyntaxRepair/HarnessTails."
