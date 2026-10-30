@@ -54,6 +54,7 @@ public sealed class EditToolHandler : IToolHandler
                 if (newString.Length > MaxChars)
                     return ToolResult.Fail($"arquivo grande demais ({newString.Length} chars, teto {MaxChars})");
                 File.WriteAllText(full, newString);
+                ArtifactOwnership.Adopt(full, context.Log);
                 context.Log?.Invoke(new JsonObject
                 {
                     ["event"] = "edit-whole-file-as-write",
@@ -87,6 +88,7 @@ public sealed class EditToolHandler : IToolHandler
 
             string updated = replaceAll ? text.Replace(oldString, newString) : ReplaceFirst(text, oldString, newString);
             File.WriteAllText(full, updated);
+            ArtifactOwnership.Adopt(full, context.Log);
             return ToolResult.Ok(replaceAll ? $"{count} substituições em '{path}'" : $"1 substituição em '{path}'");
         }
         catch (Exception ex)

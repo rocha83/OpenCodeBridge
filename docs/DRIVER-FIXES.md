@@ -1193,3 +1193,40 @@ continua igual.
 **Prova.** `U-tools-whole-file-rewrite` PASS (arquivo regravado uma vez, sem
 duplicar `static void Main`); `U-tools-elision-refused` PASS; build
 `0 Warning(s)/0 Error(s)`.
+
+## 45. Artefato escrito pela tool nascia `root:root` e quebrava o fixture no turno seguinte (2026-10-30)
+
+**Sintoma.** L4 restante (`--war-only belts-build-final,belts-orch-final,front,webui`):
+`belts-build-final-bridge` PASS (199s), `belts-orch-final-bridge` PASS (477s),
+`front-bridge` **FAIL em 23s** com `cause=undetermined` e `webui-integracao-topicos`
+SKIP por fail-fast. No log do step:
+
+```
+PASS E-front-gen (22.2s)
+FAIL E-front-edit: Access to the path '/tmp/opencode/frontpipe/app/wwwroot/css/app.css' is denied.
+```
+
+**Causa (medida, não é palpite).** A bridge sobe como root (`systemctl show
+bridge-gpu -p User` → `User=root`). O `write` do modelo (E4B-Q4, role build) gravou
+os três artefatos dentro do workspace do teste — dono `mint` — e o arquivo ficou
+`root:root` modo 644. No turno seguinte o fixture do `E-front-edit` restaurou o
+baseline com `File.Copy(gen, target, overwrite: true)` rodando como `mint`: abrir o
+alvo para escrita é negado. Não era o modelo, nem o enunciado, nem a bridge HTTP —
+era permissão de arquivo herdada de quem escreveu.
+
+**Correção (fonte única, Core).** `Core/Tools/ArtifactOwnership`:
+`write` e `edit` adotam, ao final, o dono do **ancestral existente mais próximo**
+(o workspace do cliente) via `chown --reference=<dir>`; quando o `write` cria a
+cadeia de diretórios, a raiz criada entra com `chown -R`. Sem `euid == 0` a chamada
+é no-op (quem escreve já é o dono). Evento `artifact-owner` vai para o log com
+`ok`/`detail` (melhor esforço: falha de `chown` não derruba a tool).
+
+**Correção (fixture).** `E2EFrontPipeTests.Replace(src, dest)` apaga antes de
+copiar: o UNLINK depende só da permissão do **diretório** (do dono do workspace), não
+do arquivo, então a rodada seguinte nunca morre por herança de `root`. Usado na
+restauração de baseline do `E-front-edit`.
+
+**Prova.** `U-tools-artifact-owner` (novo, verde): cadeia nova criada pelo `write`,
+`OwnerDir` = workspace, dono consegue sobrescrever o artefato. Pins vizinhos verdes
+na mesma rodada: `U-tools-elision-refused`, `U-tools-whole-file-rewrite`,
+`U-tools-project-path-hint` → `[test] PASS=4 FAIL=0`.

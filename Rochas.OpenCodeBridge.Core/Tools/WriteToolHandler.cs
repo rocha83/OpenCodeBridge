@@ -29,9 +29,14 @@ public sealed class WriteToolHandler : IToolHandler
         try
         {
             string? dir = Path.GetDirectoryName(full);
+            string? created = ArtifactOwnership.FirstMissingDir(dir);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             bool existed = File.Exists(full);
             File.WriteAllText(full, content);
+            // Bridge como root: o artefato (e os diretorios criados aqui) herdam o
+            // dono do workspace, para o cliente poder editar/rebuildar o que a tool
+            // escreveu (medido em E-front-edit, 2026-10-30).
+            ArtifactOwnership.Adopt(full, context.Log, created);
             return ToolResult.Ok($"{(existed ? "atualizado" : "criado")} {content.Length} chars em '{path}'");
         }
         catch (Exception ex)

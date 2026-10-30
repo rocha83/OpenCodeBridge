@@ -294,6 +294,21 @@ internal static class E2EFrontPipeTests
 
     static string Abs(string text) => text.Replace("app/", Ws + "/app/");
 
+    // Workspace reaproveitado entre rodadas: um arquivo gravado pela bridge (root)
+    // nao pode ser sobrescrito pelo runner (mint) e `File.Copy(..., true)` morre com
+    // "Access to the path ... is denied." (medido em E-front-edit, 2026-10-30).
+    // O UNLINK depende so' do diretorio (que e' do dono do workspace); apagar + copiar devolve o arquivo
+    // ao dono de quem roda o teste.
+    static void Replace(string source, string target)
+    {
+        if (File.Exists(target))
+        {
+            try { File.Delete(target); }
+            catch (Exception ex) { Console.WriteLine($"  [front] aviso: nao removi {target} ({ex.Message})"); }
+        }
+        File.Copy(source, target, true);
+    }
+
     // ------------------------------------------------------------------- servidor
     static Process? Server;
 
@@ -594,7 +609,7 @@ internal static class E2EFrontPipeTests
         TestContext.Check(File.Exists(target), $"rode E-front-gen antes (workspace sem {baselineName})");
         // Idempotente: volta ao baseline do Gen antes de editar.
         string genFile = Path.Combine(Ws, "gen", baselineName);
-        if (File.Exists(genFile)) File.Copy(genFile, target, true);
+        if (File.Exists(genFile)) Replace(genFile, target);
 
         JsonObject before;
         if (WebDriver)

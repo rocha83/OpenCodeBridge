@@ -136,4 +136,48 @@ public static class UnitToolGuardTests
             try { Directory.Delete(ws, true); } catch { }
         }
     }
+
+    /// <summary>
+    /// Artefato escrito pela tool herda o dono do workspace quando a bridge roda
+    /// como root; sem root e' no-op (quem escreve ja e' o dono). O `write` cria a
+    /// cadeia de diretorios e o arquivo continua legivel/sobrescrevivel depois.
+    /// Antes da correcao, `app.css` gravado pelo modelo ficou `root:root` e o
+    /// fixture do teste (mint) morreu em `E-front-edit` com "Access ... is denied."
+    /// </summary>
+    public static Task ArtifactOwnerAdopted()
+    {
+        string ws = Path.Combine(Path.GetTempPath(), "tool-owner", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(ws);
+        try
+        {
+            // Cadeia: ws existe, ws/a/b/ ainda nao.
+            string full = Path.Combine(ws, "a", "b", "c.css");
+            TestContext.Check(ArtifactOwnership.FirstMissingDir(Path.GetDirectoryName(full)) == Path.Combine(ws, "a"),
+                "o primeiro diretorio ausente da cadeia e' ws/a (o que a tool cria)");
+            TestContext.Check(ArtifactOwnership.OwnerDir(full) == ws,
+                $"o ancestral existente mais proximo e' o workspace (saiu: '{ArtifactOwnership.OwnerDir(full)}')");
+
+            var ctx = new ToolContext { WorkspaceRoot = ws, ExtraRoots = Array.Empty<string>() };
+            var write = new WriteToolHandler();
+            var r = write.Handle(new JsonObject
+            {
+                ["path"] = "a/b/c.css",
+                ["content"] = "#quadro { width: 10px; }\n"
+            }.ToJsonString(), ctx);
+            TestContext.Check(r.Success, $"write em cadeia nova deveria passar (saiu: '{r.Error}')");
+            TestContext.Check(File.Exists(full), "write cria o arquivo na cadeia nova");
+            // O proprio teste (dono do workspace) reescreve o artefato: se a adocao
+            // de dono tivesse falhado sob root, aqui e' "Access ... denied".
+            File.WriteAllText(full, "#quadro { width: 20px; }\n");
+            TestContext.Check(File.ReadAllText(full).Contains("20px", StringComparison.Ordinal),
+                "o dono do workspace consegue sobrescrever o artefato da tool");
+            TestContext.Check(Directory.Exists(Path.Combine(ws, "a", "b")),
+                "write cria a cadeia de diretorios do artefato");
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            try { Directory.Delete(ws, true); } catch { }
+        }
+    }
 }
