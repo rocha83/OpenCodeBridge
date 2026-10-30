@@ -76,10 +76,12 @@ public static class PlaywrightSetup
             pickSubagent: true);
 
     // Núcleo da seleção: filtro + preferência declarados como JS, sem id do banco.
+    // O agente é escolhido, o campo fica realçado pelo compasso do espectador e só
+    // então o subagente é escolhido no segundo dropdown (mesmo compasso).
     private static async Task<string> SelectAgentAsync(IPage page, string label, string what,
         string filterJs, string preferJs, bool pickSubagent)
     {
-        string js = @"() => {
+        string agentJs = @"() => {
           const sel = document.getElementById('agentId');
           const opts = [...sel.options].filter(o => o.value);
           const want = opts.filter(FILTER);
@@ -87,30 +89,78 @@ public static class PlaywrightSetup
           if (!pick) return '';
           sel.value = pick.value;
           sel.dispatchEvent(new Event('change'));
-          let sub = '';
-          const ex = document.getElementById('executorId');
-          if (ex && PICKSUB) {
-            const all = [...ex.options].filter(o => o.value);
-            // Subagente da esteira = Scripter Q4 (quem executa as fases); o Exec da
-            // GPU2 e' fallback. Nunca o MoE: ele so' fetch/display/subagent.
-            const chosen =
-                 all.find(o => /Scripter/i.test(o.textContent || '') && !/GPU2|Q3/i.test(o.textContent || ''))
-              || all.find(o => /Scripter/i.test(o.textContent || ''))
-              || all.find(o => /Exec/i.test(o.textContent || ''));
-            if (chosen) {
-              ex.value = chosen.value;
-              ex.dispatchEvent(new Event('change'));
-              sub = chosen.textContent.trim();
-            }
-          }
-          return pick.value + '|' + pick.textContent.trim() + ' sub=' + (sub || 'nenhum');
-        }".Replace("FILTER", filterJs).Replace("PREFER", preferJs)
-          .Replace("PICKSUB", pickSubagent ? "true" : "false");
-        string picked = await page.EvaluateAsync<string>(js);
+          return pick.value + '|' + pick.textContent.trim();
+        }".Replace("FILTER", filterJs).Replace("PREFER", preferJs);
+        string picked = await page.EvaluateAsync<string>(agentJs);
         if (string.IsNullOrEmpty(picked))
             throw new InvalidOperationException($"dropdown sem perfil {what}");
-        Console.WriteLine($"[ui] {label}: agente {what} = {picked}");
-        return picked;
+        await PaceAsync(page, "select#agentId");
+
+        string sub = "nenhum";
+        if (pickSubagent && await page.QuerySelectorAsync("select#executorId") is not null)
+        {
+            // Subagente da esteira = Scripter Q4 (quem executa as fases); o Exec da
+            // GPU2 e' fallback. Nunca o MoE: ele so' fetch/display/subagent.
+            string subJs = @"() => {
+              const ex = document.getElementById('executorId');
+              const all = [...ex.options].filter(o => o.value);
+              const chosen =
+                   all.find(o => /Scripter/i.test(o.textContent || '') && !/GPU2|Q3/i.test(o.textContent || ''))
+                || all.find(o => /Scripter/i.test(o.textContent || ''))
+                || all.find(o => /Exec/i.test(o.textContent || ''));
+              if (!chosen) return '';
+              ex.value = chosen.value;
+              ex.dispatchEvent(new Event('change'));
+              return chosen.value + '|' + chosen.textContent.trim();
+            }";
+            string subPicked = await page.EvaluateAsync<string>(subJs);
+            if (!string.IsNullOrEmpty(subPicked))
+            {
+                sub = subPicked;
+                await PaceAsync(page, "select#executorId");
+            }
+        }
+        Console.WriteLine($"[ui] {label}: agente {what} = {picked} sub={sub}");
+        return $"{picked} sub={sub}";
+    }
+
+    /// <summary>
+    /// Compasso de tela: realça o campo já selecionado, segura o tempo de leitura e
+    /// limpa o realce. Existe para o <b>espectador</b> da janela aberta ver a escolha
+    /// acontecendo; em headless não roda (nada a assistir).
+    /// </summary>
+    /// <param name="page">Página em <c>/Chat</c>.</param>
+    /// <param name="selector">Campo que acabou de mudar de valor.</param>
+    private static async Task PaceAsync(IPage page, string selector)
+    {
+        int ms = PaceMs();
+        if (ms <= 0) return;
+        await page.EvaluateAsync(@"sel => {
+            const e = document.querySelector(sel);
+            if (!e) return;
+            e.style.outline = '3px solid #f59e0b';
+            e.style.outlineOffset = '2px';
+            e.style.boxShadow = '0 0 0 4px rgba(245,158,11,.35)';
+            e.scrollIntoView({ block: 'center' });
+        }", selector);
+        await page.WaitForTimeoutAsync(ms);
+        await page.EvaluateAsync(@"sel => {
+            const e = document.querySelector(sel);
+            if (!e) return;
+            e.style.outline = ''; e.style.outlineOffset = ''; e.style.boxShadow = '';
+        }", selector);
+    }
+
+    /// <summary>
+    /// Tempo do compasso em ms: <c>UI_PACE_MS</c> manda; sem a variável, 1500 com a
+    /// janela aberta (espectador) e 0 em headless (CI sem plateia).
+    /// </summary>
+    /// <returns>Milissegundos de espera por campo (0 = sem compasso).</returns>
+    public static int PaceMs()
+    {
+        string? env = Environment.GetEnvironmentVariable("UI_PACE_MS");
+        if (int.TryParse(env, out int v)) return Math.Clamp(v, 0, 10000);
+        return Headless() ? 0 : 1500;
     }
 
     /// <summary>
