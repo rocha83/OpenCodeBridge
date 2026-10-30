@@ -1246,6 +1246,6 @@ lista já tinha a linha `units` e o assert virava falso negativo. Fora de um run
 **Correção.** Assert ESTRUTURAL no mesmo contrato: (a) a lista contém a linha do
 step publicado, (b) toda linha de `war=1` tem `mode` (o filtro do painel). O resto
 do pin (reset sem `panel` preserva enunciado/histórico; reset com `panel` zera
-enunciado, histórico e lista) segue literal.
+enunciado, histórico e lista) continua igual.
 
 **Prova.** `--only U-diag-reset-panel,U-diag-reset,U-status` → `[test] PASS=3 FAIL=0`.
