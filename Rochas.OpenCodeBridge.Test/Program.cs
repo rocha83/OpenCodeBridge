@@ -336,6 +336,11 @@ internal static class Program
         if (TestContext.RunCpu) TestContext.Run("E-science-cpu", E2EScienceTests.ScienceCpu);
         else Console.WriteLine("[test] skip E-science-cpu (--skip-cpu)");
         TestContext.Run("E-mission-tools", E2EMissionTests.MissionTools);
+        // Smoke de ctx ANTES das missoes (L4): força o 400 exceed_context_size
+        // contra o llama real e prova a escalada da bridge (nudge -> compactacao
+        // -> 413). O mecanismo que segura o hanoi, medido em 2s e sem 30 turnos.
+        TestContext.Run("E-ctx-overflow", E2EContextOverflowTests.OverflowRecovers);
+        TestContext.Run("E-ctx-overflow-exhaust", E2EContextOverflowTests.OverflowExhausted);
         TestContext.Run("E-mission-algo-cs-hanoi", E2EMissionTests.MissionAlgoCsHanoi);
         TestContext.Run("E-mission-algo-cs-bin", E2EMissionTests.MissionAlgoCsBin);
         TestContext.Run("E-mission-algo-cs-btree", E2EMissionTests.MissionAlgoCsBTree);

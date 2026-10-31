@@ -439,6 +439,9 @@ case "$LEVEL" in
     echo "$HSTATUS" | grep -q '"main_harness":true' \
       || log "AVISO: main_harness nao esta true — Level 4 pede harness ligado (--main-harness 1 --harness-tails 1)"
     for mode in $MODES; do
+      # Smoke de ctx PRIMEIRO: força o 400 exceed_context_size e prova a
+      # escalada nudge -> compactacao -> 413 (mesmo passo do WarTemplate L4).
+      step_bridge "e-ctx-overflow-$mode" --only E-ctx-overflow --mode "$mode"
       step_bridge "e-algo-cs-hanoi-$mode" --only =E-mission-algo-cs-hanoi --mode "$mode"
       step_bridge "e-algo-cs-bin-$mode" --only =E-mission-algo-cs-bin --mode "$mode"
       step_bridge "e-algo-cs-btree-$mode" --only =E-mission-algo-cs-btree --mode "$mode"

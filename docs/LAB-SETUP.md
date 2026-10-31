@@ -578,7 +578,7 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 > (ou devem ser) `mode=opencode`.
 > **Tool tail é regra:** qualquer teste que enuncia uso de tools exige
 > `--harness-tails 1` + `--tail-scope all|managed` (preflight
-> `bridge_harness_tails`). Request sem `tools` no array não recebe cauda de
+> `harness_tails_status`). Request sem `tools` no array não recebe cauda de
 > tools (`hasTools:false`). Tópico sem tools usa perfil `plan` (0.3/on) e o
 > enunciado termina com `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`; com tools fica
 > `build` (0.1/off).
@@ -1382,7 +1382,7 @@ Args gravados nas units (as três, `bridge-gpu`, `bridge-gpu2` e `bridge-cpu-for
   behavior é conduta geral e entra sempre (independente do main harness); a
   cauda de tools só entra quando o request traz o array `tools`. O
   `--harness-tails` continua como **alias de compatibilidade** que liga/desliga
-  as duas (o preflight `bridge_harness_tails` segue lendo o status).
+  as duas (o preflight `harness_tails_status` segue lendo o status).
 - Com `--harness-tails 0` as tails não entram em nenhum caminho: o OpenCode já
   roda o "tubo puro". Não é preciso "configurar caminho puro" para ele — só para
   WebUI/testes sem sufixo.

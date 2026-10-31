@@ -694,6 +694,12 @@ internal sealed class WarTemplate : CircuitTemplate
             case 4:
                 foreach (string mode in _p.Modes)
                 {
+                    // Smoke de ctx PRIMEIRO (2s, sem GPU): força o 400
+                    // exceed_context_size contra o llama real e prova a escalada
+                    // nudge -> compactacao -> 413. E' o mecanismo que segura o
+                    // hanoi abaixo (substring pega E-ctx-overflow e -exhaust).
+                    yield return StepBridge(driver, $"e-ctx-overflow-{mode}", mode,
+                        new[] { "--only", "E-ctx-overflow" });
                     yield return StepBridge(driver, $"e-algo-cs-hanoi-{mode}", mode,
                         new[] { "--only", "=E-mission-algo-cs-hanoi" });
                     yield return StepBridge(driver, $"e-algo-cs-bin-{mode}", mode,
@@ -1030,18 +1036,23 @@ internal sealed class WarTemplate : CircuitTemplate
 
             // REGRA PRIMORDIAL: cauda de tools e obrigatoria para todo teste que
             // ENUNCIA uso de tools. Sem ela o modelo perde o contrato operacional
-            // (read/write/edit/glob/...), que nao vai duplicado na prosa. O gate
-            // e o deployment: --harness-tails 1 e --tail-scope != off.
+            // (read/write/edit/glob/...), que nao vai duplicado na prosa. O gate e
+            // o STATUS da bridge (da onde le os flags efetivos): as duas caudas
+            // ligadas (behavior + tools) e --tail-scope != off. `harness_tails` e'
+            // o alias legado: binario antigo so' expoe ele, entao cai nele.
             string bscope = Str(st, "tail_scope");
-            Pf(driver, "bridge_harness_tails",
-                string.Equals(btails, "true", StringComparison.OrdinalIgnoreCase)
-                    && !string.Equals(bscope, "off", StringComparison.OrdinalIgnoreCase),
+            Pf(driver, "harness_tails_status",
+                !string.Equals(bscope, "off", StringComparison.OrdinalIgnoreCase)
+                    && On(st, "behavior_tail", "harness_tails")
+                    && On(st, "tools_tail_flag", "harness_tails"),
                 new JsonObject
                 {
                     ["bridge"] = _p.Bridge,
-                    ["harness_tails"] = btails,
                     ["tail_scope"] = bscope,
-                    ["fix"] = "ligue --harness-tails 1 --tail-scope all|managed (tool tails e regra para teste que usa tools)"
+                    ["harness_tails"] = btails,
+                    ["behavior_tail"] = Str(st, "behavior_tail"),
+                    ["tools_tail"] = Str(st, "tools_tail_flag"),
+                    ["fix"] = "ligue --harness-behavior 1 --harness-tools 1 --tail-scope all|managed (ou o alias --harness-tails 1)"
                 });
         }
 
@@ -1291,6 +1302,17 @@ internal sealed class WarTemplate : CircuitTemplate
         try { return JsonNode.Parse(text) as JsonObject; }
         catch { return null; }
     }
+
+    /// <summary>
+    /// Flag booleano lido do status como texto, com fallback para o alias legado.
+    /// Binario novo expoe <c>behavior_tail</c>/<c>tools_tail_flag</c>; o antigo
+    /// so' tem <c>harness_tails</c>, que e' o alias das duas — sem o fallback o
+    /// preflight reprovaria uma bridge perfeita.
+    /// </summary>
+    private static bool On(JsonObject? obj, string key, string aliasWhenMissing)
+        => string.Equals(Str(obj, key), "true", StringComparison.OrdinalIgnoreCase)
+           || (Str(obj, key).Length == 0
+               && string.Equals(Str(obj, aliasWhenMissing), "true", StringComparison.OrdinalIgnoreCase));
 
     private static string Str(JsonObject? obj, string key)
     {

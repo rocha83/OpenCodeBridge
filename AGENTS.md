@@ -222,7 +222,7 @@ conveniência manual, nunca fonte de verdade.
 ## Regra: tool tail é obrigatória para teste que usa tools (primordial)
 - Todo enunciado/teste que **declara ou enuncia uso de tools** roda com a cauda
   de tools ligada: `--harness-tails 1` + `--tail-scope all|managed`. Preflight
-  do WAR exige `bridge_harness_tails` (tails on e scope ≠ off); sem isso o
+  do WAR exige `harness_tails_status` (tails on e scope ≠ off); sem isso o
   modelo perde o contrato `read/write/edit/glob` (que não vai duplicado na
   prosa) e o step falha por motivo errado.
 - O inverso também vale: pedido **sem** `tools` no array não recebe cauda de

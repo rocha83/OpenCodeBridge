@@ -2001,7 +2001,7 @@ WriteJson(ctx, 200, new JsonObject
         ["aux_temp"] = double.IsNaN(AuxTemp) ? null : JsonValue.Create(AuxTemp),
 ["context_tokens"] = ContextTokens, ["context_guard"] = ContextGuard, ["context_slots"] = ContextSlots,
 ["mode"] = Mode?.Name ?? "auto", ["tail_scope"] = TailScope,
-["main_harness"] = MainHarnessOn, ["main_harness_scope"] = "managed-only", ["main_harness_opencode"] = false, ["harness_tails"] = TailsEnabled, ["tails_managed"] = TailsEnabled, ["tails_opencode"] = false, ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
+["main_harness"] = MainHarnessOn, ["main_harness_scope"] = "managed-only", ["main_harness_opencode"] = false, ["harness_tails"] = TailsEnabled, ["behavior_tail"] = BehaviorTailEnabled, ["tools_tail_flag"] = ToolsTailEnabled, ["tails_managed"] = TailsEnabled, ["tails_opencode"] = false, ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
         ["last_client"] = LastClient, ["last_request_ms"] = LastRequestMs,
         ["last_enunciado_step"] = LastEnunciadoStep, ["last_enunciado_ms"] = LastEnunciadoMs,
 ["api_key"] = string.IsNullOrEmpty(ApiKey) ? "" : "***",
