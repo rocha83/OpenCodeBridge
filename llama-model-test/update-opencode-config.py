@@ -25,8 +25,8 @@ provider = {
             "name": "Llama 3.1 8B Instruct Q4_K_M (porta 4120)",
             "tool_call": True,
             "limit": {
-                "context": 8192,
-                "output": 2048
+                "context": 131072,
+                "output": 8192
             },
             "temperature": 0.3
         }

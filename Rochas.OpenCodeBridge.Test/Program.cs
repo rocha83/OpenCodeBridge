@@ -206,6 +206,7 @@ internal static class Program
         TestContext.Run("U-tools-antireply-helpers", UnitToolBreakerTests.ToolScopeUsesHelperSubclasses);
         TestContext.Run("U-toolargs-literal-newline", UnitToolBreakerTests.FixesLiteralNewlineEscape);
         TestContext.Run("U-tails-path-simulation-rules", UnitToolBreakerTests.ToolsTailCarriesPathAndSimulationRules);
+        TestContext.Run("U-tails-cs-error-table", UnitToolBreakerTests.ToolsTailCarriesCsErrorTable);
         TestContext.Run("U-fs-repair-comprehension", UnitToolBreakerTests.FsRepairComprehensionForms);
         TestContext.Run("U-fs-repair-module-line", UnitToolBreakerTests.FsRepairModuleLineAlone);
         TestContext.Run("U-fs-repair-body-shape", UnitToolBreakerTests.FsRepairFunctionBodyShape);
@@ -215,6 +216,8 @@ internal static class Program
         TestContext.Run("U-fs-repair-diagnostic-detection", UnitToolBreakerTests.FsRepairDiagnosticDetection);
         TestContext.Run("U-cs-repair-missing-brace", UnitToolBreakerTests.CsRepairMissingBrace);
         TestContext.Run("U-cs-repair-applies-brace", UnitToolBreakerTests.CsRepairAppliesMissingBrace);
+        TestContext.Run("U-cs-repair-unexpected-token", UnitToolBreakerTests.CsRepairUnexpectedToken);
+        TestContext.Run("U-cs-repair-applies-extra-close", UnitToolBreakerTests.CsRepairAppliesExtraClose);
         TestContext.Run("U-context-compact", UnitToolBreakerTests.ContextCompact);
         TestContext.Run("U-context-compact-recursive", UnitToolBreakerTests.ContextCompactRecursive);
         TestContext.Run("U-context-overflow-detect", UnitToolBreakerTests.ContextOverflowDetect);

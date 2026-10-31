@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=root
 Environment=HOME=/root
-ExecStart=/usr/local/bin/llama-server --alias Llama-3.1-8B-Instruct-Q4_K_M --host 127.0.0.1 --port 4120 -m /media/mint/2a295c1a-afad-44fb-84dc-053406a7bbfb/opt/llama/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf -c 8192 -np 1 -ngl 0 -fa on -t 4 -tb 4 --no-host --api-key guest@123
+ExecStart=/usr/local/bin/llama-server --alias Llama-3.1-8B-Instruct-Q4_K_M --host 127.0.0.1 --port 4120 -m /media/mint/2a295c1a-afad-44fb-84dc-053406a7bbfb/opt/llama/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf -c 131072 -np 1 -ngl 99 -fa on --cache-type-k q4_0 --cache-type-v q4_0 -t 4 -tb 4 --no-host --api-key guest@123
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=300

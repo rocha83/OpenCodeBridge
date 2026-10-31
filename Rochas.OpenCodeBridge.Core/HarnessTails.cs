@@ -101,6 +101,24 @@ public static class HarnessTails
     const string SubagentLine =
         "SUBAGENTE: o schema de cada tool viaja no array `tools` do request; preserve o array e o system do role ao delegar; nao troque schema por prosa.";
 
+    /// <summary>
+    /// Tabela de erros C#, GERADA da fonte única (<see cref="CsSyntaxRepair.Rules"/>).
+    /// A cauda instrui ANTES do erro; o <c>CsSyntaxRepair</c> repara no retry quando
+    /// o modelo ignora. Duas cópias divergem na primeira edição — aqui só se compõe
+    /// o texto, nunca se escreve o mapa de novo.
+    /// </summary>
+    /// <remarks>
+    /// O formato espelha a tabela do FsMini (arquivada em
+    /// <c>Archived/FsMiniTail.cs</c>): <c>CSxxxx sintoma -> forma correta</c>. O
+    /// mesmo aprendizado da trilha F#: instruir a forma CERTA reduz o loop de
+    /// compilação; a dica nunca exibe o literal inválido que o modelo copia.
+    /// </remarks>
+    public static readonly string CsErrorTableLine =
+        "TABELA DE ERROS C# (codigo: sintoma -> forma correta): "
+        + string.Join(" ", CsSyntaxRepair.Rules.Select(r =>
+            r.Code + " " + r.Cause + " -> " + r.CorrectForm.Replace("\n", " ").Replace("  ", " ") + ". "))
+        + "SE O BUILD FALHAR: leia a linha `error CSxxxx`, aplique a forma da tabela e edite SO' o trecho; nao reescreva o arquivo igual.";
+
     static readonly (string Text, string[][] Requires)[] Segments =
     {
         (OneStepLine, Array.Empty<string[]>()),
@@ -111,6 +129,7 @@ public static class HarnessTails
         (ExecuteSandboxLine, Array.Empty<string[]>()),
         (OrderingLine, new[] { new[] { "write" }, new[] { "shell" } }),
         (DotnetLine, new[] { new[] { "shell" } }),
+        (CsErrorTableLine, new[] { new[] { "shell" } }),
         (FileLine, new[] { new[] { "write" } }),
         (ExistingProjectLine, new[] { new[] { "shell" } }),
         (FileRepoFlowLine, new[] { new[] { "write" }, new[] { "shell" }, new[] { "git" } }),

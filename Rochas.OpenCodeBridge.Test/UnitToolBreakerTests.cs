@@ -411,6 +411,39 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Tabela de erros C# na cauda de tools: o MESMO mapa do
+    /// <see cref="global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair"/> (fonte única,
+    /// gerado de `Rules`), presente quando o request tem `shell` — só ali existe
+    /// "build falhar". Instrui a forma CERTA ANTES do erro; o reparo in-flow entra
+    /// no retry quando o modelo ignora. Formato espelha o FsMini arquivado.
+    /// </summary>
+    public static Task ToolsTailCarriesCsErrorTable()
+    {
+        string tail = global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools;
+        TestContext.Check(tail.Contains("TABELA DE ERROS C#", StringComparison.Ordinal),
+            "cauda traz a tabela de erros C#");
+        // Cada código da tabela vem da fonte única (Rules), não de cópia à mão.
+        foreach (var rule in global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Rules)
+            TestContext.Check(tail.Contains(rule.Code, StringComparison.Ordinal),
+                "cauda cobre " + rule.Code + " (mesma fonte do CsSyntaxRepair)");
+        // CS1003 (medido no hanoi de 2026-10-31): ensina a forma certa, nunca o literal errado.
+        TestContext.Check(tail.Contains("if (flag[i] && flag[i + 2])", StringComparison.Ordinal),
+            "CS1003 ensina a forma CERTA (um `)` por `(`)");
+        TestContext.Check(!tail.Contains("flag[i + 2]))", StringComparison.Ordinal),
+            "a tabela NUNCA exibe o literal errado (o modelo copia o que ve)");
+        TestContext.Check(tail.Contains("aplique a forma da tabela e edite SO'", StringComparison.Ordinal),
+            "a tabela manda aplicar a forma e editar SÓ o trecho");
+        // Só com shell: sem execução não existe "build falhando".
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.HarnessTails.ComposeTools(new[] { "read", "write" })
+                .Contains("TABELA DE ERROS C#", StringComparison.Ordinal),
+            "sem `shell` a tabela de erros nao entra (nao existe build falhando)");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.HarnessTails.ComposeTools(new[] { "read", "shell" })
+                .Contains("TABELA DE ERROS C#", StringComparison.Ordinal),
+            "com `shell` a tabela de erros entra");
+        return Task.CompletedTask;
+    }
+
     public static Task BehaviorTailForcesToolFirst()
     {
         string tail = global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultBehavior;
@@ -863,6 +896,77 @@ internal static class UnitToolBreakerTests
         TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
                 src, "ERRO: exit 1: boom", out _),
             "erro sem codigo CS nao dispara reparo determinístico");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// CS1003 (`Syntax error, ']' expected`) não tinha mapa: o hanoi do L4 de
+    /// 2026-10-31 gastou 386s e FAIL com um `)` duplicado no fim do `if`
+    /// (<c>if (isPrime[i] &amp;&amp; isPrime[i + 2]))</c>). A dica conta o excesso
+    /// LOCAL e ensina só a forma válida — nunca exibe o literal errado copiável.
+    /// </summary>
+    public static Task CsRepairUnexpectedToken()
+    {
+        string src = "class P { void M(int[] flag) {\n"
+                   + "    int count = 0;\n"
+                   + "    for (int i = 0; i < flag.Length; i++) {\n"
+                   + "        if (flag[i] > 0 && flag[i + 1] > 0))\n"
+                   + "            count++;\n"
+                   + "    }\n"
+                   + "} }\n";
+        string err = "ERRO: exit 1: /tmp/mcs/Program.cs(4,44): error CS1003: Syntax error, ']' expected [/tmp/mcs/mcs.csproj]";
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.HasDiagnostic(err),
+            "error CS1003 conta como diagnostico C#");
+        string hint = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(src, err);
+        TestContext.Check(hint.Contains("linha 4", StringComparison.Ordinal),
+            "a dica aponta a linha que o compilador citou (saiu: '" + hint.Replace("\n", " | ") + "')");
+        TestContext.Check(hint.Contains("1 `)` a mais", StringComparison.Ordinal),
+            "a dica conta o `)` excedente da linha (saiu: '" + hint.Replace("\n", " | ") + "')");
+        TestContext.Check(hint.Contains("if (flag[i] && flag[i + 2])", StringComparison.Ordinal),
+            "a dica mostra a forma CERTA, com um `)` por `(`");
+        TestContext.Check(!hint.Contains("flag[i + 2]))", StringComparison.Ordinal),
+            "a dica NUNCA exibe o literal errado (o modelo copia o que ve)");
+        // Fonte sem excesso na linha não recebe contagem inventada: cai no texto
+        // genérico da tabela (sem "a mais do que `(`", que é a mensagem contada).
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
+                "class A { void M(int[] f) { if (f[0] > 0) f[0] = 0; } }\n", err)
+                .Contains("a mais do que", StringComparison.Ordinal),
+            "linha balanceada nao recebe contagem inventada");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Salvage determinístico do CS1003: remove o fechamento excedente da linha do
+    /// erro quando ela é a ÚNICA culpada (desbalanceamento local == global) e o
+    /// excesso está no fim da linha. Fora dessa medida, não mexe — parêntese legítimo
+    /// de bloco multilinha não pode ser comido.
+    /// </summary>
+    public static Task CsRepairAppliesExtraClose()
+    {
+        string src = "class P { void M(int[] flag) {\n"
+                   + "    int count = 0;\n"
+                   + "    for (int i = 0; i < flag.Length; i++) {\n"
+                   + "        if (flag[i] > 0 && flag[i + 1] > 0))\n"
+                   + "            count++;\n"
+                   + "    }\n"
+                   + "} }\n";
+        string err = "ERRO: exit 1: /tmp/mcs/Program.cs(4,44): error CS1003: Syntax error, ']' expected [/tmp/mcs/mcs.csproj]";
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, err, out string fixedSrc),
+            "TryRepair aplica o reparo de CS1003");
+        TestContext.Check(fixedSrc.Contains("if (flag[i] > 0 && flag[i + 1] > 0)", StringComparison.Ordinal),
+            "o reparo remove o `)` excedente e mantem a condicao valida");
+        int open = 0, close = 0;
+        foreach (char ch in fixedSrc) { if (ch == '(') open++; else if (ch == ')') close++; }
+        TestContext.Check(open == close, $"fonte reparado fica balanceado em parenteses ({open} abre / {close} fecha)");
+        // Fonte já balanceado não gera reparo.
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
+                "class A { void M(int[] f) { if (f[0] > 0) f[0] = 0; } }\n", err, out _),
+            "fonte ja balanceado nao gera reparo de CS1003");
+        // Excesso que NÃO é da linha (global != local) não é tocado.
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
+                "class A {\n  void M(int[] f) {\n    int x = (1 + 2;\n    if (f[0] > 0)) x++;\n  }\n}\n",
+                "ERRO: exit 1: /tmp/mcs/Program.cs(4,20): error CS1003: Syntax error, ']' expected [/tmp/mcs/mcs.csproj]", out _),
+            "desbalanceamento global diferente do local nao e' reparado (sem comer parentese legitimo)");
         return Task.CompletedTask;
     }
 
