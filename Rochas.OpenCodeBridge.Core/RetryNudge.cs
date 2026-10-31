@@ -74,10 +74,12 @@ public static class RetryNudge
     /// </summary>
     /// <param name="body">Corpo JSON já transformado para o upstream.</param>
     /// <param name="currentTemperature">Temperatura efetiva do turno que abortou.</param>
-    /// <param name="profiles">Tabela de roles em vigor (null = default do Core).</param>
+    /// <param name="detourReference">Temperatura de referência do desvio já resolvida
+    /// pelo host (ver <see cref="Sampling.DetourReference"/>); NaN usa o perfil de
+    /// desvio da tabela.</param>
     /// <returns>Corpo do retry ou null quando não dá para orientar o modelo.</returns>
     public static string? WithAbortNudge(string body, double currentTemperature,
-        IReadOnlyDictionary<string, RoleProfile>? profiles = null)
+        double detourReference = double.NaN)
     {
         JsonObject? node;
         try { node = JsonNode.Parse(body)?.AsObject(); }
@@ -102,7 +104,8 @@ public static class RetryNudge
         }
         if (!attached) return null;
 
-        node["temperature"] = Sampling.ForRetry(currentTemperature, profiles);
+        node["temperature"] = Sampling.ForRetry(currentTemperature,
+            double.IsNaN(detourReference) ? Sampling.DetourReference(false) : detourReference);
         return node.ToJsonString();
     }
 

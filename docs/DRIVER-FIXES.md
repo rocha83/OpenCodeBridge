@@ -1619,3 +1619,34 @@ o modelo pediu (não só `write`), `stall` conta tool executada como progresso, 
 **Prova.** `U-tails-present-tools`, `U-retry-temp-detour`, `U-upstream-abort-nudge`,
 `U-upstream-abort-detect`, `U-role-permissions` → `[test] PASS=5 FAIL=0`;
 `U-tails-path-simulation-rules` e os `U-main-harness` seguem verdes.
+
+## 58. Portão P1 exigia o texto INTEIRO da cauda de tools: `ausente tools_tail` com cauda presente (2026-10-30)
+
+**Sintoma.** `E-belts-build-direct` (L2, Q4 base, modo bridge) FALHOU no portão
+de fluxo, depois dos belts azul **e** verde passarem, com
+`fluxo bridge incompleto: ausente tools_tail ... chars=6846 main_harness=true
+has_tools=true tools_tail=false tail_scope=all harness_tails=true`. O
+`/api/harness` da MESMA bridge respondia `tools_chars=2270` — a cauda estava
+configurada e injetada.
+
+**Causa.** A bridge atestava a cauda comparando o **texto inteiro** configurado
+com o system enviado (`systemText.Contains(HarnessToolsTail)`). Desde que a
+cauda passou a ser **composta pelo schema** do request, ela deixa de ser o texto
+default: com um subconjunto de tools, frases inteiras saem (por exemplo a linha
+de fluxo arquivo+repo, que exige `write`+`shell`+`git`). A igualdade então falha
+num system que tem a cauda — falso negativo do portão, não do modelo.
+
+**Prova medida (antes/depois na mesma bridge).** Request de liveness com
+`tools=[read,write]` → `tools_tail=false`, `chars=6833`; com o catálogo inteiro →
+`tools_tail=false`, `chars=7754`; a cauda composta cresce com o schema, logo o
+texto difere do default em ambos.
+
+**Correção (Core, uma regra para os dois consumidores).**
+`HarnessTails.HasToolsTail(system, configured)` reconhece pelo **cabeçalho**
+(`ToolsHeader`, estável na composição completa e na composta) e, para override do
+deployment, pelo próprio prefixo. `/api/test/last-system` e o log de `tails`
+passaram a chamar a mesma rotina.
+
+**Lição.** Instrumentação que decide PASS não pode comparar contra o texto
+"canônico" de um artefato que é **função do request**. Sentinela estável, no
+Core, é o que sobrevive à composição.

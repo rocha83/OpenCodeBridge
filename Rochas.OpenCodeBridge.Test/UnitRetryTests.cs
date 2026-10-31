@@ -1,5 +1,7 @@
 using System.Net.Http;
 using System.Text.Json.Nodes;
+using Tails = Rochas.OpenCodeBridge.Core.HarnessTails;
+using Smp = Rochas.OpenCodeBridge.Core.Sampling;
 
 namespace Rochas.OpenCodeBridge.Test;
 
@@ -8,6 +10,45 @@ namespace Rochas.OpenCodeBridge.Test;
 // aborto do upstream. São unidades puras: não tocam rede nem GPU.
 internal static class UnitRetryTests
 {
+    /// <summary>
+    /// O portao de fluxo (PENDINGS P1) exige "cauda de tools presente" sempre que
+    /// o request declara `tools`. A cauda e' composta pelo schema, entao o texto
+    /// final nao e' igual ao default inteiro: o reconhecimento tem que ser pelo
+    /// cabecalho (sentinela), nunca pela igualdade do texto.
+    /// </summary>
+    public static Task ToolsTailMarker()
+    {
+        // 1. Cauda completa: reconhecida.
+        string full = Tails.Compose("system", true, Tails.DefaultBehavior, Tails.DefaultTools);
+        TestContext.Check(Tails.HasToolsTail(full, Tails.DefaultTools),
+            "cauda completa e' reconhecida no system final");
+
+        // 2. Cauda composta pelo schema (subconjunto): o texto NAO e' o default,
+        //    mas a cauda esta' la' — era o falso negativo medido em 2026-10-30.
+        string narrowed = Tails.Compose("system", true, Tails.DefaultBehavior, Tails.DefaultTools, true,
+            new[] { "read", "write", "shell" });
+        TestContext.Check(!narrowed.Contains(Tails.DefaultTools, StringComparison.Ordinal),
+            "cauda filtrada nao contem o texto default inteiro (por isso a igualdade falhava)");
+        TestContext.Check(Tails.HasToolsTail(narrowed, Tails.DefaultTools),
+            "cauda filtrada pelo schema e' reconhecida pelo cabecalho");
+
+        // 3. Sem tools no request a cauda sai de proposito: nao pode ser reconhecida.
+        string noTools = Tails.Compose("system", true, Tails.DefaultBehavior, Tails.DefaultTools, false);
+        TestContext.Check(!Tails.HasToolsTail(noTools, Tails.DefaultTools),
+            "pedido sem tools nao carrega cauda de tools");
+
+        // 4. Override do deployment: reconhecido pelo proprio prefixo.
+        const string customTail = "CAUDA CUSTOMIZADA DO DEPLOYMENT: use as tools do schema.";
+        string withCustom = Tails.Compose("system", true, "", customTail);
+        TestContext.Check(Tails.HasToolsTail(withCustom, customTail),
+            "override de cauda e' reconhecido pelo prefixo");
+        TestContext.Check(!Tails.HasToolsTail(withCustom, Tails.DefaultTools),
+            "override nao passa como cauda default");
+        TestContext.Check(!Tails.HasToolsTail("", Tails.DefaultTools) && !Tails.HasToolsTail(full, ""),
+            "system ou cauda vazios nao atestam nada");
+        return Task.CompletedTask;
+    }
+
     public static Task TailsOnlyPresentTools()
     {
         string onlyWrite = global::Rochas.OpenCodeBridge.Core.HarnessTails.ComposeTools(new[] { "write" });
@@ -50,6 +91,42 @@ internal static class UnitRetryTests
         TestContext.Check(
             Math.Abs(global::Rochas.OpenCodeBridge.Core.Sampling.ForRetry(0.1, custom) - 0.45) < 0.0001,
             "valor do desvio vem do perfil, nao de literal no codigo");
+
+        // Valor global do host para o desvio (--aux-temp): MESMA precedencia da
+        // temperatura do turno — role resolvido manda; sem role, vale o global.
+        TestContext.Check(
+            Math.Abs(Smp.ForRetry(0.1, Smp.DetourReference(true, profiles, 0.7)) - plan) < 0.0001,
+            "com role resolvido o desvio continua sendo o do role, nao o valor do host");
+        TestContext.Check(
+            Math.Abs(Smp.ForRetry(0.1, Smp.DetourReference(false, profiles, 0.7)) - 0.7) < 0.0001,
+            "sem role resolvido o valor do host preenche o desvio");
+        TestContext.Check(
+            Math.Abs(Smp.ForRetry(0.1, Smp.DetourReference(false, profiles, double.NaN)) - plan) < 0.0001,
+            "sem role e sem valor do host o desvio volta ao perfil de desvio");
+        TestContext.Check(
+            Math.Abs(Smp.ForRetry(0.9, Smp.DetourReference(false, profiles, 0.3)) - 0.9) < 0.0001,
+            "o desvio nunca esfria um turno que ja estava mais quente");
+        TestContext.Check(
+            Math.Abs(Smp.ForRetry(0.2, double.NaN) - 0.2) < 0.0001,
+            "referencia ausente (NaN) mantem a temperatura do turno");
+        TestContext.Check(
+            Math.Abs(Smp.DetourReference(false, profiles, double.NaN) - plan) < 0.0001,
+            "sem valor do host a referencia de desvio e' o perfil (tabela unica)");
+
+        var auxBody = new JsonObject
+        {
+            ["model"] = "m",
+            ["temperature"] = 0.1,
+            ["messages"] = new JsonArray(
+                new JsonObject { ["role"] = "system", ["content"] = "S" },
+                new JsonObject { ["role"] = "user", ["content"] = "faca" })
+        };
+        double auxRef = Smp.DetourReference(false, profiles, 0.7);
+        string? auxRetried = global::Rochas.OpenCodeBridge.Core.RetryNudge
+            .WithAbortNudge(auxBody.ToJsonString(), 0.1, auxRef);
+        TestContext.Check(auxRetried is not null
+            && Math.Abs(JsonNode.Parse(auxRetried!)!["temperature"]!.GetValue<double>() - 0.7) < 0.0001,
+            "nudge do aborto leva a referencia de desvio para o corpo do retry");
         return Task.CompletedTask;
     }
 
@@ -116,6 +193,72 @@ internal static class UnitRetryTests
         var clean = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = "pedido" });
         TestContext.Check(!global::Rochas.OpenCodeBridge.Core.RetryNudge.HasRetryHint(clean),
             "pedido normal nao sobe temperatura");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Loop agentico nao acumula system: harness/cauda entram UMA vez por
+    /// request, mesmo quando o cliente devolve o system composto do turno
+    /// anterior (e system/developer espalhados colapsam num so').
+    /// </summary>
+    public static Task PromptDedupInAgenticLoop()
+    {
+        // 1. BuildSystem idempotente: reaplicar sobre o proprio resultado nao cresce.
+        string once = global::Rochas.OpenCodeBridge.Core.MainHarness.BuildSystem("Voce e o agente build.", "Build", null);
+        string twice = global::Rochas.OpenCodeBridge.Core.MainHarness.BuildSystem(once, "Build", null);
+        TestContext.Check(once == twice, "BuildSystem idempotente: reaplicar nao cresce o system");
+        TestContext.Check(
+            once.IndexOf(global::Rochas.OpenCodeBridge.Core.SystemPromptDedup.HarnessMarker, StringComparison.Ordinal)
+            == once.LastIndexOf(global::Rochas.OpenCodeBridge.Core.SystemPromptDedup.HarnessMarker, StringComparison.Ordinal),
+            "harness aparece uma unica vez");
+        TestContext.Check(once.Contains("Voce e o agente build."),
+            "system do cliente preservado no system composto");
+
+        // 2. Apply em dois turnos do mesmo historico.
+        var msgs = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = "faz o pedido" });
+        global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(msgs, true, "Build", null);
+        global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(msgs, true, "Build", null);
+        TestContext.Check(msgs.Count == 2, "Apply nao acumula mensagem de system a cada turno");
+        string sysTwo = msgs[0]!["content"]!.GetValue<string>()!;
+        TestContext.Check(msgs[0]!["role"]!.GetValue<string>() == "system", "system continua no topo");
+        TestContext.Check(
+            sysTwo.IndexOf(global::Rochas.OpenCodeBridge.Core.SystemPromptDedup.HarnessMarker, StringComparison.Ordinal)
+            == sysTwo.LastIndexOf(global::Rochas.OpenCodeBridge.Core.SystemPromptDedup.HarnessMarker, StringComparison.Ordinal),
+            "harness unico depois de dois turnos");
+        TestContext.Check(msgs[1]!["role"]!.GetValue<string>() == "user", "historico do cliente intacto");
+
+        // 3. system + developer espalhados colapsam numa mensagem inicial.
+        var multi = new JsonArray(
+            new JsonObject { ["role"] = "system", ["content"] = "system A" },
+            new JsonObject { ["role"] = "developer", ["content"] = "developer B" },
+            new JsonObject { ["role"] = "user", ["content"] = "pedido" });
+        global::Rochas.OpenCodeBridge.Core.MainHarness.Apply(multi, true, "Build", null);
+        TestContext.Check(multi.Count == 2, "system e developer colapsam numa so' mensagem");
+        string sysMulti = multi[0]!["content"]!.GetValue<string>()!;
+        TestContext.Check(sysMulti.Contains("system A") && sysMulti.Contains("developer B"),
+            "os dois textos de system foram preservados");
+        TestContext.Check(multi[1]!["content"]!.GetValue<string>() == "pedido",
+            "mensagem do usuario segue intacta");
+
+        // 4. Compose idempotente: cauda (data/behavior/tools) nao duplica.
+        string c1 = global::Rochas.OpenCodeBridge.Core.HarnessTails.Compose("system do cliente", true,
+            global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultBehavior,
+            global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools);
+        string c2 = global::Rochas.OpenCodeBridge.Core.HarnessTails.Compose(c1, true,
+            global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultBehavior,
+            global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools);
+        TestContext.Check(c1 == c2, "Compose idempotente: cauda nao duplica no turno seguinte");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.SystemPromptDedup.StripTails(c1) == "system do cliente",
+            "StripTails devolve exatamente o system do cliente");
+
+        // 5. Clean corta os dois lados (harness na frente, cauda atras).
+        string full = global::Rochas.OpenCodeBridge.Core.HarnessTails.Compose(
+            global::Rochas.OpenCodeBridge.Core.MainHarness.BuildSystem("system do cliente", "Build", null),
+            true,
+            global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultBehavior,
+            global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools);
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.SystemPromptDedup.Clean(full).Trim() == "system do cliente",
+            "Clean devolve so' o system original do cliente");
         return Task.CompletedTask;
     }
 

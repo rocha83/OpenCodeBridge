@@ -49,7 +49,11 @@ public static class HarnessTails
     // `Requires` = grupos de tools: TODOS os grupos precisam estar satisfeitos;
     // dentro do grupo, QUALQUER membro satisfaz (ex.: write OU edit).
 
-    const string ToolsHeader =
+    /// <summary>
+    /// Cabecalho da cauda de tools: sentinela estavel de "a cauda entrou no
+    /// system final", presente na composicao completa E na composta pelo schema.
+    /// </summary>
+    public const string ToolsHeader =
         "MODO DE USO DAS TOOLS (regras transversais; o contrato de cada tool vai no schema):";
 
     const string OneStepLine =
@@ -191,6 +195,28 @@ public static class HarnessTails
     /// </summary>
     public static readonly string DefaultTools = ComposeTools(null);
 
+    /// <summary>
+    /// A cauda de tools entrou no system final?
+    /// </summary>
+    /// <remarks>
+    /// A cauda configurada nao e' o unico texto possivel: ela e' COMPOSTA a
+    /// partir do schema do request, entao um subconjunto de tools omite frases
+    /// inteiras. Procurar o texto inteiro devolve falso para cauda presente; a
+    /// prova sai do cabecalho (<see cref="ToolsHeader"/>), que existe em toda
+    /// composicao. Um override do deployment e' casado pelo proprio prefixo.
+    /// </remarks>
+    /// <param name="system">System efetivamente enviado ao upstream.</param>
+    /// <param name="tools">Cauda configurada (<see cref="DefaultTools"/> ou override).</param>
+    /// <returns>True quando a cauda (completa, composta ou override) esta' no texto.</returns>
+    public static bool HasToolsTail(string? system, string? tools)
+    {
+        if (string.IsNullOrEmpty(system) || string.IsNullOrEmpty(tools)) return false;
+        string marker = string.Equals(tools, DefaultTools, StringComparison.Ordinal)
+            ? ToolsHeader
+            : tools.Length <= 40 ? tools : tools[..40];
+        return system.Contains(marker, StringComparison.Ordinal);
+    }
+
     // O FsMini (tabela de sintaxe F#) foi ARQUIVADO em 2026-10-30 junto da
     // trilha F#: ver Rochas.OpenCodeBridge.Test/Archived/FsMiniTail.cs. Nenhum
     // teste ativo usa a cauda (C#/WAR nao recebem sintaxe F#); o texto fica
@@ -214,7 +240,10 @@ public static class HarnessTails
         bool hasTools = true, IReadOnlyCollection<string>? toolNames = null)
     {
         if (!harness) return system ?? "";
-        string t = (system ?? "").Trim();
+        // O cliente reenvia o system do turno anterior: cortar a cauda ja'
+        // injetada deixa a composicao idempotente (sem data/behavior/tools
+        // duplicados nem contexto crescendo por turno).
+        string t = SystemPromptDedup.StripTails(system).Trim();
         // Data do host no proprio harness: modelos pequenos inventam data de
         // memoria; o pedido "hoje" passa a ter uma fonte verdadeira no contexto.
         string hoje = "DATA ATUAL DO HOST: " + System.DateTime.Now.ToString("yyyy-MM-dd") +

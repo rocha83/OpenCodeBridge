@@ -511,6 +511,7 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 | `--thinking` | `events` | `events` mostra `reasoning_content`; `off` descarta |
 | `--thinking-format` | `events` | nome canônico do formato de repasse do reasoning; `--thinking` é alias |
 | `--temperature` | `0.3` | global; perfil por sufixo do id vence |
+| `--aux-temp` | vazio | global do turno de retry; role por sufixo do id vence, valor ausente cai no perfil de desvio (`plan`) |
 | `--max-tokens` | `0` | teto de saída (0 = sem teto; llama/cliente decidem) |
 | `--coerced-max-tokens` / `--cpu-max-tokens` | `0` | teto da linha COAGIDA (upstream sem parser); `--cpu-max-tokens` é alias histórico ("cpu" era inferência por nome de modelo) |
 | `--tool-output-limit` | `0` | corte por resultado de tool (0 = integral) |

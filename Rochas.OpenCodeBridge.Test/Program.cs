@@ -221,6 +221,8 @@ internal static class Program
         TestContext.Run("U-upstream-abort-nudge", UnitRetryTests.AbortNudgeRewritesTurn);
         TestContext.Run("U-upstream-abort-detect", UnitRetryTests.DetectsAbortAndRetryHint);
         TestContext.Run("U-role-permissions", UnitRetryTests.RolePermissionsInSystem);
+        TestContext.Run("U-tools-tail-marker", UnitRetryTests.ToolsTailMarker);
+        TestContext.Run("U-prompt-dedup", UnitRetryTests.PromptDedupInAgenticLoop);
         // U-fsmini-covers-repair-codes ARQUIVADO em 2026-10-30 junto da trilha F#:
         // o pin segue em UnitToolBreakerTests (compila), mas nao roda no placar ativo.
         TestContext.Run("U-fs-repair-ref-type", UnitToolBreakerTests.FsRepairRefType);

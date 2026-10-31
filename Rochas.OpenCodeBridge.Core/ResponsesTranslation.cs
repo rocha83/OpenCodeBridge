@@ -65,6 +65,31 @@ public static class ResponsesTranslation
         return "";
     }
 
+    /// <summary>
+    /// Extrai o system que ficou no inicio do <c>input</c> e o remove do array.
+    /// </summary>
+    /// <remarks>
+    /// No caminho <c>/v1/responses</c> o system do cliente (e todo
+    /// <c>developer</c> fundido pelo host) chega como <c>input[0]</c>. Para o
+    /// upstream ele vira <c>instructions</c> — o UNICO system do request —, e a
+    /// cauda composta entra nele. Sem isso sobram dois systems e o template
+    /// recusa o turno. Idempotente: no turno seguinte o texto e' extraido de
+    /// novo, sem acumular.
+    /// </remarks>
+    /// <param name="req">Request Responses (mutado: o system inicial sai do input).</param>
+    /// <returns>Texto do system inicial (vazio quando nao havia).</returns>
+    public static string TakeLeadingSystem(JsonObject req)
+    {
+        // Mantem o array com pelo menos 1 item: input vazio nao e' contrato.
+        if (req["input"] is not JsonArray list || list.Count < 2) return "";
+        if (list[0] is not JsonObject m) return "";
+        if ((m["role"]?.GetValue<string>() ?? "") is not ("system" or "developer")) return "";
+        string text = ExtractResponseText(m["content"]);
+        if (string.IsNullOrWhiteSpace(text)) return "";
+        list.RemoveAt(0);
+        return text;
+    }
+
     /// <summary>Nomes das tools anunciadas (diagnóstico: o que o cliente mandou).</summary>
     /// <param name="tools">Array de tools.</param>
     /// <returns>Até 24 nomes.</returns>

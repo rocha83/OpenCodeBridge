@@ -1,5 +1,46 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## System único no loop agentico, valor auxiliar de desvio e prova honesta da cauda de tools (2026-10-30, sessão 43)
+
+**Motivo.** Três defeitos medidos na rodada L1→L4 com Q4 base:
+
+1. o cliente devolve, a cada turno, o system do turno anterior (já composto pelo
+   harness); a bridge recompunha por cima → harness dentro do "SYSTEM DO ROLE",
+   cauda sobre cauda e contexto crescendo a cada volta;
+2. `--aux-temp` (temperatura do turno de retry) não existia como valor global do
+   host: quando o model id não carrega role, o desvio caía no default sem o
+   operador poder ajustar;
+3. o portão de fluxo (P1) exigia o texto **inteiro** da cauda de tools no system
+   final, mas a cauda é **composta pelo schema** do request — com um subconjunto
+   de tools o texto é diferente do default, e o portão reprovava cauda presente
+   (`ausente tools_tail` com `tools_chars` provando a injeção).
+
+**Decisões.**
+- **Core é a fonte do dedup.** `SystemPromptDedup` (corte do harness/cauda já
+  injetados) + `MainHarness.CollapseSystems` (um único `system` por request,
+  juntando `system`/`developer` espalhados) + `HarnessTails.Compose` idempotente.
+  O `SYSTEM DO ROLE` volta a conter só o texto do chamador.
+- **Array `tools` sempre completo.** A blacklist/permissão por role limita o
+  **uso** (`ToolBlacklist` + `ToolPolicy` na execução), nunca o anúncio: o schema
+  é a fonte do request e o system do role enuncia a proibição por ação.
+- **`--aux-temp` segue a MESMA precedência da temperatura do turno**: role
+  resolvido manda; sem role, vale o valor do host; sem ele, o perfil de desvio da
+  tabela. Para isso o Core ganhou `Sampling.DetourReference(hasRole, profiles,
+  auxTemp)` e `RetryNudge` recebe a **referência já resolvida** — o transporte não
+  precisa conhecer roles. `Sampling.ForRetry` mantém as duas formas (perfil ou
+  referência pronta) e, com referência ausente, não esquenta nem esfria o turno.
+- **Reconhecimento da cauda pelo cabeçalho**: `HarnessTails.HasToolsTail`
+  procura a sentinela (`ToolsHeader`) em vez de comparar o texto inteiro; override
+  do deployment casa pelo próprio prefixo. O host (`/api/test/last-system` e o log
+  de `tails`) usa a mesma rotina — uma regra, dois consumidores.
+- **`/api/status` expõe `aux_temp`** (null quando o desvio vem do role).
+
+**Prova.** `U-prompt-dedup`, `U-tools-tail-marker` (novos), `U-retry-temp-detour`
+(estendido com a precedência role > host > tabela), `U-upstream-abort-nudge`,
+`U-upstream-abort-detect`, `U-role-permissions`, `U-tails-present-tools`,
+`U-tails-path-simulation-rules` → suíte de units `PASS=166 FAIL=0 SKIP=6`; build
+Release 0 erros. Registro do defeito #3 em `docs/DRIVER-FIXES.md` #58.
+
 ## Aborto do upstream tem nudge + desvio de temperatura; cauda de tools pelo schema (2026-10-30, sessão 41)
 
 **Motivo.** `belts-build-bridge` (L2, Q4 base) FAIL `undetermined` no azul: o

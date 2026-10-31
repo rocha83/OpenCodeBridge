@@ -153,6 +153,7 @@ Every flag lives in exactly one group. Boolean flags accept `true/false` and
 | Flag | Default | Effect | Example |
 |---|---|---|---|
 | `--temperature` | `0.3` | Global temperature when the client/profile does not send one. | `--temperature 0.2` |
+| `--aux-temp` | — | Global temperature of the RETRY turn (detour). Same precedence as `--temperature`: a resolved role wins; without a role this value applies; without it, the detour profile (`plan`). | `--aux-temp 0.5` |
 | `--tool-output-limit` | `0` | Cut each tool result at N chars; `0` = full output. | `--tool-output-limit 8000` |
 | `--sampling-passthrough` | `false` | Forward client sampling params (`repeat_penalty`, `dry_*`, `top_p`, `seed`). | `--sampling-passthrough 1` |
 
@@ -493,6 +494,7 @@ Flags booleanas aceitam `true/false` e `1/0`.
 | Argumento | Default | Efeito | Exemplo |
 |---|---|---|---|
 | `--temperature` | `0.3` | Temperatura global quando cliente/perfil não manda. | `--temperature 0.2` |
+| `--aux-temp` | — | Temperatura global do turno de RETRY (desvio). Mesma precedência da `--temperature`: role resolvido manda; sem role, vale este valor; sem ele, o perfil de desvio (`plan`). | `--aux-temp 0.5` |
 | `--tool-output-limit` | `0` | Corta cada resultado de tool em N chars; `0` = integral. | `--tool-output-limit 8000` |
 | `--sampling-passthrough` | `false` | Repassa amostragem do cliente (`repeat_penalty`, `dry_*`, `top_p`, `seed`). | `--sampling-passthrough 1` |
 

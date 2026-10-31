@@ -86,23 +86,69 @@ SEGURANÇA E FORMATO
         IReadOnlyCollection<string>? forbidden = null)
     {
         if (!enabled) return false;
-        string? clientSystem = null;
-        if (messages.Count > 0 && messages[0] is System.Text.Json.Nodes.JsonObject first
-            && first["role"]?.GetValue<string>() == "system")
-            clientSystem = first["content"]?.GetValue<string>();
+        // Um system por request (o template do llama so' aceita o primeiro) e
+        // sempre reconstruido do zero: junta system/developer espalhados, corta
+        // harness/cauda ja' injetados e reinsere um unico system no topo. Assim o
+        // loop agentico nao acumula copia a cada turno.
+        string? clientSystem = CollapseSystems(messages);
         // (sem curto-circuito por "opencode master": em bridge lane o harness é
         // SEMPRE on; o discriminador é o modo/cliente, não o conteúdo do system)
 
         string text = BuildSystem(clientSystem, role, forbidden);
-        if (messages.Count > 0 && messages[0] is System.Text.Json.Nodes.JsonObject sys
-            && sys["role"]?.GetValue<string>() == "system")
-            sys["content"] = text;
-        else
-            messages.Insert(0, new System.Text.Json.Nodes.JsonObject { ["role"] = "system", ["content"] = text });
+        messages.Insert(0, new System.Text.Json.Nodes.JsonObject { ["role"] = "system", ["content"] = text });
         return true;
     }
 
+    /// <summary>
+    /// Junta todos os <c>system</c>/<c>developer</c> do historico numa unica
+    /// string e os retira do array, preservando a ordem. O template do upstream
+    /// aceita um system e apenas no inicio; um <c>developer</c> depois de uma
+    /// mensagem de usuario derrubaria o turno.
+    /// </summary>
+    /// <param name="messages">Historico chat (mutado: os system/developer saem).</param>
+    /// <returns>Texto concatenado dos systems (null quando nao havia nenhum).</returns>
+    public static string? CollapseSystems(System.Text.Json.Nodes.JsonArray messages)
+    {
+        if (messages.Count == 0) return null;
+        var parts = new List<string>();
+        for (int i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i] is not System.Text.Json.Nodes.JsonObject m) continue;
+            string? role = m["role"]?.GetValue<string>();
+            if (role is not ("system" or "developer")) continue;
+            string? content = ContentText(m["content"]);
+            if (!string.IsNullOrWhiteSpace(content)) parts.Add(content.Trim());
+            messages.RemoveAt(i);
+        }
+        if (parts.Count == 0) return null;
+        parts.Reverse();
+        return string.Join("\n\n", parts);
+    }
+
+    /// <summary>Texto de um <c>content</c> chat (string ou array de partes).</summary>
+    /// <param name="content">Valor de <c>content</c>.</param>
+    /// <returns>Texto plano ou null.</returns>
+    static string? ContentText(System.Text.Json.Nodes.JsonNode? content)
+    {
+        if (content is System.Text.Json.Nodes.JsonValue v
+            && v.TryGetValue<string>(out string? s)) return s;
+        if (content is System.Text.Json.Nodes.JsonArray a)
+        {
+            var texts = a.Select(p => p?["text"]?.GetValue<string>())
+                         .Where(t => !string.IsNullOrWhiteSpace(t));
+            string joined = string.Join("\n\n", texts);
+            return joined.Length > 0 ? joined : null;
+        }
+        return null;
+    }
+
     /// <summary>Monta o system do harness preservando o que e dinamico no cliente.</summary>
+    /// <remarks>
+    /// Idempotente: se o texto ja' veio composto (o cliente reenvia o system do
+    /// turno anterior), primeiro corta harness e cauda — ver
+    /// <see cref="SystemPromptDedup"/>. Sem isso o <c>SYSTEM DO ROLE</c> passaria
+    /// a conter o harness inteiro e o texto cresceria a cada turno.
+    /// </remarks>
     /// <param name="clientSystem">System original do cliente (pode ser null).</param>
     /// <param name="role">Role do subagente; null = cliente generico.</param>
     /// <param name="forbidden">Tools barradas ao role (blacklist do host).</param>
@@ -110,17 +156,18 @@ SEGURANÇA E FORMATO
     public static string BuildSystem(string? clientSystem, string? role = null,
         IReadOnlyCollection<string>? forbidden = null)
     {
+        string source = SystemPromptDedup.Clean(clientSystem);
         var sb = new System.Text.StringBuilder(Text);
         string perms = PermissionsLine(role, forbidden);
         if (perms.Length > 0) sb.Append("\n\n").Append(perms);
-        string? env = ExtractBlock(clientSystem, "<env>", "</env>");
+        string? env = ExtractBlock(source, "<env>", "</env>");
         if (env is not null) sb.Append("\n\nAMBIENTE REAL (cliente)\n").Append(env);
-        string? skills = ExtractBlock(clientSystem, "<available_skills>", "</available_skills>");
+        string? skills = ExtractBlock(source, "<available_skills>", "</available_skills>");
         if (skills is not null) sb.Append("\n\nSKILLS DISPONIVEIS (cliente)\n").Append(skills);
-        string? date = ExtractLine(clientSystem, "Today's date:");
+        string? date = ExtractLine(source, "Today's date:");
         if (date is not null) sb.Append("\n\n").Append(date);
 
-        string trimmed = clientSystem?.Trim() ?? "";
+        string trimmed = source.Trim();
         if (trimmed.Length > 0 && trimmed.Length < 6000)
         {
             string label = string.IsNullOrWhiteSpace(role)

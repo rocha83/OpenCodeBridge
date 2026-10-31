@@ -54,6 +54,7 @@ internal static partial class Program
     static string Model = "Gemma4-E4B-Q4";                          // id servido pelo Llama
     static string Thinking = "events";                             // "events" = mostra | "off" = descarta
     static double Temperature = 0.2;                                 // execucao/build (escala baixa 0.1 / media 0.3 / alta 0.5); tool calling continua deterministico via tool_choice
+    static double AuxTemp = double.NaN;                            // temperatura AUXILIAR do turno de retry/reconsideracao (--aux-temp); NaN = usa a do role de desvio (plan)
     static int MaxTokens;                                          // teto de saida da linha GPU: 0 = SEM TETO (a infra/llama controla via -c/--n-predict e o cliente decide via max_tokens); >0 = clamp
     static int CpuMaxTokens;                                       // teto da linha CPU: 0 = SEM TETO (deixa o llama controlar); >0 = clamp p/ conter divagacao em decode lento (~5 tok/s)
     static string ToolShimMode = "";                                // "json" = shim generico: remove tools, forca envelope JSON via grammar e converte de volta p/ tool_calls
@@ -433,6 +434,7 @@ internal static partial class Program
             if (cfg["model"]?.GetValue<string>() is string model && model.Length > 0) Model = model;
             if (cfg["thinking"]?.GetValue<string>() is string thinking && thinking is "events" or "off") Thinking = thinking;
             if (cfg["temperature"]?.GetValue<double>() is double temp) Temperature = temp;
+            if (cfg["auxTemp"]?.GetValue<double>() is double at) AuxTemp = at;
             if (cfg["maxTokens"]?.GetValue<int>() is int mt && mt >= 0) MaxTokens = mt;
             if (cfg["cpuMaxTokens"]?.GetValue<int>() is int cmt && cmt >= 0) CpuMaxTokens = cmt;
             if (cfg["toolOutputLimit"]?.GetValue<int>() is int tol && tol >= 0) ToolOutputLimit = tol;
@@ -578,8 +580,7 @@ internal static partial class Program
             // cauda sai de proposito — sem ela o modelo emite JSON de tool como texto).
             ["main_harness"] = mainHarness,
             ["has_tools"] = hasTools,
-            ["tools_tail"] = hasTools && HarnessToolsTail.Length > 0
-                             && systemText.Contains(HarnessToolsTail, StringComparison.Ordinal),
+            ["tools_tail"] = hasTools && HarnessTails.HasToolsTail(systemText, HarnessToolsTail),
             // Temperatura que vai no corpo do upstream + se o model id carrega role
             // (has_profile=true + valor == perfil do role = prova de "rodou a 0.1").
             ["temperature"] = temperature.HasValue ? JsonValue.Create(temperature.Value) : null,
@@ -1165,6 +1166,10 @@ internal static partial class Program
                 // ---------- H) geração/artefatos ----------
                 // Invariante: em locale pt-BR, Parse("0.7") quebraria sem isso
                 case "--temperature": Temperature = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); break;
+                // Temperatura AUXILIAR (retry/reconsideracao): vence o role de
+                // desvio. Existe p/ quando o model id nao carrega role e o
+                // desvio cairia no default sem o operador conseguir ajustar.
+                case "--aux-temp": AuxTemp = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); break;
                 // 0 = sem corte do resultado de tool (conteudo integral).
                 case "--tool-output-limit": ToolOutputLimit = int.Parse(cliArgs[i + 1]); break;
                 // Repasse dos parametros de amostragem do cliente ao llama
@@ -1951,6 +1956,8 @@ WriteJson(ctx, 200, new JsonObject
         ["listen"] = Listen, ["port"] = Port,
         ["upstream"] = Upstream, ["model"] = Model, ["thinking"] = Thinking,
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
+        // Temperatura auxiliar do retry: null quando o desvio vem do role (plan).
+        ["aux_temp"] = double.IsNaN(AuxTemp) ? null : JsonValue.Create(AuxTemp),
 ["context_tokens"] = ContextTokens, ["context_guard"] = ContextGuard, ["context_slots"] = ContextSlots,
 ["mode"] = Mode?.Name ?? "auto", ["tail_scope"] = TailScope,
 ["main_harness"] = MainHarnessOn, ["main_harness_scope"] = "managed-only", ["main_harness_opencode"] = false, ["harness_tails"] = TailsEnabled, ["tails_managed"] = TailsEnabled, ["tails_opencode"] = false, ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
@@ -2029,13 +2036,20 @@ WriteJson(ctx, 200, new JsonObject
         // quando o cliente nao informa nenhuma. llama.cpp aceita qualquer
         // id, mas normalizar aqui mantem o log/telemetria coerentes.
         string outBody = body;
+        // Model id PEDIDO (com sufixo de role), lido fora do try: o desvio de
+        // temperatura do retry e o aborto do upstream precisam dele depois.
+        string reqModelOut = "";
         try
         {
             var node = JsonNode.Parse(body)?.AsObject();
             // Modelo/role originais ANTES do rewrite; o main harness usa o role
             // para preservar o system do subagente e sugerir segmentacao.
             string reqModel = node?["model"]?.GetValue<string>() ?? "";
+            reqModelOut = reqModel;
             string reqRole = RoleOfModel(reqModel);
+            // Role resolvido ANTES do rewrite do model (o upstream usa o id servido,
+            // sem sufixo): decide a precedencia do desvio de temperatura no retry.
+            bool reqHasRole = reqRole.Length > 0;
             // Marca opencode ANTES do rewrite (model com sufixo = tubo puro).
             bool opencodeIn = node is not null && IsOpencodeModel(reqModel);
             string profThinkMid = "";
@@ -2132,7 +2146,8 @@ WriteJson(ctx, 200, new JsonObject
                 && RetryNudge.HasRetryHint(retryMsgs))
             {
                 double curRetry = node["temperature"]?.GetValue<double>() ?? Temperature;
-                double detour = Sampling.ForRetry(curRetry, Profiles);
+                double detour = Sampling.ForRetry(curRetry,
+                    Sampling.DetourReference(reqHasRole, Profiles, AuxTemp));
                 if (Math.Abs(detour - curRetry) > 0.0001)
                 {
                     node["temperature"] = detour;
@@ -2299,7 +2314,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             headersSent = true;
         }
         using var upstreamResponse = SendWithAbortRetry(ctx, forward, outBody,
-            HttpCompletionOption.ResponseHeadersRead);
+            HttpCompletionOption.ResponseHeadersRead, reqModelOut);
         if (coerceLine && upstreamResponse.IsSuccessStatusCode)
         {
             CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent, AnnouncedTools(outBody), startedAt);
@@ -2631,7 +2646,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // desvio lida do role plan, nao um literal.
         if (RetryNudge.HasRetryHint(messages))
         {
-            double detour = Sampling.ForRetry(temperature, Profiles);
+            double detour = Sampling.ForRetry(temperature,
+                Sampling.DetourReference(hasProfile, Profiles, AuxTemp));
             if (Math.Abs(detour - temperature) > 0.0001)
             {
                 temperature = detour;
@@ -2692,9 +2708,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 ["attached"] = messages.Count > 0 && messages[0] is JsonObject s1
                                && s1["content"] is JsonValue s1v
                                && (s1v.TryGetValue<string>(out string? t1)
-                                   ? (HarnessToolsTail.Length == 0
-                                       ? false
-                                       : t1.Contains(HarnessToolsTail[..Math.Min(20, HarnessToolsTail.Length)]))
+                                   ? HarnessTails.HasToolsTail(t1, HarnessToolsTail)
                                    : false),
                 ["behavior_chars"] = HarnessBehaviorTail.Length,
                 ["tools_chars"] = HarnessToolsTail.Length
@@ -2932,7 +2946,8 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             Content = new StringContent(chat.ToJsonString(SerOpts), Encoding.UTF8, "application/json")
         };
         WithAuth(chatRequest, ctx);
-        using var upstreamResponse = SendWithAbortRetry(ctx, chatRequest, chat.ToJsonString(SerOpts));
+        using var upstreamResponse = SendWithAbortRetry(ctx, chatRequest, chat.ToJsonString(SerOpts),
+            HttpCompletionOption.ResponseContentRead, requestedModel);
         string responseBody = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         if (!upstreamResponse.IsSuccessStatusCode)
         {
@@ -3028,7 +3043,11 @@ string outBody = body;
             {
                 // Cliente que nao manda `instructions` (WAR/SDK) ainda recebe a
                 // formula do harness; sem isso as tails nao chegavam ao modelo.
-                string formula = WithFormula("", req["model"]?.GetValue<string>() ?? "", pthHasTools);
+                // O system que o NormalizeSystemFirst fundiu no `input[0]` vira
+                // `instructions` (UNICO system do upstream): a cauda pega nele e
+                // nao sobra um segundo system dentro do input.
+                string baseSys = TakeLeadingSystem(req);
+                string formula = WithFormula(baseSys, req["model"]?.GetValue<string>() ?? "", pthHasTools);
                 if (!string.IsNullOrWhiteSpace(formula))
                 {
                     req["instructions"] = formula;
@@ -3043,7 +3062,7 @@ string outBody = body;
         };
         WithAuth(forward, ctx);
 using var upstreamResponse = SendWithAbortRetry(ctx, forward, outBody,
-            HttpCompletionOption.ResponseHeadersRead);
+            HttpCompletionOption.ResponseHeadersRead, req["model"]?.GetValue<string>());
         double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
         string? errBody = null;
         if (!upstreamResponse.IsSuccessStatusCode)
@@ -3983,9 +4002,12 @@ var shape = new StringBuilder();
     /// <param name="forward">Request já montado para o upstream.</param>
     /// <param name="body">Corpo JSON enviado (base do retry com nudge).</param>
     /// <param name="option">Modo de leitura da resposta.</param>
+    /// <param name="requestedModel">Model id PEDIDO (com sufixo de role, antes do
+    /// rewrite para o id servido): decide a precedência do desvio de temperatura.</param>
     /// <returns>Resposta do upstream (primeira ou do retry).</returns>
     static HttpResponseMessage SendWithAbortRetry(HttpListenerContext ctx, HttpRequestMessage forward,
-        string body, HttpCompletionOption option = HttpCompletionOption.ResponseContentRead)
+        string body, HttpCompletionOption option = HttpCompletionOption.ResponseContentRead,
+        string? requestedModel = null)
     {
         try
         {
@@ -3995,14 +4017,19 @@ var shape = new StringBuilder();
         {
             double current = Temperature;
             try { current = JsonNode.Parse(body)?["temperature"]?.GetValue<double>() ?? Temperature; } catch { }
-            string? retryBody = RetryNudge.WithAbortNudge(body, current, Profiles);
+            // Mesma precedencia da temperatura do turno: role resolvido manda;
+            // sem role, o valor global do host; sem ele, o perfil de desvio.
+            bool hasRole = !string.IsNullOrEmpty(requestedModel)
+                           && TryProfile(requestedModel, out _, out _);
+            double detour = Sampling.DetourReference(hasRole, Profiles, AuxTemp);
+            string? retryBody = RetryNudge.WithAbortNudge(body, current, detour);
             Metrics.UpstreamAbort(true);
             Log(new JsonObject
             {
                 ["event"] = "upstream-abort-retry",
                 ["path"] = ctx.Request.Url?.AbsolutePath ?? "",
                 ["error"] = Truncate(ex.Message, 300),
-                ["temperature"] = Sampling.ForRetry(current, Profiles),
+                ["temperature"] = Sampling.ForRetry(current, detour),
                 ["nudged"] = retryBody is not null
             });
             if (retryBody is null) throw new RetryNudge.UpstreamAbortException(ex.Message, ex);
@@ -4022,6 +4049,15 @@ var shape = new StringBuilder();
             }
         }
     }
+
+    /// <summary>
+    /// Extrai o system fundido no inicio do <c>input</c> (gramatica do protocolo
+    /// no Core: <see cref="ResponsesTranslation.TakeLeadingSystem"/>).
+    /// </summary>
+    /// <param name="req">Request Responses (mutado: o system inicial sai do input).</param>
+    /// <returns>Texto do system inicial (vazio quando nao havia).</returns>
+    static string TakeLeadingSystem(JsonObject req)
+        => ResponsesTranslation.TakeLeadingSystem(req);
 
     /// <summary>Funde system/developer do input num unico system inicial (o template exige system primeiro).</summary>
     /// <param name="req">Request Responses (mutado no lugar).</param>
@@ -4084,7 +4120,8 @@ static bool NormalizeSystemFirst(JsonObject req)
         };
         WithAuth(chatRequest, ctx);
 
-        using var upstreamResponse = SendWithAbortRetry(ctx, chatRequest, chat.ToJsonString(SerOpts));
+        using var upstreamResponse = SendWithAbortRetry(ctx, chatRequest, chat.ToJsonString(SerOpts),
+            HttpCompletionOption.ResponseContentRead, requestedModel);
         string responseBody = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         if (!upstreamResponse.IsSuccessStatusCode)
         {
@@ -4161,7 +4198,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         // Headers do upstream ANTES de abrir o SSE: se der erro aqui,
         // devolvemos JSON de erro limpo (nada foi enviado ao cliente ainda).
         using var upstreamResponse = SendWithAbortRetry(ctx, chatRequest, chat.ToJsonString(SerOpts),
-            HttpCompletionOption.ResponseHeadersRead);
+            HttpCompletionOption.ResponseHeadersRead, requestedModel);
         if (!upstreamResponse.IsSuccessStatusCode)
         {
             string errorBody = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
