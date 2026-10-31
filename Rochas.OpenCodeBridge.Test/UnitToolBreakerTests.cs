@@ -909,8 +909,10 @@ internal static class UnitToolBreakerTests
         static bool Core(System.Text.Json.Nodes.JsonArray m, int ctx, int slots)
             => global::Rochas.OpenCodeBridge.Core.ContextGuard.Compact(m, ctx, slots);
 
-        TestContext.Check(!Core(BuildHistory(12, 42000, 1000), 140000, 1),
-            "acima do ctx mas abaixo de 95% dele nao compacta (teto 133000 > 126k)");
+        // Estimativa calibrada do Core (chars/3.2, pior caso de codigo medido):
+        // ~517k chars = ~162k tokens. Com teto de 95% de 200000 (190000) nao compacta.
+        TestContext.Check(!Core(BuildHistory(12, 42000, 1000), 200000, 1),
+            "acima do ctx mas abaixo de 95% dele nao compacta (teto 190000 > ~162k)");
         TestContext.Check(Core(BuildHistory(12, 42000, 1000), 131072, 1),
             "passa de 95% de 131072 (124518) e compacta");
         TestContext.Check(Core(BuildHistory(12, 42000, 1000), 524288, 4),
@@ -928,6 +930,79 @@ internal static class UnitToolBreakerTests
         string lastTool = hist[^1]?["content"]?.GetValue<string>() ?? "";
         TestContext.Check(lastTool.Contains("CS1513", StringComparison.Ordinal),
             "resultado recente preserva o marcador de falha para o breaker");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Corte RECURSIVO: quando os turnos recentes intactos ja passam do teto, um passe
+    /// so' vira no-op e a proxima request estoura o slot (medido no hanoi: 140146
+    /// tokens contra 131072 por slot). A janela preservada encolhe (8 -> 4 -> 2) ate'
+    /// caber; o turno em curso (ultimo par) fica intacto.
+    /// </summary>
+    public static Task ContextCompactRecursive()
+    {
+        // ~912k chars = ~285k tokens: 4 pares (8 mensagens) ja passam do teto de
+        // 124518 (95% de 131072), entao o 1o passe (preserva 8) nao basta.
+        var hist = new System.Text.Json.Nodes.JsonArray(
+            new System.Text.Json.Nodes.JsonObject { ["role"] = "system", ["content"] = "s" });
+        hist.Add(new System.Text.Json.Nodes.JsonObject { ["role"] = "user", ["content"] = "u" });
+        for (int i = 0; i < 6; i++)
+        {
+            hist.Add(new System.Text.Json.Nodes.JsonObject
+            {
+                ["role"] = "assistant", ["content"] = "",
+                ["tool_calls"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["id"] = "c" + i, ["type"] = "function",
+                    ["function"] = new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["name"] = "write",
+                        ["arguments"] = "{\"path\":\"a.cs\",\"content\":\"" + new string('x', 150_000) + "\"}"
+                    }
+                })
+            });
+            hist.Add(new System.Text.Json.Nodes.JsonObject
+            {
+                ["role"] = "tool", ["tool_call_id"] = "c" + i,
+                ["content"] = "ok " + new string('y', 2_000)
+            });
+        }
+        static int Estimate(System.Text.Json.Nodes.JsonArray m)
+        {
+            int chars = 0;
+            foreach (var x in m) chars += x?.ToJsonString().Length ?? 0;
+            return (int)Math.Ceiling(chars / 3.2);
+        }
+        int before = Estimate(hist);
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ContextGuard.Compact(hist, 131072, 1),
+            "historico com turnos recentes acima do teto compacta");
+        TestContext.Check(Estimate(hist) < before / 2,
+            $"corte recursivo encolhe mais de metade (antes={before}, depois={Estimate(hist)})");
+        string midArgs = hist[6]?["tool_calls"]?[0]?["function"]?["arguments"]?.GetValue<string>() ?? "";
+        TestContext.Check(midArgs.Contains("omitido", StringComparison.Ordinal),
+            "o 2o passe corta tambem o bloco do meio (nao so' o mais antigo)");
+        string lastArgs = hist[^2]?["tool_calls"]?[0]?["function"]?["arguments"]?.GetValue<string>() ?? "";
+        TestContext.Check(lastArgs.Length > 100_000,
+            "o turno em curso (ultimo par) fica intacto");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Detector do 400 seco do llama: o guard reativo (usage.prompt_tokens) nao ve'
+    /// nada num corpo de erro, entao a bridge usa este parse para a escalada
+    /// nudge -> compactacao -> 413. Texto exato medido no hanoi.
+    /// </summary>
+    public static Task ContextOverflowDetect()
+    {
+        const string body = "{\"error\":{\"code\":400,\"message\":\"the request (140146 tokens) "
+            + "exceeds the available context size (131072 tokens), try increasing it\","
+            + "\"type\":\"exceed_context_size\"}}";
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ContextGuard.LooksLikeOverflow(body, out int t),
+            "400 exceed_context_size e' detectado como estouro");
+        TestContext.Check(t == 140146, $"tokens do prompt lidos da mensagem (veio {t})");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.ContextGuard.LooksLikeOverflow(
+                "{\"error\":{\"message\":\"invalid api key\"}}", out _),
+            "outro 400 nao e' estouro");
         return Task.CompletedTask;
     }
 

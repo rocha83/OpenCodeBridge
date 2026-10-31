@@ -336,11 +336,28 @@ Observações:
   iniciado como `dotnet exec`, o nome será `dotnet` e a detecção é limitada.
   Isso é documentado como limitação portável, não como bloqueio.
 - No L3 e no L4, `main_harness=false` gera **apenas aviso**; não bloqueia.
-- **Thinking off é regra da WAR.** A bridge de bancada roda `--thinking off`
-  (o role `build` já é off por perfil; a esteira é executada na maior parte por
-  ele). Thinking on fica para Plan/Orch/MoE — em tools densas ele gasta
-  raciocínio, ramifica e alucina. O preflight confere `main_harness` (L3/L4) mas
-  não força thinking: a regra é do setup da bridge (`--thinking off`).
+- **Thinking off é regra da WAR, e a regra é da bridge.** A bridge alvo
+  (`bridge-gpu.service`, `:4124`) roda `--thinking off`; o global vale para o id
+  **sem sufixo**, que é o que a maior parte dos steps serve, e o perfil por
+  sufixo mantém `build`/`scripter`/`exec` off (execução determinística).
+  Thinking on fica para Plan/Orch/MoE — em tools densas ele gasta raciocínio,
+  ramifica e alucina. O preflight confere `main_harness`/`harness_tails`
+  (L3/L4) e `context_tokens`, mas **não força nem confere thinking**: não existe
+  flag de teste para isso, e criar uma violaria a regra de que a bridge tem
+  estratégia fixa e o teste se adapta a ela. Se o `/api/status` voltar
+  `thinking:"events"`, o erro é do **setup** (unit) e se corrige ali — nunca
+  dentro da bateria.
+
+  Conferência antes do run (mesmo dado que o preflight lê em `bridge_status`):
+
+  ```bash
+  curl -s -H 'Authorization: Bearer guest@123' http://127.0.0.1:4124/api/status \
+    | jq '{thinking, mode, main_harness, harness_tails, tail_scope}'
+  # {"thinking":"off","mode":"bridge","main_harness":true,"harness_tails":true,"tail_scope":"all"}
+  ```
+
+  Referência completa da regra (motivo, tabela de perfis, unit espelho):
+  `docs/LAB-SETUP.md` §4.3.1 "Thinking off nos testes".
 
 ## 10. Levels e steps da WAR
 
@@ -349,10 +366,10 @@ Cada level roda os steps em série (`MaxParallelSteps=1`), nos dois modos
 
 | Level | Steps |
 |---|---|
-| **L1** | `units` uma vez (`U-`, bridge), `integration-{bridge}` (`E-stream/E-review/E-iot/E-error/E-full-cycle/E-healthy`), `topics-{bridge}` (`E-senior/E-ent`). |
-| **L2** | `responses-tools-{bridge}`, `tools-full-{bridge}`, `belts-build-{bridge}` (azul,verde), `belts-orch-{bridge}` (azul,verde). |
-| **L3** | `science-gpu-{bridge}`, `mission-tools-{bridge}`, `belts-build-roxa-{bridge}`, `belts-orch-roxa-{bridge}`. |
-| **L4** | `algo-{bridge}`, `belts-build-final-{bridge}` (marrom,preta), `belts-orch-final-{bridge}` (marrom,preta), `front-{bridge}`, `webui-integracao-topicos`. |
+| **L1** | `units` uma vez (`U-`, bridge), `e-integration-{tema}-{bridge}` (um teste por step: `stream`, `review`, `iot`, `error`, `fullcycle`, `healthy`), `e-topics-{tema}-{bridge}` (um tema por step: `senior-react`, `senior-bus`, `senior-erp`, `senior-arm`, `ent-crud` (3 CRUD), `ent-worker`, `ent-redis`, `ent-dashboard`). |
+| **L2** | `e-responses-tools-{bridge}`, `e-tools-full-{bridge}`, `e-belts-{azul,verde}-{build,orch}-{bridge}` (uma belt por step). |
+| **L3** | `e-science-gpu-{bridge}`, `e-mission-tools-{bridge}`, `e-belts-roxa-{build,orch}-{bridge}`. |
+| **L4** | `e-algo-cs-{hanoi,bin,btree,kmeans,sort}-{bridge}`, `e-belts-{marrom,preta}-{build,orch}-{bridge}`, `e-front-{gen,edit,edit-razor,edit-react,verify}-{bridge}` (só com GPU2), `webui-integracao-topicos`. |
 
 Cada level roda sozinho (`--war-level N`). Dentro do level, `--war-only NAME`
 filtra steps por substring (ou lista com vírgula); dentro do step, o teste

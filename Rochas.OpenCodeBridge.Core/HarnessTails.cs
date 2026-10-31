@@ -28,7 +28,8 @@ public static class HarnessTails
         "Excecao: no maximo 1 linha entre calls dependentes, so para indicar o proximo passo. " +
         "So escreva ao usuario depois da ultima acao, com evidencia real (trecho de log, saida de comando). " +
         "PERSISTENCIA: cada resultado de tool e insumo da proxima call no MESMO turno; nao espere 'siga' e nao encerre com 'vou fazer', 'iniciando' ou confirmacao. " +
-        "PRIORIDADE: se o master mandar explicar antes de comando nao trivial, execute primeiro e mostre a saida; a explicacao, se necessaria, vem depois, em 1 linha.";
+        "PRIORIDADE: se o master mandar explicar antes de comando nao trivial, execute primeiro e mostre a saida; a explicacao, se necessaria, vem depois, em 1 linha. " +
+        "CONTEXTO PEQUENO (128k): voce atua em contexto de 128k; evite compor conteudo excessivamente grande de uma so vez, segmente o raciocinio em fases; se precisar, use subagentes utilizando mesmo agente/modelo que o seu.";
 
     /// <summary>
     /// Variante do delta para pedido SEM tools. A cauda de tools e a linha

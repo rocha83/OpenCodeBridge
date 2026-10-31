@@ -193,6 +193,14 @@ internal sealed class WarTemplate : CircuitTemplate
         "ERRO: .*|ok=false|permission|negad", RegexOptions.CultureInvariant);
     private static readonly Regex RxFixture = new(
         "artefato .*conteudo=''", RegexOptions.CultureInvariant);
+    // Estouro de contexto tem causa propria: o 400 exceed_context_size (ou o 413
+    // context_compact_required) nao e' "bridge fora do ar" nem "infra" — o log
+    // do teste mostra "bridge indisponivel" porque o cliente desiste apos as
+    // retentativas, e o rotulo generico escondia a causa real (medido 2026-10-31
+    // no E-mission-algo-cs-hanoi: 140146 tokens contra 131072 por slot).
+    private static readonly Regex RxContext = new(
+        "exceed_context_size|exceeds the available context size|context_compact_required",
+        RegexOptions.CultureInvariant);
     private static readonly Regex RxLevelDir = new(
         @"^L(\d+)-(.+)$", RegexOptions.CultureInvariant);
 
@@ -246,11 +254,19 @@ internal sealed class WarTemplate : CircuitTemplate
         if (o.Status) return PrintStatus(p);
         if (o.All || !string.IsNullOrWhiteSpace(o.Levels) || o.From != 1)
             return RunAll(o, p);
-        // Credencial RESOLVIDA (p.Api) e nao a opcao crua: com o.ApiKey nulo o
-        // reset ia sem Authorization e a bridge respondia 401, deixando sonda,
-        // contadores e painel da rodada anterior no lugar.
-        TestContext.ResetDiagnostics(clearProbe: true, bridge: p.Bridge, required: false, apiKey: p.Api,
-            clearPanel: true);
+        // Zera UMA vez, só quando a bateria VAI RODAR. `--war-list` e
+        // `--war-gate-only` são leitura: sem este guard, listar steps zerava
+        // sonda, contadores e painel de um run EM CURSO (medido 2026-10-31,
+        // L3: três `--war-list` seguidos emitiram diag-reset no meio da belt
+        // roxa e apagaram o enunciado publicado do step que estava executando).
+        if (!o.List && !o.GateOnly)
+        {
+            // Credencial RESOLVIDA (p.Api) e nao a opcao crua: com o.ApiKey nulo o
+            // reset ia sem Authorization e a bridge respondia 401, deixando sonda,
+            // contadores e painel da rodada anterior no lugar.
+            TestContext.ResetDiagnostics(clearProbe: true, bridge: p.Bridge, required: false, apiKey: p.Api,
+                clearPanel: true);
+        }
         return RunLevel(o, p, o.Level,
             o.Stamp ?? Env("LEVEL_STAMP") ?? NowStamp(),
             o.GateOnly, lockHeld: false, globalLog: null);
@@ -351,15 +367,20 @@ internal sealed class WarTemplate : CircuitTemplate
 
         int failed = 0;
         // Sonda zerada UMA vez por bateria (o run isolado ja faz o mesmo por ser a propria rodada).
-        // Credencial RESOLVIDA (p.Api) e nao a opcao crua: com o.ApiKey nulo o
-        // reset ia sem Authorization e a bridge respondia 401, deixando sonda,
-        // contadores e painel da rodada anterior no lugar.
-        TestContext.ResetDiagnostics(clearProbe: true, bridge: p.Bridge, required: false, apiKey: p.Api,
-            clearPanel: true);
+        // So quando a bateria vai RODAR: `--war-all --war-list` é leitura e nao
+        // pode zerar um run em curso (mesmo guard do caminho de level unico).
+        if (!o.List)
+        {
+            // Credencial RESOLVIDA (p.Api) e nao a opcao crua: com o.ApiKey nulo o
+            // reset ia sem Authorization e a bridge respondia 401, deixando sonda,
+            // contadores e painel da rodada anterior no lugar.
+            TestContext.ResetDiagnostics(clearProbe: true, bridge: p.Bridge, required: false, apiKey: p.Api,
+                clearPanel: true);
+        }
         // Esteira INTEIRA (L1..L4) recomeça também o Grafana: o painel relê as séries
         // e o plugin Infinity do zero, sem arrastar cache/estado da rodada anterior.
         // Nível isolado (`--war-level N`) não mexe no painel de quem está olhando.
-        if (levels.Count > 1) RestartGrafana(globalLog);
+        if (levels.Count > 1 && !o.List) RestartGrafana(globalLog);
         LogGlobal(globalLog, $"=== run-all-levels {stamp} (levels: {string.Join(",", levels)}) ===");
         LogGlobal(globalLog, $"repo: {p.Root}");
         LogGlobal(globalLog, $"artefatos: {p.OutBase}");
@@ -565,6 +586,42 @@ internal sealed class WarTemplate : CircuitTemplate
         return false;
     }
 
+    /// <summary>
+    /// Fatiamento de <c>integration-{mode}</c> (L1): um step por cenario, na ordem
+    /// do <c>Program.Run</c>. Mesmo motivo do <c>topics</c>: o step com seis testes
+    /// nao dizia no painel qual deles parou. Todos os tokens levam <c>=</c>
+    /// (nome exato) porque <c>--only</c> e' substring.
+    /// </summary>
+    private static readonly (string Suffix, string Test)[] IntegrationStepFilters =
+    {
+        ("stream", "E-stream-architect"),
+        ("review", "E-review-architect"),
+        ("iot", "E-iot-event-queue"),
+        ("error", "E-error-mitigation"),
+        ("fullcycle", "E-full-cycle-iot-queue-push"),
+        ("healthy", "E-healthy-concurrency")
+    };
+
+    /// <summary>
+    /// Fatiamento de <c>topics-{mode}</c> (L1): um step por tema, na ordem do
+    /// <c>Program.Run</c>. Mesmo motivo do <c>mission-algo</c> (L4): o step agregado
+    /// de dez cenarios nao dizia no painel qual deles falhou; aqui o nome do step
+    /// ja e o tema (<c>e-topics-ent-crud-bridge</c>, <c>e-topics-senior-erp-bridge</c>).
+    /// O CRUD vai num step so' (tres cenarios do mesmo tema, filtrados por
+    /// <c>E-ent-crud</c>); o resto e' um por teste.
+    /// </summary>
+    private static readonly (string Suffix, string Filter)[] TopicStepFilters =
+    {
+        ("senior-react", "E-senior-react"),
+        ("senior-bus", "E-senior-bus"),
+        ("senior-erp", "E-senior-erp"),
+        ("senior-arm", "E-senior-arm"),
+        ("ent-crud", "E-ent-crud"),
+        ("ent-worker", "E-ent-worker"),
+        ("ent-redis", "E-ent-redis"),
+        ("ent-dashboard", "E-ent-dashboard")
+    };
+
     private IEnumerable<CircuitStepSpec> AllSteps(TestCircuitDriver driver)
     {
         switch (_level)
@@ -577,25 +634,40 @@ internal sealed class WarTemplate : CircuitTemplate
                     new[] { "--only", "U-" });
                 foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"integration-{mode}", mode,
-                        new[] { "--only", "E-stream,E-review,E-iot,E-error,E-full-cycle,E-healthy" });
-                    yield return StepBridge(driver, $"topics-{mode}", mode,
-                        new[] { "--only", "E-senior,E-ent" });
+                    // Integracao UM A UM (2026-10-30): seis cenarios num step so'
+                    // escondia o culpado. Mesmo padrao do topics.
+                    foreach ((string suffix, string test) in IntegrationStepFilters)
+                        yield return StepBridge(driver, $"e-integration-{suffix}-{mode}", mode,
+                            new[] { "--only", "=" + test });
+                    // Topicos por TEMA (2026-10-30): o step agregado `topics-{mode}`
+                    // escondia QUAL dos dez testes parou (mesmo padrao do fatiamento
+                    // de mission-algo em L4). Cada tema vira step proprio no painel
+                    // (prefixo `e-topics-`) e o FAIL para nele, no nome do cenario.
+                    // Token sem `=`: substring de um so' casa o teste unico; o
+                    // `E-ent-crud` pega os tres CRUD de proposito (mesmo tema).
+                    foreach ((string suffix, string filter) in TopicStepFilters)
+                        yield return StepBridge(driver, $"e-topics-{suffix}-{mode}", mode,
+                            new[] { "--only", filter });
                 }
                 break;
 
-            // L2: tools completas + belts azul/verde (build e orch).
+            // L2: tools completas + belts azul/verde (build e orch), UMA BELT
+            // POR STEP (2026-10-30): `--belts azul,verde` num step so' escondia
+            // em qual faixa parou.
             case 2:
                 foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"responses-tools-{mode}", mode,
-                        new[] { "--only", "E-responses-tools" });
-                    yield return StepBridge(driver, $"tools-full-{mode}", mode,
-                        new[] { "--only", "E-tools-full" });
-                    yield return StepBridge(driver, $"belts-build-{mode}", mode,
-                        new[] { "--only", "E-belts-build-direct", "--belts", "azul,verde" });
-                    yield return StepBridge(driver, $"belts-orch-{mode}", mode,
-                        new[] { "--only", "E-belts-direct", "--belts", "azul,verde" });
+                    yield return StepBridge(driver, $"e-responses-tools-{mode}", mode,
+                        new[] { "--only", "=E-responses-tools" });
+                    yield return StepBridge(driver, $"e-tools-full-{mode}", mode,
+                        new[] { "--only", "=E-tools-full" });
+                    // Ordem preservada: trilha Build primeiro, trilha Orch depois.
+                    foreach (string belt in new[] { "azul", "verde" })
+                        yield return StepBridge(driver, $"e-belts-{belt}-build-{mode}", mode,
+                            new[] { "--only", "E-belts-build-direct", "--belts", belt });
+                    foreach (string belt in new[] { "azul", "verde" })
+                        yield return StepBridge(driver, $"e-belts-{belt}-orch-{mode}", mode,
+                            new[] { "--only", "E-belts-direct", "--belts", belt });
                 }
                 break;
 
@@ -603,49 +675,62 @@ internal sealed class WarTemplate : CircuitTemplate
             case 3:
                 foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"science-gpu-{mode}", mode,
-                        new[] { "--only", "E-science-gpu" });
-                    yield return StepBridge(driver, $"mission-tools-{mode}", mode,
-                        new[] { "--only", "E-mission-tools" });
-                    yield return StepBridge(driver, $"belts-build-roxa-{mode}", mode,
+                    yield return StepBridge(driver, $"e-science-gpu-{mode}", mode,
+                        new[] { "--only", "=E-science-gpu" });
+                    yield return StepBridge(driver, $"e-mission-tools-{mode}", mode,
+                        new[] { "--only", "=E-mission-tools" });
+                    yield return StepBridge(driver, $"e-belts-roxa-build-{mode}", mode,
                         new[] { "--only", "E-belts-build-direct", "--belts", "roxa" });
-                    yield return StepBridge(driver, $"belts-orch-roxa-{mode}", mode,
+                    yield return StepBridge(driver, $"e-belts-roxa-orch-{mode}", mode,
                         new[] { "--only", "E-belts-direct", "--belts", "roxa" });
                 }
                 break;
 
             // L4: mission algo em C# (hanoi + bin/btree/kmeans/sort) + belts
-            // marrom/preta + frontend e Web UI. A trilha F# (bin/btree/sort) foi
-            // ARQUIVADA em 2026-10-30 (ver Archived/FsAlgoMissions.cs): o modelo
-            // alternava PASS/FAIL no mesmo enunciado e o FAIL bloqueava o L4.
+            // marrom/preta (uma por step) + frontend (um teste por step) e Web UI.
+            // A trilha F# (bin/btree/sort) foi ARQUIVADA em 2026-10-30 (ver
+            // Archived/FsAlgoMissions.cs): o modelo alternava PASS/FAIL no mesmo
+            // enunciado e o FAIL bloqueava o L4.
             case 4:
                 foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"algo-cs-hanoi-{mode}", mode,
+                    yield return StepBridge(driver, $"e-algo-cs-hanoi-{mode}", mode,
                         new[] { "--only", "=E-mission-algo-cs-hanoi" });
-                    yield return StepBridge(driver, $"algo-cs-bin-{mode}", mode,
-                        new[] { "--only", "E-mission-algo-cs-bin" });
-                    yield return StepBridge(driver, $"algo-cs-btree-{mode}", mode,
-                        new[] { "--only", "E-mission-algo-cs-btree" });
-                    yield return StepBridge(driver, $"algo-cs-kmeans-{mode}", mode,
-                        new[] { "--only", "E-mission-algo-cs-kmeans" });
-                    yield return StepBridge(driver, $"algo-cs-sort-{mode}", mode,
-                        new[] { "--only", "E-mission-algo-cs-sort" });
-                    yield return StepBridge(driver, $"belts-build-final-{mode}", mode,
-                        new[] { "--only", "E-belts-build-direct", "--belts", "marrom,preta" });
-                    yield return StepBridge(driver, $"belts-orch-final-{mode}", mode,
-                        new[] { "--only", "E-belts-direct", "--belts", "marrom,preta" });
+                    yield return StepBridge(driver, $"e-algo-cs-bin-{mode}", mode,
+                        new[] { "--only", "=E-mission-algo-cs-bin" });
+                    yield return StepBridge(driver, $"e-algo-cs-btree-{mode}", mode,
+                        new[] { "--only", "=E-mission-algo-cs-btree" });
+                    yield return StepBridge(driver, $"e-algo-cs-kmeans-{mode}", mode,
+                        new[] { "--only", "=E-mission-algo-cs-kmeans" });
+                    yield return StepBridge(driver, $"e-algo-cs-sort-{mode}", mode,
+                        new[] { "--only", "=E-mission-algo-cs-sort" });
+                    foreach (string belt in new[] { "marrom", "preta" })
+                        yield return StepBridge(driver, $"e-belts-{belt}-build-{mode}", mode,
+                            new[] { "--only", "E-belts-build-direct", "--belts", belt });
+                    foreach (string belt in new[] { "marrom", "preta" })
+                        yield return StepBridge(driver, $"e-belts-{belt}-orch-{mode}", mode,
+                            new[] { "--only", "E-belts-direct", "--belts", belt });
                     // Front mede pelo snapshot estatico (Razor/CSS/TSX) — o navegador
                     // do --war-webdriver e' SO' do ultimo step (webui-integracao-topicos).
                     // Medido 2026-10-30: com --webdriver aqui a sonda abria janela headed,
                     // nao demonstrava nada e o baseline estourava Timeout 30000ms.
-                    // Front: a fase de EDICAO (E-front-edit) exige a GPU2 (role exec).
-                    // Na trilha Q4-only (sem GPU2) ela viraria FAIL apos o STOP do front-gen.
-                    // Igual a E-front-edit: so' entra quando ha linha na rodada.
+                    // Front: a fase de EDICAO (E-front-edit*) exige a GPU2 (role exec).
+                    // Na trilha Q4-only (sem GPU2) o bloco inteiro e' pulado; com GPU2
+                    // cada teste vira step proprio (2026-10-30) — gen/edit/edit-razor/
+                    // edit-react/verify. `=` porque `E-front-edit` e' prefixo de
+                    // `-edit-razor`/`-edit-react`.
                     if (TestContext.Gpu2Bridge is not null)
                     {
-                        yield return StepBridge(driver, $"front-{mode}", mode,
-                            new[] { "--only", "E-front" });
+                        yield return StepBridge(driver, $"e-front-gen-{mode}", mode,
+                            new[] { "--only", "=E-front-gen" });
+                        yield return StepBridge(driver, $"e-front-edit-{mode}", mode,
+                            new[] { "--only", "=E-front-edit" });
+                        yield return StepBridge(driver, $"e-front-edit-razor-{mode}", mode,
+                            new[] { "--only", "=E-front-edit-razor" });
+                        yield return StepBridge(driver, $"e-front-edit-react-{mode}", mode,
+                            new[] { "--only", "=E-front-edit-react" });
+                        yield return StepBridge(driver, $"e-front-verify-{mode}", mode,
+                            new[] { "--only", "=E-front-verify" });
                     }
                 }
                 yield return StepWeb(driver);
@@ -855,6 +940,9 @@ internal sealed class WarTemplate : CircuitTemplate
         string text = File.Exists(logPath) ? File.ReadAllText(logPath) : "";
         if (RxInfra.IsMatch(text)) return "infra";
         if (text.Contains("calls=)", StringComparison.Ordinal)) return "executor";
+        // Antes de "bridge": o estouro de ctx termina em "bridge indisponivel" no
+        // log do cliente, mas a causa medida e' o 400 seco do llama.
+        if (RxContext.IsMatch(text)) return "contexto";
         if (RxBridge.IsMatch(text)) return "bridge";
         if (RxFixture.IsMatch(text)) return "fixture";
         return "undetermined";

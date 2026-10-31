@@ -162,13 +162,13 @@ unit (`--temperature`/`--thinking`); id com sufixo **vence**.
 
 | id | temp | thinking | papel |
 |---|---|---|---|
-| `Gemma4-E4B-Q4` | 0.5 | events | global GPU1 (base da unit) |
+| `Gemma4-E4B-Q4` | 0.2 | off | global GPU1 (base da unit; `--thinking off`, ver 4.3) |
 | `Gemma4-E4B-Q4-plan` | 0.3 | events | planeja |
 | `Gemma4-E4B-Q4-build` | 0.1 | off | executa |
 | `Gemma4-E4B-Q4-orch` | 0.3 | events | orquestra/delega |
 | `Gemma4-E4B-Q4-moe` | 0.5 | events | explora/generalista |
 | `Gemma4-E4B-Q4-scripter` | 0.1 | off | compõe scripts |
-| `Gemma4-E4B-UD-Q3` | 0.5 | events | global GPU2 (base da unit) |
+| `Gemma4-E4B-UD-Q3` | 0.2 | events | global GPU2 (base da unit) |
 | `Gemma4-E4B-UD-Q3-plan` | 0.3 | events | planeja |
 | `Gemma4-E4B-UD-Q3-build` | 0.1 | off | executa |
 | `Gemma4-E4B-UD-Q3-moe` | 0.5 | events | explora |
@@ -178,8 +178,22 @@ unit (`--temperature`/`--thinking`); id com sufixo **vence**.
 Escala de temperatura: **0.1 baixa (execução) / 0.3 média (planejamento) / 0.5 alta (exploração)**;
 o global da unit é **0.2**. O `temperature` do `opencode.json` (0.3/0.1/0.3/0.5/0.1)
 segue a mesma escala.
-O thinking off vem do perfil (build/scripter/exec); as units atuais não usam
-`--thinking-off-roles`.
+O thinking efetivo vem do **perfil por sufixo, que PREVALECE sobre o global** —
+essa é a regra: os steps mandam ids com sufixo (`-plan`, `-orch`, `-build`) e
+cada um assume o thinking do **seu** role (`plan`/`orch` = on, porque os testes
+também usam Plan; `build`/`scripter`/`exec` = off). O global da bridge da GPU1 é
+**`--thinking off`** (`bridge-gpu.service`, ver §4.3.1) e vale **só** para o id
+**sem sufixo**, que é o que a maior parte dos steps do WAR serve: sem sufixo não
+há perfil, então o id cai no global e sai sem `reasoning_content`. Nenhuma unit
+usa `--thinking-off-roles`, porque o perfil já cobre as roles de execução.
+
+Como conferir (antes de qualquer bateria):
+
+```bash
+curl -s -H 'Authorization: Bearer guest@123' http://127.0.0.1:4124/api/status \
+  | jq '{thinking, mode, main_harness, harness_tails, tail_scope}'
+# {"thinking":"off","mode":"bridge","main_harness":true,"harness_tails":true,"tail_scope":"all"}
+```
 
 ### 1.3 Agents
 
@@ -637,7 +651,7 @@ Total: **não medido neste chroot (sem CUDA)**; medir no host (RTX 3060, 12288 M
 | `--anti-repeat` / `--anti-repeat-retry` | `1` | ambas as bridges |
 | `--main-harness` / `--harness-tails` / `--tail-scope` / `--legacy-harness` | `0` / `1` / `all` / `0` | todas (master do cliente intacto; tails nos dois caminhos) |
 | `--diagnostic` | `0` | ambas (sonda desligada) |
-| `--thinking` | `events` | ambas (formato de repasse; o thinking efetivo vem do perfil) |
+| `--thinking` | `off` (GPU1) / `events` (GPU2) | formato de repasse do reasoning; nos **testes** a bridge alvo roda `off` (§4.3.1), o thinking efetivo por role vem do perfil |
 | `--coerce-text-tools` / `--coerce-narrated` / `--tool-strategy` | `0` | ambas (upstream com parser nativo) |
 | `--anti-repeat-window` | `512` | ambas |
 | `--passthrough-responses` | `true` | ambas |
@@ -1000,11 +1014,13 @@ Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `MAIN_HARNESS=0` e
 ### 4.3 Units de produção (exemplo aplicado)
 
 ```ini
-# bridge-gpu.service  (GPU1 / E4B base) — linha única no unit
+# bridge-gpu.service  (GPU1 / E4B base) — linha única no unit (espelho do /etc real)
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4124 --upstream http://127.0.0.1:4100 --model Gemma4-E4B-Q4 \
-  --thinking events --temperature 0.2 --max-tokens 16384 --api-key guest@123 \
-  --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 \
+  --thinking off --temperature 0.2 --max-tokens 16384 \
+  --context-guard 1 --context-tokens 524288 --context-slots 4 \
+  --api-key guest@123 --passthrough-responses true \
+  --mode bridge --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0 \
   --anti-repeat 1 --anti-repeat-retry 1 \
   --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 \
   --anti-repeat-window 512 --log /tmp/bridge-gpu.log
@@ -1021,6 +1037,35 @@ ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
 
 A `bridge-cpu-forced.service` (`:4126`, `-ngl 0`) também roda
 `--main-harness 0 --harness-tails 1 --tail-scope all --anti-repeat-retry 1`.
+
+#### 4.3.1 Thinking off nos testes (regra)
+
+A esteira de testes (unit, integração e WAR) roda com **thinking desligado** na
+bridge alvo. A regra é **do setup da bridge**, não do driver: o `WarTemplate`
+confere `main_harness`/`harness_tails`/`context_tokens` no preflight e **não**
+força thinking — se a unit voltar a `--thinking events`, ninguém corrige por
+baixo e o run mede outra coisa.
+
+| o que | valor | onde |
+|---|---|---|
+| global da GPU1 | `--thinking off` | `bridge-gpu.service` |
+| perfil por sufixo (**prevalece** sobre o global) | `plan`/`orch` = on (os steps de teste usam Plan e Orch) · `build`/`scripter`/`exec` = off | `RoleProfiles` (tabela única no Core) |
+| id sem sufixo (a maior parte dos steps do WAR) | cai no global → **off** | `Program.cs` (`profThinkMid` vazio) |
+| `--thinking-off-roles` | não usado por nenhuma unit | o perfil já cobre as roles de execução |
+
+Motivo: thinking on em tools densas gasta raciocínio, ramifica e alucina
+(`AGENTS.md`, `docs/DRIVER-FIXES.md`). Thinking on fica para Plan/Orch/MoE.
+
+Conferência (rode antes do run; é o mesmo dado que o preflight lê):
+
+```bash
+curl -s -H 'Authorization: Bearer guest@123' http://127.0.0.1:4124/api/status \
+  | jq '{thinking, mode, main_harness, harness_tails, tail_scope, context_tokens, context_slots}'
+# thinking=off · mode=bridge · main_harness=true · harness_tails=true · tail_scope=all
+```
+
+O `GET /api/test/last-system` completa a prova do lado do request
+(`temperature`, `has_profile`, `main_harness`, `tools_tail`).
 
 Atalhos de desktop: `OpenCode Bridge GPU/CPU` reiniciam as units e mostram
 saúde; `Llama GPU`/`Llama CPU` regeneram e reiniciam os servidores;
@@ -1315,17 +1360,29 @@ Args gravados nas units (as três, `bridge-gpu`, `bridge-gpu2` e `bridge-cpu-for
   thinking em turno com tools (perda de UX/qualidade) — use-o só no caminho puro
   de testes/WebUI (`--tool-shim json --tool-shim-max-string 1200
   --tool-shim-min-calls 3`), nunca por padrão na ponte do OpenCode.
-- **context-guard: aceito, reportado — e hoje inerte.** `--context-tokens 131072`
-  aparece em `/api/status` (`config_groups.orcamento`), mas o 413
-  `context_compact_required` não dispara porque (a) a guarda vive só no ramo
-  agregado non-stream do `Passthrough` (chat) e (b) com `--anti-repeat-abort 1`
-  o request non-stream é atendido antes por `TryStreamAbortChat`, que não tem
-  guarda; e (c) o OpenCode usa `/v1/responses` (`HandleResponses`), também sem
-  guarda. Prova: instância descartável (porta efêmera) com `--context-tokens 1000`
-  recebeu prompt de 3734 tokens → **HTTP 200**. A proteção real hoje é o
-  `limit.context = 131072` do opencode + compactação do próprio cliente.
-  **Pendência para a próxima release:** estimar tokens na entrada (pré-flight)
-  e/ou plugar a guarda em `HandleResponses` e no ramo de stream-abort.
+- **context-guard: ativo nos dois sentidos (2026-10-31).** `--context-tokens` +
+  `--context-slots` entram em `/api/status` (`config_groups.orcamento`) e o 413
+  `context_compact_required` dispara pelo `usage.prompt_tokens` de resposta
+  **bem-sucedida** no ramo JSON do chat. O buraco medido no
+  `E-mission-algo-cs-hanoi` (140146 tokens contra 131072 por slot) era o 400
+  **seco** do llama (`exceed_context_size`): erro não tem `usage`, então a guarda
+  reativa nunca disparava e o corpo do erro ia cru. Agora o `Passthrough` chama
+  `ContextGuard.LooksLikeOverflow` no corpo do erro e escala:
+  **1) nudge** (`ContextGuard.NudgeText`, lembrete de economia — não corta
+  conteúdo), **2) compactação** (`ContextGuard.Compact`, teto de 70% do slot),
+  **3) 413** `context_compact_required`. Eventos `context-guard`
+  (`where=upstream-400`), `context-nudge` e `context-compact` ficam no log da
+  bridge; o driver WAR rotula a falha como `causa=contexto`.
+- **Estimativa de tokens calibrada no próprio llama** (`/tokenize`, 2026-10-31):
+  prosa 3.83 chars/token, C# 3.66, C# denso 3.22. O `chars/4` subestimava até
+  1.24x em código e a compactação virava no-op. `ContextGuard` usa **3.2** (pior
+  caso medido) para errar para cima; o corte é **recursivo** (janela preservada
+  8 → 4 → 2) quando os turnos recentes sozinhos já passam do teto.
+- **Caudas separadas** (`--harness-behavior` / `--harness-tools`, default ON):
+  behavior é conduta geral e entra sempre (independente do main harness); a
+  cauda de tools só entra quando o request traz o array `tools`. O
+  `--harness-tails` continua como **alias de compatibilidade** que liga/desliga
+  as duas (o preflight `bridge_harness_tails` segue lendo o status).
 - Com `--harness-tails 0` as tails não entram em nenhum caminho: o OpenCode já
   roda o "tubo puro". Não é preciso "configurar caminho puro" para ele — só para
   WebUI/testes sem sufixo.

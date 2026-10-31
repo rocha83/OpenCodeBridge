@@ -346,16 +346,18 @@ A esteira WAR tem quatro níveis, nesta ordem, tanto no `WarTemplate`
 
 | Level | Ordem interna |
 |---|---|
-| **L1** | `units` (uma vez, bridge) → `integração` → `tópicos` |
-| **L2** | `E-responses-tools` → `E-tools-full` → belts **azul e verde** (build + orch) |
-| **L3** | `E-science-gpu` → `E-mission-tools` → belt **roxa** (build + orch) |
-| **L4** | `E-mission-algo-cs-hanoi` → `E-mission-algo-cs-{bin,btree,kmeans,sort}` → belts **marrom e preta** (build + orch) → `E-front-*` → `webui-integracao-topicos` |
+| **L1** | `units` (uma vez, bridge) → `e-integration-{tema}` (6 steps) → `e-topics-{tema}` (8 steps) |
+| **L2** | `e-responses-tools` → `e-tools-full` → belts **azul e verde**, uma belt por step (build + orch) |
+| **L3** | `e-science-gpu` → `e-mission-tools` → belt **roxa** (build + orch) |
+| **L4** | `e-algo-cs-hanoi` → `e-algo-cs-{bin,btree,kmeans,sort}` → belts **marrom e preta**, uma belt por step (build + orch) → `e-front-{gen,edit,edit-razor,edit-react,verify}` → `webui-integracao-topicos` |
 
-- **L1 integração**: `E-stream-*`, `E-review-*`, `E-iot-*`, `E-error-*`,
-  `E-full-cycle-*`, `E-healthy-*`.
-- **L1 tópicos**: `E-senior-*`, `E-ent-*`.
+- **L1 `e-integration-*` / `e-topics-*`**: um step por teste/cenario
+  (`E-stream-*`, `E-review-*`, `E-iot-*`, `E-error-*`, `E-full-cycle-*`,
+  `E-healthy-*`, `E-senior-*`, `E-ent-*`); `e-topics-ent-crud` cobre os três
+  CRUD juntos (product/customer/saleinvoice).
 - **L4 web UI**: `E-front-gen`, `E-front-edit`, `E-front-edit-razor`,
-  `E-front-edit-react`, `E-front-verify` e `webui-integracao-topicos`.
+  `E-front-edit-react`, `E-front-verify` (cada um o seu step `e-front-*`) e
+  `webui-integracao-topicos`.
 
 Cada nível roda sozinho (`--war-level 1..4` / `run-levels.sh --level 1..4`).
 Dentro do nível, `--war-only NAME` filtra steps (substring ou lista com

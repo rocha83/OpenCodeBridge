@@ -357,7 +357,7 @@ fi
 
 case "$LEVEL" in
   1)
-    STEPS_DESC="units (bridge, uma vez); integracao bridge/opencode (E-stream/E-review/E-iot/E-error/E-full-cycle/E-healthy); topicos bridge/opencode (E-senior/E-ent)"
+    STEPS_DESC="units (bridge, uma vez); integracao 1 teste/step (e-integration-stream|review|iot|error|fullcycle|healthy); topicos 1 tema/step (e-topics-senior-react|bus|erp|arm, e-topics-ent-crud|worker|redis|dashboard)"
     if [ "$LIST" = "1" ]; then
       echo "Level 1 -> $STEPS_DESC"; exit 0
     fi
@@ -367,12 +367,26 @@ case "$LEVEL" in
     # Units sao da bridge (HTTP), nao do opencode: roda uma vez.
     step_bridge "units" --only U- --mode bridge
     for mode in $MODES; do
-      step_bridge "integration-$mode" --only E-stream,E-review,E-iot,E-error,E-full-cycle,E-healthy --mode "$mode"
-      step_bridge "topics-$mode" --only E-senior,E-ent --mode "$mode"
+      # Integracao um a um (2026-10-30): espelha o fatiamento do WarTemplate.
+      step_bridge "e-integration-stream-$mode"    --only =E-stream-architect            --mode "$mode"
+      step_bridge "e-integration-review-$mode"    --only =E-review-architect            --mode "$mode"
+      step_bridge "e-integration-iot-$mode"       --only =E-iot-event-queue             --mode "$mode"
+      step_bridge "e-integration-error-$mode"     --only =E-error-mitigation            --mode "$mode"
+      step_bridge "e-integration-fullcycle-$mode" --only =E-full-cycle-iot-queue-push   --mode "$mode"
+      step_bridge "e-integration-healthy-$mode"   --only =E-healthy-concurrency         --mode "$mode"
+      # Topicos por tema (2026-10-30): o agregado escondia qual falhou.
+      step_bridge "e-topics-senior-react-$mode"   --only E-senior-react          --mode "$mode"
+      step_bridge "e-topics-senior-bus-$mode"     --only E-senior-bus            --mode "$mode"
+      step_bridge "e-topics-senior-erp-$mode"     --only E-senior-erp            --mode "$mode"
+      step_bridge "e-topics-senior-arm-$mode"     --only E-senior-arm            --mode "$mode"
+      step_bridge "e-topics-ent-crud-$mode"       --only E-ent-crud              --mode "$mode"
+      step_bridge "e-topics-ent-worker-$mode"     --only =E-ent-worker           --mode "$mode"
+      step_bridge "e-topics-ent-redis-$mode"      --only =E-ent-redis            --mode "$mode"
+      step_bridge "e-topics-ent-dashboard-$mode"  --only =E-ent-dashboard        --mode "$mode"
     done
     ;;
   2)
-    STEPS_DESC="responses-tools; tools-full; belts build/orch azul,verde (bridge default)"
+    STEPS_DESC="e-responses-tools; e-tools-full; belts 1 faixa/step build+orch azul,verde (e-belts-azul-build|azul-orch|verde-build|verde-orch)"
     if [ "$LIST" = "1" ]; then
       echo "Level 2 -> $STEPS_DESC"; exit 0
     fi
@@ -380,15 +394,19 @@ case "$LEVEL" in
     log "=== LEVEL 2 ($OUT) ==="
     preflight || { log "BLOCKED: preflight reprovado"; gate; exit 3; }
     for mode in $MODES; do
-      step_bridge "responses-tools-$mode" --only E-responses-tools --mode "$mode"
-      step_bridge "tools-full-$mode" --only E-tools-full --mode "$mode"
-      # Ordem: trilha Build primeiro, trilha Orch depois.
-      step_bridge "belts-build-$mode" --only E-belts-build-direct --belts azul,verde --mode "$mode"
-      step_bridge "belts-orch-$mode" --only E-belts-direct --belts azul,verde --mode "$mode"
+      step_bridge "e-responses-tools-$mode" --only =E-responses-tools --mode "$mode"
+      step_bridge "e-tools-full-$mode" --only =E-tools-full --mode "$mode"
+      # Ordem: trilha Build primeiro, trilha Orch depois. Uma belt por step.
+      for belt in azul verde; do
+        step_bridge "e-belts-$belt-build-$mode" --only E-belts-build-direct --belts "$belt" --mode "$mode"
+      done
+      for belt in azul verde; do
+        step_bridge "e-belts-$belt-orch-$mode" --only E-belts-direct --belts "$belt" --mode "$mode"
+      done
     done
     ;;
   3)
-    STEPS_DESC="science-gpu; mission-tools; belts build/orch roxa (bridge default)"
+    STEPS_DESC="e-science-gpu; e-mission-tools; belt roxa 1 faixa/step (e-belts-roxa-build, e-belts-roxa-orch)"
     if [ "$LIST" = "1" ]; then
       echo "Level 3 -> $STEPS_DESC"; exit 0
     fi
@@ -401,14 +419,14 @@ case "$LEVEL" in
     echo "$HSTATUS" | grep -q '"main_harness":true' \
       || log "AVISO: main_harness nao esta true — Level 3 pede harness ligado (--main-harness 1 --harness-tails 1)"
     for mode in $MODES; do
-      step_bridge "science-gpu-$mode" --only E-science-gpu --mode "$mode"
-      step_bridge "mission-tools-$mode" --only E-mission-tools --mode "$mode"
-      step_bridge "belts-build-roxa-$mode" --only E-belts-build-direct --belts roxa --mode "$mode"
-      step_bridge "belts-orch-roxa-$mode" --only E-belts-direct --belts roxa --mode "$mode"
+      step_bridge "e-science-gpu-$mode" --only =E-science-gpu --mode "$mode"
+      step_bridge "e-mission-tools-$mode" --only =E-mission-tools --mode "$mode"
+      step_bridge "e-belts-roxa-build-$mode" --only E-belts-build-direct --belts roxa --mode "$mode"
+      step_bridge "e-belts-roxa-orch-$mode" --only E-belts-direct --belts roxa --mode "$mode"
     done
     ;;
   4)
-    STEPS_DESC="mission-algo C# (hanoi,bin,btree,kmeans,sort); belts build/orch marrom,preta (bridge default); frontend E-front; webui-integracao-topicos"
+    STEPS_DESC="e-algo-cs-* (hanoi,bin,btree,kmeans,sort); belts marrom/preta 1 faixa/step (e-belts-marrom-build|marrom-orch|preta-build|preta-orch); frontend e-front-gen|edit|edit-razor|edit-react|verify; webui-integracao-topicos"
     if [ "$LIST" = "1" ]; then
       echo "Level 4 -> $STEPS_DESC"; exit 0
     fi
@@ -421,16 +439,25 @@ case "$LEVEL" in
     echo "$HSTATUS" | grep -q '"main_harness":true' \
       || log "AVISO: main_harness nao esta true — Level 4 pede harness ligado (--main-harness 1 --harness-tails 1)"
     for mode in $MODES; do
-      step_bridge "algo-cs-hanoi-$mode" --only =E-mission-algo-cs-hanoi --mode "$mode"
-      step_bridge "algo-cs-bin-$mode" --only E-mission-algo-cs-bin --mode "$mode"
-      step_bridge "algo-cs-btree-$mode" --only E-mission-algo-cs-btree --mode "$mode"
-      step_bridge "algo-cs-kmeans-$mode" --only E-mission-algo-cs-kmeans --mode "$mode"
-      step_bridge "algo-cs-sort-$mode" --only E-mission-algo-cs-sort --mode "$mode"
+      step_bridge "e-algo-cs-hanoi-$mode" --only =E-mission-algo-cs-hanoi --mode "$mode"
+      step_bridge "e-algo-cs-bin-$mode" --only =E-mission-algo-cs-bin --mode "$mode"
+      step_bridge "e-algo-cs-btree-$mode" --only =E-mission-algo-cs-btree --mode "$mode"
+      step_bridge "e-algo-cs-kmeans-$mode" --only =E-mission-algo-cs-kmeans --mode "$mode"
+      step_bridge "e-algo-cs-sort-$mode" --only =E-mission-algo-cs-sort --mode "$mode"
       # Trilha F# (algo-fs-*) ARQUIVADA em 2026-10-30: ver
       # Rochas.OpenCodeBridge.Test/Archived/FsAlgoMissions.cs. Nao roda no gate.
-      step_bridge "belts-build-final-$mode" --only E-belts-build-direct --belts marrom,preta --mode "$mode"
-      step_bridge "belts-orch-final-$mode" --only E-belts-direct --belts marrom,preta --mode "$mode"
-      step_bridge "front-$mode" --only E-front --mode "$mode"
+      # Uma belt por step.
+      for belt in marrom preta; do
+        step_bridge "e-belts-$belt-build-$mode" --only E-belts-build-direct --belts "$belt" --mode "$mode"
+      done
+      for belt in marrom preta; do
+        step_bridge "e-belts-$belt-orch-$mode" --only E-belts-direct --belts "$belt" --mode "$mode"
+      done
+      # Front um teste por step (a fase de edicao exige GPU2: aqui so ha' GPU2
+      # na trilha dual; em Q4-only o bloco inteiro nao roda neste script).
+      for front in gen edit edit-razor edit-react verify; do
+        step_bridge "e-front-$front-$mode" --only "=E-front-$front" --mode "$mode"
+      done
     done
     step_webtest
     ;;

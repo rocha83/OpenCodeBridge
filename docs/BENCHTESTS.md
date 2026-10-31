@@ -195,17 +195,21 @@ step pode ser filtrado por `--only`.
 
 | Level | Ordem interna |
 |---|---|
-| **L1** | `units` (uma vez, bridge) → `integração` → `tópicos` |
-| **L2** | `E-responses-tools` → `E-tools-full` → belts **azul e verde** (build + orch) |
-| **L3** | `E-science-gpu` → `E-mission-tools` → belt **roxa** (build + orch) |
-| **L4** | `E-mission-algo-cs-hanoi` → `E-mission-algo-cs-{bin,btree,kmeans,sort}` → belts **marrom e preta** (build + orch) → frontend `E-front-*` → `webui-integracao-topicos` |
+| **L1** | `units` (uma vez, bridge) → `e-integration-{tema}` (6 steps) → `e-topics-{tema}` (8 steps) |
+| **L2** | `e-responses-tools` → `e-tools-full` → belts **azul e verde**, uma belt por step (build + orch) |
+| **L3** | `e-science-gpu` → `e-mission-tools` → belt **roxa** (build + orch) |
+| **L4** | `e-algo-cs-hanoi` → `e-algo-cs-{bin,btree,kmeans,sort}` → belts **marrom e preta**, uma belt por step (build + orch) → frontend `e-front-{gen,edit,edit-razor,edit-react,verify}` → `webui-integracao-topicos` |
 
-- **L1 integração**: `E-stream-architect`, `E-review-architect`,
-  `E-iot-event-queue`, `E-error-mitigation`,
-  `E-full-cycle-iot-queue-push`, `E-healthy-concurrency`.
-- **L1 tópicos**: `E-senior-react`, `E-senior-bus`, `E-senior-erp`,
-  `E-senior-arm`, `E-ent-crud-product`, `E-ent-crud-customer`,
-  `E-ent-crud-saleinvoice`, `E-ent-worker`, `E-ent-garnet`, `E-ent-dashboard`.
+- **L1 `e-integration-{tema}`** (um teste por step): `e-integration-stream`
+  (`E-stream-architect`), `e-integration-review` (`E-review-architect`),
+  `e-integration-iot` (`E-iot-event-queue`), `e-integration-error`
+  (`E-error-mitigation`), `e-integration-fullcycle`
+  (`E-full-cycle-iot-queue-push`), `e-integration-healthy`
+  (`E-healthy-concurrency`).
+- **L1 `e-topics-{tema}`** (um tema por step): `e-topics-senior-react`,
+  `e-topics-senior-bus`, `e-topics-senior-erp`, `e-topics-senior-arm`,
+  `e-topics-ent-crud` (os três CRUD de uma vez: product/customer/saleinvoice),
+  `e-topics-ent-worker`, `e-topics-ent-redis`, `e-topics-ent-dashboard`.
 - **L4 frontend/web**: `E-front-gen`, `E-front-edit` (CSS),
   `E-front-edit-razor`, `E-front-edit-react`, `E-front-verify` e
   `webui-integracao-topicos` (Web.Test).
@@ -234,8 +238,12 @@ dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
 dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
   --war-level 1 --war-only integration
 dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
-  --war-level 4 --war-only belts-build-final,front
+  --war-level 4 --war-only e-belts-marrom-build,e-front-gen
 ```
+
+(`integration` e `front` casam por substring nos steps `e-integration-*` e
+`e-front-*`; `belts-build-final`/`belts-orch-final` eram os nomes antigos dos
+steps de belt agregados — hoje é `e-belts-{cor}-{build,orch}`).
 
 ### Rodar um teste individual
 

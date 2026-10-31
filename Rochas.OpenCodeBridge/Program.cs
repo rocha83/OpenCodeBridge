@@ -138,6 +138,15 @@ internal static partial class Program
     // embutido? Usado so pela validacao, p/ avisar "cauda inerte com
     // --harness-tails 0" sem acusar o default.
     static bool BehaviorTailCustom, ToolsTailCustom;
+    // Flag PROPRIA de cada cauda (--harness-behavior / --harness-tools): behavior
+    // e tools sao responsabilidades separadas. O behavior entra SEMPRE por padrao
+    // (conduta geral); a cauda de tools so entra quando o request traz o array
+    // `tools`. Desligar uma nao afeta a outra. Default: ambas ON.
+    static bool BehaviorTailEnabled = true, ToolsTailEnabled = true;
+    // Texto efetivo da cauda (vazio quando a flag desligou a peca). Fonte unica
+    // para TailsAtivas e para a composicao — o Core recebe "" e nao injeta.
+    static string BehaviorTailEffective => BehaviorTailEnabled ? HarnessBehaviorTail : "";
+    static string ToolsTailEffective => ToolsTailEnabled ? HarnessToolsTail : "";
     // Onde as caudas valem (--tail-scope / appsettings tailScope):
     //   managed = padrao historico: so cliente direto/Web, com --harness-tails 1;
     //   all     = tambem no caminho opencode (model com sufixo de role);
@@ -159,7 +168,7 @@ internal static partial class Program
     static int BreakerHard = 6;                                  // falhas que encerram o turno
     // Ha alguma cauda configurada? O /api/harness reporta isso; a decisao por
     // caminho fica em TailsOn (harnessTails + tailScope).
-    static bool TailsAtivas() => HarnessBehaviorTail.Length > 0 || HarnessToolsTail.Length > 0;
+    static bool TailsAtivas() => BehaviorTailEffective.Length > 0 || ToolsTailEffective.Length > 0;
     // Cliente da requisicao corrente. O CLI do opencode traz harness proprio, entao
     // a cauda ali e opcional; qualquer outro cliente (WAR, Web, SDK) recebe a cauda
     // mesmo com modelo de role (sufixo). O sufixo NAO identifica cliente — era o
@@ -179,12 +188,25 @@ internal static partial class Program
     // caminho: "all" injeta TAMBEM na raia opencode, "managed" so no cliente
     // direto/Web (opencode se auto-gerencia). O gate do modo e `Tails` do
     // BridgeMode — nunca o BridgeLane, que discrimina apenas o MainHarness.
-    static bool TailsOn(string? modelId) =>
-        TailsEnabled
+    // Cauda de BEHAVIOR: conduta geral, INDEPENDENTE do main harness — o flag
+    // --harness-behavior 0 desliga e o default e' ON (com main harness ligado o
+    // comportamento tambem entra, por consequencia do default). O escopo/caminho
+    // segue o das caudas (off desliga; opencode so com "all").
+    static bool BehaviorTailOn() =>
+        BehaviorTailEnabled
         && TailScope != "off"
         && (Mode?.Tails ?? true)
         && (TailScope == "all" || !OpencodeClient.Value)
-        && TailsAtivas();
+        && BehaviorTailEffective.Length > 0;
+    // Cauda de TOOLS: como usar as tools, so quando o request traz o array.
+    static bool ToolsTailOn() =>
+        ToolsTailEnabled
+        && TailScope != "off"
+        && (Mode?.Tails ?? true)
+        && (TailScope == "all" || !OpencodeClient.Value)
+        && ToolsTailEffective.Length > 0;
+    // Alguma cauda entra neste request (usado pelo gate do chamador).
+    static bool TailsOn(string? modelId) => BehaviorTailOn() || ToolsTailOn();
     static int AntiRepeatWindow = ContentAntiRepeat.DefaultWindow; // janela (chars) da cauda comparada com o historico (64..2048); default unico no Core
     // Janela PROPRIA dos argumentos de tool: `write`/`edit` carrega arquivo inteiro
     // e repete trechos legitimos. Com a janela do texto o abort cortava a call no
@@ -452,12 +474,15 @@ internal static partial class Program
             if (cfg["maxTokensCoerced"]?.GetValue<int>() is int mtc && mtc >= 0) CpuMaxTokens = mtc;
             // Dois switches separados: mainHarness (texto base) e harnessTails
             // (delta). Nao ha chave alias: so estes dois nomes valem.
-            if (cfg["harnessTails"]?.GetValue<bool>() is bool ht) TailsEnabled = ht;
+            if (cfg["harnessTails"]?.GetValue<bool>() is bool ht)
+            { TailsEnabled = ht; BehaviorTailEnabled = ht; ToolsTailEnabled = ht; }
             if (cfg["mode"]?.GetValue<string>() is string md && BridgeMode.TryParse(md, out BridgeMode mcfg)) Mode = mcfg;
             if (cfg["mainHarness"]?.GetValue<bool>() is bool mh) MainHarnessOn = mh;
             // Caudas ajustaveis no appsettings (string vazia desliga a peca).
             if (cfg["harnessToolsTail"]?.GetValue<string>() is string ham) { HarnessToolsTail = ham; ToolsTailCustom = true; }
             if (cfg["harnessBehaviorTail"]?.GetValue<string>() is string bt) { HarnessBehaviorTail = bt; BehaviorTailCustom = true; }
+            if (cfg["harnessBehavior"]?.GetValue<bool>() is bool hb) BehaviorTailEnabled = hb;
+            if (cfg["harnessTools"]?.GetValue<bool>() is bool htb) ToolsTailEnabled = htb;
             if (cfg["tailScope"]?.GetValue<string>() is string tsp && tsp is "managed" or "all" or "off") TailScope = tsp;
             if (cfg["breakerSoft"]?.GetValue<int>() is int bsoft && bsoft >= 0) BreakerSoft = bsoft;
             if (cfg["breakerHard"]?.GetValue<int>() is int bhard && bhard >= 0) BreakerHard = bhard;
@@ -572,6 +597,8 @@ internal static partial class Program
             ["env"] = systemText.Contains("<env>", StringComparison.Ordinal),
             ["tail_scope"] = TailScope,
             ["harness_tails"] = TailsEnabled,
+            ["behavior_tail"] = BehaviorTailEnabled,
+            ["tools_tail_flag"] = ToolsTailEnabled,
             ["lane"] = BridgeLane.Value == true ? "bridge" : "opencode",
             ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             // Portao de fluxo (PENDINGS P1): prova do que ESTE request carregou.
@@ -580,7 +607,7 @@ internal static partial class Program
             // cauda sai de proposito — sem ela o modelo emite JSON de tool como texto).
             ["main_harness"] = mainHarness,
             ["has_tools"] = hasTools,
-            ["tools_tail"] = hasTools && HarnessTails.HasToolsTail(systemText, HarnessToolsTail),
+            ["tools_tail"] = hasTools && HarnessTails.HasToolsTail(systemText, ToolsTailEffective),
             // Temperatura que vai no corpo do upstream + se o model id carrega role
             // (has_profile=true + valor == perfil do role = prova de "rodou a 0.1").
             ["temperature"] = temperature.HasValue ? JsonValue.Create(temperature.Value) : null,
@@ -1117,9 +1144,17 @@ internal static partial class Program
                     break;
 
                 // ---------- D) harness/prompt ----------
-                case "--harness-tails": TailsEnabled = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--harness-tails":
+                    // Alias legado (compat): liga/desliga AS DUAS caudas. As flags
+                    // reais passaram a ser --harness-behavior e --harness-tools.
+                    TailsEnabled = cliArgs[i + 1] is not "false" and not "0";
+                    BehaviorTailEnabled = TailsEnabled;
+                    ToolsTailEnabled = TailsEnabled;
+                    break;
                 case "--harness-behavior-tail": HarnessBehaviorTail = cliArgs[i + 1]; BehaviorTailCustom = true; break;
                 case "--harness-tools-tail": HarnessToolsTail = cliArgs[i + 1]; ToolsTailCustom = true; break;
+                case "--harness-behavior": BehaviorTailEnabled = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--harness-tools": ToolsTailEnabled = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--tail-scope":
                     if (cliArgs[i + 1] is "managed" or "all" or "off") TailScope = cliArgs[i + 1];
                     break;
@@ -1271,6 +1306,10 @@ internal static partial class Program
             warns.Add("--harness-tails 1 com --tail-scope managed: o caminho opencode (modelo com sufixo de role) fica SEM cauda — use --tail-scope all");
         if (TailScope == "all" && !TailsAtivas())
             warns.Add("--tail-scope all com caudas vazias: nada a injetar");
+        if (TailsEnabled && !BehaviorTailEnabled)
+            warns.Add("--harness-behavior 0: cauda de comportamento desligada (tools segue pela flag propria)");
+        if (TailsEnabled && !ToolsTailEnabled)
+            warns.Add("--harness-tools 0: cauda de tools desligada (comportamento segue pela flag propria)");
         if (BreakerHard > 0 && BreakerSoft > BreakerHard)
             errors.Add($"--breaker-soft {BreakerSoft} maior que --breaker-hard {BreakerHard}: o aviso nunca apareceria");
         if (!ContextGuard && ContextTokens > 0)
@@ -1685,8 +1724,10 @@ internal static partial class Program
                     ["harness_tails"] = TailsEnabled,
                     ["tails_managed"] = TailsAtivas() && TailScope is "all" or "managed",
                     ["tails_opencode"] = false,
-                    ["behavior_chars"] = HarnessBehaviorTail.Length,
-                    ["tools_chars"] = HarnessToolsTail.Length
+                    ["behavior_tail"] = BehaviorTailEnabled,
+                    ["tools_tail"] = ToolsTailEnabled,
+                    ["behavior_chars"] = BehaviorTailEffective.Length,
+                    ["tools_chars"] = ToolsTailEffective.Length
                 });
                 return;
             }
@@ -2708,10 +2749,12 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 ["attached"] = messages.Count > 0 && messages[0] is JsonObject s1
                                && s1["content"] is JsonValue s1v
                                && (s1v.TryGetValue<string>(out string? t1)
-                                   ? HarnessTails.HasToolsTail(t1, HarnessToolsTail)
+                                   ? HarnessTails.HasToolsTail(t1, ToolsTailEffective)
                                    : false),
-                ["behavior_chars"] = HarnessBehaviorTail.Length,
-                ["tools_chars"] = HarnessToolsTail.Length
+                ["behavior_tail"] = BehaviorTailEnabled,
+                ["tools_tail"] = ToolsTailEnabled,
+                ["behavior_chars"] = BehaviorTailEffective.Length,
+                ["tools_chars"] = ToolsTailEffective.Length
             });
         // Breaker de loop agentico: le o historico (function_call + resultado) e
         // decide nudge/trip. Trip = nao chama o modelo (o turno esta perdido).
@@ -3212,7 +3255,12 @@ var shape = new StringBuilder();
     {
         // Fonte unica das caudas no Core; o host so decide ligar/desligar e
         // passa as sobrescritas de CLI/appsettings.
-        return HarnessTails.Compose(sys, TailsOn(modelId), HarnessBehaviorTail, HarnessToolsTail,
+        bool behaviorOn = BehaviorTailOn();
+        bool toolsOn = ToolsTailOn();
+        if (!behaviorOn && !toolsOn) return sys ?? "";
+        return HarnessTails.Compose(sys, true,
+            behaviorOn ? HarnessBehaviorTail : "",
+            toolsOn ? HarnessToolsTail : "",
             hasTools, toolNames);
     }
 
@@ -4011,7 +4059,7 @@ var shape = new StringBuilder();
     {
         try
         {
-            return Http.Send(forward, option);
+            return RecoverOverflow(ctx, Http.Send(forward, option), body, forward, option);
         }
         catch (Exception ex) when (RetryNudge.IsUpstreamAbort(ex))
         {
@@ -4040,7 +4088,7 @@ var shape = new StringBuilder();
             WithAuth(retry, ctx);
             try
             {
-                return Http.Send(retry, option);
+                return RecoverOverflow(ctx, Http.Send(retry, option), retryBody, retry, option);
             }
             catch (Exception ex2) when (RetryNudge.IsUpstreamAbort(ex2))
             {
@@ -4048,6 +4096,144 @@ var shape = new StringBuilder();
                 throw new RetryNudge.UpstreamAbortException(ex2.Message + " (apos 1 retry com nudge)", ex2);
             }
         }
+    }
+
+    /// <summary>
+    /// Recuperacao de estouro de contexto no upstream. O 400
+    /// <c>exceed_context_size</c> do llama nao e' "ponte fora": o INPUT nao cabe no
+    /// slot. Escalada (regra no Core, loop aqui): 1) nudge — lembrete de economia
+    /// ao modelo, sem cortar conteudo; 2) compactacao — <see cref="ContextGuard.Compact"/>,
+    /// unica rotina que encolhe o input; 3) 413 <c>context_compact_required</c>.
+    /// </summary>
+    /// <remarks>
+    /// So' vale para corpo no formato chat (com <c>messages</c>): e' o unico com
+    /// historico compactavel. Nos demais formatos a resposta volta intacta. O
+    /// corpo do erro e' lido para a deteccao; quando NAO e' estouro ele e'
+    /// recolocado na resposta para o chamador repassar como antes.
+    /// </remarks>
+    /// <param name="ctx">Contexto HTTP (auth da retentativa).</param>
+    /// <param name="response">Resposta recebida do upstream.</param>
+    /// <param name="body">Corpo enviado (chat: com <c>messages</c>).</param>
+    /// <param name="forward">Request original (metodo/URI da retentativa).</param>
+    /// <param name="option">Modo de leitura da resposta.</param>
+    /// <returns>Resposta boa, resposta de erro reencolada ou 413.</returns>
+    static HttpResponseMessage RecoverOverflow(HttpListenerContext ctx, HttpResponseMessage response,
+        string body, HttpRequestMessage forward, HttpCompletionOption option)
+    {
+        if (response.IsSuccessStatusCode || !ContextGuardEnabled() || ContextTokens <= 0)
+            return response;
+        try { if (JsonNode.Parse(body)?["messages"] is not JsonArray) return response; }
+        catch { return response; }
+        string errBody;
+        try { errBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult(); }
+        catch { return response; }
+        if (!Rochas.OpenCodeBridge.Core.ContextGuard.LooksLikeOverflow(errBody, out int promptTokens))
+        {
+            // Nao e' estouro: o corpo lido volta no lugar do stream consumido.
+            response.Content.Dispose();
+            response.Content = new StringContent(errBody, Encoding.UTF8, "application/json");
+            return response;
+        }
+        int status = (int)response.StatusCode;
+        response.Dispose();
+        int perSlot = ContextTokens / Math.Max(1, ContextSlots);
+        Log(new JsonObject
+        {
+            ["event"] = "context-guard",
+            ["where"] = "upstream-400",
+            ["status"] = status,
+            ["prompt_tokens"] = promptTokens,
+            ["ctx_tokens"] = ContextTokens,
+            ["slots"] = ContextSlots,
+            ["fraction"] = perSlot > 0 ? Math.Round((double)promptTokens / perSlot, 4) : 0
+        });
+        string current = body;
+        for (int attempt = 1; attempt <= 2; attempt++)
+        {
+            // 1) nudge (lembrete, sem trim); 2) compactacao (encolhe o input).
+            string? next = attempt == 1
+                ? NudgeOverflowBody(current)
+                : CompactOverflowBody(current, ContextTokens, ContextSlots);
+            if (next is null) break;
+            current = next;
+            var retry = new HttpRequestMessage(forward.Method, forward.RequestUri)
+            {
+                Content = new StringContent(current, Encoding.UTF8, "application/json")
+            };
+            WithAuth(retry, ctx);
+            HttpResponseMessage resp;
+            try { resp = Http.Send(retry, option); }
+            catch (Exception ex)
+            {
+                Log(new JsonObject { ["event"] = "context-recovery-fail", ["attempt"] = attempt, ["error"] = Truncate(ex.Message, 300) });
+                break;
+            }
+            Log(new JsonObject
+            {
+                ["event"] = attempt == 1 ? "context-nudge" : "context-compact",
+                ["where"] = "upstream-400",
+                ["attempt"] = attempt,
+                ["req_chars"] = current.Length,
+                ["ok"] = resp.IsSuccessStatusCode
+            });
+            if (resp.IsSuccessStatusCode) return resp;
+            string err2;
+            try { err2 = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult(); }
+            catch { err2 = ""; }
+            resp.Dispose();
+            if (!Rochas.OpenCodeBridge.Core.ContextGuard.LooksLikeOverflow(err2, out _))
+            {
+                // Outro erro (nao e' mais estouro): devolve como veio.
+                return new HttpResponseMessage((HttpStatusCode)(int)status)
+                {
+                    Content = new StringContent(err2, Encoding.UTF8, "application/json")
+                };
+            }
+        }
+        // 3) sinal honesto: nem a compactacao cabe -> o cliente compacta a sessao.
+        return new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge)
+        {
+            Content = new StringContent(new JsonObject
+            {
+                ["error"] = new JsonObject
+                {
+                    ["message"] = $"Contexto estourou o slot ({promptTokens} tokens de {perSlot}). Compacte a sessao e tente de novo.",
+                    ["type"] = "invalid_request_error",
+                    ["code"] = "context_compact_required"
+                }
+            }.ToJsonString(SerOpts), Encoding.UTF8, "application/json")
+        };
+    }
+
+    /// <summary>Corpo com o lembrete de economia (1a tentativa); null quando nao ha o que fazer.</summary>
+    /// <param name="body">Corpo chat atual.</param>
+    /// <returns>Corpo nudgado ou null.</returns>
+    static string? NudgeOverflowBody(string body)
+    {
+        var node = JsonNode.Parse(body)?.AsObject();
+        if (node?["messages"] is not JsonArray msgs) return null;
+        // Nao duplica: o cliente pode reenviar um corpo que ja' carrega o lembrete.
+        foreach (var m in msgs)
+            if (m is JsonObject o && o["content"] is JsonValue v && v.TryGetValue<string>(out string? s)
+                && s.Contains(Rochas.OpenCodeBridge.Core.ContextGuard.NudgeText, StringComparison.Ordinal))
+                return null;
+        msgs.Add(new JsonObject { ["role"] = "user", ["content"] = Rochas.OpenCodeBridge.Core.ContextGuard.NudgeText });
+        return node!.ToJsonString(SerOpts);
+    }
+
+    /// <summary>Corpo compactado (2a tentativa) ate' 70% do slot; null quando nada a cortar.</summary>
+    /// <param name="body">Corpo chat atual.</param>
+    /// <param name="tokens">Ctx TOTAL servido.</param>
+    /// <param name="slots">Slots paralelos do llama.</param>
+    /// <returns>Corpo compactado ou null.</returns>
+    static string? CompactOverflowBody(string body, int tokens, int slots)
+    {
+        var node = JsonNode.Parse(body)?.AsObject();
+        if (node?["messages"] is not JsonArray msgs) return null;
+        // Teto de 70%: o 400 provou que 100% do slot nao cabe; cortar ate' 95%
+        // deixaria o proximo turno estourando de novo (o cliente reenvia o historico).
+        if (!Rochas.OpenCodeBridge.Core.ContextGuard.Compact(msgs, tokens, slots, 0.70)) return null;
+        return node!.ToJsonString(SerOpts);
     }
 
     /// <summary>

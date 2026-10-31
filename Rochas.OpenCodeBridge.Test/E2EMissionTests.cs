@@ -86,6 +86,7 @@ internal static class E2EMissionTests
         history.Add(new JsonObject { ["role"] = "user", ["content"] =
             $"Em {ws}/mcs existe o projeto mcs.csproj. Escreva Program.cs para calcular e imprimir, um valor por linha e sem rotulos, tres numeros inteiros: o fatorial de 10; o maximo divisor comum de 1071 e 462; e quantos numeros primos existem de 1 a 50. " +
             $"O programa tem que compilar e rodar com `dotnet run --project {ws}/mcs/mcs.csproj` sem erro e imprimir exatamente esses tres numeros, nessa ordem (calcule, nao copie os numeros). " +
+            $"Segmente o raciocinio em fases, inclusive ao implementar. Calcule o caminho minimo antes de comecar a mover as pecas impulsivamente; saiba quantos movimentos vai gastar no minimo usando a formula 2^n - 1. " +
             $"Conforme as instrucoes previas da sessao (main harness e tails), use as tools no formato entregue, uma acao por vez." });
 
         string final = "";

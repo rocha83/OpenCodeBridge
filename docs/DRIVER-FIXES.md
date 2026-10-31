@@ -1650,3 +1650,50 @@ passaram a chamar a mesma rotina.
 **Lição.** Instrumentação que decide PASS não pode comparar contra o texto
 "canônico" de um artefato que é **função do request**. Sentinela estável, no
 Core, é o que sobrevive à composição.
+
+## 59. Estouro de contexto invisível: guard reativo cego ao 400 seco e estimativa chars/4 (2026-10-31)
+
+**Sintoma.** L4 `e-algo-cs-hanoi-bridge` (Q4, modo bridge, harness full on)
+FALHOU com `causa=bridge`: o log do teste dizia `bridge indisponivel na fase C#`
+após três `HTTP falhou`. O log do llama mostrava o motivo real — `400`
+`exceed_context_size`, request de **140146 tokens** contra **131072 por slot**
+(`-c 524288 -np 4`).
+
+**Causa 1 (guarda cega ao erro).** `ContextGuard.Tripped` lê
+`usage.prompt_tokens` de uma resposta **200**. Num 400 não existe `usage`, então
+o 413 `context_compact_required` — que o cliente já sabia tratar — nunca saía e
+o corpo do erro ia cru. O cliente contava como falha de transporte, retentava o
+MESMO histórico e desistia na terceira.
+
+**Causa 2 (estimativa subestimava).** `Compact` estimava `chars/4` (calibrado em
+prosa). Medido no `/tokenize` do próprio llama: prosa 3.83, C# 3.66, C# denso
+3.22 chars/token — o estimado ficava abaixo do teto, a compactação virava no-op
+e a request seguinte estourava.
+
+**Causa 3 (corte de um passe só).** Com o modelo reescrevendo o arquivo inteiro
+a cada `write`, as 8 mensagens recentes preservadas sozinhas passavam de 124k
+tokens: o único passe não reduzia o suficiente e `Compact` retornava `false`.
+
+**Correção (Core é a fonte única).**
+
+1. `ContextGuard.LooksLikeOverflow(body, out tokens)`: detecta
+   `exceed_context_size`/`exceeds the available context size` e lê o número do
+   prompt na mensagem do llama.
+2. `ContextGuard.Compact`: estimativa calibrada em **3.2 chars/token** (pior caso
+   medido, erra para cima) e corte **recursivo** — a janela preservada encolhe
+   8 → 4 → 2 até caber ou bater o piso (system + 1ª troca).
+3. `Program.RecoverOverflow` (chamado por `SendWithAbortRetry`): escalada
+   **1) nudge** (`NudgeText`, lembrete de economia, sem cortar conteúdo),
+   **2) compactação** (`Compact` com teto de 70% do slot — 95% deixaria o turno
+   seguinte estourando de novo), **3) 413** `context_compact_required`. Só vale
+   para corpo no formato chat (com `messages`); em outro erro o corpo lido volta
+   na resposta para o chamador repassar como antes.
+4. `WarTemplate.Classify`: `exceed_context_size`/`context_compact_required` no log
+   do step vira `causa=contexto` — antes o rótulo genérico `bridge` escondia a
+   causa real.
+
+**Prova.** `U-context-overflow-detect` (parse do texto medido, 140146),
+`U-context-compact-recursive` (histórico com 4 pares acima do teto encolhe mais
+de metade, o 2º passe corta o bloco do meio e o turno em curso fica intacto),
+`U-context-compact` (95% de 131072/1 = 524288/4, marcador `omitido`, `CS1513`
+preservado) → `[test] PASS=20 FAIL=0` na rodada de units.

@@ -216,6 +216,8 @@ internal static class Program
         TestContext.Run("U-cs-repair-missing-brace", UnitToolBreakerTests.CsRepairMissingBrace);
         TestContext.Run("U-cs-repair-applies-brace", UnitToolBreakerTests.CsRepairAppliesMissingBrace);
         TestContext.Run("U-context-compact", UnitToolBreakerTests.ContextCompact);
+        TestContext.Run("U-context-compact-recursive", UnitToolBreakerTests.ContextCompactRecursive);
+        TestContext.Run("U-context-overflow-detect", UnitToolBreakerTests.ContextOverflowDetect);
         TestContext.Run("U-tails-present-tools", UnitRetryTests.TailsOnlyPresentTools);
         TestContext.Run("U-retry-temp-detour", UnitRetryTests.RetryTemperatureUsesDetourRole);
         TestContext.Run("U-upstream-abort-nudge", UnitRetryTests.AbortNudgeRewritesTurn);
