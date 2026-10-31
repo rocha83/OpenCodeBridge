@@ -403,7 +403,7 @@ internal static class E2EMissionTests
         string run = "`dotnet run --project " + ws + "/" + dir + "/" + proj + "`";
         string head = "Preciso de um programa em " + ws + "/" + dir + "/Program." + ext + ", no projeto " + proj
             + " que ja existe (nao crie outro projeto), imprimindo o resultado de um jeito simples para eu conferir, so com numeros inteiros.\n";
-        string hanoi = "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Em `hanoi=` imprima o NUMERO DE MOVIMENTOS que a solucao executou (quantos movimentos — nao o numero de discos) e em `hanoi_seq=` a sequencia completa numa UNICA linha, com os movimentos separados por virgula, no formato 1->2,1->3,...\n"
+        string hanoi = "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Crie uma funcao para 4 parametros. Em `hanoi=` imprima o NUMERO DE MOVIMENTOS que a solucao executou (quantos movimentos — nao o numero de discos) e em `hanoi_seq=` a sequencia completa numa UNICA linha, com os movimentos separados por virgula, no formato 1->2,1->3,...\n"
             + "O contrato da sequencia e' o de movimentos LEGAIS: cada item move o disco do topo de uma haste para OUTRA (origem e destino nunca iguais) e a torre termina inteira na haste 3 — o teste confere movimento por movimento, entao uma sequencia com `3->3` ou com disco saindo do lugar errado nao vale.\n"
             + "Rode " + run + " e ajuste ate imprimir as duas linhas com os valores que o programa calculou (nao copie numeros do enunciado).";
         string primes = "2) No MESMO programa, acrescente a analise dos primos: quantos ha abaixo de 100 (`primes100=`), abaixo de 1000 (`primes1000=`) e quantos pares gemeos abaixo de 100 (`twin100=`). O crivo de Eratostenes e uma boa pedida.\n"
