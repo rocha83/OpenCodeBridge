@@ -118,14 +118,32 @@ internal static class E2EBeltsTests
 
     /// <summary>Scripter via opencode real: o CLI executa a tool write e entrega .sh/.md no workspace.</summary>
     /// <returns>true se o .sh existe e passa em bash -n.</returns>
+    /// <summary>
+    /// Contrato do Scripter — fonte unica das duas raias (bridge e opencode).
+    /// O ENTREGAVEL desta fase e' o script bash + companion; a tarefa do Orch e' o
+    /// CONTEUDO que o script executa. Sem essa separacao o modelo obedece a tarefa
+    /// (que cita `src/Domain/*.cs` e `db/*.sql`) e nunca grava o `.sh`: medido em
+    /// e-belts-marrom-orch de 2026-10-31 — 0 scripts e 6 reescritas dos mesmos dois
+    /// arquivos em 8 turnos, enquanto a belt azul (mesmo codigo, tarefa sem paths de
+    /// artefato) gravou `.cs` + `.sh` + `.md` e passou.
+    /// </summary>
+    internal static string ScripterSystem(string safeTitle, string grounded) =>
+        "Voce e o Scripter (role scripter, E4B). Voce NAO executa a tarefa: voce ESCREVE o script bash que a executa.\n" +
+        "ENTREGAVEL desta fase (tool write): " + safeTitle + ".sh (bash puro, com shebang, no maximo 80 linhas) e o companion " +
+        safeTitle + ".md (no maximo 20 linhas) descrevendo o que o script faz.\n" +
+        "Os arquivos que a tarefa cita (.cs, .sql, ...) sao criados PELO script (heredoc ou arquivo separado), nunca por voce.\n" +
+        "Ao terminar responda apenas SCRIPTER-OK.\n\n" + grounded +
+        "REGRA: bash puro; nunca escreva C#/SQL dentro do .sh (use heredoc ou arquivo separado).";
+
+    /// <summary>Conteudo da tarefa: o que o script deve fazer (nao o entregavel).</summary>
+    internal static string ScripterTask(string taskPrompt) =>
+        "TAREFA A EXECUTAR (conteudo do script, nao o entregavel):\n" + taskPrompt;
+
     static bool ScriptViaOpencode(string key, string ws, string safeTitle, string taskPrompt, string grounded)
     {
         string scriptName = safeTitle + ".sh";
-        string prompt =
-            "Voce e o Scripter (role scripter, E4B). Componha UM script bash que executa a tarefa e grave no cwd " + ws + " o arquivo " + scriptName + " com shebang. " +
-            "Gere tambem o companion " + safeTitle + ".md descrevendo o script. Use a tool write UMA vez por arquivo; script com no maximo 80 linhas, companion com no maximo 20. " +
-            "Bash puro; nunca escreva C#/SQL solto no .sh (use heredoc ou arquivo separado). Ao terminar responda apenas SCRIPTER-OK.\n\n" +
-            grounded + "\nTAREFA:\n" + taskPrompt;
+        string prompt = ScripterSystem(safeTitle, grounded) + "\n\n"
+                      + ScripterTask(taskPrompt) + "\n\nworkspace=" + ws;
         for (int attempt = 0; attempt < 3; attempt++)
         {
             Log($"  [belt:{key}] scripter via opencode (agent=scripter) tentativa {attempt + 1}/3...");
@@ -344,11 +362,12 @@ internal static class E2EBeltsTests
                     string metaPath = System.IO.Path.Combine(ws, safeTitle + ".md");
                     var beforeFiles = new HashSet<string>(System.IO.Directory.GetFiles(ws, "*.sh"));
                     var writtenScripts = new List<string>();
+                    int scriptNudges = 0;
 
                     var tools = TestContext.Catalog("write");
                     var sh = new JsonArray(
-                        new JsonObject { ["role"]="system", ["content"]="Voce e o Scripter (role scripter, E4B). Componha um script bash que executa a tarefa e o salve em " + safeTitle + ".sh com shebang. Tambem gere companion " + safeTitle + ".md descrevendo o que o script faz. Mantenha o script com no maximo 80 linhas e o companion com no maximo 20 linhas (saida curta cabe no teto de tokens). Use write. Ao terminar responda apenas SCRIPTER-OK.\n\n" + grounded + "REGRA: bash puro; nunca escreva C#/SQL dentro do .sh (use heredoc ou arquivo separado)." },
-                        new JsonObject { ["role"]="user", ["content"]=taskPrompt });
+                        new JsonObject { ["role"]="system", ["content"]=ScripterSystem(safeTitle, grounded) },
+                        new JsonObject { ["role"]="user", ["content"]=ScripterTask(taskPrompt) });
                     // Watchers extras na roxa orch: o Scripter pode abrir com
                     // prosa e recuperar no turno seguinte; 6 turnos/2 nudges
                     // eram curtos. Aceite (.sh válido no `bash -n`) inalterado;
@@ -412,6 +431,16 @@ internal static class E2EBeltsTests
                                 writtenScripts.Add(System.IO.Path.Combine(ws, path));
                             sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]=outText });
                             Log($"  [belt:{key}] write -> {outText}");
+                        }
+                        // Houve tool_call, mas nenhum .sh: o modelo obedeceu a tarefa
+                        // e reescreveu os arquivos dela (medido no marrom: 6 reescritas
+                        // de .cs/.sql, 0 script). O nudge de "sem tool" nao cobre esse
+                        // caso, entao cutuca o ENTREGAVEL — sem afrouxar o aceite.
+                        if (writtenScripts.Count == 0 && scriptNudges < 2)
+                        {
+                            scriptNudges++;
+                            Log($"  [belt:{key}] scripter sem .sh no turno {turn + 1} — nudge de entregavel {scriptNudges}/2");
+                            sh.Add(new JsonObject { ["role"]="user", ["content"]="O entregavel desta fase e o script " + safeTitle + ".sh (bash puro, com shebang). Grave esse arquivo com a tool write; nao reescreva os arquivos da tarefa. Responda SCRIPTER-OK ao terminar." });
                         }
                     }
                     // O modelo escolhe o nome do arquivo (com/sem acento, as vezes com

@@ -231,6 +231,7 @@ internal static class Program
         TestContext.Run("U-flow-gate", UnitToolBreakerTests.BridgeFlowGateCases);
         TestContext.Run("U-antirepeat-args-window", UnitToolBreakerTests.AntiRepeatArgsWindowIsIndependent);
         TestContext.Run("U-toolcall-salvage-notice", UnitToolBreakerTests.SalvageNoticeIsRecognizable);
+        TestContext.Run("U-belt-scripter-prompt", UnitBeltScenarioTests.ScripterPromptSeparatesDeliverableFromTask);
         TestContext.Run("U-bridge-notice", UnitToolBreakerTests.BridgeNoticeFormatIsSingleSource);
         TestContext.Run("U-tails-tool-first", UnitToolBreakerTests.BehaviorTailForcesToolFirst);
         TestContext.Run("U-translate-temp-respeita-tunel", UnitToolBreakerTests.TranslateTempRespeitaTunel);

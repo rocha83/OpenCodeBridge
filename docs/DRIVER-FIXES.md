@@ -1814,3 +1814,46 @@ contem o `for` errado; o caso de parentese do hanoi segue ensinado),
 `U-tails-cs-error-table` (a CAUDA carrega "C# nao tem `for` com `in`" e
 `foreach (var item in colecao)`) -> `[test] PASS=8 FAIL=0`.
 
+
+## 63. Scripter obedeceu a tarefa do Orch e nunca gravou o `.sh`: 0 scripts, 8 turnos (2026-10-31)
+
+**Sintoma.** `e-belts-marrom-orch-bridge` FAIL em 49s:
+`[marrom] FAIL: assert: Scripter compôs 0 scripts válidos`, `validando: scripts=0
+integros=0 descartados=0`. Histórico do step: 3 SKIP (sempre pulado por falha
+anterior) + este FAIL — **primeira medição real**, não regressão do arquivamento
+F# nem do `for`/`in`.
+
+**Causa.** O system do Scripter dizia "salve em `<title>.sh`", mas a tarefa do
+Orch entrava **crua** no turno do usuário, citando caminhos de artefato:
+
+```
+Orch raw: [{"title":"Definir Modelo de Domínio e Esquema SQL",
+ "prompt":"... ESCOPO: Criar o arquivo `src/Domain/Reimbursement.cs` ...
+ e criar o arquivo `db/Schema.sql` ..."}]
+```
+
+O modelo obedeceu o turno do usuário (mais específico, com paths): gravou
+`Reimbursement.cs` e `Schema.sql` e **reescreveu os dois 6 vezes** em 8 turnos.
+O único nudge existente dispara quando **não há tool_call**; aqui havia tool_call
+em todo turno, então o loop nunca era corrigido. A belt azul (mesmo código,
+tarefa sem paths de artefato) gravou `.cs` + `.sh` + `.md` e passou — a diferença
+era o enunciado, não a capacidade do modelo.
+
+O `anti-repeat-write` do Core **não alcança** este caminho: ele vive no loop de
+tool do próprio bridge (`Program.cs`), e nesta belt quem executa as tools é o
+teste via `POST /api/tools/execute` — o bridge só devolve `tool_calls`.
+
+**Correção.** Fonte única do contrato (`E2EBeltsTests.ScripterSystem`), usada
+pelas duas raias (bridge e opencode):
+- separa **entregável** (`.sh` + `.md`, bash puro) de **tarefa** (conteúdo que o
+  script executa), e diz que os `.cs`/`.sql` citados são criados **pelo** script;
+- a tarefa entra como `TAREFA A EXECUTAR (conteudo do script, nao o entregavel)`;
+- o loop do bridge ganha o nudge que faltava: turno com tool_call mas sem `.sh`
+  → cutuca o entregável pelo nome (máx. 2), sem afrouxar o aceite (`bash -n`).
+
+**Prova.** Isolado `--war-level 4 --war-only e-belts-marrom-orch`
+(`L4-iso-20261031-133640`) → `PASS (47.8s)`:
+`scripter sem .sh no turno 1 — nudge de entregavel 1/2` →
+`write -> criado 1366 chars em 'definir_modelo_de_domínio_e_esquema_sql.sh'` →
+`script OK` → `scripts=1 integros=1 descartados=0`. Pin
+`U-belt-scripter-prompt` (`PASS=3 FAIL=0` com os pins C#).
