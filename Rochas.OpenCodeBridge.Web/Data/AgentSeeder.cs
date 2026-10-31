@@ -225,6 +225,12 @@ public static class AgentSeeder
     private static void NormalizeDelegationRules(SqliteConnection conn)
     {
         const string clause = " DELEGACAO POR CONTEXTO (obrigatoria): quando o contexto desta sessao atingir 90% da janela, nao continue a tarefa no mesmo fio: divida o restante em sub-tarefas atomicas e delegue via tool subagent, uma por chamada, com micro-enunciado OBJETIVO + ESCOPO + PROIBIDO + ACEITE. Delegue SOMENTE para subagentes do seu proprio role e da sua propria familia de modelo. Agregue os resultados, re-execute o ACEITE e conclua com o resumo.";
+        // EXCECAO ORCH: a clausula generica acima ("somente mesmo role/familia")
+        // contradiz a regra do Orch, que e' o UNICO role que delega para OUTRO role
+        // (o Scripter, de menor capacidade) — a permissao do agente ja' limita
+        // subagent a resource "scripter". Sem esta excecao o Orch tentaria delegar
+        // para outro Orch e a cadeia Orch -> Scripter quebra.
+        const string orchClause = " DELEGACAO POR CONTEXTO (obrigatoria): quando o contexto desta sessao atingir 90% da janela, nao continue a tarefa no mesmo fio: divida o restante em sub-tarefas atomicas e delegue via tool subagent, uma por chamada, com micro-enunciado OBJETIVO + ESCOPO + PROIBIDO + ACEITE. EXCECAO ORCH: o Orch NAO executa a tarefa nem delega para outro Orch — segmenta e delega OBRIGATORIAMENTE ao role Scripter (menor modelo) via tool subagent, uma chamada por tarefa. Agregue os resultados, re-execute o ACEITE e conclua com o resumo.";
         const string moeRule = " MODO CHAT: nao acessa disco (sem read/glob/grep/git/shell), apenas internet (fetch) e subagentes do proprio role.";
         try
         {
@@ -236,11 +242,19 @@ public static class AgentSeeder
                  WHERE name NOT LIKE '%MoE%' AND tools NOT LIKE '%subagent%';
                 UPDATE agents SET system_prompt = system_prompt || @moe
                  WHERE name LIKE '%MoE%' AND system_prompt NOT LIKE '%MODO CHAT%';
+                -- Orch: corta qualquer versao da clausula generica (incompativel com a
+                -- excecao Orch->Scripter) e grava a excecao. Idempotente: o corte tira
+                -- tambem a propria excecao, que e' regravada logo abaixo.
+                UPDATE agents SET system_prompt = substr(system_prompt, 1, instr(system_prompt, ' DELEGACAO POR CONTEXTO') - 1)
+                 WHERE name LIKE '%Orch%' AND instr(system_prompt, ' DELEGACAO POR CONTEXTO') > 0;
+                UPDATE agents SET system_prompt = system_prompt || @orch
+                 WHERE name LIKE '%Orch%' AND system_prompt NOT LIKE '%EXCECAO ORCH%';
                 UPDATE agents SET system_prompt = system_prompt || @clause
-                 WHERE system_prompt NOT LIKE '%DELEGACAO POR CONTEXTO%';
+                 WHERE name NOT LIKE '%Orch%' AND system_prompt NOT LIKE '%DELEGACAO POR CONTEXTO%';
                 """;
             cmd.Parameters.AddWithValue("@moe", moeRule);
             cmd.Parameters.AddWithValue("@clause", clause);
+            cmd.Parameters.AddWithValue("@orch", orchClause);
             cmd.ExecuteNonQuery();
         }
         catch { /* migracao best-effort */ }

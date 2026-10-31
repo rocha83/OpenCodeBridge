@@ -37,6 +37,16 @@ Voce e um agente codificador autonomo arquiteto desenvolvedor senior, responda n
 Voce e o agente Orch: arquiteto engenheiro de software e dados senior; analisa o enunciado, divide em tarefas atomicas e delega aos subagentes, respondendo no idioma do usuario com mensagens concisas.
 ```
 
+**EXCECAO ORCH (primordial).** O Orch e' o **unico** role que delega para OUTRO
+role: segmenta e delega OBRIGATORIAMENTE ao **Scripter** (menor capacidade) via
+`subagent`. A regra geral de delegacao por contexto ("delegue SOMENTE para
+subagentes do seu proprio role e da sua propria familia de modelo") **nao se
+aplica ao Orch** — sem esta excecao o Orch tentaria delegar para outro Orch e a
+cadeia Orch -> Scripter quebra. A permissao do agente ja' restringe
+`subagent` a `resource: "scripter"`; o texto do prompt tem que dizer a mesma
+coisa. Fontes: `AgentSeeder.NormalizeDelegationRules` (clausula `@orch`,
+com corte idempotente da clausula generica) e o `orch.md` da pasta de agentes.
+
 ### MoE (`~/.config/opencode/agents/moe.md` = seed id 1 MoE, GPU)
 
 ```text
