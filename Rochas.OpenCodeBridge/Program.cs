@@ -1447,6 +1447,10 @@ internal static partial class Program
                     ["nudge_args"] = Metrics.NudgeArgs,
                     ["anti_repeat_content"] = Metrics.AntiRepeatContent,
                     ["anti_repeat_tools"] = Metrics.AntiRepeatTools,
+                    // Abortos do upstream (conexao encerrada antes da resposta):
+                    // retry com nudge e falha final (502 upstream_aborted).
+                    ["upstream_abort"] = Metrics.UpstreamAbortCount,
+                    ["upstream_abort_retry"] = Metrics.UpstreamAbortRetryCount,
                     ["tools_calls"] = ToolsCalls,
                     ["files_generated"] = GeneratedFiles.Count
                 });
