@@ -362,7 +362,6 @@ internal static class E2EBeltsTests
                     string metaPath = System.IO.Path.Combine(ws, safeTitle + ".md");
                     var beforeFiles = new HashSet<string>(System.IO.Directory.GetFiles(ws, "*.sh"));
                     var writtenScripts = new List<string>();
-                    int scriptNudges = 0;
 
                     var tools = TestContext.Catalog("write");
                     var sh = new JsonArray(
@@ -431,16 +430,6 @@ internal static class E2EBeltsTests
                                 writtenScripts.Add(System.IO.Path.Combine(ws, path));
                             sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]=outText });
                             Log($"  [belt:{key}] write -> {outText}");
-                        }
-                        // Houve tool_call, mas nenhum .sh: o modelo obedeceu a tarefa
-                        // e reescreveu os arquivos dela (medido no marrom: 6 reescritas
-                        // de .cs/.sql, 0 script). O nudge de "sem tool" nao cobre esse
-                        // caso, entao cutuca o ENTREGAVEL — sem afrouxar o aceite.
-                        if (writtenScripts.Count == 0 && scriptNudges < 2)
-                        {
-                            scriptNudges++;
-                            Log($"  [belt:{key}] scripter sem .sh no turno {turn + 1} — nudge de entregavel {scriptNudges}/2");
-                            sh.Add(new JsonObject { ["role"]="user", ["content"]="O entregavel desta fase e o script " + safeTitle + ".sh (bash puro, com shebang). Grave esse arquivo com a tool write; nao reescreva os arquivos da tarefa. Responda SCRIPTER-OK ao terminar." });
                         }
                     }
                     // O modelo escolhe o nome do arquivo (com/sem acento, as vezes com
