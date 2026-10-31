@@ -114,6 +114,7 @@ public static class CsSyntaxRepair
             case "CS1513": return FixMissingBrace(source);
             case "CS1003": return FixUnexpectedToken(source, compilerError);
             case "CS1022": return FixExtraBrace(source);
+            case "CS7036": return FixMissingArgs(source, compilerError);
             default: return FromTable(FirstCode(compilerError));
         }
     }
@@ -269,6 +270,100 @@ public static class CsSyntaxRepair
              + close + " fecha-chave.\n"
              + "CERTO: cada `}` fecha um bloco que foi aberto; apague o(s) " + extra
              + " `}` sobrando no fim do arquivo.";
+    }
+
+    /// <summary>
+    /// CS7036 (<c>no argument given that corresponds to the required parameter</c>):
+    /// a chamada passa MENOS argumentos do que a declaração exige. A dica conta os
+    /// dois lados com o valor real (nós medimos: o hanoi do L4 chamou
+    /// <c>SolveHanoi(4, 1, 3)</c> com declaração de 4 parâmetros). Descreve a forma
+    /// certa — um valor por parâmetro, na ordem — mas nunca exibe a chamada errada
+    /// nem inventa uma chamada correta com nomes fora de escopo (seria literal
+    /// copiável que não compila).
+    /// </summary>
+    /// <param name="source">Fonte C# atual.</param>
+    /// <param name="compilerError">Saída do build (aponta a linha da chamada).</param>
+    /// <returns>Dica com as contagens, ou a dica genérica da tabela.</returns>
+    static string FixMissingArgs(string source, string compilerError)
+    {
+        string line = SourceLineAt(source, compilerError);
+        int lineNo = SourceLineNumber(compilerError);
+        if (line.Length == 0 || lineNo < 1) return FromTable("CS7036");
+        var call = Regex.Match(line, @"\b([A-Za-z_]\w*)\s*\(");
+        if (!call.Success) return FromTable("CS7036");
+        string name = call.Groups[1].Value;
+        // Declaracao: tipo + nome + (params). Exige tipo com espaco interno para nao
+        // confundir com outra chamada.
+        var decl = Regex.Match(source,
+            @"\b[A-Za-z_]\w*(?:<[^>]*>)?(?:\[\])?\s+" + Regex.Escape(name) + @"\s*\(([^)]*)\)");
+        if (!decl.Success) return FromTable("CS7036");
+        string parms = decl.Groups[1].Value.Trim();
+        if (!Regex.IsMatch(parms, @"\w+\s+\w")) return FromTable("CS7036");
+        var needed = SplitTopLevel(parms);
+        // Conta os argumentos da chamada apontada (na linha do erro).
+        string afterLine = line[(call.Index + call.Groups[1].Length)..];
+        int open = afterLine.IndexOf('(');
+        var given = SplitTopLevel(ParenBody(afterLine, open));
+        if (needed.Count == 0) return FromTable("CS7036");
+        // So' os NOMES dos parametros (mais limpo p/ o modelo que a lista com tipo).
+        var paramNames = new List<string>();
+        foreach (var p in needed)
+        {
+            var parts = p.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            paramNames.Add(parts[^1]);
+        }
+        return "ERRO: a linha " + lineNo + " chama " + name + " com " + given.Count
+             + " argumento(s), mas a declaracao exige " + needed.Count
+             + " parametro(s): " + string.Join(", ", paramNames) + ".\n"
+             + "CERTO: cada parametro da declaracao precisa de UM argumento — passe "
+             + needed.Count + " valores na chamada, na ordem da declaracao, "
+             + "cada um produzido pelo seu algoritmo antes de chamar.";
+    }
+
+    /// <summary>Corpo entre parênteses que casam, a partir de <paramref name="open"/> (índice do <c>(</c>).</summary>
+    /// <param name="text">Texto de onde ler.</param>
+    /// <param name="open">Índice do parêntese de abertura.</param>
+    /// <returns>Conteúdo interno, ou "" quando não há parêntese válido.</returns>
+    static string ParenBody(string text, int open)
+    {
+        if (open < 0 || open >= text.Length) return "";
+        int depth = 0;
+        for (int i = open; i < text.Length; i++)
+        {
+            if (text[i] == '(') depth++;
+            else if (text[i] == ')')
+            {
+                depth--;
+                if (depth == 0) return text[(open + 1)..i];
+            }
+        }
+        return "";
+    }
+
+    /// <summary>
+    /// Divide uma lista (parâmetros de declaração ou argumentos de chamada) nos
+    /// elementos de nível mais alto, respeitando parênteses/colchetes/ângulos
+    /// aninhados — <c>int[] a, Func&lt;int,int&gt; b</c> vira 2 itens.
+    /// </summary>
+    /// <param name="list">Lista separada por vírgulas.</param>
+    /// <returns>Itens aparados, sem itens vazios.</returns>
+    static List<string> SplitTopLevel(string list)
+    {
+        var items = new List<string>();
+        int depth = 0, start = 0;
+        for (int i = 0; i <= list.Length; i++)
+        {
+            char c = i < list.Length ? list[i] : ',';
+            if (c is '(' or '[' or '<') depth++;
+            else if (c is ')' or ']' or '>') depth--;
+            else if (c == ',' && depth == 0)
+            {
+                string item = list[start..i].Trim();
+                if (item.Length > 0) items.Add(item);
+                start = i + 1;
+            }
+        }
+        return items;
     }
 
     /// <summary>Número da linha que o compilador aponta (<c>arquivo(linha,coluna)</c>) ou 0.</summary>

@@ -943,6 +943,51 @@ internal static class UnitToolBreakerTests
     }
 
     /// <summary>
+    /// CS7036 (`no argument given that corresponds to the required parameter`): o
+    /// hanoi do L4 de 2026-10-31 chamou `SolveHanoi(4, 1, 3)` com declaração de 4
+    /// parâmetros e a dica genérica ("passe TODOS os parametros") não foi aplicada —
+    /// o modelo reescreveu o arquivo inteiro e manteve a chamada errada. A dica
+    /// concreta conta os DOIS lados com o valor real e lista os parâmetros, mas
+    /// nunca exibe a chamada errada nem inventa uma chamada "correta" com nomes
+    /// fora de escopo (seria literal que não compila — regra primordial).
+    /// </summary>
+    public static Task CsHintCountsCallArgs()
+    {
+        string src = "public class Program\n"
+                   + "{\n"
+                   + "    public static void Main()\n"
+                   + "    {\n"
+                   + "        SolveHanoi(4, 1, 3);\n"
+                   + "    }\n"
+                   + "\n"
+                   + "    public static void SolveHanoi(int n, int source, int destination, int auxiliary)\n"
+                   + "    {\n"
+                   + "        if (n == 1) return;\n"
+                   + "        SolveHanoi(n - 1, source, auxiliary, destination);\n"
+                   + "    }\n"
+                   + "}\n";
+        string err = "ERRO: exit 1: /tmp/mcs/Program.cs(5,9): error CS7036: There is no argument given that corresponds to the required parameter 'auxiliary' of 'Program.SolveHanoi(int, int, int, int)' [/tmp/mcs/mcs.csproj]";
+        string hint = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(src, err);
+        TestContext.Check(hint.Contains("linha 5", StringComparison.Ordinal),
+            "a dica aponta a linha da chamada (saiu: '" + hint.Replace("\n", " | ") + "')");
+        TestContext.Check(hint.Contains("com 3 argumento(s)", StringComparison.Ordinal),
+            "a dica conta os argumentos REAIS da chamada (saiu: '" + hint.Replace("\n", " | ") + "')");
+        TestContext.Check(hint.Contains("exige 4 parametro(s)", StringComparison.Ordinal),
+            "a dica conta os parâmetros REAIS da declaração");
+        TestContext.Check(hint.Contains("n, source, destination, auxiliary", StringComparison.Ordinal),
+            "a dica lista os nomes dos parâmetros que faltam");
+        TestContext.Check(!hint.Contains("SolveHanoi(4, 1, 3)", StringComparison.Ordinal),
+            "a dica NUNCA exibe a chamada errada (o modelo copia o que ve)");
+        TestContext.Check(!hint.Contains("SolveHanoi(n, source, destination, auxiliary)", StringComparison.Ordinal),
+            "a dica nao inventa chamada com nomes de parametro fora de escopo (nao compila)");
+        // Sem declaração conhecida cai no texto genérico da tabela (não inventa contagem).
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
+                "class A { void M() { } }\n", err).Contains("passe TODOS os parametros", StringComparison.Ordinal),
+            "sem achado da declaracao cai na dica generica da tabela");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Salvage determinístico do CS1003 = FALLBACK (mesmo threshold do CS1513): só
     /// depois de 2 entregas da MESMA dica. Remove o fechamento excedente da linha do
     /// erro quando ela é a ÚNICA culpada (local == global) e o excesso está no fim da
