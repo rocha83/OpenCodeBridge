@@ -1518,3 +1518,50 @@ bridge (que a Web não emitia).
 `POST /Chat/Stream` → 282 deltas de `reasoning_content`, 1141 de `content`,
 **0** `tool_calls` (`/tmp/opencode/sse.txt`) — a bolha recebe o raciocínio e o
 turno sai em texto, que é o comportamento medido pela faixa.
+
+## 56. Guard de ctx morto com o TOTAL de slots e compactação fora do Core (2026-10-30)
+
+**Sintoma.** L4 `algo-cs-hanoi-bridge` no Q4 Base falhou de duas formas seguidas:
+
+```
+run 202201: FAIL CS1513 (22 abre / 21 fecha) — 26 turnos de dica repetida
+run 203424: FAIL overflow 142701 > 131072 (400 seco do llama)
+```
+
+**Causa 1 (guard morto).** A unit servia `--context-tokens 524288`, que é o ctx
+**total** de `-np 4` (4 × 131072). `ContextGuard.Tripped` dividia por `Slots`,
+mas o host nunca informava os slots (default 1) → limiar 95% = 498k, inalcançável
+com um slot de 128k. O 413 `context_compact_required` existia no código e nunca
+disparava; o cliente seguia até o llama devolver 400.
+
+**Causa 2 (compactação no lugar errado).** A rotina vivia no harness de teste e,
+numa primeira versão, no `MainHarness` — que é **enunciado** (texto do system).
+Regra do projeto: `MainHarness` só compõe o system; regra de ctx mora no
+`ContextGuard`, a mesma classe que detecta o 95% e emite o 413.
+
+**Correção.**
+
+1. `--context-slots N` no host (`ContextSlots`), exposto no `/api/status` como
+   `context_slots`; `ContextGuardSettings.Slots` (default 1) e a divisão
+   `Tokens/Slots` no `Tripped`. Unit `bridge-gpu`: `--context-slots 4`
+   (524288/4 = 131072 por slot). `gpu2`/`cpu-forced` são 1 slot — total já é o
+   por-slot, sem flag.
+2. **Rotina ÚNICA** de compactação no Core: `ContextGuard.Compact(messages,
+   contextTokens, slots, threshold = DefaultThreshold=0.95)`. Teto = 95% do ctx
+   por-slot; acima dele os args antigos de tool call viram marcador (o arquivo
+   em disco é a fonte, o modelo relê com `read`) e resultados antigos são
+   truncados preservando o início (marcador de falha que o breaker lê). Não
+   remove mensagens → pareamento `tool_call`/`tool_result` válido.
+3. Cliente (harness de teste) chama `ContextGuard.Compact` antes de cada request
+   e, no 413, compacta com metade do ctx e retenta. `AlgoCtxParams` lê
+   `context_tokens`/`context_slots` do status e cai no per-slot conhecido (131072)
+   quando a bridge é antiga — dividir o total por 1 deixaria o guard morto.
+4. `CsSyntaxRepair.TryRepair`: quando a dica de `CS1513` repete e o modelo não
+   age, o Core aplica o `}` que falta (determinístico) e o cliente recompila.
+   É reparo de sintaxe, não compactação; não afrouxa o aceite (o artefato
+   continua tendo de compilar e produzir a saída).
+
+**Prova.** `U-context-compact` (95% de 131072/1 = 524288/4 → 124518; acima do
+ctx mas abaixo do teto não compacta; args antigos viram marcador; último
+resultado preserva `CS1513`), `U-cs-repair-applies-brace`,
+`U-cs-repair-missing-brace` → `[test] PASS=3 FAIL=0`.

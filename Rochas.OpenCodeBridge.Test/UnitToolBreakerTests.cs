@@ -838,6 +838,99 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Salvage determinístico: a dica de CS1513 só ENSINA e o modelo fraco ignora
+    /// (2026-10-30: Q4 Base gastou 26 turnos e deixou 22 abre-chave / 21 fecha-chave).
+    /// <see cref="global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair"/>
+    /// fecha o bloco mecânico no fim e devolve o fonte balanceado; sem CS1513 ou com
+    /// fonte já balanceado não inventa correção.
+    /// </summary>
+    public static Task CsRepairAppliesMissingBrace()
+    {
+        string src = "namespace mcs\n{\n    public class Program\n    {\n        static void Main()\n        {\n"
+                   + "            var x = 1;\n        }\n    }\n"; // falta o `}` do namespace
+        string err = "ERRO: exit 1: /tmp/mcs/Program.cs(10,2): error CS1513: } expected [/tmp/mcs/mcs.csproj]";
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, err, out string fixedSrc),
+            "TryRepair aplica o reparo de CS1513");
+        int open = 0, close = 0;
+        foreach (char ch in fixedSrc) { if (ch == '{') open++; else if (ch == '}') close++; }
+        TestContext.Check(open == close, $"fonte reparado fica balanceado ({open} abre / {close} fecha)");
+        TestContext.Check(fixedSrc.EndsWith("}\n", StringComparison.Ordinal),
+            "o reparo acrescenta a(s) linha(s) só com `}` no fim do arquivo");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
+                "class A { void M() { } }\n", err, out _),
+            "fonte ja balanceado nao gera reparo (sem inventar correcao)");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
+                src, "ERRO: exit 1: boom", out _),
+            "erro sem codigo CS nao dispara reparo determinístico");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Guard de ctx do Core (rotina ÚNICA): teto = 95% do ctx por-slot — ctx total
+    /// dividido pelos slots do llama (524288/4 = 131072 -> 124518, mesmo teto de
+    /// 131072/1). Acima do teto resume o histórico (args antigos viram marcador) e
+    /// preserva os últimos turnos (o marcador de falha recente continua legível
+    /// para o breaker).
+    /// </summary>
+    public static Task ContextCompact()
+    {
+        // ~126k tokens (504k chars / 4): acima de 95% de 131072 (124518) e abaixo do
+        // ctx do slot (131072) — é o intervalo que prova a fração de 95%.
+        static System.Text.Json.Nodes.JsonArray BuildHistory(int pairs, int argChars, int toolChars)
+        {
+            var hist = new System.Text.Json.Nodes.JsonArray(
+                new System.Text.Json.Nodes.JsonObject { ["role"] = "system", ["content"] = "s" });
+            hist.Add(new System.Text.Json.Nodes.JsonObject { ["role"] = "user", ["content"] = "u" });
+            for (int i = 0; i < pairs; i++)
+            {
+                hist.Add(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["role"] = "assistant", ["content"] = "",
+                    ["tool_calls"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["id"] = "c" + i, ["type"] = "function",
+                        ["function"] = new System.Text.Json.Nodes.JsonObject
+                        {
+                            ["name"] = "write",
+                            ["arguments"] = "{\"path\":\"a.cs\",\"content\":\"" + new string('x', argChars) + "\"}"
+                        }
+                    })
+                });
+                hist.Add(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["role"] = "tool", ["tool_call_id"] = "c" + i,
+                    ["content"] = "ERRO: exit 1: error CS1513: } expected " + new string('y', toolChars)
+                });
+            }
+            return hist;
+        }
+
+        static bool Core(System.Text.Json.Nodes.JsonArray m, int ctx, int slots)
+            => global::Rochas.OpenCodeBridge.Core.ContextGuard.Compact(m, ctx, slots);
+
+        TestContext.Check(!Core(BuildHistory(12, 42000, 1000), 140000, 1),
+            "acima do ctx mas abaixo de 95% dele nao compacta (teto 133000 > 126k)");
+        TestContext.Check(Core(BuildHistory(12, 42000, 1000), 131072, 1),
+            "passa de 95% de 131072 (124518) e compacta");
+        TestContext.Check(Core(BuildHistory(12, 42000, 1000), 524288, 4),
+            "ctx total dividido pelos slots (524288/4) tem o mesmo teto de 131072/1");
+        TestContext.Check(!Core(BuildHistory(12, 42000, 1000), 0, 4),
+            "sem ctx nao ha teto (nao compacta)");
+        TestContext.Check(!Core(BuildHistory(2, 100, 100), 5000, 1),
+            "historico pequeno nao compacta");
+
+        var hist = BuildHistory(12, 42000, 1000);
+        TestContext.Check(Core(hist, 131072, 1), "historico acima do teto compacta");
+        string firstArgs = hist[2]?["tool_calls"]?[0]?["function"]?["arguments"]?.GetValue<string>() ?? "";
+        TestContext.Check(firstArgs.Contains("omitido", StringComparison.Ordinal),
+            "args antigos viram marcador (o arquivo em disco é a fonte)");
+        string lastTool = hist[^1]?["content"]?.GetValue<string>() ?? "";
+        TestContext.Check(lastTool.Contains("CS1513", StringComparison.Ordinal),
+            "resultado recente preserva o marcador de falha para o breaker");
+        return Task.CompletedTask;
+    }
+
     // O pin da cauda F# (FsMini) foi ARQUIVADO em 2026-10-30 junto da trilha
     // F#: ver Archived/FsMiniPin.cs. Ele compila lá, mas não é registrado no
     // Program.cs — teste arquivado não entra no placar ativo.

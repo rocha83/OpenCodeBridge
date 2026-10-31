@@ -961,9 +961,25 @@ internal sealed class WarTemplate : CircuitTemplate
                 ["bridge_upstream"] = string.IsNullOrEmpty(bup) ? _p.Upstream : bup,
                 ["esperado"] = _p.Upstream
             });
+        // REGRA PRIMORDIAL: o host declara o ctx TOTAL (--context-tokens) e os slots
+        // (--context-slots); o llama reporta o ctx POR SLOT em /props.n_ctx (uma
+        // request so cabe num slot). O gate compara o por-slot da bridge (total /
+        // slots) com o do llama — mesma invariante, agora contando os slots
+        // (medido 2026-10-30: total 524288, -np 4, por-slot 131072). Antes o gate
+        // exigia total == n_ctx e reprovava a configuração certa (BLOCKED L1).
+        string bslots = Str(st, "context_slots");
+        string bctxSlot = bctx;
+        if (int.TryParse(bctx, out int ctxTotal) && int.TryParse(string.IsNullOrEmpty(bslots) ? "1" : bslots, out int nSlots) && nSlots > 0)
+            bctxSlot = (ctxTotal / nSlots).ToString();
         Pf(driver, "bridge_context_tokens",
-            string.IsNullOrEmpty(nctx) || string.IsNullOrEmpty(bctx) || nctx == bctx,
-            new JsonObject { ["context_tokens"] = bctx, ["n_ctx_slot"] = nctx });
+            string.IsNullOrEmpty(nctx) || string.IsNullOrEmpty(bctxSlot) || nctx == bctxSlot,
+            new JsonObject
+            {
+                ["context_tokens"] = bctx,
+                ["context_slots"] = bslots,
+                ["n_ctx_slot"] = nctx,
+                ["bridge_ctx_slot"] = bctxSlot
+            });
 
         // Linha GPU2 (Q3) NAO faz parte do gate do Q4: quando configurada
         // (`--war-bridge-q3` / WAR_GPU2_BRIDGE) a checagem e' informativa; quando

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Rochas.OpenCodeBridge.Core;
@@ -61,6 +62,42 @@ public static class CsSyntaxRepair
                                 + "CERTO: termine a instrução da linha apontada com `;`.";
             default: return "";
         }
+    }
+
+    /// <summary>
+    /// Reparo DETERMINÍSTICO: devolve o fonte corrigido quando o diagnóstico tem
+    /// mapa mecânico e não ambíguo (hoje só CS1513, chaves desbalanceadas no fim).
+    /// </summary>
+    /// <remarks>
+    /// A dica (<see cref="Suggest"/>) só ENSINA a forma; modelo fraco ignora (medido
+    /// em 2026-10-30: o Q4 Base repetiu o mesmo <c>CS1513</c> por 26 turnos, arquivo
+    /// com 22 abre-chave e 21 fecha-chave). O harness aplica este reparo quando o build
+    /// falha e a dica já foi dada: a chave que falta é mecânica, não lógica — se o
+    /// algoritmo também estiver errado, o rebuild falha e o aceite segue honesto.
+    /// </remarks>
+    /// <param name="source">Fonte C# atual (texto completo).</param>
+    /// <param name="compilerError">Saída do build com o diagnóstico CSxxxx.</param>
+    /// <param name="repaired">Fonte corrigido quando o reparo se aplica.</param>
+    /// <returns>True quando há correção determinística e o fonte foi devolvido em <paramref name="repaired"/>.</returns>
+    public static bool TryRepair(string source, string compilerError, out string repaired)
+    {
+        repaired = source;
+        if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(compilerError)) return false;
+        // Só CS1513 tem mapa não ambíguo: o bloco mais externo não fechou no fim.
+        if (FirstCode(compilerError) != "CS1513") return false;
+        int open = 0, close = 0;
+        foreach (char c in source)
+        {
+            if (c == '{') open++;
+            else if (c == '}') close++;
+        }
+        if (open <= close) return false;
+        int missing = open - close;
+        var sb = new StringBuilder(source);
+        if (sb.Length > 0 && sb[^1] != '\n') sb.Append('\n');
+        for (int i = 0; i < missing; i++) sb.Append("}\n");
+        repaired = sb.ToString();
+        return true;
     }
 
     /// <summary>

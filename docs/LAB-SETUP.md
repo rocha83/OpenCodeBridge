@@ -4,13 +4,45 @@ Detalhes de infraestrutura, configuração dos servidores llama, contextos, VRAM
 cenários de teste e referência completa de argumentos da bridge. O resumo
 expresso (componente, cenário de teste e harness) fica no `README.md`.
 
-## Snapshot atual (2026-10-23)
+## Snapshot atual (2026-10-30) — Q4 UD é o único modelo
+
+> **Regra do lab (2026-10-30): o Q4 UD não fala com outro modelo.** Ele é o
+> **único modelo ativo** nas linhas de GPU e de CPU. O **Q3 UD** e o **Q4 base**
+> foram **aposentados** — arquivos em **squashfs**, remoção física **pendente**
+> (config futura, ver runbook abaixo e HISTORY). A antiga linha **GPU2**
+> (`Gemma4-E4B-UD-Q3`) **não existe mais**.
 
 | linha | modelo | ctx | VRAM |
 |---|---|---|---|
-| GPU1 `:4100` | `Gemma4-E4B-Q4` — Gemma4 E4B **base original** `Q4_K_M` + mmproj **Q8_0** | `-c 131072 -np 1` = **1×128k** | (medir no host; chroot sem CUDA) |
-| GPU2 `:4110` | `Gemma4-E4B-UD-Q3` — Huihui Gemma4 E4B **abliterated** `IQ3_XXS`, **text-only** | `-c 114688 -np 2` = **2×56k** | (medir no host; chroot sem CUDA) |
-| CPU `:4120` | `Gemma4-E4B-Q4` — mesmo E4B base, **CPU puro** (`-ngl 0`) | `-c 131072 -np 1` = **1×128k** | 0 (RAM) |
+| GPU1 `:4100` | `Gemma4-E4B-UD` — Gemma4 E4B **UD (uncensored)** `Q4_K_M` + mmproj **Q8_0**, na **ext4** | `-c 524288 -np 4` = **4×128k** | ~10,8 / 12,2 GB (full `CUDA0`) |
+| CPU Forced `:4120` | `Gemma4-E4B-UD` — **o próprio Q4 UD**, **CPU puro** (`-ngl 0`) | `-c 131072 -np 1` = **1×128k** | 0 (RAM) |
+
+**Arquivos do modelo (ext4, gravável):**
+`/media/mint/2a295c1a-afad-44fb-84dc-053406a7bbfb/opt/models/gemma-4-E4B-it-uncensored/`
+→ `gemma-4-E4B-it-uncensored-Q4_K_M.gguf` (~5,0 GiB) +
+`mmproj-gemma-4-E4B-it-Q8_0.gguf` (~534 MiB).
+
+**Endpoints:** llama `:4100` / bridge `:4124` (GPU full) ·
+llama `:4120` / bridge `:4125` (CPU Forced, `-ngl 0`).
+
+> **Runbook — ajuste das units no desktop (2026-10-30).** Conforme a transição
+> para Q4 UD único, ajustar as units systemd neste desktop:
+> 1. **Remover as units do Q3**: `llama-gpu2.service` (`:4110`) e
+>    `bridge-gpu2.service` (`:4125`) → `systemctl disable --now` e apagar os
+>    `.service` (Q3 aposentado).
+> 2. **Reapontar o CPU Forced** para o **próprio Q4 UD** com `-ngl 0` (mesmo
+>    arquivo GGUF da ext4) e mover a **bridge para `:4125`**
+>    (antes `bridge-cpu-forced` em `:4126`).
+> 3. **Q3/Q4-base no disco:** em squashfs (`/opt/models/gemma4-e4b-base/…`,
+>    `/opt/models/huihui-gemma4-e4b-abliterated/…`) — **não apagáveis agora**;
+>    remoção física = **config futura** quando o storage ficar gravável.
+
+> **Nota CPU Forced.** A linha **CPU** é **explícita e separada** da GPU1 — **não**
+> é "GPU2" nem disputa VRAM com a GPU1: `llama-cpu-forced.service` (`:4120`,
+> `-ngl 0 -t 4 -tb 4`) + `bridge-cpu-forced.service` (**`:4125`**). Carrega o
+> **mesmo arquivo do Q4 UD** mas com `-ngl 0`. Existe como **cenário de teste**
+> para **tarefas granulares de execução de scripts**, para medir/validar o
+> executor de scripts sem VRAM.
 
 Temperatura: CLI base **0.2**; perfis do runtime (`appsettings.json`) **plan 0.3 / build 0.1 / orch 0.3 / moe 0.5 / scripter 0.1 / exec 0.1** (escala baixa **0.1**, média **0.3**, alta **0.5**); o `temperature` do modelo no `opencode.json` segue a mesma escala.
 Detalhes de remaster em `/media/mint/Linux/remaster-update6.md`.
@@ -26,19 +58,18 @@ lá; só `git pull --ff-only origin main` e redeploy (`dotnet build -c Release`
 
 | nome | o que é | endpoint |
 |---|---|---|
-| **GPU1** | `Gemma4-E4B-Q4` (E4B base original, `Q4_K_M`) — 100% GPU | llama `:4100` / bridge `:4124` |
-| **GPU2** | `Gemma4-E4B-UD-Q3` (E4B abliterated, `IQ3_XXS`) — 100% GPU | llama `:4110` / bridge `:4125` |
-| **CPU Forced** | `Gemma4-E4B-Q4` (`Q4_K_M`) — `-ngl 0` (CPU puro) | llama `:4120` / bridge `:4126` |
+| **GPU1** | `Gemma4-E4B-UD` (E4B **UD** = uncensored, `Q4_K_M`) — 100% GPU, na **ext4** | llama `:4100` / bridge `:4124` |
+| **CPU Forced** | `Gemma4-E4B-UD` (**o próprio Q4 UD**) — `-ngl 0` (CPU puro) | llama `:4120` / bridge **`:4125`** |
 
-Os dois primeiros rodam em **GPU full** (`-ngl 99`) e **TurboQuant** (`turbo3` no
-KV), convivendo em 12 GB de VRAM (RTX 3060, 12288 MiB).
+A **GPU1** roda em **GPU full** (`-ngl 99`) e **TurboQuant** (`turbo3` no KV),
+com `4×128k` de ctx em 12 GB de VRAM (RTX 3060, 12288 MiB).
 
-> **Nota CPU Forced.** A **GPU2** (`Gemma4-E4B-UD-Q3`) roda **100% em GPU**
-> (`-ngl 99`), sem offload. A linha **CPU** é explícita e separada:
-> `llama-cpu-forced.service` (`:4120`, `-ngl 0 -t 4 -tb 4`) +
-> `bridge-cpu-forced.service` (`:4126`). Ela existe como **cenário de teste**
-> para **tarefas granulares de execução de scripts** (`-ngl 0`, `-t/-tb`), para
-> medir/validar o executor de scripts sem disputar VRAM com a GPU1.
+> **Nota — linha GPU2 aposentada (2026-10-30).** A antiga **GPU2**
+> (`Gemma4-E4B-UD-Q3`, llama `:4110` / bridge `:4125`) **foi removida**; o
+> conceito de "GPU2" **não existe mais**. **Nunca** houve "CPU como GPU2":
+> CPU puro é sempre `*-cpu-forced` (`-ngl 0`). O **CPU Forced** passou a apontar
+> para o **próprio Q4 UD** e sua bridge ocupou a porta **`:4125`** (antes do Q3).
+> Definição completa e runbook: ver *Snapshot atual* no topo.
 
 ---
 
@@ -55,8 +86,17 @@ atrás de duas bridges:
 
 | provider | bridge | llama | papel |
 |---|---|---|---|
-| `openai` | `http://127.0.0.1:4124/v1` | `:4100` | GPU1 `Gemma4-E4B-Q4` (E4B base original Q4_K_M) |
-| `llama` | `http://127.0.0.1:4125/v1` | `:4110` | GPU2 `Gemma4-E4B-UD-Q3` (E4B abliterated IQ3_XXS) |
+| `openai` | `http://127.0.0.1:4124/v1` | `:4100` | GPU1 `Gemma4-E4B-UD` (E4B **UD** uncensored Q4_K_M) — **único modelo de produção** |
+
+> **Transição de providers (2026-10-30, Q4 UD único).** O `opencode.json` ainda
+> declara os ids **pré-transição**: `openai:Gemma4-E4B-Q4*` (Q4 base), um provider
+> `llama` em `:4125` com `Gemma4-E4B-UD-Q3*` (**Q3 aposentado**) e um `cpu` em
+> `:4126`. **Alvo:** `openai:4124` aponta p/ **`Gemma4-E4B-UD`** (sufixos
+> `-plan/-build/-orch/-moe/-scripter/-exec`); provider `llama` (Q3) **removido**;
+> `cpu` passa a **`Gemma4-E4B-UD`** em `:4125`. Reapontamento dos ids segue o
+> **runbook** no topo (as units são ajustadas no desktop antes do opencode.json).
+> A bridge `:4124` **já serve** `Gemma4-E4B-UD` (a resposta do modelo vem como
+> `Gemma4-E4B-UD-build`), mesmo que as chaves do json ainda digam `Q4`.
 
 ```json
 {
@@ -166,6 +206,15 @@ genérico `llama/Gemma4-E4B-UD-Q3` cai no `--thinking events` da unit e abre rea
 ---
 
 ## 2. Servidores llama (GPU full, 12 GB, TurboQuant)
+
+> **⚠️ Estado abaixo = pré-transição (Q4 base `:4100` + GPU2/Q3 `:4110`).**
+> Desde **2026-10-30 (Q4 UD único)**, o `llama-gpu` roda o **Q4 UD** na **ext4**
+> (`/media/mint/2a29…/opt/models/gemma-4-E4B-it-uncensored/gemma-4-E4B-it-uncensored-Q4_K_M.gguf`,
+> `-c 524288 -np 4` = 4×128k, full `CUDA0`), e a linha **GPU2 (`:4110`) foi
+> removida**. Os exemplos de unit e as rotas `/opt/models/…` abaixo documentam a
+> **configuração antiga** (Q4 base em squashfs + Q3) — mantida como histórico até
+> a limpeza física (config futura). Use o **Snapshot atual** (topo) como fonte da
+> config corrente.
 
 ### 2.1 Flags do `llama-server` usadas nesta linha
 
@@ -1177,21 +1226,24 @@ Esta seção é a **memória de remaster**: o host é live USB (overlay), então
 abaixo precisa ser gravado na ISO/remaster — nada disso sobrevive a um reboot
 sem estar na imagem.
 
-### 9.1 Nomes, portas e units (fim da confusão CPU × GPU2)
+### 9.1 Nomes, portas e units (Q4 UD único, 2026-10-30)
 
 | papel | unit | porta | script (fonte da unit) | observação |
 |---|---|---|---|---|
-| GPU1 (orquestrador) | `llama-gpu.service` | 4100 | `/usr/local/bin/start-llama-gpu.sh` | E4B **Q4_K_M** + mmproj, `-ot .*=CUDA0` |
-| **GPU2** (segunda instância, **GPU**) | `llama-gpu2.service` | 4110 | `/usr/local/bin/start-llama-gpu2.sh` | E4B UD-Q3, sem mmproj, `-ot` com embd/per-layer no host |
-| CPU puro (bancada) | `llama-cpu-forced.service` | 4120 | `/usr/local/bin/start-llama-cpu-forced.sh` | E4B Q4 base, `-ngl 0` |
-| bridge GPU1 | `bridge-gpu.service` | 4124 | `/usr/local/bin/start-bridge-gpu.sh` | Q4, guard 131072 |
-| **bridge GPU2** | `bridge-gpu2.service` | 4125 | `/usr/local/bin/start-bridge-gpu2.sh` | Q3, guard 57344 |
-| bridge CPU puro | `bridge-cpu-forced.service` | 4126 | `/usr/local/bin/start-bridge-cpu-forced.sh` | Q4 CPU, guard 131072 |
+| GPU1 (orquestrador) | `llama-gpu.service` | 4100 | `/usr/local/bin/start-llama-gpu.sh` | E4B **UD** `Q4_K_M` (ext4) + mmproj, `-ot .*=CUDA0`, `-c 524288 -np 4` |
+| CPU puro (bancada) | `llama-cpu-forced.service` | 4120 | `/usr/local/bin/start-llama-cpu-forced.sh` | **o próprio Q4 UD**, `-ngl 0` |
+| bridge GPU1 | `bridge-gpu.service` | 4124 | `/usr/local/bin/start-bridge-gpu.sh` | Q4 UD, guard 524288 |
+| bridge CPU puro | `bridge-cpu-forced.service` | **4125** | `/usr/local/bin/start-bridge-cpu-forced.sh` | Q4 UD CPU, guard 131072 |
 
-- **Removidos** em 2026-10-23: `llama-cpu.service` e `bridge-cpu.service`
+- **Removidas em 2026-10-30** (Q3 aposentado): `llama-gpu2.service` (`:4110`) e
+  `bridge-gpu2.service` (`:4125`) → não recriar. A porta **`:4125`** passou ao
+  **bridge CPU Forced** (antes em `:4126`).
+- **Removidas** em 2026-10-23: `llama-cpu.service` e `bridge-cpu.service`
   (nomes enganosos — rodavam 100% GPU). Não recriar no remaster.
-- `GPU2` **não** é CPU. CPU puro é sempre `*-cpu-forced` (`-ngl 0`).
-- Regra de VRAM: **nunca** offload para CPU nas duas linhas GPU
+- **CPU puro é sempre `*-cpu-forced` (`-ngl 0`)** — uma linha própria, **nunca**
+  "GPU2". O conceito **GPU2** (e a antiga "confusão CPU × GPU2") **não existe
+  mais**: o Q4 UD é o único modelo em GPU e em CPU.
+- Regra de VRAM: **nunca** offload para CPU na linha GPU
   (`-ngl 99` fixo; sem `-nkvo`, sem `--no-op-offload`). Só o CPU-forced usa `-ngl 0`.
 
 ### 9.2 Launchers zenity (`/usr/local/bin`) — padrão único

@@ -195,6 +195,7 @@ internal static partial class Program
     static bool ContextGuard = false;
     static double ContextThreshold = 0.95;                       // fracao do ctx (0.5..0.99)
     static int ContextTokens = 0;                                // tamanho do ctx do modelo servido
+    static int ContextSlots = 1;                                 // slots paralelos do llama (-np): divide o ctx total
     static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
     const int SondaMaxChars = 2048;                              // amostra da cauda/duplicata no log de diagnostico
     // Granularidade da sonda (grupo observabilidade):
@@ -1073,7 +1074,7 @@ internal static partial class Program
     //   F) anti-repeat ...... --anti-repeat --anti-repeat-abort --anti-repeat-retry
     //                         --anti-repeat-window --anti-repeat-notice
     //   G) orçamento ........ --max-tokens --coerced-max-tokens (alias --cpu-max-tokens)
-    //                         --context-guard --context-tokens --context-threshold
+    //                         --context-guard --context-tokens --context-slots --context-threshold
     //   H) geração/artefatos  --temperature --tool-output-limit
     //   I) segurança ........ --risk-ask --risk-ask-minutes --risk-tools-alerts --tool-blacklist
     //   J) observabilidade .. --diagnostic --diagnostic-level
@@ -1159,6 +1160,7 @@ internal static partial class Program
                 case "--context-guard": ContextGuard = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--context-threshold": { double v = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); if (v >= 0.5 && v <= 0.99) ContextThreshold = v; break; }
                 case "--context-tokens": ContextTokens = int.Parse(cliArgs[i + 1]); break;
+                case "--context-slots": ContextSlots = int.Parse(cliArgs[i + 1]); break;
 
                 // ---------- H) geração/artefatos ----------
                 // Invariante: em locale pt-BR, Parse("0.7") quebraria sem isso
@@ -1253,6 +1255,8 @@ internal static partial class Program
             errors.Add("--anti-repeat-notice precisa de >= 20 caracteres");
         if (ContextGuard && ContextTokens <= 0)
             errors.Add("--context-guard 1 exige --context-tokens > 0 (sem o tamanho do ctx o guard nunca dispara)");
+        if (ContextSlots < 1)
+            errors.Add($"--context-slots {ContextSlots} invalido: use >= 1 (slots paralelos do llama, -np)");
 
         if (CpuMaxTokens > 0 && !CoerceFor())
             warns.Add($"--coerced-max-tokens {CpuMaxTokens} inerte: use --upstream-parser none ou --coerce-text-tools 1");
@@ -1919,7 +1923,7 @@ WriteJson(ctx, 200, new JsonObject
         ["listen"] = Listen, ["port"] = Port,
         ["upstream"] = Upstream, ["model"] = Model, ["thinking"] = Thinking,
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
-["context_tokens"] = ContextTokens, ["context_guard"] = ContextGuard,
+["context_tokens"] = ContextTokens, ["context_guard"] = ContextGuard, ["context_slots"] = ContextSlots,
 ["mode"] = Mode?.Name ?? "auto", ["tail_scope"] = TailScope,
 ["main_harness"] = MainHarnessOn, ["main_harness_scope"] = "managed-only", ["main_harness_opencode"] = false, ["harness_tails"] = TailsEnabled, ["tails_managed"] = TailsEnabled, ["tails_opencode"] = false, ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
         ["last_client"] = LastClient, ["last_request_ms"] = LastRequestMs,
@@ -3473,14 +3477,14 @@ var shape = new StringBuilder();
     }
 
     internal static bool ContextGuardEnabled() => ContextGuard;
-    internal static (bool Enabled, double Threshold, int Tokens) ContextGuardConfig() => (ContextGuard, ContextThreshold, ContextTokens);
-    internal static void ContextGuardSetup(bool enabled, double threshold, int tokens)
-    { ContextGuard = enabled; ContextThreshold = threshold; ContextTokens = tokens; }
+    internal static (bool Enabled, double Threshold, int Tokens, int Slots) ContextGuardConfig() => (ContextGuard, ContextThreshold, ContextTokens, ContextSlots);
+    internal static void ContextGuardSetup(bool enabled, double threshold, int tokens, int slots)
+    { ContextGuard = enabled; ContextThreshold = threshold; ContextTokens = tokens; ContextSlots = slots > 0 ? slots : 1; }
 
     // Guarda de ctx: a regra mora no Core (ContextGuard); aqui so os parametros.
     internal static bool ContextGuardTripped(string json, out int promptTokens, out double fraction) =>
         Rochas.OpenCodeBridge.Core.ContextGuard.Tripped(json,
-            new ContextGuardSettings(ContextGuardEnabled(), ContextThreshold, ContextTokens),
+            new ContextGuardSettings(ContextGuardEnabled(), ContextThreshold, ContextTokens, ContextSlots),
             out promptTokens, out fraction);
 
     /// <summary>Remove tags de controle e registra a sonda (host: o log fica aqui).</summary>

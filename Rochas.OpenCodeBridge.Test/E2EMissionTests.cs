@@ -332,7 +332,8 @@ internal static class E2EMissionTests
                        + "Imprima `btree_found=<true|false>` e `btree_count=<total de chaves da arvore>`. ",
             "kmeans" => "Implemente K-Means com k=2 sobre os pontos (1,1), (1,2), (2,1), (8,8), (8,9), (9,8). "
                         + "Imprima os dois centroides finais com 1 casa decimal em `kmeans_c1=<x>,<y>` e "
-                        + "`kmeans_c2=<x>,<y>`, na ordem crescente de x. ",
+                        + "`kmeans_c2=<x>,<y>`, na ordem crescente de x. "
++ "implemente a lógica atento ao ponto de parada correto do algoritmo.",
             _ => "Implemente DOIS algoritmos distintos, cada um na sua propria funcao: "
                  + "(1) quick sort — escolha um pivo, particione e ordene RECURSIVAMENTE as sublistas menores e maiores; "
                  + "(2) bubble sort — compare e troque vizinhos ate a lista ficar ordenada. "
@@ -434,6 +435,7 @@ internal static class E2EMissionTests
         if (dump)
             Console.WriteLine($"  [algo:{lang}] system={sys.Length} chars; regras F# presentes={sys.Contains("F# MINI")}");
         string feedback = "";
+        var (ctxTokens, ctxSlots) = AlgoCtxParams();
         // Uma rodada por etapa, com contexto resetado: um programa inteiro em F# custa
         // mais de uma passada. O aceite (metas e formato) nao muda entre as etapas.
         for (int attempt = 1; attempt <= stages.Length; attempt++)
@@ -455,12 +457,26 @@ internal static class E2EMissionTests
         for (int turn = 0; turn < turns; turn++)
         {
             JsonObject r;
+            // Guard de contexto do laço: compacta a sessão ANTES de estourar o slot.
+            // A mecânica (95% do ctx por-slot) mora no Core (ContextGuard.Compact); o
+            // modelo fraco reescreve o arquivo inteiro a cada edit/write e o histórico
+            // infla (medido 2026-10-30: 142k tokens > 128k/slot -> 400 seco do llama).
+            global::Rochas.OpenCodeBridge.Core.ContextGuard.Compact(hist, ctxTokens, ctxSlots);
             try
             {
                 r = await Chat(bridge, model, (JsonArray)hist.DeepClone(), global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat());
             }
             catch (Exception ex)
             {
+                // 413 do guard de ctx: não é ponte fora do ar, é sinal para compactar
+                // e retentar (o guard da bridge dispara a 95% do slot; aqui o cliente
+                // compacta a sessão — o arquivo em disco permanece a fonte).
+                if (ex.Message.Contains("413", StringComparison.Ordinal) && ex.Message.Contains("context_compact_required", StringComparison.Ordinal))
+                {
+                    global::Rochas.OpenCodeBridge.Core.ContextGuard.Compact(hist, ctxTokens / 2, ctxSlots);
+                    Console.WriteLine($"  [algo:{lang}] guard de ctx: 413 context_compact_required — compactou e retenta");
+                    continue;
+                }
                 global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Apply(hist);
                 Console.WriteLine($"  [algo:{lang}] HTTP falhou: {ex.Message.Split('\n')[0]}");
                 // Ponte fora do ar nao e' falha de raciocinio: 3 seguidas encerram a
@@ -560,6 +576,18 @@ internal static class E2EMissionTests
         string srcPath = Path.Combine(ws, dir, file);
         string src = File.Exists(srcPath) ? File.ReadAllText(srcPath) : "";
         string output = await RunShell(ws, model, "dotnet run --project " + project + " -c Release");
+        // Salvage determinístico: a dica in-flow (CsSyntaxRepair.Suggest) só ENSINA e o
+        // modelo fraco ignora (medido 2026-10-30: Q4 Base repetiu CS1513 por 26 turnos
+        // com 22 abre-chave e 21 fecha-chave). Aplicar o reparo mecânico do Core e
+        // rebuildar é a forma certa; se a lógica também estiver errada o rebuild falha
+        // e o aceite continua honesto (sem afrouxar).
+        if (lang == "C#" && global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, output, out string fixedSrc))
+        {
+            File.WriteAllText(srcPath, fixedSrc);
+            src = fixedSrc;
+            output = await RunShell(ws, model, "dotnet run --project " + project + " -c Release");
+            if (dump) Console.WriteLine($"  [algo:{lang}] salvage CS1513: fechou bloco(s) aberto(s) e rebuildou");
+        }
         if (dump)
             Console.WriteLine($"  [algo:{lang}] tentativa {attempt}: {((accept ?? AlgoOk)(output) ? "bateu as metas" : "fora das metas")} | {output.Replace("\n", " | ")[..Math.Min(180, output.Replace("\n", " | ").Length)]}");
         if ((accept ?? AlgoOk)(output) || attempt == stages.Length) return (src, output);
@@ -568,6 +596,35 @@ internal static class E2EMissionTests
                  + "\nCorrija " + Path.Combine(ws, dir, file) + " e rode de novo; as metas e o formato continuam os mesmos.";
         }
         return (string.Empty, string.Empty);
+    }
+
+    /// <summary>
+    /// Parâmetros de contexto da sessão do laço de algoritmo, lidos do /api/status da
+    /// bridge (ctx total e slots). A regra (95% do ctx por-slot) mora no Core
+    /// (<see cref="global::Rochas.OpenCodeBridge.Core.ContextGuard.Compact"/>); aqui só
+    /// lemos os parâmetros. O llama não informa os slots, então o cliente declara
+    /// (<c>--context-slots</c>); quando o status não traz o campo (bridge antiga), cai
+    /// no per-slot conhecido de 128k — dividir o total por 1 deixaria o guard morto.
+    /// </summary>
+    static (int Ctx, int Slots) AlgoCtxParams()
+    {
+        const int PerSlotFallback = 131072; // 128k por slot (Q4: 524288 / 4 slots)
+        try
+        {
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, TestContext.Bridge + "/api/status");
+            if (!string.IsNullOrWhiteSpace(TestContext.ApiKey))
+                req.Headers.Authorization = new("Bearer", TestContext.ApiKey);
+            using var res = http.Send(req);
+            if (!res.IsSuccessStatusCode) return (PerSlotFallback, 1);
+            var node = System.Text.Json.Nodes.JsonNode.Parse(res.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+            int ctx = node?["context_tokens"]?.GetValue<int>() ?? 0;
+            int slots = node?["context_slots"]?.GetValue<int>() ?? 0;
+            if (ctx <= 0) return (PerSlotFallback, 1);
+            if (slots <= 0) return (Math.Min(ctx, PerSlotFallback), 1);
+            return (ctx, slots);
+        }
+        catch { return (PerSlotFallback, 1); }
     }
 
     static bool AlgoOk(string output)

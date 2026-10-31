@@ -1,5 +1,47 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Transição para Q4 UD único — GPU2/Q3/Q4-base aposentados (2026-10-30, sessão 38)
+
+**Regra nova do lab.** O **Q4 UD** (`Gemma4-E4B-UD`) passa a ser o **único
+modelo** — *"o Q4 UD não fala com outro modelo"*. As linhas **GPU2 (Q3)** e
+**CPU (Q4 base)** deixam de usar modelos distintos.
+
+**Arquivos (nome pedido):**
+- **Q4 UD (único, em uso, ext4):**
+  `/media/mint/2a295c1a-afad-44fb-84dc-053406a7bbfb/opt/models/gemma-4-E4B-it-uncensored/`
+  → `gemma-4-E4B-it-uncensored-Q4_K_M.gguf` (~5,0 GiB) +
+  `mmproj-gemma-4-E4B-it-Q8_0.gguf` (~534 MiB). **Substitui o Q4 base e o Q3 UD.**
+- **Q3 UD (aposentado, squashfs):** `/opt/models/huihui-gemma4-e4b-abliterated/Huihui-gemma-4-E4B-it-qat-q4_0-unquantized-abliterated.i1-IQ3_XXS.gguf` — remoção física **pendente (config futura)**.
+- **Q4 base (aposentado, squashfs):** `/opt/models/gemma4-e4b-base/google_gemma-4-E4B-it-Q4_K_M.gguf` (+ `mmproj-gemma-4-E4B-it-Q8_0.gguf`) — remoção física **pendente (config futura)**.
+
+**Config llama do Q4 UD (idem à atual):** `-c 524288 -np 4` = **4×128k**, full
+`CUDA0` (`-ot .*=CUDA0`, `-ngl 99`), KV `turbo3`, `--prio 2/2`, mmproj na GPU.
+Bridge `:4124` com `--context-tokens 524288 --mode bridge --main-harness 1
+--harness-tails 1`. (VRAM ~10,8/12,2 GB; ~40 t/s.)
+
+**CPU Forced → Q4 UD:** `llama-cpu-forced` (`:4120`) passa a carregar **o próprio
+Q4 UD** com `-ngl 0` (antes carregava o Q4 base); `bridge-cpu-forced` sai de
+`:4126` e vai para **`:4125`** (porta liberada pelo Q3).
+
+**Runbook — ajuste das units no desktop (pendente):**
+1. remover `llama-gpu2.service` (`:4110`) e `bridge-gpu2.service` (`:4125`) — Q3 aposentado;
+2. reapontar o CPU Forced para o Q4 UD e mover sua bridge p/ `:4125`;
+3. Q3/Q4-base em squashfs não apagáveis agora → **config futura**.
+
+**Docs `LAB-SETUP.md` atualizados:** Snapshot no topo (Q4 UD único + arquivos +
+runbook); §0 Nomenclatura (GPU2 removida; **conceito "CPU como GPU2"
+eliminado**); §1.1 providers (transição p/ `Gemma4-E4B-UD`, provider Q3
+aposentado); banner §2 (units/flags/rotas antigas = histórico); §9.1 units
+(tabela só com GPU1 + CPU Forced `:4125`, GPU2 fora).
+
+**Enunciado kmeans (evita o bug de parada):** ao fim acrescentado
+*"implemente a lógica atento ao ponto de parada correto do algoritmo"*. O modelo
+gerava k-means que **parava na 1ª iteração** (flag `changed` nunca virava `true`
+→ `if (!changed) break`), imprimindo centróides `(1.5,1.0)`/`(6.5,6.8)` em vez dos
+convergidos `(1.33,1.33)`/`(8.33,8.33)`; `AlgoOkKMeans` exige `Round(x1)==1 &&
+Round(x2)==8`. Bug de **lógica** (não sintaxe/harness) — o assert rejeitou
+corretamente; kmeans havia passado 5× antes (estocástico).
+
 ## Web UI: turno em texto encerra o request + nota honesta + perfil da faixa (2026-10-30, sessão 37)
 
 **Sintoma medido (sessão 27/28 do `web.db` de PROD).** Enunciado "Crie um script
@@ -5251,3 +5293,12 @@ recursiva das sublistas no quick sort e proíbe usar a saída de um para preench
 a chave do outro. O aceite não mudou: as duas listas completas em ordem
 crescente. Prova: `E-mission-algo-cs-sort` PASS 48,9 s
 (`logs/isolated/cs-sort3-*.log`).
+
+## Guard de ctx: slots no host e compactação única no Core (2026-10-30)
+
+O Q4 Base estourava o slot (142701 > 131072) sem o guard disparar: `--context-tokens
+524288` é o total de 4 slots e o `ContextGuard` dividia por 1. Entrou `--context-slots`
+(host declara; `/api/status` expõe `context_slots`) e a **rotina única** de compactação
+passou para o `ContextGuard` (`Compact`, 95% do ctx por-slot) — o `MainHarness` fica só
+com o enunciado. Cliente compacta antes de cada request e no 413; `CsSyntaxRepair.TryRepair`
+fecha `CS1513` deterministicamente. Detalhe e prova: `docs/DRIVER-FIXES.md` #56.
