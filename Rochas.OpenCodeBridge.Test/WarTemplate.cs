@@ -883,7 +883,10 @@ internal sealed class WarTemplate : CircuitTemplate
         if (props.Code == 200)
         {
             var j = TryJson(props.Body);
+            // llama expoe n_ctx em default_generation_settings (nao no top-level).
             nctx = Str(j, "n_ctx");
+            if (string.IsNullOrEmpty(nctx))
+                nctx = Str(j?["default_generation_settings"]?.AsObject(), "n_ctx");
             slots = Str(j, "total_slots");
             modelPath = Str(j, "model_path");
         }
