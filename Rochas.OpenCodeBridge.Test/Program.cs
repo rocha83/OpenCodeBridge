@@ -219,6 +219,8 @@ internal static class Program
         TestContext.Run("U-cs-repair-unexpected-token", UnitToolBreakerTests.CsRepairUnexpectedToken);
         TestContext.Run("U-cs-hint-counts-call-args", UnitToolBreakerTests.CsHintCountsCallArgs);
         TestContext.Run("U-cs-repair-applies-extra-close", UnitToolBreakerTests.CsRepairAppliesExtraClose);
+        TestContext.Run("U-cs-hint-for-in", UnitToolBreakerTests.CsHintDetectsForIn);
+        TestContext.Run("U-cs-repair-applies-for-in", UnitToolBreakerTests.CsRepairForInOnlyAfterTwoRepeats);
         TestContext.Run("U-context-compact", UnitToolBreakerTests.ContextCompact);
         TestContext.Run("U-context-compact-recursive", UnitToolBreakerTests.ContextCompactRecursive);
         TestContext.Run("U-context-overflow-detect", UnitToolBreakerTests.ContextOverflowDetect);

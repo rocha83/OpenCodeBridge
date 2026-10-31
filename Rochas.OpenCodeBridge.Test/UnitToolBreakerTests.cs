@@ -432,6 +432,15 @@ internal static class UnitToolBreakerTests
             "CS1003 ensina a forma CERTA (um `)` por `(`)");
         TestContext.Check(!tail.Contains("flag[i + 2]))", StringComparison.Ordinal),
             "a tabela NUNCA exibe o literal errado (o modelo copia o que ve)");
+        // CS1003 forma `for` com `in` (medido no kmeans do L4 de 2026-10-31: 617s de
+        // loop). A INSTRUCAO da cauda tem que ensinar `foreach` ANTES do erro — e' a
+        // prioridade do projeto (instruir primeiro, reparar so' como rede).
+        TestContext.Check(tail.Contains("C# nao tem `for` com `in`", StringComparison.Ordinal),
+            "CS1003 instrui que C# nao tem `for` com `in`");
+        TestContext.Check(tail.Contains("foreach (var item in colecao)", StringComparison.Ordinal),
+            "CS1003 mostra a forma CERTA com `foreach`");
+        TestContext.Check(!tail.Contains("for (var point in", StringComparison.Ordinal),
+            "a tabela nunca exibe a forma `for` com `in` como exemplo");
         TestContext.Check(tail.Contains("aplique a forma da tabela e edite SO'", StringComparison.Ordinal),
             "a tabela manda aplicar a forma e editar SÓ o trecho");
         // Só com shell: sem execução não existe "build falhando".
@@ -984,6 +993,74 @@ internal static class UnitToolBreakerTests
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
                 "class A { void M() { } }\n", err).Contains("passe TODOS os parametros", StringComparison.Ordinal),
             "sem achado da declaracao cai na dica generica da tabela");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// CS1003 na forma `for` com `in` (o kmeans do L4 de 2026-10-31 escreveu
+    /// `for (var point in _points)`, habito de Python/JS, e ficou 617s em loop porque
+    /// a dica de CS1003 ensinava parenteses — o caso do hanoi). A dica identifica a
+    /// forma pelo cabecalho SEM `;` e mostra SÓ o `foreach` correto, montado da
+    /// propria linha do fonte.
+    /// </summary>
+    public static Task CsHintDetectsForIn()
+    {
+        string src = "class K { void M() {\n"
+                   + "    foreach (var c in _clusters) { }\n"
+                   + "    for (var point in _points)\n"
+                   + "        point.Assign();\n"
+                   + "} }\n";
+        string err = "ERRO: exit 1: /tmp/mcs/Program.cs(3,13): error CS1003: Syntax error, 'foreach' expected [/tmp/mcs/mcs.csproj]";
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.HasDiagnostic(err),
+            "error CS1003 conta como diagnostico C#");
+        string hint = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(src, err);
+        TestContext.Check(hint.Contains("linha 3", StringComparison.Ordinal),
+            "a dica aponta a linha do `for` (saiu: '" + hint.Replace("\n", " | ") + "')");
+        TestContext.Check(hint.Contains("foreach (var point in _points)", StringComparison.Ordinal),
+            "a dica mostra a forma CERTA com `foreach` (saiu: '" + hint.Replace("\n", " | ") + "')");
+        TestContext.Check(!hint.Contains("for (var point in _points)", StringComparison.Ordinal),
+            "a dica NUNCA exibe o `for` errado (o modelo copia o que ve)");
+        // O caso de fechamento (hanoi) continua sendo ensinado como antes.
+        string paren = "class P { void M(int[] f) {\n"
+                     + "    if (f[0] > 0 && f[1] > 0))\n"
+                     + "        f[0] = 0;\n"
+                     + "} }\n";
+        string parenErr = "ERRO: exit 1: /tmp/mcs/Program.cs(2,31): error CS1003: Syntax error, ']' expected [/tmp/mcs/mcs.csproj]";
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(paren, parenErr)
+                .Contains("a mais", StringComparison.Ordinal),
+            "CS1003 com parentese excedente continua na dica de fechamento (sem regressao)");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Reparo deterministico do `for` com `in` = FALLBACK no MESMO threshold do
+    /// CS1513/CS1003 (2 entregas da mesma dica). Troca `for` por `foreach` na linha
+    /// apontada; um `for` legitimo (com `;` no cabecalho) NUNCA e' tocado.
+    /// </summary>
+    public static Task CsRepairForInOnlyAfterTwoRepeats()
+    {
+        string src = "class K { void M() {\n"
+                   + "    for (var point in _points)\n"
+                   + "        point.Assign();\n"
+                   + "} }\n";
+        string err = "ERRO: exit 1: /tmp/mcs/Program.cs(2,13): error CS1003: Syntax error, 'foreach' expected [/tmp/mcs/mcs.csproj]";
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, err, out _, 0),
+            "1a entrega da dica: reparo NAO entra (instrucao ainda resolve)");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, err, out _, 1),
+            "2a entrega da dica: reparo ainda NAO entra");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, err, out string fixedSrc, 2),
+            "3a entrega da MESMA dica: o fallback deterministico entra");
+        TestContext.Check(fixedSrc.Contains("foreach (var point in _points)", StringComparison.Ordinal),
+            "o reparo troca `for` por `foreach` na linha apontada (saiu: '" + fixedSrc.Replace("\n", " | ") + "')");
+        TestContext.Check(!fixedSrc.Contains("for (var point in _points)", StringComparison.Ordinal),
+            "o `for` errado desaparece do fonte");
+        // `for` legitimo (com `;`) nao vira `foreach`.
+        string legit = "class K { void M(int n) {\n"
+                     + "    for (int i = 0; i < n; i++)\n"
+                     + "        i++;\n"
+                     + "} }\n";
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(legit, err, out _, 2),
+            "`for` com `;` no cabecalho NAO e' tocado (nao e' for..in)");
         return Task.CompletedTask;
     }
 

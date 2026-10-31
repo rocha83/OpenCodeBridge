@@ -68,10 +68,12 @@ public static class CsSyntaxRepair
     static readonly Rule[] RuleTable =
     {
         new("CS1513", "falta `}` para fechar um bloco",
-            "cada `{` de bloco (namespace, classe, metodo, if, for) fecha com UM `}`; no fim do arquivo feche na ordem inversa em que abriu"),
-        new("CS1003", "token de fechamento a mais (ou abertura sem par)",
+            "cada `{` de bloco (namespace, classe, metodo, if, for, foreach) fecha com UM `}`; no fim do arquivo feche na ordem inversa em que abriu"),
+        new("CS1003", "token de fechamento a mais, ou `for` com `in` no lugar de `foreach`",
             "cada `(` fecha com UM `)` e o `]` de um indice fecha ANTES do `)` da condicao:\n"
-            + "if (flag[i] && flag[i + 2])\n    count++;"),
+            + "if (flag[i] && flag[i + 2])\n    count++;\n"
+            + "para percorrer colecao use `foreach` — C# nao tem `for` com `in`:\n"
+            + "foreach (var item in colecao)\n    Console.WriteLine(item);"),
         new("CS1026", "parentese aberto sem `)`",
             "feche o par na MESMA linha que o compilador aponta: Somar(a, b)"),
         new("CS1002", "instrucao sem `;`",
@@ -159,9 +161,14 @@ public static class CsSyntaxRepair
         string code = FirstCode(compilerError);
         // CS1513: o bloco mais externo não fechou no fim.
         if (code == "CS1513") return TryRepairMissingBrace(source, out repaired);
-        // CS1003: fechamento a mais na linha do erro (medido no hanoi de 2026-10-31:
-        // `)` duplicado no fim do `if` — o Roslyn esperava o `]` do índice seguinte).
-        if (code == "CS1003") return TryRepairExtraClose(source, compilerError, out repaired);
+        // CS1003 tem duas formas: `for (x in y)` (C# nao tem for..in) e fechamento a
+        // mais na linha do erro (medido no hanoi de 2026-10-31: `)` duplicado no fim
+        // do `if` — o Roslyn esperava o `]` do índice seguinte).
+        if (code == "CS1003")
+        {
+            if (TryRepairForIn(source, compilerError, out repaired)) return true;
+            return TryRepairExtraClose(source, compilerError, out repaired);
+        }
         return false;
     }
 
@@ -226,6 +233,73 @@ public static class CsSyntaxRepair
     }
 
     /// <summary>
+    /// Detecta cabeçalho <c>for (x in y)</c>. C# não tem <c>for..in</c> — o Roslyn
+    /// responde <c>CS1003: Syntax error, 'foreach' expected</c>. Um <c>for</c>
+    /// legítimo sempre tem <c>;</c> no cabeçalho (início; condição; passo), então
+    /// "sem <c>;</c> e com <c>in</c>" identifica a forma sem ambiguidade.
+    /// </summary>
+    /// <param name="line">Linha apontada pelo compilador.</param>
+    /// <returns>True quando a linha é um <c>for</c> sem <c>;</c> e com <c>in</c>.</returns>
+    static bool IsForInHeader(string line)
+    {
+        if (string.IsNullOrEmpty(line)) return false;
+        var m = Regex.Match(line, @"\bfor\s*\(");
+        if (!m.Success) return false;
+        string body = ParenBody(line, m.Index + m.Length - 1);
+        if (body.Length == 0) return false;
+        if (body.Contains(';')) return false;
+        return Regex.IsMatch(body, @"\bin\b");
+    }
+
+    /// <summary>
+    /// CS1003 na forma <c>for (x in y)</c>: a linha percorre uma coleção com a
+    /// sintaxe de Python/JS. A dica mostra SÓ a forma certa, montada da própria
+    /// linha (o modelo copia o literal que a dica mostra): <c>foreach</c> com a
+    /// mesma cabeça. Nunca exibe o <c>for</c> errado como exemplo.
+    /// </summary>
+    /// <param name="line">Linha apontada pelo compilador.</param>
+    /// <param name="lineNo">Número da linha (para a mensagem).</param>
+    /// <returns>"ERRO: ...\nCERTO: ..." com a linha corrigida.</returns>
+    static string FixForInHeader(string line, int lineNo)
+    {
+        var m = Regex.Match(line, @"\bfor\s*\(");
+        int open = m.Index + m.Length - 1;
+        string body = ParenBody(line, open);
+        string corrected = line[..m.Index] + "foreach (" + body + ")" + line[(open + body.Length + 2)..];
+        return "ERRO: a linha " + lineNo + " percorre uma colecao com `for` e `in`; "
+             + "C# nao tem `for` com `in` (o compilador espera `foreach`).\n"
+             + "CERTO: use `foreach` com a mesma cabeca:\n"
+             + corrected.TrimEnd();
+    }
+
+    /// <summary>
+    /// CS1003 na forma <c>for (x in y)</c>: troca o <c>for</c> por <c>foreach</c> na
+    /// linha apontada. Mecânico e não ambíguo — C# não tem <c>for..in</c>, então o
+    /// texto corrigido é sempre válido e o corpo do laço não é tocado.
+    /// </summary>
+    /// <param name="source">Fonte C# atual.</param>
+    /// <param name="compilerError">Saída do build (aponta a linha do <c>for</c>).</param>
+    /// <param name="repaired">Fonte com <c>foreach</c> no lugar do <c>for</c>.</param>
+    /// <returns>True quando o reparo se aplica.</returns>
+    static bool TryRepairForIn(string source, string compilerError, out string repaired)
+    {
+        repaired = source;
+        int lineNo = SourceLineNumber(compilerError);
+        if (lineNo < 1) return false;
+        string[] lines = source.Replace("\r\n", "\n").Split('\n');
+        if (lineNo > lines.Length) return false;
+        string line = lines[lineNo - 1];
+        if (!IsForInHeader(line)) return false;
+        var m = Regex.Match(line, @"\bfor\s*\(");
+        if (!m.Success) return false;
+        lines[lineNo - 1] = line[..m.Index] + "foreach" + line[(m.Index + 3)..];
+        string candidate = string.Join("\n", lines);
+        if (candidate == source) return false;
+        repaired = candidate;
+        return true;
+    }
+
+    /// <summary>
     /// CS1003 (<c>Syntax error, '&lt;tok&gt;' expected</c>): o compilador achou um
     /// fechamento a mais ANTES do token que esperava. O caso medido no L4 de
     /// 2026-10-31 (hanoi, 386s e FAIL) foi um <c>)</c> duplicado no fim de um
@@ -239,6 +313,10 @@ public static class CsSyntaxRepair
     {
         string line = SourceLineAt(source, compilerError);
         int lineNo = SourceLineNumber(compilerError);
+        // `for (x in y)` vem ANTES dos casos de fechamento: C# nao tem for..in e o
+        // Roslyn responde CS1003 esperando `foreach` (medido no kmeans do L4 de
+        // 2026-10-31: 617s de loop porque a dica ensinava parenteses).
+        if (IsForInHeader(line)) return FixForInHeader(line, lineNo);
         int extraParen = CountChar(line, ')') - CountChar(line, '(');
         if (extraParen > 0)
             return "ERRO: a linha " + lineNo + " tem " + extraParen

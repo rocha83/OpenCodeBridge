@@ -1754,13 +1754,63 @@ ANTES do parse de `--bridge/--api-key`, entao `TestContext.Bridge` ficava no
 default `:4124` e o helper miraria a unit errada em porta diferente.
 
 **Correcao.**
-1. `WarTemplate.OnRunStart`: sincroniza `TestContext.Bridge/ApiKey` com
-   `_p.Bridge/_p.Api` (e `Mode` quando a bateria e' opencode pura).
-2. `WarTemplate.Preflight` (topo): chama `TestContext.RestartBridge()` DEPOIS do
-   build/deploy e ANTES das checagens de status, para o preflight medir a bridge
-   recem-reiniciada. Falha vira check `bridge_restart` (veredito BLOCKED com
-   evidencia), nunca excecao crua.
+1. `WarTemplate.SyncBridgeContext(p)`: sincroniza `TestContext.Bridge/ApiKey` com
+   `p.Bridge/p.Api` (e `Mode` quando a bateria e' opencode pura). Chamado por
+   `OnRunStart` e pelo restart.
+2. `WarTemplate.RestartBridgeOnce(p, log)`: reinicia a bridge alvo **UMA vez por
+   BATERIA** (nao por nivel), em `Run()` (nivel unico) e `RunAll()` (esteira),
+   junto do `diag/reset`. Falha = fail-fast `BLOCKED` (rc=3).
+3. Ordem: restart -> `diag/reset` -> `RestartGrafana`. `--war-list` e
+   `--war-gate-only` sao leitura e nao reiniciam nada.
 
-**Prova.** Linha `[restart] bridge alvo reiniciada antes do preflight: <url>` no
-log da bateria, seguida de `preflight ok` e dos steps. Teste de bateria real
-(L1 -> L4) e' a evidencia exigida pela regra "driver so' muda com bateria real".
+**Por que nao no `Preflight` (1a tentativa, revertida).** O preflight roda POR
+NIVEL: com `--war-all` a bridge era reiniciada no inicio de cada nivel. Restart
+troca o processo e zera `/api/metrics`, a sonda e os arquivos contados (sao por
+vida do processo) — o painel recomecava do zero a cada nivel. Medido no run
+`war-all-20261031-121412`: `[restart]` nas linhas 13 (L1) e 256 (L2), e
+`uptime_seconds=154` as 12:27:01 (restart em ~12:24:27, inicio do L2).
+
+**Prova.** Linha `[restart] bridge alvo reiniciada uma vez por bateria: <url>`
+UMA vez no console de niveis, `uptime_seconds` crescendo continuo de L1 a L4 e
+os contadores de `/api/metrics` sem reset entre niveis.
+
+## 62. CS1003 com `for` + `in`: a tabela ensinava parenteses e o modelo loopou 617s (2026-10-31)
+
+**Sintoma.** `e-algo-cs-kmeans-bridge` (L4) FAIL em 617s com
+`Program.cs(53,13): error CS1003: Syntax error, 'foreach' expected`. A linha 53
+era `for (var point in _points)` — C# nao tem `for` com `in` (habito de
+Python/JS). O modelo alternou `write`/`shell(ok=false)`/`edit(ok=false)`/`read`
+por ~30 turnos sem tocar na linha culpada.
+
+**Causa.** CS1003 tem DUAS formas e a tabela/dica so' cobria uma:
+1. fechamento a mais na linha (medido no hanoi, `)` duplicado no fim do `if`);
+2. `for` com `in` no lugar de `foreach`.
+
+`FixUnexpectedToken` testava `)`/`]` excedentes, nao achava nada na linha
+balanceada e caia em `FromTable("CS1003")` — que ensina parenteses. A dica
+apontava a correcao ERRADA e o modelo obedeceu a ela. Enunciado descartado como
+causa: o texto do kmeans so' tem problema, chaves de saida e ordem; nenhum
+`for`/`foreach` (a unica ocorrencia de `for` que o modelo lia era a linha CS1513
+da tabela, sobre fechar bloco).
+
+**Correcao (instrucao primeiro, repair como rede).**
+1. `RuleTable` CS1003 passa a instruir as duas formas — "C# nao tem `for` com
+   `in`" + `foreach (var item in colecao)` — e a cauda
+   (`HarnessTails.CsErrorTableLine`) e' gerada dela, entao a instrucao chega
+   ANTES do erro, com `shell` no array de tools.
+2. `RuleTable` CS1513 cita `foreach` entre os blocos que fecham com `}`.
+3. `IsForInHeader(line)`: `for` sem `;` no cabecalho e com `in` (um `for` de C#
+   sempre tem `;`), sem ambiguidade.
+4. `FixUnexpectedToken` despacha `for..in` -> `)` -> `]` e mostra a linha
+   corrigida montada do proprio fonte (`foreach (var point in _points)`), nunca o
+   literal errado.
+5. `TryRepairForIn` no MESMO gate `repeatCount >= 2` dos outros reparos: troca
+   `for` por `foreach` na linha apontada. `for (int i = 0; i < n; i++)` nao e'
+   tocado.
+
+**Prova.** `U-cs-hint-for-in` (dica contem `foreach (var point in _points)` e NAO
+contem o `for` errado; o caso de parentese do hanoi segue ensinado),
+`U-cs-repair-applies-for-in` (false em 0/1, true em 2, `for` legitimo intacto) e
+`U-tails-cs-error-table` (a CAUDA carrega "C# nao tem `for` com `in`" e
+`foreach (var item in colecao)`) -> `[test] PASS=8 FAIL=0`.
+

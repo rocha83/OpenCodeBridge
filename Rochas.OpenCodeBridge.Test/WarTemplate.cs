@@ -261,6 +261,9 @@ internal sealed class WarTemplate : CircuitTemplate
         // roxa e apagaram o enunciado publicado do step que estava executando).
         if (!o.List && !o.GateOnly)
         {
+            // Bridge alvo reiniciada UMA vez por rodada — mesma granularidade do
+            // diag/reset (restart de processo zera contadores e sonda).
+            if (!RestartBridgeOnce(p, null)) return 3;
             // Credencial RESOLVIDA (p.Api) e nao a opcao crua: com o.ApiKey nulo o
             // reset ia sem Authorization e a bridge respondia 401, deixando sonda,
             // contadores e painel da rodada anterior no lugar.
@@ -300,6 +303,53 @@ internal sealed class WarTemplate : CircuitTemplate
         var gate = driver.Gate();
         template.OnRunEnd(driver, gate);
         return template.RequireGreen && !gate.Green ? 1 : 0;
+    }
+
+    /// <summary>
+    /// Sincroniza o contexto da suíte com o alvo REAL da bateria. O WAR despacha
+    /// para <c>RunMain</c> antes do parse normal (<c>Program.Main</c>), então
+    /// <c>--bridge/--api-key/--mode</c> não populam <see cref="TestContext"/>: ele
+    /// ficaria no default <c>:4124</c> e qualquer mecanismo in-process miraria a
+    /// porta errada (o restart escolhe a unit pela porta: 4124 <c>bridge-gpu</c>,
+    /// 4125 <c>bridge-gpu2</c>, 4126 <c>bridge-cpu-forced</c>). O modo só muda em
+    /// bateria opencode pura (o default já é <c>bridge</c>).
+    /// </summary>
+    /// <param name="p">Caminhos/opções resolvidos da bateria.</param>
+    private static void SyncBridgeContext(WarPaths p)
+    {
+        TestContext.Bridge = p.Bridge;
+        TestContext.ApiKey = p.Api;
+        if (p.Modes.Contains("opencode", StringComparer.OrdinalIgnoreCase)
+            && !p.Modes.Contains("bridge", StringComparer.OrdinalIgnoreCase))
+            TestContext.Mode = "opencode";
+    }
+
+    /// <summary>
+    /// Reinicia a bridge alvo UMA vez por bateria — mesma granularidade do
+    /// <c>diag/reset</c>, nunca por nível. Restart troca o processo e zera os
+    /// contadores de <c>/api/metrics</c>, a sonda e os arquivos contados, que são
+    /// POR VIDA DO PROCESSO: reiniciar no início de cada nível picava a leitura do
+    /// painel (medido no L4 de 2026-10-31 — <c>uptime_seconds</c> voltava a zero no
+    /// L2 e os contadores de cada nível recomeçavam).
+    /// </summary>
+    /// <param name="p">Caminhos/opções resolvidos da bateria.</param>
+    /// <param name="globalLog">Log global da bateria (nulo no nível único).</param>
+    /// <returns>True quando a bridge subiu com status válido; false = fail-fast.</returns>
+    private static bool RestartBridgeOnce(WarPaths p, TextWriter? globalLog)
+    {
+        SyncBridgeContext(p);
+        try
+        {
+            TestContext.RestartBridge();
+            LogGlobal(globalLog, $"[restart] bridge alvo reiniciada uma vez por bateria: {p.Bridge}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LogGlobal(globalLog,
+                $"BLOCKED: restart da bridge alvo falhou ({p.Bridge}): {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>
@@ -371,6 +421,10 @@ internal sealed class WarTemplate : CircuitTemplate
         // pode zerar um run em curso (mesmo guard do caminho de level unico).
         if (!o.List)
         {
+            // Bridge alvo reiniciada UMA vez por bateria — mesma granularidade do
+            // diag/reset. Medido no L4 de 2026-10-31: reiniciar no inicio de cada
+            // nivel zerava contadores/sonda/painel a cada nivel.
+            if (!RestartBridgeOnce(p, globalLog)) return 3;
             // Credencial RESOLVIDA (p.Api) e nao a opcao crua: com o.ApiKey nulo o
             // reset ia sem Authorization e a bridge respondia 401, deixando sonda,
             // contadores e painel da rodada anterior no lugar.
@@ -488,16 +542,8 @@ internal sealed class WarTemplate : CircuitTemplate
 
         // O WAR despacha para RunMain ANTES do parse normal (Program.Main), entao
         // --bridge/--api-key/--mode nao popolam o contexto da suite: ele ficaria no
-        // default :4124 e qualquer mecanismo in-process miraria a porta errada — o
-        // RestartBridge do preflight usa a porta para escolher a unit systemd
-        // (4124 bridge-gpu / 4125 bridge-gpu2 / 4126 bridge-cpu-forced). Sincroniza
-        // o contexto com o alvo real. O modo so' muda em bateria opencode pura
-        // (default ja' e' bridge).
-        TestContext.Bridge = _p.Bridge;
-        TestContext.ApiKey = _p.Api;
-        if (_p.Modes.Contains("opencode", StringComparer.OrdinalIgnoreCase)
-            && !_p.Modes.Contains("bridge", StringComparer.OrdinalIgnoreCase))
-            TestContext.Mode = "opencode";
+        // default :4124 e qualquer mecanismo in-process miraria a porta errada.
+        SyncBridgeContext(_p);
 
         driver.Publish(new JsonObject
         {
@@ -975,28 +1021,13 @@ internal sealed class WarTemplate : CircuitTemplate
         _pfFail.Clear();
         driver.Log("=== preflight ===");
 
-        // REGRA (AGENTS.md): toda bateria E2E comeca com o restart da bridge alvo —
-        // ali o binario em uso e' trocado e o pool HTTP dos dois lados e' renovado.
-        // O driver so' reiniciava o grafana; a bridge dependia do operador, com risco
-        // de avaliar contra binario velho. Roda DEPOIS do build/deploy (para o binario
-        // novo entrar em uso) e ANTES das checagens de status (para o preflight medir a
-        // bridge recem-reiniciada). Falha vira check do preflight (veredito BLOCKED
-        // com evidencia), nunca excecao crua.
-        try
-        {
-            TestContext.RestartBridge();
-            driver.Log($"[restart] bridge alvo reiniciada antes do preflight: {_p.Bridge}");
-        }
-        catch (Exception ex)
-        {
-            Pf(driver, "bridge_restart", false, new JsonObject
-            {
-                ["bridge"] = _p.Bridge,
-                ["erro"] = ex.Message,
-                ["fix"] = "confira a unit da porta alvo (4124 bridge-gpu / 4125 bridge-gpu2 / 4126 bridge-cpu-forced) e o sudo -n"
-            });
-            driver.Log($"[restart] FALHOU: {ex.Message}");
-        }
+        // O restart da bridge alvo NAO roda aqui. O preflight e' POR NIVEL e restart
+        // de processo zera os contadores de /api/metrics, a sonda e os arquivos
+        // contados (sao por vida do processo) — reiniciar a cada nivel picava o
+        // painel. Ele acontece UMA vez por bateria, em Run()/RunAll(), junto do
+        // diag/reset (mesma granularidade). Medido no L4 de 2026-10-31:
+        // `uptime_seconds` voltava a zero no inicio do L2 e a leitura por nivel
+        // recomecava do zero.
 
         int upPort = PortOf(_p.Upstream, 4100);
         var health = HttpGet($"http://127.0.0.1:{upPort}/health", null);
