@@ -49,13 +49,13 @@ public abstract class ToolsAntiRepeat
     /// (trocar de abordagem ou parar), nunca o passo a passo.
     /// </remarks>
     public const string NudgeNotice =
-        "\n\n[BRIDGE-BREAKER] {N} falhas sobre o mesmo alvo nesta rodada. Repetir a mesma chamada nao resolve: " +
+        "\n\n" + BridgeNotice.BreakerMarker + " {N} falhas sobre o mesmo alvo nesta rodada. Repetir a mesma chamada nao resolve: " +
         "troque de abordagem (outro caminho, outra forma de escrever, outra ferramenta) ou, se nao avancar, " +
         "entregue o que ja funciona e relate o erro exato e o que ja tentou.";
 
     /// <summary>Aviso devolvido no curto-circuito (modo Trip).</summary>
     public const string TripNotice =
-        "[BRIDGE-BREAKER] Turno encerrado apos {N} falhas sobre o mesmo alvo (Nao houve chamada ao modelo). " +
+        BridgeNotice.BreakerMarker + " Turno encerrado apos {N} falhas sobre o mesmo alvo (Nao houve chamada ao modelo). " +
         "Nao adianta repetir: mude de abordagem ou relate o erro exato e o que ja tentou.";
 
     /// <summary>

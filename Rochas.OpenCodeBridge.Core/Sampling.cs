@@ -20,4 +20,19 @@ public static class Sampling
         if (hasProfile && !double.IsNaN(profileTemp)) return (profileTemp, "profile");
         return (globalTemp, "global");
     }
+
+    /// <summary>
+    /// Temperatura de um turno de RETRY com reconsideração: nunca abaixo da
+    /// temperatura do role de desvio (<c>plan</c>), nunca abaixo da atual. Não é
+    /// literal — a referência vem de <see cref="RoleProfiles.DetourTemperature"/>,
+    /// então o operador ajusta o valor no perfil, num lugar só.
+    /// </summary>
+    /// <param name="current">Temperatura efetiva do turno que falhou.</param>
+    /// <param name="profiles">Tabela de roles em vigor (null = default do Core).</param>
+    /// <returns>Temperatura do retry.</returns>
+    public static double ForRetry(double current, IReadOnlyDictionary<string, RoleProfile>? profiles = null)
+    {
+        double detour = RoleProfiles.DetourTemperature(profiles);
+        return current > detour ? current : detour;
+    }
 }

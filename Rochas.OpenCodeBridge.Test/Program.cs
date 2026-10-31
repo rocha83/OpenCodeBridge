@@ -216,6 +216,11 @@ internal static class Program
         TestContext.Run("U-cs-repair-missing-brace", UnitToolBreakerTests.CsRepairMissingBrace);
         TestContext.Run("U-cs-repair-applies-brace", UnitToolBreakerTests.CsRepairAppliesMissingBrace);
         TestContext.Run("U-context-compact", UnitToolBreakerTests.ContextCompact);
+        TestContext.Run("U-tails-present-tools", UnitRetryTests.TailsOnlyPresentTools);
+        TestContext.Run("U-retry-temp-detour", UnitRetryTests.RetryTemperatureUsesDetourRole);
+        TestContext.Run("U-upstream-abort-nudge", UnitRetryTests.AbortNudgeRewritesTurn);
+        TestContext.Run("U-upstream-abort-detect", UnitRetryTests.DetectsAbortAndRetryHint);
+        TestContext.Run("U-role-permissions", UnitRetryTests.RolePermissionsInSystem);
         // U-fsmini-covers-repair-codes ARQUIVADO em 2026-10-30 junto da trilha F#:
         // o pin segue em UnitToolBreakerTests (compila), mas nao roda no placar ativo.
         TestContext.Run("U-fs-repair-ref-type", UnitToolBreakerTests.FsRepairRefType);

@@ -14,6 +14,13 @@ public static class BridgeNotice
     /// <summary>Prefixo comum: é o que identifica "isto é instrução da bridge".</summary>
     public const string Prefix = "BRIDGE (";
 
+    /// <summary>
+    /// Marcador do aviso do breaker de loop agêntico. É a segunda família de
+    /// aviso (não usa o prefixo <see cref="Prefix"/>); fica aqui para o
+    /// predicado de "turno de retry" não duplicar o literal.
+    /// </summary>
+    public const string BreakerMarker = "[BRIDGE-BREAKER]";
+
     /// <summary>Tag vazia usa o escopo genérico (nunca sai "BRIDGE ()").</summary>
     public const string DefaultScope = "tool";
 

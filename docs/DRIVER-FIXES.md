@@ -1565,3 +1565,57 @@ Regra do projeto: `MainHarness` só compõe o system; regra de ctx mora no
 ctx mas abaixo do teto não compacta; args antigos viram marcador; último
 resultado preserva `CS1513`), `U-cs-repair-applies-brace`,
 `U-cs-repair-missing-brace` → `[test] PASS=3 FAIL=0`.
+
+## 57. Tool call fora do schema derrubou a conexão: 500 opaco, sem retry e sem desvio (2026-10-30)
+
+**Sintoma.** `belts-build-bridge` (L2, Q4 base) FAIL `cause=undetermined` no azul,
+turno 4. A bridge devolveu `500 {"error":"An error occurred while sending the request."}`
+e o `PostChat` do belt não retentou (só casava `500 ... peg-gemma4`).
+
+**Causa raiz (log do llama).** `common_chat_peg_parse: unparsed peg-gemma4 output:
+<|tool_call>call:shell` → `srv stop: cancel task` → `ResponseEnded` na bridge. O
+modelo emitiu uma tool **fora do array `tools`** (o belt expunha só `write`) e sem
+args. Não é ctx (pico de `input_tokens` 9682 de 131072/slot; `truncated = 0`;
+zero 400/413) e não é compactação (`ContextGuard.Compact` só roda em
+`E2EMissionTests`, limiar 95% de 124518). É amostragem — a repro isolada passou
+(`PASS 156.9s`, 8 arquivos).
+
+**O que estava errado no mecanismo (três pontos).**
+
+1. **A dica anunciava tool ausente.** `HarnessTails.DefaultTools` era estático e
+   dizia "shell para executar" mesmo com o schema só de `write`; o `MainHarness`
+   duplicava a mesma linha. Com `tool_choice=required` o modelo copia o literal e
+   a call fora do schema é rejeitada pelo parser.
+2. **O retry não existia no ramo do aborto.** `TryStreamAbortChat`/`ToolCallRepair`
+   só atuam em resposta **recebida**; conexão encerrada caía no catch global e
+   virava 500 opaco, invisível em `/api/metrics`.
+3. **Nenhum desvio de abordagem.** Reenviar o mesmo corpo na mesma temperatura
+   (`build` 0.1) tende a reproduzir a mesma saída.
+
+**Correção (Core é a fonte única).**
+
+- `HarnessTails.ComposeTools(names)` compõe a cauda pelas tools do request; o
+  default do deployment continua o texto completo (`DefaultTools = ComposeTools(null)`).
+  A linha de ordem (`write` → `shell` para build/teste/versionamento) só entra com
+  as duas presentes; `shell` passou a citar os comandos (`dotnet build`, `npm`,
+  `python3`, `git add/commit/log`).
+- `MainHarness.PermissionsLine(role, forbidden)`: o array `tools` vai **completo**
+  (regra do ToolBlacklist: bloqueia a chamada, não esconde a tool) e o system do
+  role diz o que não pode, por **ação** (escrita/execucao). A linha duplicada de
+  tools saiu do `MainHarness`.
+- `RetryNudge` (novo): predicado de aborto, texto do nudge ("OUTRA abordagem,
+  menos passos por call, escrita mais concisa"), corpo do retry e exceção
+  `UpstreamAbortException`. `SendWithAbortRetry` faz **1 retry com nudge** nos
+  caminhos chat/responses; segunda falha vira `502 upstream_aborted` estruturado.
+- `Sampling.ForRetry` / `RoleProfiles.DetourTemperature`: o desvio usa a
+  temperatura do role **plan** (não literal) e vale **só no turno do retry**
+  (`RetryNudge.HasRetryHint` olha apenas a última mensagem — não persiste).
+- Métricas `upstream_abort` / `upstream_abort_retry` + reset.
+
+**Belt (lado teste, aceite intacto).** Array de tools completo, executa a tool que
+o modelo pediu (não só `write`), `stall` conta tool executada como progresso, e
+`PostChat` reconhece `502 upstream_aborted` além de `500 peg-gemma4`.
+
+**Prova.** `U-tails-present-tools`, `U-retry-temp-detour`, `U-upstream-abort-nudge`,
+`U-upstream-abort-detect`, `U-role-permissions` → `[test] PASS=5 FAIL=0`;
+`U-tails-path-simulation-rules` e os `U-main-harness` seguem verdes.

@@ -1,5 +1,35 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Aborto do upstream tem nudge + desvio de temperatura; cauda de tools pelo schema (2026-10-30, sessão 41)
+
+**Motivo.** `belts-build-bridge` (L2, Q4 base) FAIL `undetermined` no azul: o
+llama rejeitou `<|tool_call>call:shell` (`unparsed peg-gemma4`), cancelou a task
+e a bridge devolveu 500 opaco. O schema do belt só tinha `write`, mas a cauda
+anunciava `shell` (estática) e `tool_choice=required` obrigava uma call. Não era
+ctx (9.682 de 131072/slot, `truncated = 0`) nem compactação (limiar 95% de
+124518 e o belt não chama `Compact`). Repro isolada passou → amostragem.
+
+**Decisões.**
+- `ToolBlacklist` é a regra: **bloqueia a chamada, não esconde a tool**. Então o
+  array `tools` vai completo e o system do role enuncia a proibição por **ação**
+  (`MainHarness.PermissionsLine`). A cauda de tools, porém, é composta pelas
+  tools do request (`HarnessTails.ComposeTools`) — a dica nunca ensina tool que
+  o schema não tem. `shell` passou a citar os comandos (`dotnet build`, `npm`,
+  `python3`, `git add/commit/log`) e a ordem `write` → `shell` só aparece com as
+  duas no schema.
+- `RetryNudge` (Core): aborto de conexão → **1 retry com nudge** ("outra
+  abordagem, menos passos, escrita mais concisa") e temperatura de desvio lida
+  do role **plan** (`Sampling.ForRetry`). O desvio vale só no turno do retry
+  (predicado olha a última mensagem). Segunda falha = `502 upstream_aborted`
+  estruturado, com métrica (`upstream_abort`/`upstream_abort_retry`).
+- Belt: tools completas, executa a tool pedida, `stall` conta tool executada e
+  `PostChat` reconhece o 502. Aceite inalterado (`>=3` arquivos, `>500` chars).
+
+**Prova.** `U-tails-present-tools`, `U-retry-temp-detour`,
+`U-upstream-abort-nudge`, `U-upstream-abort-detect`, `U-role-permissions`
+→ `PASS=5 FAIL=0`; build Release 0 erros. Detalhe em `docs/DRIVER-FIXES.md` #57.
+
+
 ## Transição para Q4 UD único — GPU2/Q3/Q4-base aposentados (2026-10-30, sessão 38)
 
 **Regra nova do lab.** O **Q4 UD** (`Gemma4-E4B-UD`) passa a ser o **único

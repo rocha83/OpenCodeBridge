@@ -1897,6 +1897,30 @@ WriteJson(ctx, 200, new JsonObject
                 try { ctx.Response.Abort(); } catch { }
                 return;
             }
+            // Aborto do upstream que persistiu ao retry: 502 estruturado, nao o
+            // 500 opaco (o cliente distingue transporte de erro de modelo e pode
+            // orientar o turno seguinte).
+            if (ex is RetryNudge.UpstreamAbortException abort)
+            {
+                Log(new JsonObject
+                {
+                    ["event"] = "upstream-aborted", ["path"] = path,
+                    ["error"] = Truncate(abort.Message, 400)
+                });
+                try
+                {
+                    WriteJson(ctx, 502, new JsonObject
+                    {
+                        ["error"] = new JsonObject
+                        {
+                            ["type"] = "upstream_aborted",
+                            ["message"] = abort.Message
+                        }
+                    });
+                }
+                catch { }
+                return;
+            }
             Log(new JsonObject { ["event"] = "error", ["path"] = path, ["error"] = Truncate(msg, 800) });
             try { WriteJson(ctx, 500, new JsonObject { ["error"] = ex.Message }); } catch { }
         }
@@ -2055,7 +2079,9 @@ WriteJson(ctx, 200, new JsonObject
             if (node is not null && node["messages"] is JsonArray chatHarness
                 && BridgeLane.Value == true)
             {
-                bool applied = MainHarness.Apply(chatHarness, true, reqRole);
+                // Tools barradas ao role vao no system (o array `tools` continua
+                // completo: blacklist bloqueia a chamada, nao esconde a tool).
+                bool applied = MainHarness.Apply(chatHarness, true, reqRole, BannedFor(reqModel));
                 mhChat = applied;
                 if (applied)
                 {
@@ -2095,6 +2121,27 @@ WriteJson(ctx, 200, new JsonObject
                     });
                 }
             }
+            // Turno de RETRY (nudge de reparo/breaker no historico): sobe a
+            // temperatura para a do role de desvio (plan). Reenviar o mesmo
+            // corpo na mesma temperatura tende a repetir a mesma saida.
+            if (node is not null && node["messages"] is JsonArray retryMsgs
+                && RetryNudge.HasRetryHint(retryMsgs))
+            {
+                double curRetry = node["temperature"]?.GetValue<double>() ?? Temperature;
+                double detour = Sampling.ForRetry(curRetry, Profiles);
+                if (Math.Abs(detour - curRetry) > 0.0001)
+                {
+                    node["temperature"] = detour;
+                    outBody = node.ToJsonString(SerOpts);
+                    if (Diagnostic) Log(new JsonObject
+                    {
+                        ["event"] = "temp-retry",
+                        ["from"] = curRetry,
+                        ["to"] = detour,
+                        ["model"] = node["model"]?.GetValue<string>() ?? Model
+                    });
+                }
+            }
             // Formula por caminho (--tail-scope): "all" injeta tambem no opencode.
             // Sem switch mestre: cada cauda se aplica por estar configurada
             // (appsettings ou --harness-behavior-tail / --harness-tools-tail).
@@ -2107,7 +2154,11 @@ WriteJson(ctx, 200, new JsonObject
                 {
                     if (m is JsonObject mo && mo["role"]?.GetValue<string>() is "system" or "developer"
                         && mo["content"] is JsonValue mcv && mcv.TryGetValue<string>(out string? mtext))
-                    { mo["content"] = WithFormula(mtext, fmodel, fHasTools); break; }
+                    {
+                        mo["content"] = WithFormula(mtext, fmodel, fHasTools,
+                            ToolNamesOf(node["tools"] as JsonArray));
+                        break;
+                    }
                 }
                 outBody = node.ToJsonString(SerOpts);
                 string sysSentChat = fm.OfType<JsonObject>()
@@ -2243,7 +2294,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             ctx.Response.OutputStream.Flush();
             headersSent = true;
         }
-        using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHeadersRead);
+        using var upstreamResponse = SendWithAbortRetry(ctx, forward, outBody,
+            HttpCompletionOption.ResponseHeadersRead);
         if (coerceLine && upstreamResponse.IsSuccessStatusCode)
         {
             CoercedChatResponse(ctx, upstreamResponse, wantStream, headersSent, AnnouncedTools(outBody), startedAt);
@@ -2569,7 +2621,19 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // Main harness: BASE do caminho gerido (cliente != CLI do opencode).
         // O discriminador e o CLIENTE (igual as tails), nunca o sufixo do modelo:
         // o WAR usa <modelo>-build e ficaria sem base.
-        bool mainHarness = MainHarness.Apply(messages, BridgeLane.Value == true, RoleOfModel(requestedModel));
+        bool mainHarness = MainHarness.Apply(messages, BridgeLane.Value == true, RoleOfModel(requestedModel),
+            BannedFor(requestedModel));
+        // Turno de RETRY (nudge de reparo/breaker no historico): temperatura de
+        // desvio lida do role plan, nao um literal.
+        if (RetryNudge.HasRetryHint(messages))
+        {
+            double detour = Sampling.ForRetry(temperature, Profiles);
+            if (Math.Abs(detour - temperature) > 0.0001)
+            {
+                temperature = detour;
+                tempSource = "retry";
+            }
+        }
         if (Diagnostic && mainHarness)
             Log(new JsonObject
             {
@@ -2592,12 +2656,18 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
             if (messages.Count > 0 && messages[0] is JsonObject sys0
                 && sys0["role"]?.GetValue<string>() == "system"
                 && sys0["content"] is JsonValue sysv && sysv.TryGetValue<string>(out string? syst))
-                sys0["content"] = WithFormula(syst, requestedModel, reqHasTools);
+                sys0["content"] = WithFormula(syst, requestedModel, reqHasTools,
+                    ToolNamesOf(req["tools"] as JsonArray));
             else
                 // Cliente sem system/instructions (WAR/SDK): a formula do harness
                 // precisa existir como system; antes a tail era descartada e o
                 // modelo rodava sem DATA/GIT/EDIT/GLOB.
-                messages.Insert(0, new JsonObject { ["role"] = "system", ["content"] = WithFormula("", requestedModel, reqHasTools) });
+                messages.Insert(0, new JsonObject
+                {
+                    ["role"] = "system",
+                    ["content"] = WithFormula("", requestedModel, reqHasTools,
+                        ToolNamesOf(req["tools"] as JsonArray))
+                });
         }
         string sysSentR = messages.OfType<JsonObject>()
             .FirstOrDefault(x => x["role"]?.GetValue<string>() is "system" or "developer")
@@ -2858,7 +2928,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             Content = new StringContent(chat.ToJsonString(SerOpts), Encoding.UTF8, "application/json")
         };
         WithAuth(chatRequest, ctx);
-        using var upstreamResponse = Http.Send(chatRequest);
+        using var upstreamResponse = SendWithAbortRetry(ctx, chatRequest, chat.ToJsonString(SerOpts));
         string responseBody = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         if (!upstreamResponse.IsSuccessStatusCode)
         {
@@ -2968,7 +3038,8 @@ string outBody = body;
             Content = new StringContent(outBody, Encoding.UTF8, "application/json")
         };
         WithAuth(forward, ctx);
-using var upstreamResponse = Http.Send(forward, HttpCompletionOption.ResponseHeadersRead);
+using var upstreamResponse = SendWithAbortRetry(ctx, forward, outBody,
+            HttpCompletionOption.ResponseHeadersRead);
         double elapsed = (DateTime.UtcNow - startedAt).TotalSeconds;
         string? errBody = null;
         if (!upstreamResponse.IsSuccessStatusCode)
@@ -3111,12 +3182,28 @@ var shape = new StringBuilder();
     /// <param name="sys">System prompt original.</param>
     /// <param name="modelId">Model id do pedido (define o caminho).</param>
     /// <param name="hasTools">Request traz array `tools`? (sem tools: nada de cauda de tools)</param>
+    /// <param name="toolNames">Nomes das tools do request (null = todas as do catalogo)</param>
     /// <returns>System prompt composto.</returns>
-    internal static string WithFormula(string sys, string? modelId, bool hasTools = true)
+    internal static string WithFormula(string sys, string? modelId, bool hasTools = true,
+        IReadOnlyCollection<string>? toolNames = null)
     {
         // Fonte unica das caudas no Core; o host so decide ligar/desligar e
         // passa as sobrescritas de CLI/appsettings.
-        return HarnessTails.Compose(sys, TailsOn(modelId), HarnessBehaviorTail, HarnessToolsTail, hasTools);
+        return HarnessTails.Compose(sys, TailsOn(modelId), HarnessBehaviorTail, HarnessToolsTail,
+            hasTools, toolNames);
+    }
+
+    /// <summary>
+    /// Nomes das tools do array `tools` do request (null quando o request nao
+    /// traz o array). A cauda de tools e' composta por esta lista.
+    /// </summary>
+    static IReadOnlyCollection<string>? ToolNamesOf(JsonArray? tools)
+    {
+        if (tools is null) return null;
+        var names = new List<string>();
+        foreach (var n in ToolNames(tools))
+            if (n?.GetValue<string>() is string s && s.Length > 0) names.Add(s);
+        return names;
     }
 
     /// <summary>Pedido opencode (perfil com sufixo)? Se sim, tubo puro, sem formula.</summary>
@@ -3880,6 +3967,58 @@ var shape = new StringBuilder();
         catch { return null; }
     }
 
+    /// <summary>
+    /// Envia ao upstream e, em ABORTO de conexão (o llama cancela a task quando
+    /// o parser rejeita a saída), repete UMA vez com nudge de outra abordagem e
+    /// temperatura de desvio. Reenviar o mesmo corpo na mesma temperatura tende
+    /// a repetir a mesma saída; por isso o retry muda o input e o sampling.
+    /// Segunda falha = <see cref="RetryNudge.UpstreamAbortException"/> (o catch
+    /// global devolve 502 estruturado em vez do 500 opaco).
+    /// </summary>
+    /// <param name="ctx">Contexto HTTP (auth e path para o log).</param>
+    /// <param name="forward">Request já montado para o upstream.</param>
+    /// <param name="body">Corpo JSON enviado (base do retry com nudge).</param>
+    /// <param name="option">Modo de leitura da resposta.</param>
+    /// <returns>Resposta do upstream (primeira ou do retry).</returns>
+    static HttpResponseMessage SendWithAbortRetry(HttpListenerContext ctx, HttpRequestMessage forward,
+        string body, HttpCompletionOption option = HttpCompletionOption.ResponseContentRead)
+    {
+        try
+        {
+            return Http.Send(forward, option);
+        }
+        catch (Exception ex) when (RetryNudge.IsUpstreamAbort(ex))
+        {
+            double current = Temperature;
+            try { current = JsonNode.Parse(body)?["temperature"]?.GetValue<double>() ?? Temperature; } catch { }
+            string? retryBody = RetryNudge.WithAbortNudge(body, current, Profiles);
+            Metrics.UpstreamAbort(true);
+            Log(new JsonObject
+            {
+                ["event"] = "upstream-abort-retry",
+                ["path"] = ctx.Request.Url?.AbsolutePath ?? "",
+                ["error"] = Truncate(ex.Message, 300),
+                ["temperature"] = Sampling.ForRetry(current, Profiles),
+                ["nudged"] = retryBody is not null
+            });
+            if (retryBody is null) throw new RetryNudge.UpstreamAbortException(ex.Message, ex);
+            var retry = new HttpRequestMessage(forward.Method, forward.RequestUri)
+            {
+                Content = new StringContent(retryBody, Encoding.UTF8, "application/json")
+            };
+            WithAuth(retry, ctx);
+            try
+            {
+                return Http.Send(retry, option);
+            }
+            catch (Exception ex2) when (RetryNudge.IsUpstreamAbort(ex2))
+            {
+                Metrics.UpstreamAbort(false);
+                throw new RetryNudge.UpstreamAbortException(ex2.Message + " (apos 1 retry com nudge)", ex2);
+            }
+        }
+    }
+
     /// <summary>Funde system/developer do input num unico system inicial (o template exige system primeiro).</summary>
     /// <param name="req">Request Responses (mutado no lugar).</param>
     /// <returns>True se reordenou.</returns>
@@ -3941,7 +4080,7 @@ static bool NormalizeSystemFirst(JsonObject req)
         };
         WithAuth(chatRequest, ctx);
 
-        using var upstreamResponse = Http.Send(chatRequest);
+        using var upstreamResponse = SendWithAbortRetry(ctx, chatRequest, chat.ToJsonString(SerOpts));
         string responseBody = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         if (!upstreamResponse.IsSuccessStatusCode)
         {
@@ -4017,7 +4156,8 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
         // Headers do upstream ANTES de abrir o SSE: se der erro aqui,
         // devolvemos JSON de erro limpo (nada foi enviado ao cliente ainda).
-        using var upstreamResponse = Http.Send(chatRequest, HttpCompletionOption.ResponseHeadersRead);
+        using var upstreamResponse = SendWithAbortRetry(ctx, chatRequest, chat.ToJsonString(SerOpts),
+            HttpCompletionOption.ResponseHeadersRead);
         if (!upstreamResponse.IsSuccessStatusCode)
         {
             string errorBody = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();

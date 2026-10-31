@@ -29,7 +29,7 @@ AMBIENTE
 
 FERRAMENTAS
 - O schema JSON de cada tool é a fonte de nomes, campos e contrato de uso; não invente.
-- Prefira a tool dedicada: read/write/edit para arquivo, glob/grep para descobrir, webfetch/websearch para rede, shell para executar.
+- O uso de cada tool (para que serve e em que ordem) vem da cauda de tools: não invente tool fora do array `tools` do request.
 - Um passo = uma ação: se falta tool, emita a call; não narre a intenção nem simule execução.
 - Argumentos JSON válidos e completos; não trunque a call.
 - Divida os artefatos por escopo (database, backend, frontend, etc.): um arquivo por responsabilidade; quando o pedido mandar acrescentar ao MESMO arquivo, faça via edit (append do trecho), sem criar arquivo novo nem reescrever o inteiro.
@@ -80,8 +80,10 @@ SEGURANÇA E FORMATO
     /// <param name="messages">Mensagens ja convertidas (chat).</param>
     /// <param name="enabled">Flag ja filtrada por CLIENTE (BridgeLane).</param>
     /// <param name="role">Role do subagente (ex.: Scripter); null = cliente generico.</param>
+    /// <param name="forbidden">Tools barradas ao role (blacklist do host); null/vazio = role sem bloqueio.</param>
     /// <returns>true se substituiu o system.</returns>
-    public static bool Apply(System.Text.Json.Nodes.JsonArray messages, bool enabled, string? role = null)
+    public static bool Apply(System.Text.Json.Nodes.JsonArray messages, bool enabled, string? role = null,
+        IReadOnlyCollection<string>? forbidden = null)
     {
         if (!enabled) return false;
         string? clientSystem = null;
@@ -91,7 +93,7 @@ SEGURANÇA E FORMATO
         // (sem curto-circuito por "opencode master": em bridge lane o harness é
         // SEMPRE on; o discriminador é o modo/cliente, não o conteúdo do system)
 
-        string text = BuildSystem(clientSystem, role);
+        string text = BuildSystem(clientSystem, role, forbidden);
         if (messages.Count > 0 && messages[0] is System.Text.Json.Nodes.JsonObject sys
             && sys["role"]?.GetValue<string>() == "system")
             sys["content"] = text;
@@ -103,10 +105,14 @@ SEGURANÇA E FORMATO
     /// <summary>Monta o system do harness preservando o que e dinamico no cliente.</summary>
     /// <param name="clientSystem">System original do cliente (pode ser null).</param>
     /// <param name="role">Role do subagente; null = cliente generico.</param>
+    /// <param name="forbidden">Tools barradas ao role (blacklist do host).</param>
     /// <returns>System efetivo.</returns>
-    public static string BuildSystem(string? clientSystem, string? role = null)
+    public static string BuildSystem(string? clientSystem, string? role = null,
+        IReadOnlyCollection<string>? forbidden = null)
     {
         var sb = new System.Text.StringBuilder(Text);
+        string perms = PermissionsLine(role, forbidden);
+        if (perms.Length > 0) sb.Append("\n\n").Append(perms);
         string? env = ExtractBlock(clientSystem, "<env>", "</env>");
         if (env is not null) sb.Append("\n\nAMBIENTE REAL (cliente)\n").Append(env);
         string? skills = ExtractBlock(clientSystem, "<available_skills>", "</available_skills>");
@@ -123,6 +129,49 @@ SEGURANÇA E FORMATO
             sb.Append("\n\n").Append(label).Append("\n").Append(trimmed);
         }
         return sb.ToString();
+    }
+
+    /// <summary>Rótulo de AÇÃO por tool (o enunciado do role fala em ação, não em nome solto).</summary>
+    static readonly (string Tool, string Action)[] ActionLabels =
+    {
+        ("write", "escrita"),
+        ("edit", "escrita"),
+        ("shell", "execucao"),
+        ("execute", "execucao"),
+        ("read", "leitura"),
+        ("glob", "descoberta"),
+        ("grep", "descoberta"),
+        ("git", "versionamento"),
+    };
+
+    /// <summary>
+    /// Linha de PERMISSÕES do role. O array `tools` vai COMPLETO (a tool barrada
+    /// continua anunciada — regra do ToolBlacklist: bloqueia a chamada, não
+    /// esconde a tool); quem diz o que não pode é o system do role, aqui.
+    /// </summary>
+    /// <param name="role">Role em vigor ("Build", "Plan"...). Vazio = cliente genérico.</param>
+    /// <param name="forbidden">Tools barradas ao role.</param>
+    /// <returns>Linha pronta (vazia quando não há role identificado).</returns>
+    public static string PermissionsLine(string? role, IReadOnlyCollection<string>? forbidden)
+    {
+        string r = (role ?? "").Trim();
+        if (r.Length == 0) return "";
+        var blocked = (forbidden ?? Array.Empty<string>())
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (blocked.Length == 0)
+            return "PERMISSOES DO ROLE (" + r + "): todas as acoes do schema `tools`; nenhuma tool bloqueada para este role.";
+
+        var actions = new List<string>();
+        foreach (var (tool, action) in ActionLabels)
+            if (blocked.Contains(tool, StringComparer.OrdinalIgnoreCase) && !actions.Contains(action))
+                actions.Add(action);
+        string acts = actions.Count > 0 ? " (" + string.Join(", ", actions) + ")" : "";
+        return "PERMISSOES DO ROLE (" + r + "): NAO pode chamar " + string.Join(", ", blocked) + acts +
+               " — a chamada e' bloqueada na emissao. Explique ao usuario que a acao cabe a outro role; nao contorne por shell.";
     }
 
     static string? ExtractBlock(string? text, string open, string close)

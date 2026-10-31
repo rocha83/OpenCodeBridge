@@ -21,33 +21,43 @@ internal static class E2EBeltsBuildTests
 
     static void Log(string msg) { Console.WriteLine(msg); Console.Out.Flush(); }
 
-    // 500 "peg-gemma4" e falha de formato do upstream, nao de assertiva. O
-    // retry e limitado a DUAS tentativas: a segunda leva um nudge curto com o
-    // erro, porque reenviar o mesmo historico as cegas pode repetir o defeito.
-    // Se falhar de novo, a excecao sobe e o step fica FAIL.
+    // Falha de formato/transporte do upstream nao e falha de assertiva. O retry
+    // e limitado a DUAS tentativas: a segunda leva um nudge curto (texto unico do
+    // Core) porque reenviar o mesmo historico as cegas repete o defeito. Cobre
+    // 500 peg-gemma4 e o 502 upstream_aborted (conexao encerrada no meio).
     static async Task<JsonObject> PostChat(string key, int turn, JsonObject body, string toolName)
     {
         for (int attempt = 0; attempt < 2; attempt++)
         {
             try { return await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", body); }
-            catch (Exception ex) when (attempt == 0
-                && ex.Message.Contains("-> 500", StringComparison.Ordinal)
-                && ex.Message.Contains("peg-gemma4", StringComparison.OrdinalIgnoreCase))
+            catch (Exception ex) when (attempt == 0 && IsUpstreamFormatFailure(ex))
             {
-                Log($"  [belt-build:{key}] turno {turn}: 500 peg-gemma4 — nudge 1/1 (tool={toolName})");
+                Log($"  [belt-build:{key}] turno {turn}: {FirstLine(ex.Message)} — nudge 1/1 (tool={toolName})");
                 var msgs = body["messages"]?.AsArray()
-                    ?? throw new InvalidOperationException("historico sem messages no nudge peg-gemma4");
+                    ?? throw new InvalidOperationException("historico sem messages no nudge de formato");
                 msgs.Add(new JsonObject
                 {
                     ["role"] = "user",
-                    ["content"] = $"A ultima tentativa falhou no parser peg-gemma4: a tool call veio fora do formato. "
-                        + $"Reemita UMA tool call {toolName} com JSON completo e valido. Nao escreva texto fora do JSON."
+                    ["content"] = global::Rochas.OpenCodeBridge.Core.RetryNudge.Abort
+                        + $" Reemita UMA tool call {toolName} com JSON completo e valido."
                 });
                 await Task.Delay(1000);
             }
         }
-        throw new InvalidOperationException($"POST chat falhou apos nudge peg-gemma4 (turno={turn}, tool={toolName})");
+        throw new InvalidOperationException($"POST chat falhou apos nudge de formato (turno={turn}, tool={toolName})");
     }
+
+    /// <summary>500 de parser (peg-gemma4) ou 502 de aborto do upstream.</summary>
+    static bool IsUpstreamFormatFailure(Exception ex)
+    {
+        string m = ex.Message;
+        return (m.Contains("-> 500", StringComparison.Ordinal)
+                && m.Contains("peg-gemma4", StringComparison.OrdinalIgnoreCase))
+            || m.Contains("-> 502", StringComparison.Ordinal)
+            || m.Contains("upstream_aborted", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static string FirstLine(string text) => text.Split('\n')[0];
     static void SaveResult(string key, string status, string detail)
     {
         try
@@ -65,7 +75,10 @@ internal static class E2EBeltsBuildTests
         if (!model.Contains("build")) model = model.Replace("-orch", "-build").Replace("-plan", "-build");
         if (!model.Contains("build")) model += "-build";
         Log($"[belts-build:direct] modelo {model} (bridge {TestContext.Bridge})");
-        var tools = TestContext.Catalog("write");
+        // Array de tools COMPLETO: a regra do ToolBlacklist e' "bloqueia a chamada,
+        // nao esconde a tool" — o schema nao e' o lugar de restringir. O role build
+        // escreve/edita/le, compila e valida (shell) e versiona (git).
+        var tools = TestContext.Catalog();
         int pass = 0, fail = 0;
         var keysEnv = string.IsNullOrWhiteSpace(TestContext.BeltsFilter) ? Environment.GetEnvironmentVariable("BELTS_KEYS") : TestContext.BeltsFilter;
         var beltsToRun = string.IsNullOrWhiteSpace(keysEnv)
@@ -139,20 +152,25 @@ internal static class E2EBeltsBuildTests
                         continue;
                     }
                     nudges = 0;
+                    bool progressed = false;
+                    int wroteNow = 0;
                     var echo = new JsonArray();
                     foreach (var (c, _) in parsed) echo.Add(new JsonObject { ["id"]=c["id"]?.GetValue<string>()??"", ["type"]="function", ["function"]=new JsonObject { ["name"]=c["function"]?["name"]?.GetValue<string>()??"", ["arguments"]=c["function"]?["arguments"]?.GetValue<string>()??"{}" } });
                     history.Add(new JsonObject { ["role"]="assistant", ["content"]=content, ["tool_calls"]=echo });
                     foreach (var (c, a) in parsed)
                     {
+                        string tname = c["function"]?["name"]?.GetValue<string>() ?? "write";
                         string ctt = a["content"]?.GetValue<string>() ?? "";
-                        var exec = await TestContext.ExecuteTool("write", a, ws, model);
-                        bool wrote = exec["ok"]?.GetValue<bool>() == true;
-                        string outText = wrote
+                        var exec = await TestContext.ExecuteTool(tname, a, ws, model);
+                        bool execOk = exec["ok"]?.GetValue<bool>() == true;
+                        string outText = execOk
                             ? exec["output"]?.GetValue<string>() ?? "ok"
                             : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
-                        if (wrote)
+                        if (execOk) progressed = true;
+                        if (execOk && tname == "write")
                         {
                             filesCreated++;
+                            wroteNow++;
                             // Metrica de substancia: o artefato real e o conteudo
                             // gravado em disco, nao o texto do assistant (que pode
                             // ser so um resumo curto).
@@ -160,10 +178,12 @@ internal static class E2EBeltsBuildTests
                         }
                         history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c["id"]?.GetValue<string>()??"", ["content"]=outText });
                     }
-                    Log($"  [belt-build:{key}] turno {turn}: {parsed.Count} write(s), total arquivos={filesCreated}");
-                    if (filesCreated == lastFiles) stall++; else stall = 0;
+                    Log($"  [belt-build:{key}] turno {turn}: {parsed.Count} call(s) [{wroteNow} write], total arquivos={filesCreated}");
+                    // Progresso = arquivo novo OU tool executada com sucesso (build,
+                    // leitura, git): turno de validacao nao e' travamento.
+                    if (filesCreated == lastFiles && !progressed) stall++; else stall = 0;
                     lastFiles = filesCreated;
-                    if (stall >= 3) { Log($"  [belt-build:{key}] stall detectado (3 turnos sem arquivo), encerrando"); break; }
+                    if (stall >= 4) { Log($"  [belt-build:{key}] stall detectado (4 turnos sem progresso), encerrando"); break; }
                 }
                 // Fase de revisao: E4B le os arquivos criados e revisa.
                 if (filesCreated >= 3)

@@ -15,9 +15,17 @@ public sealed record RoleProfile(double Temperature, string Thinking);
 /// </summary>
 public static class RoleProfiles
 {
-    /// <summary>Tabela default: plan 0.3/events, build 0.1/off, orch 0.3/events, moe 0.5/events, scripter 0.1/off, exec 0.1/off.</summary>
-    /// <returns>Cópia mutável da tabela.</returns>
-    public static Dictionary<string, RoleProfile> DefaultCopy() => new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>Role de referência do DESVIO estratégico (retry/reconsideração).</summary>
+    /// <remarks>
+    /// Um turno de retry precisa de temperatura de desvio: reaproveita a do
+    /// role de exploração (<c>plan</c>), que já é a mais aberta do fluxo de
+    /// execução. Não existe literal espalhado — quem sobe a temperatura em
+    /// retry consulta aqui (ver <see cref="Sampling.ForRetry"/>).
+    /// </remarks>
+    public const string DetourRole = "plan";
+
+    /// <summary>Tabela default imutável (fonte única dos valores por role).</summary>
+    static readonly Dictionary<string, RoleProfile> Defaults = new(StringComparer.OrdinalIgnoreCase)
     {
         ["plan"] = new(0.3, "events"),
         ["build"] = new(0.1, "off"),
@@ -26,6 +34,23 @@ public static class RoleProfiles
         ["scripter"] = new(0.1, "off"),
         ["exec"] = new(0.1, "off"),
     };
+
+    /// <summary>Tabela default: plan 0.3/events, build 0.1/off, orch 0.3/events, moe 0.5/events, scripter 0.1/off, exec 0.1/off.</summary>
+    /// <returns>Cópia mutável da tabela.</returns>
+    public static Dictionary<string, RoleProfile> DefaultCopy() => new(Defaults, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Temperatura de desvio (retry com reconsideração), lida do role
+    /// <see cref="DetourRole"/> na tabela em vigor; sem tabela, do default.
+    /// </summary>
+    /// <param name="profiles">Tabela em vigor (null = default do Core).</param>
+    /// <returns>Temperatura de referência para o retry.</returns>
+    public static double DetourTemperature(IReadOnlyDictionary<string, RoleProfile>? profiles = null)
+    {
+        if (profiles is not null && profiles.TryGetValue(DetourRole, out RoleProfile? p) && p is not null)
+            return p.Temperature;
+        return Defaults[DetourRole].Temperature;
+    }
 
     /// <summary>Resolve o perfil pelo sufixo do model id ("...-build" =&gt; build).</summary>
     /// <param name="modelId">Model id pedido pelo cliente.</param>
