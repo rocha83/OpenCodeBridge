@@ -872,29 +872,36 @@ internal static class UnitToolBreakerTests
     }
 
     /// <summary>
-    /// Salvage determinístico: a dica de CS1513 só ENSINA e o modelo fraco ignora
-    /// (2026-10-30: Q4 Base gastou 26 turnos e deixou 22 abre-chave / 21 fecha-chave).
-    /// <see cref="global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair"/>
-    /// fecha o bloco mecânico no fim e devolve o fonte balanceado; sem CS1513 ou com
-    /// fonte já balanceado não inventa correção.
+    /// Salvage determinístico do CS1513 = FALLBACK, só depois de 2 entregas da MESMA
+    /// dica (o modelo fraco ignora a instrução: 2026-10-30, Q4 Base gastou 26 turnos
+    /// com 22 abre-chave / 21 fecha-chave). <see cref="global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair"/>
+    /// fecha o bloco mecânico e devolve o fonte balanceado; antes do threshold não
+    /// entra (a instrução ainda tem as 2 chances dela) e sem CS1513 ou com fonte já
+    /// balanceado não inventa correção.
     /// </summary>
     public static Task CsRepairAppliesMissingBrace()
     {
         string src = "namespace mcs\n{\n    public class Program\n    {\n        static void Main()\n        {\n"
                    + "            var x = 1;\n        }\n    }\n"; // falta o `}` do namespace
         string err = "ERRO: exit 1: /tmp/mcs/Program.cs(10,2): error CS1513: } expected [/tmp/mcs/mcs.csproj]";
-        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, err, out string fixedSrc),
-            "TryRepair aplica o reparo de CS1513");
+        // FALLBACK: antes de 2 entregas da MESMA dica o reparo fica de fora —
+        // empurrar a correção cedo tira do modelo a chance de aprender.
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, err, out _, 0),
+            "1a entrega da dica: reparo NAO entra (instrucao ainda resolve)");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, err, out _, 1),
+            "2a entrega da dica: reparo ainda NAO entra (2 chances p/ a instrucao)");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, err, out string fixedSrc, 2),
+            "3a entrega da MESMA dica: o fallback deterministico entra");
         int open = 0, close = 0;
         foreach (char ch in fixedSrc) { if (ch == '{') open++; else if (ch == '}') close++; }
         TestContext.Check(open == close, $"fonte reparado fica balanceado ({open} abre / {close} fecha)");
         TestContext.Check(fixedSrc.EndsWith("}\n", StringComparison.Ordinal),
             "o reparo acrescenta a(s) linha(s) só com `}` no fim do arquivo");
         TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
-                "class A { void M() { } }\n", err, out _),
+                "class A { void M() { } }\n", err, out _, 2),
             "fonte ja balanceado nao gera reparo (sem inventar correcao)");
         TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
-                src, "ERRO: exit 1: boom", out _),
+                src, "ERRO: exit 1: boom", out _, 2),
             "erro sem codigo CS nao dispara reparo determinístico");
         return Task.CompletedTask;
     }
@@ -936,10 +943,11 @@ internal static class UnitToolBreakerTests
     }
 
     /// <summary>
-    /// Salvage determinístico do CS1003: remove o fechamento excedente da linha do
-    /// erro quando ela é a ÚNICA culpada (desbalanceamento local == global) e o
-    /// excesso está no fim da linha. Fora dessa medida, não mexe — parêntese legítimo
-    /// de bloco multilinha não pode ser comido.
+    /// Salvage determinístico do CS1003 = FALLBACK (mesmo threshold do CS1513): só
+    /// depois de 2 entregas da MESMA dica. Remove o fechamento excedente da linha do
+    /// erro quando ela é a ÚNICA culpada (local == global) e o excesso está no fim da
+    /// linha. Fora dessa medida, não mexe — parêntese legítimo de bloco multilinha
+    /// não pode ser comido.
     /// </summary>
     public static Task CsRepairAppliesExtraClose()
     {
@@ -951,8 +959,10 @@ internal static class UnitToolBreakerTests
                    + "    }\n"
                    + "} }\n";
         string err = "ERRO: exit 1: /tmp/mcs/Program.cs(4,44): error CS1003: Syntax error, ']' expected [/tmp/mcs/mcs.csproj]";
-        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, err, out string fixedSrc),
-            "TryRepair aplica o reparo de CS1003");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, err, out _, 1),
+            "antes de 2 entregas da MESMA dica o reparo de CS1003 nao entra (instrucao resolve)");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, err, out string fixedSrc, 2),
+            "3a entrega da MESMA dica: o fallback de CS1003 entra");
         TestContext.Check(fixedSrc.Contains("if (flag[i] > 0 && flag[i + 1] > 0)", StringComparison.Ordinal),
             "o reparo remove o `)` excedente e mantem a condicao valida");
         int open = 0, close = 0;
@@ -960,12 +970,12 @@ internal static class UnitToolBreakerTests
         TestContext.Check(open == close, $"fonte reparado fica balanceado em parenteses ({open} abre / {close} fecha)");
         // Fonte já balanceado não gera reparo.
         TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
-                "class A { void M(int[] f) { if (f[0] > 0) f[0] = 0; } }\n", err, out _),
+                "class A { void M(int[] f) { if (f[0] > 0) f[0] = 0; } }\n", err, out _, 2),
             "fonte ja balanceado nao gera reparo de CS1003");
         // Excesso que NÃO é da linha (global != local) não é tocado.
         TestContext.Check(!global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
                 "class A {\n  void M(int[] f) {\n    int x = (1 + 2;\n    if (f[0] > 0)) x++;\n  }\n}\n",
-                "ERRO: exit 1: /tmp/mcs/Program.cs(4,20): error CS1003: Syntax error, ']' expected [/tmp/mcs/mcs.csproj]", out _),
+                "ERRO: exit 1: /tmp/mcs/Program.cs(4,20): error CS1003: Syntax error, ']' expected [/tmp/mcs/mcs.csproj]", out _, 2),
             "desbalanceamento global diferente do local nao e' reparado (sem comer parentese legitimo)");
         return Task.CompletedTask;
     }

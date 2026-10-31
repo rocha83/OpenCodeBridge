@@ -1697,3 +1697,43 @@ tokens: o único passe não reduzia o suficiente e `Compact` retornava `false`.
 de metade, o 2º passe corta o bloco do meio e o turno em curso fica intacto),
 `U-context-compact` (95% de 131072/1 = 524288/4, marcador `omitido`, `CS1513`
 preservado) → `[test] PASS=20 FAIL=0` na rodada de units.
+
+## 60. Instrução antes de reparo: tabela de erros C# na cauda; salvage vira fallback após 2 tentativas (2026-10-31)
+
+**Sintoma.** `e-algo-cs-hanoi-bridge` FAIL em **386s** no L4 de 2026-10-31:
+o laço de `edit ok:false`/`shell ok:false` terminou em
+`Program.cs(92,44): error CS1003: Syntax error, ']' expected` — um `)` a mais
+no fim de um `if (isPrime[i] && isPrime[i + 2]))`. O modelo fraco (4B) não
+tinha NENHUMA indução de sintaxe C# antes do erro: a dica in-flow só nascia
+depois que o build falhava, e o salvage determinístico empurrava a correção
+depois. A trilha F# já tinha a `TABELA DE ERROS` na cauda (FsMini, arquivada
+em `Archived/FsMiniTail.cs`); a C#, válida desde 2026-10-30, não tinha nada.
+
+**Causa.** Hierarquia invertida: o harness empurrava correção em vez de
+instruir a forma certa ANTES do erro. A regra primordial do projeto ("a dica
+ensina a forma CERTA e nunca exibe o errado") valia só para a trilha F#.
+
+**Correção (3 níveis, nessa ordem).**
+1. `HarnessTails.CsErrorTableLine`: `TABELA DE ERROS C#` na cauda de tools,
+   **gerada de `CsSyntaxRepair.RuleTable`** (fonte única — duas cópias
+   divergem na 1ª edição), ligada só quando o request tem `shell` (único
+   caminho onde existe "build falhar"). Formato espelha o FsMini:
+   `CSxxxx sintoma -> forma correta`. Cobertura: CS1513, CS1003, CS1026,
+   CS1002, CS1519, CS1525, CS0116, CS8803, CS0161, CS0103, CS0029, CS0266,
+   CS0165, CS7036, CS0102, CS0128, CS1022.
+2. `CsSyntaxRepair.Suggest` (in-flow): continua ensinando com a contagem real
+   e a linha apontada; escala na 3ª vez para "reescreva com `write`".
+3. `CsSyntaxRepair.TryRepair` (determinístico) passa a exigir
+   `repeatCount >= 2`: **fallback só depois de 2 entregas da MESMA dica** —
+   antes disso a instrução tem que dar conta. Empurrar cedo tira do modelo a
+   chance de aprender e esconde a fronteira de capacidade. O salvage do
+   `RunAlgoPhase` repassa o `hintRepeats` medido no laço.
+
+**Prova.** Instrução primeiro: hanoi isolado `E-mission-algo-cs-hanoi`
+**PASS em 131s** (antes 386s e FAIL); o dump (`TCTX_DUMP=1`) mostra o modelo
+acertando o C# de **primeira** (`T3 shell -> ok hanoi=15`), sem nenhum erro
+CS — os 2 `shell ok=false` foram só path (`mcs.csproj` vs `mcs/mcs.csproj`,
+corrigido pelo hint da bridge). Units: `U-tails-cs-error-table` (cauda cobre
+todos os codes de `Rules`, só com `shell`, sem literal errado),
+`U-cs-repair-applies-brace`/`U-cs-repair-applies-extra-close` (reparo NÃO
+entra em `repeatCount` 0 e 1, entra em 2) → `[test] PASS=7 FAIL=0`.

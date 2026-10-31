@@ -577,17 +577,17 @@ internal static class E2EMissionTests
         string srcPath = Path.Combine(ws, dir, file);
         string src = File.Exists(srcPath) ? File.ReadAllText(srcPath) : "";
         string output = await RunShell(ws, model, "dotnet run --project " + project + " -c Release");
-        // Salvage determinístico: a dica in-flow (CsSyntaxRepair.Suggest) só ENSINA e o
+        // Salvage determinístico = FALLBACK de última hora, depois de 2 entregas da
+        // MESMA dica (hintRepeats) sem o modelo resolver. A dica in-flow só ENSINA e o
         // modelo fraco ignora (medido 2026-10-30: Q4 Base repetiu CS1513 por 26 turnos
-        // com 22 abre-chave e 21 fecha-chave). Aplicar o reparo mecânico do Core e
-        // rebuildar é a forma certa; se a lógica também estiver errada o rebuild falha
-        // e o aceite continua honesto (sem afrouxar).
-        if (lang == "C#" && global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, output, out string fixedSrc))
+        // com 22 abre-chave e 21 fecha-chave). Reparar e rebuildar é a rede; se a
+        // lógica também estiver errada o rebuild falha e o aceite continua honesto.
+        if (lang == "C#" && global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(src, output, out string fixedSrc, hintRepeats))
         {
             File.WriteAllText(srcPath, fixedSrc);
             src = fixedSrc;
             output = await RunShell(ws, model, "dotnet run --project " + project + " -c Release");
-            if (dump) Console.WriteLine($"  [algo:{lang}] salvage CS1513: fechou bloco(s) aberto(s) e rebuildou");
+            if (dump) Console.WriteLine($"  [algo:{lang}] salvage (fallback apos {hintRepeats}x a mesma dica): reparo mecanico aplicado e rebuildou");
         }
         if (dump)
             Console.WriteLine($"  [algo:{lang}] tentativa {attempt}: {((accept ?? AlgoOk)(output) ? "bateu as metas" : "fora das metas")} | {output.Replace("\n", " | ")[..Math.Min(180, output.Replace("\n", " | ").Length)]}");

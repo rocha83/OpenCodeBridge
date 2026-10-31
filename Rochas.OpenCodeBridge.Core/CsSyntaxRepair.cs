@@ -4,17 +4,23 @@ using System.Text.RegularExpressions;
 namespace Rochas.OpenCodeBridge.Core;
 
 /// <summary>
-/// Reparo de sintaxe C# no retry: dado o erro do compilador e o fonte atual, devolve
-/// a forma CERTA do que o modelo erra (bloco sem fechar, instrução sem ';', parêntese
-/// aberto). Genérico de propósito: não conhece o algoritmo do pedido, só a forma da
-/// linguagem. Único lugar dessa mecânica em C# — o teste consome.
+/// Sintaxe C# em três níveis, nessa ordem: INSTRUÇÃO na cauda
+/// (<see cref="HarnessTails.CsErrorTableLine"/>, gerada daqui) → dica in-flow no
+/// retry (<see cref="Suggest"/>, aponta a linha e a forma certa) → reparo
+/// determinístico só como FALLBACK após 2 entregas da MESMA dica sem sucesso
+/// (<see cref="TryRepair"/>). Genérico de propósito: não conhece o algoritmo do
+/// pedido, só a forma da linguagem. Único lugar dessa mecânica em C#.
 /// </summary>
 /// <remarks>
+/// Hierarquia medida, não opinativa: instruir a forma certa ANTES do erro resolveu o
+/// hanoi do L4 de 2026-10-31 (386s e FAIL num loop de <c>CS1003</c> — um <c>)</c> a
+/// mais no fim de um <c>if</c>) na rodada seguinte, onde o modelo acertou de primeira.
+/// Empurrar a correção cedo demais tira do modelo a chance de aprender e esconde a
+/// fronteira de capacidade; por isso o reparo determinístico só entra quando a
+/// instrução prova que não bastou (2 entregas da MESMA dica e o erro persiste).
 /// Nasceu do L4 de 2026-10-30: `algo-cs-btree-bridge` FAIL em 345s com
-/// <c>Program.cs(101,6): error CS1513: } expected</c> — o modelo escreveu um arquivo
-/// com 26 abre-chave e 25 fecha-chave e gastou os 26 turnos sem fechar o último bloco.
-/// A trilha F# tinha reparo in-flow (<see cref="FsSyntaxRepair"/>); a C#, que é a
-/// válida desde o arquivamento de 2026-10-30, não tinha nenhum.
+/// <c>Program.cs(101,6): error CS1513: } expected</c> — 26 abre-chave e 25
+/// fecha-chave, 26 turnos sem fechar o último bloco.
 /// </remarks>
 public static class CsSyntaxRepair
 {
@@ -61,6 +67,8 @@ public static class CsSyntaxRepair
 
     static readonly Rule[] RuleTable =
     {
+        new("CS1513", "falta `}` para fechar um bloco",
+            "cada `{` de bloco (namespace, classe, metodo, if, for) fecha com UM `}`; no fim do arquivo feche na ordem inversa em que abriu"),
         new("CS1003", "token de fechamento a mais (ou abertura sem par)",
             "cada `(` fecha com UM `)` e o `]` de um indice fecha ANTES do `)` da condicao:\n"
             + "if (flag[i] && flag[i + 2])\n    count++;"),
@@ -121,23 +129,31 @@ public static class CsSyntaxRepair
     }
 
     /// <summary>
-    /// Reparo DETERMINÍSTICO: devolve o fonte corrigido quando o diagnóstico tem
-    /// mapa mecânico e não ambíguo (hoje só CS1513, chaves desbalanceadas no fim).
+    /// Reparo DETERMINÍSTICO, fallback de ÚLTIMA HORA: só entra depois de 2 entregas
+    /// da MESMA dica sem o modelo resolver. Antes disso a instrução (tabela na cauda +
+    /// dica in-flow) tem que dar conta sozinha — empurrar a correção cedo demais tira
+    /// do modelo a chance de aprender e esconde a fronteira de capacidade (medido no
+    /// L4 de 2026-10-31: instruir bastou e o hanoi passou de FAIL a PASS).
     /// </summary>
     /// <remarks>
     /// A dica (<see cref="Suggest"/>) só ENSINA a forma; modelo fraco ignora (medido
     /// em 2026-10-30: o Q4 Base repetiu o mesmo <c>CS1513</c> por 26 turnos, arquivo
     /// com 22 abre-chave e 21 fecha-chave). O harness aplica este reparo quando o build
-    /// falha e a dica já foi dada: a chave que falta é mecânica, não lógica — se o
-    /// algoritmo também estiver errado, o rebuild falha e o aceite segue honesto.
+    /// falha e a MESMA dica já foi dada 2x: a chave que falta é mecânica, não lógica —
+    /// se o algoritmo também estiver errado, o rebuild falha e o aceite segue honesto.
     /// </remarks>
     /// <param name="source">Fonte C# atual (texto completo).</param>
     /// <param name="compilerError">Saída do build com o diagnóstico CSxxxx.</param>
     /// <param name="repaired">Fonte corrigido quando o reparo se aplica.</param>
-    /// <returns>True quando há correção determinística e o fonte foi devolvido em <paramref name="repaired"/>.</returns>
-    public static bool TryRepair(string source, string compilerError, out string repaired)
+    /// <param name="repeatCount">Quantas vezes ESTA MESMA dica já foi entregue antes
+    /// (0 na primeira). Abaixo de 2 o reparo não entra: ainda é papel da instrução.</param>
+    /// <returns>True quando há correção determinística, o threshold foi atingido e o fonte foi devolvido em <paramref name="repaired"/>.</returns>
+    public static bool TryRepair(string source, string compilerError, out string repaired, int repeatCount = 0)
     {
         repaired = source;
+        // Fallback só depois de a instrução falhar 2x: antes disso empurrar seria
+        // o modelo entregando o resultado do HARNESS, não dele (fronteira escondida).
+        if (repeatCount < 2) return false;
         if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(compilerError)) return false;
         string code = FirstCode(compilerError);
         // CS1513: o bloco mais externo não fechou no fim.
