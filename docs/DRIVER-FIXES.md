@@ -1737,3 +1737,30 @@ corrigido pelo hint da bridge). Units: `U-tails-cs-error-table` (cauda cobre
 todos os codes de `Rules`, só com `shell`, sem literal errado),
 `U-cs-repair-applies-brace`/`U-cs-repair-applies-extra-close` (reparo NÃO
 entra em `repeatCount` 0 e 1, entra em 2) → `[test] PASS=7 FAIL=0`.
+
+## 61. Bateria E2E nunca reiniciava a bridge alvo: risco de avaliar binario velho (2026-10-31)
+
+**Sintoma.** O `WarTemplate` reiniciava apenas `grafana-server`; a bridge alvo
+(`bridge-gpu` :4124 / `bridge-gpu2` :4125 / `bridge-cpu-forced` :4126) era
+reiniciada a mao pelo operador. Uma bateria rodada logo apos deploy podia medir
+o binario ANTERIOR — o `systemctl restart` e' o unico ponto que troca o binario
+em uso e renova o pool HTTP dos dois lados.
+
+**Causa.** `TestContext.RestartBridge()` ja' existia completo (mapeia porta ->
+unit via `BridgeService()`, `sudo -n systemctl restart`, espera `/api/status`
+por 30s, exige `main_harness=true` em modo bridge, `ResetHttp()`), mas tinha
+ZERO chamadores. Agravante: o WAR despacha `Program.Main` -> `WarTemplate.RunMain`
+ANTES do parse de `--bridge/--api-key`, entao `TestContext.Bridge` ficava no
+default `:4124` e o helper miraria a unit errada em porta diferente.
+
+**Correcao.**
+1. `WarTemplate.OnRunStart`: sincroniza `TestContext.Bridge/ApiKey` com
+   `_p.Bridge/_p.Api` (e `Mode` quando a bateria e' opencode pura).
+2. `WarTemplate.Preflight` (topo): chama `TestContext.RestartBridge()` DEPOIS do
+   build/deploy e ANTES das checagens de status, para o preflight medir a bridge
+   recem-reiniciada. Falha vira check `bridge_restart` (veredito BLOCKED com
+   evidencia), nunca excecao crua.
+
+**Prova.** Linha `[restart] bridge alvo reiniciada antes do preflight: <url>` no
+log da bateria, seguida de `preflight ok` e dos steps. Teste de bateria real
+(L1 -> L4) e' a evidencia exigida pela regra "driver so' muda com bateria real".

@@ -486,6 +486,19 @@ internal sealed class WarTemplate : CircuitTemplate
         Environment.SetEnvironmentVariable("WAR_EVENT_URL", _p.Bridge + "/api/test/step");
         Environment.SetEnvironmentVariable("WAR_EVENT_KEY", _p.Api);
 
+        // O WAR despacha para RunMain ANTES do parse normal (Program.Main), entao
+        // --bridge/--api-key/--mode nao popolam o contexto da suite: ele ficaria no
+        // default :4124 e qualquer mecanismo in-process miraria a porta errada — o
+        // RestartBridge do preflight usa a porta para escolher a unit systemd
+        // (4124 bridge-gpu / 4125 bridge-gpu2 / 4126 bridge-cpu-forced). Sincroniza
+        // o contexto com o alvo real. O modo so' muda em bateria opencode pura
+        // (default ja' e' bridge).
+        TestContext.Bridge = _p.Bridge;
+        TestContext.ApiKey = _p.Api;
+        if (_p.Modes.Contains("opencode", StringComparer.OrdinalIgnoreCase)
+            && !_p.Modes.Contains("bridge", StringComparer.OrdinalIgnoreCase))
+            TestContext.Mode = "opencode";
+
         driver.Publish(new JsonObject
         {
             ["t"] = "run_start",
@@ -961,6 +974,29 @@ internal sealed class WarTemplate : CircuitTemplate
     {
         _pfFail.Clear();
         driver.Log("=== preflight ===");
+
+        // REGRA (AGENTS.md): toda bateria E2E comeca com o restart da bridge alvo —
+        // ali o binario em uso e' trocado e o pool HTTP dos dois lados e' renovado.
+        // O driver so' reiniciava o grafana; a bridge dependia do operador, com risco
+        // de avaliar contra binario velho. Roda DEPOIS do build/deploy (para o binario
+        // novo entrar em uso) e ANTES das checagens de status (para o preflight medir a
+        // bridge recem-reiniciada). Falha vira check do preflight (veredito BLOCKED
+        // com evidencia), nunca excecao crua.
+        try
+        {
+            TestContext.RestartBridge();
+            driver.Log($"[restart] bridge alvo reiniciada antes do preflight: {_p.Bridge}");
+        }
+        catch (Exception ex)
+        {
+            Pf(driver, "bridge_restart", false, new JsonObject
+            {
+                ["bridge"] = _p.Bridge,
+                ["erro"] = ex.Message,
+                ["fix"] = "confira a unit da porta alvo (4124 bridge-gpu / 4125 bridge-gpu2 / 4126 bridge-cpu-forced) e o sudo -n"
+            });
+            driver.Log($"[restart] FALHOU: {ex.Message}");
+        }
 
         int upPort = PortOf(_p.Upstream, 4100);
         var health = HttpGet($"http://127.0.0.1:{upPort}/health", null);
