@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
-namespace Rochas.OpenCodeBridge.Core;
+namespace Rochas.OpenCodeBridge.Test.Archived;
 
 /// <summary>
 /// Reparo de sintaxe F# no retry: dado o erro do compilador e o fonte atual, devolve

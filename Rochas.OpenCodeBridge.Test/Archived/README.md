@@ -75,3 +75,20 @@ que o modelo às vezes convergia.
    `U-fsmini-covers-repair-codes` apontando para `ArchivedFsMiniPin`.
 4. Exigir **PASS estável em 3 rodadas seguidas** antes de promover de volta ao
    gate; um PASS isolado não reverte o arquivamento.
+
+## Arquivamento complementar (2026-10-31)
+
+Fechamento do que ainda vivia fora desta pasta:
+
+| Artefato | De | Para | Motivo |
+|---|---|---|---|
+| `FsSyntaxRepair.cs` (684 linhas) | `Rochas.OpenCodeBridge.Core` | aqui (`namespace ...Test.Archived`) | o Core é a fonte da instrução do gate ativo (C#); sintaxe F# no Core confundia a composição — o nudge de tool-call chegou a ensinar `Program.fs`/`printfn` como "copie a forma" e o modelo escreveu `for (var point in _points)` (kmeans do L4, 617s) |
+| 25 pins `U-fs-repair-*` | `UnitToolBreakerTests.cs` | `FsRepairPins.cs` (`FsRepairPins`) | teste arquivado não entra no placar; saíram do `Program.cs` |
+
+O que **ficou** no Core: `DiagnosticLine.WithErrorLine` (ponteiro de linha
+`arquivo(linha,coluna)`), que é mecânica de diagnóstico compartilhada — o
+`CsSyntaxRepair.Suggest` depende dela. Não é sintaxe F#, é o "aponte a linha"
+genérico; manter cópia nos dois lados violaria a regra DRY.
+
+Caminho ativo: `CsSyntaxRepair` (tabela na cauda + dica in-flow + reparo como
+fallback após 2 entregas da mesma dica).

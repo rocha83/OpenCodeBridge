@@ -62,7 +62,7 @@ public static class ArchivedFsMissionToolsPhase
                 string fsSrcNow = File.Exists(Path.Combine(ws, "mfs", "Program.fs"))
                     ? File.ReadAllText(Path.Combine(ws, "mfs", "Program.fs")) : "";
                 string fsHint = compileErr
-                    ? global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(fsSrcNow, errLine) : "";
+                    ? global::Rochas.OpenCodeBridge.Test.Archived.FsSyntaxRepair.Suggest(fsSrcNow, errLine) : "";
                 string guidance = compileErr
                     ? $"Sem prosa: o build do F# falhou: {errLine}. " + (fsHint.Length > 0 ? fsHint + " " : "")
                       + $"Corrija {ws}/mfs/Program.fs e rode `dotnet run --project {ws}/mfs/mfs.fsproj`."
@@ -132,7 +132,7 @@ public static class ArchivedFsMissionToolsPhase
                 {
                     string curFs = File.Exists(Path.Combine(ws, "mfs", "Program.fs"))
                         ? File.ReadAllText(Path.Combine(ws, "mfs", "Program.fs")) : "";
-                    string inFlow = global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest(curFs, resf);
+                    string inFlow = global::Rochas.OpenCodeBridge.Test.Archived.FsSyntaxRepair.Suggest(curFs, resf);
                     if (inFlow.Length > 0)
                     {
                         resf += "\n\n" + inFlow;

@@ -207,13 +207,6 @@ internal static class Program
         TestContext.Run("U-toolargs-literal-newline", UnitToolBreakerTests.FixesLiteralNewlineEscape);
         TestContext.Run("U-tails-path-simulation-rules", UnitToolBreakerTests.ToolsTailCarriesPathAndSimulationRules);
         TestContext.Run("U-tails-cs-error-table", UnitToolBreakerTests.ToolsTailCarriesCsErrorTable);
-        TestContext.Run("U-fs-repair-comprehension", UnitToolBreakerTests.FsRepairComprehensionForms);
-        TestContext.Run("U-fs-repair-module-line", UnitToolBreakerTests.FsRepairModuleLineAlone);
-        TestContext.Run("U-fs-repair-body-shape", UnitToolBreakerTests.FsRepairFunctionBodyShape);
-        TestContext.Run("U-fs-repair-call-parens", UnitToolBreakerTests.FsRepairCallArgumentParens);
-        TestContext.Run("U-fs-repair-type-annotation", UnitToolBreakerTests.FsRepairInferredTypeAnnotation);
-        TestContext.Run("U-fs-repair-partial-operator", UnitToolBreakerTests.FsRepairPartialOperator);
-        TestContext.Run("U-fs-repair-diagnostic-detection", UnitToolBreakerTests.FsRepairDiagnosticDetection);
         TestContext.Run("U-cs-repair-missing-brace", UnitToolBreakerTests.CsRepairMissingBrace);
         TestContext.Run("U-cs-repair-applies-brace", UnitToolBreakerTests.CsRepairAppliesMissingBrace);
         TestContext.Run("U-cs-repair-unexpected-token", UnitToolBreakerTests.CsRepairUnexpectedToken);
@@ -231,26 +224,10 @@ internal static class Program
         TestContext.Run("U-role-permissions", UnitRetryTests.RolePermissionsInSystem);
         TestContext.Run("U-tools-tail-marker", UnitRetryTests.ToolsTailMarker);
         TestContext.Run("U-prompt-dedup", UnitRetryTests.PromptDedupInAgenticLoop);
+        // Trilha F# ARQUIVADA (2026-10-30): os pins U-fs-repair-* saíram do placar e
+        // vivem em Archived/FsRepairPins.cs; a trilha ativa é C# (CsSyntaxRepair).
         // U-fsmini-covers-repair-codes ARQUIVADO em 2026-10-30 junto da trilha F#:
         // o pin segue em UnitToolBreakerTests (compila), mas nao roda no placar ativo.
-        TestContext.Run("U-fs-repair-ref-type", UnitToolBreakerTests.FsRepairRefType);
-        TestContext.Run("U-fs-repair-repeat-escalation", UnitToolBreakerTests.FsRepairRepeatEscalation);
-        TestContext.Run("U-fs-repair-lambda-backslash", UnitToolBreakerTests.FsRepairLambdaBackslash);
-        TestContext.Run("U-fs-repair-list-literal-arrow", UnitToolBreakerTests.FsRepairListLiteralArrow);
-        TestContext.Run("U-fs-repair-return-tuple", UnitToolBreakerTests.FsRepairReturnTupleAnnotation);
-        TestContext.Run("U-fs-repair-else-let", UnitToolBreakerTests.FsRepairElseLetBlock);
-        TestContext.Run("U-fs-repair-arity", UnitToolBreakerTests.FsRepairArityMismatch);
-        TestContext.Run("U-fs-repair-use-before-def", UnitToolBreakerTests.FsRepairUseBeforeDef);
-        TestContext.Run("U-fs-repair-if-branches-string", UnitToolBreakerTests.FsRepairIfBranchesString);
-        TestContext.Run("U-fs-repair-list-contains-order", UnitToolBreakerTests.FsRepairListContainsOrder);
-        TestContext.Run("U-fs-repair-equality-operator", UnitToolBreakerTests.FsRepairEqualityOperator);
-        TestContext.Run("U-fs-repair-power-operator", UnitToolBreakerTests.FsRepairPowerOperator);
-        TestContext.Run("U-fs-repair-indexer", UnitToolBreakerTests.FsRepairIndexerAnnotation);
-        TestContext.Run("U-fs-repair-param-semicolon", UnitToolBreakerTests.FsRepairParamSemicolon);
-        TestContext.Run("U-fs-repair-generic-syntax", UnitToolBreakerTests.FsRepairGenericSyntax);
-        TestContext.Run("U-fs-repair-record-array-close", UnitToolBreakerTests.FsRepairRecordArrayClose);
-        TestContext.Run("U-fs-repair-error-line", UnitToolBreakerTests.FsRepairErrorLinePointer);
-        TestContext.Run("U-fs-repair-interpolated", UnitToolBreakerTests.FsRepairInterpolatedString);
         TestContext.Run("U-flow-gate", UnitToolBreakerTests.BridgeFlowGateCases);
         TestContext.Run("U-antirepeat-args-window", UnitToolBreakerTests.AntiRepeatArgsWindowIsIndependent);
         TestContext.Run("U-toolcall-salvage-notice", UnitToolBreakerTests.SalvageNoticeIsRecognizable);

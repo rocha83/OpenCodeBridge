@@ -530,8 +530,8 @@ internal static class E2EMissionTests
                 // `CS1513: } expected` (26 abre-chave, 25 fecha-chave).
                 Func<string, string, int, string>? repair = lang switch
                 {
-                    "F#" when global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.HasDiagnostic(res)
-                        => global::Rochas.OpenCodeBridge.Core.FsSyntaxRepair.Suggest,
+                    "F#" when global::Rochas.OpenCodeBridge.Test.Archived.FsSyntaxRepair.HasDiagnostic(res)
+                        => global::Rochas.OpenCodeBridge.Test.Archived.FsSyntaxRepair.Suggest,
                     "C#" when global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.HasDiagnostic(res)
                         => global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest,
                     _ => null

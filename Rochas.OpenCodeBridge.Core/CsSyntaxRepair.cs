@@ -38,7 +38,7 @@ public static class CsSyntaxRepair
     {
         string hint = SuggestForCode(source, compilerError);
         if (hint.Length == 0) return hint;
-        hint = FsSyntaxRepair.WithErrorLine(hint, compilerError);
+        hint = DiagnosticLine.WithErrorLine(hint, compilerError);
         if (repeatCount < 2) return hint;
         return hint + "\n\nA MESMA dica ja' veio " + (repeatCount + 1)
              + " vezes: pare de editar a mesma linha e reescreva o arquivo inteiro com a tool `write`, aplicando a forma acima.";
