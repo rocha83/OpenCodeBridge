@@ -1857,3 +1857,161 @@ pelas duas raias (bridge e opencode):
 `write -> criado 1366 chars em 'definir_modelo_de_domínio_e_esquema_sql.sh'` →
 `script OK` → `scripts=1 integros=1 descartados=0`. Pin
 `U-belt-scripter-prompt` (`PASS=3 FAIL=0` com os pins C#).
+
+## 64. Recuperação de 413 morava no teste e reenviava o mesmo corpo 23× (2026-10-31)
+
+**Sintoma.** `e-algo-cs-hanoi-bridge` FAIL em **241s** com `causa=contexto`
+(`assert: C# entrega as chaves esperadas, saiu: hanoi=32767`). O step anterior
+(`133821`) tinha falhado por `CS1003`; este falhou por **contexto**. Log do step:
+`23 × context-guard / context-nudge / context-compact`, e do **2º ao 23º ciclo os
+três campos são idênticos byte a byte**:
+
+```
+context-guard   prompt_tokens:137964  ctx:524288 slots:4 fraction:1.0526
+context-nudge   req_chars:189665      ok:False
+context-compact req_chars:183830      ok:False     ← 22× seguidas, sem evolução
+```
+
+**Causa.** Três defeitos encadeados, e o primeiro deles é de **responsabilidade**:
+
+1. **O consumidor fazia papel do Core.** No catch do `E2EMissionTests` a política
+   inteira era do teste: `Compact(hist, ctxTokens / 2, ctxSlots)` + `continue` cego.
+   Esse orçamento dava `0.95 × (524288/2) / 4 = 62259` tokens, enquanto a estimativa
+   (`189400 chars / 3.2`) media **59187** — logo `Compact` devolvia `false` **sem
+   cortar nada** e o teste reenviava o corpo exatamente igual. 23 ciclos, nenhum
+   progresso.
+2. **Fator chars→tokens errado para este conteúdo.** `CharsPerToken = 3.2` é a média
+   de prosa inglesa; a própria 400 do llama media **189665 chars → 137964 tokens =
+   1.37** (2.3× mais denso). A estimativa vinha 2.3× abaixo do real, então o guard
+   achava que cabia.
+3. **`Compact` só truncava, nunca removia.** `TrimMessage` corta `content > 600` e
+   `arguments > 300`; a massa do hanoi estava em **~400 mensagens de ~465 chars —
+   já dentro do teto**, então capar tirava 3% (189665 → 183830) e o request seguia
+   400.
+
+**Correção** (Core é a fonte única; o consumidor só chama e obedece —
+`Rochas.OpenCodeBridge.Core/ContextGuard.cs`):
+
+- `CalibrateCharsPerToken(chars, promptTokens)`: o fator calibra com os números da
+  **própria 400** (corpo enviado × `prompt_tokens` lido são do mesmo request) —
+  1.37 medido, em vez de constante de prosa.
+- `Compact(..., charsPerToken)` ganha **passo 2** — `DropMiddle`, que *remove* o
+  miolo quando só truncar não adianta (`system` + 1ª troca + cauda ficam; o arquivo
+  em disco é a fonte, o modelo relê com `read`) — e **passo 3** — `TrimTail`, o teto
+  na cauda que o passe 1 preserva.
+- `Recover(messages, ctx, slots, promptTokens, out before, out after)`: entrada
+  **única** do cliente. Calibra, compacta a `RecoveryThreshold` (0.70) e devolve se a
+  sessão **encolheu de verdade**; `false` → o consumidor falha rápido e **nunca**
+  reenvia igual.
+- `PromptTokensFrom(message)`: lê os tokens da mensagem de 413.
+- Bridge: `CompactOverflowBody` calibra com os tokens da 400 em vez do `0.70` fixo
+  sobre a constante de prosa.
+
+**Prova.**
+
+- Pin `U-ctx-recover` → `PASS (0.0s)` (caso feliz = miolo no teto, onde truncar não
+  adianta; negativo = sessão pequena **não** reporta compactada; calibre 1.37).
+- Units da run `L1-20261031-142346` → `[test] PASS=151 FAIL=0 SKIP=6`.
+- `E-ctx-overflow` → `PASS (1.5s)`: 400 vira **200 em 1.4s**, `prompt_tokens=1783`
+  (por-slot 131072).
+- `E-ctx-overflow-exhaust` → `PASS (0.6s)`: segue devolvendo **413 honesto** com
+  `context_compact_required` quando não há o que cortar (contrato preservado).
+- `e-algo-cs-hanoi-bridge` isolado (`L4-hanoi-20261031-144205`) → `PASS (116s)`,
+  contra `FAIL 241s` em `L4-20261031-135247`. **Nesta rodada o guard não disparou**
+  (0 eventos `context-guard` no step): o PASS do hanoi **não** prova a recuperação —
+  ela é provada por `E-ctx-overflow` (400 → 200) e por `U-ctx-recover`. O estouro é
+  intermitente (só acontece quando o histórico cresce além do slot, o que variou
+  entre as rodadas de 126s/241s/116s); o que se garante é que, **quando** estoura,
+  a recuperação encolhe a sessão de verdade e o consumidor nunca reenvia o corpo
+  igual — antes, eram 23 ciclos idênticos até estourar o tempo.
+
+---
+
+## 65. L4 da bateria parou no marrom: prosa sem tool (e o guard de rerun barrou o re-run) (2026-10-31)
+
+**Sintoma.** Bateria completa `all-20261031-152739` (`--war-all`, fail-fast):
+L1 `PASS=15 FAIL=0` (698s), L2 `PASS=6 FAIL=0` (512s), L3 `PASS=4 FAIL=0` (544s),
+e L4 parou em `e-belts-marrom-build-bridge` — `FAIL 152s, causa=bridge` — com
+`PARADA: ... 4 step(s) nao executado(s)`. O **mesmo** step tinha passado
+`PASS 903s` no run standalone `L4-L4full-20261031-144539`, ~35 min antes, com
+binário idêntico.
+
+**Sintoma dentro do step.** Cinco turnos sem tool call e nenhum arquivo em disco:
+
+```
+[belt-build:marrom] turno 0: sem tools (chars=11313) — nudge 1
+[belt-build:marrom] turno 1..4: 3612 / 2059 / 3086 / 2564 chars — nudge 2..5
+[belt-build:marrom] sem tools apos 4 nudges, encerrando
+[belt-build:marrom] FAIL arquivos=0 chars=22634
+FAIL E-belts-build-direct: assert: belts-build direct: 1 falharam
+```
+
+Log da bridge **no step**: `anti-repeat × 5` + `anti-repeat-salvage × 5`, todos
+`where=stream-abort calls=0`. No run PASS do mesmo step: **zero** eventos de
+anti-repeat, com `tool_exec: 12` e `artifact-owner: 14`.
+
+**Causa — é do modelo, não da bridge.** Quatro fatos fecham o diagnóstico:
+
+1. `CheckRepeat` roda a cada 512 chars e aborta quando a cauda normalizada já
+   apareceu antes: o modelo entrou em **laço de prosa** em vez de emitir `write`.
+   11313 chars antes do primeiro trip é laço longo, não corte precoce.
+2. A requisição **já** pedia `"tool_choice": "required"` — o llama local não
+   obedeceu.
+3. O nudge do teste **já** ensina a forma certa: *"Pouca fala, mais construcao:
+   voce respondeu com texto mas NAO chamou a tool write. OBRIGATORIO agora: chame
+   a tool write com path e content…"* — e o modelo o ignorou 4× seguidas.
+4. A bridge devolve o `content` acumulado e **não faz retry**, decisão medida e
+   registrada no próprio código (*"o retry pos-hoc re-gerava o turno inteiro e
+   degenerava de novo"*).
+
+**Decisão — nenhuma mudança de código, e por regra.** Um aviso novo do lado da
+bridge diria exatamente o que a mensagem seguinte já diz; a regra "a dica ensina
+a forma CERTA" **e** a de dedup de texto (`docs/AGENTS.md`) proíbe duplicar a
+mesma dica em duas superfícies. Não houve afrouxamento de aceite nem flag nova.
+
+**Guard de rerun: íntegro, e a prova de que não se contorna.** O run seguinte
+(`marrom-20261031-160929`) foi reprovado no preflight com
+`preflight FALHOU: rerun_sha512,guard_ativo_fail_fast (veredito BLOCKED)` — o FAIL
+havia gravado o hash em `logs/.rerun-guard.json`
+(`reason: "step e-belts-marrom-build-bridge FAIL: bridge"`). Para medir se um
+rebuild vazio burlava a trava, a solução foi rebuildada **sem tocar em fonte**
+(0 erros, 0 warnings):
+
+```
+antes : 44bd2dcc50f4c613  f4d32a2c62d741a1  b57fdae1186dfe13
+depois: 44bd2dcc50f4c613  f4d32a2c62d741a1  b57fdae1186dfe13   ← idênticos
+```
+
+Build determinístico ⇒ **rebuild vazio não limpa o guard**: só passa binário
+novo de verdade. A proteção foi respeitada e não foi burlada.
+
+**Duas ressalvas honestas, para não vender mais do que o dado mostra.**
+
+- `causa=bridge` é **arrastada**: o classificador casou com o próprio texto do
+  step (a linha do modelo cita `bridge http://127.0.0.1:4124`). A causa real é
+  do modelo; quem lê o summary fica com a impressão errada.
+- A sonda do step (`probes/e-belts-marrom-build-bridge.probe20261031.json`) só
+  gravou cabeçalhos — o `dupCtx` do anti-repeat **não** fica no artefato, então o
+  texto laçado não pode ser inspecionado depois. O que se tem é a assinatura
+  (`stream-abort`, `calls=0`) e a comparação com o run PASS.
+
+**Estado final da esteira (mesmo binário, sem mudança de código).**
+
+| Nível | Bateria `all-20261031-152739` | Standalone |
+|---|---|---|
+| L1 | **PASS 15/15** (698s) | — |
+| L2 | **PASS 6/6** (512s) | — |
+| L3 | **PASS 4/4** (544s) | — |
+| L4 | PASS 6 / FAIL 1 / SKIP 4 | **PASS 11/11** (2159s) — `L4-L4full-20261031-144539` |
+
+**Prova.**
+
+- `logs/levels/all-20261031-152739.console.log` →
+  `15 steps: PASS=15 FAIL=0` / `6 steps: PASS=6 FAIL=0` / `4 steps: PASS=4 FAIL=0`
+  e `GATE VERMELHO: FAIL=1 STALE=0 (PASS=6)`.
+- `logs/levels/L4-L4full-20261031-144539/summary.tsv` → 11 linhas `PASS`,
+  `11 steps: PASS=11 FAIL=0 SKIP=0 STALE=0 (2159s)`, seção `=== falhas ===` vazia.
+- `L4-all-.../steps/e-belts-marrom-build-bridge.bridge.log` → `anti-repeat` e
+  `anti-repeat-salvage` com `calls: 0`; o log do PASS traz `tool_exec: 12`.
+- Guard: `logs/.rerun-guard.json` com `reason` do FAIL, e os três hashes iguais
+  antes/depois do rebuild sem mudança de fonte.
