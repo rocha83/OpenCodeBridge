@@ -4102,7 +4102,7 @@ var shape = new StringBuilder();
     /// Recuperacao de estouro de contexto no upstream. O 400
     /// <c>exceed_context_size</c> do llama nao e' "ponte fora": o INPUT nao cabe no
     /// slot. Escalada (regra no Core, loop aqui): 1) nudge — lembrete de economia
-    /// ao modelo, sem cortar conteudo; 2) compactacao — <see cref="ContextGuard.Compact"/>,
+    /// ao modelo, sem cortar conteudo; 2) compactacao — <see cref="ContextGuard.Compact(JsonArray, int, int, double)"/>,
     /// unica rotina que encolhe o input; 3) 413 <c>context_compact_required</c>.
     /// </summary>
     /// <remarks>
@@ -4153,7 +4153,7 @@ var shape = new StringBuilder();
             // 1) nudge (lembrete, sem trim); 2) compactacao (encolhe o input).
             string? next = attempt == 1
                 ? NudgeOverflowBody(current)
-                : CompactOverflowBody(current, ContextTokens, ContextSlots);
+                : CompactOverflowBody(current, ContextTokens, ContextSlots, promptTokens);
             if (next is null) break;
             current = next;
             var retry = new HttpRequestMessage(forward.Method, forward.RequestUri)
@@ -4225,14 +4225,21 @@ var shape = new StringBuilder();
     /// <param name="body">Corpo chat atual.</param>
     /// <param name="tokens">Ctx TOTAL servido.</param>
     /// <param name="slots">Slots paralelos do llama.</param>
+    /// <param name="promptTokens">Tokens reais lidos na 400 (calibra o fator chars->tokens).</param>
     /// <returns>Corpo compactado ou null.</returns>
-    static string? CompactOverflowBody(string body, int tokens, int slots)
+    static string? CompactOverflowBody(string body, int tokens, int slots, int promptTokens)
     {
         var node = JsonNode.Parse(body)?.AsObject();
         if (node?["messages"] is not JsonArray msgs) return null;
-        // Teto de 70%: o 400 provou que 100% do slot nao cabe; cortar ate' 95%
-        // deixaria o proximo turno estourando de novo (o cliente reenvia o historico).
-        if (!Rochas.OpenCodeBridge.Core.ContextGuard.Compact(msgs, tokens, slots, 0.70)) return null;
+        // Teto de 70% (ContextGuard.RecoveryThreshold): o 400 provou que 100% do slot
+        // nao cabe; cortar ate' 95% deixaria o proximo turno estourando de novo.
+        // O fator chars->tokens vem calibrado da PROPRIA 400 (chars da sessao /
+        // prompt_tokens lido): a constante fixa de prosa subestimava em conteudo
+        // denso e o corte virava no-op (medido no hanoi de 2026-10-31).
+        double ratio = Rochas.OpenCodeBridge.Core.ContextGuard.CalibrateCharsPerToken(
+            Rochas.OpenCodeBridge.Core.ContextGuard.Size(msgs), promptTokens);
+        if (!Rochas.OpenCodeBridge.Core.ContextGuard.Compact(msgs, tokens, slots,
+                Rochas.OpenCodeBridge.Core.ContextGuard.RecoveryThreshold, ratio)) return null;
         return node!.ToJsonString(SerOpts);
     }
 

@@ -469,13 +469,21 @@ internal static class E2EMissionTests
             }
             catch (Exception ex)
             {
-                // 413 do guard de ctx: não é ponte fora do ar, é sinal para compactar
-                // e retentar (o guard da bridge dispara a 95% do slot; aqui o cliente
-                // compacta a sessão — o arquivo em disco permanece a fonte).
+                // 413 do guard de ctx: a POLITICA de recuperacao e' do Core
+                // (ContextGuard.Recover calibra o fator chars->tokens com os tokens
+                // reais da propria 400 e compacta). O teste so' obedece: se a sessao
+                // nao encolheu, falha rapido com a causa certa. Antes o teste decidia
+                // o orcamento sozinho (ctxTokens/2) e reenviava o MESMO corpo 23x —
+                // medido no hanoi de 2026-10-31 (step de 241s, causa=contexto).
                 if (ex.Message.Contains("413", StringComparison.Ordinal) && ex.Message.Contains("context_compact_required", StringComparison.Ordinal))
                 {
-                    global::Rochas.OpenCodeBridge.Core.ContextGuard.Compact(hist, ctxTokens / 2, ctxSlots);
-                    Console.WriteLine($"  [algo:{lang}] guard de ctx: 413 context_compact_required — compactou e retenta");
+                    int promptTokens = global::Rochas.OpenCodeBridge.Core.ContextGuard.PromptTokensFrom(ex.Message);
+                    bool encolheu = global::Rochas.OpenCodeBridge.Core.ContextGuard.Recover(
+                        hist, ctxTokens, ctxSlots, promptTokens, out int antes, out int depois);
+                    Console.WriteLine($"  [algo:{lang}] guard de ctx: 413 context_compact_required ({promptTokens} tokens) sessao {antes} -> {depois} chars");
+                    if (!encolheu)
+                        throw new Exception(
+                            $"413 context_compact_required sem saida na fase {lang}: a sessao nao encolheu ({antes} chars) e o slot esta cheio ({promptTokens} tokens)");
                     continue;
                 }
                 global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Apply(hist);

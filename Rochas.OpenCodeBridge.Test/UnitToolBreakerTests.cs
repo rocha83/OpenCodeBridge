@@ -987,6 +987,54 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// A recuperacao de <c>413</c> e' politica do Core, nao do consumidor: o fator
+    /// chars-&gt;tokens calibra com os numeros da propria 400 e a sessao tem de
+    /// ENCOLHER de verdade. Sem isso o cliente reenvia o MESMO corpo para sempre —
+    /// medido no <c>E-mission-algo-cs-hanoi</c> de 2026-10-31 (23 ciclos identicos,
+    /// FAIL 241s com causa=contexto).
+    /// </summary>
+    public static Task ContextRecoveryPolicy()
+    {
+        // Caso feliz: ~600 mensagens JA' no teto de conteudo (400 chars, cap 600) —
+        // e' exatamente a forma do hanoi, em que truncar nao muda nada e so' REMOVER
+        // o miolo adianta. O calibre (270k chars / 137964 tokens reais) faz a
+        // estimativa bater com o que o llama leu.
+        var hist = new JsonArray(
+            new JsonObject { ["role"] = "system", ["content"] = "voce e um executor." },
+            new JsonObject { ["role"] = "user", ["content"] = "crie o hanoi" });
+        for (int i = 0; i < 300; i++)
+        {
+            hist.Add(new JsonObject { ["role"] = "assistant", ["content"] = new string('x', 400) });
+            hist.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = "t" + i, ["content"] = new string('y', 400) });
+        }
+        bool encolheu = global::Rochas.OpenCodeBridge.Core.ContextGuard.Recover(
+            hist, 524288, 4, 137964, out int b, out int a);
+        TestContext.Check(encolheu,
+            $"sessao acima do teto encolhe na recuperacao (b={b} a={a})");
+        TestContext.Check(a < b,
+            $"recuperacao reduz a sessao de verdade (b={b} a={a}) — sem isso o cliente reenvia o mesmo corpo");
+
+        // Negativo: sessao pequena NAO e' reportada como compactada — o consumidor
+        // falha rapido em vez de reenviar achando que adiantou.
+        var pequena = new JsonArray(
+            new JsonObject { ["role"] = "system", ["content"] = "voce e um executor." },
+            new JsonObject { ["role"] = "user", ["content"] = "ok" },
+            new JsonObject { ["role"] = "assistant", ["content"] = "ok" });
+        bool ok = global::Rochas.OpenCodeBridge.Core.ContextGuard.Recover(
+            pequena, 524288, 4, 100, out int pb, out int pa);
+        TestContext.Check(!ok && pa == pb,
+            $"sessao pequena nao e' reportada como compactada (ok={ok}, {pb}->{pa})");
+
+        // Calibre: a razao da propria 400 manda sobre a constante de prosa.
+        double medido = global::Rochas.OpenCodeBridge.Core.ContextGuard.CalibrateCharsPerToken(189665, 137964);
+        TestContext.Check(medido > 1.3 && medido < 1.4,
+            $"calibre medido na 400 (189665 chars / 137964 tokens ~ 1.37); veio {medido:F3}");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ContextGuard.CalibrateCharsPerToken(1000, 0) == 3.2,
+            "sem prompt_tokens volta a constante de prosa");
+        return Task.CompletedTask;
+    }
+
     // O pin da cauda F# (FsMini) foi ARQUIVADO em 2026-10-30 junto da trilha
     // F#: ver Archived/FsMiniPin.cs. Ele compila lá, mas não é registrado no
     // Program.cs — teste arquivado não entra no placar ativo.
