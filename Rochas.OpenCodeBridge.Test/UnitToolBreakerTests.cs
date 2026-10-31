@@ -1728,6 +1728,13 @@ internal static class UnitToolBreakerTests
         }
         string aviso = global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Notice(new[] { "edit" });
         TestContext.Check(aviso.Contains("EXEMPLOS DE ARGS VALIDOS"), "o aviso traz a secao de exemplos");
+        // Core e' a fonte da instrucao e a trilha F# foi ARQUIVADA em 2026-10-30. O
+        // aviso diz "copie a forma": exemplo em F# (Program.fs/printfn/module) faz o
+        // modelo copiar a forma ERRADA — medido no kmeans do L4 de 2026-10-31, que
+        // escreveu `for (var point in _points)` (habito de linguagem dinamica).
+        foreach (string marker in new[] { ".fs\"", ".fsproj", "printfn", "module Program", "open System" })
+            TestContext.Check(!aviso.Contains(marker, StringComparison.Ordinal),
+                "o aviso nao ensina sintaxe F# (achou '" + marker + "')");
         TestContext.Check(aviso.Contains("oldString"), "o aviso repete o help curado da tool recusada (ToolHelp)");
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolCallRepair.IsSalvageNotice(aviso),
             "o aviso composto continua reconhecido como salvage");

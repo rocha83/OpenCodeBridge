@@ -27,9 +27,9 @@ public static class ToolCallRepair
     /// </summary>
     public static readonly string[] Examples =
     {
-        """{"path":"Program.fs","content":"module Program\n\nopen System\n\nprintfn \"ok\""}""",
-        """{"path":"Program.fs","oldString":"printfn \"ok\"","newString":"printfn \"%d\" 15\nprintfn \"%d\" 25"}""",
-        """{"command":"dotnet run --project mfs/mfs.fsproj"}""",
+        """{"path":"Program.cs","content":"using System;\n\nclass Program { static void Main() { Console.WriteLine(\"ok\"); } }"}""",
+        """{"path":"Program.cs","oldString":"Console.WriteLine(\"ok\");","newString":"Console.WriteLine(15);\nConsole.WriteLine(25);"}""",
+        """{"command":"dotnet run --project mcs/mcs.csproj"}""",
     };
 
     /// <summary>
