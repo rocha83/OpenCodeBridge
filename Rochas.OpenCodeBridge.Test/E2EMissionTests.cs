@@ -456,18 +456,30 @@ internal static class E2EMissionTests
             Console.WriteLine($"  [algo:{lang}] system={sys.Length} chars; regras F# presentes={sys.Contains("F# MINI")}");
         string feedback = "";
         var (ctxTokens, ctxSlots) = AlgoCtxParams();
+        // Cada etapa ganha uma segunda rodada: quando o portão dela NÃO bate, a mesma
+        // etapa volta com a saída real como feedback, em vez de queimar a única
+        // tentativa e deixar a etapa seguinte reescrever por cima. Medido em 2026-11-03
+        // (hanoi): recursão clássica certa, lista declarada e nunca preenchida, 15 linhas
+        // soltas — bastava um turno a mais com a saída na mão. O aceite não muda.
+        var plan = new List<(string Stage, Func<string, bool> Check)>();
+        for (int i = 0; i < stages.Length; i++)
+        {
+            Func<string, bool> check = stageChecks is not null && i < stageChecks.Length
+                ? stageChecks[i]
+                : accept ?? AlgoOk;
+            plan.Add((stages[i], check));
+            if (i < stages.Length - 1) plan.Add((stages[i], check));
+        }
         // Uma rodada por etapa, com contexto resetado: um programa inteiro em F# custa
         // mais de uma passada. O aceite (metas e formato) nao muda entre as etapas.
-        for (int attempt = 1; attempt <= stages.Length; attempt++)
+        for (int attempt = 1; attempt <= plan.Count; attempt++)
         {
         // Portão DESTA etapa: quando o enunciado vem segmentado, cada etapa só termina
         // quando o que ELA pede já saiu certo (o aceite final continua sendo `accept`).
         // Sem isso a etapa 1 encerrava com `hanoi=0` e a seguinte reescrevia por cima.
-        Func<string, bool> stageCheck = stageChecks is not null && attempt - 1 < stageChecks.Length
-            ? stageChecks[attempt - 1]
-            : accept ?? AlgoOk;
+        Func<string, bool> stageCheck = plan[attempt - 1].Check;
         var hist = new JsonArray(new JsonObject { ["role"] = "system", ["content"] = sys });
-        hist.Add(new JsonObject { ["role"] = "user", ["content"] = stages[attempt - 1] + feedback });
+        hist.Add(new JsonObject { ["role"] = "user", ["content"] = plan[attempt - 1].Stage + feedback });
         // Retry de tool: o controle de loop que a bridge usa no caminho de chat
         // (ToolsBreaker, soft/hard) vale aqui tambem — o POST /api/tools/execute nao
         // passa por ele. Nenhuma mecanica nova: 3 falhas no MESMO alvo viram aviso no
@@ -626,7 +638,7 @@ internal static class E2EMissionTests
         }
         if (dump)
             Console.WriteLine($"  [algo:{lang}] tentativa {attempt}: {((accept ?? AlgoOk)(output) ? "bateu as metas" : "fora das metas")} | {output.Replace("\n", " | ")[..Math.Min(180, output.Replace("\n", " | ").Length)]}");
-        if ((accept ?? AlgoOk)(output) || attempt == stages.Length) return (src, output);
+        if ((accept ?? AlgoOk)(output) || attempt == plan.Count) return (src, output);
         // Saida real alimenta a etapa seguinte junto do enunciado dela (sem dica de passo).
         feedback = "\n\nA saida anterior nao bateu. Saida real:\n" + (output.Length > 900 ? output[..900] : output)
                  + "\nCorrija " + Path.Combine(ws, dir, file) + " e rode de novo; as metas e o formato continuam os mesmos.";
