@@ -283,8 +283,14 @@ internal static class E2EMissionTests
         // a amostra em que o modelo local devolve o scaffold (`Hello, World!`) sem
         // editar. O aceite final é o mesmo (cinco chaves); a segmentação só reduz o
         // que ele precisa acertar de uma vez (regra de micro-runs).
+        //
+        // Cada etapa tem o SEU aceite (medido em 2026-11-03): sem isso a etapa dá-se
+        // por cumprida com o contador parado em `hanoi=0` e a etapa seguinte reescreve
+        // por cima do arquivo errado. O portão por etapa só verifica o que aquela
+        // etapa pede — o aceite final continua sendo as cinco chaves.
         string[] stages = AlgoStages(ws, "mcs");
-        var (src, output) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", stages);
+        var (src, output) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", stages,
+            stageChecks: HanoiStageChecks);
         TestContext.Check(!HasHardcodedAlgo(src), "C# calcula (sem hardcode das metas)");
         TestContext.Check(AlgoOk(output), "C# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
         Console.WriteLine($"  [algo] C# ok:\n{output.Trim()}");
@@ -409,14 +415,15 @@ internal static class E2EMissionTests
         // sequencia) e ele acertava um e esquecia o outro. Cada etapa agora declara o
         // formato exato da saida que ela pede.
         string hanoiCount = "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Crie UMA funcao recursiva de 4 parametros (quantos discos, haste de origem, haste auxiliar, haste de destino) que resolva a torre de verdade, e um programa que a execute.\n"
-            + "O programa imprime uma unica linha, com o NUMERO DE MOVIMENTOS que a solucao executou (quantos movimentos aconteceram — nao o numero de discos), no formato:\n"
+            + "O numero de movimentos e' CONTADO pela propria solucao — um contador que soma 1 a cada movimento executado, nao uma formula pronta. A saida do programa tem EXATAMENTE uma linha, nesse formato:\n"
             + "hanoi=<n>\n"
-            + "Rode " + run + " e ajuste ate essa linha sair com o valor que o programa calculou (nao copie numeros do enunciado).";
-        string hanoiSeq = "2) No MESMO programa, a MESMA solucao precisa registrar cada movimento em vez de imprimi-lo solto: cada movimento tem o formato 1->2 (haste de origem, seta, haste de destino) e todos vao numa UNICA linha, separados por virgula, na ordem em que aconteceram.\n"
+            + "Nesta etapa o programa nao lista os movimentos: eles entram na etapa seguinte. Rode " + run
+            + " e ajuste ate essa linha sair com o valor contado (nao copie numeros do enunciado).";
+        string hanoiSeq = "2) No MESMO programa, a solucao passa a entregar tambem a LISTA dos movimentos: cada movimento e' o texto 1->2 (haste de origem, seta, haste de destino), na ordem em que aconteceu. O programa junta essa lista numa unica linha, com os itens separados por virgula, logo depois da linha do contador.\n"
             + "O contrato da sequencia e' o de movimentos LEGAIS: cada item move o disco do topo de uma haste para OUTRA (origem e destino nunca iguais) e a torre termina inteira na haste 3 — o teste confere movimento por movimento, entao uma sequencia com `3->3` ou com disco saindo do lugar errado nao vale.\n"
-            + "A saida do programa passa a ser estas duas linhas, nessa ordem, cada chave UMA vez:\n"
+            + "A saida do programa tem EXATAMENTE estas duas linhas, nessa ordem, cada chave UMA vez:\n"
             + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\n"
-            + "Rode " + run + " e ajuste ate sairem as duas linhas.";
+            + "Rode " + run + " e ajuste ate sairem as duas linhas — o contador e a lista descrevem os MESMOS movimentos.";
         string primes = "3) No MESMO programa, acrescente a analise dos primos: quantos ha abaixo de 100 (`primes100=`), abaixo de 1000 (`primes1000=`) e quantos pares gemeos abaixo de 100 (`twin100=`). O crivo de Eratostenes e uma boa pedida.\n"
             + "Mantenha as duas linhas de Hanoi ja' corretas (`hanoi=` continua sendo o numero de movimentos e `hanoi_seq=` continua numa unica linha) e termine com estas cinco linhas, uma por linha, nessa ordem e com cada chave UMA vez:\n"
             + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\nprimes100=<n>\nprimes1000=<n>\ntwin100=<n>\n"
@@ -432,7 +439,7 @@ internal static class E2EMissionTests
     /// </summary>
     static async Task<(string Src, string Out)> RunAlgoPhase(
         string bridge, string model, string ws, string lang, string project, string file, string[] stages,
-        int turns = 26, Func<string, bool>? accept = null)
+        int turns = 26, Func<string, bool>? accept = null, Func<string, bool>[]? stageChecks = null)
     {
         string sysBase = "Voce e engenheiro senior C# e F#. Responda SOMENTE com tool calls, sem prosa.";
         string sys = lang == "F#"
@@ -452,6 +459,12 @@ internal static class E2EMissionTests
         // mais de uma passada. O aceite (metas e formato) nao muda entre as etapas.
         for (int attempt = 1; attempt <= stages.Length; attempt++)
         {
+        // Portão DESTA etapa: quando o enunciado vem segmentado, cada etapa só termina
+        // quando o que ELA pede já saiu certo (o aceite final continua sendo `accept`).
+        // Sem isso a etapa 1 encerrava com `hanoi=0` e a seguinte reescrevia por cima.
+        Func<string, bool> stageCheck = stageChecks is not null && attempt - 1 < stageChecks.Length
+            ? stageChecks[attempt - 1]
+            : accept ?? AlgoOk;
         var hist = new JsonArray(new JsonObject { ["role"] = "system", ["content"] = sys });
         hist.Add(new JsonObject { ["role"] = "user", ["content"] = stages[attempt - 1] + feedback });
         // Retry de tool: o controle de loop que a bridge usa no caminho de chat
@@ -577,7 +590,7 @@ internal static class E2EMissionTests
                     Console.WriteLine($"  [algo:{lang}] T{turn} {fn} args={a.ToJsonString()[..Math.Min(120, a.ToJsonString().Length)]} -> {seen.Replace("\n", " | ")[..Math.Min(300, seen.Replace("\n", " | ").Length)]}");
                 }
                 hist.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = res });
-                if (fn == "shell" && (accept ?? AlgoOk)(res)) done = true;
+                if (fn == "shell" && stageCheck(res)) done = true;
             }
             var verdict = loopGuard.Evaluate(hist);
             if (verdict.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Nudge)
@@ -649,6 +662,17 @@ internal static class E2EMissionTests
 
     static bool AlgoOk(string output)
     {
+        var kv = ParseKeys(output);
+        if (!kv.TryGetValue("hanoi", out var h) || h.Trim() != "15") return false;
+        if (!kv.TryGetValue("primes100", out var p1) || p1.Trim() != "25") return false;
+        if (!kv.TryGetValue("primes1000", out var p2) || p2.Trim() != "168") return false;
+        if (!kv.TryGetValue("twin100", out var t) || t.Trim() != "8") return false;
+        return SeqOk(kv);
+    }
+
+    /// <summary>Chaves `nome=valor` de uma linha cada, na ordem em que saíram.</summary>
+    static Dictionary<string, string> ParseKeys(string output)
+    {
         var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var line in output.Split('\n'))
         {
@@ -658,15 +682,29 @@ internal static class E2EMissionTests
             string v = line[(i + 1)..].Trim();
             if (k.Length > 0 && v.Length > 0) kv[k] = v;
         }
-        if (!kv.TryGetValue("hanoi", out var h) || h.Trim() != "15") return false;
-        if (!kv.TryGetValue("primes100", out var p1) || p1.Trim() != "25") return false;
-        if (!kv.TryGetValue("primes1000", out var p2) || p2.Trim() != "168") return false;
-        if (!kv.TryGetValue("twin100", out var t) || t.Trim() != "8") return false;
+        return kv;
+    }
+
+    /// <summary>Sequência de Hanoi legal e completa: 15 movimentos, abre em 1-&gt;2 e fecha em 2-&gt;3.</summary>
+    static bool SeqOk(Dictionary<string, string> kv)
+    {
         if (!kv.TryGetValue("hanoi_seq", out var seq)) return false;
         var moves = seq.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(x => x.Replace(" ", "")).ToArray();
         return moves.Length == 15 && moves[0] == "1->2" && moves[^1] == "2->3";
     }
+
+    /// <summary>
+    /// Portão de cada etapa do Hanoi (o aceite FINAL continua sendo
+    /// <see cref="AlgoOk"/>): 1) só a contagem certa; 2) contagem + sequência legal;
+    /// 3) as cinco chaves.
+    /// </summary>
+    static readonly Func<string, bool>[] HanoiStageChecks =
+    {
+        o => ParseKeys(o).TryGetValue("hanoi", out var h) && h.Trim() == "15",
+        o => { var kv = ParseKeys(o); return kv.TryGetValue("hanoi", out var h) && h.Trim() == "15" && SeqOk(kv); },
+        AlgoOk,
+    };
 
     static bool HasHardcodedAlgo(string src)
     {
