@@ -2363,3 +2363,37 @@ a forma que o probe compilou.
 **Prova (`iso-b5`, antes do split):** o portão por etapa já funcionava —
 `hanoi=15` saiu correto e o FAIL passou a ser outro (`CS1501`, primos). O split
 resolve o resto; ver a linha de `iso-b6` no HISTORY.
+
+## 75-b. Hanoi: portão por etapa, segunda rodada e split do crivo (2026-11-03)
+
+Continuação do #75, com cinco amostras isoladas do mesmo teste:
+
+| rodada | duração | saída real | leitura |
+|---|---|---|---|
+| `iso-b6` | 141,5 s | `hanoi=3` + `A->C,…` (7 itens) | etapa 2 sem "4 discos / hastes numéricas" |
+| `iso-b7` | 85,7 s | 15 linhas soltas (sem chaves) | recursão certa, `List` criada e nunca preenchida |
+| `iso-b8` | 169,9 s | 15 movimentos certos + `hanoi=4` + `hanoi_seq=` vazio | idem; contou discos |
+| `iso-b9` | 165,4 s | `hanoi=15` + 2 movimentos fixos `"1->2"`/`"3->2"` | **copiou** a sequência no código |
+
+**O que fechou cada buraco:**
+
+1. A etapa 2 passou a reafirmar o contrato (4 discos, hastes 1/2/3) — o `iso-b6`
+   trocava por 3 discos e letras.
+2. Cada etapa ganhou **segunda rodada** com a saída real como feedback
+   (`RunAlgoPhase`, plano de etapas): o portão que não bate volta na MESMA etapa em
+   vez de deixar a seguinte reescrever por cima. Antes, um contratempo na etapa 2
+   consumia a única tentativa.
+3. O aceite lê a sequência **da saída** (`hanoi_seq=` quando preenchida, senão os
+   próprios movimentos impressos) e continua exigindo o mesmo: 15 movimentos, todos
+   legais, primeiro `1->2`, último `2->3`, `hanoi=15`. Layout não é o problema; a
+   sequência é. `HasCopiedMoves` (2+ literais `"1->2"`) segue barrando a lista pronta
+   — foi ele que pegou o `iso-b9`.
+4. **O crivo saiu do programa do Hanoi** (decisão do operador, 2026-11-03): virou
+   `E-mission-algo-cs-primes` (`25`/`168`/`8`, `HasHardcodedPrimes` barra os totais
+   fixos), registrada no runner e no step `e-algo-cs-primes` do L4 (`WarTemplate` +
+   `scripts/war/run-levels.sh` + `docs/BENCHTESTS.md`). Dois problemas no mesmo
+   programa dividiam os turnos: ele acertava um, esquecia o outro e copiava o terceiro.
+
+**Medição de 1 slot × 128k** (llama `-c 131072 -np 1`, bridge
+`--context-tokens 131072 --context-slots 1`): `iso-b6/b7/b8/b9` em 85–170 s contra
+287 s do `iso-b5` (4 × 114688) no mesmo teste, VRAM 9,3 GiB contra 11,6 GiB.

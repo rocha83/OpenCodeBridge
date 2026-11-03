@@ -443,6 +443,7 @@ case "$LEVEL" in
       # escalada nudge -> compactacao -> 413 (mesmo passo do WarTemplate L4).
       step_bridge "e-ctx-overflow-$mode" --only E-ctx-overflow --mode "$mode"
       step_bridge "e-algo-cs-hanoi-$mode" --only =E-mission-algo-cs-hanoi --mode "$mode"
+      step_bridge "e-algo-cs-primes-$mode" --only =E-mission-algo-cs-primes --mode "$mode"
       step_bridge "e-algo-cs-bin-$mode" --only =E-mission-algo-cs-bin --mode "$mode"
       step_bridge "e-algo-cs-btree-$mode" --only =E-mission-algo-cs-btree --mode "$mode"
       step_bridge "e-algo-cs-kmeans-$mode" --only =E-mission-algo-cs-kmeans --mode "$mode"

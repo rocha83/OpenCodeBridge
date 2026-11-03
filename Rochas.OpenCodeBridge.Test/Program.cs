@@ -334,6 +334,7 @@ internal static class Program
         TestContext.Run("E-ctx-overflow", E2EContextOverflowTests.OverflowRecovers);
         TestContext.Run("E-ctx-overflow-exhaust", E2EContextOverflowTests.OverflowExhausted);
         TestContext.Run("E-mission-algo-cs-hanoi", E2EMissionTests.MissionAlgoCsHanoi);
+        TestContext.Run("E-mission-algo-cs-primes", E2EMissionTests.MissionAlgoCsPrimes);
         TestContext.Run("E-mission-algo-cs-bin", E2EMissionTests.MissionAlgoCsBin);
         TestContext.Run("E-mission-algo-cs-btree", E2EMissionTests.MissionAlgoCsBTree);
         TestContext.Run("E-mission-algo-cs-kmeans", E2EMissionTests.MissionAlgoCsKMeans);

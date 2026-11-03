@@ -270,7 +270,7 @@ internal static class E2EMissionTests
     /// Step separado do E-mission-tools: falha de algoritmo nao se mistura com
     /// a entrega git/zip. Enunciado humano: meta + dica de formula, sem passo a passo.
     /// </summary>
-    /// <summary>Missao de algoritmos em C# (Hanoi + crivo): metas e formato conferidos pela saida real.</summary>
+    /// <summary>Missao de algoritmos em C#: torre de Hanoi (contagem + sequencia), conferida pela saida real.</summary>
     public static async Task MissionAlgoCsHanoi()
     {
         string bridge = TestContext.Bridge;
@@ -278,16 +278,14 @@ internal static class E2EMissionTests
         string ws = TestContext.FreshWorkspace("e2e-mission-algo-cs-hanoi");
         TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
 
-        // Três etapas no MESMO arquivo (contagem de Hanoi, sequência de Hanoi,
-        // primos), como as demais missões C#: um programa inteiro em um turno só é
-        // a amostra em que o modelo local devolve o scaffold (`Hello, World!`) sem
-        // editar. O aceite final é o mesmo (cinco chaves); a segmentação só reduz o
-        // que ele precisa acertar de uma vez (regra de micro-runs).
+        // Duas etapas no MESMO arquivo (resolver a torre em texto, depois implementar
+        // em C#). Os primos saíram daqui em 2026-11-03: eram dois problemas no mesmo
+        // programa, o modelo entregava um e esquecia o outro (e ainda copiava a
+        // sequência) — hoje são a missão própria `E-mission-algo-cs-primes`.
         //
         // Cada etapa tem o SEU aceite (medido em 2026-11-03): sem isso a etapa dá-se
         // por cumprida com o contador parado em `hanoi=0` e a etapa seguinte reescreve
-        // por cima do arquivo errado. O portão por etapa só verifica o que aquela
-        // etapa pede — o aceite final continua sendo as cinco chaves.
+        // por cima do arquivo errado.
         string[] stages = AlgoStages(ws, "mcs");
         var (src, output) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", stages,
             stageChecks: HanoiStageChecks(ws));
@@ -313,6 +311,9 @@ internal static class E2EMissionTests
 
     /// <summary>Missao algoritmica em C# (4/4): quick sort + bubble sort.</summary>
     public static Task MissionAlgoCsSort() => RunAlgoMission("e2e-mission-algo-cs-sort", "C#", "sort", AlgoOkSort, HasHardcodedSort);
+
+    /// <summary>Missao algoritmica em C# (5/5): crivo de Eratostenes, separada do Hanoi em 2026-11-03.</summary>
+    public static Task MissionAlgoCsPrimes() => RunAlgoMission("e2e-mission-algo-cs-primes", "C#", "primes", AlgoOkPrimes, HasHardcodedPrimes);
 
     /// <summary>
     /// Enunciado de uma das missoes algoritmicas tradicionais. O TEXTO e' o mesmo
@@ -340,6 +341,10 @@ internal static class E2EMissionTests
                         + "Imprima os dois centroides finais com 1 casa decimal em `kmeans_c1=<x>,<y>` e "
                         + "`kmeans_c2=<x>,<y>`, na ordem crescente de x. "
 + "implemente a lógica atento ao ponto de parada correto do algoritmo.",
+            "primes" => "Conte os primos com o crivo de Eratostenes (nada de dividir cada numero por todos os menores): "
+                        + "quantos ha abaixo de 100, quantos abaixo de 1000 e quantos pares gemeos abaixo de 100 "
+                        + "(dois primos com diferenca 2, como 3 e 5). Imprima `primes100=<n>`, `primes1000=<n>` e "
+                        + "`twin100=<n>`, uma chave por linha, com o total que o crivo contou. ",
             _ => "Implemente DOIS algoritmos distintos, cada um na sua propria funcao: "
                  + "(1) quick sort — escolha um pivo, particione e ordene RECURSIVAMENTE as sublistas menores e maiores; "
                  + "(2) bubble sort — compare e troque vizinhos ate a lista ficar ordenada. "
@@ -423,11 +428,7 @@ internal static class E2EMissionTests
             + "A funcao recursiva de 4 parametros (quantos discos, haste de origem, haste auxiliar, haste de destino) CALCULA os movimentos — a sequencia nao vai pronta no codigo.\n"
             + "A saida do programa tem os 15 movimentos, cada um escrito como 1->2 (haste de origem, seta, haste de destino) — um por linha ou todos numa unica linha com os itens separados por virgula — e tambem a linha `hanoi=<n>`, onde `<n>` e' quantos movimentos a solucao executou (nao e' o numero de discos).\n"
             + "Rode " + run + " e ajuste ate a saida bater com a solucao do passo 1.";
-        string primes = "3) No MESMO programa, acrescente a analise dos primos: quantos ha abaixo de 100 (`primes100=`), abaixo de 1000 (`primes1000=`) e quantos pares gemeos abaixo de 100 (`twin100=`). O crivo de Eratostenes e uma boa pedida.\n"
-            + "Mantenha a saida de Hanoi ja' correta (os movimentos e a linha `hanoi=` com o total que a solucao executou) e termine com estas tres linhas, cada chave UMA vez:\n"
-            + "primes100=<n>\nprimes1000=<n>\ntwin100=<n>\n"
-            + "Rode " + run + " e ajuste ate bater; nao copie os numeros do enunciado.";
-        return new[] { solve, implement, primes };
+        return new[] { solve, implement };
     }
 
     /// <summary>
@@ -674,20 +675,15 @@ internal static class E2EMissionTests
     }
 
     /// <summary>
-    /// Aceite do Hanoi: contagem (15), sequência legal e os três números de primos.
-    /// A sequência vale na linha <c>hanoi_seq=</c> (CSV) OU impressa movimento a
-    /// movimento pelo programa: o problema é a sequência executada, não a diagramação.
-    /// Medido em 2026-11-03 — o modelo acerta a recursão clássica e imprime cada
-    /// movimento dentro dela; exigir a lista montada à mão reprovava solução correta
-    /// por causa do layout (`iso-b6/b7/b8`: 15 movimentos certos, `hanoi_seq=` vazio).
+    /// Aceite do Hanoi: contagem (15) e sequência legal. Os primos saíram daqui em
+    /// 2026-11-03 e viraram a missão própria <c>E-mission-algo-cs-primes</c> — dois
+    /// problemas no mesmo programa dividiam os turnos e o modelo entregava um,
+    /// esquecia o outro e ainda copiava a sequência.
     /// </summary>
     static bool AlgoOk(string output)
     {
         var kv = ParseKeys(output);
         if (!kv.TryGetValue("hanoi", out var h) || h.Trim() != "15") return false;
-        if (!kv.TryGetValue("primes100", out var p1) || p1.Trim() != "25") return false;
-        if (!kv.TryGetValue("primes1000", out var p2) || p2.Trim() != "168") return false;
-        if (!kv.TryGetValue("twin100", out var t) || t.Trim() != "8") return false;
         return HanoiSeqOk(output);
     }
 
@@ -731,9 +727,8 @@ internal static class E2EMissionTests
     /// <summary>
     /// Portão de cada etapa do Hanoi (o aceite FINAL continua sendo
     /// <see cref="AlgoOk"/>): 1) a solução em texto (<c>hanoi.txt</c>) com os 15
-    /// movimentos legais; 2) o C# resolvendo a torre e dizendo a contagem; 3) todas as
-    /// chaves. A etapa 1 não tem saída de programa: quem responde é o arquivo que o
-    /// modelo gravou.
+    /// movimentos legais; 2) o C# resolvendo a torre e dizendo a contagem. A etapa 1
+    /// não tem saída de programa: quem responde é o arquivo que o modelo gravou.
     /// </summary>
     static Func<string, bool>[] HanoiStageChecks(string ws)
     {
@@ -810,8 +805,25 @@ internal static class E2EMissionTests
         return i >= 0 ? l[..i] : l;
     }));
 
-    internal static bool AlgoOkBin(string output) => ParseKeyValues(output).TryGetValue("binsearch_idx", out var v) && v.Replace(" ", "") == "6";
-    internal static bool HasHardcodedBin(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"binsearch_idx\s*=\s*6");
+    /// <summary>
+    /// Aceite do crivo (<c>E-mission-algo-cs-primes</c>): primos abaixo de 100 e de 1000
+    /// e pares gêmeos abaixo de 100. Missão própria desde 2026-11-03, quando saiu do
+    /// programa do Hanoi.
+    /// </summary>
+    internal static bool AlgoOkPrimes(string output)
+    {
+        var kv = ParseKeyValues(output);
+        return kv.TryGetValue("primes100", out var p1) && p1.Trim() == "25"
+            && kv.TryGetValue("primes1000", out var p2) && p2.Trim() == "168"
+            && kv.TryGetValue("twin100", out var t) && t.Trim() == "8";
+    }
+
+    /// <summary>Fonte com os totais fixados não conta: o crivo tem que rodar de verdade.</summary>
+    internal static bool HasHardcodedPrimes(string src) =>
+        System.Text.RegularExpressions.Regex.IsMatch(StripComments(src),
+            @"(primes100|primes1000|twin100)\s*=\s*(25|168|8)\b");
+
+    internal static bool AlgoOkBin(string output) => ParseKeyValues(output).TryGetValue("binsearch_idx", out var v) && v.Replace(" ", "") == "6";    internal static bool HasHardcodedBin(string src) => System.Text.RegularExpressions.Regex.IsMatch(StripComments(src), @"binsearch_idx\s*=\s*6");
 
     internal static bool AlgoOkBTree(string output)
     {

@@ -198,7 +198,7 @@ step pode ser filtrado por `--only`.
 | **L1** | `units` (uma vez, bridge) → `e-integration-{tema}` (6 steps) → `e-topics-{tema}` (8 steps) |
 | **L2** | `e-responses-tools` → `e-tools-full` → belts **azul e verde**, uma belt por step (build + orch) |
 | **L3** | `e-science-gpu` → `e-mission-tools` → belt **roxa** (build + orch) |
-| **L4** | `e-algo-cs-hanoi` → `e-algo-cs-{bin,btree,kmeans,sort}` → belts **marrom e preta**, uma belt por step (build + orch) → frontend `e-front-{gen,edit,edit-razor,edit-react,verify}` → `webui-integracao-topicos` |
+| **L4** | `e-algo-cs-hanoi` → `e-algo-cs-primes` → `e-algo-cs-{bin,btree,kmeans,sort}` → belts **marrom e preta**, uma belt por step (build + orch) → frontend `e-front-{gen,edit,edit-razor,edit-react,verify}` → `webui-integracao-topicos` |
 
 - **L1 `e-integration-{tema}`** (um teste por step): `e-integration-stream`
   (`E-stream-architect`), `e-integration-review` (`E-review-architect`),
@@ -449,12 +449,14 @@ isolada com `--only E-science-cpu` quando a Q3 estiver dedicada.
 `LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 4`
 
 Roda, em `--mode bridge` (default), nesta ordem:
-`E-mission-algo-cs-hanoi` → `E-mission-algo-cs-{bin,btree,kmeans,sort}` →
+`E-mission-algo-cs-hanoi` → `E-mission-algo-cs-primes` →
+`E-mission-algo-cs-{bin,btree,kmeans,sort}` →
 `belts-build` marrom+preta → `belts-orch` marrom+preta →
 `E-front-*` (Gen/Edit CSS/Razor/React/Verify) → `webui-integracao-topicos`
 (Web.Test: integração + tópicos).
 
-`E-mission-algo-cs-hanoi` (Hanoi + crivo, C#) e as quatro missões de algoritmo
+`E-mission-algo-cs-hanoi` (torre de Hanoi, C#), `E-mission-algo-cs-primes`
+(crivo de Eratostenes, C# — separado do Hanoi em 2026-11-03) e as quatro missões de algoritmo
 em C# (`E-mission-algo-cs-bin` busca binária, `-btree` árvore de busca,
 `-kmeans` K-Means e `-sort` quick sort + bubble sort) são testes **separados**,
 cada um no seu projeto/fonte e com aceite próprio. Misturar algoritmos num teste

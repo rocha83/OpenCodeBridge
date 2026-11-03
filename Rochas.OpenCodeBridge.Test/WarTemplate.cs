@@ -967,6 +967,8 @@ internal sealed class WarTemplate : CircuitTemplate
                         new[] { "--only", "E-ctx-overflow" });
                     yield return StepBridge(driver, $"e-algo-cs-hanoi-{mode}", mode,
                         new[] { "--only", "=E-mission-algo-cs-hanoi" });
+                    yield return StepBridge(driver, $"e-algo-cs-primes-{mode}", mode,
+                        new[] { "--only", "=E-mission-algo-cs-primes" });
                     yield return StepBridge(driver, $"e-algo-cs-bin-{mode}", mode,
                         new[] { "--only", "=E-mission-algo-cs-bin" });
                     yield return StepBridge(driver, $"e-algo-cs-btree-{mode}", mode,
