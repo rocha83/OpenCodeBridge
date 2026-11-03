@@ -24,7 +24,7 @@ internal static class BridgeFlowGate
     /// <param name="record">Registro de <c>system-sent</c> da bridge (ou null).</param>
     /// <param name="testStartMs">Inicio do teste (epoch ms); 0 desliga a checagem de idade.</param>
     /// <returns>Causa da faltante, "" quando o fluxo fecha, ou <c>INCONCLUSIVO: ...</c>.</returns>
-    public static string Check(JsonObject? record, long testStartMs = 0)
+    public static string Check(JsonObject? record, long testStartMs = 0, bool tailsOptional = false)
     {
         if (record is null || Str(record, "event") != "system-sent")
             return "nenhum system do request registrado na bridge (GET /api/test/last-system vazio)";
@@ -42,9 +42,8 @@ internal static class BridgeFlowGate
             return "ausente main_harness";
         string scope = Str(record, "tail_scope") is { Length: > 0 } s ? s : "off";
         // Diagnostico do operador (WAR --war-no-tails-gate propaga
-        // BRIDGE_TAILS_OPTIONAL=1): o run mede o modelo SEM caudas; o
-        // main_harness continua obrigatorio (regra irrevogavel do modo bridge).
-        bool tailsOptional = Environment.GetEnvironmentVariable("BRIDGE_TAILS_OPTIONAL") == "1";
+        // BRIDGE_TAILS_OPTIONAL=1): o Probe do E2E passa tailsOptional; o
+        // Check direto (pins unitarios) segue exigindo caudas.
         if (!tailsOptional)
         {
             if (!IsTrue(record, "harness_tails"))
@@ -82,8 +81,12 @@ internal static class BridgeFlowGate
         {
             return ("registro indisponivel: " + ex.Message.Split('\n')[0], "sem last-system");
         }
-        return (Check(rec, testStartMs), rec is null ? "registro vazio" : Describe(rec));
+        return (Check(rec, testStartMs, TailsOptional()), rec is null ? "registro vazio" : Describe(rec));
     }
+
+    /// <summary>Opt-in do run de diagnostico (WAR --war-no-tails-gate).</summary>
+    static bool TailsOptional ()
+        => Environment.GetEnvironmentVariable("BRIDGE_TAILS_OPTIONAL") == "1";
 
     /// <summary>
     /// Probe que sabe se o teste mandou request para ESTA bridge: o contador

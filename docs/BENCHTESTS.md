@@ -306,8 +306,9 @@ padrão e pode ser declarado explicitamente com `--war-stop-on-fail`.
 > **Relaxamento explícito (diagnóstico):** `--war-no-tails-gate` transforma a
 > reprovação das caudas em `preflight_aviso` (com `relaxado_por` na evidência)
 > em vez de BLOCKED. Serve para medir o modelo **sem** caudas; o
-> `bridge_main_harness` continua gate duro e `anti_repeat`/`slot` só entram na
-> evidência (`/api/status` já expõe os dois).
+> `bridge_main_harness` continua gate duro. Simétrico para anti-repeat:
+> `--war-no-anti-repeat-gate` relaxa `anti_repeat_status`; `slot` só entra na
+> evidência (`/api/status` já expõe `anti_repeat` e `slot`).
 
 ```bash
 # bridge própria (para testar o build do repo, não o binário de produção)

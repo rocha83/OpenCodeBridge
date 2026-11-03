@@ -68,6 +68,8 @@ internal sealed class WarTemplate : CircuitTemplate
         // Diagnostico do modelo cru: relaxa o gate `harness_tails_status` do
         // preflight (caudas off). Opt-in explicito — o default segue gate duro.
         public bool NoTailsGate;
+        // Simetrico ao de tails: relaxa `anti_repeat_status` (anti-repeat off).
+        public bool NoAntiRepeatGate;
         // Web UI pelo navegador: SO' o ultimo step (webui-integracao-topicos) roda a UI
         // (--web URL --ui --phase full). O front mede por snapshot estatico. Headed
         // abre a janela (--war-headed / HEADED=1).
@@ -1142,6 +1144,33 @@ internal sealed class WarTemplate : CircuitTemplate
                 });
                 driver.Log($"preflight AVISO: harness_tails_status reprovado e RELAXADO por --war-no-tails-gate {tailsEvidence.ToJsonString()}");
             }
+
+            // Anti-repeat: gate proprio, simetrico ao de tails. O padrao do
+            // laboratorio e anti-repeat LIGADO na bridge alvo; o operador que
+            // quer medir o modelo sem ele passa --war-no-anti-repeat-gate (o
+            // relaxamento fica registrado no preflight, nunca em silencio).
+            bool arOk = On(st, "anti_repeat", "anti_repeat");
+            var arEvidence = new JsonObject
+            {
+                ["bridge"] = _p.Bridge,
+                ["anti_repeat"] = Str(st, "anti_repeat"),
+                ["anti_repeat_flag"] = Str(st, "anti_repeat_flag"),
+                ["fix"] = "ligue --anti-repeat 1 (ou passe --war-no-anti-repeat-gate para medir sem ele)"
+            };
+            if (arOk || !_o.NoAntiRepeatGate)
+                Pf(driver, "anti_repeat_status", arOk, arEvidence);
+            else
+            {
+                arEvidence["relaxado_por"] = "--war-no-anti-repeat-gate";
+                driver.Publish(new JsonObject
+                {
+                    ["t"] = "preflight_aviso",
+                    ["check"] = "anti_repeat_status",
+                    ["ok"] = false,
+                    ["evidence"] = arEvidence
+                });
+                driver.Log($"preflight AVISO: anti_repeat_status reprovado e RELAXADO por --war-no-anti-repeat-gate {arEvidence.ToJsonString()}");
+            }
         }
 
         Pf(driver, "bridge_upstream",
@@ -1334,6 +1363,8 @@ internal sealed class WarTemplate : CircuitTemplate
         // Diagnostico do modelo sem caudas (--war-no-tails-gate): os filhos
         // aceitam tails off no portao de fluxo (main_harness segue obrigatorio).
         if (_o.NoTailsGate) env["BRIDGE_TAILS_OPTIONAL"] = "1";
+        // Diagnostico do modelo sem anti-repeat (--war-no-anti-repeat-gate).
+        if (_o.NoAntiRepeatGate) env["BRIDGE_ANTI_REPEAT_OPTIONAL"] = "1";
         // Linha GPU2 (diagnostico/bancada). Nome semantico: WAR_GPU2_BRIDGE; o
         // legado WAR_CPU_BRIDGE continua aceito pelos consumidores. `--war-no-cpu`
         // mantem a rodada Q4-only e nao publica a linha para os filhos.
@@ -1675,6 +1706,7 @@ internal sealed class WarTemplate : CircuitTemplate
                 case "--war-no-rebuild": o.NoBuild = true; break;
                 case "--war-stop-on-fail": o.StopOnFirstFailure = true; break;
                 case "--war-no-tails-gate": o.NoTailsGate = true; break;
+                case "--war-no-anti-repeat-gate": o.NoAntiRepeatGate = true; break;
                 case "--war-no-stop-on-fail":
                 case "--war-continue": o.StopOnFirstFailure = false; break;
                 case "--war-pause": o.Pause = true; break;
@@ -1728,6 +1760,7 @@ internal sealed class WarTemplate : CircuitTemplate
           --war-list               lista os steps do level
           --war-stop-on-fail       para no primeiro FAIL/STALE/BLOCKED (default)
           --war-no-tails-gate      relaxa o gate de tails do preflight (caudas off; diagnostico)
+          --war-no-anti-repeat-gate relaxa o gate de anti-repeat (diagnostico)
           --war-no-stop-on-fail    segue mesmo com FAIL (mede placar completo)
           --war-require-green      gate vermelho derruba o exit (default)
           --war-no-require-green   nao derruba

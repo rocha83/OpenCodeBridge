@@ -352,6 +352,9 @@ não existe*. Medido duas vezes: `[1; 3 .. n-1]` (DRIVER-FIXES #13) e a forma
   opt-in propaga `BRIDGE_TAILS_OPTIONAL=1` aos filhos, então o portão de fluxo
   (`BridgeFlowGate`) aceita caudas off no run de diagnóstico — o
   `main_harness` continua obrigatório.
+- **Anti-repeat tem gate próprio e simétrico:** `anti_repeat_status` exige
+  `anti_repeat=true` na bridge alvo; `--war-no-anti-repeat-gate` o transforma em
+  `preflight_aviso` (e propaga `BRIDGE_ANTI_REPEAT_OPTIONAL=1` aos filhos).
 - **Slots são opcionais:** a bridge só envia `id_slot` com `--slot N`
   (default `-1` = llama escolhe o slot livre). A bateria roda um level por
   slot quando o operador fixa o slot na unit; paralelismo entre levels é
