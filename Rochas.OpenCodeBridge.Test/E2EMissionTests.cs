@@ -290,8 +290,9 @@ internal static class E2EMissionTests
         // etapa pede — o aceite final continua sendo as cinco chaves.
         string[] stages = AlgoStages(ws, "mcs");
         var (src, output) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", stages,
-            stageChecks: HanoiStageChecks);
+            stageChecks: HanoiStageChecks(ws));
         TestContext.Check(!HasHardcodedAlgo(src), "C# calcula (sem hardcode das metas)");
+        TestContext.Check(!HasCopiedMoves(src), "C# calcula a sequencia (sem copiar a lista pronta)");
         TestContext.Check(AlgoOk(output), "C# entrega as chaves esperadas, saiu: " + output[..Math.Min(240, output.Length)]);
         Console.WriteLine($"  [algo] C# ok:\n{output.Trim()}");
     }
@@ -406,30 +407,28 @@ internal static class E2EMissionTests
         string ext = cs ? "cs" : "fs";
         string proj = dir + (cs ? ".csproj" : ".fsproj");
         string run = "`dotnet run --project " + ws + "/" + dir + "/" + proj + "`";
-        string head = "Preciso de um programa em " + ws + "/" + dir + "/Program." + ext + ", no projeto " + proj
-            + " que ja existe (nao crie outro projeto), imprimindo o resultado de um jeito simples para eu conferir, so com numeros inteiros.\n";
-        // Tres etapas em vez de duas (2026-11-03): com o par "hanoi + primos" o modelo
-        // imprimia os movimentos SOLTOS, uma linha por movimento (Console.WriteLine
-        // dentro da recursao), dava a etapa por cumprida e a chave `hanoi_seq=` nunca
-        // saia; o enunciado de uma vez so cobria dois contratos diferentes (contagem e
-        // sequencia) e ele acertava um e esquecia o outro. Cada etapa agora declara o
-        // formato exato da saida que ela pede.
-        string hanoiCount = "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. As hastes sao identificadas pelos numeros 1, 2 e 3 (origem 1, destino 3). Crie UMA funcao recursiva de 4 parametros (quantos discos, haste de origem, haste auxiliar, haste de destino) que resolva a torre de verdade, e um programa que a execute.\n"
-            + "O numero de movimentos e' CONTADO pela propria solucao — um contador que soma 1 a cada movimento executado, nao uma formula pronta. A saida do programa tem EXATAMENTE uma linha, nesse formato:\n"
-            + "hanoi=<n>\n"
-            + "Nesta etapa o programa nao lista os movimentos: eles entram na etapa seguinte. Rode " + run
-            + " e ajuste ate essa linha sair com o valor contado (nao copie numeros do enunciado).";
-        string hanoiSeq = "2) No MESMO programa, reescreva o Program.cs INTEIRO com `write` para que a solucao tambem entregue a LISTA dos movimentos: a funcao recursiva recebe a lista junto com os discos e as hastes, ACRESCENTA nela cada movimento como o texto 1->2 (haste de origem, seta, haste de destino, sempre com os numeros 1, 2 e 3) e NAO escreve nada na tela — quem imprime e' o Main, depois de a solucao terminar.\n"
-            + "O contrato da sequencia e' o de movimentos LEGAIS: cada item move o disco do topo de uma haste para OUTRA (origem e destino nunca iguais) e a torre termina inteira na haste 3 — o teste confere movimento por movimento, entao uma sequencia com `3->3` ou com disco saindo do lugar errado nao vale.\n"
+        string solutionFile = Path.Combine(ws, "hanoi.txt").Replace('\\', '/');
+        // ETAPA 1 — resolver o Hanoi SEM C# (2026-11-03): pedir "conta e sequencia" no
+        // mesmo turno em que ele aprende a linguagem misturava dois problemas — ele
+        // acertava a contagem e escrevia os movimentos dentro da recursao. Aqui a
+        // solucao e' o artefato (texto com os 15 movimentos) e o C# entra depois.
+        string solve = "1) Antes do codigo: resolva a torre de Hanoi com 4 discos, da haste 1 para a 3, e grave a solucao em "
+            + solutionFile + " com `write`.\n"
+            + "O arquivo tem uma linha por movimento, 15 no total, cada um no formato 1->2 (haste de origem, seta, haste de destino, so com os numeros 1, 2 e 3).\n"
+            + "O contrato e' o de movimentos LEGAIS: cada movimento leva o disco do topo de uma haste para OUTRA (origem e destino nunca iguais) e no fim a torre inteira esta na haste 3 — o primeiro movimento e' 1->2 e o ultimo 2->3.\n"
+            + "Nao ha codigo nesta etapa: o arquivo de texto e' a entrega.";
+        string implement = "2) Agora implemente a MESMA solucao em " + ws + "/" + dir + "/Program." + ext + ", no projeto " + proj
+            + " que ja existe (nao crie outro projeto), com `write` do arquivo INTEIRO.\n"
+            + "A funcao recursiva de 4 parametros (quantos discos, haste de origem, haste auxiliar, haste de destino) CALCULA os movimentos — a sequencia nao vai pronta no codigo. A funcao entrega a lista para o Main imprimir: ela nao escreve nada na tela.\n"
             + "A saida do programa tem EXATAMENTE estas duas linhas, nessa ordem, cada chave UMA vez:\n"
             + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\n"
-            + "O Main imprime a lista inteira numa unica linha, com os itens separados por virgula. Rode " + run
-            + " e ajuste ate sairem as duas linhas — o contador e a lista descrevem os MESMOS movimentos.";
+            + "O `hanoi=` e' a contagem que a solucao fez, o `hanoi_seq=` e' a lista inteira numa unica linha com os itens separados por virgula, e a sequencia e' a mesma que voce gravou no passo 1. Rode "
+            + run + " e ajuste ate sairem as duas linhas.";
         string primes = "3) No MESMO programa, acrescente a analise dos primos: quantos ha abaixo de 100 (`primes100=`), abaixo de 1000 (`primes1000=`) e quantos pares gemeos abaixo de 100 (`twin100=`). O crivo de Eratostenes e uma boa pedida.\n"
             + "Mantenha as duas linhas de Hanoi ja' corretas (`hanoi=` continua sendo o numero de movimentos e `hanoi_seq=` continua numa unica linha) e termine com estas cinco linhas, uma por linha, nessa ordem e com cada chave UMA vez:\n"
             + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\nprimes100=<n>\nprimes1000=<n>\ntwin100=<n>\n"
             + "Rode " + run + " e ajuste ate bater; nao copie os numeros do enunciado.";
-        return new[] { head + hanoiCount, head + hanoiSeq, head + primes };
+        return new[] { solve, implement, primes };
     }
 
     /// <summary>
@@ -591,7 +590,9 @@ internal static class E2EMissionTests
                     Console.WriteLine($"  [algo:{lang}] T{turn} {fn} args={a.ToJsonString()[..Math.Min(120, a.ToJsonString().Length)]} -> {seen.Replace("\n", " | ")[..Math.Min(300, seen.Replace("\n", " | ").Length)]}");
                 }
                 hist.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = res });
-                if (fn == "shell" && stageCheck(res)) done = true;
+                // Etapa cuja entrega e' arquivo (ex.: a solucao do Hanoi em texto)
+                // fecha no `write`/`edit`: nao ha saida de programa para conferir.
+                if ((fn == "shell" || fn == "write" || fn == "edit") && stageCheck(fn == "shell" ? res : "")) done = true;
             }
             var verdict = loopGuard.Evaluate(hist);
             if (verdict.Verdict == global::Rochas.OpenCodeBridge.Core.BreakerVerdict.Nudge)
@@ -697,15 +698,54 @@ internal static class E2EMissionTests
 
     /// <summary>
     /// Portão de cada etapa do Hanoi (o aceite FINAL continua sendo
-    /// <see cref="AlgoOk"/>): 1) só a contagem certa; 2) contagem + sequência legal;
-    /// 3) as cinco chaves.
+    /// <see cref="AlgoOk"/>): 1) a solução em texto (<c>hanoi.txt</c>) com os 15
+    /// movimentos legais; 2) o C# calculando e imprimindo contagem + sequência;
+    /// 3) as cinco chaves. A etapa 1 não tem saída de programa: quem responde é o
+    /// arquivo que o modelo gravou.
     /// </summary>
-    static readonly Func<string, bool>[] HanoiStageChecks =
+    static Func<string, bool>[] HanoiStageChecks(string ws)
     {
-        o => ParseKeys(o).TryGetValue("hanoi", out var h) && h.Trim() == "15",
-        o => { var kv = ParseKeys(o); return kv.TryGetValue("hanoi", out var h) && h.Trim() == "15" && SeqOk(kv); },
-        AlgoOk,
-    };
+        string solutionFile = Path.Combine(ws, "hanoi.txt");
+        return new Func<string, bool>[]
+        {
+            _ => HanoiMovesOk(solutionFile),
+            o => { var kv = ParseKeys(o); return kv.TryGetValue("hanoi", out var h) && h.Trim() == "15" && SeqOk(kv); },
+            AlgoOk,
+        };
+    }
+
+    /// <summary>
+    /// A solução em texto: 15 linhas, cada uma um movimento legal no formato
+    /// <c>1-&gt;2</c> (hastes 1..3, origem diferente do destino), abrindo em
+    /// <c>1-&gt;2</c> e fechando em <c>2-&gt;3</c>.
+    /// </summary>
+    static bool HanoiMovesOk(string path)
+    {
+        if (!File.Exists(path)) return false;
+        var moves = File.ReadAllLines(path)
+            .Select(l => l.Trim().Replace(" ", ""))
+            .Where(l => l.Length > 0)
+            .ToArray();
+        if (moves.Length != 15) return false;
+        if (!moves.All(m => System.Text.RegularExpressions.Regex.IsMatch(m, "^[1-3]->[1-3]$"))) return false;
+        if (moves.Any(m => m[0] == m[^1])) return false;
+        return moves[0] == "1->2" && moves[^1] == "2->3";
+    }
+
+    /// <summary>
+    /// Sequência de Hanoi copiada pronta no código: dois ou mais literais de
+    /// movimento (<c>"1-&gt;2"</c>) fora de comentário. A implementação de verdade
+    /// monta o texto a partir das hastes (interpolação), então não tem esse literal.
+    /// </summary>
+    static bool HasCopiedMoves(string src)
+    {
+        string code = string.Join("\n", src.Split('\n').Select(l =>
+        {
+            int i = l.IndexOf("//", StringComparison.Ordinal);
+            return i >= 0 ? l[..i] : l;
+        }));
+        return System.Text.RegularExpressions.Regex.Matches(code, "\"[1-3]->[1-3]\"").Count >= 2;
+    }
 
     static bool HasHardcodedAlgo(string src)
     {
