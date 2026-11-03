@@ -729,7 +729,7 @@ internal static class TestContext
     /// <param name="attempts">Numero de tentativas (>=1).</param>
     /// <param name="attempt">Recebe (pasta da tentativa, feedback da falha anterior).</param>
     /// <param name="retryHint">Orientacao do cenario para a nova tentativa (opcional).</param>
-    public static async Task AgentAttempts(string label, string dirRoot, int attempts,
+    public static async Task<string> AgentAttempts(string label, string dirRoot, int attempts,
         Func<string, string, Task> attempt, string? retryHint = null)
     {
         string feedback = "";
@@ -753,7 +753,7 @@ internal static class TestContext
             try
             {
                 await attempt(dir, feedback);
-                return;
+                return dir;
             }
             catch (Exception ex)
             {
@@ -761,6 +761,35 @@ internal static class TestContext
                 Console.WriteLine($"  [{label}] tentativa {n} falhou: {ex.Message.Split('\n')[0]}");
                 feedback = "\n\nTENTATIVA ANTERIOR FALHOU: " + ex.Message
                     + "\nRefaca do zero nesta pasta nova, cumprindo todos os requisitos do enunciado."
+                    + (retryHint is { Length: > 0 } ? "\n" + retryHint : "");
+            }
+        }
+        throw last!;
+    }
+
+    /// <summary>
+    /// Tentativas no MESMO diretorio: usado quando o enunciado e' sequencial ao
+    /// anterior (passo 2 AJUSTA o artefato do passo 1). O feedback carrega a
+    /// falha do aceite e proibe refazer o que ja esta versionado.
+    /// </summary>
+    public static async Task RetrySame(string label, string dir, int attempts,
+        Func<string, string, Task> attempt, string? retryHint = null)
+    {
+        string feedback = "";
+        Exception? last = null;
+        for (int n = 1; n <= Math.Max(1, attempts); n++)
+        {
+            try
+            {
+                await attempt(dir, feedback);
+                return;
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+                Console.WriteLine($"  [{label}] tentativa {n} falhou: {ex.Message.Split('\n')[0]}");
+                feedback = "\n\nTENTATIVA ANTERIOR FALHOU: " + ex.Message
+                    + "\nCorrija nesta mesma pasta, sem refazer os passos ja concluidos e sem trocar os nomes de arquivo do enunciado."
                     + (retryHint is { Length: > 0 } ? "\n" + retryHint : "");
             }
         }
