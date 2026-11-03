@@ -84,6 +84,11 @@ internal static class Program
                 RequireQ3 = false,
                 RequireMainHarness = TestContext.Mode == "bridge",
                 ProbeModel = true,
+                // Piso de VRAM: default 512 MiB; o laboratorio full-VRAM declara
+                // o piso real pela env WAR_MIN_FREE_VRAM (vem de --war-min-free-vram).
+                MinFreeVramMiB = int.TryParse(Environment.GetEnvironmentVariable("WAR_MIN_FREE_VRAM"), out int minVram)
+                    ? minVram
+                    : 512,
                 CheckLock = Environment.GetEnvironmentVariable("BRIDGE_UNDER_DRIVER") != "1"
             });
             if (!preflight.Print())

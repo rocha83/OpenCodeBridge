@@ -2079,3 +2079,29 @@ tocava no serviço. Paralelismo não existia: `RunAll` fazia
 Grafana respondeu 16/16 painéis com dados (`rows>0`); raias comprovadas por
 `launch_slot_: id N` distintos no log do llama e coluna `raia` no
 `GET /api/test/steps?war=1`.
+
+## 68. Preflight por step reprovava VRAM no lab full-VRAM: todas as raias SKIP rc=3 (2026-11-03)
+
+**Sintoma** — bateria em raias (L1..L4 simultâneos) terminou em 21s com
+`PASS=0 FAIL=0 SKIP=15` em cada level. Log do step:
+```
+[preflight] FAIL vram livre — 494 MiB livres (min 512)
+[preflight] NO-GO: corrija os FAIL acima
+```
+`summary.tsv`: todo step `SKIP rc=3`.
+
+**Causa** — `StackPreflight.MinFreeVramMiB` é 512 por default e o preflight do
+runner (`Program.cs`) não tinha como o operador declarar outro piso. O setup
+novo roda o E4B Q6_K retrained + mmproj **inteiros na VRAM** com 4 slots de
+114688 (`-c 458752 -np 4 -ngl 99 --mmproj-offload --no-host --op-offload`),
+então sobram ~500 MiB por definição: o piso antigo só servia para setup com
+headroom.
+
+**Correção** — `--war-min-free-vram N` (env `WAR_MIN_FREE_VRAM`), default 512
+preservado; o runner lê a env no `StackPreflightOptions.MinFreeVramMiB` e o
+valor aparece no `[preflight]` de cada step. Não é relaxamento silencioso: o
+piso declarado fica na evidência, e o resto do preflight (modelo, bridge,
+main harness, llama, lock) continua duro.
+
+**Prova** — mesma unit, `--war-min-free-vram 256`: `[preflight] ok vram livre`
+e as raias voltaram a executar steps (não mais SKIP rc=3).

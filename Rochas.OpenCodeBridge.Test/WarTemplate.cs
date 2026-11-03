@@ -75,6 +75,10 @@ internal sealed class WarTemplate : CircuitTemplate
         // level). Os steps de cada level seguem sequenciais dentro da raia; o pino
         // de slot do level vem do llama (bridge com `--slot -1`), nao da flag.
         public bool Parallel;
+        // Piso de VRAM livre do preflight por step. Default 512 MiB; laboratorio
+        // full-VRAM (modelo+mmproj residentes, 4 slots) deixa pouca folga e o
+        // operador declara o piso real com --war-min-free-vram (evidencia no log).
+        public int? MinFreeVram;
         // Web UI pelo navegador: SO' o ultimo step (webui-integracao-topicos) roda a UI
         // (--web URL --ui --phase full). O front mede por snapshot estatico. Headed
         // abre a janela (--war-headed / HEADED=1).
@@ -259,6 +263,10 @@ internal sealed class WarTemplate : CircuitTemplate
 
     private static int Run(WarOptions o, WarPaths p)
     {
+        // Piso de VRAM declarado pelo operador desce para o preflight de cada
+        // step (processo filho herda o env): lab full-VRAM nao tem 512 MiB de folga.
+        if (o.MinFreeVram is int minVram)
+            Environment.SetEnvironmentVariable("WAR_MIN_FREE_VRAM", minVram.ToString(CultureInfo.InvariantCulture));
         if (o.Pause) return ControlPause(p);
         if (o.Resume) return ControlResume(p);
         if (o.Status) return PrintStatus(p);
@@ -509,10 +517,13 @@ internal sealed class WarTemplate : CircuitTemplate
         // Esteira INTEIRA (L1..L4) recomeça também o Grafana: o painel relê as séries
         // e o plugin Infinity do zero, sem arrastar cache/estado da rodada anterior.
         // Nível isolado (`--war-level N`) não mexe no painel de quem está olhando.
-        if (levels.Count > 1 && !o.List) RestartGrafana(globalLog);
-        // Raias (`--war-parallel`): um processo por level simultaneo, cada um no
-        // slot que o llama alocar. Dentro da raia os steps seguem sequenciais.
-        if (!o.List) EnsureGrafana(globalLog);
+        if (!o.List)
+        {
+            // Bateria L1..L4 reinicia o painel; lista/level unico preserva o que
+            // o operador esta vendo (EnsureGrafana so faz start se estiver fora).
+            if (levels.Count > 1) RestartGrafana(globalLog);
+            else EnsureGrafana(globalLog);
+        }
         if (o.Parallel && levels.Count > 1 && !o.List)
             return RunParallel(o, p, levels, stamp, globalLog, driverSummary);
         LogGlobal(globalLog, $"=== run-all-levels {stamp} (levels: {string.Join(",", levels)}) ===");
@@ -1859,6 +1870,7 @@ internal sealed class WarTemplate : CircuitTemplate
             {
                 case "--war-level": o.Level = ParseInt(Next(), 1); break;
                 case "--war-parallel": o.Parallel = true; break;
+                case "--war-min-free-vram": o.MinFreeVram = ParseInt(Next(), 256); break;
                 case "--war-all": o.All = true; break;
                 case "--war-levels": o.Levels = Next(); o.All = true; break;
                 case "--war-only": o.OnlySteps = Next(); break;
@@ -1940,6 +1952,7 @@ internal sealed class WarTemplate : CircuitTemplate
           --war-all                executa 1 -> 4 em sequencia
           --war-parallel           raias: um level por slot do llama, em paralelo
                                    (bridge precisa estar com --slot -1)
+          --war-min-free-vram N    piso de VRAM livre do preflight (default 512; lab full-VRAM usa menor)
           --war-levels 1,2,3,4     levels explicitos
           --war-only NAME          roda so steps cujo nome contem NAME (virgula = lista)
           --war-modes bridge       modos (bridge|opencode), default "bridge"
