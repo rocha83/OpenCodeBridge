@@ -111,8 +111,9 @@ internal static class E2EToolsFullTests
     {
         const string basePrompt =
             "Na pasta atual existe um repositorio git com o arquivo data.txt ja commitado com a data de hoje. " +
-            "Busque na internet o clima de Sao Paulo de hoje e acrescente em data.txt, na linha de baixo da data, " +
-            "a linha 'ARQUIVO EDITADO - Clima: ' seguida do clima real retornado. Adicione a mudanca e faca o commit " +
+            "Busque o clima de Sao Paulo agora em https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m " +
+            "e acrescente em data.txt, na linha de baixo da data (a data ja gravada continua no arquivo), a linha " +
+            "'ARQUIVO EDITADO - Clima: ' seguida da temperatura retornada. Adicione a mudanca e faca o commit " +
             "com a mensagem 'Added sao paulo weather'. Grave a saida de git log (os dois commits) no arquivo historico_git.log.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
@@ -122,10 +123,12 @@ internal static class E2EToolsFullTests
         string dataPath = Path.Combine(dir, DataFile);
         TestContext.Check(File.Exists(dataPath), $"[toolsfull:adjust] {DataFile} continua existindo");
         string body = ReadText(dataPath);
-        TestContext.Check(body.Contains(DateTime.Now.ToString("yyyy"), StringComparison.Ordinal)
-            && body.Contains("EDITADO", StringComparison.Ordinal)
+        TestContext.Check(body.Contains(DateTime.Now.ToString("yyyy"), StringComparison.Ordinal),
+            $"[toolsfull:adjust] a data que ja estava commitada continua em {DataFile} — o ajuste acrescenta, nao sobrescreve " +
+            $"(conteudo='{Trecho(dataPath)}')");
+        TestContext.Check(body.Contains("EDITADO", StringComparison.Ordinal)
             && body.Contains("Clima", StringComparison.OrdinalIgnoreCase),
-            $"[toolsfull:adjust] {DataFile} com a data e a linha do clima no MESMO arquivo (conteudo='{Trecho(dataPath)}')");
+            $"[toolsfull:adjust] linha 'ARQUIVO EDITADO - Clima: <temperatura>' no MESMO arquivo (conteudo='{Trecho(dataPath)}')");
 
         var (commits, log) = GitLog(repo);
         TestContext.Check(commits.Length >= 2,
