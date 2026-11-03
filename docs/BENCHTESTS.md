@@ -343,6 +343,33 @@ sudo bash -c "cd /usr/src/opencodebridge && REPO=/usr/src/opencodebridge \
   (`--only <teste>`), que usa o mesmo preflight:
   `WAR_MIN_FREE_VRAM=256 dotnet …Rochas.OpenCodeBridge.Test.dll --only E-tools-full …`.
 
+### Rodadas de comparação dos knots (uma por vez, nunca juntas)
+
+Para medir o custo/benefício dos knots maleáveis (cauda de tools, anti-repeat),
+o experimento é **uma rodada completa L1..L4 por configuração**, com raias
+paralelas e fail-fast desligado (o placar inteiro por raia é o dado):
+
+| Rodada | Bridge alvo | Gates do WAR |
+|---|---|---|
+| 1 (baseline) | `--main-harness 1 --harness-tails 0 --tail-scope off --anti-repeat 0` | `--war-no-tails-gate --war-no-anti-repeat-gate` |
+| 2 | `+ --anti-repeat 1` | `--war-no-tails-gate` |
+| 3 | `+ --harness-tails 1 --tail-scope managed` | nenhum (gates duros) |
+
+Os dois scripts do lab fazem isso sem edição manual da unit:
+
+```bash
+scripts/lab/war-round.sh 1 0 0    # baseline: só main harness
+scripts/lab/war-round.sh 2 0 1    # + anti-repeat
+scripts/lab/war-round.sh 3 1 1    # + cauda de tools
+```
+
+`set-bridge-flags.sh` (usado pelo `war-round.sh`) reescreve só
+`--harness-tails`/`--tail-scope`/`--anti-repeat` no `ExecStart`, guarda backup da
+unit em `/tmp/opencode`, faz `daemon-reload` + `restart` e **falha rápido** se
+`--main-harness 1` não estiver lá ou se o `/api/status` responder
+`main_harness=false`/`mode!=bridge`. O main harness **não** é parâmetro de
+rodada: em modo bridge ele é gate duro.
+
 ```bash
 # bridge própria (para testar o build do repo, não o binário de produção)
 cd Rochas.OpenCodeBridge/bin/Release/net10.0
