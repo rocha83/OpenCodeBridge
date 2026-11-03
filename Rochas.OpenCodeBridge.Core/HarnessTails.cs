@@ -102,6 +102,17 @@ public static class HarnessTails
         "SUBAGENTE: o schema de cada tool viaja no array `tools` do request; preserve o array e o system do role ao delegar; nao troque schema por prosa.";
 
     /// <summary>
+    /// Exemplo POSITIVO do caminho inteiro (forma certa, nada do que nao existe):
+    /// o modelo copia o literal que a cauda mostra, entao o exemplo tem que
+    /// compilar e versionar de primeira. Entra quando ha escrita E execucao.
+    /// </summary>
+    const string HappyPathLine =
+        "EXEMPLO OTIMISTA (caminho que compila e versiona de primeira): " +
+        "`write` do arquivo completo -> `shell` `dotnet build <projeto>.csproj` -> `git add .` + `git commit -m \"<mensagem do passo>\"` -> `read` para a prova. " +
+        "No C# que compila de primeira: tipo de assinatura publica tambem e' `public` (`public sealed class Ponto { public int X; }` com `public IReadOnlyList<Ponto> Calcular()`); " +
+        "comparacao de generico usa `EqualityComparer<T>.Default.Equals(a, b)`; variavel lida fora do laco e' declarada ANTES do `for`.";
+
+    /// <summary>
     /// Tabela de erros C#, GERADA da fonte única (<see cref="CsSyntaxRepair.Rules"/>).
     /// A cauda instrui ANTES do erro; o <c>CsSyntaxRepair</c> repara no retry quando
     /// o modelo ignora. Duas cópias divergem na primeira edição — aqui só se compõe
@@ -130,6 +141,7 @@ public static class HarnessTails
         (OrderingLine, new[] { new[] { "write" }, new[] { "shell" } }),
         (DotnetLine, new[] { new[] { "shell" } }),
         (CsErrorTableLine, new[] { new[] { "shell" } }),
+        (HappyPathLine, new[] { new[] { "write" }, new[] { "shell" } }),
         (FileLine, new[] { new[] { "write" } }),
         (ExistingProjectLine, new[] { new[] { "shell" } }),
         (FileRepoFlowLine, new[] { new[] { "write" }, new[] { "shell" }, new[] { "git" } }),

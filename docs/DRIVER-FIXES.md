@@ -2275,3 +2275,48 @@ aceite, sem refazer o passo 1.
 PASS E-tools-full (28.0s)
 [test] PASS=1 FAIL=0 SKIP=0
 ```
+
+## 74. Tabela de erros C# sem CS0019/CS0050 e sem exemplo positivo (2026-11-03)
+
+**Sintoma (R3 `R3-20261103-080258`, tails=1/anti=1).** L4 fechou 3 PASS/7 FAIL e
+três dos vermelhos eram o MESMO tipo de código errado que a cauda não ensinava:
+
+- `E-mission-algo-cs-btree`: `Program.cs(24,17): error CS0019: O operador "=="
+  não pode ser aplicado a operandos dos tipos "T" e "T"`.
+- `E-mission-algo-cs-kmeans`: `Program.cs(13,31): error CS0050: Inconsistent
+  accessibility: return type 'List<KMeans.Point>' is less accessible than
+  method`.
+- `E-mission-algo-cs-sort`: `Program.cs(43,54): error CS0103: The name 'i' does
+  not exist in the current context` — variável criada dentro do `for` e lida
+  depois do laço.
+
+**Causa.** `CsSyntaxRepair.RuleTable` (fonte única da `TABELA DE ERROS C#` da
+cauda) não tinha `CS0019` nem `CS0050`, e o `CS0103` só dizia "declare antes do
+uso", sem o caso de escopo do laço. Sem a forma certa na cauda, o modelo repete
+o padrão errado até o build estourar; o mesmo arquivo também não tinha um
+exemplo POSITIVO do caminho inteiro (write → build → commit → read).
+
+**Correção.** Só na fonte única, sem duplicar texto:
+
+1. `CS0103` — causa passa a citar a variável de `for` lida fora do laço; a forma
+   certa mostra `int i;` antes do `for (...)` e a alternativa `foreach`.
+2. `CS0019` (novo) — igualdade por `EqualityComparer<T>.Default.Equals(a, b)` e
+   ordem com `where T : IComparable<T>` + `a.CompareTo(b) < 0`.
+3. `CS0050` (novo) — tipo de assinatura pública com a mesma acessibilidade do
+   método (`public sealed class Ponto` + `public IReadOnlyList<Ponto>`).
+4. `HarnessTails.HappyPathLine` (novo segmento, exige `write` **e** `shell`) —
+   exemplo otimista do caminho que compila e versiona de primeira, com as três
+   formas acima no mesmo parágrafo.
+
+**Prova.** As formas ensinadas compilam e rodam (probe `/tmp/opencode/cs-probe`,
+`net10.0`):
+
+```
+Compilação com êxito.
+    0 Aviso(s)
+    0 Erro(s)
+10        # i(3) + Soma(6) + Igual(0) + Menor(0) + Calcular().Count(1)
+```
+
+Nenhum literal inválido entrou na dica: a tabela só descreve o sintoma e mostra
+a forma que o probe compilou.

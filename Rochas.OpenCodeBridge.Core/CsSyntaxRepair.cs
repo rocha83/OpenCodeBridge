@@ -88,8 +88,19 @@ public static class CsSyntaxRepair
             "instrucoes de topo vem ANTES de `namespace`/`class`, ou tudo dentro de static void Main()"),
         new("CS0161", "nem todos os caminhos devolvem valor",
             "todo caminho de um metodo nao-void termina em `return`: if (c) return 1; return 0;"),
-        new("CS0103", "nome nao existe no contexto atual",
-            "declare o nome antes do uso e no mesmo escopo: int total = Somar(a, b);"),
+        new("CS0103", "nome nao existe no contexto atual (variavel de `for` usada fora do laco)",
+            "declare o nome no escopo onde ele e' lido: `int total = Somar(a, b);` antes do uso; " +
+            "a variavel criada dentro do `for` so vive no laco — para usa-la depois declare ANTES:\n"
+            + "int i;\nfor (i = 0; i < n; i++)\n    Soma += v[i];\nConsole.WriteLine(i);\n"
+            + "ou percorra com `foreach (var item in colecao)` quando o indice nao for necessario"),
+        new("CS0019", "operador aplicado a tipo generico `T` sem restricao (`==`, `!=`, `<`)",
+            "compare valor generico por igualdade com `EqualityComparer<T>.Default.Equals(a, b)` " +
+            "(negacao: `!EqualityComparer<T>.Default.Equals(a, b)`) e ordem com restricao no metodo:\n"
+            + "static bool Igual<T>(T a, T b) => EqualityComparer<T>.Default.Equals(a, b);\n"
+            + "static bool Menor<T>(T a, T b) where T : IComparable<T> => a.CompareTo(b) < 0;"),
+        new("CS0050", "tipo de retorno/parametro menos acessivel que o metodo",
+            "o tipo da assinatura publica tem a MESMA acessibilidade do metodo: use `public sealed class Ponto { public int X; }` " +
+            "com `public IReadOnlyList<Ponto> Calcular()`; se o tipo for `internal`, o metodo tambem e' `internal`"),
         new("CS0029", "tipo incompativel na atribuicao",
             "os dois lados tem o MESMO tipo, ou conversao explicita: int x = (int)valor;"),
         new("CS0266", "tipo incompativel na conversao implicita",
