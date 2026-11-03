@@ -1331,6 +1331,9 @@ internal sealed class WarTemplate : CircuitTemplate
             // deve tratar o lock do proprio driver como runner concorrente.
             ["BRIDGE_UNDER_DRIVER"] = "1"
         };
+        // Diagnostico do modelo sem caudas (--war-no-tails-gate): os filhos
+        // aceitam tails off no portao de fluxo (main_harness segue obrigatorio).
+        if (_o.NoTailsGate) env["BRIDGE_TAILS_OPTIONAL"] = "1";
         // Linha GPU2 (diagnostico/bancada). Nome semantico: WAR_GPU2_BRIDGE; o
         // legado WAR_CPU_BRIDGE continua aceito pelos consumidores. `--war-no-cpu`
         // mantem a rodada Q4-only e nao publica a linha para os filhos.

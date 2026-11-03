@@ -41,14 +41,21 @@ internal static class BridgeFlowGate
         if (!IsTrue(record, "main_harness"))
             return "ausente main_harness";
         string scope = Str(record, "tail_scope") is { Length: > 0 } s ? s : "off";
-        if (!IsTrue(record, "harness_tails"))
-            return $"ausente tails (harness_tails={Json(record, "harness_tails")} tail_scope={scope})";
-        if (scope == "off")
-            return "ausente tails (tail_scope=off)";
-        // So quando o request declarou tools: sem tools a cauda sai de proposito
-        // (senao o modelo devolve o JSON da tool como texto e trunca).
-        if (IsTrue(record, "has_tools") && !IsTrue(record, "tools_tail"))
-            return "ausente tools_tail (request declara tools e o system final nao traz a cauda)";
+        // Diagnostico do operador (WAR --war-no-tails-gate propaga
+        // BRIDGE_TAILS_OPTIONAL=1): o run mede o modelo SEM caudas; o
+        // main_harness continua obrigatorio (regra irrevogavel do modo bridge).
+        bool tailsOptional = Environment.GetEnvironmentVariable("BRIDGE_TAILS_OPTIONAL") == "1";
+        if (!tailsOptional)
+        {
+            if (!IsTrue(record, "harness_tails"))
+                return $"ausente tails (harness_tails={Json(record, "harness_tails")} tail_scope={scope})";
+            if (scope == "off")
+                return "ausente tails (tail_scope=off)";
+            // So quando o request declarou tools: sem tools a cauda sai de proposito
+            // (senao o modelo devolve o JSON da tool como texto e trunca).
+            if (IsTrue(record, "has_tools") && !IsTrue(record, "tools_tail"))
+                return "ausente tools_tail (request declara tools e o system final nao traz a cauda)";
+        }
         return "";
     }
 

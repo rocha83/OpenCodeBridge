@@ -348,7 +348,10 @@ não existe*. Medido duas vezes: `[1; 3 .. n-1]` (DRIVER-FIXES #13) e a forma
   `behavior_tail`, `tools_tail_flag` e `anti_repeat` na evidência de
   `bridge_status`; reprovar as caudas **não** derruba o run quando o operador
   passa `--war-no-tails-gate` (o relaxamento sai em `preflight_aviso` com
-  `relaxado_por`, nunca em silêncio). Sem a flag, o gate segue duro.
+  `relaxado_por`, nunca em silêncio). Sem a flag, o gate segue duro. O mesmo
+  opt-in propaga `BRIDGE_TAILS_OPTIONAL=1` aos filhos, então o portão de fluxo
+  (`BridgeFlowGate`) aceita caudas off no run de diagnóstico — o
+  `main_harness` continua obrigatório.
 - **Slots são opcionais:** a bridge só envia `id_slot` com `--slot N`
   (default `-1` = llama escolhe o slot livre). A bateria roda um level por
   slot quando o operador fixa o slot na unit; paralelismo entre levels é
