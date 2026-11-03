@@ -2161,3 +2161,44 @@ segue exigindo `content` com "OK" e `prompt < por-slot * 0.9`.
 
 **Prova** — mesmo payload, 256: `finish=stop`, `content="OK"`,
 `prompt_tokens=1518` (por-slot 114688 → bem abaixo do teto).
+
+## 71. `E-tools-full` medido com as caudas DESLIGADAS: falha por construção (2026-11-03)
+
+**Sintoma** — `e-tools-full-bridge` FAIL em duas rodadas seguidas (AR2 e
+RAIAS), cada tentativa por um sub-aceite diferente:
+
+| tentativa | FAIL | artefato em disco |
+|---|---|---|
+| t1 | `arquivo de texto com a data criado (files=1)` | `subpasta/data.txt` sem o ano, **sem `.git`** |
+| t2 | `pasta com repo git iniciado` | pasta sem repo |
+| t3 | `pasta com repo git iniciado` | pasta sem repo |
+
+**Diagnóstico (dedução com evidência, não palpite).**
+
+1. O enunciado do teste (que é de dev humano, sem mecânica) termina com
+   `conforme as instrucoes previas da sessao (main harness e tails)` — ele
+   **conta** com o contrato das caudas.
+2. Esse contrato mora só em `HarnessTails` (`FileLine`: pedido de arquivo
+   entrega via `write`; `FileRepoFlowLine`: `mkdir` → `write` com o path →
+   `git init/add/commit` → `git log` no histórico; `ProofLine`: `read` depois de
+   escrever; `JsonArgsLine`: args é string JSON). Nada disso viaja no array
+   `tools` (que só tem schema).
+3. Nas duas rodadas medidas a bridge estava `harness_tails=false`,
+   `behavior_tail=false`, `tools_tail_flag=false`, `tail_scope=off`
+   (`/api/status` e os probes de `logs/levels/*.console.log`), e a WAR rodava
+   com `--war-no-tails-gate` (relaxamento de diagnóstico). O modelo executou
+   **só** o passo 1 (arquivo) e parou: sem `FileRepoFlowLine` não houve
+   `git init`, e sem `JsonArgsLine`/`ProofLine` o arquivo saiu sem a data.
+4. Ligando as caudas (`--harness-tails 1 --tail-scope managed`) e repetindo a
+   mesma requisição com `tools` na raia bridge:
+   `/api/harness` → `{"harness_tails":true,"tails_managed":true,"tools_tail":true,"tools_chars":4687}`;
+   `/api/test/last-system` → `{"has_tools":true,"tools_tail":true,"chars":6634}`.
+
+**Conclusão** — `E-tools-full` é teste de tools **com** o contrato de tools: o
+gate `harness_tails_status` do preflight existe exatamente para impedir essa
+medição inválida. `--war-no-tails-gate` é diagnóstico do modelo cru, nunca
+caminho para PASS; com as caudas off o FAIL é esperado e não mede o modelo.
+
+**Ação** — unit `bridge-gpu` passa a `--harness-tails 1 --tail-scope managed`
+(respaldo em `/tmp/opencode/bridge-gpu.service.bak-*`); a rodada seguinte roda
+**sem** nenhum relaxamento (caudas e anti-repeat como gates duros).
