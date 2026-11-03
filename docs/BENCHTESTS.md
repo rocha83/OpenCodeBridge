@@ -310,6 +310,29 @@ padrão e pode ser declarado explicitamente com `--war-stop-on-fail`.
 > `--war-no-anti-repeat-gate` relaxa `anti_repeat_status`; `slot` só entra na
 > evidência (`/api/status` já expõe `anti_repeat` e `slot`).
 
+### Raias paralelas (um level por slot do llama)
+
+Com 4 slots no llama (`-np 4`) e a bridge sem pino (`--slot -1`), cada level
+roda numa raia própria:
+
+```bash
+sudo bash -c "cd /usr/src/opencodebridge && REPO=/usr/src/opencodebridge \
+  dotnet Rochas.OpenCodeBridge.Test/bin/Release/net10.0/Rochas.OpenCodeBridge.Test.dll \
+  --war-all --war-parallel --war-modes bridge --war-no-build --war-no-cpu \
+  --war-no-tails-gate --war-no-anti-repeat-gate \
+  --war-api-key guest@123 --war-bridge http://127.0.0.1:4124 \
+  --war-upstream http://127.0.0.1:4100 --war-out logs/levels/$STAMP"
+```
+
+- O pai reinicia a bridge UMA vez, zera sonda/painel (`diag/reset`) e passa o
+  guard de rebuild; cada filho (`WAR_PARALLEL_CHILD=1`, `WAR_LANE=N`) só roda
+  o seu level — sem restart, sem reset, sem lock próprio.
+- Steps **sequenciais dentro da raia** (o driver segue um por vez no level).
+- Console por raia: `logs/levels/<stamp>/L<N>-<stamp>.console.log`.
+- Painel: `POST /api/test/step` leva `level`; a tabela "Steps concluídos" traz
+  a coluna `raia`. Throughput/VRAM/tools seguem globais.
+- Fail-fast do pai não aborta raia já disparada; o exit agrega os rc.
+
 ```bash
 # bridge própria (para testar o build do repo, não o binário de produção)
 cd Rochas.OpenCodeBridge/bin/Release/net10.0

@@ -603,6 +603,11 @@
           "format": "table",
           "columns": [
             {
+              "selector": "level",
+              "text": "raia",
+              "type": "string"
+            },
+            {
               "selector": "step",
               "text": "step",
               "type": "string"

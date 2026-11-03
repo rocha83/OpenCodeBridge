@@ -2046,3 +2046,36 @@ O main harness continua irrevogavel em `--mode bridge` (excecao de args).
  'tail_scope': 'off', 'anti_repeat': False, 'anti_repeat_flag': False,
  'context_tokens': 458752, 'context_slots': 4, 'slot': 0}
 ```
+
+## 67. Painel Grafana não subia junto com a WAR e bateria só rodava em sequência (2026-11-03)
+
+**Sintoma** — rodada de nível único (`--war-level 1`) com o painel em `:4800`
+fora do ar não subia `grafana-server`: a esteira executou L1 inteiro com o
+dashboard `[]` em `/api/search`. E os levels só existiam em fila: `--war-all`
+rodava L1→L4 em sequência com a bridge pinada em `--slot 0`, desperdiçando os
+`-np 4` slots do llama (só 1 slot ocupado).
+
+**Causa** — `RestartGrafana` era chamado apenas em `RunAll` com
+`levels.Count > 1`; nível isolado (o caminho usado na bateria por slot) nunca
+tocava no serviço. Paralelismo não existia: `RunAll` fazia
+`foreach (levels) RunLevel(...)` e o lock do circuito é um só por repo.
+
+**Correção** —
+1. `EnsureGrafana` (start de `grafana-server`) em **toda** rodada; `start` só
+   quando a unidade não está ativa, `RestartGrafana` segue apenas na bateria
+   L1..L4 (não apaga o painel de quem está olhando um nível isolado).
+2. `--war-parallel`: o pai faz lock + restart da bridge + `diag/reset` + guard
+   **uma vez** e dispara um filho por level com `WAR_PARALLEL_CHILD=1`,
+   `WAR_LANE=N`, `LEVEL_STAMP` comum e console próprio
+   (`L<N>-<stamp>.console.log`). O filho não reinicia bridge, não zera painel
+   e não recheca o guard; `guard_ativo_fail_fast` registra `guard_pai: true`.
+3. Detalhe da raia no painel: `PostStepEvent` acrescenta `level` (de
+   `WAR_LANE`) na linha de `/api/test/step`; a tabela "Steps concluídos" ganhou
+   a coluna `raia`. Métricas (throughput, VRAM, tools) continuam globais.
+4. Slot: com raias o pino do level não existe mais — a bridge sobe com
+   `--slot -1` e o llama distribui as 4 sequências concorrentes.
+
+**Prova** — `dotnet build -c Release` 0 avisos/0 erros; `curl /api/ds/query` no
+Grafana respondeu 16/16 painéis com dados (`rows>0`); raias comprovadas por
+`launch_slot_: id N` distintos no log do llama e coluna `raia` no
+`GET /api/test/steps?war=1`.

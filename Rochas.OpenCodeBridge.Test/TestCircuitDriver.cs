@@ -392,6 +392,12 @@ internal sealed class TestCircuitDriver : IDisposable
             string t = ev["t"]?.GetValue<string>() ?? "";
             if (t is not ("step_start" or "step_end")) return;
             var row = ev.DeepClone().AsObject();
+            // Raia (level) na linha do painel: com `--war-parallel` cada level roda
+            // num slot do llama, e o operador precisa saber de qual raia e' o step.
+            // Sem a env (rodada sequencial) o campo nao existe e o painel segue global.
+            string lane = Environment.GetEnvironmentVariable("WAR_LANE") ?? "";
+            if (lane.Length > 0 && int.TryParse(lane, out int laneNo))
+                row["level"] = laneNo;
             if (t == "step_start")
             {
                 row["verdict"] = "RUN";

@@ -25,6 +25,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
@@ -70,6 +71,10 @@ internal sealed class WarTemplate : CircuitTemplate
         public bool NoTailsGate;
         // Simetrico ao de tails: relaxa `anti_repeat_status` (anti-repeat off).
         public bool NoAntiRepeatGate;
+        // Raias: um level por slot do llama, rodando em paralelo (um processo por
+        // level). Os steps de cada level seguem sequenciais dentro da raia; o pino
+        // de slot do level vem do llama (bridge com `--slot -1`), nao da flag.
+        public bool Parallel;
         // Web UI pelo navegador: SO' o ultimo step (webui-integracao-topicos) roda a UI
         // (--web URL --ui --phase full). O front mede por snapshot estatico. Headed
         // abre a janela (--war-headed / HEADED=1).
@@ -264,7 +269,7 @@ internal sealed class WarTemplate : CircuitTemplate
         // sonda, contadores e painel de um run EM CURSO (medido 2026-10-31,
         // L3: três `--war-list` seguidos emitiram diag-reset no meio da belt
         // roxa e apagaram o enunciado publicado do step que estava executando).
-        if (!o.List && !o.GateOnly)
+        if (!o.List && !o.GateOnly && !IsParallelChild)
         {
             // Bridge alvo reiniciada UMA vez por rodada — mesma granularidade do
             // diag/reset (restart de processo zera contadores e sonda).
@@ -274,10 +279,12 @@ internal sealed class WarTemplate : CircuitTemplate
             // contadores e painel da rodada anterior no lugar.
             TestContext.ResetDiagnostics(clearProbe: true, bridge: p.Bridge, required: false, apiKey: p.Api,
                 clearPanel: true);
+            // Painel de observacao sobe junto com a WAR (start; sem restart se ja ativo).
+            EnsureGrafana(null);
         }
         return RunLevel(o, p, o.Level,
             o.Stamp ?? Env("LEVEL_STAMP") ?? NowStamp(),
-            o.GateOnly, lockHeld: false, globalLog: null);
+            o.GateOnly, lockHeld: IsParallelChild, globalLog: null);
     }
 
     private static int RunLevel(
@@ -394,6 +401,69 @@ internal sealed class WarTemplate : CircuitTemplate
         }
     }
 
+    /// <summary>
+    /// Garante o painel de observacao de pe junto com a WAR. Unidade inativa vira
+    /// <c>start</c> em qualquer rodada (nivel isolado incluso); rodada de nivel
+    /// unico com o servico ja ativo NAO reinicia — o operador pode estar com o
+    /// painel aberto e o restart apagaria o estado que ele esta lendo. A bateria
+    /// inteira (L1..L4) segue com o restart de <see cref="RestartGrafana"/>.
+    /// Falha no painel nunca vira BLOCKED: observabilidade nao decide PASS/FAIL.
+    /// </summary>
+    /// <param name="globalLog">Log global da bateria (pode ser nulo em nivel unico).</param>
+    private static bool EnsureGrafana(TextWriter? globalLog)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("sudo", "-n systemctl is-active grafana-server")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            using var check = Process.Start(psi);
+            if (check is null)
+            {
+                LogGlobal(globalLog, "[grafana] estado indisponivel (sudo nao iniciou)");
+                return false;
+            }
+            string state = check.StandardOutput.ReadToEnd().Trim();
+            check.WaitForExit(30000);
+            if (state == "active")
+            {
+                LogGlobal(globalLog, "[grafana] ja ativo — painel preservado");
+                return true;
+            }
+            using var start = Process.Start(new ProcessStartInfo("sudo", "-n systemctl start grafana-server")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            });
+            if (start is null) return false;
+            string err = start.StandardError.ReadToEnd();
+            if (!start.WaitForExit(90000) || start.ExitCode != 0)
+            {
+                LogGlobal(globalLog, $"[grafana] start falhou (exit={start.ExitCode}): {err.Trim()}");
+                return false;
+            }
+            LogGlobal(globalLog, "[grafana] start ok — painel sobe junto com a WAR :4800");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LogGlobal(globalLog, $"[grafana] start indisponivel: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Processo filho de bateria em raias (<c>--war-parallel</c>): o pai ja
+    /// reiniciou a bridge alvo, zerou sonda/painel e passou o guard de rebuild.
+    /// O filho nao repete nada disso (senao cada level derrubaria a raia vizinha)
+    /// e usa o slot que o llama alocar — ponteiro de raia em <c>WAR_LANE</c>.
+    /// </summary>
+    private static bool IsParallelChild => Env("WAR_PARALLEL_CHILD") is "1" or "true" or "yes";
+
     private static int RunAll(WarOptions o, WarPaths p)
     {
         var levels = LevelsToRun(o);
@@ -440,6 +510,11 @@ internal sealed class WarTemplate : CircuitTemplate
         // e o plugin Infinity do zero, sem arrastar cache/estado da rodada anterior.
         // Nível isolado (`--war-level N`) não mexe no painel de quem está olhando.
         if (levels.Count > 1 && !o.List) RestartGrafana(globalLog);
+        // Raias (`--war-parallel`): um processo por level simultaneo, cada um no
+        // slot que o llama alocar. Dentro da raia os steps seguem sequenciais.
+        if (!o.List) EnsureGrafana(globalLog);
+        if (o.Parallel && levels.Count > 1 && !o.List)
+            return RunParallel(o, p, levels, stamp, globalLog, driverSummary);
         LogGlobal(globalLog, $"=== run-all-levels {stamp} (levels: {string.Join(",", levels)}) ===");
         LogGlobal(globalLog, $"repo: {p.Root}");
         LogGlobal(globalLog, $"artefatos: {p.OutBase}");
@@ -495,6 +570,116 @@ internal sealed class WarTemplate : CircuitTemplate
         }
         LogGlobal(globalLog,
             $"=== TODOS OS LEVELS DA TRILHA VERDES ({DateTime.Now:yyyy-MM-dd HH:mm:ss}) ===");
+        return 0;
+    }
+
+    /// <summary>
+    /// Bateria em raias (<c>--war-parallel</c>): dispara um filho por level e
+    /// espera todos. Cada filho roda com <c>--war-level N</c> e os ponteiros
+    /// <c>WAR_LANE=N</c> + <c>WAR_PARALLEL_CHILD=1</c>, entao nao reinicia a
+    /// bridge, nao zera sonda/painel do vizinho e nao repete o guard. Dentro da
+    /// raia os steps seguem sequenciais; o painel separa as linhas pelo campo
+    /// <c>level</c> publicado em <c>/api/test/step</c>. Fail-fast nao mata raia
+    /// ja disparada: FAIL fica registrado, o exit e' 1 e o resumo aponta o level.
+    /// </summary>
+    private static int RunParallel(WarOptions o, WarPaths p, List<int> levels, string stamp,
+        TextWriter globalLog, string driverSummary)
+    {
+        var bins = BinaryGuard.ForWar(p.BridgeDll, p.TestDll, p.WebTestDll);
+        var guard = BinaryGuard.Check(
+            new BinaryGuard.Binaries(bins.Sha512, p.BridgeDll + "\n" + p.TestDll + "\n" + p.WebTestDll),
+            Path.Combine(p.Root, "logs", ".rerun-guard.json"));
+        if (o.StopOnFirstFailure && !guard.Allowed)
+        {
+            LogGlobal(globalLog, $"BLOCKED: rerun-guard — {guard.Reason}");
+            return 3;
+        }
+        LogGlobal(globalLog, $"[guard] {guard.Reason}");
+
+        // Args do pai viram base do filho, sem o que e' por-level/por-run.
+        var raw = Environment.GetCommandLineArgs().Skip(1).ToList();
+        string[] dropWithValue =
+        {
+            "--war-level", "--war-levels", "--war-out", "--war-stamp",
+            "--war-from", "--war-to", "--war-resume-stamp", "--war-resume-level"
+        };
+        var childArgs = new List<string>();
+        for (int i = 0; i < raw.Count; i++)
+        {
+            string a = raw[i];
+            if (dropWithValue.Contains(a)) { i++; continue; }
+            if (a is "--war-all" or "--war-list" or "--war-gate-only" or "--war-parallel" or "--war-help")
+                continue;
+            childArgs.Add(a);
+        }
+
+        string exe = Environment.ProcessPath ?? "dotnet";
+        string self = Environment.GetCommandLineArgs()[0];
+        bool viaDotnet = Path.GetFileNameWithoutExtension(exe).Equals("dotnet",
+            StringComparison.OrdinalIgnoreCase);
+        string Quote(string s) => "'" + s.Replace("'", "'\\''") + "'";
+
+        var runs = new List<(int Level, Process Proc, string Dir)>();
+        foreach (int lvl in levels)
+        {
+            string dir = Path.Combine(p.OutBase, $"L{lvl}-{stamp}");
+            string console = Path.Combine(p.OutBase, $"L{lvl}-{stamp}.console.log");
+            var cmd = new StringBuilder();
+            cmd.Append("cd ").Append(Quote(p.Root)).Append(" && ");
+            cmd.Append(Quote(exe)).Append(' ');
+            if (viaDotnet) cmd.Append(Quote(self)).Append(' ');
+            foreach (string a in childArgs) cmd.Append(Quote(a)).Append(' ');
+            cmd.Append("--war-level ").Append(lvl).Append(' ');
+            cmd.Append("--war-out ").Append(Quote(p.OutBase)).Append(' ');
+            cmd.Append("> ").Append(Quote(console)).Append(" 2>&1");
+
+            var psi = new ProcessStartInfo("bash")
+            {
+                UseShellExecute = false,
+                WorkingDirectory = p.Root,
+            };
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add(cmd.ToString());
+            psi.Environment["WAR_PARALLEL_CHILD"] = "1";
+            psi.Environment["WAR_LANE"] = lvl.ToString(CultureInfo.InvariantCulture);
+            psi.Environment["LEVEL_STAMP"] = stamp;
+            psi.Environment["LEVEL_OUT"] = p.OutBase;
+
+            var proc = Process.Start(psi)
+                ?? throw new InvalidOperationException($"raia {lvl}: bash nao iniciou");
+            runs.Add((lvl, proc, dir));
+            LogGlobal(globalLog,
+                $"[raia {lvl}] disparada (slot livre do llama) -> {dir} (console: {Path.GetFileName(console)})");
+        }
+
+        int failed = 0;
+        foreach (var (lvl, proc, dir) in runs)
+        {
+            proc.WaitForExit();
+            int rc = proc.ExitCode;
+            proc.Dispose();
+            File.AppendAllText(driverSummary, $"{lvl}\t{rc}\t{stamp}\t{dir}\n");
+            if (rc != 0)
+            {
+                failed++;
+                LogGlobal(globalLog, $"############ RAIA {lvl} -> rc={rc} VERMELHA ({DateTime.Now:yyyy-MM-dd HH:mm:ss}) ############");
+            }
+            else
+            {
+                LogGlobal(globalLog, $"############ RAIA {lvl} -> rc=0 VERDE ({DateTime.Now:yyyy-MM-dd HH:mm:ss}) ############");
+            }
+        }
+
+        LogGlobal(globalLog, "");
+        if (failed > 0)
+        {
+            LogGlobal(globalLog,
+                $"=== RAIAS CONCLUIDAS COM {failed} LEVEL(S) VERMELHO(S) === (fail-fast nao aborta raia em curso)");
+            LogGlobal(globalLog, $"resumo: {driverSummary}");
+            return 1;
+        }
+        LogGlobal(globalLog,
+            $"=== TODAS AS RAIAS VERDES ({DateTime.Now:yyyy-MM-dd HH:mm:ss}) ===");
         return 0;
     }
 
@@ -1237,12 +1422,15 @@ internal sealed class WarTemplate : CircuitTemplate
         // --war-stop-on-fail o guard e obrigatorio (nao existe flag para
         // desligar); sem ele um PASS poderia sair com binario velho. A
         // evidencia carrega o modo do driver que esta sendo verificado.
-        Pf(driver, "guard_ativo_fail_fast", !_o.StopOnFirstFailure || rerunGuard.Allowed, new JsonObject
+        Pf(driver, "guard_ativo_fail_fast",
+            !_o.StopOnFirstFailure || rerunGuard.Allowed || IsParallelChild, new JsonObject
         {
             ["fail_fast"] = _o.StopOnFirstFailure,
             ["guard"] = "regeracao-por-sha512",
             ["modo"] = string.IsNullOrWhiteSpace(_o.Modes) ? "bridge" : _o.Modes,
-            ["estado"] = rerunGuard.Allowed ? "ok" : rerunGuard.Reason
+            ["estado"] = rerunGuard.Allowed ? "ok" : rerunGuard.Reason,
+            // Raia: o guard foi checado UMA vez no processo pai que disparou as raias.
+            ["guard_pai"] = IsParallelChild
         });
 
         string? opencode = Execution.FindOnPath("opencode");
@@ -1670,6 +1858,7 @@ internal sealed class WarTemplate : CircuitTemplate
             switch (a)
             {
                 case "--war-level": o.Level = ParseInt(Next(), 1); break;
+                case "--war-parallel": o.Parallel = true; break;
                 case "--war-all": o.All = true; break;
                 case "--war-levels": o.Levels = Next(); o.All = true; break;
                 case "--war-only": o.OnlySteps = Next(); break;
@@ -1749,6 +1938,8 @@ internal sealed class WarTemplate : CircuitTemplate
         EXECUCAO
           --war-level N            executa um level (1..4)
           --war-all                executa 1 -> 4 em sequencia
+          --war-parallel           raias: um level por slot do llama, em paralelo
+                                   (bridge precisa estar com --slot -1)
           --war-levels 1,2,3,4     levels explicitos
           --war-only NAME          roda so steps cujo nome contem NAME (virgula = lista)
           --war-modes bridge       modos (bridge|opencode), default "bridge"

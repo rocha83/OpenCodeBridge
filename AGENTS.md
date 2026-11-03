@@ -359,6 +359,21 @@ não existe*. Medido duas vezes: `[1; 3 .. n-1]` (DRIVER-FIXES #13) e a forma
   (default `-1` = llama escolhe o slot livre). A bateria roda um level por
   slot quando o operador fixa o slot na unit; paralelismo entre levels é
   escolha do operador, não requisito da esteira.
+- **Raias paralelas (`--war-parallel`):** um processo por level, disparado
+  junto, cada raia ocupando um slot do llama (bridge com `--slot -1`, `-np`
+  slots no llama). Dentro da raia os steps seguem **sequenciais**; o pai faz
+  uma vez o restart da bridge, o `diag/reset` (sonda + painel) e o guard de
+  rebuild, e os filhos (`WAR_PARALLEL_CHILD=1`) não repetem nada disso.
+  Fail-fast não mata raia já disparada: FAIL fica registrado, o exit é 1 e o
+  `driver-summary` aponta o level. Cada raia grava `L<N>-<stamp>.console.log`.
+- **Painel identifica a raia:** o driver acrescenta `level` (de `WAR_LANE`)
+  na linha de `POST /api/test/step`; o dashboard usa a coluna `raia` nos
+  "Steps concluídos". Os demais dados (throughput, VRAM, tools) continuam
+  **globais** por decisão do operador (uma GPU, um llama).
+- **Grafana sobe junto com a WAR:** `EnsureGrafana` faz `start` de
+  `grafana-server` em toda rodada (level único inclusive) e só reinicia
+  quando o serviço já está ativo e a bateria é L1..L4 (`RestartGrafana`).
+  Falha do painel é aviso no log, nunca BLOCKED.
 
 ## Regra: disposição WAR L1 → L4 (ordem obrigatória)
 
