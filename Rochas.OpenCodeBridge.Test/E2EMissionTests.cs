@@ -414,16 +414,17 @@ internal static class E2EMissionTests
         // saia; o enunciado de uma vez so cobria dois contratos diferentes (contagem e
         // sequencia) e ele acertava um e esquecia o outro. Cada etapa agora declara o
         // formato exato da saida que ela pede.
-        string hanoiCount = "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Crie UMA funcao recursiva de 4 parametros (quantos discos, haste de origem, haste auxiliar, haste de destino) que resolva a torre de verdade, e um programa que a execute.\n"
+        string hanoiCount = "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. As hastes sao identificadas pelos numeros 1, 2 e 3 (origem 1, destino 3). Crie UMA funcao recursiva de 4 parametros (quantos discos, haste de origem, haste auxiliar, haste de destino) que resolva a torre de verdade, e um programa que a execute.\n"
             + "O numero de movimentos e' CONTADO pela propria solucao — um contador que soma 1 a cada movimento executado, nao uma formula pronta. A saida do programa tem EXATAMENTE uma linha, nesse formato:\n"
             + "hanoi=<n>\n"
             + "Nesta etapa o programa nao lista os movimentos: eles entram na etapa seguinte. Rode " + run
             + " e ajuste ate essa linha sair com o valor contado (nao copie numeros do enunciado).";
-        string hanoiSeq = "2) No MESMO programa, a solucao passa a entregar tambem a LISTA dos movimentos: cada movimento e' o texto 1->2 (haste de origem, seta, haste de destino), na ordem em que aconteceu. O programa junta essa lista numa unica linha, com os itens separados por virgula, logo depois da linha do contador.\n"
+        string hanoiSeq = "2) No MESMO programa, reescreva o Program.cs INTEIRO com `write` para que a solucao tambem entregue a LISTA dos movimentos: a funcao recursiva recebe a lista junto com os discos e as hastes, ACRESCENTA nela cada movimento como o texto 1->2 (haste de origem, seta, haste de destino, sempre com os numeros 1, 2 e 3) e NAO escreve nada na tela — quem imprime e' o Main, depois de a solucao terminar.\n"
             + "O contrato da sequencia e' o de movimentos LEGAIS: cada item move o disco do topo de uma haste para OUTRA (origem e destino nunca iguais) e a torre termina inteira na haste 3 — o teste confere movimento por movimento, entao uma sequencia com `3->3` ou com disco saindo do lugar errado nao vale.\n"
             + "A saida do programa tem EXATAMENTE estas duas linhas, nessa ordem, cada chave UMA vez:\n"
             + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\n"
-            + "Rode " + run + " e ajuste ate sairem as duas linhas — o contador e a lista descrevem os MESMOS movimentos.";
+            + "O Main imprime a lista inteira numa unica linha, com os itens separados por virgula. Rode " + run
+            + " e ajuste ate sairem as duas linhas — o contador e a lista descrevem os MESMOS movimentos.";
         string primes = "3) No MESMO programa, acrescente a analise dos primos: quantos ha abaixo de 100 (`primes100=`), abaixo de 1000 (`primes1000=`) e quantos pares gemeos abaixo de 100 (`twin100=`). O crivo de Eratostenes e uma boa pedida.\n"
             + "Mantenha as duas linhas de Hanoi ja' corretas (`hanoi=` continua sendo o numero de movimentos e `hanoi_seq=` continua numa unica linha) e termine com estas cinco linhas, uma por linha, nessa ordem e com cada chave UMA vez:\n"
             + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\nprimes100=<n>\nprimes1000=<n>\ntwin100=<n>\n"
