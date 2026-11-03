@@ -2320,3 +2320,46 @@ Compilação com êxito.
 
 Nenhum literal inválido entrou na dica: a tabela só descreve o sintoma e mostra
 a forma que o probe compilou.
+
+## 75. Hanoi no L4: contagem certa e `hanoi_seq=` nunca saía (2026-11-03)
+
+**Sintoma (medido, três amostras isoladas do mesmo teste):**
+
+| rodada | duração | saída real |
+|---|---|---|
+| `iso-b2` | 122 s | `hanoi=15` + **15 linhas soltas** `1->2` … (sem `hanoi_seq=`, sem primos) |
+| `iso-b3` | 138 s | 15 linhas `move 1 -> 2` + **`hanoi=0`** |
+| `iso-b4` | 178 s | 15 linhas `A -> B` + `hanoi=15` (contagem fechou, sequência não) |
+
+**Causa.** Dois problemas diferentes no mesmo enunciado:
+
+1. A etapa pedia **dois contratos** (contagem e sequência) num turno só. O modelo
+   aprendia a imprimir os movimentos **dentro da recursão**
+   (`Console.WriteLine($"{source} -> {destination}")`) e dava a etapa por
+   cumprida; a chave `hanoi_seq=` nunca era emitida.
+2. A etapa não tinha **portão próprio**: ela só terminava por fim de turnos ou
+   prosa, então a etapa seguinte reescrevia por cima de um arquivo já errado
+   (foi assim que `hanoi=15` virou `hanoi=0` no `iso-b3` — contador `moves`
+   declarado e nunca incrementado).
+
+**Correção** (só enunciado/harness; o aceite final continua as cinco chaves,
+`hanoi=15`, `primes100=25`, `primes1000=168`, `twin100=8` e a sequência legal):
+
+1. **Etapa 1 resolve o Hanoi sem C#**: a entrega é `hanoi.txt` com 15 linhas,
+   uma por movimento (`1->2`, hastes 1..3, origem ≠ destino, abre em `1->2` e
+   fecha em `2->3`). Portão da etapa = o próprio arquivo
+   (`HanoiMission.HanoiMovesOk`).
+2. **Etapa 2 implementa em C#** (`write` do arquivo inteiro): a função recursiva
+   de 4 parâmetros calcula, entrega a lista e **não** escreve na tela; o `Main`
+   imprime as duas linhas. Portão = `hanoi=15` **e** `hanoi_seq` legal.
+3. **Etapa 3** acrescenta os primos, mantendo as duas linhas.
+4. `RunAlgoPhase(..., stageChecks)` fecha cada etapa no aceite dela (e aceita
+   `write`/`edit` como gatilho quando a entrega é arquivo, não saída de
+   programa).
+5. `E2EMissionTests.HasCopiedMoves`: dois ou mais literais `"1->2"` fora de
+   comentário reprovam a missão — a sequência tem que ser **calculada**, não
+   copiada do `hanoi.txt`.
+
+**Prova (`iso-b5`, antes do split):** o portão por etapa já funcionava —
+`hanoi=15` saiu correto e o FAIL passou a ser outro (`CS1501`, primos). O split
+resolve o resto; ver a linha de `iso-b6` no HISTORY.

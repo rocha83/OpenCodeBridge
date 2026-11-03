@@ -419,7 +419,8 @@ internal static class E2EMissionTests
             + "Nao ha codigo nesta etapa: o arquivo de texto e' a entrega.";
         string implement = "2) Agora implemente a MESMA solucao em " + ws + "/" + dir + "/Program." + ext + ", no projeto " + proj
             + " que ja existe (nao crie outro projeto), com `write` do arquivo INTEIRO.\n"
-            + "A funcao recursiva de 4 parametros (quantos discos, haste de origem, haste auxiliar, haste de destino) CALCULA os movimentos — a sequencia nao vai pronta no codigo. A funcao entrega a lista para o Main imprimir: ela nao escreve nada na tela.\n"
+            + "E' a mesma torre do passo 1: 4 discos, da haste 1 para a haste 3, com as hastes identificadas pelos numeros 1, 2 e 3 — a saida so tem numeros.\n"
+            + "A funcao recursiva de 4 parametros (quantos discos, haste de origem, haste auxiliar, haste de destino) CALCULA os movimentos — a sequencia nao vai pronta no codigo. Ela recebe a lista e acrescenta nela cada movimento; quem imprime e' o Main, depois que a recursao termina (nada de escrever na tela de dentro da funcao).\n"
             + "A saida do programa tem EXATAMENTE estas duas linhas, nessa ordem, cada chave UMA vez:\n"
             + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\n"
             + "O `hanoi=` e' a contagem que a solucao fez, o `hanoi_seq=` e' a lista inteira numa unica linha com os itens separados por virgula, e a sequencia e' a mesma que voce gravou no passo 1. Rode "
