@@ -2202,3 +2202,24 @@ caminho para PASS; com as caudas off o FAIL é esperado e não mede o modelo.
 **Ação** — unit `bridge-gpu` passa a `--harness-tails 1 --tail-scope managed`
 (respaldo em `/tmp/opencode/bridge-gpu.service.bak-*`); a rodada seguinte roda
 **sem** nenhum relaxamento (caudas e anti-repeat como gates duros).
+
+## 72. Enunciados de `E-tools-full`/`E-mission-tools` citavam harness/tails (2026-11-03)
+
+**Sintoma** — os dois enunciados terminavam com "conforme as instrucoes
+previas da sessao (main harness e tails)" e o mission ainda carregava dicas de
+outra tarefa ("calcule o caminho minimo antes de mover as pecas", "2^n - 1",
+"segmente o raciocinio em fases"). Além de violar a regra do enunciado de dev
+humano (problema + contrato observável, nunca mecânica), isso **cria
+dependência falsa**: com as caudas off o texto promete um contrato que não
+existe no request, e o FAIL mede o artefato do enunciado.
+
+**Correção** — enunciados enxutos, sem menção a harness/tails/mecânica:
+`E-tools-full` descreve só a tarefa (subpasta + arquivo com a data, repo git com
+o commit `data de hoje`, clima de São Paulo na linha `ARQUIVO EDITADO - Clima:`,
+segundo commit `Added sao paulo weather`, saida do `git log` num arquivo de
+historico); `E-mission-tools` pede só o `Program.cs` que imprime fatorial de 10,
+MDC(1071,462) e a contagem de primos de 1..50, compilando e rodando. Assertivas
+intactas.
+
+**Prova** — `dotnet build -c Release` 0 avisos/0 erros nos dois repos; rodada
+isolada com caudas e anti-repeat ligados mede o modelo, não o texto.
