@@ -466,8 +466,12 @@ internal static class E2EMissionTests
             Func<string, bool> check = stageChecks is not null && i < stageChecks.Length
                 ? stageChecks[i]
                 : accept ?? AlgoOk;
+            // Toda etapa ganha a segunda rodada, inclusive a última: era justamente
+            // a etapa de implementação que ficava sem retry e morria com erro de
+            // compilação de uma linha (`iso-b11`: `namespace mcs;` duplicado,
+            // CS8954) mesmo com a saída do build na mão. O aceite não muda.
             plan.Add((stages[i], check));
-            if (i < stages.Length - 1) plan.Add((stages[i], check));
+            plan.Add((stages[i], check));
         }
         // Uma rodada por etapa, com contexto resetado: um programa inteiro em F# custa
         // mais de uma passada. O aceite (metas e formato) nao muda entre as etapas.
