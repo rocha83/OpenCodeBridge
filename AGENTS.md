@@ -366,6 +366,13 @@ não existe*. Medido duas vezes: `[1; 3 .. n-1]` (DRIVER-FIXES #13) e a forma
   rebuild, e os filhos (`WAR_PARALLEL_CHILD=1`) não repetem nada disso.
   Fail-fast não mata raia já disparada: FAIL fica registrado, o exit é 1 e o
   `driver-summary` aponta o level. Cada raia grava `L<N>-<stamp>.console.log`.
+- **Binário não muda no meio da rodada (trava por step):** editar
+  fonte/rebuidar durante a bateria é erro de processo, não resultado. O
+  `WarTemplate.BeforeStep` compara o SHA-512 do test/bridge com o do
+  `OnRunStart` **antes** de cada step e devolve `Fail rc=3` ("binario mudou
+  durante o run (test X->Y, bridge Z->W)") + evento `step_stale_precheck`;
+  o fail-fast para ali, sem gastar o step. O `STALE` pós-step fica só para
+  binário trocado DENTRO do próprio step. Rebuild é fora da rodada.
 - **Modo é escolha do operador:** sem `--war-parallel` a bateria é
   **sequencial** e `--war-stop-on-fail` para no primeiro nível vermelho; com
   `--war-parallel` as raias rodam juntas e o fail-fast vale **dentro** de cada

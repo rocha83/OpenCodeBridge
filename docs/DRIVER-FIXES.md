@@ -2105,3 +2105,26 @@ main harness, llama, lock) continua duro.
 
 **Prova** — mesma unit, `--war-min-free-vram 256`: `[preflight] ok vram livre`
 e as raias voltaram a executar steps (não mais SKIP rc=3).
+
+## 69. STALE por rebuild no meio da rodada só era detectado DEPOIS do step (2026-11-03)
+
+**Sintoma** — L1 da bateria em raias marcou
+`e-topics-ent-crud-bridge STALE "binario mudou durante o run"` com `secs=232`
+(quase 4 min de GPU perdidos) e as três linhas seguintes saíram
+"nao executado".
+
+**Causa** — o guard comparava o hash em `VerdictForTest`, ou seja, **depois**
+de o step rodar. O `dotnet build` do PROD feito pelo operador no meio da
+corrida era invisível até o fim do step seguinte.
+
+**Correção** — hook `CircuitTemplate.BeforeStep` chamado pelo
+`TestCircuitDriver.RunStepAsync` antes de publicar `step_start`; o
+`WarTemplate` devolve `Fail rc=3` com causa `binario mudou durante o run
+(test X->Y, bridge Z->W)` e publica `step_stale_precheck` (hashes inicio/agora
+dos dois binários). Fail-fast para a rodada no primeiro step, sem gastar GPU.
+O `STALE` pós-step continua como rede de segurança (binário trocado DENTRO do
+step).
+
+**Prova** — `dotnet build -c Release` 0 avisos/0 erros; rodada seguinte
+(anti-repeat ON) arrancou com `[guard] hash diferente do ultimo FAIL` e
+nenhum `step_stale_precheck` (nada foi rebuidado durante a bateria).

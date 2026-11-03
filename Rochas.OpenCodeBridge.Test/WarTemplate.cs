@@ -1124,10 +1124,39 @@ internal sealed class WarTemplate : CircuitTemplate
                 && (_p.RetryAll || run.ExitCode is 124 or 137));
     }
 
+    /// <summary>
+    /// Trava de hash ANTES do step: se o binario (test/bridge) mudou desde o
+    /// <c>OnRunStart</c>, aborta na hora com BLOCKED em vez de gastar o step
+    /// inteiro para descobrir depois (medido 2026-11-03: 232s de GPU perdidos
+    /// em STALE porque o operador rebuildeu o PROD no meio da bateria). Editar
+    /// fonte/rebuidar durante a rodada e' erro de processo, nao resultado de teste.
+    /// </summary>
+    public override CircuitStepResult? BeforeStep(TestCircuitDriver driver, CircuitStepSpec step)
+    {
+        string nowTest = Hash(_p.TestDll);
+        string nowBridge = Hash(_p.BridgeDll);
+        if (nowTest == _initHashTest && nowBridge == _hashBridge) return null;
+
+        static string Short(string h) => h.Length >= 12 ? h[..12] : h;
+        string cause =
+            $"binario mudou durante o run (test {Short(_initHashTest)}->{Short(nowTest)}, " +
+            $"bridge {Short(_hashBridge)}->{Short(nowBridge)})";
+        driver.Publish(new JsonObject
+        {
+            ["t"] = "step_stale_precheck",
+            ["step"] = step.Name,
+            ["test_sha_inicio"] = _initHashTest,
+            ["test_sha_agora"] = nowTest,
+            ["bridge_sha_inicio"] = _hashBridge,
+            ["bridge_sha_agora"] = nowBridge
+        });
+        return new CircuitStepResult(step.Name, CircuitVerdict.Fail, 0, 3, cause, 0,
+            Path.Combine(_out, "steps", step.Name + ".test.log"));
+    }
+
     private CircuitStepOutcome VerdictForTest(
         TestCircuitDriver driver, CircuitStepRun run)
-    {
-        CircuitStepOutcome outcome = ParseLogVerdict(run.LogPath, run.ExitCode);
+    {        CircuitStepOutcome outcome = ParseLogVerdict(run.LogPath, run.ExitCode);
         if (Hash(_p.TestDll) != _initHashTest)
         {
             string now = Hash(_p.TestDll);

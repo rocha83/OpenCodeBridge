@@ -223,6 +223,14 @@ internal abstract class CircuitTemplate
         TestCircuitDriver driver, CircuitStepResult result)
         => Array.Empty<CircuitStepSpec>();
 
+    /// <summary>
+    /// Trava por step ANTES da execucao: devolver um resultado aqui impede o
+    /// step de rodar (usado pela WAR para abortar na hora quando o binario mudou
+    /// no meio da bateria, em vez de gastar o step inteiro para marcar STALE).
+    /// </summary>
+    public virtual CircuitStepResult? BeforeStep(
+        TestCircuitDriver driver, CircuitStepSpec step) => null;
+
     /// <summary>Politica de gate; default = PASS>0, FAIL=0, STALE=0.</summary>
     public virtual CircuitGatePolicy GatePolicy(TestCircuitDriver driver)
         => CircuitGatePolicy.Default;
@@ -528,6 +536,24 @@ internal sealed class TestCircuitDriver : IDisposable
         }
 
         await WaitIfPausedAsync(ct).ConfigureAwait(false);
+
+        // Trava do template antes do step: barata e no comeco (hash mudou no meio
+        // da bateria = erro de processo; nao gasta GPU para descobrir depois).
+        var veto = _template.BeforeStep(this, step);
+        if (veto is not null)
+        {
+            AppendSummary(veto, 0);
+            Publish(new JsonObject
+            {
+                ["t"] = "step_end",
+                ["step"] = step.Name,
+                ["mode"] = step.Mode,
+                ["verdict"] = "BLOCKED",
+                ["cause"] = veto.Cause
+            });
+            Log($"BLOCKED {step.Name}: {veto.Cause}");
+            return veto;
+        }
 
         int attempt = NextAttempt(step.Name);
         Publish(new JsonObject
