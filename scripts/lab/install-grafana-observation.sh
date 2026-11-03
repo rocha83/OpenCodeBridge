@@ -75,6 +75,22 @@ install -m 0644 \
 # 5) Permissoes, boot e restart
 chown -R grafana:grafana /var/lib/grafana/dashboards "$PROV_DIR" "$DS_DIR" 2>/dev/null || true
 systemctl enable grafana-server >/dev/null
+
+# 4b) Acesso anonimo (Viewer): painel local de observacao precisa aparecer na
+# lista sem login. Sem `[auth.anonymous] enabled = true` o Grafana devolve 302
+# para /login e a lista "Dashboards" fica vazia para quem abre :4800 direto.
+GINI=/etc/grafana/grafana.ini
+if [ -f "$GINI" ]; then
+  awk '
+    /^\[auth\.anonymous\]/ { insec=1; print; next }
+    /^\[/ { insec=0 }
+    insec && /^;?enabled[[:space:]]*=/ { print "enabled = true"; next }
+    insec && /^;?org_name[[:space:]]*=/ { print "org_name = Main Org."; next }
+    insec && /^;?org_role[[:space:]]*=/ { print "org_role = Viewer"; next }
+    { print }
+  ' "$GINI" > /tmp/opencode-grafana.ini.tmp && cat /tmp/opencode-grafana.ini.tmp > "$GINI"
+fi
+
 systemctl restart grafana-server
 
 # 6) Health
