@@ -93,7 +93,7 @@ public static class HarnessTails
         "PROJETO EXISTENTE: edite os arquivos do projeto; `dotnet new` so em pasta vazia (segundo .csproj/.fsproj na mesma pasta quebra o `dotnet run --project` apontando a pasta).";
 
     const string FileRepoFlowLine =
-        "FLUXO ARQUIVO+REPO (nomes do exemplo; troque pelos do seu pedido): `mkdir` da pasta → `write` com o path da pasta (`notas/hoje.txt`) → `git init`/`add`/`commit` com o mesmo `path` → `git log` e a saida colada no historico (passo a passo comentado no help da tool git).";
+        "FLUXO ARQUIVO+REPO (nomes do exemplo; troque pelos do seu pedido): `mkdir` da pasta → `write` com o path da pasta (`notas/hoje.txt`) → `git init`/`add`/`commit` com o mesmo `path` → `git log` e a saida colada no historico (passo a passo comentado no help da tool git). UM COMMIT POR PASSO CONCLUIDO: cada passo do pedido que muda arquivo termina com `git add .` + `git commit -m \"<mensagem do passo>\"`; nao junte os passos num commit unico no fim (o `git log` tem que mostrar um commit por passo).";
 
     const string ProofLine =
         "PROVA: depois de `write`/`edit`, `read` o arquivo — o conteudo dele e' o texto que a tool devolveu; historico de comando e' a saida literal colada (ex.: `git log`, com os hashes que vieram).";
