@@ -332,6 +332,9 @@ sudo bash -c "cd /usr/src/opencodebridge && REPO=/usr/src/opencodebridge \
 - Painel: `POST /api/test/step` leva `level`; a tabela "Steps concluídos" traz
   a coluna `raia`. Throughput/VRAM/tools seguem globais.
 - Fail-fast do pai não aborta raia já disparada; o exit agrega os rc.
+- **Os dois modos convivem:** `--war-all` sem `--war-parallel` = sequencial
+  (fail-fast entre levels); com `--war-parallel` = raias simultâneas, fail-fast
+  só dentro da raia. Mesmo template, mesmo gate, mesmo `driver-summary`.
 - **Piso de VRAM:** o preflight de cada step exige 512 MiB livres por padrão.
   No lab full-VRAM (modelo + mmproj residentes em 4 slots) sobram ~500 MiB e
   `vram livre` reprova → todo step sai `SKIP rc=3`. O operador declara o piso

@@ -366,6 +366,10 @@ não existe*. Medido duas vezes: `[1; 3 .. n-1]` (DRIVER-FIXES #13) e a forma
   rebuild, e os filhos (`WAR_PARALLEL_CHILD=1`) não repetem nada disso.
   Fail-fast não mata raia já disparada: FAIL fica registrado, o exit é 1 e o
   `driver-summary` aponta o level. Cada raia grava `L<N>-<stamp>.console.log`.
+- **Modo é escolha do operador:** sem `--war-parallel` a bateria é
+  **sequencial** e `--war-stop-on-fail` para no primeiro nível vermelho; com
+  `--war-parallel` as raias rodam juntas e o fail-fast vale **dentro** de cada
+  raia. Os dois caminhos usam o mesmo template/gate — só muda o disparo.
 - **Painel identifica a raia:** o driver acrescenta `level` (de `WAR_LANE`)
   na linha de `POST /api/test/step`; o dashboard usa a coluna `raia` nos
   "Steps concluídos". Os demais dados (throughput, VRAM, tools) continuam

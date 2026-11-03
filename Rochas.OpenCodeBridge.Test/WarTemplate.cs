@@ -606,6 +606,11 @@ internal sealed class WarTemplate : CircuitTemplate
             return 3;
         }
         LogGlobal(globalLog, $"[guard] {guard.Reason}");
+        // Fail-fast em raias so vale DENTRO da raia: o pai nao mata processo irmao
+        // ja em curso (o level vermelho registra rc e o resumo aponta qual).
+        LogGlobal(globalLog, o.StopOnFirstFailure
+            ? "fail-fast: DENTRO de cada raia (level vermelho para a raia; raias irmas seguem ate o fim)"
+            : "fail-fast: OFF (--war-no-stop-on-fail)");
 
         // Args do pai viram base do filho, sem o que e' por-level/por-run.
         var raw = Environment.GetCommandLineArgs().Skip(1).ToList();
@@ -1951,9 +1956,10 @@ internal sealed class WarTemplate : CircuitTemplate
           --war-level N            executa um level (1..4)
           --war-all                executa 1 -> 4 em sequencia
           --war-parallel           raias: um level por slot do llama, em paralelo
-                                   (bridge precisa estar com --slot -1)
-          --war-min-free-vram N    piso de VRAM livre do preflight (default 512; lab full-VRAM usa menor)
-          --war-levels 1,2,3,4     levels explicitos
+                                   (bridge com --slot -1). Sequencial (default) honra
+                                   o fail-fast entre levels; em raias ele vale DENTRO
+                                   da raia (level vermelho para de rodar, irmaos seguem)
+          --war-min-free-vram N    piso de VRAM livre do preflight (default 512; lab full-VRAM usa menor)          --war-levels 1,2,3,4     levels explicitos
           --war-only NAME          roda so steps cujo nome contem NAME (virgula = lista)
           --war-modes bridge       modos (bridge|opencode), default "bridge"
           --war-from N --war-to N  faixa de levels
