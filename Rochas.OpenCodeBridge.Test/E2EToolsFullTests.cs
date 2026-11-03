@@ -55,9 +55,10 @@ internal static class E2EToolsFullTests
     static async Task CreateAttempt(string dir, string feedback)
     {
         const string basePrompt =
-            "Trabalhe dentro da pasta atual. Crie a subpasta notas e, dentro dela, o arquivo notas/data.txt " +
-            "com a data de hoje (a data do sistema) escrita como texto. Inicialize um repositorio git na pasta notas, " +
-            "adicione os arquivos e faca o commit com a mensagem 'data de hoje'; confirme com git log.";
+            "Trabalhe dentro da pasta atual. Crie a subpasta notas (nome exato, sem traduzir) e grave nela o arquivo " +
+            "notas/data.txt com a data de hoje (a data do sistema) escrita como texto. Inicialize o repositorio git " +
+            "dentro da pasta notas, adicione tudo o que esta nela e faca o commit com a mensagem 'data de hoje'; " +
+            "confirme com git log.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         string parent = Path.GetDirectoryName(dir)!;
@@ -75,7 +76,9 @@ internal static class E2EToolsFullTests
 
         string dataPath = Path.Combine(dir, DataFile);
         TestContext.Check(File.Exists(dataPath),
-            $"[toolsfull:create] arquivo {DataFile} criado (conteudo da pasta: {string.Join(", ", Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Select(Path.GetFileName))})");
+            $"[toolsfull:create] arquivo {DataFile} criado — caminho e nome da pasta sao exatamente os do enunciado " +
+            $"(subpastas: {string.Join(", ", Directory.GetDirectories(dir).Select(Path.GetFileName))}; " +
+            $"arquivos: {string.Join(", ", Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Select(Path.GetFileName))})");
         string body = ReadText(dataPath);
         TestContext.Check(body.Contains(DateTime.Now.ToString("yyyy"), StringComparison.Ordinal),
             $"[toolsfull:create] {DataFile} traz a data de hoje como texto (conteudo='{Trecho(dataPath)}')");
@@ -108,10 +111,11 @@ internal static class E2EToolsFullTests
     static async Task AdjustAttempt(string dir, string feedback)
     {
         const string basePrompt =
-            "Na pasta atual existe o repositorio git notas, com notas/data.txt ja commitado com a data de hoje. " +
-            "Busque na internet o clima de Sao Paulo de hoje e acrescente em notas/data.txt, na linha de baixo da data, " +
-            "a linha 'ARQUIVO EDITADO - Clima: ' seguida do clima real retornado. Adicione a mudanca e faca o commit " +
-            "com a mensagem 'Added sao paulo weather'. Grave a saida de git log (os dois commits) no arquivo notas/historico_git.log.";
+            "Na pasta atual existe a subpasta notas (nome exato) com o repositorio git e o arquivo notas/data.txt " +
+            "ja commitado com a data de hoje. Busque na internet o clima de Sao Paulo de hoje e acrescente em " +
+            "notas/data.txt, na linha de baixo da data, a linha 'ARQUIVO EDITADO - Clima: ' seguida do clima real " +
+            "retornado. Adicione a mudanca e faca o commit com a mensagem 'Added sao paulo weather'. " +
+            "Grave a saida de git log (os dois commits) no arquivo notas/historico_git.log.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
