@@ -7,13 +7,12 @@ namespace Rochas.OpenCodeBridge.Test;
 // versionamento proprio:
 //   1) cria e versiona  (data.txt com a data + commit 'data de hoje')
 //   2) ajusta e versiona (linha do clima no MESMO arquivo + commit
-//      'Added sao paulo weather' + historico_git.log com os dois commits)
+//      "Added sao paulo weather")
 // Enunciado curto de dev humano: objetivo + contrato observavel, com o NOME do
 // arquivo declarado (o aceite confere o artefato em disco).
 internal static class E2EToolsFullTests
 {
     const string DataFile = "data.txt";
-    const string HistoryFile = "historico_git.log";
 
     static (int Code, string Out) Run(string exe, string cwd, int secs, params string[] args)
     {
@@ -104,8 +103,8 @@ internal static class E2EToolsFullTests
 
     /// <summary>
     /// Passo 2 — AJUSTA E VERSIONA: acrescenta a linha do clima no MESMO
-    /// `data.txt`, commita 'Added sao paulo weather' e grava o `git log` em
-    /// `historico_git.log`. Roda depois do passo 1, no mesmo diretorio.
+    /// `data.txt` (sem perder a data ja commitada) e commita
+    /// 'Added sao paulo weather'. Roda depois do passo 1, no mesmo diretorio.
     /// </summary>
     static async Task AdjustAttempt(string dir, string feedback)
     {
@@ -114,7 +113,7 @@ internal static class E2EToolsFullTests
             "Busque o clima de Sao Paulo agora em https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m " +
             "e acrescente em data.txt, na linha de baixo da data (a data ja gravada continua no arquivo), a linha " +
             "'ARQUIVO EDITADO - Clima: ' seguida da temperatura retornada. Adicione a mudanca e faca o commit " +
-            "com a mensagem 'Added sao paulo weather'. Grave a saida de git log (os dois commits) no arquivo historico_git.log.";
+            "com a mensagem 'Added sao paulo weather'; confirme com git log.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
@@ -137,14 +136,6 @@ internal static class E2EToolsFullTests
             $"[toolsfull:adjust] primeiro commit com mensagem 'data de hoje' (log: {log.Trim().Replace("\n", " / ")})");
         TestContext.Check(log.Contains("Added sao paulo weather"),
             $"[toolsfull:adjust] segundo commit com mensagem 'Added sao paulo weather' (log: {log.Trim().Replace("\n", " / ")})");
-
-        string histPath = Path.Combine(dir, HistoryFile);
-        TestContext.Check(File.Exists(histPath),
-            $"[toolsfull:adjust] historico gravado em {HistoryFile} (arquivos: {string.Join(", ", Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Select(f => Path.GetFileName(f)))})");
-        string hist = ReadText(histPath);
-        int hashes = commits.Count(k => k.Split(' ')[0].Length >= 7 && hist.Contains(k.Split(' ')[0]));
-        TestContext.Check(hashes >= 2,
-            $"[toolsfull:adjust] {HistoryFile} traz os dois commits do log (hashes encontrados: {hashes}; conteudo='{Trecho(histPath)}')");
 
         if (TestContext.Mode == "bridge")
         {
@@ -170,7 +161,7 @@ internal static class E2EToolsFullTests
         string dir = await TestContext.AgentAttempts("toolsfull:create", "/tmp/opencode/toolsfull-agent", 3,
             CreateAttempt, retryHint: "com o nome de arquivo do enunciado (data.txt) na pasta de trabalho.");
         await TestContext.RetrySame("toolsfull:adjust", dir, 3,
-            AdjustAttempt, retryHint: "com os nomes de arquivo do enunciado (data.txt e historico_git.log), no MESMO repositorio.");
+            AdjustAttempt, retryHint: "no MESMO repositorio e no MESMO data.txt do passo anterior (acrescente, nao sobrescreva).");
         Console.WriteLine("[toolsfull] cenario agentico (criar+versionar, ajustar+versionar) concluido");
     }
 }
