@@ -147,6 +147,8 @@ internal static class Program
         TestContext.Run("U-tools-elision-refused", UnitToolGuardTests.ElisionRefused);
         TestContext.Run("U-tools-whole-file-rewrite", UnitToolGuardTests.WholeFileRewriteRefused);
         TestContext.Run("U-tools-artifact-owner", UnitToolGuardTests.ArtifactOwnerAdopted);
+        TestContext.Run("U-slot-pin", UnitSlotPinTests.PinObject);
+        TestContext.Run("U-slot-pin-body", UnitSlotPinTests.PinString);
         TestContext.Run("U-tool-help", UnitToolHelpTests.Run);
         TestContext.Run("U-tool-feedback-shell-cwd", UnitToolFeedbackTests.ShellReportsCwd);
         TestContext.Run("U-tool-feedback-git-chain", UnitToolFeedbackTests.GitChainTeaching);

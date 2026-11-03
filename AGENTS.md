@@ -339,6 +339,21 @@ não existe*. Medido duas vezes: `[1; 3 .. n-1]` (DRIVER-FIXES #13) e a forma
   uma bancada que não é a de produção). O único uso legítimo de porta extra é a
   porta **experimental canônica** do projeto, nunca uma inventada por sessão.
 
+## Regra: knots do WAR — main harness fixo, caudas/anti-repeat/slots opcionais
+
+- **Main harness em modo bridge é irrevogável:** `--main-harness 1` na unit da
+  bridge alvo e o preflight `bridge_main_harness` continua gate DURO (BLOCKED).
+  Não existe flag de relaxamento para ele.
+- **Caudas e anti-repeat são maleáveis:** o preflight registra `tail_scope`,
+  `behavior_tail`, `tools_tail_flag` e `anti_repeat` na evidência de
+  `bridge_status`; reprovar as caudas **não** derruba o run quando o operador
+  passa `--war-no-tails-gate` (o relaxamento sai em `preflight_aviso` com
+  `relaxado_por`, nunca em silêncio). Sem a flag, o gate segue duro.
+- **Slots são opcionais:** a bridge só envia `id_slot` com `--slot N`
+  (default `-1` = llama escolhe o slot livre). A bateria roda um level por
+  slot quando o operador fixa o slot na unit; paralelismo entre levels é
+  escolha do operador, não requisito da esteira.
+
 ## Regra: disposição WAR L1 → L4 (ordem obrigatória)
 
 A esteira WAR tem quatro níveis, nesta ordem, tanto no `WarTemplate`

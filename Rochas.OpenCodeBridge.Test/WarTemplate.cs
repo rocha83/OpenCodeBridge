@@ -65,6 +65,9 @@ internal sealed class WarTemplate : CircuitTemplate
         public bool Rebuild;
         public bool NoBuild;
         public bool StopOnFirstFailure = true;
+        // Diagnostico do modelo cru: relaxa o gate `harness_tails_status` do
+        // preflight (caudas off). Opt-in explicito — o default segue gate duro.
+        public bool NoTailsGate;
         // Web UI pelo navegador: SO' o ultimo step (webui-integracao-topicos) roda a UI
         // (--web URL --ui --phase full). O front mede por snapshot estatico. Headed
         // abre a janela (--war-headed / HEADED=1).
@@ -1085,6 +1088,8 @@ internal sealed class WarTemplate : CircuitTemplate
                 ["temperature"] = btemp,
                 ["main_harness"] = bmain,
                 ["harness_tails"] = btails,
+                ["anti_repeat"] = Str(st, "anti_repeat"),
+                ["slot"] = Str(st, "slot"),
                 ["context_tokens"] = bctx
             });
             // Gate duro: o WAR sempre roda steps de bridge (L1..L4). Bridge
@@ -1108,19 +1113,35 @@ internal sealed class WarTemplate : CircuitTemplate
             // ligadas (behavior + tools) e --tail-scope != off. `harness_tails` e'
             // o alias legado: binario antigo so' expoe ele, entao cai nele.
             string bscope = Str(st, "tail_scope");
-            Pf(driver, "harness_tails_status",
-                !string.Equals(bscope, "off", StringComparison.OrdinalIgnoreCase)
+            bool tailsOk = !string.Equals(bscope, "off", StringComparison.OrdinalIgnoreCase)
                     && On(st, "behavior_tail", "harness_tails")
-                    && On(st, "tools_tail_flag", "harness_tails"),
-                new JsonObject
+                    && On(st, "tools_tail_flag", "harness_tails");
+            var tailsEvidence = new JsonObject
+            {
+                ["bridge"] = _p.Bridge,
+                ["tail_scope"] = bscope,
+                ["harness_tails"] = btails,
+                ["behavior_tail"] = Str(st, "behavior_tail"),
+                ["tools_tail"] = Str(st, "tools_tail_flag"),
+                ["fix"] = "ligue --harness-behavior 1 --harness-tools 1 --tail-scope all|managed (ou o alias --harness-tails 1)"
+            };
+            if (tailsOk || !_o.NoTailsGate)
+                Pf(driver, "harness_tails_status", tailsOk, tailsEvidence);
+            else
+            {
+                // Relaxamento EXPLICITO do operador (--war-no-tails-gate): a
+                // bateria roda contra o modelo sem caudas e o preflight registra
+                // o motivo no evento e no console — nunca em silencio.
+                tailsEvidence["relaxado_por"] = "--war-no-tails-gate";
+                driver.Publish(new JsonObject
                 {
-                    ["bridge"] = _p.Bridge,
-                    ["tail_scope"] = bscope,
-                    ["harness_tails"] = btails,
-                    ["behavior_tail"] = Str(st, "behavior_tail"),
-                    ["tools_tail"] = Str(st, "tools_tail_flag"),
-                    ["fix"] = "ligue --harness-behavior 1 --harness-tools 1 --tail-scope all|managed (ou o alias --harness-tails 1)"
+                    ["t"] = "preflight_aviso",
+                    ["check"] = "harness_tails_status",
+                    ["ok"] = false,
+                    ["evidence"] = tailsEvidence
                 });
+                driver.Log($"preflight AVISO: harness_tails_status reprovado e RELAXADO por --war-no-tails-gate {tailsEvidence.ToJsonString()}");
+            }
         }
 
         Pf(driver, "bridge_upstream",
@@ -1650,6 +1671,7 @@ internal sealed class WarTemplate : CircuitTemplate
                 case "--war-no-build":
                 case "--war-no-rebuild": o.NoBuild = true; break;
                 case "--war-stop-on-fail": o.StopOnFirstFailure = true; break;
+                case "--war-no-tails-gate": o.NoTailsGate = true; break;
                 case "--war-no-stop-on-fail":
                 case "--war-continue": o.StopOnFirstFailure = false; break;
                 case "--war-pause": o.Pause = true; break;
@@ -1702,6 +1724,7 @@ internal sealed class WarTemplate : CircuitTemplate
           --war-gate-only          recalcula o gate sem executar steps
           --war-list               lista os steps do level
           --war-stop-on-fail       para no primeiro FAIL/STALE/BLOCKED (default)
+          --war-no-tails-gate      relaxa o gate de tails do preflight (caudas off; diagnostico)
           --war-no-stop-on-fail    segue mesmo com FAIL (mede placar completo)
           --war-require-green      gate vermelho derruba o exit (default)
           --war-no-require-green   nao derruba

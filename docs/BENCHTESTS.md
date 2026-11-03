@@ -302,6 +302,12 @@ padrão e pode ser declarado explicitamente com `--war-stop-on-fail`.
 > `harness_tails_status`). Pedido sem `tools` no array não recebe cauda de
 > tools. Tópico sem tools = perfil `plan` (0.3/on) e o corpo termina com
 > `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`; com tools = `build` (0.1/off).
+>
+> **Relaxamento explícito (diagnóstico):** `--war-no-tails-gate` transforma a
+> reprovação das caudas em `preflight_aviso` (com `relaxado_por` na evidência)
+> em vez de BLOCKED. Serve para medir o modelo **sem** caudas; o
+> `bridge_main_harness` continua gate duro e `anti_repeat`/`slot` só entram na
+> evidência (`/api/status` já expõe os dois).
 
 ```bash
 # bridge própria (para testar o build do repo, não o binário de produção)

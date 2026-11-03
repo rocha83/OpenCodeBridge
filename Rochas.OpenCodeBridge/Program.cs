@@ -219,6 +219,9 @@ internal static partial class Program
     static double ContextThreshold = 0.95;                       // fracao do ctx (0.5..0.99)
     static int ContextTokens = 0;                                // tamanho do ctx do modelo servido
     static int ContextSlots = 1;                                 // slots paralelos do llama (-np): divide o ctx total
+    // Slot fixo do upstream (0..N-1; -1 = llama escolhe o slot livre). Serve ao
+    // regime de 4 slots do E4B Q6_K (:4100): a bateria roda UM level por slot.
+    static int Slot = Rochas.OpenCodeBridge.Core.SlotPin.None;
     static bool Diagnostic = false;                              // sonda Serilog: --diagnostic / appsettings diagnostic / env DIAGNOSTIC=1
     const int SondaMaxChars = 2048;                              // amostra da cauda/duplicata no log de diagnostico
     // Granularidade da sonda (grupo observabilidade):
@@ -1102,7 +1105,7 @@ internal static partial class Program
     //   F) anti-repeat ...... --anti-repeat --anti-repeat-abort --anti-repeat-retry
     //                         --anti-repeat-window --anti-repeat-notice
     //   G) orçamento ........ --max-tokens --coerced-max-tokens (alias --cpu-max-tokens)
-    //                         --context-guard --context-tokens --context-slots --context-threshold
+    //                         --context-guard --context-tokens --context-slots --context-threshold --slot
     //   H) geração/artefatos  --temperature --tool-output-limit
     //   I) segurança ........ --risk-ask --risk-ask-minutes --risk-tools-alerts --tool-blacklist
     //   J) observabilidade .. --diagnostic --diagnostic-level
@@ -1197,6 +1200,8 @@ internal static partial class Program
                 case "--context-threshold": { double v = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); if (v >= 0.5 && v <= 0.99) ContextThreshold = v; break; }
                 case "--context-tokens": ContextTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--context-slots": ContextSlots = int.Parse(cliArgs[i + 1]); break;
+                // Pino de slot (id_slot do llama): -1 desliga; N>=0 fixa o slot.
+                case "--slot": Slot = int.Parse(cliArgs[i + 1]); break;
 
                 // ---------- H) geração/artefatos ----------
                 // Invariante: em locale pt-BR, Parse("0.7") quebraria sem isso
@@ -1297,6 +1302,10 @@ internal static partial class Program
             errors.Add("--context-guard 1 exige --context-tokens > 0 (sem o tamanho do ctx o guard nunca dispara)");
         if (ContextSlots < 1)
             errors.Add($"--context-slots {ContextSlots} invalido: use >= 1 (slots paralelos do llama, -np)");
+        if (Slot < Rochas.OpenCodeBridge.Core.SlotPin.None)
+            errors.Add($"--slot {Slot} invalido: use -1 (livre) ou 0..{Math.Max(0, ContextSlots - 1)}");
+        else if (Slot >= ContextSlots)
+            errors.Add($"--slot {Slot} fora do numero de slots ({ContextSlots}): o llama responde 400 para id_slot inexistente");
 
         if (CpuMaxTokens > 0 && !CoerceFor())
             warns.Add($"--coerced-max-tokens {CpuMaxTokens} inerte: use --upstream-parser none ou --coerce-text-tools 1");
@@ -1999,7 +2008,7 @@ WriteJson(ctx, 200, new JsonObject
 ["temperature"] = Temperature, ["max_tokens"] = MaxTokens,
         // Temperatura auxiliar do retry: null quando o desvio vem do role (plan).
         ["aux_temp"] = double.IsNaN(AuxTemp) ? null : JsonValue.Create(AuxTemp),
-["context_tokens"] = ContextTokens, ["context_guard"] = ContextGuard, ["context_slots"] = ContextSlots,
+["context_tokens"] = ContextTokens, ["context_guard"] = ContextGuard, ["context_slots"] = ContextSlots, ["slot"] = Slot,
 ["mode"] = Mode?.Name ?? "auto", ["tail_scope"] = TailScope,
 ["main_harness"] = MainHarnessOn, ["main_harness_scope"] = "managed-only", ["main_harness_opencode"] = false, ["harness_tails"] = TailsEnabled, ["behavior_tail"] = BehaviorTailEnabled, ["tools_tail_flag"] = ToolsTailEnabled, ["tails_managed"] = TailsEnabled, ["tails_opencode"] = false, ["breaker_soft"] = BreakerSoft, ["breaker_hard"] = BreakerHard,
         ["last_client"] = LastClient, ["last_request_ms"] = LastRequestMs,
@@ -2276,6 +2285,8 @@ WriteJson(ctx, 200, new JsonObject
             }
         }
         catch { outBody = body; }
+        // Pino de slot da linha chat (id_slot). So reescreve quando ha pino.
+        outBody = SlotPin.Apply(outBody, Slot);
         // Preserva o verbo original (GET p/ models, POST p/ completions).
         // Linha CPU (llama sem parser server-side): forca upstream sem stream
         // p/ coagir o texto em tool_calls e devolver SSE sintetizado — senao o
@@ -2879,6 +2890,9 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // quando divaga — stop dedicado corta o loop sem afetar tool calls
         // (elas nunca vem nativas aqui, só via coercion do texto).
         else if (coercedLine) chat["stop"] = new JsonArray("[END_OF_TEXT]");
+        // Pino de slot: id_slot fixo no upstream (um level por slot). Sem pino
+        // (-1) o llama continua escolhendo o slot livre.
+        SlotPin.Apply(chat, Slot);
         return chat;
     }
 
