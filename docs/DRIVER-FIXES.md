@@ -2015,3 +2015,34 @@ novo de verdade. A proteção foi respeitada e não foi burlada.
   `anti-repeat-salvage` com `calls: 0`; o log do PASS traz `tool_exec: 12`.
 - Guard: `logs/.rerun-guard.json` com `reason` do FAIL, e os três hashes iguais
   antes/depois do rebuild sem mudança de fonte.
+
+---
+
+## 66. Modo bridge revertia `--anti-repeat 0` (precedencia do modo sobre a CLI)
+
+**Sintoma** — unit subiu com `--mode bridge --main-harness 1 --anti-repeat 0`
+(pedido explicito do operador para medir o modelo sem anti-repeat) e o
+`/api/status` devolveu `anti_repeat: true`:
+```
+{'mode': 'bridge', 'main_harness': True, 'harness_tails': False,
+ 'tail_scope': 'off', 'anti_repeat': True, ...}
+```
+
+**Causa** — `ApplyMode()` fazia `if (m.AntiRepeat) AntiRepeat = true;` e o
+`BridgeMode.Bridge` carrega `AntiRepeat = true`. O modo reescrevia a flag do
+operador depois do `ParseArgs`, contra a precedencia documentada
+"CLI vence o arquivo/o modo". As caudas escapavam porque o modo so DESLIGA
+(`if (!m.Tails) TailsEnabled = false;`).
+
+**Correção** — `AntiRepeatFlag` (nullable) guarda a declaracao explicita de
+CLI/appsettings; o modo liga por padrao mas respeita `false`:
+`if (m.AntiRepeat && AntiRepeatFlag != false) AntiRepeat = true;`. O status
+passou a expor `anti_repeat_flag` (intencao) ao lado de `anti_repeat` (efetivo).
+O main harness continua irrevogavel em `--mode bridge` (excecao de args).
+
+**Prova** — mesmo binario, mesma unit, depois do fix:
+```
+{'mode': 'bridge', 'main_harness': True, 'harness_tails': False,
+ 'tail_scope': 'off', 'anti_repeat': False, 'anti_repeat_flag': False,
+ 'context_tokens': 458752, 'context_slots': 4, 'slot': 0}
+```

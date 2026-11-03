@@ -83,6 +83,10 @@ internal static partial class Program
     //   none            = devolve texto puro; a bridge coagia e sintetiza
     static string UpstreamParser = "native";
     static bool AntiRepeat = true;                               // AntiRepeat: observa o thinking em stream e conteve repeticao
+    // Declaracao EXPLICITA do operador (CLI/appsettings) para o anti-repeat:
+    // o modo bridge liga por padrao, mas nao pode reverter um `--anti-repeat 0`
+    // (precedencia "CLI vence o modo").
+    static bool? AntiRepeatFlag;
     // Abort em stream: com o detector tripado, corta a geracao no upstream na
     // hora (fecha o SSE) em vez de pagar o turno degenerado inteiro (medido:
     // 16.384 tokens ~ 375 s). Flag propria para poder desligar SO o corte e
@@ -494,7 +498,7 @@ internal static partial class Program
             if (cfg["antiRepeatAbort"]?.GetValue<bool>() is bool arA) AntiRepeatAbort = arA;
             if (cfg["diagnosticLevel"]?.GetValue<string>() is string dlg && dlg.Length > 0) DiagnosticLevel = dlg.Trim().ToLowerInvariant();
             if (cfg["streamPerDelta"]?.GetValue<bool>() is bool spd) StreamPerDelta = spd;
-            if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) AntiRepeat = ar;
+            if (cfg["antiRepeat"]?.GetValue<bool>() is bool ar) { AntiRepeat = ar; AntiRepeatFlag = ar; }
             if (cfg["coerceNarrated"]?.GetValue<bool>() is bool cn) CoerceNarrated = cn;
             if (cfg["bridgeManaged"]?.GetValue<bool>() is bool bm) BridgeManagedAll = bm;
             if (cfg["riskAsk"]?.GetValue<bool>() is bool ra) RiskAsk = ra;
@@ -1183,7 +1187,7 @@ internal static partial class Program
                 case "--tool-shim-min-calls": ToolShimMinCalls = int.Parse(cliArgs[i + 1]); break;
 
                 // ---------- F) anti-repeat ----------
-                case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; break;
+                case "--anti-repeat": AntiRepeat = cliArgs[i + 1] is not "false" and not "0"; AntiRepeatFlag = AntiRepeat; break;
                 case "--anti-repeat-abort": AntiRepeatAbort = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-retry": AntiRepeatRetry = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--anti-repeat-window": AntiRepeatWindow = int.Parse(cliArgs[i + 1]); break;
@@ -1270,7 +1274,7 @@ internal static partial class Program
                 "Use --mode opencode para a raia que ja carrega o harness proprio no stream.");
         if (!m.MainHarness) MainHarnessOn = false;
         if (!m.Tails) TailsEnabled = false;
-        if (m.AntiRepeat) AntiRepeat = true;
+        if (m.AntiRepeat && AntiRepeatFlag != false) AntiRepeat = true;
     }
 
     /// <summary>Coerencia entre flags — roda ANTES de subir o listener.</summary>
@@ -2021,6 +2025,7 @@ WriteJson(ctx, 200, new JsonObject
         ["cpu_max_tokens"] = CpuMaxTokens, ["coerced_max_tokens"] = CpuMaxTokens,
         ["upstream_parser"] = UpstreamParser,
         ["anti_repeat"] = AntiRepeat, ["anti_repeat_abort"] = AntiRepeatAbort,
+        ["anti_repeat_flag"] = AntiRepeatFlag,
         ["anti_repeat_window"] = AntiRepeatWindow,
         ["anti_repeat_args_window"] = AntiRepeatArgsWindow,
         ["sampling_passthrough"] = SamplingPassthrough,
