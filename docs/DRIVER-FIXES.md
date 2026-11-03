@@ -2226,3 +2226,52 @@ intactas.
 
 **Prova** — `dotnet build -c Release` 0 avisos/0 erros nos dois repos; rodada
 isolada com caudas e anti-repeat ligados mede o modelo, não o texto.
+
+## 73. `E-tools-full`: um enunciado por fase (criar+versionar, ajustar+versionar) (2026-11-03)
+
+**Sintoma.** Com um único enunciado de 4 passos, o E4B-Q4 chegava ao fim do
+fluxo (pasta, arquivo, repo, identidade, `add`, `commit`, `log`) e **fundia**
+os passos: fazia **um** commit só, ou dois com a **mesma** mensagem. A assertiva
+de dois commits com mensagens distintas era a única vermelha — e o modelo chegou
+a **fabricar** o hash do segundo commit num arquivo de histórico.
+
+**Causa.** O pedido era longo demais para o orçamento de raciocínio do E4B: ele
+acerta a mecânica passo a passo, mas perde a contagem/ordem dos passos quando o
+enunciado tem quatro. Não é dica faltando (as dicas de forma certa já estavam
+no Core: `path` relativo à raiz, `add` antes do `commit`, um commit por passo).
+
+**Correção.** `E2EToolsFullTests` passou a ter **dois enunciados sequenciais no
+mesmo diretório**, cada um com o seu versionamento:
+
+1. `toolsfull:create` — grava `data.txt` com a data de hoje, inicia o repo na
+   pasta de trabalho e commita `data de hoje`.
+2. `toolsfull:adjust` — acrescenta em `data.txt` (sem perder a data já
+   commitada) a linha `ARQUIVO EDITADO - Clima: <temperatura>` lida de
+   `https://api.open-meteo.com/v1/forecast?...` e commita
+   `Added sao paulo weather`.
+
+`TestContext.AgentAttempts` devolve o diretório que passou (o passo 2 roda nele)
+e o novo `TestContext.RetrySame` repete **no mesmo diretório**, com o feedback do
+aceite, sem refazer o passo 1.
+
+**O que saiu do contrato e por quê (sem afrouxar o resto):**
+
+- **subpasta `notas`** — medido três vezes: o modelo cria `notes` (traduz), ou
+  `notas` **e** `notes`, e grava o `data.txt` na raiz; numa tentativa subiu o
+  `.git` para o diretório **pai** do workspace. Composição "pasta + repo dentro
+  da pasta" não se sustenta no E4B. O repo passou a ser a pasta de trabalho.
+- **`historico_git.log`** — artefato que eu tinha inventado além do spec de
+  duas fases. O modelo grava hashes **fabricados** (`aabbc43`/`7f302f3` quando
+  os reais eram `c31ab6f`/`25fdccd`/`6677e54`). Assertiva removida junto com o
+  enunciado; `git log` continua exigido como confirmação no texto.
+
+**Prova.** Rodada isolada (`--only E-tools-full`, bridge `:4124` com
+`--main-harness 1 --harness-tails 1 --tail-scope managed --anti-repeat 1`):
+
+```
+  [toolsfull:create] ok (10 calls, texto=0 chars)
+  [toolsfull:adjust] ok (11 calls, texto=0 chars)
+  [toolsfull] cenario agentico (criar+versionar, ajustar+versionar) concluido
+PASS E-tools-full (28.0s)
+[test] PASS=1 FAIL=0 SKIP=0
+```
