@@ -115,6 +115,9 @@ public static class CsSyntaxRepair
             "defina o nome UMA vez; apague a repeticao"),
         new("CS1022", "`}` a mais (bloco fechado que nao estava aberto)",
             "cada `}` fecha um bloco que foi aberto; apague o `}` sobrando no fim do arquivo"),
+        new("CS8954", "duas declaracoes de `namespace` file-scoped no mesmo arquivo",
+            "o `namespace X;` file-scoped aparece UMA vez, na primeira linha do arquivo, e tudo o mais (classes, metodos, `Main`) vem depois dele sem repetir a declaracao; " +
+            "para varios blocos no mesmo arquivo use o formato com chaves: `namespace App { ... }`, uma vez por bloco"),
     };
 
     static string SuggestForCode(string source, string compilerError)

@@ -29,7 +29,20 @@ STAMP="R${ID}-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$LAB_DIR"
 echo "$STAMP" > "$LAB_DIR/.stamp-R${ID}"
 
-# 1) knots da bridge alvo (main harness fica ON: gate duro do modo bridge)
+# 1) BUILD -> REDEPLOY -> RESTART e' o ciclo padrao de toda rodada: o binario
+#    novo entra ANTES de o driver medir (sem isso a rodada mede codigo velho e o
+#    guard de rebuild barra a reexecucao com "binarios inalterados desde o FAIL").
+BUILD_LOG="$LAB_DIR/.build-R${ID}.log"
+echo "== build (Release) -> $BUILD_LOG"
+if ! sudo -n bash -c "cd '$REPO' && dotnet build -c Release Rochas.OpenCodeBridge.slnx > '$BUILD_LOG' 2>&1"; then
+  echo "FAIL: build quebrou — ultimas linhas:"
+  tail -20 "$BUILD_LOG"
+  exit 1
+fi
+grep -E "Aviso\(s\)|Erro\(s\)|Compilação com êxito" "$BUILD_LOG" | tail -3
+
+# 2) knots da bridge alvo (main harness fica ON: gate duro do modo bridge);
+#    set-bridge-flags grava as flags e reinicia a unit (redeploy -> restart).
 "$HERE/set-bridge-flags.sh" "$TAILS" "$ANTI" "$UNIT"
 
 # 2) status da bridge alvo: fail fast se nao subir ou se main harness vier off
