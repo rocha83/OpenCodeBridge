@@ -278,11 +278,11 @@ internal static class E2EMissionTests
         string ws = TestContext.FreshWorkspace("e2e-mission-algo-cs-hanoi");
         TestContext.ScaffoldProject("mcs", Path.Combine(ws, "mcs"));
 
-        // Duas etapas no MESMO arquivo (Hanoi, depois primos), como as demais
-        // missões C#: um programa inteiro em um turno só é a amostra em que o
-        // modelo local devolve o scaffold (`Hello, World!`) sem editar. O aceite
-        // final é o mesmo (cinco chaves); a segmentação só reduz o que ele
-        // precisa acertar de uma vez (regra de micro-runs).
+        // Três etapas no MESMO arquivo (contagem de Hanoi, sequência de Hanoi,
+        // primos), como as demais missões C#: um programa inteiro em um turno só é
+        // a amostra em que o modelo local devolve o scaffold (`Hello, World!`) sem
+        // editar. O aceite final é o mesmo (cinco chaves); a segmentação só reduz o
+        // que ele precisa acertar de uma vez (regra de micro-runs).
         string[] stages = AlgoStages(ws, "mcs");
         var (src, output) = await RunAlgoPhase(bridge, model, ws, "C#", "mcs/mcs.csproj", "Program.cs", stages);
         TestContext.Check(!HasHardcodedAlgo(src), "C# calcula (sem hardcode das metas)");
@@ -389,9 +389,10 @@ internal static class E2EMissionTests
 
     /// <summary>Mesmo enunciado de missao para o projeto C# (mcs) e o F# (mfs).</summary>
     /// <summary>
-    /// Enunciado da missao em duas etapas sobre o MESMO arquivo: Hanoi primeiro,
-    /// primos depois. O aceite final (as cinco chaves) e' o mesmo; a segmentacao so'
-    /// reduz o que o modelo precisa acertar de uma vez (regra de micro-runs).
+    /// Enunciado da missao em TRES etapas sobre o MESMO arquivo: contagem de Hanoi,
+    /// sequencia de Hanoi e primos. O aceite final (as cinco chaves) e' o mesmo; a
+    /// segmentacao so' reduz o que o modelo precisa acertar de uma vez (regra de
+    /// micro-runs).
     /// </summary>
     static string[] AlgoStages(string ws, string dir)
     {
@@ -401,14 +402,26 @@ internal static class E2EMissionTests
         string run = "`dotnet run --project " + ws + "/" + dir + "/" + proj + "`";
         string head = "Preciso de um programa em " + ws + "/" + dir + "/Program." + ext + ", no projeto " + proj
             + " que ja existe (nao crie outro projeto), imprimindo o resultado de um jeito simples para eu conferir, so com numeros inteiros.\n";
-        string hanoi = "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Crie uma funcao para 4 parametros. Em `hanoi=` imprima o NUMERO DE MOVIMENTOS que a solucao executou (quantos movimentos — nao o numero de discos) e em `hanoi_seq=` a sequencia completa numa UNICA linha, com os movimentos separados por virgula, no formato 1->2,1->3,...\n"
+        // Tres etapas em vez de duas (2026-11-03): com o par "hanoi + primos" o modelo
+        // imprimia os movimentos SOLTOS, uma linha por movimento (Console.WriteLine
+        // dentro da recursao), dava a etapa por cumprida e a chave `hanoi_seq=` nunca
+        // saia; o enunciado de uma vez so cobria dois contratos diferentes (contagem e
+        // sequencia) e ele acertava um e esquecia o outro. Cada etapa agora declara o
+        // formato exato da saida que ela pede.
+        string hanoiCount = "1) A torre de Hanoi com 4 discos, da haste 1 para a 3. Crie UMA funcao recursiva de 4 parametros (quantos discos, haste de origem, haste auxiliar, haste de destino) que resolva a torre de verdade, e um programa que a execute.\n"
+            + "O programa imprime uma unica linha, com o NUMERO DE MOVIMENTOS que a solucao executou (quantos movimentos aconteceram — nao o numero de discos), no formato:\n"
+            + "hanoi=<n>\n"
+            + "Rode " + run + " e ajuste ate essa linha sair com o valor que o programa calculou (nao copie numeros do enunciado).";
+        string hanoiSeq = "2) No MESMO programa, a MESMA solucao precisa registrar cada movimento em vez de imprimi-lo solto: cada movimento tem o formato 1->2 (haste de origem, seta, haste de destino) e todos vao numa UNICA linha, separados por virgula, na ordem em que aconteceram.\n"
             + "O contrato da sequencia e' o de movimentos LEGAIS: cada item move o disco do topo de uma haste para OUTRA (origem e destino nunca iguais) e a torre termina inteira na haste 3 — o teste confere movimento por movimento, entao uma sequencia com `3->3` ou com disco saindo do lugar errado nao vale.\n"
-            + "Rode " + run + " e ajuste ate imprimir as duas linhas com os valores que o programa calculou (nao copie numeros do enunciado).";
-        string primes = "2) No MESMO programa, acrescente a analise dos primos: quantos ha abaixo de 100 (`primes100=`), abaixo de 1000 (`primes1000=`) e quantos pares gemeos abaixo de 100 (`twin100=`). O crivo de Eratostenes e uma boa pedida.\n"
+            + "A saida do programa passa a ser estas duas linhas, nessa ordem, cada chave UMA vez:\n"
+            + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\n"
+            + "Rode " + run + " e ajuste ate sairem as duas linhas.";
+        string primes = "3) No MESMO programa, acrescente a analise dos primos: quantos ha abaixo de 100 (`primes100=`), abaixo de 1000 (`primes1000=`) e quantos pares gemeos abaixo de 100 (`twin100=`). O crivo de Eratostenes e uma boa pedida.\n"
             + "Mantenha as duas linhas de Hanoi ja' corretas (`hanoi=` continua sendo o numero de movimentos e `hanoi_seq=` continua numa unica linha) e termine com estas cinco linhas, uma por linha, nessa ordem e com cada chave UMA vez:\n"
             + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\nprimes100=<n>\nprimes1000=<n>\ntwin100=<n>\n"
             + "Rode " + run + " e ajuste ate bater; nao copie os numeros do enunciado.";
-        return new[] { head + hanoi, head + primes };
+        return new[] { head + hanoiCount, head + hanoiSeq, head + primes };
     }
 
     /// <summary>

@@ -118,6 +118,9 @@ public static class CsSyntaxRepair
         new("CS8954", "duas declaracoes de `namespace` file-scoped no mesmo arquivo",
             "o `namespace X;` file-scoped aparece UMA vez, na primeira linha do arquivo, e tudo o mais (classes, metodos, `Main`) vem depois dele sem repetir a declaracao; " +
             "para varios blocos no mesmo arquivo use o formato com chaves: `namespace App { ... }`, uma vez por bloco"),
+        new("CS1001", "identificador esperado (cabecalho do arquivo recomecado dentro do corpo)",
+            "`using`, `namespace` e `class` ficam UMA vez, no TOPO do arquivo, e dentro de um metodo so entram instrucoes — " +
+            "o arquivo nao recomeca no meio; para trocar tudo, mande o arquivo COMPLETO com `write`, do topo ao ultimo `}`, uma unica vez"),
     };
 
     static string SuggestForCode(string source, string compilerError)
