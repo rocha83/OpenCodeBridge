@@ -2128,3 +2128,36 @@ step).
 **Prova** — `dotnet build -c Release` 0 avisos/0 erros; rodada seguinte
 (anti-repeat ON) arrancou com `[guard] hash diferente do ultimo FAIL` e
 nenhum `step_stale_precheck` (nada foi rebuidado durante a bateria).
+
+## 70. `E-ctx-overflow` falhava por teto de 32 tokens, não por compactação (2026-11-03)
+
+**Sintoma** — `e-ctx-overflow-bridge` FAIL duas rodadas seguidas com
+`assert: o modelo respondeu de verdade depois da compactacao (content: )`,
+apesar do `context-compact` ok:
+```
+{"event":"context-compact","where":"upstream-400","attempt":2,"req_chars":6929,"ok":true}
+[ctx-smoke] recover -> 200 em 2.7s
+```
+
+**Diagnóstico (reprodução direta com o mesmo corpo)** —
+`max_tokens=32`:
+```
+http=200 t=3.8  finish=length  content=''  tool_calls=0
+usage: completion=32  reasoning_chars=~0 (preamble cortado no teto)
+```
+`max_tokens=256` (mesmo corpo, mesma bridge):
+```
+http=200 t=5.6  finish=stop  content='OK'  tool_calls=0
+reasoning_chars=470  usage: completion=98
+```
+O E4B emite **preâmbulo de raciocínio** (~470 chars ≈ 98 tokens) antes do
+texto; com teto 32 a completion termina em `finish=length` e `content` fica
+vazio. A compactação estava certa — o artefato era o teto do smoke.
+
+**Correção (sem afrouxar a assertiva)** — `max_tokens` 32 → 256 em
+`OverflowRecovers` e novo check `finish != "length"` com mensagem própria
+(se voltar a truncar, o FAIL aponta o teto, não "content vazio"). O aceite
+segue exigindo `content` com "OK" e `prompt < por-slot * 0.9`.
+
+**Prova** — mesmo payload, 256: `finish=stop`, `content="OK"`,
+`prompt_tokens=1518` (por-slot 114688 → bem abaixo do teto).

@@ -100,7 +100,12 @@ internal sealed class E2EContextOverflowTests
         {
             ["model"] = TestContext.SuiteModel,
             ["messages"] = msgs,
-            ["max_tokens"] = 32,
+            // O teto tem de caber o PREAMBULO de raciocinio do modelo alem do
+            // "OK": medido no E4B, 470 chars (~98 tokens) de reasoning antes da
+            // resposta. Com 32 tokens a completion termina em finish=length e
+            // `content` fica vazio por artefato do teste, nao por falha da
+            // compactacao (medido 2026-11-03, DRIVER-FIXES #70).
+            ["max_tokens"] = 256,
             ["stream"] = false
         };
         Console.WriteLine($"  [ctx-smoke] payload={body.ToJsonString().Length} chars (blob 430k de alta entropia)");
@@ -110,6 +115,9 @@ internal sealed class E2EContextOverflowTests
             $"estouro de ctx vira 200 apos a escalada (veio {status}: {resp.Replace("\n", " ")[..Math.Min(220, resp.Length)]})");
         var obj = JsonNode.Parse(resp)?.AsObject();
         string content = obj?["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
+        string finish = obj?["choices"]?[0]?["finish_reason"]?.GetValue<string>() ?? "";
+        TestContext.Check(finish != "length",
+            $"completion nao truncada pelo teto de tokens (finish={finish})");
         TestContext.Check(content.Contains("OK", StringComparison.OrdinalIgnoreCase),
             "o modelo respondeu de verdade depois da compactacao (content: " + content[..Math.Min(40, content.Length)] + ")");
         int prompt = obj?["usage"]?["prompt_tokens"]?.GetValue<int>() ?? 0;
