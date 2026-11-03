@@ -2,19 +2,18 @@ using System.Text.Json.Nodes;
 
 namespace Rochas.OpenCodeBridge.Test;
 
-// Teste de tools COMPLETO: read, write, edit, glob, grep, navegacao em pastas,
-// git (init/add/commit/log) e busca web. Dois enunciados SEQUENCIAIS sobre o
-// MESMO repositorio, cada um com versionamento proprio:
-//   1) cria e versiona  (notas/data.txt com a data + commit 'data de hoje')
+// Teste de tools COMPLETO: read, write, edit, glob, grep, git (init/add/commit/log)
+// e busca web. Dois enunciados SEQUENCIAIS sobre o MESMO repositorio, cada um com
+// versionamento proprio:
+//   1) cria e versiona  (data.txt com a data + commit 'data de hoje')
 //   2) ajusta e versiona (linha do clima no MESMO arquivo + commit
 //      'Added sao paulo weather' + historico_git.log com os dois commits)
-// Enunciado curto de dev humano: objetivo + contrato observavel, com os NOMES
-// de pasta e arquivo declarados (o aceite confere o artefato em disco).
+// Enunciado curto de dev humano: objetivo + contrato observavel, com o NOME do
+// arquivo declarado (o aceite confere o artefato em disco).
 internal static class E2EToolsFullTests
 {
-    const string Dir = "notas";
-    const string DataFile = "notas/data.txt";
-    const string HistoryFile = "notas/historico_git.log";
+    const string DataFile = "data.txt";
+    const string HistoryFile = "historico_git.log";
 
     static (int Code, string Out) Run(string exe, string cwd, int secs, params string[] args)
     {
@@ -49,16 +48,15 @@ internal static class E2EToolsFullTests
     }
 
     /// <summary>
-    /// Passo 1 — CRIA E VERSIONA: subpasta `notas`, `notas/data.txt` com a data
-    /// de hoje e o commit 'data de hoje'. Aceite = artefato em disco + o commit.
+    /// Passo 1 — CRIA E VERSIONA: `data.txt` na pasta de trabalho com a data de
+    /// hoje e o commit 'data de hoje'. Aceite = artefato em disco + o commit.
     /// </summary>
     static async Task CreateAttempt(string dir, string feedback)
     {
         const string basePrompt =
-            "Trabalhe dentro da pasta atual. Crie a subpasta notas (nome exato, sem traduzir) e grave nela o arquivo " +
-            "notas/data.txt com a data de hoje (a data do sistema) escrita como texto. Inicialize o repositorio git " +
-            "dentro da pasta notas, adicione tudo o que esta nela e faca o commit com a mensagem 'data de hoje'; " +
-            "confirme com git log.";
+            "Trabalhe na pasta atual. Crie o arquivo data.txt com a data de hoje (a data do sistema) escrita como " +
+            "texto. Inicialize um repositorio git nesta mesma pasta, adicione o arquivo e faca o commit com a " +
+            "mensagem 'data de hoje'; confirme com git log.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         string parent = Path.GetDirectoryName(dir)!;
@@ -76,16 +74,17 @@ internal static class E2EToolsFullTests
 
         string dataPath = Path.Combine(dir, DataFile);
         TestContext.Check(File.Exists(dataPath),
-            $"[toolsfull:create] arquivo {DataFile} criado — caminho e nome da pasta sao exatamente os do enunciado " +
+            $"[toolsfull:create] arquivo {DataFile} criado na pasta de trabalho — nome exato do enunciado " +
             $"(subpastas: {string.Join(", ", Directory.GetDirectories(dir).Select(Path.GetFileName))}; " +
             $"arquivos: {string.Join(", ", Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Select(Path.GetFileName))})");
         string body = ReadText(dataPath);
         TestContext.Check(body.Contains(DateTime.Now.ToString("yyyy"), StringComparison.Ordinal),
             $"[toolsfull:create] {DataFile} traz a data de hoje como texto (conteudo='{Trecho(dataPath)}')");
 
-        string repo = Path.Combine(dir, Dir);
+        string repo = dir;
         TestContext.Check(Directory.Exists(Path.Combine(repo, ".git")),
-            $"[toolsfull:create] repositorio git iniciado em {Dir} (pasta: {string.Join(", ", Directory.GetDirectories(dir, "*", SearchOption.AllDirectories).Select(Path.GetFileName))})");
+            $"[toolsfull:create] repositorio git iniciado na pasta de trabalho " +
+            $"(subpastas: {string.Join(", ", Directory.GetDirectories(dir, "*", SearchOption.AllDirectories).Select(Path.GetFileName))})");
 
         var (commits, log) = GitLog(repo);
         TestContext.Check(commits.Length >= 1 && log.Contains("data de hoje"),
@@ -105,22 +104,21 @@ internal static class E2EToolsFullTests
 
     /// <summary>
     /// Passo 2 — AJUSTA E VERSIONA: acrescenta a linha do clima no MESMO
-    /// `notas/data.txt`, commita 'Added sao paulo weather' e grava o `git log`
-    /// em `notas/historico_git.log`. Roda depois do passo 1, no mesmo diretorio.
+    /// `data.txt`, commita 'Added sao paulo weather' e grava o `git log` em
+    /// `historico_git.log`. Roda depois do passo 1, no mesmo diretorio.
     /// </summary>
     static async Task AdjustAttempt(string dir, string feedback)
     {
         const string basePrompt =
-            "Na pasta atual existe a subpasta notas (nome exato) com o repositorio git e o arquivo notas/data.txt " +
-            "ja commitado com a data de hoje. Busque na internet o clima de Sao Paulo de hoje e acrescente em " +
-            "notas/data.txt, na linha de baixo da data, a linha 'ARQUIVO EDITADO - Clima: ' seguida do clima real " +
-            "retornado. Adicione a mudanca e faca o commit com a mensagem 'Added sao paulo weather'. " +
-            "Grave a saida de git log (os dois commits) no arquivo notas/historico_git.log.";
+            "Na pasta atual existe um repositorio git com o arquivo data.txt ja commitado com a data de hoje. " +
+            "Busque na internet o clima de Sao Paulo de hoje e acrescente em data.txt, na linha de baixo da data, " +
+            "a linha 'ARQUIVO EDITADO - Clima: ' seguida do clima real retornado. Adicione a mudanca e faca o commit " +
+            "com a mensagem 'Added sao paulo weather'. Grave a saida de git log (os dois commits) no arquivo historico_git.log.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
 
-        string repo = Path.Combine(dir, Dir);
+        string repo = dir;
         string dataPath = Path.Combine(dir, DataFile);
         TestContext.Check(File.Exists(dataPath), $"[toolsfull:adjust] {DataFile} continua existindo");
         string body = ReadText(dataPath);
@@ -167,9 +165,9 @@ internal static class E2EToolsFullTests
         // tentativa (estado limpo); o passo 2 repete no mesmo diretorio para
         // nao perder o commit do passo 1.
         string dir = await TestContext.AgentAttempts("toolsfull:create", "/tmp/opencode/toolsfull-agent", 3,
-            CreateAttempt, retryHint: "com os nomes de pasta e arquivo do enunciado (notas e notas/data.txt).");
+            CreateAttempt, retryHint: "com o nome de arquivo do enunciado (data.txt) na pasta de trabalho.");
         await TestContext.RetrySame("toolsfull:adjust", dir, 3,
-            AdjustAttempt, retryHint: "com os nomes de arquivo do enunciado (notas/data.txt e notas/historico_git.log).");
+            AdjustAttempt, retryHint: "com os nomes de arquivo do enunciado (data.txt e historico_git.log), no MESMO repositorio.");
         Console.WriteLine("[toolsfull] cenario agentico (criar+versionar, ajustar+versionar) concluido");
     }
 }
