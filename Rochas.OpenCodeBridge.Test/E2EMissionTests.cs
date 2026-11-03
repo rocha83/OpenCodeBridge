@@ -84,9 +84,8 @@ internal static class E2EMissionTests
         var sys = new JsonObject { ["role"] = "system", ["content"] = sysBase };
         var history = new JsonArray(sys);
         history.Add(new JsonObject { ["role"] = "user", ["content"] =
-            $"Em {ws}/mcs existe o projeto mcs.csproj. Escreva Program.cs que calcule e imprima, um valor por linha e sem rotulos, tres inteiros: " +
-            $"o fatorial de 10; o maximo divisor comum de 1071 e 462; e quantos primos existem de 1 a 50. " +
-            $"O programa compila e roda com `dotnet run --project {ws}/mcs/mcs.csproj` sem erro, imprimindo exatamente esses tres numeros nessa ordem (calcule, nao copie)." });
+            $"Em {ws}/mcs existe o projeto mcs.csproj. Escreva Program.cs para calcular e imprimir, um valor por linha e sem rotulos, tres numeros inteiros: o fatorial de 10; o maximo divisor comum de 1071 e 462; e quantos numeros primos existem de 1 a 50. " +
+            $"O programa tem que compilar e rodar com `dotnet run --project {ws}/mcs/mcs.csproj` sem erro e imprimir exatamente esses tres numeros, nessa ordem (calcule, nao copie os numeros)." });
 
         string final = "";
         string logPath = Path.Combine(ws, "_mission.log");

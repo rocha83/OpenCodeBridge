@@ -30,11 +30,17 @@ internal static class E2EToolsFullTests
         // Enunciado de TAREFA, nao de harness: sem path, sem nome de tool e sem
         // coringa de coordenada. O modelo flui; o harness resolve o cwd.
         const string basePrompt =
-            "Nesta pasta: crie uma subpasta com um arquivo de texto contendo a data de hoje (a do sistema). " +
-            "Inicialize um repositorio git nessa subpasta e faca o primeiro commit com a mensagem 'data de hoje'. " +
-            "Busque o clima de Sao Paulo de hoje e acrescente no mesmo arquivo a linha 'ARQUIVO EDITADO - Clima: ' " +
-            "seguida do clima encontrado. Faca o segundo commit com a mensagem 'Added sao paulo weather' e grave a saida " +
-            "do git log (os dois commits) num arquivo de historico dentro do repositorio.";
+            "Trabalhe dentro da pasta atual: tudo (pastas e arquivos) nasce aqui. " +
+            "1. Crie uma subpasta com nome a sua escolha e, dentro dela, um arquivo de texto simples com nome a sua escolha " +
+            "contendo a data de hoje (a data do sistema) escrita como texto. " +
+            "2. Nessa mesma subpasta, inicialize um repositorio git, adicione os arquivos e faca o primeiro commit " +
+            "com a mensagem 'data de hoje'; confirme com git log. " +
+            "3. Busque na internet o clima de Sao Paulo de hoje e use o texto real retornado; escreva no MESMO arquivo, " +
+            "na linha de baixo da data, \"ARQUIVO EDITADO - Clima: \" seguido desse clima — o arquivo fica com a data e a linha do clima " +
+            "e voce confere isso lendo o arquivo. " +
+            "4. Faca o segundo commit com a mensagem 'Added sao paulo weather', confirme os 2 commits com git log e salve essa " +
+            "saida num arquivo de historico dentro da pasta do repositorio; confira a lista dos arquivos que ficaram nessa pasta " +
+            "e o arquivo de historico deve aparecer nela antes de terminar.";
         // A retentativa recebe a FALHA do aceite (contrato observavel), nunca a
         // mecanica do teste; a 1a tentativa e o enunciado puro.
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
