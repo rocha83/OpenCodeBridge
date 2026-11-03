@@ -2213,12 +2213,15 @@ humano (problema + contrato observável, nunca mecânica), isso **cria
 dependência falsa**: com as caudas off o texto promete um contrato que não
 existe no request, e o FAIL mede o artefato do enunciado.
 
-**Correção** — enunciados enxutos, sem menção a harness/tails/mecânica:
-`E-tools-full` descreve só a tarefa (subpasta + arquivo com a data, repo git com
-o commit `data de hoje`, clima de São Paulo na linha `ARQUIVO EDITADO - Clima:`,
-segundo commit `Added sao paulo weather`, saida do `git log` num arquivo de
-historico); `E-mission-tools` pede só o `Program.cs` que imprime fatorial de 10,
-MDC(1071,462) e a contagem de primos de 1..50, compilando e rodando. Assertivas
+**Correção** — só a linha de harness/tails saiu; o resto do enunciado fica
+exatamente como estava. `E-tools-full` mantém os 4 passos numerados (subpasta +
+arquivo com a data, repo git com o commit `data de hoje`, clima de São Paulo na
+linha `ARQUIVO EDITADO - Clima:`, segundo commit `Added sao paulo weather` e a
+saída do `git log` num arquivo de histórico) **sem** a frase "execute uma tool
+por vez ... (main harness e tails)": quem entrega o contrato de tools é a
+cauda, não o texto do teste. `E-mission-tools` mantém o pedido do `Program.cs`
+(fatorial de 10, MDC(1071,462), primos de 1..50) e perde a dica de mecânica
+("segmente o raciocínio", "2^n - 1") e a mesma frase de harness. Assertivas
 intactas.
 
 **Prova** — `dotnet build -c Release` 0 avisos/0 erros nos dois repos; rodada

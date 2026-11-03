@@ -339,7 +339,9 @@ sudo bash -c "cd /usr/src/opencodebridge && REPO=/usr/src/opencodebridge \
   No lab full-VRAM (modelo + mmproj residentes em 4 slots) sobram ~500 MiB e
   `vram livre` reprova → todo step sai `SKIP rc=3`. O operador declara o piso
   real com `--war-min-free-vram 256` (env `WAR_MIN_FREE_VRAM`), e o valor
-  aparece no `[preflight]` de cada step.
+  aparece no `[preflight]` de cada step. A env vale também no runner isolado
+  (`--only <teste>`), que usa o mesmo preflight:
+  `WAR_MIN_FREE_VRAM=256 dotnet …Rochas.OpenCodeBridge.Test.dll --only E-tools-full …`.
 
 ```bash
 # bridge própria (para testar o build do repo, não o binário de produção)
