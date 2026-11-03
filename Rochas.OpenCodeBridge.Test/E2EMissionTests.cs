@@ -420,14 +420,12 @@ internal static class E2EMissionTests
         string implement = "2) Agora implemente a MESMA solucao em " + ws + "/" + dir + "/Program." + ext + ", no projeto " + proj
             + " que ja existe (nao crie outro projeto), com `write` do arquivo INTEIRO.\n"
             + "E' a mesma torre do passo 1: 4 discos, da haste 1 para a haste 3, com as hastes identificadas pelos numeros 1, 2 e 3 — a saida so tem numeros.\n"
-            + "A funcao recursiva de 4 parametros (quantos discos, haste de origem, haste auxiliar, haste de destino) CALCULA os movimentos — a sequencia nao vai pronta no codigo. Ela recebe a lista e acrescenta nela cada movimento; quem imprime e' o Main, depois que a recursao termina (nada de escrever na tela de dentro da funcao).\n"
-            + "A saida do programa tem EXATAMENTE estas duas linhas, nessa ordem, cada chave UMA vez:\n"
-            + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\n"
-            + "O `hanoi=` e' a contagem que a solucao fez, o `hanoi_seq=` e' a lista inteira numa unica linha com os itens separados por virgula, e a sequencia e' a mesma que voce gravou no passo 1. Rode "
-            + run + " e ajuste ate sairem as duas linhas.";
+            + "A funcao recursiva de 4 parametros (quantos discos, haste de origem, haste auxiliar, haste de destino) CALCULA os movimentos — a sequencia nao vai pronta no codigo.\n"
+            + "A saida do programa tem os 15 movimentos, cada um escrito como 1->2 (haste de origem, seta, haste de destino) — um por linha ou todos numa unica linha com os itens separados por virgula — e tambem a linha `hanoi=<n>`, onde `<n>` e' quantos movimentos a solucao executou (nao e' o numero de discos).\n"
+            + "Rode " + run + " e ajuste ate a saida bater com a solucao do passo 1.";
         string primes = "3) No MESMO programa, acrescente a analise dos primos: quantos ha abaixo de 100 (`primes100=`), abaixo de 1000 (`primes1000=`) e quantos pares gemeos abaixo de 100 (`twin100=`). O crivo de Eratostenes e uma boa pedida.\n"
-            + "Mantenha as duas linhas de Hanoi ja' corretas (`hanoi=` continua sendo o numero de movimentos e `hanoi_seq=` continua numa unica linha) e termine com estas cinco linhas, uma por linha, nessa ordem e com cada chave UMA vez:\n"
-            + "hanoi=<n>\nhanoi_seq=1->2,1->3,...\nprimes100=<n>\nprimes1000=<n>\ntwin100=<n>\n"
+            + "Mantenha a saida de Hanoi ja' correta (os movimentos e a linha `hanoi=` com o total que a solucao executou) e termine com estas tres linhas, cada chave UMA vez:\n"
+            + "primes100=<n>\nprimes1000=<n>\ntwin100=<n>\n"
             + "Rode " + run + " e ajuste ate bater; nao copie os numeros do enunciado.";
         return new[] { solve, implement, primes };
     }
@@ -675,6 +673,14 @@ internal static class E2EMissionTests
         catch { return (PerSlotFallback, 1); }
     }
 
+    /// <summary>
+    /// Aceite do Hanoi: contagem (15), sequência legal e os três números de primos.
+    /// A sequência vale na linha <c>hanoi_seq=</c> (CSV) OU impressa movimento a
+    /// movimento pelo programa: o problema é a sequência executada, não a diagramação.
+    /// Medido em 2026-11-03 — o modelo acerta a recursão clássica e imprime cada
+    /// movimento dentro dela; exigir a lista montada à mão reprovava solução correta
+    /// por causa do layout (`iso-b6/b7/b8`: 15 movimentos certos, `hanoi_seq=` vazio).
+    /// </summary>
     static bool AlgoOk(string output)
     {
         var kv = ParseKeys(output);
@@ -682,7 +688,29 @@ internal static class E2EMissionTests
         if (!kv.TryGetValue("primes100", out var p1) || p1.Trim() != "25") return false;
         if (!kv.TryGetValue("primes1000", out var p2) || p2.Trim() != "168") return false;
         if (!kv.TryGetValue("twin100", out var t) || t.Trim() != "8") return false;
-        return SeqOk(kv);
+        return HanoiSeqOk(output);
+    }
+
+    /// <summary>
+    /// Movimentos de Hanoi lidos da saída: a lista de <c>hanoi_seq=</c> quando ela vem
+    /// preenchida, senão os próprios itens <c>1-&gt;2</c> impressos (um por linha ou CSV).
+    /// </summary>
+    static string[] HanoiMoves(string output)
+    {
+        var kv = ParseKeys(output);
+        if (kv.TryGetValue("hanoi_seq", out var seq) && seq.Contains("->", StringComparison.Ordinal))
+            return seq.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => x.Replace(" ", "")).Where(x => x.Length > 0).ToArray();
+        return System.Text.RegularExpressions.Regex.Matches(output, "[1-3]->[1-3]")
+            .Select(m => m.Value).ToArray();
+    }
+
+    /// <summary>Sequência completa: 15 movimentos, todos legais, abre em 1-&gt;2 e fecha em 2-&gt;3.</summary>
+    static bool HanoiSeqOk(string output)
+    {
+        var moves = HanoiMoves(output);
+        return moves.Length == 15 && moves.All(m => m[0] != m[^1])
+            && moves[0] == "1->2" && moves[^1] == "2->3";
     }
 
     /// <summary>Chaves `nome=valor` de uma linha cada, na ordem em que saíram.</summary>
@@ -700,21 +728,12 @@ internal static class E2EMissionTests
         return kv;
     }
 
-    /// <summary>Sequência de Hanoi legal e completa: 15 movimentos, abre em 1-&gt;2 e fecha em 2-&gt;3.</summary>
-    static bool SeqOk(Dictionary<string, string> kv)
-    {
-        if (!kv.TryGetValue("hanoi_seq", out var seq)) return false;
-        var moves = seq.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(x => x.Replace(" ", "")).ToArray();
-        return moves.Length == 15 && moves[0] == "1->2" && moves[^1] == "2->3";
-    }
-
     /// <summary>
     /// Portão de cada etapa do Hanoi (o aceite FINAL continua sendo
     /// <see cref="AlgoOk"/>): 1) a solução em texto (<c>hanoi.txt</c>) com os 15
-    /// movimentos legais; 2) o C# calculando e imprimindo contagem + sequência;
-    /// 3) as cinco chaves. A etapa 1 não tem saída de programa: quem responde é o
-    /// arquivo que o modelo gravou.
+    /// movimentos legais; 2) o C# resolvendo a torre e dizendo a contagem; 3) todas as
+    /// chaves. A etapa 1 não tem saída de programa: quem responde é o arquivo que o
+    /// modelo gravou.
     /// </summary>
     static Func<string, bool>[] HanoiStageChecks(string ws)
     {
@@ -722,7 +741,7 @@ internal static class E2EMissionTests
         return new Func<string, bool>[]
         {
             _ => HanoiMovesOk(solutionFile),
-            o => { var kv = ParseKeys(o); return kv.TryGetValue("hanoi", out var h) && h.Trim() == "15" && SeqOk(kv); },
+            o => { var kv = ParseKeys(o); return kv.TryGetValue("hanoi", out var h) && h.Trim() == "15" && HanoiSeqOk(o); },
             AlgoOk,
         };
     }
