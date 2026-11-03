@@ -84,16 +84,16 @@ public static class HarnessTails
         "AO CODIFICAR: monte a solucao com `write`/`edit` (o arquivo e' o artefato); so entao use `shell` para build de validacao, execucao de testes ou versionamento do codigo.";
 
     const string DotnetLine =
-        "DOTNET: com mais de um projeto na pasta, `--project <pasta>` e ambiguo: aponte o ARQUIVO (`<dir>/<nome>.fsproj` ou `.csproj`).";
+        "DOTNET: com mais de um projeto na pasta, `--project` apontando a pasta e ambiguo: aponte o ARQUIVO do projeto (ex.: `notas/notas.fsproj` ou o `.csproj`).";
 
     const string FileLine =
         "ARQUIVO: pedido que manda criar/gravar arquivo entrega via `write` (conteudo completo); devolver o codigo em prosa no chat NAO conclui o pedido.";
 
     const string ExistingProjectLine =
-        "PROJETO EXISTENTE: edite os arquivos do projeto; `dotnet new` so em pasta vazia (segundo .csproj/.fsproj na mesma pasta quebra `dotnet run --project <pasta>`).";
+        "PROJETO EXISTENTE: edite os arquivos do projeto; `dotnet new` so em pasta vazia (segundo .csproj/.fsproj na mesma pasta quebra o `dotnet run --project` apontando a pasta).";
 
     const string FileRepoFlowLine =
-        "FLUXO ARQUIVO+REPO (exemplo; use os nomes do seu pedido): `mkdir` da pasta → `write` com o path da pasta (`<pasta>/<arquivo>`) → `git init`/`add`/`commit` com o mesmo `path` → `git log` e a saida colada no historico (passo a passo comentado no help da tool git).";
+        "FLUXO ARQUIVO+REPO (nomes do exemplo; troque pelos do seu pedido): `mkdir` da pasta → `write` com o path da pasta (`notas/hoje.txt`) → `git init`/`add`/`commit` com o mesmo `path` → `git log` e a saida colada no historico (passo a passo comentado no help da tool git).";
 
     const string ProofLine =
         "PROVA: depois de `write`/`edit`, `read` o arquivo — o conteudo dele e' o texto que a tool devolveu; historico de comando e' a saida literal colada (ex.: `git log`, com os hashes que vieram).";

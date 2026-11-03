@@ -58,10 +58,19 @@ internal static class UnitToolHelpTests
             && git.Contains("commit -m", StringComparison.Ordinal)
             && git.Contains("log --oneline", StringComparison.Ordinal),
             "help do git traz o exemplo de sucesso do fluxo completo");
-        TestContext.Check(git.Contains("\"path\":\"<pasta>\"", StringComparison.Ordinal),
-            "exemplo do git marca os nomes como ficticios e usa o MESMO path");
-        TestContext.Check(!git.Contains("\"path\":\"projeto\"", StringComparison.Ordinal),
-            "exemplo do git nao fixa nome de pasta que o modelo copiaria ao pe' da letra");
+        // A dica ensina a forma CERTA e nunca exibe a errada: `<pasta>` e'
+        // copiado ao pe' da letra (medido em E-tools-full 2026-11-03:
+        // `mkdir -p <pasta>` falhou). O exemplo usa nomes reais e o MESMO path,
+        // entao copiar a letra produz uma acao valida.
+        TestContext.Check(git.Contains("\"path\":\"notas\"", StringComparison.Ordinal)
+            && !git.Contains("<pasta>", StringComparison.Ordinal)
+            && !git.Contains("<arquivo>", StringComparison.Ordinal),
+            "exemplo do git e copiavel (nomes reais, mesmo path, sem placeholder)");
+        string tailText = global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools;
+        string mainText = global::Rochas.OpenCodeBridge.Core.MainHarness.Text;
+        TestContext.Check(!tailText.Contains("<pasta>", StringComparison.Ordinal)
+            && !mainText.Contains("<pasta>", StringComparison.Ordinal),
+            "cauda e main harness nao exibem o literal `<pasta>` (o modelo copia)");
         TestContext.Check(!git.Contains("não encadeie", StringComparison.Ordinal),
             "help do git ensina a forma certa (sem instrucao negativa de encadeamento)");
         TestContext.Check(shell.Contains("cwd de cada chamada", StringComparison.Ordinal),

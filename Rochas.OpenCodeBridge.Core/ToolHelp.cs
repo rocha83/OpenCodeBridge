@@ -29,23 +29,23 @@ public static class ToolHelp
         ["glob"] = """USO: `pattern` só glob (sem regex/alternância); diretório em `path`; 0 matches = `ls`/`find` no shell. Ex.: {"pattern":"**/*.cs","path":"src"}.""",
         ["grep"] = """USO: `pattern` é regex; restrinja com `path`/`include` quando houver; use read para contexto. Ex.: {"pattern":"TODO","path":"src"}.""",
         ["git"] = """
-            EXEMPLO DE SUCESSO (nomes entre `<>` são fictícios: troque pelos do seu pedido). Uma suboperação por chamada; o MESMO `path` em todas.
+            EXEMPLO DE SUCESSO (nomes do exemplo: troque pelos do seu pedido). Uma suboperação por chamada; o MESMO `path` em todas.
              // 1) cria a pasta de trabalho
-             shell {"command":"mkdir -p <pasta>"}
+             shell {"command":"mkdir -p notas"}
              // 2) inicia o repo, apontando a pasta
-             git {"command":"init","path":"<pasta>"}
+             git {"command":"init","path":"notas"}
              // 3) grava os arquivos já com o nome da pasta no path
-             write {"path":"<pasta>/<arquivo>","content":"..."}
+             write {"path":"notas/hoje.txt","content":"..."}
              // 4) ANTES do primeiro `commit`: identidade local, DUAS chamadas nesta ordem, mesma pasta
-             git {"command":"config user.name \"<nome>\"","path":"<pasta>"}
-             git {"command":"config user.email \"<email>\"","path":"<pasta>"}
+             git {"command":"config user.name \"Ana\"","path":"notas"}
+             git {"command":"config user.email \"ana@exemplo.com\"","path":"notas"}
              // 5) adiciona tudo
-             git {"command":"add .","path":"<pasta>"}
+             git {"command":"add .","path":"notas"}
              // 6) commita com a mensagem
-             git {"command":"commit -m \"<mensagem>\"","path":"<pasta>"}
+             git {"command":"commit -m \"primeiro commit\"","path":"notas"}
              // 7) confere: os commits aparecem no log (cole esta saída no histórico)
-             git {"command":"log --oneline","path":"<pasta>"}
-            LEITURA: status, log, diff, show, branch, ls-files, rev-parse. Erro `Author identity unknown` (ou `Please tell me who you are`) = o passo 4 ainda não rodou.
+             git {"command":"log --oneline","path":"notas"}
+            LEITURA: status, log, diff, show, branch, ls-files, rev-parse. Erro `Author identity unknown` (ou `Please tell me who you are`) = o passo 4 ainda não rodou. Erro `nothing to commit` (ou `no changes added to commit`) = o arquivo mudou DEPOIS do último `add`: rode `git add .` de novo e repita o `commit` (sem esse add o commit nao entra no log).
             """,
         ["subagent"] = """USO: um micro-enunciado por call (OBJETIVO+ESCOPO+PROIBIDO+ACEITE); `prompt` completo; não aninhe JSON; use a tool nativa, nunca shell/execute. Ex.: {"agent":"build","description":"fix","prompt":"..."}.""",
         ["task"] = """USO: um micro-enunciado por call (OBJETIVO+ESCOPO+PROIBIDO+ACEITE); `prompt` completo; não aninhe JSON; use a tool nativa, nunca shell/execute. Ex.: {"agent":"build","description":"fix","prompt":"..."}.""",
