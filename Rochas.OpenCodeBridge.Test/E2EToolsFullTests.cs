@@ -112,21 +112,20 @@ internal static class E2EToolsFullTests
                 foreach (var item in output) _hist.Add(item?.DeepClone());
         }
 
-        /// <summary>Turno de pergunta: tools no schema, mas SEM call (tool_choice none).</summary>
+        /// <summary>Turno de pergunta: sem tools no request, resposta em prosa.</summary>
         public async Task<string> Ask(string message)
         {
             Note("U", message);
+            // Sem `tools` o schema nao entra; a frase abaixo pede prosa explicita.
+            // Com tool_choice "none" o 4B devolvia 1-50 tokens (quase vazio) —
+            // medido 2026-11-06; com a instrucao em texto ele responde.
+            string ask = message + "\n\nResponda em texto, sem usar ferramentas.";
             var input = Input();
-            input.Add(new JsonObject { ["role"] = "user", ["content"] = message });
+            input.Add(new JsonObject { ["role"] = "user", ["content"] = ask });
             var body = new JsonObject
             {
                 ["model"] = TestContext.SuiteModel,
                 ["input"] = input,
-                // Sem `tools` o template do 4B despeja os tokens de tool call no
-                // texto (`<|tool_call>...`) ou devolve vazio — medido 2026-11-06.
-                // Com o schema presente e `tool_choice: none` ele responde prosa.
-                ["tools"] = global::Rochas.OpenCodeBridge.Core.ToolCatalog.Responses(),
-                ["tool_choice"] = "none",
                 ["stream"] = false
             };
             var res = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", body);
