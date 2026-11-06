@@ -119,7 +119,7 @@ internal static class E2EToolsFullTests
             // Sem `tools` o schema nao entra; a frase abaixo pede prosa explicita.
             // Com tool_choice "none" o 4B devolvia 1-50 tokens (quase vazio) —
             // medido 2026-11-06; com a instrucao em texto ele responde.
-            string ask = message + "\n\nResponda-me aqui em TEXTO, sem usar tools.";
+            string ask = message + "\n\nResponda-me aqui em TEXTO.";
             var input = Input();
             input.Add(new JsonObject { ["role"] = "user", ["content"] = ask });
             var body = new JsonObject
