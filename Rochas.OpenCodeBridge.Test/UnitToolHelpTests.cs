@@ -22,8 +22,76 @@ internal static class UnitToolHelpTests
         TestContext.Check(shell.StartsWith("executa", StringComparison.Ordinal), "descricao original preservada");
         TestContext.Check(shell.Contains(ToolHelp.Marker, StringComparison.Ordinal), "help marcado no schema chat");
         TestContext.Check(shell.Contains("cd dir && cmd", StringComparison.Ordinal), "help de shell cobre cd");
+        // Pacote: a ordem e' o erro medido no E-mission-tools de 2026-10-29 (o
+        // modelo passou a origem no lugar do .zip e o zip recusou 4 vezes).
+        TestContext.Check(shell.Contains("zip -qr pacote.zip .", StringComparison.Ordinal),
+            "help de shell ensina a ordem do pacote (o .zip vem primeiro)");
+        TestContext.Check(shell.Contains("Zip file structure invalid", StringComparison.Ordinal),
+            "help de shell explica o sintoma do zip em prosa");
         TestContext.Check(chat[1]!["function"]!["description"]!.GetValue<string>() == "original",
             "tool sem help nao e alterada");
+
+        // Git: identidade e' passo do modelo, ensinado na ORDEM (name, email,
+        // commit) — o modelo escrevia `user.user.name` e o commit falhava em loop.
+        string git = global::Rochas.OpenCodeBridge.Core.ToolHelp.Apply(
+            JsonNode.Parse("""
+            [{"type":"function","function":{"name":"git","description":"git"}}]
+            """)!.AsArray())[0]!["function"]!["description"]!.GetValue<string>();
+        TestContext.Check(git.Contains("ANTES do primeiro `commit`", StringComparison.Ordinal),
+            "help do git situa a config antes do commit");
+        TestContext.Check(git.Contains("config user.name", StringComparison.Ordinal)
+            && git.Contains("config user.email", StringComparison.Ordinal),
+            "help do git ensina as DUAS chamadas de identidade");
+        TestContext.Check(git.IndexOf("config user.name", StringComparison.Ordinal)
+            < git.IndexOf("config user.email", StringComparison.Ordinal),
+            "help do git ensina name antes de email");
+        TestContext.Check(git.Contains("Author identity unknown", StringComparison.Ordinal),
+            "help do git explica o sintoma de identidade ausente");
+        TestContext.Check(!git.Contains("user.user.name", StringComparison.Ordinal),
+            "help do git nao exibe a chave errada (so o certo e' copiavel)");
+        // Receita comentada (exemplo generalizado de SUCESSO): o modelo copia a
+        // ordem certa — init, arquivos com a pasta, identidade, add, commit, log —
+        // em vez de encadear tudo numa chamada so'.
+        TestContext.Check(git.Contains("EXEMPLO DE SUCESSO", StringComparison.Ordinal)
+            && git.Contains("\"command\":\"init\"", StringComparison.Ordinal)
+            && git.Contains("\"command\":\"add .\"", StringComparison.Ordinal)
+            && git.Contains("commit -m", StringComparison.Ordinal)
+            && git.Contains("log --oneline", StringComparison.Ordinal),
+            "help do git traz o exemplo de sucesso do fluxo completo");
+        // A dica ensina a forma CERTA e nunca exibe a errada: `<pasta>` e'
+        // copiado ao pe' da letra (medido em E-tools-full 2026-11-03:
+        // `mkdir -p <pasta>` falhou). O exemplo usa nomes reais e o MESMO path,
+        // entao copiar a letra produz uma acao valida.
+        TestContext.Check(git.Contains("\"path\":\"notas\"", StringComparison.Ordinal)
+            && !git.Contains("<pasta>", StringComparison.Ordinal)
+            && !git.Contains("<arquivo>", StringComparison.Ordinal),
+            "exemplo do git e copiavel (nomes reais, mesmo path, sem placeholder)");
+        string tailText = global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools;
+        string mainText = global::Rochas.OpenCodeBridge.Core.MainHarness.Text;
+        TestContext.Check(!tailText.Contains("<pasta>", StringComparison.Ordinal)
+            && !mainText.Contains("<pasta>", StringComparison.Ordinal),
+            "cauda e main harness nao exibem o literal `<pasta>` (o modelo copia)");
+        TestContext.Check(!git.Contains("não encadeie", StringComparison.Ordinal),
+            "help do git ensina a forma certa (sem instrucao negativa de encadeamento)");
+        TestContext.Check(shell.Contains("cwd de cada chamada", StringComparison.Ordinal),
+            "help de shell diz o cwd real de cada chamada");
+
+        // Path das tools de arquivo: RAIZ do workspace, nao o cwd do shell — o
+        // modelo gravava `data.txt` na raiz achando que estava na subpasta.
+        var paths = global::Rochas.OpenCodeBridge.Core.ToolHelp.Apply(JsonNode.Parse("""
+        [
+          {"type":"function","function":{"name":"write","description":"w"}},
+          {"type":"function","function":{"name":"read","description":"r"}},
+          {"type":"function","function":{"name":"edit","description":"e"}}
+        ]
+        """)!.AsArray());
+        foreach (int i in new[] { 0, 1, 2 })
+        {
+            string d = paths[i]!["function"]!["description"]!.GetValue<string>();
+            TestContext.Check(d.Contains("RAIZ do workspace", StringComparison.Ordinal)
+                && d.Contains("NAO vale para tools", StringComparison.Ordinal),
+                "help de path ensina raiz do workspace (" + paths[i]!["function"]!["name"] + ")");
+        }
         TestContext.Check(chat[0]!["function"]!["parameters"]!["properties"]!["command"] is not null,
             "schema nao e alterado");
 

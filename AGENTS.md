@@ -39,8 +39,13 @@
 - Históricos: do fim ao começo, blocos de 8k.
 
 ## Conteúdo longo + subagentes que só agem (2026-10-04)
-- Thinking: GPU com thinking ligado (`--thinking events`); linha 4B/CPU
-  conforme o cadastro do agente (`events` p/ Plan, `off` p/ execução direta).
+- **Thinking por role (regra desde o início):** ON **só** em **Plan, Orch e MoE**
+  (planejamento/exploração, sem tools densas); **Build, Scripter e Exec são OFF**
+  (execução determinística). Fonte única em `RoleProfiles.cs` + `appsettings.json`.
+  Thinking on em tools densas gasta raciocínio, ramifica e alucina.
+- **Toda a esteira WAR roda `--thinking off`**, porque é executada na maior parte
+  pelo role **Build** (é o par do agent `build`). Plan/Orch/MoE seguem on onde
+  fizer sentido; o gate da WAR é sempre off.
 - Conteúdo longo (>10k tokens) NÃO vai inteiro no prompt: fatiar em blocos
   com sobreposição e um índice (arquivo:início:fim) antes de delegar.
 - Subagente = Qwen com viés executor: o 9B delega a subagentes DELE MESMO
@@ -88,6 +93,76 @@
 - PROD (`/usr/src/opencodebridge`) só faz pull + rebuild + restart (deploy).
 - Em conflito de merge, a prioridade é do persistente (`checkout --ours <arquivo>`).
 
+## Regra: Core é a fonte única; consumidor não reimplementa
+
+Vale para Web, suíte de testes, OpenCode, CLI e qualquer consumidor do Core.
+**Não se implementa no consumidor uma lógica que já pertence ao Core.**
+Consumidor chama `Rochas.OpenCodeBridge.Core` ou a API da bridge; não cria
+uma segunda versão da mesma responsabilidade.
+
+- **No Core:** catálogo/schema de tools, help curado, execução de tools,
+  permissão/role, `WorkspaceGuard`, process runner, preflight de stack,
+  MainHarness/tails, sanitização/coerção, sampling, métricas e parsing de
+  protocolo.
+- **No consumidor:** só orquestração do cenário, fixture, transporte HTTP,
+  assertivas e evidência. Teste pode montar o workspace e o enunciado; não
+  pode criar `ToolCatalog`, `Tools()`, `Exec()`, `LocalExec()`, `Shell()` de
+  tool, conversão manual chat→Responses nem schema paralelo.
+- **Nome/args de tool são contrato do Core.** Se o teste usa `read_file`,
+  `write_file`, `edit_file` ou `list_dir`, isso é bug: o catálogo canônico é
+  `read`, `write`, `edit`, `glob` (e `git` quando exposto).
+- **Divergência é bug de Core, não do teste.** Corrija a fonte única e todos
+  os consumidores passam a usar a mesma definição. Não “adapte” o teste.
+- **Proibido:** `TestContext.ToolCatalog`, `E2EMissionTests.Tools/Exec`,
+  `E2EFrontPipeTests.FrontTools/LocalExec` e equivalentes. O caminho correto
+  é `Core.ToolCatalog.Chat/Responses` + `POST /api/tools/execute`.
+- **Exceção legítima:** lógica exclusiva do cenário de teste (gerar
+  enunciado, preparar fixture, controlar serviço, checar saída) não é Core;
+  ainda assim, não duplique uma responsabilidade que o Core já tem.
+
+## Regra: identificadores em en-US, comentários e docs em pt-BR (primordial)
+
+Vale para **todo** código novo (Core, bridge, testes, scripts, JSON de dashboard):
+
+1. **Nomes de tipos, métodos, propriedades, variáveis, parâmetros, constantes e
+   campos em en-US** (`missing`, `noToolsTail`, `staleRecord`, `ParseKeyValues`).
+   Nunca `falta`, `semCauda`, `velho`, `outroCliente`, `prosaSeguida`.
+2. **Comentários, XML docs, mensagens de log voltadas ao operador e docs em
+   pt-BR** (com acentuação quando o arquivo já usa).
+3. **Mensagem de assertiva/refutação em pt-BR** (é o que o operador lê no
+   `FAIL`), mas o **nome do teste** e as chaves de JSON/API em en-US.
+4. Código existente com nome em pt-BR **não** se renomeia de passagem: corrige
+   só o trecho tocado pelo enunciado (evita diff gigante e conflito no PROD).
+
+## Regra: DRY antes de criar — procure o artefato existente e complete-o (primordial)
+
+Vale para **todo** artefato novo: arquivo, classe, método, tool, pin, script,
+unidade systemd, seção de doc, mensagem de nudge. Criar antes de procurar é bug
+de processo, não estilo.
+
+1. **Busca primeiro, criação depois.** Antes de escrever, procure o mesmo
+   sujeito no repo (`grep -rn "<termo>"`, `ls <pasta>`, `git log -S "<termo>"`,
+   leitura do arquivo que já trata o assunto). Nome diferente não é assunto
+   diferente: "retry", "loop", "breaker", "anti-repeat" e "escalada" são o
+   **mesmo** mecanismo.
+2. **Complemento > duplicata.** Se o existente cobre a responsabilidade, ele
+   ganha o caso novo (parâmetro, ramo, asserção, linha de tabela). Só se cria
+   artefato novo quando o existente **não** cobre — e o retorno diz, com
+   evidência, por que não servia.
+3. **Caso medido (2026-10-29).** Para o loop de 15 `edit` com `oldString`
+   obsoleto no `E-mission-algo-fs` foi criado `Core/ToolRetryEscalation` — que
+   duplicava `ToolsAntiRepeat`/`ToolsBreaker` (falha no mesmo alvo, soft 3 / hard
+   6, nudge/trip), já usado pela bridge no caminho de chat. O artefato foi
+   **revertido**; o certo era o consumidor (`RunAlgoPhase`) chamar o controle
+   existente. O pin novo também saiu: o caso entrou em `U-breaker-compiler-loop`.
+4. **Evidência no retorno:** “procurei `<termo>` em `<caminho>` → achei
+   `<arquivo:símbolo>` → completei com `<caso>`” (comando + trecho). Busca sem
+   resultado também se declara (“procurei X, Y e Z; não existe”) — nunca criar
+   no escuro.
+5. **Dedup também vale para texto:** duas cópias da mesma dica/aviso/aprendizado
+   divergem na primeira edição. Um lugar só (Core/tabela única), consumidores
+   chamam. Ver “a dica ensina a forma CERTA” e “Core é a fonte única”.
+
 ## Regra: blindagem em C# — teste + evidência, nunca script decorativo
 Vale para gate, preflight, driver, parsing de veredito e qualquer verificação que
 decida PASS/FAIL. O padrão do projeto é C# com teste e evidência; bash é
@@ -124,4 +199,231 @@ conveniência manual, nunca fonte de verdade.
   codifica hints por role.
 - Evidência mínima: evento `main-harness` com `path=chat`, `role` e `tools=N`;
   `U-main-harness` verde.
+
+## Regra: modo bridge exige MainHarness — trava de execução (primordial)
+- `--mode bridge` + `--main-harness 0` é combinação **inválida**: a bridge não
+  sobe e devolve `[bridge] ERRO DE ARGUMENTOS: modo bridge exige main harness ON`
+  (exit 2, `ArgumentException` em `ApplyMode`). Sem o nosso harness só roda a
+  raia `--mode opencode`, que carrega o harness próprio no stream com o llama.
+- As units OpenCode `:4124/:4125/:4126` são (ou devem ser) `mode=opencode`.
+- O discriminador do lado do request é o cliente (`BridgeLane`), nunca o
+  sufixo do modelo nem o conteúdo do system (não há heurística de "master
+  opencode": em bridge lane o harness é SEMPRE on).
+- Longevidade: todo teste que regredir por causa desta determinação se adapta
+  (ex.: `U-main-harness-opencode-master`, `U-main-harness-master`,
+  `U-translate-temp-respeita-tunel` = perfil build 0.1).
+
+## Regra: fail-fast do driver exige guard de rebuild (primordial)
+- Com `--war-stop-on-fail` (default) o guard de rebuild é **obrigatório**:
+  preflight `guard_ativo_fail_fast` (fail-fast + sha512 + modo na evidência).
+- Não existe flag para desligar o guard; PASS só depois de estado limpo e
+  binário com o hash corrente.
+
+## Regra: tool tail é obrigatória para teste que usa tools (primordial)
+- Todo enunciado/teste que **declara ou enuncia uso de tools** roda com a cauda
+  de tools ligada: `--harness-tails 1` + `--tail-scope all|managed`. Preflight
+  do WAR exige `harness_tails_status` (tails on e scope ≠ off); sem isso o
+  modelo perde o contrato `read/write/edit/glob` (que não vai duplicado na
+  prosa) e o step falha por motivo errado.
+- O inverso também vale: pedido **sem** `tools` no array não recebe cauda de
+  tools (`HarnessTails.Compose(..., hasTools:false)`), porque o modelo devolve
+  JSON de tool como texto e trunca. `U-main-harness-tools-tail` cobre os dois.
+- Teste/e enunciado sem tools é **conceito**: perfil `plan` (0.3, thinking on)
+  e o corpo do pedido termina com `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`.
+- Tails seguem o **modo** (`BridgeMode.Tails`) e o `tail-scope`, não o
+  `BridgeLane`: `all` injeta também na raia opencode; `managed` só direto/Web.
+
+## Regra: enunciado de teste é de dev humano, não receita (primordial)
+- O enunciado declara o **problema e o contrato observável** (status HTTP, transação,
+  detalhe header+items, cache-aside) — **nunca a mecânica do teste**: proibido
+  enumerar `app.MapGet/MapPost/...`, "use `useEffect`", a chamada exata de DI,
+  "não use edit", "sem TODO/NotImplementedException", "grave PRIMEIRO/POR ÚLTIMO",
+  "(sem tool calls)".
+- A mecânica pertence ao harness/tool-help. O aceite continua literal e **não**
+  afrouxa: quando o assert depender de nome, prefira um check **estrutural**
+  (ex.: detalhe = `ProductId` + `Qty`) a ditar o nome no enunciado.
+- Enunciado sem tools termina com `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`; o Core
+  (`DefaultBehaviorNoTools`) garante que isso vale **texto com o entregável
+  completo**, não "plano de implementação". Proibido trocar por
+  `MOSTRE-ME COMO MODO PLANO EM TEXTO`: o modelo lê "modo plano" como *documento
+  de plano* e devolve "Plano de Implementação… aguardando confirmação" (medido
+  em `E-ent-crud-product` e `E-ent-dashboard`, `:4134`).
+
+## Regra: a dica ensina a forma CERTA e nunca exibe a errada (primordial)
+
+Vale para **toda** superfície de indução: `HarnessTails` (behavior/tools),
+tool-help (`Core/ToolHelp`), avisos/nudges (`ToolCallRepair`, breaker,
+anti-repeat) e o reparo de sintaxe (`FsSyntaxRepair`). O modelo **copia o literal**
+que a dica mostra — inclusive quando a dica mostra o literal *como exemplo do que
+não existe*. Medido duas vezes: `[1; 3 .. n-1]` (DRIVER-FIXES #13) e a forma
+`[for i in 1 .. n-1 do expr]` no L3 de 2026-10-29.
+
+- **Enuncie por descrição, não por literal errado**: "`do` dentro de LISTA sem
+  `yield` → use `->` ou `do yield`", e não "`[for i .. do expr]` está errado".
+- **O CERTO tem que ser válido e verificável**: forma emitida por dica/reparo
+  deve ter prova de compilação (`scripts/diag/fs-repair-probe.fsx`) — nada de
+  sugestão que preserve o defeito (`do` + `->` juntos, lista tipada `unit`).
+- **Asserts pinam a forma ensinada**: `U-tails-path-simulation-rules` exige
+  presença da forma correta **e** ausência do literal inválido copyável.
+
+## Regra: fail-fast em TODA rodada de runner (não só no WAR)
+- `TestContext.Run` aborta a rodada no primeiro FAIL (`StopOnFail` default ON):
+  imprime `[test] FAIL-FAST: rodada abortada no primeiro FAIL (<nome>)`, marca o
+  resto como `SKIP ... (fail-fast)` e o summary sai com
+  `[test] ABORTADO (fail-fast) no primeiro FAIL: <nome>`. Nenhum teste depois do
+  FAIL executa — nada de GPU gasta em cascata vermelha.
+- `--no-stop-on-fail` é a única forma de medir placar completo (uso consciente,
+  nunca para "ver quantos passam").
+- Vale igual para `--only <lista>`: a lista é ordem de execução, não licença
+  para rodar tudo depois de vermelho.
+
+## Regra: falha de path na tool devolve o caminho real (primordial)
+- `read`/`edit` com arquivo inexistente respondem `arquivo não encontrado:
+  '<path>' (existe em: <relativo> — use esse path)` (`WorkspaceGuard.Locate`:
+  BFS depth 4, 3 achados, sem prometer quando não há achado). O modelo faz `cd`
+  no shell e esquece que o path de tool é relativo à raiz — sem a dica ele
+  repete a chamada e queima os steps (`E-tools-full`: "marca EDITADO").
+- É correção de mecânica no Core, **não** afrouxamento de aceite: o teste
+  continua exigindo o artefato editado no disco.
+- Prova: `U-tools-path-hint`.
+
+## Regra: painel do gate mostra o step em EXECUÇÃO (primordial)
+- O driver publica **também** `step_start` na bridge, como `verdict: "RUN"`
+  (`TestCircuitDriver.PostStepEvent`); o `step_end` sobrescreve a linha com
+  `PASS/FAIL/SKIP`. Publicar só `step_end` deixa o painel parado durante a
+  bateria — parece "Grafana não atualizou".
+- O row precisa de `mode` não vazio: `GET /api/test/steps?war=1` descarta linha
+  sem `mode` (o filtro do painel). Prova: `U-circuit-publish-run`.
+- Dicionário do painel: `RUN` (azul) e `PAUSA` (roxo) existem em `status`;
+  `STALE`/`BLOCKED` não mudam.
+
+## Regra: diagnóstico zera por reset; restart é para binário/pool
+
+- Contadores de `/api/metrics`, `ProbeSamples` e arquivos contados são por vida
+  do processo. Zerar número **não** exige restart: `POST /api/diag/reset`
+  (Bearer ApiKey; `?probe=1&files=1` inclui sonda e arquivos) zera tudo e
+  devolve `{ok:true,event:"diag-reset"}`.
+- **Painel também zera por reset**: `?panel=1` limpa o enunciado publicado
+  (`step` → `n/d`), o histórico do enunciado, as respostas do agente e a lista
+  de steps, e regrava o estado em disco. Sem isso o painel arrasta o enunciado
+  da execução anterior (o arquivo de estado sobrevive ao restart) e a mesma
+  linha de `step` não limpa nada porque o nome se repete entre runs.
+- **Granularidade**: a bateria limpa **uma vez**, no start (`WarTemplate`,
+  `?probe=1&files=1&panel=1`). O `step_start` **não zera nada**: zerar contadores
+  a cada step reiniciava o painel (throughput/arquivos/tools voltavam a zero a
+  cada linha da esteira) e a leitura do run ficava picada. A curva da sonda e os
+  contadores enchem a rodada inteira; o campo `step` da amostra distingue cada
+  passo. O run isolado (`TestContext.ResetDiagnostics`) é a própria rodada: limpa
+  sonda, contadores e painel no início dele.
+- Toda bateria E2E, em ambos os modos (`bridge` e `opencode`), **ainda** começa
+  com o restart da bridge alvo: `sudo systemctl restart bridge-gpu` (`:4124`),
+  `bridge-gpu2` (`:4125`) ou `bridge-cpu-forced` (`:4126`). Ali o binário em uso
+  é trocado e o pool HTTP dos dois lados é renovado.
+- Validar `/api/status` antes do primeiro step; em `--mode bridge`, exigir
+  `main_harness=true`. Falhar rápido se o restart ou o status não subir.
+- Rebuild/deploy (binário novo) sempre leva restart junto; painel/contador não.
+  Bridge antiga sem `/api/diag/reset` faz o reset falhar rápido — não se volta a
+  reiniciar por step só para zerar número.
+
+## Regra: NÃO criar instâncias de bridge em portas paralelas durante testes (primordial)
+
+- Proibido subir uma `Rochas.OpenCodeBridge` extra em porta separada (ex.: 4134,
+  4144) só para "bancada" de teste. Os testes E2E usam **a bridge alvo já
+  existente** (unit systemd `bridge-gpu` `:4124`, `bridge-gpu2` `:4125` ou
+  `bridge-cpu-forced` `:4126`), reiniciada no início da bateria.
+- Se a bridge alvo não servir para o modo do teste (`main_harness`), o correto é
+  **ajustar o restart da própria unit** (flag/`appsettings`), e não clonar a
+  bridge numa porta efêmera.
+- Motivo: ponte paralela mascara o ambiente real (perfil, harness, `--impl`),
+  duplica VRAM/portas e criou "inconstância" já medida (modelo avaliado contra
+  uma bancada que não é a de produção). O único uso legítimo de porta extra é a
+  porta **experimental canônica** do projeto, nunca uma inventada por sessão.
+
+## Regra: knots do WAR — main harness fixo, caudas/anti-repeat/slots opcionais
+
+- **Main harness em modo bridge é irrevogável:** `--main-harness 1` na unit da
+  bridge alvo e o preflight `bridge_main_harness` continua gate DURO (BLOCKED).
+  Não existe flag de relaxamento para ele.
+- **Caudas e anti-repeat são maleáveis:** o preflight registra `tail_scope`,
+  `behavior_tail`, `tools_tail_flag` e `anti_repeat` na evidência de
+  `bridge_status`; reprovar as caudas **não** derruba o run quando o operador
+  passa `--war-no-tails-gate` (o relaxamento sai em `preflight_aviso` com
+  `relaxado_por`, nunca em silêncio). Sem a flag, o gate segue duro. O mesmo
+  opt-in propaga `BRIDGE_TAILS_OPTIONAL=1` aos filhos, então o portão de fluxo
+  (`BridgeFlowGate`) aceita caudas off no run de diagnóstico — o
+  `main_harness` continua obrigatório.
+- **Anti-repeat tem gate próprio e simétrico:** `anti_repeat_status` exige
+  `anti_repeat=true` na bridge alvo; `--war-no-anti-repeat-gate` o transforma em
+  `preflight_aviso` (e propaga `BRIDGE_ANTI_REPEAT_OPTIONAL=1` aos filhos).
+- **Slots são opcionais:** a bridge só envia `id_slot` com `--slot N`
+  (default `-1` = llama escolhe o slot livre). A bateria roda um level por
+  slot quando o operador fixa o slot na unit; paralelismo entre levels é
+  escolha do operador, não requisito da esteira.
+- **Raias paralelas (`--war-parallel`):** um processo por level, disparado
+  junto, cada raia ocupando um slot do llama (bridge com `--slot -1`, `-np`
+  slots no llama). Dentro da raia os steps seguem **sequenciais**; o pai faz
+  uma vez o restart da bridge, o `diag/reset` (sonda + painel) e o guard de
+  rebuild, e os filhos (`WAR_PARALLEL_CHILD=1`) não repetem nada disso.
+  Fail-fast não mata raia já disparada: FAIL fica registrado, o exit é 1 e o
+  `driver-summary` aponta o level. Cada raia grava `L<N>-<stamp>.console.log`.
+- **Binário não muda no meio da rodada (trava por step):** editar
+  fonte/rebuidar durante a bateria é erro de processo, não resultado. O
+  `WarTemplate.BeforeStep` compara o SHA-512 do test/bridge com o do
+  `OnRunStart` **antes** de cada step e devolve `Fail rc=3` ("binario mudou
+  durante o run (test X->Y, bridge Z->W)") + evento `step_stale_precheck`;
+  o fail-fast para ali, sem gastar o step. O `STALE` pós-step fica só para
+  binário trocado DENTRO do próprio step. Rebuild é fora da rodada.
+- **Modo é escolha do operador:** sem `--war-parallel` a bateria é
+  **sequencial** e `--war-stop-on-fail` para no primeiro nível vermelho; com
+  `--war-parallel` as raias rodam juntas e o fail-fast vale **dentro** de cada
+  raia. Os dois caminhos usam o mesmo template/gate — só muda o disparo.
+- **Painel identifica a raia:** o driver acrescenta `level` (de `WAR_LANE`)
+  na linha de `POST /api/test/step`; o dashboard usa a coluna `raia` nos
+  "Steps concluídos". Os demais dados (throughput, VRAM, tools) continuam
+  **globais** por decisão do operador (uma GPU, um llama).
+- **Grafana sobe junto com a WAR:** `EnsureGrafana` faz `start` de
+  `grafana-server` em toda rodada (level único inclusive) e só reinicia
+  quando o serviço já está ativo e a bateria é L1..L4 (`RestartGrafana`).
+  Falha do painel é aviso no log, nunca BLOCKED.
+
+## Regra: disposição WAR L1 → L4 (ordem obrigatória)
+
+A esteira WAR tem quatro níveis, nesta ordem, tanto no `WarTemplate`
+(`--war-level`) quanto em `scripts/war/run-levels.sh` (`--level`):
+
+| Level | Ordem interna |
+|---|---|
+| **L1** | `units` (uma vez, bridge) → `e-integration-{tema}` (6 steps) → `e-topics-{tema}` (8 steps) |
+| **L2** | `e-responses-tools` → `e-tools-full` → belts **azul e verde**, uma belt por step (build + orch) |
+| **L3** | `e-science-gpu` → `e-mission-tools` → belt **roxa** (build + orch) |
+| **L4** | `e-algo-cs-hanoi` → `e-algo-cs-{bin,btree,kmeans,sort}` → belts **marrom e preta**, uma belt por step (build + orch) → `e-front-{gen,edit,edit-razor,edit-react,verify}` → `webui-integracao-topicos` |
+
+- **L1 `e-integration-*` / `e-topics-*`**: um step por teste/cenario
+  (`E-stream-*`, `E-review-*`, `E-iot-*`, `E-error-*`, `E-full-cycle-*`,
+  `E-healthy-*`, `E-senior-*`, `E-ent-*`); `e-topics-ent-crud` cobre os três
+  CRUD juntos (product/customer/saleinvoice).
+- **L4 web UI**: `E-front-gen`, `E-front-edit`, `E-front-edit-razor`,
+  `E-front-edit-react`, `E-front-verify` (cada um o seu step `e-front-*`) e
+  `webui-integracao-topicos`.
+
+Cada nível roda sozinho (`--war-level 1..4` / `run-levels.sh --level 1..4`).
+Dentro do nível, `--war-only NAME` filtra steps (substring ou lista com
+vírgula). Dentro do step, o teste individual é `--only NOME` no runner.
+`--war-all` e `run-all-levels.sh` sem argumentos percorrem **1 → 2 → 3 → 4**
+e param no primeiro gate vermelho.
+
+- **Saída de teste/SEMPRE em `logs/levels` do repositório.** O default do
+  `WarTemplate`/`run-levels.sh` é `<repo>/logs/levels`; é proibido mandar
+  artefato de WAR para `/tmp/opencode` ou qualquer pasta fora do repo. Console
+  do run vai para `logs/levels/<stamp>.console.log`; summary/events/probes
+  ficam em `logs/levels/L<N>-<stamp>/`. Só use `--war-out`/`LEVEL_OUT` para
+  subpasta dentro de `logs/levels`.
+- **Modo padrão: `bridge`.** `opencode` só entra com `--war-modes opencode`
+  ou `LEVEL_MODES=opencode`; não alternar modos na mesma bateria.
+- **Fail-fast explícito:** `--war-stop-on-fail` (padrão do driver) para no
+  primeiro FAIL/STALE/BLOCKED; `--war-no-stop-on-fail` só para medir placar
+  completo. Não afirmar “fail-fast” sem o `events.jsonl` do run atual mostrar
+  a parada.
+- Não mover testes entre níveis sem atualizar `WarTemplate`, `run-levels.sh`,
+  `docs/BENCHTESTS.md`, `TEST-DRIVER.md` e este arquivo na mesma mudança.
 

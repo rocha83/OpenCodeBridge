@@ -21,7 +21,10 @@ namespace Rochas.OpenCodeBridge.Test;
 
 internal static class E2EFrontPipeTests
 {
-    static string CpuBridge => Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE") ?? "http://127.0.0.1:4125";
+    // Fase de EDICAO do front roda na GPU2 (role exec). Nome semantico do env:
+    // WAR_GPU2_BRIDGE (WAR_CPU_BRIDGE segue como legado). Sem a linha na rodada
+    // (esteira Q4-only) o teste e' SKIP explicito — nunca :4125 por default.
+    static string CpuBridge => TestContext.RequireGpu2("front:edit");
     static string Url => (Environment.GetEnvironmentVariable("FRONT_WEBDRIVER_URL") ?? "http://127.0.0.1:5199").TrimEnd('/') + "/";
     const string AppName = "FrontApp";
     const string CssRel = "app/wwwroot/css/app.css";
@@ -244,18 +247,6 @@ internal static class E2EFrontPipeTests
         return (p.ExitCode, so.Result + se.Result);
     }
 
-    static string Shell(string cwd, string cmd, int secs = 180)
-    {
-        var psi = new ProcessStartInfo("/bin/bash") { WorkingDirectory = cwd, RedirectStandardOutput = true, RedirectStandardError = true };
-        psi.ArgumentList.Add("-c");
-        psi.ArgumentList.Add(cmd);
-        using var p = Process.Start(psi) ?? throw new Exception("sem processo: bash");
-        var so = p.StandardOutput.ReadToEndAsync();
-        var se = p.StandardError.ReadToEndAsync();
-        if (!p.WaitForExit(secs * 1000)) { try { p.Kill(true); } catch { } return "TIMEOUT."; }
-        return $"exit={p.ExitCode}\n" + so.Result + se.Result;
-    }
-
     // ---- instalacao do app (deterministica, nao e' o modelo que faz o dotnet new)
     static readonly (string File, string Sub, string Url)[] AssetMap =
     {
@@ -305,6 +296,21 @@ internal static class E2EFrontPipeTests
     }
 
     static string Abs(string text) => text.Replace("app/", Ws + "/app/");
+
+    // Workspace reaproveitado entre rodadas: um arquivo gravado pela bridge (root)
+    // nao pode ser sobrescrito pelo runner (mint) e `File.Copy(..., true)` morre com
+    // "Access to the path ... is denied." (medido em E-front-edit, 2026-10-30).
+    // O UNLINK depende so' do diretorio (que e' do dono do workspace); apagar + copiar devolve o arquivo
+    // ao dono de quem roda o teste.
+    static void Replace(string source, string target)
+    {
+        if (File.Exists(target))
+        {
+            try { File.Delete(target); }
+            catch (Exception ex) { Console.WriteLine($"  [front] aviso: nao removi {target} ({ex.Message})"); }
+        }
+        File.Copy(source, target, true);
+    }
 
     // ------------------------------------------------------------------- servidor
     static Process? Server;
@@ -385,103 +391,8 @@ internal static class E2EFrontPipeTests
         throw new Exception("inalcancavel");
     }
 
-    // ------------------------------------------------------------------- tools locais
-    static JsonObject P(string name, string desc, JsonObject props, params string[] required)
-    {
-        var req = new JsonArray();
-        foreach (var r in required) req.Add(r);
-        return new JsonObject
-        {
-            ["type"] = "function",
-            ["function"] = new JsonObject
-            {
-                ["name"] = name,
-                ["description"] = desc,
-                ["parameters"] = new JsonObject { ["type"] = "object", ["properties"] = props, ["required"] = req },
-            },
-        };
-    }
-
-    static JsonArray FrontTools(string[] names)
-    {
-        var all = new Dictionary<string, JsonObject>
-        {
-            ["read_file"] = P("read_file", "Le um arquivo do workspace (offset/limit em linhas, opcionais)",
-                new JsonObject { ["path"] = new JsonObject { ["type"] = "string" }, ["offset"] = new JsonObject { ["type"] = "integer" }, ["limit"] = new JsonObject { ["type"] = "integer" } }, "path"),
-            ["list_dir"] = P("list_dir", "Lista um diretorio do workspace",
-                new JsonObject { ["path"] = new JsonObject { ["type"] = "string" } }, "path"),
-            ["write_file"] = P("write_file", "Cria/substitui um arquivo texto do workspace",
-                new JsonObject { ["path"] = new JsonObject { ["type"] = "string" }, ["content"] = new JsonObject { ["type"] = "string" } }, "path", "content"),
-            ["edit_file"] = P("edit_file", "Troca old_string por new_string num arquivo do workspace (old_string deve ser unico)",
-                new JsonObject { ["path"] = new JsonObject { ["type"] = "string" }, ["old_string"] = new JsonObject { ["type"] = "string" }, ["new_string"] = new JsonObject { ["type"] = "string" } }, "path", "old_string", "new_string"),
-        };
-        var arr = new JsonArray();
-        foreach (var n in names) if (all.TryGetValue(n, out var t)) arr.Add(t.DeepClone());
-        return arr;
-    }
-
-    static bool Allowed(string rel, string[] allow) =>
-        allow.Length == 0 || allow.Any(a => rel == a || a.EndsWith("/**") && rel.StartsWith(a[..^3], StringComparison.Ordinal));
-
-    static string LocalExec(string[] allow, string fn, JsonObject args)
-    {
-        try
-        {
-            string Arg(string k) => args[k]?.GetValue<string>() ?? "";
-            string Resolve(string p)
-            {
-                string abs = Path.GetFullPath(Path.IsPathRooted(p) ? p : Path.Combine(Ws, p));
-                if (!abs.StartsWith(Ws, StringComparison.Ordinal)) throw new Exception("path fora do workspace: " + p);
-                string rel = Path.GetRelativePath(Ws, abs).Replace('\\', '/');
-                if (!Allowed(rel, allow)) throw new Exception($"path fora do escopo do enunciado ({rel}; permitido: {string.Join(",", allow)})");
-                return abs;
-            }
-            switch (fn)
-            {
-                case "read_file":
-                {
-                    string abs = Resolve(Arg("path"));
-                    if (!File.Exists(abs)) return "ERRO: arquivo nao existe: " + Arg("path");
-                    var lines = File.ReadAllLines(abs);
-                    int off = args["offset"]?.GetValue<int>() ?? 0;
-                    int lim = args["limit"]?.GetValue<int>() ?? lines.Length;
-                    off = Math.Clamp(off, 0, Math.Max(0, lines.Length));
-                    var slice = lines.Skip(off).Take(Math.Max(0, lim)).Select((l, i) => $"{off + i + 1}: {l}");
-                    return Clip($"{Arg("path")} ({lines.Length} linhas)\n" + string.Join("\n", slice));
-                }
-                case "list_dir":
-                {
-                    string abs = Resolve(Arg("path").Length == 0 ? "." : Arg("path"));
-                    return Clip(string.Join("\n", Directory.GetFileSystemEntries(abs)
-                        .OrderBy(x => x)
-                        .Select(x => Path.GetFileName(x) + (Directory.Exists(x) ? "/" : $" ({new FileInfo(x).Length}b)"))));
-                }
-                case "write_file":
-                {
-                    string abs = Resolve(Arg("path"));
-                    Directory.CreateDirectory(Path.GetDirectoryName(abs)!);
-                    File.WriteAllText(abs, Arg("content"));
-                    return $"escrito {Path.GetRelativePath(Ws, abs)} ({Arg("content").Length} bytes)";
-                }
-                case "edit_file":
-                {
-                    string abs = Resolve(Arg("path"));
-                    if (!File.Exists(abs)) return "ERRO: arquivo nao existe: " + Arg("path");
-                    string src = File.ReadAllText(abs);
-                    string oldS = Arg("old_string"), newS = Arg("new_string");
-                    if (oldS.Length == 0) return "ERRO: old_string vazio";
-                    int at = src.IndexOf(oldS, StringComparison.Ordinal);
-                    if (at < 0) return "ERRO: old_string nao encontrado em " + Arg("path");
-                    if (src.IndexOf(oldS, at + 1, StringComparison.Ordinal) >= 0) return "ERRO: old_string ambiguo (mais de 1 ocorrencia)";
-                    File.WriteAllText(abs, src[..at] + newS + src[(at + oldS.Length)..]);
-                    return $"editado {Path.GetRelativePath(Ws, abs)} ({oldS.Length} -> {newS.Length} chars)";
-                }
-                default:
-                    return "TOOL DESCONHECIDA: " + fn;
-            }
-        }
-        catch (Exception ex) { return "ERRO: " + ex.Message; }
-    }
+    // Catálogo vem do Core; aqui só filtramos os nomes que o cenário permite.
+    static JsonArray CatalogFor(string[] names) => TestContext.Catalog(names);
 
     // ------------------------------------------------------------------ loop do modelo
     static async Task<JsonObject> Chat(string bridge, string model, JsonArray messages, JsonArray? tools)
@@ -498,9 +409,9 @@ internal static class E2EFrontPipeTests
     }
 
     static async Task<JsonObject> AgentLoop(string bridge, string model, string system, string prompt,
-        string[] allow, string[] toolNames, int maxTurns, string dumpAbs, string label)
+        string[] toolNames, int maxTurns, string dumpAbs, string label, Func<bool>? stillPending = null)
     {
-        var tools = FrontTools(toolNames);
+        var tools = CatalogFor(toolNames);
         var history = new JsonArray(
             new JsonObject { ["role"] = "system", ["content"] = system },
             new JsonObject { ["role"] = "user", ["content"] = prompt });
@@ -508,10 +419,16 @@ internal static class E2EFrontPipeTests
         double tokensOut = 0, secs = 0;
         string final = "";
         int exit = 3;
+        int nudges = 0;
+        // Erro da tool no FIM do ultimo turno: o turno sem tool call precisa dele
+        // para nao aceitar "OK" com o artefato intacto (reset no topo do laco
+        // zerava o valor antes da checagem e o empurrao nunca disparava).
+        string pendingError = "";
         Directory.CreateDirectory(Path.GetDirectoryName(dumpAbs)!);
 
         for (int turn = 1; turn <= maxTurns; turn++)
         {
+            string lastToolError = "";
             var t0 = DateTime.UtcNow;
             var r = await Chat(bridge, model, (JsonArray)history.DeepClone(), tools);
             double dt = (DateTime.UtcNow - t0).TotalSeconds;
@@ -535,8 +452,37 @@ internal static class E2EFrontPipeTests
 
             if (calls is null || calls.Count == 0)
             {
+                // Tool falhou no turno anterior e o modelo encerrou sem corrigir: o
+                // artefato continua no estado anterior. Um empurrao com o erro exato
+                // (a mensagem da tool ja' ensina a forma certa) antes de aceitar o
+                // "OK" — o Q3 fechava a fase sem aplicar nada (E-front-edit-react,
+                // `oldString ocorre 2x`, 2026-10-30).
+                // Turno vazio depois de um `read` (1 token, sem tool call) tambem
+                // encerrava a fase sem aplicar nada: o Q3 de 2026-10-30 respondeu
+                // vazio e o CSS ficou intacto (delta 2 virava antes=18 depois=18).
+                bool stalled = pendingError.Length == 0
+                    && content.Trim().Length == 0
+                    && stillPending?.Invoke() == true;
+                if ((pendingError.Length > 0 || stalled) && nudges < 1)
+                {
+                    nudges++;
+                    Console.WriteLine(pendingError.Length > 0
+                        ? $"  [front:{label}] tool falhou e o modelo encerrou: empurrao com o erro exato"
+                        : $"  [front:{label}] turno vazio e o artefato intacto: empurrao para aplicar a mudanca");
+                    history.Add(new JsonObject
+                    {
+                        ["role"] = "user",
+                        ["content"] = pendingError.Length > 0
+                            ? "A ultima tool FALHOU: " + pendingError
+                                + "\nAplique a correcao agora e so' entao responda OK."
+                            : "Sua resposta veio vazia e o arquivo NAO foi alterado. "
+                                + "Aplique a mudanca pedida com uma tool call (`edit` no trecho exato, "
+                                + "ou `write` com o arquivo inteiro) e so' entao responda OK."
+                    });
+                    continue;
+                }
                 final = content;
-                exit = Regex.IsMatch(content, @"\[tool_call\]|tool_call>|(?m)^\s*(read_file|write_file|edit_file|list_dir)\s*\(") ? 4 : 0;
+                exit = Regex.IsMatch(content, @"\[tool_call\]|tool_call>|(?m)^\s*(read|write|edit|glob)\s*\(") ? 4 : 0;
                 break;
             }
 
@@ -561,10 +507,15 @@ internal static class E2EFrontPipeTests
                 JsonObject a;
                 try { a = JsonNode.Parse(c?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject(); }
                 catch { a = new JsonObject(); }
-                string res = LocalExec(allow, name, a);
+                JsonObject exec = await TestContext.ExecuteTool(name, a, Ws, model);
+                string res = exec["ok"]?.GetValue<bool>() == true
+                    ? (exec["output"]?.GetValue<string>() ?? "")
+                    : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
+                if (res.StartsWith("ERRO", StringComparison.Ordinal)) lastToolError = res;
                 results.Add(new JsonObject { ["name"] = name, ["args"] = Clip(a.ToJsonString(), 400), ["result"] = Clip(res, 800) });
                 history.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = c?["id"]?.GetValue<string>() ?? "", ["content"] = Clip(res) });
             }
+            pendingError = lastToolError;
             rec["tools"] = results;
         }
 
@@ -632,8 +583,7 @@ internal static class E2EFrontPipeTests
         var sum = TestContext.Standalone
             ? await StandalonePhase("build", prompt, dump, "gen")
             : await AgentLoop(TestContext.Bridge, model, sys, prompt,
-                new[] { "app/Views/Home/Index.cshtml", "app/wwwroot/js/app.js", CssRel },
-                new[] { "write_file", "read_file", "edit_file", "list_dir" }, 16, dump, "gen");
+                new[] { "write", "read", "edit", "glob" }, 16, dump, "gen");
 
         TestContext.Check(File.Exists(IndexView) && File.Exists(AppJs) && File.Exists(Css),
             "os 3 artefatos foram escritos pelo modelo (Index.cshtml, app.js, app.css)");
@@ -681,30 +631,52 @@ internal static class E2EFrontPipeTests
     }
 
     // ================================================================= E-front-edit
-    public static async Task Edit()
+    // Mesmo contrato para CSS, Razor e React; o alvo e' uma peca real do Gen.
+    public static Task Edit() => EditKind("css");
+    public static Task EditRazor() => EditKind("razor");
+    public static Task EditReact() => EditKind("react");
+
+    static async Task EditKind(string kind)
     {
-        TestContext.Check(File.Exists(Css), "rode E-front-gen antes (workspace sem app.css)");
-        // Volta ao baseline do gen (idempotente em re-run) e re-mede o "before".
-        string genCss = Path.Combine(Ws, "gen", "app.css");
-        if (File.Exists(genCss)) File.Copy(genCss, Css, true);
+        string baselineName = kind switch { "razor" => "Index.cshtml", "react" => "app.js", _ => "app.css" };
+        string target = kind switch { "razor" => IndexView, "react" => AppJs, _ => Css };
+        string defaultRel = kind switch
+        {
+            "razor" => "app/Views/Home/Index.cshtml",
+            "react" => "app/wwwroot/js/app.js",
+            _ => CssRel
+        };
+        TestContext.Check(File.Exists(target), $"rode E-front-gen antes (workspace sem {baselineName})");
+        // Idempotente: volta ao baseline do Gen antes de editar.
+        string genFile = Path.Combine(Ws, "gen", baselineName);
+        if (File.Exists(genFile)) Replace(genFile, target);
+
+        // Baseline da FASE (nao do gen): gravar em `gen/before.json` sobrescrevia o
+        // retrato do gen a cada fase e a cadeia do E-front-verify passava a comparar
+        // o edit contra o estado JA editado — "delta 2 antes=20 depois=20" e
+        // "no-regressao rect_w antes=320 depois=240" (medido 2026-10-30).
+        string baselinePath = Path.Combine(Ws, "gen", $"before-{kind}.json");
         JsonObject before;
         if (WebDriver)
         {
             EnsureServer();
-            before = Measure(Path.Combine(Ws, "gen", "before.json"));
+            before = Measure(baselinePath);
         }
         else
         {
-            before = StaticSnapshot("baseline");
-            File.WriteAllText(Path.Combine(Ws, "gen", "before.json"), before.ToJsonString(Indented));
+            before = StaticSnapshot(kind);
+            File.WriteAllText(baselinePath, before.ToJsonString(Indented));
         }
         CheckSnapshot("baseline", before, requireQuadro: true);
 
         string model = await E2bModel();
-        var edits = LoadEdits();
-        Console.WriteLine($"[front:edit] modelo {model} (bridge {CpuBridge}), {edits.Count} enunciados de ajuste");
-        const string sys = "Voce e o modelo de edicao de CSS (role exec). Trabalhe apenas no arquivo do enunciado. " +
-            "Use uma tool call por resposta: primeiro read_file para ver o conteudo, depois edit_file no trecho exato. " +
+        var edits = LoadEdits()
+            .Where(e => string.Equals(e?["kind"]?.GetValue<string>() ?? "css", kind, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        TestContext.Check(edits.Length > 0, $"edits.json sem caso kind={kind}");
+        Console.WriteLine($"[front:edit-{kind}] modelo {model} (bridge {CpuBridge}), {edits.Length} enunciados de ajuste");
+        const string sys = "Voce e o modelo de edicao de arquivos (role exec). Trabalhe apenas no arquivo do enunciado. " +
+            "Use uma tool call por resposta: primeiro a tool read para ver o conteudo, depois a tool edit no trecho exato. " +
             "Caminhos das tools sao relativos a raiz do workspace. Ao terminar, responda apenas OK.";
 
         foreach (var e in edits)
@@ -712,38 +684,36 @@ internal static class E2EFrontPipeTests
             var rule = e!.AsObject();
             string id = rule["id"]!.GetValue<string>();
             string file = rule["file"]!.GetValue<string>();
-            string kind = rule["kind"]?.GetValue<string>() ?? "css";
-            bool isRazor = kind == "razor";
-            string target = isRazor ? IndexView : Css;
-            string rel = rule["path"]?.GetValue<string>() ?? CssRel;
+            string rel = rule["path"]?.GetValue<string>() ?? defaultRel;
             string prompt = Enunciado(file);
             string pre = File.ReadAllText(target);
             string dump = Path.Combine(Ws, "edit", id, "transcript.json");
             var sum = TestContext.Standalone
                 ? await StandalonePhase("exec", prompt, dump, id)
-                : await AgentLoop(CpuBridge, model, sys, prompt, new[] { rel },
-                    new[] { "read_file", "write_file", "edit_file" }, 8, dump, id);
+                : await AgentLoop(CpuBridge, model, sys, prompt,
+                    new[] { "read", "write", "edit" }, 8, dump, id,
+                    stillPending: () => File.ReadAllText(target) == pre);
 
             string post = File.ReadAllText(target);
             string editDir = Path.Combine(Ws, "edit", id);
             Directory.CreateDirectory(editDir);
-            File.Copy(target, Path.Combine(editDir, isRazor ? "Index.cshtml" : "app.css"), true);
+            File.Copy(target, Path.Combine(editDir, baselineName), true);
             File.WriteAllText(Path.Combine(editDir, "enunciado.md"), prompt);
             int diff = DiffLines(pre, post);
+            TestContext.Check(diff >= 1, $"{id}: aplicou a mudanca pedida (0 linha(s) alterada(s) — artefato intacto)");
             TestContext.Check(diff <= 3, $"{id}: mexeu so no trecho do enunciado ({diff} linha(s) alterada(s), max 3)");
-            if (isRazor)
-            {
-                foreach (var mc in rule["must_contain"]?.AsArray() ?? new JsonArray())
-                    TestContext.Check(post.Contains(mc!.GetValue<string>()), $"{id}: Razor contem {mc}");
+            foreach (var mc in rule["must_contain"]?.AsArray() ?? new JsonArray())
+                TestContext.Check(post.Contains(mc!.GetValue<string>()), $"{id}: {kind} contem {mc}");
+            if (kind == "razor")
                 TestContext.Check(post.Contains("id=\"root\""), $"{id}: Razor continua montando #root");
-            }
+            else if (kind == "react")
+                TestContext.Check(post.Contains("createElement") && post.Contains("createRoot"),
+                    $"{id}: React continua com createElement/createRoot");
             else
-            {
                 TestContext.Check(Regex.IsMatch(post, @"#quadro\s*\{[^}]*width\s*:", RegexOptions.Singleline)
                     && Regex.IsMatch(post, @"#titulo\s*\{[^}]*font-size\s*:", RegexOptions.Singleline),
                     $"{id}: CSS continua com #quadro e #titulo definidos");
-            }
-            Console.WriteLine($"  [front:edit] {id}: {sum["out_tokens"]} tok em {sum["model_seconds"]}s = {sum["tps"]} tok/s, linhas alteradas={diff}");
+            Console.WriteLine($"  [front:edit-{kind}] {id}: {sum["out_tokens"]} tok em {sum["model_seconds"]}s = {sum["tps"]} tok/s, linhas alteradas={diff}");
 
             JsonObject after;
             if (WebDriver) after = Measure(Path.Combine(editDir, "after.json"));
@@ -784,6 +754,11 @@ internal static class E2EFrontPipeTests
     // =============================================================== E-front-verify
     public static Task Verify()
     {
+        // A cadeia de verificacao consome os `after.json` das fases de edicao, que
+        // rodam na GPU2. Sem a linha na rodada (esteira Q4-only) o verify nao tem
+        // o que comparar: SKIP honesto, em vez de FAIL por artefato ausente.
+        if (TestContext.Gpu2Bridge is null)
+            TestContext.Skip("front:verify depende das fases de edicao (GPU2) — fora desta rodada");
         var edits = LoadEdits();
         string reports = Path.Combine(Ws, "reports");
         Directory.CreateDirectory(reports);
@@ -831,6 +806,22 @@ internal static class E2EFrontPipeTests
                     double n1 = Num(chain[i + 1].Snap["styles"]?[parts[0]]?[parts[1]]);
                     Verdict(id, $"no-regressao {parts[0]} {parts[1]}", Math.Abs(n1 - n0) <= 0.5, $"antes={n0} depois={n1}");
                 }
+                continue;
+            }
+            if (kind == "react")
+            {
+                string js = File.Exists(AppJs) ? File.ReadAllText(AppJs) : "";
+                foreach (var mc in rule["must_contain"]?.AsArray() ?? new JsonArray())
+                {
+                    string token = mc!.GetValue<string>();
+                    Verdict(id, "react contem " + token, js.Contains(token), token);
+                }
+                foreach (var mn in rule["must_not_contain"]?.AsArray() ?? new JsonArray())
+                {
+                    string token = mn!.GetValue<string>();
+                    Verdict(id, "react nao contem " + token, !js.Contains(token), token);
+                }
+                Verdict(id, "react createElement/createRoot", js.Contains("createElement") && js.Contains("createRoot"), "estrutura React");
                 continue;
             }
             string sel = rule["selector"]!.GetValue<string>();

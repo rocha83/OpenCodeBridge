@@ -22,22 +22,83 @@ public sealed class EditToolHandler : IToolHandler
         bool replaceAll = obj["replaceAll"]?.GetValue<bool>() ?? false;
         if (string.IsNullOrWhiteSpace(path)) return ToolResult.Fail("path é obrigatório");
         if (string.IsNullOrEmpty(oldString)) return ToolResult.Fail("oldString é obrigatório");
+        if (ToolContentGuard.Elided(newString, "edit") is string elided)
+            return ToolResult.Fail(elided);
+        // Reescrita total disfarcada de edit (arquivo inteiro no newString + ancora
+        // de uma linha): aplicar como `edit` normal duplicaria o resto do arquivo
+        // (CS1022). Em vez de recusar e esperar o modelo trocar para `write` (o que
+        // gerava 3+ edits identicos e loop; medido no kmeans de 2026-10-30), a
+        // intencao e' aplicada como reescrita total. Se a ancora nao existir, a
+        // mensagem aponta o caminho real e a forma certa.
+        string? rewrite = ToolContentGuard.WholeFileRewrite(oldString, newString);
 
         if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why, context.ExtraRoots))
             return ToolResult.Fail(why);
-        if (!File.Exists(full)) return ToolResult.Fail($"arquivo não encontrado: '{path}'");
+        if (!File.Exists(full))
+        {
+            // O modelo frequentemente passa so o nome depois de um `cd` no shell:
+            // aponta o caminho real para a proxima chamada ser a certa.
+            return ToolResult.Fail(WorkspaceGuard.NotFound("arquivo", path,
+                WorkspaceGuard.Locate(context.WorkspaceRoot, path, context.ExtraRoots)));
+        }
 
         try
         {
             string text = File.ReadAllText(full);
             if (text.Length > MaxChars) return ToolResult.Fail($"arquivo grande demais ({text.Length} chars, teto {MaxChars})");
 
+            if (rewrite is not null)
+            {
+                if (!text.Contains(oldString, StringComparison.Ordinal))
+                    return ToolResult.Fail(rewrite + " A ancora '" + oldString + "' nao existe em '" + path + "'.");
+                if (newString.Length > MaxChars)
+                    return ToolResult.Fail($"arquivo grande demais ({newString.Length} chars, teto {MaxChars})");
+                File.WriteAllText(full, newString);
+                ArtifactOwnership.Adopt(full, context.Log);
+                context.Log?.Invoke(new JsonObject
+                {
+                    ["event"] = "edit-whole-file-as-write",
+                    ["path"] = path,
+                    ["chars"] = newString.Length
+                });
+                return ToolResult.Ok($"edit aplicado como reescrita total de '{path}' ({newString.Length} chars): "
+                    + "a ancora de uma linha foi encontrada e o newString e' o arquivo inteiro.");
+            }
+
             int count = CountOccurrences(text, oldString);
-            if (count == 0) return ToolResult.Fail("oldString não encontrado no arquivo");
-            if (count > 1 && !replaceAll) return ToolResult.Fail($"oldString ocorre {count}x; use replaceAll ou refine o trecho");
+            if (count == 0)
+            {
+                // Nao ecoa o trecho errado: a dica e' a forma que funciona. O modelo
+                // reenviava o bloco inteiro com um `oldString` que nao existia e batia no
+                // mesmo erro (medido no isolado de 2026-10-29); a primeira linha real
+                // serve de ancora para o trecho curto.
+                string first = "";
+                foreach (string line in text.Split('\n'))
+                {
+                    if (line.Trim().Length == 0) continue;
+                    first = line.Trim();
+                    break;
+                }
+                if (first.Length > 80) first = first[..80];
+                return ToolResult.Fail("oldString não encontrado no arquivo. Copie o trecho EXATO de um `read` "
+                    + "(um trecho curto, de uma linha, e' mais facil de acertar) ou grave o arquivo inteiro com `write`. "
+                    + $"Primeira linha de '{path}': {first}");
+            }
+            if (count > 1 && !replaceAll)
+            {
+                // A forma CERTA vai na mensagem (o modelo copia o literal): a mesma
+                // chamada com `replaceAll: true` troca TODAS as ocorrencias. Antes a
+                // mensagem dizia so' "use replaceAll ou refine o trecho" e o Q3 deu
+                // o turno por encerrado com "OK" sem aplicar nada (medido em
+                // E-front-edit-react, 2026-10-30).
+                return ToolResult.Fail($"oldString ocorre {count}x em '{path}'. CERTO: repita a mesma chamada com "
+                    + "\"replaceAll\": true para trocar as " + count + " ocorrencias de uma vez; "
+                    + "se quiser trocar SO' uma, copie um trecho maior (que exista uma vez) do ultimo `read`.");
+            }
 
             string updated = replaceAll ? text.Replace(oldString, newString) : ReplaceFirst(text, oldString, newString);
             File.WriteAllText(full, updated);
+            ArtifactOwnership.Adopt(full, context.Log);
             return ToolResult.Ok(replaceAll ? $"{count} substituições em '{path}'" : $"1 substituição em '{path}'");
         }
         catch (Exception ex)

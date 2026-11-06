@@ -9,22 +9,71 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 5,
   "refresh": "5s",
   "panels": [
     {
+      "id": 19,
+      "type": "table",
+      "title": "Modo / Main Harness",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "${bridge}/api/status",
+          "url_options": {
+            "method": "GET"
+          },
+          "root_selector": "",
+          "format": "table",
+          "columns": [
+            {
+              "selector": "mode",
+              "text": "modo",
+              "type": "string"
+            },
+            {
+              "selector": "main_harness",
+              "text": "main_harness",
+              "type": "string"
+            }
+          ],
+          "parser": "backend"
+        }
+      ]
+    },
+    {
       "id": 1,
-      "title": "Fluxo principal",
+      "title": "🔀 Fluxo principal",
       "type": "text",
       "gridPos": {
-        "h": 3,
-        "w": 24,
+        "h": 5,
+        "w": 18,
         "x": 0,
         "y": 0
       },
       "options": {
         "mode": "markdown",
-        "content": "NOTA: Modo Bridge (Main Harness ON), Modo OpenCode (Main Harness OFF)"
+        "content": "Executa -> Falha -> Para e Corrige -> Republica Bridges -> Reinicia Testes\n\nMODO ATUAL e Main Harness: ver painel ao lado."
       }
     },
     {
@@ -35,7 +84,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 3
+        "y": 5
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -46,15 +95,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/enunciado/messages",
+          "url": "${bridge}/api/test/enunciado/messages",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "table",
@@ -74,7 +117,8 @@
               "text": "mensagem",
               "type": "string"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "options": {
@@ -133,7 +177,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 3
+        "y": 5
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -144,19 +188,18 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/activity?limit=6",
+          "url": "${bridge}/api/test/activity?limit=6",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "table",
           "columns": [
+            {
+              "selector": "step",
+              "text": "step",
+              "type": "string"
+            },
             {
               "selector": "time",
               "text": "hora",
@@ -172,7 +215,8 @@
               "text": "resposta",
               "type": "string"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "options": {
@@ -225,13 +269,13 @@
     },
     {
       "id": 2,
-      "title": "Requests totais",
+      "title": "Mensagens ao modelo",
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 5,
         "x": 0,
-        "y": 11
+        "y": 13
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -242,24 +286,19 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
             {
-              "selector": "requests",
-              "text": "requests",
+              "selector": "model_requests",
+              "text": "mensagens",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -269,9 +308,9 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 11
+        "w": 5,
+        "x": 10,
+        "y": 13
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -282,15 +321,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -299,7 +332,8 @@
               "text": "tps",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -309,9 +343,9 @@
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 11
+        "w": 4,
+        "x": 15,
+        "y": 13
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -322,15 +356,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -339,7 +367,8 @@
               "text": "arquivos",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "options": {
@@ -365,13 +394,13 @@
     },
     {
       "id": 3,
-      "title": "Falhas",
+      "title": "Falhas do modelo",
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 11
+        "w": 5,
+        "x": 19,
+        "y": 13
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -382,24 +411,19 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
             {
-              "selector": "failed_requests",
-              "text": "failed",
+              "selector": "model_failed_requests",
+              "text": "falhas",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -411,7 +435,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 15
+        "y": 17
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -422,15 +446,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -444,7 +462,8 @@
               "text": "bridge",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -456,7 +475,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 15
+        "y": 17
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -467,15 +486,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/metrics",
+          "url": "${bridge}/api/metrics",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -489,7 +502,8 @@
               "text": "tools",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -501,7 +515,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 33
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -512,15 +526,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe/latest",
+          "url": "${bridge}/api/test/probe/latest",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "table",
@@ -536,11 +544,12 @@
               "type": "number"
             },
             {
-              "selector": "requests",
-              "text": "requests",
+              "selector": "model_requests",
+              "text": "mensagens",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "options": {
@@ -575,7 +584,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 25
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -586,19 +595,18 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/steps",
+          "url": "${bridge}/api/test/steps?war=1",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "table",
           "columns": [
+            {
+              "selector": "level",
+              "text": "raia",
+              "type": "string"
+            },
             {
               "selector": "step",
               "text": "step",
@@ -619,7 +627,8 @@
               "text": "modo",
               "type": "string"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "options": {
@@ -639,7 +648,8 @@
               "wrapText": true
             },
             "inspect": false
-          }
+          },
+          "noValue": "sem steps publicados ainda"
         },
         "overrides": [
           {
@@ -695,6 +705,14 @@
                       "BLOCKED": {
                         "color": "red",
                         "index": 4
+                      },
+                      "RUN": {
+                        "color": "blue",
+                        "index": 5
+                      },
+                      "PAUSA": {
+                        "color": "purple",
+                        "index": 6
                       }
                     }
                   }
@@ -713,7 +731,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 37
+        "y": 39
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -724,15 +742,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
+          "url": "${bridge}/api/test/probe?limit=1000",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "timeseries",
@@ -752,7 +764,8 @@
               "text": "t/s total",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "fieldConfig": {
@@ -813,7 +826,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 37
+        "y": 39
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -824,15 +837,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/test/probe?limit=1000",
+          "url": "${bridge}/api/test/probe?limit=1000",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "format": "timeseries",
@@ -857,7 +864,8 @@
               "text": "GPU %",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ],
       "fieldConfig": {
@@ -934,7 +942,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 45
+        "y": 47
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -945,15 +953,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/status",
+          "url": "${bridge}/api/status",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -1017,7 +1019,8 @@
               "text": "uptime_s",
               "type": "number"
             }
-          ]
+          ],
+          "parser": "backend"
         }
       ]
     },
@@ -1029,7 +1032,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 45
+        "y": 47
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -1040,15 +1043,9 @@
           "refId": "A",
           "type": "json",
           "source": "url",
-          "url": "http://127.0.0.1:4124/api/status",
+          "url": "${bridge}/api/status",
           "url_options": {
-            "method": "GET",
-            "headers": [
-              {
-                "key": "Authorization",
-                "value": "Bearer guest@123"
-              }
-            ]
+            "method": "GET"
           },
           "root_selector": "",
           "columns": [
@@ -1087,9 +1084,68 @@
               "text": "tail_scope",
               "type": "string"
             }
-          ]
+          ],
+          "parser": "backend"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "title": "Respostas do modelo",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 13
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "opencodebridge-infinity"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "url": "${bridge}/api/metrics",
+          "url_options": {
+            "method": "GET"
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "model_responses",
+              "text": "respostas",
+              "type": "number"
+            }
+          ],
+          "parser": "backend"
         }
       ]
     }
-  ]
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "bridge",
+        "type": "custom",
+        "label": "Bridge",
+        "query": "http://127.0.0.1:4124",
+        "current": {
+          "text": "http://127.0.0.1:4124",
+          "value": "http://127.0.0.1:4124"
+        },
+        "options": [
+          {
+            "text": "http://127.0.0.1:4124",
+            "value": "http://127.0.0.1:4124"
+          }
+        ],
+        "includeAll": false,
+        "multi": false,
+        "hide": 0
+      }
+    ]
+  }
 }

@@ -42,20 +42,41 @@ public abstract class ToolsAntiRepeat
     public abstract string Scope { get; }
 
     /// <summary>Aviso injetado no ultimo resultado (modo Nudge).</summary>
+    /// <remarks>
+    /// Generico de proposito: nasceu de loops de path, de compilador e de shell,
+    /// mas nao receita nenhuma receita (a mecanica de ferramenta mora na harness
+    /// tool tail). O aviso descreve o FATO (mesmo alvo falhando) e o ESCAPE
+    /// (trocar de abordagem ou parar), nunca o passo a passo.
+    /// </remarks>
     public const string NudgeNotice =
-        "\n\n[BRIDGE-BREAKER] A ponte notou {N} falhas seguidas no mesmo alvo. Se fizer sentido, vale conferir o caminho real " +
-        "com `ls -la <diretorio-pai>` e copiar o nome da saida; se o diretorio nao existir, criar com caminho absoluto e " +
-        "conferir com `ls`. Se preferir, relate o erro exato e o que ja tentou.";
+        "\n\n" + BridgeNotice.BreakerMarker + " {N} falhas sobre o mesmo alvo nesta rodada. Repetir a mesma chamada nao resolve: " +
+        "troque de abordagem (outro caminho, outra forma de escrever, outra ferramenta) ou, se nao avancar, " +
+        "entregue o que ja funciona e relate o erro exato e o que ja tentou.";
 
     /// <summary>Aviso devolvido no curto-circuito (modo Trip).</summary>
     public const string TripNotice =
-        "[BRIDGE-BREAKER] A ponte encerrou este turno apos {N} falhas seguidas no mesmo alvo, para evitar repeticao. " +
-        "Nao houve chamada ao modelo. Vale relatar o erro exato e a ultima saida; na proxima mensagem, " +
-        "conferir o caminho com `ls -la` e usar o nome copiado.";
+        BridgeNotice.BreakerMarker + " Turno encerrado apos {N} falhas sobre o mesmo alvo (Nao houve chamada ao modelo). " +
+        "Nao adianta repetir: mude de abordagem ou relate o erro exato e o que ja tentou.";
 
-    /// <summary>Marcadores que caracterizam resultado de falha de tool.</summary>
+    /// <summary>
+    /// Marcadores que caracterizam resultado de falha de tool.
+    /// </summary>
+    /// <remarks>
+    /// E o CONTRATO de saida das nossas tools, nao o vocabulario de cada
+    /// ecossistema: toda ferramenta shell passa pelo ProcessRunner (exit != 0,
+    /// com a saida embutida — compilador, traceback e afins vem dentro) e os
+    /// handlers devolvem "nao encontrado"/"negada". Snifar "error FS0751" ou
+    /// "traceback" aqui acoplaria o Core a linguagens; a deteccao fica generica e
+    /// vale para qualquer ferramenta futura que siga o mesmo contrato.
+    /// </remarks>
     private static readonly Regex FailureMarkers = new(
-        "exited with code [1-9]" +
+        // Falha semantica do executor: o resultado carimbado pelo ToolExecutor
+        // (ToolResult.Success=false) chega como "ERRO: ..." / "Error: ...".
+        // Detectar o prefixo canonico (nao vocabulario de ecossistema) e o que
+        // torna a deteccao abstrata para qualquer ferramenta futura.
+        "ERRO:|Error:|\\berror:" +
+        "|exited? with code [1-9]|(^|\\n)\\s*exit [1-9]\\d*" +
+        "|traceback (most recent call last)|undefined reference|unhandled exception\\.|assertionfailed" +
         "|file not found|no such file|not a directory|is a directory" +
         "|search path does not exist|unable to find files|unable to write" +
         "|command not found|permission denied|operation not permitted" +
@@ -123,6 +144,23 @@ public abstract class ToolsAntiRepeat
     public static bool LooksLikeFailure(string? content)
         => !string.IsNullOrWhiteSpace(content) && FailureMarkers.IsMatch(content);
 
+    /// <summary>
+    /// Assinatura de uma falha: o conteudo sem posicao (linha/coluna) e com espaco
+    /// colapsado. Dois builds que devolvem o MESMO diagnostico em linhas diferentes
+    /// sao a mesma falha (o modelo so' empurrou o codigo adiante) — e' o sinal do
+    /// loop de compilacao que nao avanca. O CODIGO (`FS0010`) fica: erro diferente
+    /// e' progresso, nao loop.
+    /// </summary>
+    /// <param name="content">Resultado da tool.</param>
+    /// <returns>Chave da falha (240 chars) ou vazio quando nao e' falha.</returns>
+    static string FailureKey(string? content)
+    {
+        if (!LooksLikeFailure(content)) return "";
+        string key = Regex.Replace(content!, @"\([^)\r\n]*\)", "()");
+        key = Regex.Replace(key, @"\s+", " ").Trim();
+        return key.Length <= 240 ? key : key[..240];
+    }
+
     /// <summary>Chamadas de tool do historico: call_id -> (tool, argumentos).</summary>
     /// <param name="messages">Mensagens no formato chat.</param>
     /// <returns>Mapa por call_id.</returns>
@@ -172,9 +210,16 @@ public abstract class ToolsAntiRepeat
     }
 
     /// <summary>
-    /// Loop por FALHA: falhas consecutivas no fim do historico em que o modelo
-    /// reescreve o MESMO alvo com mutacoes cosmeticas.
+    /// Loop por FALHA: falhas no fim do historico — consecutivas (streak) ou
+    /// intercaladas de sucesso no MESMO alvo (janela por alvo).
     /// </summary>
+    /// <remarks>
+    /// O streak so nao bastou: no loop medido em E-mission-tools
+    /// (logs/levels/L3-20261028-163556/evidence/mission-agent.log) o padrao era
+    /// edit/write OK + shell com o MESMO erro de compilador, repetido 10x —
+    /// sucesso intercalado zera o streak e o breaker ficava mudo. Contamos entao
+    /// tambem as falhas do alvo mais frequente dentro da janela.
+    /// </remarks>
     /// <param name="messages">Mensagens no formato chat.</param>
     /// <param name="soft">Falhas que disparam o aviso (0 desliga).</param>
     /// <param name="hard">Falhas que encerram o turno (0 desliga).</param>
@@ -185,26 +230,61 @@ public abstract class ToolsAntiRepeat
             return new BreakerResult(BreakerVerdict.None, 0, 0, "");
         var calls = CollectCalls(messages);
         var results = CollectResults(messages, calls);
-        // Cauda de falhas: so o fim conta (o modelo pode ter acertado antes).
+
+        // Sinal classico: falhas consecutivas no fim (o modelo pode ter acertado antes).
         int streak = 0;
-        var targets = new HashSet<string>(StringComparer.Ordinal);
-        var tools = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (int i = results.Count - 1; i >= 0; i--)
+        for (int i = results.Count - 1; i >= 0 && LooksLikeFailure(results[i].Content); i--)
+            streak++;
+
+        // Janela por alvo: sucesso intercalado NAO zera o loop. O alvo e o da
+        // ultima falha; mede quantas vezes ELE falhou na janela.
+        int janela = Math.Max(hard > 0 ? hard : soft, soft) * 2;
+        string? alvo = null;
+        int doAlvo = 0;
+        var falhas = new List<(string Tool, string Target)>();
+        for (int i = results.Count - 1, vistas = 0; i >= 0 && vistas < janela; i--, vistas++)
         {
             var r = results[i];
-            if (!LooksLikeFailure(r.Content)) break;
-            streak++;
-            targets.Add(NormalizeTarget(r.Tool, r.Arguments));
-            if (r.Tool.Length > 0) tools.Add(r.Tool);
+            if (!LooksLikeFailure(r.Content)) continue;
+            string t = NormalizeTarget(r.Tool, r.Arguments);
+            falhas.Add((r.Tool, t));
+            alvo ??= t;
+            if (t == alvo) doAlvo++;
         }
-        if (streak < soft) return new BreakerResult(BreakerVerdict.None, streak, targets.Count, "");
-        if (streak >= hard && hard > 0)
-            return new BreakerResult(BreakerVerdict.Trip, streak, targets.Count, TripNotice.Replace("{N}", streak.ToString()));
-        // Nudge so quando e claramente o MESMO alvo (mutacoes cosmeticas) e no
-        // maximo 2 tools distintas; falhas em alvos diferentes sao progresso.
-        if (targets.Count <= 1 && tools.Count <= 2)
-            return new BreakerResult(BreakerVerdict.Nudge, streak, targets.Count, NudgeNotice.Replace("{N}", streak.ToString()));
-        return new BreakerResult(BreakerVerdict.None, streak, targets.Count, "");
+        var targets = new HashSet<string>(falhas.Select(f => f.Target), StringComparer.Ordinal);
+        var tools = new HashSet<string>(falhas.Select(f => f.Tool).Where(t => t.Length > 0),
+                                        StringComparer.OrdinalIgnoreCase);
+
+        // MESMA falha repetida: e' o loop de compilacao que nao avanca. Cada build
+        // devolve o mesmo diagnostico (so' a linha muda) e o modelo reescreve o
+        // arquivo; o sucesso cosmetico do `write` intercalado zera o `streak` e o
+        // alvo alternado (path do arquivo x comando do build) segura `doAlvo` em
+        // 4-5 para sempre. Medido em 2026-10-30 (missao K-Means F#: 10 turnos,
+        // nudge 4/5 alternados, ZERO trip e o mesmo `error FS0010 ... '|]'` em
+        // todos). Aqui a contagem e' do HISTORICO INTEIRO, nao da janela: na janela
+        // de 2*hard resultados o loop intercalado com `write`/`ls` de sucesso nunca
+        // chega a hard (era o furo). Assinatura = erro sem caminho/posicao/numero,
+        // entao erro DIFERENTE (progresso) nao soma.
+        var assinaturas = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var r in results)
+        {
+            string key = FailureKey(r.Content);
+            if (key.Length == 0) continue;
+            assinaturas[key] = assinaturas.TryGetValue(key, out int n) ? n + 1 : 1;
+        }
+        int mesmaFalha = 0;
+        foreach (int n in assinaturas.Values) mesmaFalha = Math.Max(mesmaFalha, n);
+
+        int contagem = Math.Max(streak, Math.Max(doAlvo, mesmaFalha));
+        if (contagem < soft) return new BreakerResult(BreakerVerdict.None, contagem, targets.Count, "");
+        if (contagem >= hard && hard > 0)
+            return new BreakerResult(BreakerVerdict.Trip, contagem, targets.Count, TripNotice.Replace("{N}", contagem.ToString()));
+        // Nudge quando e claramente o MESMO artefato (mutacoes cosmeticas). Dois
+        // alvos cabem porque o loop real e edit+shell sobre o MESMO arquivo (path
+        // e command normalizam diferente); 3+ alvos continuam sendo progresso.
+        if (targets.Count <= 2 && tools.Count <= 2)
+            return new BreakerResult(BreakerVerdict.Nudge, contagem, targets.Count, NudgeNotice.Replace("{N}", contagem.ToString()));
+        return new BreakerResult(BreakerVerdict.None, contagem, targets.Count, "");
     }
 
     /// <summary>
@@ -339,4 +419,53 @@ public sealed class RepeatedCall : ToolsAntiRepeat
     /// <param name="messages">Mensagens no formato chat.</param>
     /// <returns>Conjunto de assinaturas loopadas.</returns>
     public HashSet<string> Find(JsonNode? messages) => FindRepeatedCalls(messages, MinCount);
+}
+
+/// <summary>
+/// Alvos de `write` que ja apareceram no historico. O modelo que reescreve o
+/// MESMO arquivo varias vezes (variando o conteudo) fura o anti-repeat de
+/// assinatura exata; o path e' o sinal estavel do loop de reescrita.
+/// </summary>
+public sealed class RepeatedWritePath : ToolsAntiRepeat
+{
+    /// <summary>Ocorrencias do mesmo path que caracterizam reescrita.</summary>
+    public int MinCount { get; }
+
+    /// <summary>Cria o detector por path.</summary>
+    /// <param name="minCount">Ocorrencias no historico (>= 1).</param>
+    public RepeatedWritePath(int minCount) => MinCount = Math.Max(1, minCount);
+
+    /// <inheritdoc />
+    public override string Scope => "write-path";
+
+    /// <summary>Paths de `write` repetidos no historico.</summary>
+    /// <param name="messages">Mensagens no formato chat.</param>
+    /// <returns>Conjunto de paths ja escritos.</returns>
+    public HashSet<string> Find(JsonNode? messages)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (messages is JsonArray arr)
+            foreach (var m in arr)
+            {
+                if (m is not JsonObject mo || mo["tool_calls"] is not JsonArray calls) continue;
+                foreach (var c in calls)
+                {
+                    if (c is not JsonObject co || co["function"] is not JsonObject fn) continue;
+                    // So `write` (criar/sobrescrever) — `edit` e' correcao pontual legitima.
+                    if ((fn["name"]?.GetValue<string>() ?? "").Trim().ToLowerInvariant() is not ("write" or "write_file")) continue;
+                    string path = PathOf(fn["arguments"]?.GetValue<string>() ?? "");
+                    if (path.Length == 0) continue;
+                    counts[path] = counts.TryGetValue(path, out int n) ? n + 1 : 1;
+                }
+            }
+        return new HashSet<string>(counts.Where(kv => kv.Value >= MinCount).Select(kv => kv.Key),
+                                   StringComparer.Ordinal);
+    }
+
+    /// <summary>Extrai `path` dos argumentos (JSON) sem lancar.</summary>
+    static string PathOf(string args)
+    {
+        try { return JsonNode.Parse(args)?["path"]?.GetValue<string>() ?? ""; }
+        catch { return ""; }
+    }
 }

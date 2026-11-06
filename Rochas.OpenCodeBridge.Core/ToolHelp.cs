@@ -20,27 +20,70 @@ public static class ToolHelp
 
     static readonly Dictionary<string, string> Docs = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["shell"] = """USO: uma chamada = um comando; `cd` não persiste (use `cd dir && cmd`); script = write + `bash arquivo`; não simule saída. Ex.: {"command":"ls -la"}.""",
-        ["bash"] = """USO: uma chamada = um comando; `cd` não persiste (use `cd dir && cmd`); script = write + `bash arquivo`; não simule saída. Ex.: {"command":"ls -la"}.""",
-        ["sh"] = """USO: uma chamada = um comando; `cd` não persiste (use `cd dir && cmd`); script = write + `bash arquivo`; não simule saída. Ex.: {"command":"ls -la"}.""",
-        ["write"] = """USO: arquivo novo ou reescrita integral; mudança pontual = edit; conteúdo completo, sem stub. Ex.: {"path":"a.txt","content":"..."}.""",
-        ["read"] = """USO: leia antes de editar; arquivo grande = offset/limit quando o schema expuser; binário = shell+python3. Ex.: {"path":"a.txt"}.""",
-        ["edit"] = """USO: `oldString` exato e único; para acrescentar, `newString` = oldString + trecho novo; confirme com read/grep. Ex.: {"path":"a.txt","oldString":"x","newString":"y"}.""",
+        ["shell"] = """USO: uma chamada = um comando; o cwd de cada chamada é a raiz do workspace (para rodar numa subpasta: `cd dir && cmd`, que vale nesta chamada); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (o nome do .zip vem primeiro; erro `Zip file structure invalid` = o primeiro argumento não é um .zip válido — use um nome novo); a saída real da tool é a prova. Ex.: {"command":"ls -la"}.""",
+        ["bash"] = """USO: uma chamada = um comando; o cwd de cada chamada é a raiz do workspace (para rodar numa subpasta: `cd dir && cmd`, que vale nesta chamada); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (o nome do .zip vem primeiro; erro `Zip file structure invalid` = o primeiro argumento não é um .zip válido — use um nome novo); a saída real da tool é a prova. Ex.: {"command":"ls -la"}.""",
+        ["sh"] = """USO: uma chamada = um comando; o cwd de cada chamada é a raiz do workspace (para rodar numa subpasta: `cd dir && cmd`, que vale nesta chamada); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (o nome do .zip vem primeiro; erro `Zip file structure invalid` = o primeiro argumento não é um .zip válido — use um nome novo); a saída real da tool é a prova. Ex.: {"command":"ls -la"}.""",
+        ["write"] = """USO: `path` é relativo à RAIZ do workspace (o `cd` do shell NAO vale para tools): arquivo da subpasta = `sub/arquivo`; arquivo novo ou reescrita integral; mudança pontual = edit. Ex.: {"path":"a.txt","content":"..."}.""",
+        ["read"] = """USO: `path` é relativo à RAIZ do workspace (o `cd` do shell NAO vale para tools): arquivo da subpasta = `sub/arquivo`; leia antes de editar; arquivo grande = offset/limit quando o schema expuser; binário = shell+python3. Ex.: {"path":"a.txt"}.""",
+        ["edit"] = """USO: `path` é relativo à RAIZ do workspace (o `cd` do shell NAO vale para tools): arquivo da subpasta = `sub/arquivo` (não `arquivo`); `oldString` exato e único; para ACRESCENTAR, `newString` = oldString + trecho novo, e o `oldString` precisa reaparecer intacto dentro do `newString`; quando o pedido mandar acrescentar ao MESMO arquivo, edite (append) — nao crie arquivo novo nem reescreva o inteiro. Confirme com read/grep DEPOIS da edição. Ex.: {"path":"a.txt","oldString":"x","newString":"y"}.""",
         ["glob"] = """USO: `pattern` só glob (sem regex/alternância); diretório em `path`; 0 matches = `ls`/`find` no shell. Ex.: {"pattern":"**/*.cs","path":"src"}.""",
-        ["grep"] = """USO: `pattern` é regex; restrinja com `path`/`include` quando houver; use read para contexto; não use grep do shell. Ex.: {"pattern":"TODO","path":"src"}.""",
-        ["git"] = """USO: `path` = repo; `init` com dir explícito; uma suboperação por chamada; identidade via config user.name/email; não encadeie `&&`. Ex.: {"command":"status","path":"/repo"}.""",
+        ["grep"] = """USO: `pattern` é regex; restrinja com `path`/`include` quando houver; use read para contexto. Ex.: {"pattern":"TODO","path":"src"}.""",
+        ["git"] = """
+            EXEMPLO DE SUCESSO (nomes do exemplo: troque pelos do seu pedido). Uma suboperação por chamada; o MESMO `path` em todas.
+             // 1) cria a pasta de trabalho
+             shell {"command":"mkdir -p notas"}
+             // 2) inicia o repo, apontando a pasta
+             git {"command":"init","path":"notas"}
+             // 3) grava os arquivos já com o nome da pasta no path
+             write {"path":"notas/hoje.txt","content":"..."}
+             // 4) ANTES do primeiro `commit`: identidade local, DUAS chamadas nesta ordem, mesma pasta
+             git {"command":"config user.name \"Ana\"","path":"notas"}
+             git {"command":"config user.email \"ana@exemplo.com\"","path":"notas"}
+             // 5) adiciona tudo
+             git {"command":"add .","path":"notas"}
+             // 6) commita com a mensagem
+             git {"command":"commit -m \"primeiro commit\"","path":"notas"}
+             // 7) confere: os commits aparecem no log (cole esta saída no histórico)
+             git {"command":"log --oneline","path":"notas"}
+            LEITURA: status, log, diff, show, branch, ls-files, rev-parse. Erro `Author identity unknown` (ou `Please tell me who you are`) = o passo 4 ainda não rodou. Erro `nothing to commit` (ou `no changes added to commit`) = o arquivo mudou DEPOIS do último `add`: rode `git add .` de novo e repita o `commit` (sem esse add o commit nao entra no log).
+            """,
         ["subagent"] = """USO: um micro-enunciado por call (OBJETIVO+ESCOPO+PROIBIDO+ACEITE); `prompt` completo; não aninhe JSON; use a tool nativa, nunca shell/execute. Ex.: {"agent":"build","description":"fix","prompt":"..."}.""",
         ["task"] = """USO: um micro-enunciado por call (OBJETIVO+ESCOPO+PROIBIDO+ACEITE); `prompt` completo; não aninhe JSON; use a tool nativa, nunca shell/execute. Ex.: {"agent":"build","description":"fix","prompt":"..."}.""",
         ["question"] = """USO: só para ambiguidade real, 1 rodada; 2–4 opções curtas; não use para confirmar ação já decidida. Ex.: {"questions":[{"question":"...","header":"...","options":[...]}]}.""",
         ["skill"] = """USO: `id` exato de skill disponível; carregue só quando a tarefa casar; não use para ler arquivo comum. Ex.: {"id":"opencode"}.""",
-        ["webfetch"] = """USO: URL http(s), read-only; `format` text/markdown/html; não use curl. Ex.: {"url":"https://...","format":"markdown"}.""",
+        ["webfetch"] = """USO: URL http(s), read-only; a bridge envia User-Agent de Firefox 133 em Windows 11 (evita bloqueio de bot). `format` text/markdown/html. Use para obter texto REAL da rede (clima, docs, paginas) e so reporte o que a tool devolveu; nao invente conteudo. Ex.: {"url":"https://...","format":"markdown"}.""",
         ["websearch"] = """USO: `query` curta para informação atual; não use para arquivo local. Ex.: {"query":"..."}.""",
         ["execute"] = """USO: JS Code Mode; sem import/fs/timers; chame `tools.X`; `return` explícito; a bridge desembrulha tools.X. Ex.: `return tools.read({path:"a"})`.""",
-        ["fetch"] = """USO: GET read-only; prefira webfetch quando existir; não use curl. Ex.: {"url":"https://..."}.""",
+        ["fetch"] = """USO: GET read-only; prefira webfetch quando existir. Ex.: {"url":"https://..."}.""",
         ["display"] = """USO: saída curta para o usuário; não substitui write/read; role display só permite echo. Ex.: {"command":"echo ok"}.""",
         ["proc"] = """USO: operação de processo; exige role/permissão; não use shell para contornar bloqueio. Ex.: {"command":"ps"}.""",
         ["install"] = """USO: instalação de dependência; exige role/permissão; não use para contornar bloqueio. Ex.: {"command":"dotnet restore"}.""",
     };
+
+    /// <summary>
+    /// Help curado de UMA tool (o mesmo texto que vai na descricao do schema) ou "".
+    /// Fonte unica: quem precisa repetir a instrucao FORA do array de tools (ex.: o
+    /// aviso de salvage do <see cref="ToolCallRepair"/>) chama aqui — nao copia texto.
+    /// </summary>
+    /// <param name="name">Nome canonico da tool.</param>
+    /// <returns>Texto do help (sem o marcador) ou "".</returns>
+    public static string For(string? name) =>
+        !string.IsNullOrWhiteSpace(name) && Docs.TryGetValue(name, out string? doc) ? doc.Trim() : "";
+
+    /// <summary>Help curado de varias tools, sem repetir o mesmo texto.</summary>
+    /// <param name="names">Nomes canonicos (pode vir nulo/vazio).</param>
+    /// <returns>Blocos de help separados por linha em branco.</returns>
+    public static string For(IEnumerable<string>? names)
+    {
+        if (names is null) return "";
+        var docs = new List<string>();
+        foreach (string name in names)
+        {
+            string doc = For(name);
+            if (doc.Length > 0 && !docs.Contains(doc)) docs.Add(doc);
+        }
+        return string.Join("\n\n", docs);
+    }
 
     /// <summary>Aplica o help ao array e devolve o mesmo array (mutado no lugar).</summary>
     /// <param name="tools">Array de tools nos shapes chat, Responses ou namespace.</param>

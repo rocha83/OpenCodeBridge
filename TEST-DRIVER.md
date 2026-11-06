@@ -43,6 +43,15 @@ TestCircuitDriver -> WarTemplate -> Execution
 - `Execution` não conhece WAR; `WarTemplate` não cria processo; `TestCircuitDriver`
   não conhece bridge/llama/opencode.
 
+### Fronteira Core x consumidor
+
+O driver e a suíte são **consumidores** do Core, como a Web UI, o OpenCode e a
+CLI. Catálogo/schema de tools, execução, permissão/workspace guard, process
+runner, preflight, harness/tails, sanitização, sampling e parsing ficam em
+`Rochas.OpenCodeBridge.Core`. O consumidor faz orquestração, fixture, transporte
+HTTP, assertiva e evidência; não cria `ToolCatalog`, `Tools()`, `Exec()`,
+`LocalExec()`, `Shell()` de tool nem schema paralelo.
+
 ## 2. Ordem de execução de um level
 
 `TestCircuitDriver.RunAsync` executa exatamente esta sequência:
@@ -88,7 +97,7 @@ nesse caso o driver nem cria/executa o restante do run.
 - `--war-status` mostra o lock, a pausa, os binários e os últimos levels.
 - `--war-all` mantém **um único lock** para a trilha inteira e passa
   `AcquireLock=false` para os drivers dos levels; assim nenhum outro runner
-  entra entre L1 e L3.
+  entra entre L1 e L4.
 - `--war-gate-only` é leitura pura: não adquire lock.
 
 ### Exit codes
@@ -326,24 +335,53 @@ Observações:
 - `sem_run_orfao` usa `Process.GetProcesses()` e `ProcessName`; se o runner for
   iniciado como `dotnet exec`, o nome será `dotnet` e a detecção é limitada.
   Isso é documentado como limitação portável, não como bloqueio.
-- No L3, `main_harness=false` gera **apenas aviso**; não bloqueia.
+- No L3 e no L4, `main_harness=false` gera **apenas aviso**; não bloqueia.
+- **Thinking off é regra da WAR, e a regra é da bridge.** A bridge alvo
+  (`bridge-gpu.service`, `:4124`) roda `--thinking off`; o global vale para o id
+  **sem sufixo**, que é o que a maior parte dos steps serve, e o perfil por
+  sufixo mantém `build`/`scripter`/`exec` off (execução determinística).
+  Thinking on fica para Plan/Orch/MoE — em tools densas ele gasta raciocínio,
+  ramifica e alucina. O preflight confere `main_harness`/`harness_tails`
+  (L3/L4) e `context_tokens`, mas **não força nem confere thinking**: não existe
+  flag de teste para isso, e criar uma violaria a regra de que a bridge tem
+  estratégia fixa e o teste se adapta a ela. Se o `/api/status` voltar
+  `thinking:"events"`, o erro é do **setup** (unit) e se corrige ali — nunca
+  dentro da bateria.
+
+  Conferência antes do run (mesmo dado que o preflight lê em `bridge_status`):
+
+  ```bash
+  curl -s -H 'Authorization: Bearer guest@123' http://127.0.0.1:4124/api/status \
+    | jq '{thinking, mode, main_harness, harness_tails, tail_scope}'
+  # {"thinking":"off","mode":"bridge","main_harness":true,"harness_tails":true,"tail_scope":"all"}
+  ```
+
+  Referência completa da regra (motivo, tabela de perfis, unit espelho):
+  `docs/LAB-SETUP.md` §4.3.1 "Thinking off nos testes".
 
 ## 10. Levels e steps da WAR
 
 Cada level roda os steps em série (`MaxParallelSteps=1`), nos dois modos
-(`bridge` e `opencode`), quando aplicável:
+(padrão `bridge`; `opencode` só com `--war-modes opencode`):
 
 | Level | Steps |
 |---|---|
-| **L1** | `units-{bridge,opencode}` (`U-`), `devpipe-{bridge,opencode}` (`E-devpipe`), `tools-full-{bridge,opencode}` (`E-tools-full`, com o ciclo git/arquivo do antigo dual), `belts-build-{bridge,opencode}` (azul,verde), `belts-orch-{bridge,opencode}` (azul,verde). Web UI fica no L3. |
-| **L2** | `mission-tools`, `responses-tools`, `science-gpu`, `science-cpu` (se CPU ligada), `belts-build-roxa` e `belts-orch-roxa` nos dois modos. Web UI fica no L3. |
-| **L3** | `belts-build-final` (marrom,preta), `belts-orch-final` (marrom,preta) nos dois modos, `webui-integracao-topicos`. |
+| **L1** | `units` uma vez (`U-`, bridge), `e-integration-{tema}-{bridge}` (um teste por step: `stream`, `review`, `iot`, `error`, `fullcycle`, `healthy`), `e-topics-{tema}-{bridge}` (um tema por step: `senior-react`, `senior-bus`, `senior-erp`, `senior-arm`, `ent-crud` (3 CRUD), `ent-worker`, `ent-redis`, `ent-dashboard`). |
+| **L2** | `e-responses-tools-{bridge}`, `e-tools-full-{bridge}`, `e-belts-{azul,verde}-{build,orch}-{bridge}` (uma belt por step). |
+| **L3** | `e-science-gpu-{bridge}`, `e-mission-tools-{bridge}`, `e-belts-roxa-{build,orch}-{bridge}`. |
+| **L4** | `e-algo-cs-{hanoi,bin,btree,kmeans,sort}-{bridge}`, `e-belts-{marrom,preta}-{build,orch}-{bridge}`, `e-front-{gen,edit,edit-razor,edit-react,verify}-{bridge}` (só com GPU2), `webui-integracao-topicos`. |
+
+Cada level roda sozinho (`--war-level N`). Dentro do level, `--war-only NAME`
+filtra steps por substring (ou lista com vírgula); dentro do step, o teste
+individual é `--only NOME` no runner.
 
 Modos:
 
-- `bridge`: o teste chama a bridge pura (`/v1/responses` + tools); a bridge monta
-  o turno.
-- `opencode`: o teste chama o `opencode` real; o cliente traz o master.
+- `bridge` (**padrão**): o teste chama a bridge pura (`/v1/responses` + tools);
+  a bridge monta o turno.
+- `opencode`: o teste chama o `opencode` real; o cliente traz o master. Só
+  roda com `--war-modes opencode`/`LEVEL_MODES=opencode`.
+- Fail-fast é o padrão (`--war-stop-on-fail`); `--war-no-stop-on-fail` desliga.
 
 O driver passa `--mode` para a suíte. O step `web` roda
 `dotnet exec Rochas.OpenCodeBridge.Web.Test.dll` e não usa `--mode`.
@@ -398,17 +436,21 @@ de enunciado/teste, não para afrouxar o gate.
 ## 13. CLI
 
 ```bash
-# level único
-dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-level 3
+# level único (1..4)
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-level 4
 
-# trilha inteira
+# trilha inteira (1 -> 4)
 dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-all
 
 # levels explícitos
 dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-levels 1,2
 
+# um step do level
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- \
+  --war-level 1 --war-only integration
+
 # listar steps sem executar
-dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-level 3 --war-list
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-level 4 --war-list
 
 # recalcular gate de um run
 dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- \
@@ -505,7 +547,7 @@ Exemplo: `--war-level 2` com Q4 em `:4124` e Q3 em `:4125`.
     exit 0; senão exit 1.
 11. `OnRunEnd` publica `run_end` e imprime os artefatos.
 
-Se `--war-all`, o `WarTemplate` mantém **um** lock para L1→L3, cria um
+Se `--war-all`, o `WarTemplate` mantém **um** lock para L1→L4, cria um
 `TestCircuitDriver` por level e continua após um level vermelho, registrando o
 rc em `driver-summary-<stamp>.tsv`. No fim, exit 1 se qualquer level falhou.
 `--war-resume-stamp`/`--war-resume-level` reutilizam o stamp de um level

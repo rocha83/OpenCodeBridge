@@ -1,5 +1,536 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## System único no loop agentico, valor auxiliar de desvio e prova honesta da cauda de tools (2026-10-30, sessão 43)
+
+**Motivo.** Três defeitos medidos na rodada L1→L4 com Q4 base:
+
+1. o cliente devolve, a cada turno, o system do turno anterior (já composto pelo
+   harness); a bridge recompunha por cima → harness dentro do "SYSTEM DO ROLE",
+   cauda sobre cauda e contexto crescendo a cada volta;
+2. `--aux-temp` (temperatura do turno de retry) não existia como valor global do
+   host: quando o model id não carrega role, o desvio caía no default sem o
+   operador poder ajustar;
+3. o portão de fluxo (P1) exigia o texto **inteiro** da cauda de tools no system
+   final, mas a cauda é **composta pelo schema** do request — com um subconjunto
+   de tools o texto é diferente do default, e o portão reprovava cauda presente
+   (`ausente tools_tail` com `tools_chars` provando a injeção).
+
+**Decisões.**
+- **Core é a fonte do dedup.** `SystemPromptDedup` (corte do harness/cauda já
+  injetados) + `MainHarness.CollapseSystems` (um único `system` por request,
+  juntando `system`/`developer` espalhados) + `HarnessTails.Compose` idempotente.
+  O `SYSTEM DO ROLE` volta a conter só o texto do chamador.
+- **Array `tools` sempre completo.** A blacklist/permissão por role limita o
+  **uso** (`ToolBlacklist` + `ToolPolicy` na execução), nunca o anúncio: o schema
+  é a fonte do request e o system do role enuncia a proibição por ação.
+- **`--aux-temp` segue a MESMA precedência da temperatura do turno**: role
+  resolvido manda; sem role, vale o valor do host; sem ele, o perfil de desvio da
+  tabela. Para isso o Core ganhou `Sampling.DetourReference(hasRole, profiles,
+  auxTemp)` e `RetryNudge` recebe a **referência já resolvida** — o transporte não
+  precisa conhecer roles. `Sampling.ForRetry` mantém as duas formas (perfil ou
+  referência pronta) e, com referência ausente, não esquenta nem esfria o turno.
+- **Reconhecimento da cauda pelo cabeçalho**: `HarnessTails.HasToolsTail`
+  procura a sentinela (`ToolsHeader`) em vez de comparar o texto inteiro; override
+  do deployment casa pelo próprio prefixo. O host (`/api/test/last-system` e o log
+  de `tails`) usa a mesma rotina — uma regra, dois consumidores.
+- **`/api/status` expõe `aux_temp`** (null quando o desvio vem do role).
+
+**Prova.** `U-prompt-dedup`, `U-tools-tail-marker` (novos), `U-retry-temp-detour`
+(estendido com a precedência role > host > tabela), `U-upstream-abort-nudge`,
+`U-upstream-abort-detect`, `U-role-permissions`, `U-tails-present-tools`,
+`U-tails-path-simulation-rules` → suíte de units `PASS=166 FAIL=0 SKIP=6`; build
+Release 0 erros. Registro do defeito #3 em `docs/DRIVER-FIXES.md` #58.
+
+## Aborto do upstream tem nudge + desvio de temperatura; cauda de tools pelo schema (2026-10-30, sessão 41)
+
+**Motivo.** `belts-build-bridge` (L2, Q4 base) FAIL `undetermined` no azul: o
+llama rejeitou `<|tool_call>call:shell` (`unparsed peg-gemma4`), cancelou a task
+e a bridge devolveu 500 opaco. O schema do belt só tinha `write`, mas a cauda
+anunciava `shell` (estática) e `tool_choice=required` obrigava uma call. Não era
+ctx (9.682 de 131072/slot, `truncated = 0`) nem compactação (limiar 95% de
+124518 e o belt não chama `Compact`). Repro isolada passou → amostragem.
+
+**Decisões.**
+- `ToolBlacklist` é a regra: **bloqueia a chamada, não esconde a tool**. Então o
+  array `tools` vai completo e o system do role enuncia a proibição por **ação**
+  (`MainHarness.PermissionsLine`). A cauda de tools, porém, é composta pelas
+  tools do request (`HarnessTails.ComposeTools`) — a dica nunca ensina tool que
+  o schema não tem. `shell` passou a citar os comandos (`dotnet build`, `npm`,
+  `python3`, `git add/commit/log`) e a ordem `write` → `shell` só aparece com as
+  duas no schema.
+- `RetryNudge` (Core): aborto de conexão → **1 retry com nudge** ("outra
+  abordagem, menos passos, escrita mais concisa") e temperatura de desvio lida
+  do role **plan** (`Sampling.ForRetry`). O desvio vale só no turno do retry
+  (predicado olha a última mensagem). Segunda falha = `502 upstream_aborted`
+  estruturado, com métrica (`upstream_abort`/`upstream_abort_retry`).
+- Belt: tools completas, executa a tool pedida, `stall` conta tool executada e
+  `PostChat` reconhece o 502. Aceite inalterado (`>=3` arquivos, `>500` chars).
+
+**Prova.** `U-tails-present-tools`, `U-retry-temp-detour`,
+`U-upstream-abort-nudge`, `U-upstream-abort-detect`, `U-role-permissions`
+→ `PASS=5 FAIL=0`; build Release 0 erros. Detalhe em `docs/DRIVER-FIXES.md` #57.
+
+
+## Transição para Q4 UD único — GPU2/Q3/Q4-base aposentados (2026-10-30, sessão 38)
+
+**Regra nova do lab.** O **Q4 UD** (`Gemma4-E4B-UD`) passa a ser o **único
+modelo** — *"o Q4 UD não fala com outro modelo"*. As linhas **GPU2 (Q3)** e
+**CPU (Q4 base)** deixam de usar modelos distintos.
+
+**Arquivos (nome pedido):**
+- **Q4 UD (único, em uso, ext4):**
+  `/media/mint/2a295c1a-afad-44fb-84dc-053406a7bbfb/opt/models/gemma-4-E4B-it-uncensored/`
+  → `gemma-4-E4B-it-uncensored-Q4_K_M.gguf` (~5,0 GiB) +
+  `mmproj-gemma-4-E4B-it-Q8_0.gguf` (~534 MiB). **Substitui o Q4 base e o Q3 UD.**
+- **Q3 UD (aposentado, squashfs):** `/opt/models/huihui-gemma4-e4b-abliterated/Huihui-gemma-4-E4B-it-qat-q4_0-unquantized-abliterated.i1-IQ3_XXS.gguf` — remoção física **pendente (config futura)**.
+- **Q4 base (aposentado, squashfs):** `/opt/models/gemma4-e4b-base/google_gemma-4-E4B-it-Q4_K_M.gguf` (+ `mmproj-gemma-4-E4B-it-Q8_0.gguf`) — remoção física **pendente (config futura)**.
+
+**Config llama do Q4 UD (idem à atual):** `-c 524288 -np 4` = **4×128k**, full
+`CUDA0` (`-ot .*=CUDA0`, `-ngl 99`), KV `turbo3`, `--prio 2/2`, mmproj na GPU.
+Bridge `:4124` com `--context-tokens 524288 --mode bridge --main-harness 1
+--harness-tails 1`. (VRAM ~10,8/12,2 GB; ~40 t/s.)
+
+**CPU Forced → Q4 UD:** `llama-cpu-forced` (`:4120`) passa a carregar **o próprio
+Q4 UD** com `-ngl 0` (antes carregava o Q4 base); `bridge-cpu-forced` sai de
+`:4126` e vai para **`:4125`** (porta liberada pelo Q3).
+
+**Runbook — ajuste das units no desktop (pendente):**
+1. remover `llama-gpu2.service` (`:4110`) e `bridge-gpu2.service` (`:4125`) — Q3 aposentado;
+2. reapontar o CPU Forced para o Q4 UD e mover sua bridge p/ `:4125`;
+3. Q3/Q4-base em squashfs não apagáveis agora → **config futura**.
+
+**Docs `LAB-SETUP.md` atualizados:** Snapshot no topo (Q4 UD único + arquivos +
+runbook); §0 Nomenclatura (GPU2 removida; **conceito "CPU como GPU2"
+eliminado**); §1.1 providers (transição p/ `Gemma4-E4B-UD`, provider Q3
+aposentado); banner §2 (units/flags/rotas antigas = histórico); §9.1 units
+(tabela só com GPU1 + CPU Forced `:4125`, GPU2 fora).
+
+**Enunciado kmeans (evita o bug de parada):** ao fim acrescentado
+*"implemente a lógica atento ao ponto de parada correto do algoritmo"*. O modelo
+gerava k-means que **parava na 1ª iteração** (flag `changed` nunca virava `true`
+→ `if (!changed) break`), imprimindo centróides `(1.5,1.0)`/`(6.5,6.8)` em vez dos
+convergidos `(1.33,1.33)`/`(8.33,8.33)`; `AlgoOkKMeans` exige `Round(x1)==1 &&
+Round(x2)==8`. Bug de **lógica** (não sintaxe/harness) — o assert rejeitou
+corretamente; kmeans havia passado 5× antes (estocástico).
+
+## Web UI: turno em texto encerra o request + nota honesta + perfil da faixa (2026-10-30, sessão 37)
+
+**Sintoma medido (sessão 27/28 do `web.db` de PROD).** Enunciado "Crie um script
+hello world em C#… delegue ao subagente": o subagente **gravou** `Program.cs`
+(`[write] ok`) e a bolha final do agente foi a nota
+"caímos numa espiral de saudações/despedidas **sem executar nada**". Duas
+mentiras no mesmo pixel: houve execução, e a espiral não era de saudação.
+
+**Causa.** No `StreamResponsesBypass` (caminho de produção, `Chat:UseResponsesBypass`
+= true) o laço só terminava por teto de **4 turnos de prosa**. O perfil do
+dropdown era o **MoE/Plan** (id 1, só `fetch/display/subagent`) e, com
+`thinking=events`, os turnos voltaram **sem content e sem tool** — o laço
+reenviava o **mesmo input** quatro vezes (nada de novo entrava) e o epílogo
+trocava tudo pela `ChatterGuard.StopNote`.
+
+**Correção (Core + Web, sem novo mecanismo).**
+- **Turno sem tool call encerra o request**: o modelo não tem mais o que executar,
+  então o texto é a resposta. Antes de qualquer execução, reenviar o mesmo input
+  só produzia a mesma saudação (a espiral medida).
+- **Prosa DEPOIS de executar** continua permitida (declaração por ação), com teto
+  curto de 2 turnos e o `ChatterGuard` do Core cortando repetição.
+- **`ChatterGuard.StopNoteFor(anyToolRan)`**: nota honesta — com tools/subs
+  executados, `StopNoteAfterWork` ("nova etapa, os cards ficam na sessão") em vez
+  de "sem executar nada". Pin: `U-chatter-note-apos-execucao` +
+  `U-chatter-note-sem-mentira`.
+- **Nudge de turno vazio no bypass** (paridade com o loop chat): 1 cutucada
+  "responda em texto agora" em vez de gastar os 4 turnos no mesmo input.
+
+**Perfil do dropdown nos testes da Web UI (era mecânica de teste errada).**
+`UiChatSendAsync` fixava `agentId=1`/`executorId=2` (MoE/Plan) — o WAR media um
+perfil que **não** é o da esteira. Agora a faixa declara o perfil e o seletor
+escolhe por **rótulo+modelo** (id do banco dev/PROD diverge):
+`orch` para enunciado de **delegação/composição** (divide em fases e compõe com
+`subagent`; é Build sem `write`), `build` para execução direta ("faça tudo você
+mesmo com suas tools"), `plan` para o caminho **sem tools** (é o perfil com
+`thinking=events`, o teste comprova o **reasoning na UI** — assert novo
+`raciocinio=N chars` sobre o bloco "Raciocínio" da bolha). Fase `--phase full`
+(que era referenciada e caía em "fase desconhecida") passou a existir: roda as
+duas faces na mesma faixa; o step `webui-integracao-topicos` do WAR usa `full`.
+Smoke `--simple` (PASS estável) **não** foi tocado.
+
+## Missão F# trocada por 4 algoritmos separados + portão de fluxo bridge (P1) (2026-10-30)
+
+**Decisão.** Hanoi + crivo em F# acumulou 17 amostras sem PASS (a variância do
+turno e a sintaxe F# dominavam o veredito, não o algoritmo). Hanoi fica **só no
+C#** (`E-mission-algo-cs`) e a missão F# virou **quatro testes distintos**, cada
+um com projeto/fonte e aceite próprios — o vermelho passa a dizer QUAL algoritmo
+falhou:
+
+| teste | enunciado (natural, sem receita) | aceite |
+|---|---|---|
+| `E-mission-algo-fs-bin` | busca binária em array ordenado, alvo 13 | `binsearch_idx=5` |
+| `E-mission-algo-fs-btree` | B-tree com `[10;20;5;6;12;30;7;17]`, busca 6 | `btree_found=true`, `btree_count=8` |
+| `E-mission-algo-fs-kmeans` | K-Means k=2 em 6 pontos | `kmeans_c1=`/`kmeans_c2=` com 1 casa, c1<c2 e separados |
+| `E-mission-algo-fs-sort` | quick sort e bubble sort em `[5;2;9;1;5;6]` | `quicksort=1,2,5,5,6,9`, `bubblesort=1,2,5,5,6,9` |
+
+Harness/tails/FsMini **não** foram tocados: a mudança é só no enunciado e no
+aceite (regra "apenas mude o teste"). `WarTemplate`, `scripts/war/run-levels.sh`,
+`docs/BENCHTESTS.md` e `AGENTS.md` (tabela L4) passaram a listar os quatro steps.
+
+**Portão de fluxo bridge (PENDINGS P1) implementado.** `RecordSystemSent` grava
+`main_harness` (retorno real de `MainHarness.Apply`), `has_tools`, `tools_tail`,
+`lane` e `ts`; `TestContext.Run` chama `BridgeFlowGate.Probe` ao fim de todo
+`E-*` em modo bridge e recusa com `fluxo bridge incompleto: ausente
+<main_harness|tails|tools_tail>` + dump. Registro anterior ao teste recusa com
+causa própria e registro de outro cliente (`lane != bridge`) sai como
+`INCONCLUSIVO` — a bridge guarda só o último system, então acusar o teste ali
+seria mentira. Prova: `U-flow-gate` (feliz + 6 negativos).
+
+**Nota de bancada.** O `rerun-guard` estava travando a reexecução com o hash de
+um FAIL de *unit* (`U-flow-gate`, já verde no mesmo binário); o estado foi movido
+para `logs/.rerun-guard.json.cleared-20261029-233507` com esta justificativa e a
+suíte completa seguia `PASS=146 FAIL=0 SKIP=6`.
+
+## `E-mission-algo-fs` 14ª amostra: FS0001 com ramo `string` e dica de array (2026-10-29)
+
+**Resultado medido.** `logs/isolated/E-mission-algo-fs_-20261029-215110.log`
+(`PASS=0 FAIL=1`): 11 × `FS0001` e **9 reparos** injetados, sem convergir. O fonte
+misturou lista e texto no mesmo `if` (`subSeq @ "," + nextMove`), e o erro nomeado
+era `which here is 'string'. This branch returns a value of type ''a list'`. A 13ª
+amostra (mesmo modelo) tinha compilado e acertado a sequência — a variância do turno
+importa: aqui o modelo escreveu F# com cara de OCaml/C# e nunca saiu.
+
+**Causa.** O ramo `FS0001` "branches of an 'if'" devolvia **sempre** a dica de array
+(`Array.append`), qualquer que fosse o tipo nomeado. Com ramo `string` a dica não
+falava do defeito real (texto × lista) e o modelo repetia a linha.
+
+**Correção** (nos ramos que já existiam):
+1. `branches of an 'if'` lê o tipo do **primeiro** ramo em `which here is '...'`
+   (`string` → TEXTO com `+`, LISTA com `@`, ARRAY com `Array.append`; "nao misture
+   lista com texto"); `list` → `@`; resto → `Array.append`.
+2. `FS0001` com `''a list'` + `'string'` → "`@` junta LISTA e `+` junta TEXTO".
+3. `FsMini`: a linha única de `FS0001` cita os três jeitos de juntar.
+
+**Prova.** `units` **140 PASS / 0 FAIL SKIP=6** (`U-fs-repair-if-branches-string`
+novo; `U-fs-repair-comprehension` segue exigindo `Array.append` para ramo array),
+probe com `texto junta com + e lista com @ (FS0001 ramo string)` = OK, build
+`0 Aviso(s) / 0 Erro(s)`.
+
+## `E-mission-algo-fs` 12ª amostra: FS0039 de ordem e aviso de salvage com exemplos (2026-10-29)
+
+**Resultado medido.** `logs/isolated/E-mission-algo-fs_-20261029-203932.log`
+(`PASS=0 FAIL=1`, 2 × 26 turnos): 13 builds com 15 ocorrências do **mesmo**
+`FS0039: The value or constructor 'dest_aux' is not defined` — usado nas linhas 11
+e 15, declarado na linha 19. **`reparo=0` em 52 turnos** (o ramo `FS0039` só cobria
+`mod` e `let` sem `rec`). Ainda: 13 turnos sem tool call (12 = `BRIDGE (edit): JSON
+invalido/truncado`), 6 `oldString não encontrado`, breaker nudge 11× / trip 0.
+
+**Correções.**
+1. `FsSyntaxRepair`: `FS0039` com uso ANTES da declaração no módulo — mede a linha
+   da declaração e a do primeiro uso e ensina `let auxiliar = 3` acima de quem usa
+   (ou receber por parâmetro); sem declaração no fonte, silêncio.
+2. `ToolCallRepair`: aviso de salvage **composto** — cabeçalho + 3 exemplos de args
+   JSON válidos + help curado da tool recusada (`ToolHelp.For`, fonte única). Sem
+   nome de tool, cita `write/edit/read/shell`.
+3. `ToolHelp`: `For(string)`/`For(IEnumerable)` expõem o mesmo texto do schema.
+4. `FsMini`: regra de ordem na linha única de `FS0039`.
+
+**Prova.** `units` **139 PASS / 0 FAIL SKIP=6** (`U-fs-repair-use-before-def`;
+`U-toolcall-salvage-notice` com exemplos parseados e help da tool), probe com
+`valor declarado antes do primeiro uso (FS0039)` = OK, build `0 Aviso(s) / 0 Erro(s)`.
+
+## `E-mission-algo-fs` 11ª amostra: FS0003 de aridade + rastro do isolado (2026-10-29)
+
+**Resultado medido.** `logs/isolated/E-mission-algo-fs_-20261029-202053.log`
+(704 s, `PASS=0 FAIL=1`): `Program.fs(10,24)` **FS0003** — `let rec hanoi (n: int)
+: int * string list` chamado como `hanoi n 1 3 2` (linhas 10, 15 e 23). Programa
+completo (crivo, `countPrimes`, `countTwins`, `[<EntryPoint>]`): o vermelho é a
+aridade da própria função, não sintaxe solta. Log **sem** `[algo:F#]`, `reparo:`
+e `breaker:` — `run-isolated.sh` não exportava `TCTX_DUMP`.
+
+**Correções.**
+1. `FsSyntaxRepair`: `FS0003` + `not a function and cannot be applied` mede a
+   aridade na fonte (declaração × chamada) e ensina a forma que compila; sem
+   posição/medida, silêncio (nunca chuta).
+2. `FsMini`: a regra entra na linha única de `FS0751/FS0003`.
+3. `scripts/run-isolated.sh`: `export TCTX_DUMP=1` — turno, reparo e breaker
+   passam a ficar no log do isolado.
+
+**Prova.** `units` **138 PASS / 0 FAIL SKIP=6** (`U-fs-repair-arity` novo),
+probe com `declaracao e chamada com a mesma aridade (FS0003)` = OK, build
+`0 Aviso(s) / 0 Erro(s)`.
+
+## `E-mission-algo-fs` 10ª amostra: dois gaps de ensino e retry de `edit` (2026-10-29)
+
+**Resultado medido.** Isolado `logs/isolated/E-mission-algo-fs_-20261029-195002.log`
+(750,6 s, `PASS=0 FAIL=1`), 2 tentativas × 26 turnos, **1 reparo em 52 turnos** —
+no último turno. Tentativa 1 morreu em `FS0010: Unexpected symbol ':' in binding`
+(`: (count: int * string list)`, nome de campo dentro da anotação de retorno);
+tentativa 2 em `FS0588` com `else let limit = …` na mesma linha do `else`. O
+turno também foi comido por retry: 15 `oldString não encontrado` (9 `edit` + 4
+`write` idênticos), sem `BRIDGE-BREAKER` no log.
+
+**Correções (mecanismo no Core).**
+1. `FsSyntaxRepair`: `FS0010` + `Unexpected symbol ':' in binding` ensina
+   `: int * string list` (só o tipo, sem `nome:`).
+2. `FsSyntaxRepair`: `FS3118/FS0588/FS0528` com `else let` na fonte ensina o
+   `else` sozinho e o bloco indentado.
+3. `RunAlgoPhase` passa a chamar o `ToolsBreaker` que a bridge já usa (soft 3 /
+   hard 6): o `/api/tools/execute` não passa pelo caminho de chat, então os 15
+   retries de `edit` nunca chegavam ao controle de loop. Nenhum mecanismo novo.
+4. `FsMini`: as duas formas entram nas linhas únicas de `FS0010` e de
+   `FS3118/FS0588/FS0528`.
+
+**Prova.** `units` **137 PASS / 0 FAIL SKIP=6** (pins `U-fs-repair-return-tuple` e
+`U-fs-repair-else-let`; `U-breaker-compiler-loop` ganhou o caso do `oldString`
+obsoleto), probe compilando as duas formas novas, build `0 Aviso(s) / 0 Erro(s)`.
+
+## `E-mission-algo-fs`: FsMini garantido no fluxo, reparo em `warning` e missão em 2 etapas (2026-10-29)
+
+**Pedido:** garantir, com teste, que a fase F# **lê o `FsMini` no fluxo antes de
+agir** e corrigir o erro real do `E-mission-algo-fs`.
+
+**Erro real medido (isolado 19:25, 7ª amostra).** O reparo in-flow era injetado
+só quando a saída do build continha `"error FS"`. O diagnóstico da vez era
+`warning FS0193` (operador `@`/`List.append` sem o segundo operando): `Suggest`
+nunca foi chamado e o modelo repetiu a MESMA linha em 4 builds. Somando as duas
+amostras anteriores, o padrão era sempre o mesmo — **dica genérica repetida 17
+vezes em 30 turnos** (`printfn "%s" (String.concat "," movs)`) sem o modelo
+aplicar, e programa F# de 95 linhas com construções inválidas
+(`char.TryParse c).AsSeq()`).
+
+**Correções (mecanismo no Core; aceite intacto).**
+1. `FsSyntaxRepair.HasDiagnostic` — `error` **ou** `warning` `FSdddd` dispara o
+   reparo; o teste deixou de comparar string (`res.Contains("error FS")`).
+   `FirstCode` prefere `error` e aceita `warning` quando é o único diagnóstico.
+2. **Guarda de fluxo**: a fase F# lança na hora se o `system` não carregar
+   `FsMini` (`"fase F# sem FsMini no system: o modelo agiria sem a tabela de
+   sintaxe"`) — nunca mais 30 turnos sem o contrato.
+3. `FS0193` entra no `FsMini` e no `FsSyntaxRepair` só com a forma que compila
+   (`a @ b`, `List.append a b`, `x |> List.append ys`).
+4. **Dica repetida 3×** vira instrução explícita de reescrever o arquivo inteiro
+   com `write`, em vez de reeditar a mesma linha.
+5. **Scaffold do `Program.fs`**: o template do `dotnet new` não traz diretiva de
+   módulo; o arquivo inicial (`module Program` + `open System`) já compila e o
+   modelo não gasta turnos em `FS0010` de cabeçalho.
+6. **Missão F# em duas etapas** sobre o MESMO arquivo (Hanoi → primos), 26 turnos
+   cada, com contexto novo e a saída real realimentada; o aceite final é o mesmo
+   (5 chaves, `hanoi_seq` com 15 movimentos) e `HasHardcodedAlgo` continua
+   reprovando meta copiada.
+7. **Escalada da dica repetida foi para o Core**: `FsSyntaxRepair.Suggest(source,
+   error, repeatCount)` acrescenta “reescreva o arquivo inteiro com a tool
+   `write`” a partir da 3ª vez da MESMA dica (e nunca quando não há dica). O teste
+   só conta repetições — nada de mecânica de ensino no consumidor.
+8. **`FS0010` + `Unexpected type application`** (8ª amostra: `(moves: ref
+   seq<string>)`) ensina `ref` como tipo POS-fixado com `:=`/`!`
+   (`moves: string list ref`, `moves := !moves @ [ … ]`), sem ecoar `ref seq`.
+
+**Pins novos.** `U-fs-repair-diagnostic-detection` (warning conta, error conta,
+`MSB1009` e saída vazia não contam), `U-fsmini-covers-repair-codes` (o `FsMini`
+citado pela fase cobre as 16 regras que o reparo responde e começa com o marcador
+`F# MINI`), `U-fs-repair-ref-type` e `U-fs-repair-repeat-escalation`. Prova:
+`units` **134 PASS / 0 FAIL**, build `0 Aviso(s) / 0 Erro(s)`, commits `59deeaa`
+e `1b14994`, deploy + restart (`uptime=0`, `main_harness=True`, `tails=True`).
+
+## `E-mission-algo` dividido em dois testes (C# e F#) e dicas que ensinavam o caso errado (2026-10-29)
+
+**Pedido:** o teste de algoritmos misturava C# e F# no mesmo veredito. Separação
+em dois testes, com o aceite intacto, e conserto de mecânica só no Core.
+
+**Diagnóstico.** No mesmo teste, a metade C# oscilou entre PASS e FAIL em quatro
+amostras (15:08, 15:25, 15:29, 15:37) e a metade F# nunca chegou a compilar; um
+único veredito escondia qual metade rompeu e as tentativas de uma contaminavam as
+da outra (o histórico da fase C# seguia no contexto da fase F#). O `ALGO_FROM=F#`
+existia só para fugir disso — diagnóstico, não conserto.
+
+**Separação (mecânica de teste, aceite inalterado).**
+`E-mission-algo-cs` (`MissionAlgoCs`, só `mcs/Program.cs`) e
+`E-mission-algo-fs` (`MissionAlgoFs`, só `mfs/Program.fs`), ambos com o MESMO
+enunciado de missão (`AlgoPrompt(ws, dir)`) e o MESMO aceite (`hanoi=15`,
+`primes100=25`, `primes1000=168`, `twin100=8`, `hanoi_seq` com 15 movimentos,
+primeiro `1->2` e último `2->3`, e `HasHardcodedAlgo` sobre a fonte). `ALGO_FROM`
+removido; `WarTemplate` e `run-levels.sh` do L4 passam a ter `algo-cs-$mode` e
+`algo-fs-$mode`; `AGENTS.md`, `docs/BENCHTESTS.md` e `docs/DRIVER-FIXES.md`
+atualizados. Commit `507c9cf`.
+
+**Resultado da primeira medição isolada.** `E-mission-algo-cs` **PASS** (29,2 s).
+`E-mission-algo-fs` **FAIL**, e o veredito é honesto: o modelo hardcodou as metas
+(`printfn "hanoi=15"`, `printfn "hanoi_seq=1->2,1->3,..."`) e o programa não
+compilava (`FS0001` nos ramos do `if`).
+
+**Defeitos de mecânica medidos e corrigidos (Core, nunca no aceite).**
+1. `FS0597` (argumento com chamada/pipe sem parênteses) não tinha dica: 3 builds
+   na MESMA linha. Entra na tabela `FsMini` e no `FsSyntaxRepair` só com a forma
+   que compila (`printfn "%s" (String.concat "," movs)`) — commit `507c9cf`.
+2. `FS0001` respondia pela **forma do fonte**, não pela mensagem: diante de
+   “All branches of an 'if' expression ... array ... list” a dica ensinou a forma
+   do RANGE (`[2 .. int (Math.Sqrt(float n))]`) 4 vezes seguidas. Agora a regra
+   dos ramos do `if` vem antes de qualquer heurística de fonte e ensina o que
+   compila (mesmo tipo nos dois ramos; array junta com `Array.append`), e a dica
+   de range só dispara com `float` E `int` na mensagem — commit `19de20c`.
+3. `edit` sem `oldString` encontrado passou a ensinar o caminho que funciona
+   (trecho curto copiado do `read`, ou `write` com o arquivo inteiro) e ancora a
+   primeira linha real do arquivo, sem ecoar o trecho errado (commit `201c04d`).
+4. `FS0072` (tipo do parâmetro não inferido) também não tinha dica: na 4ª amostra
+   o programa de 58 linhas **já calculava** (`printfn "hanoi=%d" hanoi_count`,
+   `String.concat`/`List.map`) e a fase morreu na linha de formatação, com 30
+   turnos sem receber nada. Entra a anotação no lambda
+   (`fun (a: int, b: int) -> sprintf "%d->%d" a b`, ou `fst`/`snd`) — commit
+   `0c750ff`.
+
+**Progressão medida (cada vez mais longe, nunca com o aceite afrouxado):**
+15:54 cabeçalho colado (`FS0010`) → 16:08 hardcode das metas + `FS0001` com dica
+errada de range → 16:21 programa real calculando, travado em `FS0072` sem dica →
+medição seguinte com as três dicas no lugar.
+
+**Prova:** `units` 127 PASS / 0 FAIL; `scripts/diag/fs-repair-probe.fsx` compila
+as formas ensinadas (corpo com `let` local, `[| for i in 1 .. 3 -> i * i |]`,
+`printfn "%s" (junta movs)`, `Array.append`); build `0 Aviso(s) / 0 Erro(s)`;
+deploy + restart a cada commit (`uptime=0`, `main_harness=True`, `tails=True`).
+
+## WAR L1+L2 bridge com harness on: L1 verde, L2 e `tools-full` corrigidos (2026-10-29)
+
+**Pedido:** reiniciar o WAR em **L1 + L2**, modo `bridge`, `main harness` e
+`tools tail` ligados; registrar; e mitigar **só** o teste que falhou, sempre na
+`:4124`, um por vez.
+
+**Estado da ponte alvo (antes da bateria):** `:4124` (`bridge-gpu`) rodava com
+`--main-harness 0`, então o preflight refutaria o L1. Corrigido na própria unit
+(`/etc/systemd/system/bridge-gpu.service`), como manda a regra de não criar
+ponte paralela: `--main-harness 1` + `daemon-reload` + restart. Status passou a
+`main_harness=true, harness_tails=true, tail_scope=all, legacy_harness=false`.
+A instância de bancada em `:4134` (criada em sessão anterior, contra a regra)
+foi **encerrada**; o único resíduo são referências legadas (dashboard/datasource
+do Grafana e WAR v2 em `scripts/war`).
+
+**L1 — verde.** `logs/levels/L1-20261029-000257-l1`, commit `8b4f604`,
+`rc=0` em 00:14:26: `units` + `integr-bridge` + `topics-bridge`. O `units`
+fechou 64/64 depois de alinhar o contrato `FsMini` ×
+`U-tails-path-simulation-rules` (o teste ainda exigia os literais inválidos que
+a correção #13 removeu de propósito; agora exige a forma correta
+`[1 .. 2 .. n-1]` e **proíbe** o literal copiável `[1; 3 .. n-1]`).
+
+**L2 — primeira rodada vermelha por um único step.**
+`responses-tools-bridge` PASS (3 s); `tools-full-bridge` FAIL (37 s);
+`belts-build-bridge` e `belts-orch-bridge` SKIP (fail-fast, **não medidos**).
+
+**`tools-full-bridge`: duas amostras, duas falhas distintas**
+- amostra A: `edit(oldString="2026-10-29", newString="\nARQUIVO EDITADO - Clima: …")`
+  **apagou a data** → assert `data do sistema anotada` falhou;
+- amostra B: **nenhum `edit`**; o modelo foi para o 2º commit com árvore limpa,
+  repetiu o mesmo `shell` e o mesmo `read`, e o `anti-repeat-loop` cortou o turno.
+- Ambas são disciplina de fluxo num enunciado de 4 passos — não defeito de tool.
+
+**Correções (uma por vez, sem afrouxar aceite)**
+1. `Core/ToolHelp.cs` (`edit`): declara a invariante — para ACRESCENTAR, o
+   `oldString` **precisa reaparecer intacto** dentro do `newString` — e corrige a
+   ordem da verificação: confirmar com `read`/`grep` **depois** da edição.
+   Texto genérico, sem citar cenário, path ou data.
+2. `E2EToolsFullTests`: era o **único** teste duro da suíte com 1 tentativa
+   (mission roda 3 com feedback, belts cutucam). Passou a ter 3 tentativas com a
+   falha do aceite realimentada e pasta nova por tentativa; **enunciado e
+   assertivas idênticos**.
+
+**Prova do teste isolado** `logs/levels/tools-full-20261029-005826.console.log`:
+`PASS E-tools-full (41.7s)` na primeira tentativa, com
+`temperature=0.1 / source=profile` (role Build) no log da bridge.
+
+**L2 — verde depois da correção.** `logs/levels/L2-20261029-005925` (640 s):
+`responses-tools-bridge` 3 s, `tools-full-bridge` 40 s, `belts-build-bridge`
+311 s, `belts-orch-bridge` 286 s = **4/4 PASS**, gate verde, sem PARADA. Os dois
+belts que o fail-fast tinha deixado SKIP foram medidos e passaram. O
+`tools-full` fechou na **primeira** tentativa (o ciclo de retry não foi
+exercido) — o orçamento de 3 tentativas fica como margem para a variância já
+medida, não como muleta.
+
+**Painel (Grafana) — apontado para a ponte única.** Os painéis consultavam
+`:4134` (encerrada) e por isso vinham vazios (`no response received` no log do
+Infinity). Corrigido em dois pontos: variável `bridge` do dashboard
+(`current`/`query`/`options` só `:4124`, `version` 4→5) e `allowedHosts` do
+datasource — este último exigiu subir o `version` do YAML acima do gravado no DB
+(estava `3`, editado pela UI), porque **provisionamento de datasource ignora em
+silêncio arquivo com versão menor**, mesmo após restart.
+
+## WAR thinking OFF e limpeza do painel: a regra já existia (2026-10-29)
+
+**Pedido:** a WAR tem de rodar com thinking **off** e o painel só pode ser limpo
+no início da rodada, nunca por step.
+
+**Thinking — nada novo era preciso.** A regra já está implementada no perfil do
+model id (`docs/LAB-SETUP.md` §1.2): a suíte manda `Gemma4-E4B-Q4-build` e o id
+com sufixo vence o global da unit → **temp 0.1 + thinking off**. O `--thinking
+events` da unit é o default de quem não manda sufixo. Evidência no log da ponte:
+`"model":"Gemma4-E4B-Q4-build","temperature":0.1,"temperature_source":"profile",
+"has_reasoning":false` (1158 requisições da esteira, todas com o sufixo). Um
+toggle de `POST /api/config` chegou a ser escrito no runner e foi **revertido**
+(`fc5dd52`) por ser artefato duplicado de mecanismo existente.
+
+**Painel — um reset por nível.** A limpeza virou `reset_once` no
+`scripts/war/run-levels.sh` (`?probe=1&files=1&panel=1`, com `-d ''` — sem corpo
+o `HttpListener` devolve 411) e os steps rodam com `WAR_NO_RESET=1`, respeitado
+por `Program.cs` e `TestContext.Run`. A prova no log da ponte são duas linhas
+`diag-reset` por bateria (uma por nível), em vez do par por `step_start`.
+
+## `tools-full`: enunciado de missão e a dica da forma certa (2026-10-29)
+
+Três falhas medidas na WAR, todas de fluxo, nenhuma de tool:
+
+- data **substituída** pela linha do clima (`data.txt` sem o ano);
+- clima buscado e **2º commit sem a linha** (o modelo pulou a escrita);
+- **nenhuma listagem** da pasta (`listou/buscou arquivos`), passo que o enunciado
+  não pedia.
+
+Correções, uma por vez e sem afrouxar assertiva:
+
+1. `E2EToolsFullTests` — passo 3 e 4 em língua de dev, no artefato observável:
+   “o arquivo fica com a data e a linha do clima e você confere isso **lendo** o
+   arquivo”; “salve a saída em um histórico dentro da pasta do repositório e
+   **confira a lista dos arquivos** que ficaram nessa pasta”. A mensagem do assert
+   de listagem passou a imprimir as `calls` (diagnóstico, não aceite).
+2. `Core/HarnessTails.cs` (`tools`) — linha positiva `EDITAR ACRESCENTANDO`:
+   o `oldString` é o trecho que **continua**; o `newString` traz esse mesmo trecho
+   + o texto novo. Sem exemplo copiável de path nem nome concreto.
+
+**Prova:** `E-tools-full` isolado **PASS 23,5 s** com o binário `c67e529`; units
+`PASS=124 FAIL=0 SKIP=6`, build `0 Aviso(s)/0 Erro(s)`.
+
+**WAR L2 → L3 no mesmo binário (`c67e529`, modo `bridge`, fail-fast, um nível por
+vez):**
+- `logs/levels/L2-20261029-143602` (701 s) — `responses-tools` 2 s,
+  `tools-full` 27 s, `belts-build` (azul+verde) 239 s, `belts-direct`
+  (azul+verde) 427 s = **4/4 PASS**, `STALE=0`.
+- `logs/levels/L3-20261029-144743` (612 s) — `science-gpu` 166 s,
+  `mission-tools` 82 s, `belts-build` roxa 108 s, `belts-direct` roxa 251 s =
+  **4/4 PASS**, `STALE=0`.
+- Reset do painel: **uma** linha `diag-reset` por nível (14:36:02 e 14:47:43);
+  nenhuma por `step_start`. `thinking=events` restaurado no fim (o efetivo por
+  requisição é o do perfil `-build`), `main_harness=true`, `harness_tails=true`.
+
+
+## WAR L1+L2 bridge-only: L1 verde, L2 corrigido e verde (2026-10-27)
+
+**Pedido:** reiniciar corretamente, rodar L1+L2 em bridge-only e fail-fast, com
+artefatos dentro de `logs/levels` do repositório.
+
+**Execução e resultados:**
+- L1 `logs/levels/L1-20261027-l1l2-l1`: `units`, `integration-bridge`,
+  `topics-bridge` = **3/3 PASS** (741 s), gate verde.
+- L2 `logs/levels/L2-20261027-l1l2-l2`: `belts-build-bridge` falhou em 500
+  `The model produced output that does not match the expected peg-gemma4
+  format`; `belts-orch-bridge` ficou SKIP (fail-fast). Gate vermelho.
+- Retry `logs/levels/L2-20261027-l2retry`: falha imediata `Access to the path
+  /tmp/opencode/belts-build/azul/Startup/DependencyInjection.cs is denied`.
+  Causa: o bridge executa `write` como root e o run seguinte, como `mint`,
+  não conseguia limpar o workspace anterior.
+- Correção em `E2EBeltsBuildTests`: workspace único por execução
+  (`/tmp/opencode/belts-build/<timestamp>-<pid>/<belt>`, sem reutilizar pasta
+  root) e retry limitado a **2 tentativas** para 500 `peg-gemma4`: a segunda
+  anexa um nudge curto com o erro, pedindo UMA tool call válida (`write` na
+  criação, `read` na revisão), em vez de reenviar o mesmo histórico às cegas.
+  Se repetir, a exceção sobe e o step fica FAIL. Build Release 0 avisos /
+  0 erros.
+- L2 final `logs/levels/L2-20261027-l2fix`: `responses-tools-bridge`,
+  `tools-full-bridge`, `belts-build-bridge`, `belts-orch-bridge` = **4/4 PASS**
+  (537 s), gate verde.
+- Console e artefatos sempre no repo: `logs/levels/<run>.console.log` e
+  `logs/levels/L<N>-<stamp>/`; regra registrada no `AGENTS.md`.
+
 ## Janelas Zenity: diagnóstico nas bridges e 4 campos nos OpenCode Web (2026-10-26)
 
 **Pedido:** toda janela abre pedindo os dados, mas considerando os padrões; a
@@ -4142,3 +4673,703 @@ Evidencia: probe em `:4126`, header `bridge`, model `-scripter` ->
 `{"event":"main-harness","path":"chat","role":"Scripter","tools":1}`,
 `prompt_tokens=1782`, resposta com `write_file`; mesmo request com header
 `opencode` -> sem evento, `prompt_tokens=40`; `U-main-harness` PASS=10 FAIL=0.
+
+**Dashboard Grafana + provisioning (2026-10-27).**
+- PROD (`/usr/src`) estava em `dc7f518`, atras do persistente `9e5cc3b`; `/api/test/enunciado` dava 404 e as sondas nao apareciam. Recuperado com `git clean -fd` + `git reset --hard persist/main` (backup em `/tmp/opencode/usr-src-backup-*.tgz`) e `scripts/deploy-pull.sh` (pull --rebase + build + restart). Bridge `:4124` subida manualmente com `--main-harness 1 --diagnostic 1` para a bancada, mantendo a unit canonica em `0`.
+- O painel "Tools calls por step" (e demais) ficavam vazios porque a bateria rodava via `run-levels.sh` (bash), que nao inicia o `StepProbe`. Agora a bateria L1+L2 roda pelo driver C# (`--war-levels 1,2`), que publica `/api/test/probe`, `/api/test/steps`, `/api/test/enunciado` e `/api/test/activity`. O dashboard se preenche com dados reais.
+- Plugin Infinity instalado (`yesoreyeram-infinity-datasource`) e dashboard provisionado em `/etc/grafana/provisioning` + `/var/lib/grafana/dashboards` (datasource `opencodebridge-infinity`, allowedHosts 4124). Script idempotente criado: `scripts/lab/install-grafana-observation.sh` (commitado).
+- Units canonicas permanecem `--main-harness 0` nas 3 bridges; `:4130` Core mantem MainHarness on. Apenas a instacia manual da bancada usa `1`.
+
+**Nomes semanticos nos steps do WAR (2026-10-27).**
+- `WarTemplate` ganhou `--war-modes` (e env `LEVEL_MODES`) para filtrar os modos
+  rodados. Default continua `opencode bridge`. Com `--war-modes bridge`, a bateria
+  publica apenas steps `*-bridge`, evitando nomes `*-opencode` em run bridge.
+- Commits: `1ecb729` (filtro) + `a9ee3fc` (script Grafana) + `96f7c2e` (history).
+
+**WAR single-thread sem parada (2026-10-27).**
+- `--war-no-stop-on-fail` (alias `--war-continue`) adicionado ao `WarTemplate` para
+  medir o placar completo sem interromper no primeiro FAIL/STALE. MaxParallelSteps
+  permanece 1 (sequencial). Rodar L1+L2 em modo bridge:
+  `--war-levels 1,2 --war-modes bridge --war-no-stop-on-fail --war-no-build`.
+
+**Metricas reais do modelo no dashboard (2026-10-27).**
+- `requests`/`failed_requests` continuam sendo HTTP total (inclui polling do
+  Grafana e health checks), mas o dashboard deixou de usa-los. Foram expostos
+  `model_requests` (POST `/v1/*` = mensagem inteira), `model_responses`
+  (conclusao de inferencia em `AddMetrics`) e `model_failed_requests`.
+- Painel "Mensagens ao modelo" usa `model_requests`, "Respostas do modelo" usa
+  `model_responses`, "Falhas do modelo" usa `model_failed_requests` e o grafico
+  por step usa `model_requests`. O polling do Grafana nao infla mais esses
+  numeros; `http_requests` fica apenas para diagnostico.
+- `E-devpipe-doc` normaliza acento/caixa sem `string.Normalize` (o projeto roda
+  com `InvariantGlobalization=true`, que anula a normalizacao Unicode): o VL
+  transcreve "Linha TRÊS" e o assert aceita `TRES`/`tres`/`TRÊS`.
+
+**Fail-fast + steps reais no painel (2026-10-27).**
+- Bateria L1+L2 volta a rodar com fail-fast ON (sem `--war-no-stop-on-fail`):
+  o circuito para no primeiro FAIL/STALE e o fluxo e corrigir, republicar e
+  reiniciar os testes.
+- `model_responses` passou a ser contado no `finally` do handler `/v1/*`
+  (chat, stream, responses e passthrough). Antes era incrementado no
+  `AddMetrics`, que nao roda em todos os caminhos, e ficava travado em 24.
+- `/api/test/steps?war=1` filtra apenas steps de WAR. `UnitCircuitTests`
+  (bad/once/p1/p2/first/next...) nao aparecem mais em "Steps concluidos":
+  `WAR_EVENT_URL` e limpo no `OnRunEnd` e o `TestContext` so publica
+  enunciado quando `WAR_STEP` existe.
+
+**Fail-fast real entre niveis (2026-10-27).**
+- O driver ja parava no primeiro FAIL dentro do nivel, mas o `RunAll`
+  continuava para o proximo nivel com a mensagem "SEGUINDO". Agora, com
+  `StopOnFirstFailure=true` (default), o `RunAll` faz `break` e nao executa
+  L2 depois de L1 vermelho.
+- O console global passa a imprimir `fail-fast: ON/OFF` no inicio da trilha,
+  para nao depender de interpretar a ausencia da flag.
+
+**Regra de fronteira Core x consumidor (2026-10-27).**
+- Fica registrado em `AGENTS.md`: Web, suite de testes, OpenCode e CLI **nao
+  implementam logicas que pertencem ao Core**. Catalogo/schema/help de tools,
+  execucao, role/workspace guard, process runner, preflight, harness/tails,
+  sanitizacao, sampling e parsing ficam em `Rochas.OpenCodeBridge.Core`.
+- O consumidor faz apenas orquestracao, fixture, transporte HTTP, assertiva e
+  evidencia. `ToolCatalog`, `Tools()`, `Exec()`, `LocalExec()`, `Shell()` de
+  tool e conversao manual chat->Responses no projeto de testes sao proibidos.
+- Correcao aplicada na suite: `TestContext`, `E2EMissionTests` e
+  `E2EFrontPipeTests` passam a usar `Core.ToolCatalog.Chat/Responses` e
+  `POST /api/tools/execute`; `git` entra no catalogo do Core (o teste nao
+  inventa `action/message/paths`), e `zip` deixa de ser tool (vai por `shell`).
+- Frontend pipeline: a bateria Gen/Edit/Verify passa a cobrir criacao e edicao
+  de pecas MVC Razor e React, no fim do L2, com evidencia por artefato.
+
+**Limpeza total Core x testes e mission bridge (2026-10-27).**
+- Nenhum teste monta mais schema/catalogo de tool: `TestContext.Catalog(...)`
+  apenas filtra `Core.ToolCatalog.Chat()`. Saíram os `Tool()`/`DevTools()`/
+  schemas locais de `E2EDevPipeTests`, `E2EBeltsTests`, `E2EBeltsBuildTests`,
+  `E2EScripterTests`, `E2EMissionTests` e `E2EFrontPipeTests`.
+- Execucao de tool tambem e' unica: `TestContext.ExecuteTool` chama
+  `POST /api/tools/execute`; `E2EScripter`, belts, belts-build e mission nao
+  escrevem/leem arquivo por conta propria. Processos de teste usam
+  `Core.Tools.ProcessRunner` (sem `ProcessStartInfo` duplicado).
+- `E2EFrontPipeTests` ganhou `EditRazor`/`EditReact` no mesmo contrato do CSS;
+  Gen cria MVC Razor + React + CSS e Verify mede os tres. Enunciados novos:
+  `edit-razor-title-mvc.md` e `edit-react-painel-2026.md`.
+- L2 termina com `front-{mode}` (`--only E-front`) no `WarTemplate` e no
+  `scripts/war/run-levels.sh`; `PrintSteps` e BENCHTESTS refletem a ordem.
+- Mission tools/algo em `--mode bridge`: a verificacao final `dotnet run` passou
+  a usar a tool `shell` da bridge (mesmo executor do modelo), eliminando o
+  conflito de dono root/user em `bin/obj`. O enunciado pede explicitamente
+  `write` do arquivo completo para o E4B nao abrir com `edit` sem `oldString`.
+- Primeiras execucoes isoldadas: `E-mission-tools` expos dois problemas reais
+  (obj root-owned e modelo usando `edit` sem `oldString`), corrigidos na
+  sequencia acima; o rerun verde fica registrado neste arquivo após a bateria.
+
+**WAR L1 -> L4 e filtros por nivel/step/teste (2026-10-27).**
+- A esteira passa a ter **quatro niveis**, nesta ordem obrigatoria:
+  - **L1**: `units` -> `integracao` (`E-stream`, `E-review`, `E-iot`,
+    `E-error`, `E-full-cycle`, `E-healthy`) -> `topicos` (`E-senior`,
+    `E-ent`);
+  - **L2**: `E-responses-tools` -> `E-tools-full` -> belts **azul e verde**
+    (build + orch);
+  - **L3**: `E-science-gpu` -> `E-mission-tools` -> belt **roxa**
+    (build + orch);
+  - **L4**: `E-mission-algo` -> belts **marrom e preta** (build + orch) ->
+    frontend `E-front-*` -> `webui-integracao-topicos`.
+- `WarTemplate` (`--war-level 1..4`, `--war-all`, `--war-levels`, `--war-from/--war-to`)
+  e `scripts/war/run-levels.sh` (`--level 1..4`) foram alinhados. Cada nivel
+  roda sozinho; `run-all-levels.sh` percorre 1 -> 4 e para no primeiro gate
+  vermelho.
+- Filtros preservados e ampliados:
+  - `--war-only NAME` seleciona steps do nivel por substring (ou lista com
+    virgula), sem executar o resto;
+  - `--only NAME` continua selecionando o teste individual dentro do step e
+    agora aceita lista com virgula (`--only E-front-edit-razor,E-senior-erp`).
+- `PrintSteps`/`--war-list` e `docs/BENCHTESTS.md`, `TEST-DRIVER.md` e
+  `AGENTS.md` registram a disposicao. O antigo L2 (science/front) e o antigo
+  L3 (marrom/preta/webui) foram redistribuidos; `E-science-cpu`,
+  `E-devpipe-*` e `E-dual-tools` ficam fora dos niveis e rodam por `--only`
+  quando necessario.
+- Validacao: `dotnet build Rochas.OpenCodeBridge.Test -c Release` verde
+  (0 avisos, 0 erros); `--war-list` de L1..L4 e `run-levels.sh --level 1..4
+  --list` imprimem a nova ordem; `bash -n` limpo nos dois scripts.
+- `--war-level 1 --war-only units` rodou como step unico e fechou
+  `PASS=1 FAIL=0 SKIP=0` (`/tmp/opencode/war-check2/L1-20261027-l1units2`).
+  Units rodam uma vez na bridge, nao no opencode: a variante opencode falhava
+  em `U-translate-temp-respeita-tunel` porque a cauda e do caminho bridge.
+- O preflight do `run-levels.sh` so exige a Web UI no L4; L1..L3 rodam sem a
+  Web no ar, coerente com a nova distribuicao.
+- Correcao de comportamento: o padrao de modos volta a ser **bridge apenas**
+  (`WarTemplate` e `run-levels.sh`); `opencode` so com `--war-modes opencode`
+  ou `LEVEL_MODES=opencode`. Fail-fast fica explicito em `--war-stop-on-fail`
+  (default do driver) e documentado; `--war-no-stop-on-fail` e a excecao.
+- O painel `/api/test/steps?war=1` nao tem `run_id` e empilha runs: os itens
+  `E-mission-tools RUN`, `units-opencode FAIL` e `units PASS` vistos juntos
+  eram de execucoes diferentes (timestamps distintos), nao de um run que
+  ignorou fail-fast. A evidencia de fail-fast passa a ser o `events.jsonl`
+  do run atual, nunca o painel agregado.
+- Execucao errada registrada: `--war-level 1` inteiro foi iniciado em
+  `opencode bridge` e interrompido; a regra operacional volta a ser um step
+  por vez quando o objetivo for diagnosticar, e `--war-levels 1,2` so quando
+  o pedido for rodar L1+L2 de ponta a ponta.
+
+**Teste cognitivo puro (2026-10-28).**
+- `E-tools-full` deixa de executar tools DIRETAMENTE (o `RunOnBridge`, que
+  enviava comandos fixos via `/api/tools/execute` sem modelo, foi removido).
+  O teste passa a ser exclusivamente cognitivo do modelo via `AgentScenario`
+  (`ToolAgent` + `Core.ToolCatalog`): enunciado natural, o modelo decide as
+  tools e a suite valida o artefato em disco. Motivo: o objetivo do teste e
+  a capacidade cognitiva do modelo e o uso de tools, nao o Core (que ja tem
+  seus proprios testes). Enviar comandos fixos "para o modelo" nao testa
+  nada cognitivo.
+- Enunciado do `AgentScenario` tornado natural (sem "Siga a ordem: 1)...",
+  sem `oldString = ...`/`newString = ...` e sem coordenadas): objetivo + aceite,
+  o modelo decide as tools. Alinha-se a REGRA "enunciado de tarefa, nao de
+  harness" (HISTORY 2026-10-26).
+- `E-ent-garnet` -> `E-ent-redis`: termo Garnet trocado para Redis e enunciado
+  passa a pedir gravacao via tool `write` (modelo grava `ProductRepository.cs`
+  em workspace; a suite le o arquivo e aplica `CheckNoStub` + `IDistributedCache`/
+  `RemoveAsync`). Renomeado para `E-ent-redis` apos passar (PASS=1 FAIL=0).
+- `E2EToolsFullTests.FullTools` agora e apenas `AgentScenario()` (sem a lane
+  de infra `RunOnBridge`).
+- `E2EToolsFullTests.RunOnBridge` removido (codigo morto).
+- `E2EEnterpriseTests.GarnetCircuit` -> `RedisCircuit` (metodo + registro
+  `E-ent-redis` em Program.cs).
+- Grafana: datasource allowedHosts inclui `http://127.0.0.1:4134` e o
+  dashboard ganha variavel `bridge` (default :4124, opcao :4134) nas URLs dos
+  paineis, para mostrar a run da bancada.
+- run-all-levels.sh: fail-fast entre niveis (break no primeiro rc!=0; override
+  `LEVEL_CONTINUE_ON_FAIL=1` para placar completo) — alinha AGENTS.md e o
+  pedido de execucao sequencial fail-fast.
+
+**Sem proibicao de ferramenta nos enunciados (2026-10-28).**
+- Regra nova: enunciado (e help de tool) NAO proibe ferramenta que nao esteja
+  na blacklist. O modelo escolhe a tool; proibir `curl`/`grep do shell` no
+  texto nao agrega nada cognitivo e vira coordenada de harness.
+- Removidas as proibicoes "nao use curl" (`ToolHelp["webfetch"]`,
+  `ToolHelp["fetch"]`, descricao da `webfetch` no `ToolCatalog`) e "nao use
+  grep do shell" (`ToolHelp["grep"]`); `MainHarness` passa a dizer "Rede via
+  webfetch/websearch ou shell, como a tarefa pedir".
+- `webfetch` entrou no `ToolCatalog` do Core (Chat/Responses, 7 -> 8 tools)
+  com schema `url`/`format`/`timeout` — o catalogo do Core e a fonte unica e
+  antes o modelo em bridge nem via a tool (so via help/sanitizer). Executor ja
+  existia (`BridgeToolExecutor`: `webfetch` -> `fetch`).
+- `E-tools-full`: enunciado fala "busque na internet" (sem pedir web fetch
+  nem tool nomeada); o aceite em bridge aceita QUALQUER caminho de rede
+  (`webfetch`, `fetch` ou `shell` com curl/wget/http) — verifica uso, nao
+  escolha de ferramenta.
+- `ToolAgent` ganhou cutucada de continuacao (max 2): o modelo parava no meio
+  da tarefa em prosa e o teste morria por silencio; agora uma segunda nudge
+  pede conclusao dos passos do enunciado (nao responde por ele).
+- E-tools-full PASS isolado apos os ajustes: `PASS E-tools-full (51.4s)`,
+  `[test] PASS=1 FAIL=0 SKIP=0`.
+
+## E-tools-full: 5x em loop (2026-10-28) — guard + variância cognitiva
+- Bateria 5x (reiniciando :4134 a cada rodada) reportou "PASS=0 FAIL=5", MAS o
+  placar e enganoso: so a rodada 1 executou o teste. As rodadas 2-5 foram
+  BLOQUEADAS pelo BinaryGuard/rerun-guard ("binarios inalterados desde o
+  ultimo FAIL") — o guard existe justamente para proibir reexecutar os mesmos
+  binarios apos um FAIL. Rodar o mesmo build 5x sem rebuild e exatamente o que
+  ele impede. Amostra real: 1 teste cognitivo.
+- A causa do FAIL da rodada 1 e COGNITIVA/nao-deterministica, nao bug de
+  codigo (mesmo build do PASS isolado): o modelo criou `random_dir` mas chamou
+  edit/read com `path:"random_file.txt"` (sem o subdir) -> tool fail; ao refaz,
+  usou `replaceAll` com `oldString="2026-10-28"` e APAGOU a linha da data ->
+  assert "data do sistema anotada" falhou.
+- Licao: E-tools-full tem variancia entre runs do modelo (repo git + edit + 2
+  commits + historico). PASS isolado nao prova estabilidade; para medir
+  estabilidade precisa-se de rebuild entre runs (ou desligar o guard) — nunca
+  de binarios identicos.
+
+## Regra (HARNESS POR MODO) — MainHarness on/off (2026-10-28)
+
+- MainHarness on/off depende do MODO: bridge → SEMPRE on; opencode → off (o
+  opencode já carrega o seu harness no stream com o llama). O discriminador é
+  o CLIENTE (BridgeLane = !opencodeClient && (Mode is null || Mode.MainHarness)),
+  nunca o sufixo do modelo. Por isso o WAR (`...-build`) não fica sem base.
+- `main_harness_scope:"managed-only"` é rótulo de status, não condição sobre o
+  sufixo; a prova é o evento `main-harness` (`chars≈3916, tails=true`) no log
+  com `model: Gemma4-E4B-Q4-build`.
+- Implementação: `Program.cs` chat (`1900`) e responses (`2408`) aplicam o
+  MainHarness quando `BridgeLane.Value == true`; o bypass `passthrough-responses`
+  (`2627`) só dispara fora da raia bridge (`BridgeLane.Value != true`).
+- Web UI (`ChatController`) hardcoda `harness = true` e chama
+  `MainHarness.BuildSystem`.
+- **Trava de execução (regra primordial):** `--mode bridge` com
+  `--main-harness 0` é combinação INVÁLIDA — a bridge não sobe e devolve
+  `[bridge] ERRO DE ARGUMENTOS: modo bridge exige main harness ON` (exit 2,
+  `ArgumentException` em `ApplyMode`). A raia sem o nosso harness é
+  `--mode opencode` (o opencode carrega o dele no stream com o llama); as units
+  `:4124/:4125/:4126` são/ devem ser `mode=opencode`.
+- **Driver (regra primordial):** fail-fast e guard de rebuild andam juntos.
+  Com `--war-stop-on-fail` (default) o guard é obrigatório — preflight
+  `guard_ativo_fail_fast` (fail-fast + sha512 + modo na evidência). Não há flag
+  para desligar o guard.
+- Testes unitários que protegiam o curto-circuito antigo foram adaptados
+  (`U-main-harness-opencode-master`, `U-main-harness-master`) e o perfil build
+  0.1 passou a ser o esperado em `U-translate-temp-respeita-tunel`.
+- **Tool tail é regra (primordial):** todo teste que enuncia tools roda com
+  `harness-tails` ligada e `tail-scope != off` (preflight
+  `bridge_harness_tails`). Pedido sem `tools` no array não recebe cauda de
+  tools (`HarnessTails.Compose(..., hasTools:false)` + variante
+  `DefaultBehaviorNoTools`, sem "TOOLS PRIMEIRO") — evidência do bug: request
+  sem tools devolveu `{"tools":[{"type":"shell"...` como TEXTO e truncou.
+- **Tails por modo:** o gate é `BridgeMode.Tails` + `tail-scope`, não
+  `BridgeLane` (que discrimina só o MainHarness). `all` injeta também na raia
+  opencode; `managed` só direto/Web.
+- **Tópicos sem tools = conceito:** perfil `plan` (0.3, thinking on) e o corpo
+  do enunciado termina com `MOSTRE-ME COMO MODO PLANO EM TEXTO`. Teste com
+  tools continua `build` (0.1, thinking off) — regra sem exceção.
+- Prova do colapso em `:4134`: mesmo prompt com `-build` (0.1/off) = 431–1.079
+  chars/2–7s; com `-plan` (0.3/on) = 7.213–8.097 chars/59–62s. Harness e tails
+  ligados nos dois; a variável é o perfil.
+- Documentado em `docs/LAB-SETUP.md` e `docs/BENCHTESTS.md`.
+
+## Regra (ENUNCIADO DE TESTE) — dev humano, não receita (2026-10-28)
+
+- `E-ent-*` estava ditando o artefato no enunciado (lista de `app.MapGet`,
+  "use `useEffect`", `AddStackExchangeRedisCache(...)` exato, "não use edit",
+  "sem TODO/NotImplemented", "grave PRIMEIRO/POR ÚLTIMO"). Isso responde o
+  teste pelo modelo e mede obediência, não engenharia. Removido.
+- Fica no enunciado só o **contrato observável** (status, transação,
+  header+items, cache-aside). Mecânica é do harness/tool-help.
+- Aceite não afrouxa: quando o assert dependia de nome, virou check
+  estrutural (`saleinvoice com detalhe` = `Items` **ou** `ProductId`+`Qty`).
+- Frase obrigatória em pedido sem tools: `MOSTRE-ME COMO MODO PLANO EM TEXTO`.
+  O Core (`DefaultBehaviorNoTools`) define que isso é **texto com o entregável
+  completo**, não plano de implementação — foi o que derrubou o
+  `E-ent-crud-product` (respondeu "🗺️ Plano de Implementação").
+- Segunda passada de humanização (mesma data): saíram também `Use Results<T> tipados`,
+  `Mostre o SQL com OFFSET/FETCH` e `codigo com IDbTransaction` — o enunciado virou
+  só o contrato (endpoints/status/transação/índice). Os asserts correspondentes
+  passaram a estrutural: paginação = `OFFSET`|`Skip` (já era), ciclo de vida =
+  `AbortController` + (`useEffect`|`useLayoutEffect`|`use(`).
+- `E-ent-redis` (15:16): modelo gravou `Startup.cs` com `services.AddDistributedRedisCache(...)`
+  (API removida no .NET 3.0) e o assert antigo exigia `AddStackExchangeRedisCache`.
+  O contrato de verdade é "cache distribuído registrado no DI": assert passou a
+  aceitar moderno (`AddStackExchangeRedisCache`), memory fallback, legado
+  (`AddDistributedRedisCache`) ou `IConnectionMultiplexer`, com a versão exposta
+  em `[info] di=modern|legacy|custom` — versão de API é visibilidade, não gate.
+## E-mission-tools (2): sucesso intercalado zera o streak + comprehension alheia (2026-10-28)
+
+- 2a rodada vermelha (`L3-20261028-163556`, `mission-tools-bridge` FAIL 274s;
+  evidência em `logs/levels/L3-20261028-163556/evidence/mission-agent.log`):
+  `error FS0010: símbolo '|' inesperado` — o modelo escreveu comprehension de
+  **Haskell** (`[i | i <- [1 .. n-1]; ...]`) e repetiu o ciclo write/edit OK +
+  `dotnet run` falhando 22 turnos por rodada; `breaker_nudge=0`, `breaker_trip=0`.
+- Causa 3 (Core): o streak era **consecutivo** — `edit`/`write` com sucesso no
+  meio zerava a contagem (sucesso + falha alternados → streak 1 sempre) e o
+  breaker ficava mudo no loop mais comum do agente (editar bem, compilar mal).
+- Causa 4 (sintaxe do modelo): comprehension `[i | i <- ...]` não existe em F# —
+  o `FsMini` não a nomeava.
+- Correção (Core; enunciado e asserts intocados):
+  - `ToolsAntiRepeat.EvaluateFailureLoop`: além do streak, conta as falhas do
+    **alvo mais frequente na janela** (`2 * max(soft, hard)`), com sucesso
+    intercalado **não** zerando; nudge passa a aceitar **2 alvos** (o loop real é
+    `edit path` + `shell command` sobre o mesmo arquivo — normalizam diferente);
+    3+ alvos continuam sendo progresso (`U-breaker-ignores-distinct-targets` verde);
+  - `HarnessTails.FsMini`: comprehension de F# é `[for i in 1 .. n-1 -> expr]`
+    (ou `do ... yield`); `[i | i <- [1 .. n-1]; ...]` nomeada como sintaxe alheia.
+- Prova em C#: `U-breaker-interleaved-loop` (edit OK + shell falhando: 2 falhas =
+  None, 3 = Nudge, 6 = Trip; variante com edit também falhando = 2 alvos, ainda
+  Nudge) e as asserções novas de `FsMini`. Bateria: `[test] PASS=8 FAIL=0`.
+
+## E-mission-tools: breaker mudo no loop do compilador (2026-10-28)
+
+- Sintoma (L3 `L3-20261028-161849`, step `mission-tools-bridge` FAIL 218s,
+  `GATE VERMELHO`, belt roxa SKIP pelo fail-fast):
+  `assert: F# imprime 3 numeros com 6 casas, saiu: ERRO: exit 1:
+  /tmp/e2e-mission/mfs/Program.fs(10,92): error FS0751: Expressão incompleta...`.
+- Evidência no repo: `logs/levels/L3-20261028-161849/evidence/mission-agent.log` +
+  `Program.fs.falho`. O log do agente mostra `retry 2` (o teste já reseta o
+  contexto e repassa o erro) e, no 2o turno, **T4→T20: o MESMO `edit` repetido
+  10x** com o MESMO `error FS0751` — nem nudge nem trip do breaker.
+- Causa 1 (Core): `FailureMarkers` cobria `exited with code [1-9]`, formato
+  **morto** — o `ProcessRunner` devolve `exit <code>: <saida>`. Logo o resultado
+  `exit 1: ... error FS0751` não casava nenhum marcador e o loop não era contado.
+- Causa 2 (sintaxe do modelo): `[1; 3 .. n-1]` **não existe** em F# — range com
+  passo é `[start .. step .. finish]`; `;` separa elementos. O `FsMini` não
+  ensinava isso e o modelo re-escrevia o mesmo erro.
+- Correção (Core, mecânica; enunciado e asserts intocados):
+  - `ToolsAntiRepeat.FailureMarkers`: `(?m)^\s*exit [1-9]` (mantendo a forma
+    antiga por compatibilidade) + `error fs\d+/cs\d+/msb\d+/fsi\d+`,
+    `traceback (most recent call last)`, `undefined reference`,
+    `unhandled exception.`, `assertionfailed`;
+  - `HarnessTails.FsMini`: regra de range (`[1 .. n-1]`, `[start .. step .. finish]`,
+    nomeia `[1; 3 .. n-1]` como inexistente) e extremos do mesmo tipo.
+- Prova em C#: `U-breaker-compiler-loop` (3 falhas de compilador = Nudge,
+    6 = Trip, mesmo alvo) e `U-breaker-failure-markers` estendido com o formato
+    real (`exit 1: ... error FS0751`, `error CS1002`, `exit 104`; `exit 0` e
+    prosa que cita `exit` continuam sem falha). Bateria: `[test] PASS=7 FAIL=0`.
+
+## E-tools-full: falha de path corrigida no Core (2026-10-28)
+
+- Sintoma (L2 `L2-20261028-160036`, step `tools-full-bridge` FAIL 127s,
+  `GATE VERMELHO`, belts SKIP pelo fail-fast):
+  `assert: [toolsfull:agent] marca EDITADO no arquivo (calls=... edit(...) ->
+  fail; grep(...) -> fail; shell(cd temp_dir && git commit) -> fail; glob(...) -> ok)`.
+- Causa: o modelo criou o arquivo em `temp_dir/` via shell (`cd temp_dir`), mas
+  chamou `edit` com `path: "random_file.txt"` — o path de tool é relativo à raiz
+  do workspace e o `cd` do shell não muda. `edit` falhou, `grep` falhou no mesmo
+  path e o loop gastou os steps até parar sem a linha EDITADO. O enunciado está
+  natural e os asserts continuam iguais; nada foi afrouxado.
+- Correção no Core (mecânica, não no teste): `WorkspaceGuard.Locate` busca o
+  MESMO nome de arquivo (BFS, depth 4, 3 achados, `bin/obj/.git/node_modules`
+  pulados) e `edit`/`read` respondem `arquivo não encontrado: '<path>' (existe
+  em: temp_dir/random_file.txt — use esse path)`. Sem achado, a mensagem fica a
+  original (não promete caminho errado).
+- Prova em C#: `U-tools-path-hint` (`PathHintApontaCaminhoReal`) — `edit` e
+  `read` no path errado apontam `temp_dir/random_file.txt`, path certo edita de
+  verdade e caminho inexistente não promete achado. `[test] PASS=1 FAIL=0`.
+
+## Painel Grafana mostra o step em execução (RUN) (2026-10-28)
+
+- Sintoma: durante o L1 o painel não mostrava `RUN` — `units` e
+  `integration-bridge` só apareciam depois de prontos, dando impressão de
+  desatualizado.
+- Causa: `TestCircuitDriver.PostStepEvent` descartava tudo que não fosse
+  `step_end` (`if (t != "step_end") return;`), então o `step_start` nunca
+  chegava na bridge. O painel lê `GET /api/test/steps?war=1` (filtra row sem
+  `mode`) e só recebia o veredito quando o teste já tinha acabado.
+- Correção: encaminha `step_start` como `verdict: "RUN", secs: 0` (mantendo
+  `mode`); a bridge guarda por nome de step, então o `step_end` sobrescreve
+  `RUN` → `PASS/FAIL` sem estado fantasma. Dashboard ganhou mapeamento
+  `RUN` (azul) e `PAUSA` (roxo) em `status`.
+- Prova em C#: `U-circuit-publish-run` (`PublishesRunBeforeVerdict`) —
+  `HttpListener` local + `WAR_EVENT_URL`, 3 steps reais, exige a sequência
+  `RUN(p1) PASS(p1) RUN(p2) PASS(p2) RUN(p3) PASS(p3)` (6 eventos) e
+  `mode=bridge` nas duas faces (filtro do painel). Bateria do driver completa:
+  `[test] PASS=19 FAIL=0 SKIP=0`.
+- Gate de referência: L1 `L1-20261028-154239` = `PASS=3 FAIL=0 SKIP=0 STALE=0`
+  (643s), `topics-bridge` PASS 624s.
+
+## Fail-fast também no runner isolado (2026-10-28)
+
+- Sintoma: `--only E-ent` seguia depois de `FAIL E-ent-crud-saleinvoice`, gastando
+  GPU nos 3 testes seguintes. O fail-fast existia só no driver WAR (por step).
+- Correção em C# na suíte: `TestContext.StopOnFail` (default `true`), `Aborted`/
+  `AbortedAt`; `Run` retorna imediatamente (`SKIP ... (fail-fast)`) e o summary
+  imprime `[test] ABORTADO (fail-fast) no primeiro FAIL: <nome>`. Flag de escape:
+  `--no-stop-on-fail`.
+- Regra em `AGENTS.md` (§ "fail-fast em TODA rodada de runner").
+
+- **Frase de fechamento trocada (decisão final).** `MOSTRE-ME COMO MODO PLANO EM
+  TEXTO` foi lida como *documento de plano* pelo E4B: `E-ent-crud-product` e
+  `E-ent-dashboard` devolveram "**Plano de Implementação** … *(aguardando
+  confirmação para entregar o código)*" — sem `MapGet/HttpPost`, sem `useEffect`,
+  e `E-ent-redis` não gravou arquivo. Fechamento agora é
+  `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS` (mesma posição: fim do
+  corpo), com `DefaultBehaviorNoTools` mapeando as duas formas para "artefato
+  final, não plano". Regra única em `AGENTS.md`, `docs/LAB-SETUP.md` e
+  `docs/BENCHTESTS.md`.
+- Medição da rodada de de-ditado: `E-ent` PASS=5/FAIL=1 antes (com dictação),
+  falha residual `saleinvoice` por nome (`Items`), corrigida no assert.
+- Sem dictação, sobraram duas falhas semânticas (15:06): `E-ent-dashboard`
+  respondeu "Plano Arquitetural" (leu `MODO PLANO` como documento) e
+  `E-ent-redis` não gravou arquivo (1 `glob` e prosa). Correção no **harness**
+  (não no enunciado): `DefaultBehaviorNoTools` passou a definir
+  `MOSTRE-ME COMO MODO PLANO EM TEXTO` = modo texto, entregável final, e a
+  proibir "plano de implementação/arquitetural"; `DefaultTools` ganhou
+  "ARQUIVO: pedido que manda criar/gravar entrega via `write`; prosa não
+  conclui". Dictação continua fora do enunciado.
+
+## Diagnóstico por reset: painel por step sem restart da bridge (2026-10-29)
+
+**Sintoma.** Painel mostrando número acumulado (`requests 2530`, `input_tokens
+781046`) que só zerava com restart. A premissa "rebuild exige restart" estava
+sendo usada também para zerar contador — restart derruba keep-alive e troca o
+binário em uso por motivo que não é binário.
+
+**Causa.** `/api/metrics`, `ProbeSamples` e `files_generated` são por vida do
+processo; não existia reset. `?fresh=1` apenas esconde o número (NO DATA), não
+zera — por isso a saída anterior era reiniciar.
+
+**Correção (um lugar só, no servidor).** `POST /api/diag/reset` com Bearer:
+`Metrics.Clear()` (anéis, deny, nudge, breaker, anti-repeat) + `Interlocked.
+Exchange` dos contadores locais (requests, model, tokens, elapsed, tools) +
+`LastClient`/`last_model_activity_ms` zerados; `?probe=1` limpa as amostras da
+sonda e `?files=1` o conjunto de arquivos contados. Resposta
+`{ok:true,event:"diag-reset",probe,files,ts}` e evento no log. Nada de estado
+paralelo nem de reinício.
+
+**Consumidores.** `TestContext.ResetDiagnostics()` (run isolado, antes de cada
+`E-*`, substituindo o restart por step) e `TestCircuitDriver.PostDiagReset()` no
+`step_start` da WAR (URL derivada da origem de `WAR_EVENT_URL`, sem env nova).
+O restart continua onde é insubstituível: início da bateria (binário em uso +
+pool HTTP) e deploy.
+
+**Regra atualizada** em `AGENTS.md` (`## Regra: diagnóstico zera por reset;
+restart é para binário/pool`) e comentário do `scripts/deploy-pull.sh`.
+
+### L1 vermelho duas vezes: variância de texto vs orçamento de passos (2026-10-29)
+
+**1ª queda — `E-ent-crud-saleinvoice` (`// ...`).** O assert anti-esqueleto
+(`CheckNoStub`) reprovou texto com marcador de elisão. Reprodução do **mesmo**
+pedido fora do teste, na mesma bridge/role: `completed`, 10.943 chars, zero
+ocorrências de `// ...` e `/* ... */`. Na medição seguinte o teste passou (58 s).
+Variância do 4B em artefato textual (role plan, 0.4), não regressão — nenhum
+assert tocado.
+
+**2ª queda — `E-ent-redis` (mock no DI).** Falhou com
+`AddSingleton<IDistributedCache, MockDistributedCache>()`, justificado no próprio
+arquivo por "não temos Redis rodando no ambiente de teste". Medição da janela do
+teste na `:4124`: **14 respostas = teto de 14 passos**, 13 tool calls, com
+`shell`×5 e `git`×1 antes dos 7 `write` — o registro real nunca coube no
+orçamento. Com 20 passos: **PASS 178.3 s, `calls=19`, `di=modern`**
+(`AddStackExchangeRedisCache`). Teto final **24** (medido + margem, faixa da
+suíte 16..28); assert e enunciado intactos, e a mensagem do DI passou a carregar
+`calls=` para diagnóstico. Nada de mock: o artefato é de produção.
+
+**Reset de diagnóstico em produção.** `POST /api/diag/reset?probe=1&files=1` na
+`:4124` devolve `{"ok":true,"event":"diag-reset","probe":true,"files":true,...}`;
+`--only U-diag-reset` → `[test] PASS=1 FAIL=0 SKIP=0`. Dois defeitos de mecânica
+apareceram na execução real e estão em `DRIVER-FIXES #16`: `HttpListener`
+responde **411** a POST sem `Content-Length` (clientes agora mandam corpo vazio)
+e `deploy-pull.sh` reprovava com o Grafana subindo (agora *polling* com teto:
+bridge 30 s, Grafana 60 s).
+
+## Temperaturas dos perfis restauradas: 0.1 / 0.3 / 0.5 (2026-10-29)
+
+Pedido do dono do lab: voltar à escala anterior — **0.1** (build/scripter/exec,
+thinking off), **0.3** (plan/orch, events), **0.5** (moe, events). O commit
+`50138b8` ("chore: scripter temperature 0.2 across profiles") subiu a tabela
+inteira para 0.4/0.7/0.2 sem medição que a justificasse e o `build` foi reduzido
+a 0.1 depois, em separado — deixando a tabela inconsistente (plan/orch 0.4,
+moe 0.7, build 0.1, scripter/exec 0.2).
+
+Alterado em todos os espelhos, para não gerar drift: `Core/RoleProfiles.cs`,
+`appsettings.json`, `appsettings.4124.gpu-example.json`,
+`appsettings.4125.cpu-example.json`, `Web/Data/AgentSeeder.cs` (comentários e
+`CASE` do seeder), `Web/Services/SubagentToolHandler.cs` (FixedTemperature 0.1),
+`Core/Tools/SubagentToolHandler.cs` (default 0.1), comentários de `Program.cs` e
+do `UnitToolBreakerTests`. O global sem sufixo continua **0.2**.
+
+Documentação: `docs/LAB-SETUP.md` (tabela por modelo, escala, agents e valores do
+runtime) e `docs/BENCHTESTS.md` §9. Atestação segue sendo
+`temperature_source=profile` no evento `response`.
+
+**Prova (pós-deploy, `:4124` reiniciada com `main_harness`/tails on):** quatro
+requests reais em `/v1/responses` atestam no evento `response`
+`temperature_source=profile` — `-plan` **0.3**, `-build` **0.1**, `-orch`
+**0.3**, `-moe` **0.5**. O `appsettings.json` do runtime
+(`.../bin/Release/net10.0`) confirma `plan 0.3` e `moe 0.5`; deploy levou
+bridge + Grafana no mesmo ciclo com `/api/status` e `/api/health` verdes.
+
+## Reset da sonda: por bateria; contadores seguem por step (2026-10-29)
+
+O reset que substituiu o restart estava com granularidade errada: o driver
+mandava `probe=1` em **todo** `step_start`, então a curva de throughput/VRAM do
+painel mostrava só o step corrente e a dos anteriores desaparecia (as amostras
+não são persistidas em arquivo; o ring da bridge é a única fonte).
+
+Corrigido sem mudar o servidor (o parâmetro já existia):
+
+- `TestCircuitDriver.PostDiagReset(bool clearProbe = false)` — no `step_start`
+  vai `?files=1` (contadores + arquivos, **sem** probe);
+- `WarTemplate.ResetDiagnosticsOnce` — uma vez por bateria (`RunAll`, antes do
+  laço de níveis) e no run de nível único: `?probe=1&files=1`;
+- `TestContext.ResetDiagnostics` (run isolado) continua com `probe=1`: o `E-*`
+  isolado é a própria rodada.
+
+Regra registrada em `AGENTS.md` e `docs/BENCHTESTS.md` §9.1. Aceite: após dois
+steps, `GET /api/test/probe?limit=1000` traz **≥2 valores distintos de `step`**
+e `/api/metrics` continua voltando a zero em cada `step_start`.
+
+## L3 `mission-tools`: reparo F# inválido, anti-repeat na tool call e turno do salvage (2026-10-29)
+
+Bateria `L1→L4` de 03:09: L1 3/3 PASS (651 s), L2 4/4 PASS (1677 s), **L3 vermelho**
+em `mission-tools-bridge` (FAIL 212 s, `causa=bridge`), com as duas roxas
+(`belts-build-roxa`, `belts-orch-roxa`) ainda **sem prova** — o fail-fast parou antes.
+
+Diagnóstico do artefato `logs/levels/L3-20261029-030937-l3/steps/mission-tools-bridge.{test,bridge}.log`:
+
+1. **o reparo ensinava forma inválida** — `CERTO: [for i in 1 .. n - 1 do i -> ...]`
+   (preservava o `do`); o modelo copia o literal da dica e ficou 12 turnos em FS0010;
+2. **anti-repeat com janela única** (`window=512`) cortou o `edit` no meio
+   (`window=512 chars=2050` → `salvage-args-rejected tools=edit` → `calls=0`);
+3. **nudge de salvage debitava turno** (`BRIDGE (edit): ...` contado no orçamento de 22).
+
+Correção: `FsSyntaxRepair` só emite forma compilável (paridade vira passo,
+`do if ... then yield`, `System.Math` qualificado, gate por código FS e guards
+para forma válida), `FsMini` ensina por **descrição** (regra nova em `AGENTS.md`:
+a dica nunca exibe o literal errado), **janela própria dos args** (1024, CLI
+`--anti-repeat-args-window`, campo no `/api/status`) com buffers separados no
+stream, e turno de salvage fora do orçamento (`ToolCallRepair.IsSalvageNotice`).
+
+Prova: units `U-fs-repair-comprehension`, `U-antirepeat-args-window`,
+`U-toolcall-salvage-notice`, `U-tails-path-simulation-rules` = `PASS=4 FAIL=0`;
+`scripts/diag/fs-repair-probe.fsx` (formas compilam; `do` sem `yield` com tipo
+aberto quebra determinístico) e `scripts/diag/verify-antirepeat-args-window.py`
+(@256 True, @1024 False, loop @1024 True). Registro completo: `DRIVER-FIXES #20`.
+
+## FsMini sem duplicidade + reset de painel + scripts de bancada (2026-10-29)
+
+**FsMini (cauda de F#).** Duas correções de forma, medidas no `E-mission-tools`:
+
+1. o histórico do painel mostrou que a tabela tinha **duas linhas FS0039**
+   (`nome nao definido` e `mod`) e prosa repetindo a tabela (`RESTO E NOMES`,
+   `FATORIO/PRODUTO`) — instrução ambígua, exatamente o que o modelo copia.
+   Agora é **uma linha por código** (FS0010, FS0751/FS0003, FS0001, FS0039,
+   FS0037, FS0058, FS0988, FS0020, FS3563), cada uma com o **sintoma em prosa**
+   e a **forma correta com exemplo** (nenhum literal inválido aparece).
+2. a rodada `09:40-09:44` falhou com `F# primos de 1 a 50 = 15` porque o modelo
+   escreveu `[1 .. int (Math.Sqrt(float n))]` no range dos **divisores**: `1`
+   divide todo inteiro → contagem **0** (`RUN -> 3628800 / 21 / 0`). A linha
+   `PRIMOS` separa explicitamente o intervalo de **entrada** (`[1 .. 50]`) do de
+   **divisores** (começa em 2), e o exemplo de auxiliar já mostra
+   `[2 .. int (Math.Sqrt(float n))]`. O assert continua `15` — nada afrouxado.
+
+**Reset de painel (`?panel=1`).** O painel mostrava o enunciado de **07:57**
+(Simpson) mesmo depois de restart porque: (a) `/api/diag/reset` só zerava
+métricas/sonda/arquivos; (b) `SetEnunciado` só limpava o histórico quando o
+nome do step mudava — e run manual repete `manual-bridge`; (c) o estado é
+persistido em `/tmp/opencode/bridge-enunciado.json` e recarregado no boot.
+Agora o reset aceita `?panel=1` e zera enunciado (`step` → `n/d`), histórico,
+respostas do agente e `TestSteps`, regravando o estado limpo. Consumo: WAR zera
+o painel **uma vez por bateria**; o `step_start` continua só `?files=1`.
+
+Prova: `--only U-diag --api-key guest@123` → `PASS=2 FAIL=0` (`U-diag-reset`,
+`U-diag-reset-panel`: publica → reset sem panel preserva → reset com panel zera
+step/histórico/steps → publica de novo).
+
+**Scripts de bancada** (registrados em `docs/LAB-SETUP.md` §15 e
+`scripts/README.md`): `bridge-restart.sh` (restart + `/api/status` e
+`--print-flags` exigindo `main_harness`/`harness_tails`), `check-units.sh`,
+`run-isolated.sh` (log em `logs/isolated/` + trail do `_mission.log`),
+`push-persist.sh` (token fora do repo, conferido por `ls-remote`) e
+`prod-repair-ownership.sh` (recuperação do PROD, DRIVER-FIXES #21).
+
+## E-mission-tools fechado: 3 verdes consecutivos (2026-10-29)
+
+Sequência do dia, do sintoma ao aceite:
+
+1. **`09:40` FAIL** — F# imprimiu `3628800 / 21 / 0`: o `isPrime` usava
+   `[1 .. int (Math.Sqrt(float n))]` no intervalo dos divisores e o `1` zera a
+   contagem. O `FsMini` ganhou a linha `PRIMOS` separando **entrada** (`[1 .. 50]`)
+   de **divisores** (começa em 2) e a tabela de erros virou uma linha por código,
+   sem prosa duplicando a tabela.
+2. **`10:18` FAIL** — o assert exigia o nome `entrega.zip` e o modelo gerou
+   `delivery.zip`. Decisão: o pacote é o contrato, não o nome — qualquer `.zip`
+   na raiz conta (e o nome que saiu vai na mensagem).
+3. **`10:56` FAIL** — `zip error: Zip file structure invalid (…/Program.fs)` 6×:
+   a origem foi passada no lugar do pacote. O help curado de `shell`/`bash`/`sh`
+   passou a ensinar `zip -qr pacote.zip .` (o `.zip` vem primeiro) e o sintoma em
+   prosa. Nada de nudge no teste: mecânica é do Core.
+4. **Dedup** — o guard de repetição entre turnos foi descartado (experimento sem
+   medição); o formato do aviso da bridge virou `Core/BridgeNotice`
+   (`Prefix`/`Tag`/`Notice`/`Is`/`Append`), com o literal `"BRIDGE ("` em um lugar
+   só e `Apply` do salvage anexando uma cópia.
+
+**Prova do aceite:** `PASS 87,9 s`, `PASS 74,6 s`, `PASS 69,6 s` — três rodadas
+isoladas consecutivas, cada uma com restart da bridge, após o help do zip.
+Build `0 Aviso(s)/0 Erro(s)`; units `PASS=121 FAIL=0 SKIP=6`.
+
+## Algo-F# x Algo-C# e o gate do loop de compilação (2026-10-30)
+
+Continuação da série `E-mission-algo-*` depois de a infra voltar:
+
+1. **btree F# PASS (27,9 s)** — 3 turnos (`read`, `edit`, `shell`), sem reparo.
+   O laço já parava no aceite da missão desde o `RunAlgoPhase(accept)`.
+2. **K-Means F# não fecha** — em duas rodadas o modelo repetiu o mesmo
+   `FS0010 '|]' … Expected '}'` (array de registros sem o `}` do último item) e
+   o `list<Point>` legítimo fazia o ramo `<...>` do reparo responder à linha
+   errada. Medido também no btree: `List.contains node.Keys key` (argumento
+   invertido) sem dica.
+3. **Gate corrigido no Core** — o breaker contava falhas só na janela de `2*hard`;
+   com `write ok`/`read ok` intercalados o contador parava em 4-5 e nunca
+   chegava ao `hard`. Agora a assinatura da falha (sem linha/coluna, com o código
+   `FS####`) é contada no histórico inteiro: 6 builds com o **mesmo** erro cortam
+   o turno; erros distintos seguem como progresso.
+4. **Reparo F#** — `SourceLineAt` como leitura única da linha do erro, gate do
+   `<...>` pela linha, e três mapas novos: `|]` sem `}`, `List.contains` com
+   argumentos trocados e `^` como potência (FS0101 → `**`/`pown`).
+5. **Missões em C#** — as quatro (bin, btree, kmeans, sort) passam a rodar em C#
+   com o MESMO enunciado e os MESMOS aceites; o K-Means **F#** foi removido por
+   decisão do operador (o algoritmo segue coberto em C#).
+
+**Prova:** units `U-breaker-same-error`, `U-fs-repair-record-array-close`,
+`U-fs-repair-list-contains-order`, `U-fs-repair-power-operator`,
+`U-fs-repair-generic-syntax`, `U-fsmini-covers-repair-codes` — PASS; bateria
+isolada das oito missões em `logs/isolated/algo-batch-*.summary`.
+
+## Trilha F# arquivada e L4 reposicionado (2026-10-30)
+
+O `E-mission-algo-fs-bin` regrediu de novo e o operador decidiu arquivar **toda**
+a trilha F#, inclusive as amostras que já tinham PASS (a fase F# de
+`E-mission-tools` inclusive):
+
+1. **Arquivados** em `Rochas.OpenCodeBridge.Test/Archived/`: as três missões
+   `fs-{bin,btree,sort}` (`FsAlgoMissions.cs`), a fase F# de `E-mission-tools`
+   (`FsMissionToolsPhase.cs`), a cauda `FsMini` (`FsMiniTail.cs`) e o pin
+   `U-fsmini-covers-repair-codes` (`FsMiniPin.cs`). O `README.md` da pasta
+   registra o cenário medido, o motivo e o roteiro de reativação.
+2. **Ativos** ficam só em C#: `E-mission-tools` (escrita + execução + git/zip,
+   sem a fase F#) e as cinco missões `E-mission-algo-cs-*`.
+3. **Hanoi renomeado** para `E-mission-algo-cs-hanoi` (sufixo igual aos demais;
+   o `--only =` continua exigindo o nome exato).
+4. **L4** (`WarTemplate` + `scripts/war/run-levels.sh`) passa a rodar
+   `algo-cs-hanoi` → `algo-cs-{bin,btree,kmeans,sort}` → belts marrom/preta →
+   `E-front-*` → `webui-integracao-topicos`; nenhum step `algo-fs-*`.
+5. **Core**: `HarnessTails` perdeu a const `FsMini` (o texto vive no arquivado);
+   `FsSyntaxRepair` continua no Core por ser reparo de produção para arquivo F#.
+
+**Prova:** build Release `0 Warning(s) / 0 Error(s)`; units
+`PASS=153 FAIL=0 SKIP=6` (inclui o fix do `mkdir -p`); `U-tool-feedback-shell-cwd`
+PASS. Bateria C#/WAR a rodar depois do redeploy.
+
+## Painel Observation: icone no fluxo, linha 1 em h=5 e Steps acima de Tools (2026-10-30)
+
+Ajuste de leitura do painel, sem tocar em dado nem em aceite:
+
+1. **Icone a esquerda no primeiro quadro** — o título passou a ser
+   `🔀 Fluxo principal` (o painel é desenho de fluxo, não série; era o único da
+   primeira linha sem marca visual).
+2. **Altura 5, não 6** — `Fluxo principal` e `Modo / Main Harness` tinham
+   crescido para `h=6` no ajuste de 0-based da busca binária; voltaram a `h=5` e
+   as linhas de baixo subiram **1 célula** (sem faixa vazia entre a linha 1 e as
+   tabelas de Enunciado/Respostas).
+3. **Ordem invertida de propósito** — `Steps concluidos` sobe para `y=25`
+   (`h=8`) e `Tools calls por step` desce para `y=33` (`h=6`); a soma fecha
+   `39`, exatamente onde começa `Throughput/VRAM`. Quem olha o painel vê
+   **primeiro o que já terminou** e depois a distribuição de tools.
+
+Fonte única continua `observation/grafana/dashboards/opencodebridge.json`;
+`scripts/lab/install-grafana-observation.sh` copia para
+`/var/lib/grafana/dashboards`, recria o provisioning e reinicia o
+`grafana-server`. Prova: `GET /api/dashboards/uid/opencodebridge` devolve os 17
+painéis com `Fluxo principal` em `h=5`, `Steps concluidos` em `y=25` e
+`Tools calls` em `y=33`.
+
+**Infra desta rodada** (mesmo dia): reboot deixou `llama-gpu2`, `bridge-gpu2`,
+`bridge-web` **disabled** e o Grafana **sem datasource/dashboard** (só
+`sample.yaml` em `/etc/grafana/provisioning`); o redeploy reinstalou o painel
+(`install-grafana-observation.sh` + `systemctl enable grafana-server`) e a
+bancada voltou com `llama :4100` apontando para o Q4 **uncensored**
+(`/media/.../llama-models/gemma-4-E4B-it-uncensored`) e `bridge :4124` em
+`--mode bridge --main-harness 1` (tails `all`, anti-repeat 1/1, salvage
+intrínseco do Core).
+
+**Falha medida na UI (Sessão 38) fechada no harness:** a rodada isolada morria
+em `I-chat-calibrate` com `TaskCanceledException` do `HttpClient` (100 s) — a
+calibragem faz vários turnos no modelo vivo e já se limitava por CTS de 150 s.
+O cliente do teste subiu para 200 s e cada teste passou a rodar por
+`CheckAsync` (exceção vira `FAIL <nome>` em vez de matar o processo e esconder
+o veredito dos seguintes).
+
+## Sort C#: quick sort e bubble sort declarados como DOIS algoritmos (2026-10-30)
+
+O `E-mission-algo-cs-sort` falhou com `quicksort=5,2,1,5,6,9` (partição única,
+sem ordenar as sublistas) enquanto o `bubblesort` saía correto. O enunciado
+dizia "Implemente quick sort e bubble sort" numa frase só; o modelo tratou o
+quick sort como uma partição e não recursou. O enunciado agora separa
+explicitamente os dois algoritmos (cada um na sua função), exige a ordenação
+recursiva das sublistas no quick sort e proíbe usar a saída de um para preencher
+a chave do outro. O aceite não mudou: as duas listas completas em ordem
+crescente. Prova: `E-mission-algo-cs-sort` PASS 48,9 s
+(`logs/isolated/cs-sort3-*.log`).
+
+## Guard de ctx: slots no host e compactação única no Core (2026-10-30)
+
+O Q4 Base estourava o slot (142701 > 131072) sem o guard disparar: `--context-tokens
+524288` é o total de 4 slots e o `ContextGuard` dividia por 1. Entrou `--context-slots`
+(host declara; `/api/status` expõe `context_slots`) e a **rotina única** de compactação
+passou para o `ContextGuard` (`Compact`, 95% do ctx por-slot) — o `MainHarness` fica só
+com o enunciado. Cliente compacta antes de cada request e no 413; `CsSyntaxRepair.TryRepair`
+fecha `CS1513` deterministicamente. Detalhe e prova: `docs/DRIVER-FIXES.md` #56.

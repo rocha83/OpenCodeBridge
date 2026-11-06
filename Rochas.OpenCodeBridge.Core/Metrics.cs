@@ -35,6 +35,7 @@ public static class Metrics
     static long _ring2Deny, _ring3Deny, _nudgeArgs;
     static long _breakerNudge, _breakerTrip;
     static long _antiRepeatContent, _antiRepeatTools;
+    static long _upstreamAbort, _upstreamAbortRetry;
     public static long Ring2Deny => System.Threading.Interlocked.Read(ref _ring2Deny);
     public static long Ring3Deny => System.Threading.Interlocked.Read(ref _ring3Deny);
     public static long NudgeArgs => System.Threading.Interlocked.Read(ref _nudgeArgs);
@@ -42,6 +43,22 @@ public static class Metrics
     public static long BreakerTripCount => System.Threading.Interlocked.Read(ref _breakerTrip);
     public static long AntiRepeatContent => System.Threading.Interlocked.Read(ref _antiRepeatContent);
     public static long AntiRepeatTools => System.Threading.Interlocked.Read(ref _antiRepeatTools);
+    public static long UpstreamAbortCount => System.Threading.Interlocked.Read(ref _upstreamAbort);
+    public static long UpstreamAbortRetryCount => System.Threading.Interlocked.Read(ref _upstreamAbortRetry);
+
+    /// <summary>
+    /// Conta um aborto do upstream (conexão encerrada antes da resposta).
+    /// Sem esse contador o caso só existia no log do arquivo — invisível no
+    /// painel, indistinguível de erro de modelo.
+    /// </summary>
+    /// <param name="retried">true = a bridge repetiu o turno; false = devolveu 502.</param>
+    public static void UpstreamAbort(bool retried)
+    {
+        if (retried) System.Threading.Interlocked.Increment(ref _upstreamAbortRetry);
+        else System.Threading.Interlocked.Increment(ref _upstreamAbort);
+        if (!Active) return;
+        Record("upstream-abort", new JsonObject { ["retried"] = retried });
+    }
 
     /// <summary>Conta uma recusa no anel e (se diagnostic ligado) grava o evento.</summary>
     /// <param name="ring">"ring2", "ring3" ou "nudge".</param>
@@ -69,6 +86,8 @@ public static class Metrics
         ["breaker_trip"] = BreakerTripCount,
         ["anti_repeat_content"] = AntiRepeatContent,
         ["anti_repeat_tools"] = AntiRepeatTools,
+        ["upstream_abort"] = UpstreamAbortCount,
+        ["upstream_abort_retry"] = UpstreamAbortRetryCount,
     };
 
     /// <summary>Conta um disparo do gate anti-repeat (conteudo ou tools).</summary>
@@ -131,6 +150,8 @@ public static class Metrics
         System.Threading.Interlocked.Exchange(ref _breakerTrip, 0);
         System.Threading.Interlocked.Exchange(ref _antiRepeatContent, 0);
         System.Threading.Interlocked.Exchange(ref _antiRepeatTools, 0);
+        System.Threading.Interlocked.Exchange(ref _upstreamAbort, 0);
+        System.Threading.Interlocked.Exchange(ref _upstreamAbortRetry, 0);
     }
 
     // Amostrador de GPU em background (5s; best-effort, sem nvidia-smi = mudo).

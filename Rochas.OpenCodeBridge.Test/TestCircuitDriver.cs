@@ -223,6 +223,14 @@ internal abstract class CircuitTemplate
         TestCircuitDriver driver, CircuitStepResult result)
         => Array.Empty<CircuitStepSpec>();
 
+    /// <summary>
+    /// Trava por step ANTES da execucao: devolver um resultado aqui impede o
+    /// step de rodar (usado pela WAR para abortar na hora quando o binario mudou
+    /// no meio da bateria, em vez de gastar o step inteiro para marcar STALE).
+    /// </summary>
+    public virtual CircuitStepResult? BeforeStep(
+        TestCircuitDriver driver, CircuitStepSpec step) => null;
+
     /// <summary>Politica de gate; default = PASS>0, FAIL=0, STALE=0.</summary>
     public virtual CircuitGatePolicy GatePolicy(TestCircuitDriver driver)
         => CircuitGatePolicy.Default;
@@ -380,20 +388,37 @@ internal sealed class TestCircuitDriver : IDisposable
 
     static readonly System.Net.Http.HttpClient EventHttp = new() { Timeout = TimeSpan.FromSeconds(3) };
 
-    // step_end tambem vai para a bridge (painel Grafana). Best-effort: sem
-    // WAR_EVENT_URL ou bridge fora, o circuito segue normalmente.
+    // step_start (verdict RUN) e step_end vao para a bridge (painel Grafana):
+    // sem o step_start o painel nao mostra o step EM EXECUCAO — ele so passa a
+    // existir quando ja acabou (impressao de "nao atualizou"). A bridge guarda
+    // por nome de step, entao o PASS/FAIL do step_end sobrescreve o RUN.
+    // Best-effort: sem WAR_EVENT_URL ou bridge fora, o circuito segue normalmente.
     static void PostStepEvent(JsonObject ev)
     {
         try
         {
-            if ((ev["t"]?.GetValue<string>() ?? "") != "step_end") return;
+            string t = ev["t"]?.GetValue<string>() ?? "";
+            if (t is not ("step_start" or "step_end")) return;
+            var row = ev.DeepClone().AsObject();
+            // Raia (level) na linha do painel: com `--war-parallel` cada level roda
+            // num slot do llama, e o operador precisa saber de qual raia e' o step.
+            // Sem a env (rodada sequencial) o campo nao existe e o painel segue global.
+            string lane = Environment.GetEnvironmentVariable("WAR_LANE") ?? "";
+            if (lane.Length > 0 && int.TryParse(lane, out int laneNo))
+                row["level"] = laneNo;
+            if (t == "step_start")
+            {
+                row["verdict"] = "RUN";
+                row["secs"] = 0;
+                row["cause"] = "";
+            }
             string url = Environment.GetEnvironmentVariable("WAR_EVENT_URL") ?? "";
             if (url.Length == 0) return;
             using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
             string key = Environment.GetEnvironmentVariable("WAR_EVENT_KEY") ?? "";
             if (key.Length > 0)
                 req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
-            req.Content = new System.Net.Http.StringContent(ev.ToJsonString(), Encoding.UTF8, "application/json");
+            req.Content = new System.Net.Http.StringContent(row.ToJsonString(), Encoding.UTF8, "application/json");
             using var _ = EventHttp.Send(req);
         }
         catch { }
@@ -512,6 +537,24 @@ internal sealed class TestCircuitDriver : IDisposable
 
         await WaitIfPausedAsync(ct).ConfigureAwait(false);
 
+        // Trava do template antes do step: barata e no comeco (hash mudou no meio
+        // da bateria = erro de processo; nao gasta GPU para descobrir depois).
+        var veto = _template.BeforeStep(this, step);
+        if (veto is not null)
+        {
+            AppendSummary(veto, 0);
+            Publish(new JsonObject
+            {
+                ["t"] = "step_end",
+                ["step"] = step.Name,
+                ["mode"] = step.Mode,
+                ["verdict"] = "BLOCKED",
+                ["cause"] = veto.Cause
+            });
+            Log($"BLOCKED {step.Name}: {veto.Cause}");
+            return veto;
+        }
+
         int attempt = NextAttempt(step.Name);
         Publish(new JsonObject
         {
@@ -529,11 +572,14 @@ internal sealed class TestCircuitDriver : IDisposable
         CircuitStepResult result = default!;
         long totalSeconds = 0;
 
+        // Diagnostico: UMA limpeza por bateria (WarTemplate, no start) — o step
+        // nao zera mais nada. Zerar por step reiniciava os contadores do painel
+        // a cada linha da esteira e a serie de throughput/arquivos do run sumia.
+
         using var probe = StepProbe.Start(
             _o.RunDirectory,
             step.Name, step.Mode, step.ProbeUrl, step.ProbeApiKey, step.ProbeLogs,
             Path.Combine(_o.RunDirectory, "journey"));
-
         for (int i = 0; i < maxAttempts; i++)
         {
             if (i > 0)

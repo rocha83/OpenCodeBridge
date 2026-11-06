@@ -16,7 +16,18 @@ internal static class ChatterGuardTests
         ToolResets();
         LongResets();
         MixedResets();
+        StopNoteHonesty();
         return Failures;
+    }
+
+    // A nota final não pode afirmar "sem executar nada" quando o turno JÁ executou
+    // tools/subs (medido na Web em 2026-10-30: subagente gravou Program.cs e a
+    // bolha dizia que nada tinha rodado).
+    private static void StopNoteHonesty()
+    {
+        Check(ChatterGuard.StopNoteFor(false) == ChatterGuard.StopNote, "U-chatter-note-sem-execucao");
+        Check(ChatterGuard.StopNoteFor(true) == ChatterGuard.StopNoteAfterWork, "U-chatter-note-apos-execucao");
+        Check(!ChatterGuard.StopNoteFor(true).Contains("sem executar nada"), "U-chatter-note-sem-mentira");
     }
 
     private static void Check(bool ok, string name)

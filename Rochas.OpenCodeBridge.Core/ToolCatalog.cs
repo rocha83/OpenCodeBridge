@@ -20,7 +20,7 @@ namespace Rochas.OpenCodeBridge.Core;
 public static class ToolCatalog
 {
     /// <summary>Tools no shape <c>chat/completions</c>.</summary>
-    /// <returns>Array de tools (6).</returns>
+    /// <returns>Array de tools (8).</returns>
     public static JsonArray Chat()
     {
         var tools = new JsonArray
@@ -57,7 +57,18 @@ public static class ToolCatalog
                 ["pattern"] = new JsonObject { ["type"] = "string" },
                 ["path"] = new JsonObject { ["type"] = "string" },
                 ["include"] = new JsonObject { ["type"] = "string" }
-            }, "pattern")
+            }, "pattern"),
+            Fn("webfetch", "Busca conteudo de uma URL http(s) e retorna como texto (text/markdown/html); somente leitura.", new JsonObject
+            {
+                ["url"] = new JsonObject { ["type"] = "string" },
+                ["format"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("text", "markdown", "html") },
+                ["timeout"] = new JsonObject { ["type"] = "number", ["exclusiveMinimum"] = 0, ["maximum"] = 120 }
+            }, "url"),
+            Fn("git", "Executa um comando git no repositorio. Leitura para todos; init/add/commit/config so para build/exec.", new JsonObject
+            {
+                ["command"] = new JsonObject { ["type"] = "string" },
+                ["path"] = new JsonObject { ["type"] = "string" }
+            }, "command")
         };
         return ToolHelp.Apply(tools);
     }

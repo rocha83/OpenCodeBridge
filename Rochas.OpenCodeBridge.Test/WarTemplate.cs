@@ -4,25 +4,28 @@
 //  Este arquivo nao executa processo, nao controla pausa, nao faz lock e nao
 //  grava summary/events: tudo isso e o TestCircuitDriver (TestCircuitDriver.cs).
 //  Aqui mora somente a receita WAR:
-//    - levels 1..3, steps bridge/opencode/webui;
+//    - levels 1..4, steps bridge/opencode/webui;
 //    - preflight de llama, bridge, binarios, opencode, disco e GPU;
 //    - parser PASS/FAIL dos testes, causa e hash STALE;
 //    - build da .slnx e redeploy opt-in;
 //    - gate WAR (PASS>0, FAIL=0, STALE=0).
 //
 //  CLI:
-//    dotnet run -c Release -- --war-level 3
+//    dotnet run -c Release -- --war-level 4
 //    dotnet run -c Release -- --war-all
 //    dotnet run -c Release -- --war-levels 1,2
 //    dotnet run -c Release -- --war-level 2 --war-gate-only
-//    dotnet run -c Release -- --war-level 3 --war-list
+//    dotnet run -c Release -- --war-level 4 --war-list
+//    dotnet run -c Release -- --war-level 3 --war-only mission-tools
 //    dotnet run -c Release -- --war-pause | --war-resume | --war-status
 //
 //  Portavel: sem bash, flock(2), /proc, nvidia-smi obrigatorio ou paths
 //  Linux. Testes adaptam-se a bridge; a bridge nao muda para o teste.
 // ===========================================================================
 
+using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
@@ -40,8 +43,9 @@ internal sealed class WarTemplate : CircuitTemplate
         public bool? Cpu;
         public int Level = 1;
         public int From = 1;
-        public int To = 3;
+        public int To = 4;
         public string? Levels;
+        public string? OnlySteps;
         public string? Stamp;
         public string? ResumeStamp;
         public int ResumeLevel = 1;
@@ -51,6 +55,7 @@ internal sealed class WarTemplate : CircuitTemplate
         public string? ApiKey;
         public string? BridgeQ3;
         public string? Blog;
+        public string? Modes;
         public string? Lock;
         public string? PauseFile;
         public string? Root;
@@ -60,6 +65,28 @@ internal sealed class WarTemplate : CircuitTemplate
         public bool RetryAll;
         public bool Rebuild;
         public bool NoBuild;
+        public bool StopOnFirstFailure = true;
+        // Diagnostico do modelo cru: relaxa o gate `harness_tails_status` do
+        // preflight (caudas off). Opt-in explicito — o default segue gate duro.
+        public bool NoTailsGate;
+        // Simetrico ao de tails: relaxa `anti_repeat_status` (anti-repeat off).
+        public bool NoAntiRepeatGate;
+        // Raias: um level por slot do llama, rodando em paralelo (um processo por
+        // level). Os steps de cada level seguem sequenciais dentro da raia; o pino
+        // de slot do level vem do llama (bridge com `--slot -1`), nao da flag.
+        public bool Parallel;
+        // Piso de VRAM livre do preflight por step. Default 512 MiB; laboratorio
+        // full-VRAM (modelo+mmproj residentes, 4 slots) deixa pouca folga e o
+        // operador declara o piso real com --war-min-free-vram (evidencia no log).
+        public int? MinFreeVram;
+        // Web UI pelo navegador: SO' o ultimo step (webui-integracao-topicos) roda a UI
+        // (--web URL --ui --phase full). O front mede por snapshot estatico. Headed
+        // abre a janela (--war-headed / HEADED=1).
+        public bool WebDriver;
+        public string? WebDriverUrl;
+        public bool WebHeaded;
+        // Faixas exercitadas pela Web UI (Playwright) no step webui-integracao-topicos.
+        public string? WebUiBelts;
         public bool Pause;
         public bool Resume;
         public bool Status;
@@ -96,7 +123,8 @@ internal sealed class WarTemplate : CircuitTemplate
         bool Cpu,
         bool NoBuild,
         bool ForceBuild,
-        bool RetryAll)
+        bool RetryAll,
+        string[] Modes)
     {
         public static WarPaths From(WarOptions o)
         {
@@ -115,6 +143,14 @@ internal sealed class WarTemplate : CircuitTemplate
             int retries = Math.Clamp(o.Retries ?? ParseInt(Env("LEVEL_RETRIES"), 1), 1, 10);
             int retryDelay = Math.Max(0, o.RetryDelay ?? ParseInt(Env("LEVEL_RETRY_DELAY"), 5));
             int stepTimeout = o.StepTimeout ?? ParseInt(Env("LEVEL_STEP_TIMEOUT"), 7200);
+
+            string modesRaw = (o.Modes ?? Env("LEVEL_MODES") ?? "bridge").Trim();
+            string[] modes = modesRaw.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(m => m.Trim().ToLowerInvariant())
+                .Where(m => m is "opencode" or "bridge")
+                .Distinct()
+                .ToArray();
+            if (modes.Length == 0) modes = new[] { "opencode", "bridge" };
 
             string testProj = Path.Combine(root, "Rochas.OpenCodeBridge.Test",
                 "Rochas.OpenCodeBridge.Test.csproj");
@@ -147,7 +183,8 @@ internal sealed class WarTemplate : CircuitTemplate
                 Cpu: cpu,
                 NoBuild: noBuild,
                 ForceBuild: forceBuild,
-                RetryAll: retryAll);
+                RetryAll: retryAll,
+                Modes: modes);
         }
     }
 
@@ -170,6 +207,14 @@ internal sealed class WarTemplate : CircuitTemplate
         "ERRO: .*|ok=false|permission|negad", RegexOptions.CultureInvariant);
     private static readonly Regex RxFixture = new(
         "artefato .*conteudo=''", RegexOptions.CultureInvariant);
+    // Estouro de contexto tem causa propria: o 400 exceed_context_size (ou o 413
+    // context_compact_required) nao e' "bridge fora do ar" nem "infra" — o log
+    // do teste mostra "bridge indisponivel" porque o cliente desiste apos as
+    // retentativas, e o rotulo generico escondia a causa real (medido 2026-10-31
+    // no E-mission-algo-cs-hanoi: 140146 tokens contra 131072 por slot).
+    private static readonly Regex RxContext = new(
+        "exceed_context_size|exceeds the available context size|context_compact_required",
+        RegexOptions.CultureInvariant);
     private static readonly Regex RxLevelDir = new(
         @"^L(\d+)-(.+)$", RegexOptions.CultureInvariant);
 
@@ -218,14 +263,36 @@ internal sealed class WarTemplate : CircuitTemplate
 
     private static int Run(WarOptions o, WarPaths p)
     {
+        // Piso de VRAM declarado pelo operador desce para o preflight de cada
+        // step (processo filho herda o env): lab full-VRAM nao tem 512 MiB de folga.
+        if (o.MinFreeVram is int minVram)
+            Environment.SetEnvironmentVariable("WAR_MIN_FREE_VRAM", minVram.ToString(CultureInfo.InvariantCulture));
         if (o.Pause) return ControlPause(p);
         if (o.Resume) return ControlResume(p);
         if (o.Status) return PrintStatus(p);
         if (o.All || !string.IsNullOrWhiteSpace(o.Levels) || o.From != 1)
             return RunAll(o, p);
+        // Zera UMA vez, só quando a bateria VAI RODAR. `--war-list` e
+        // `--war-gate-only` são leitura: sem este guard, listar steps zerava
+        // sonda, contadores e painel de um run EM CURSO (medido 2026-10-31,
+        // L3: três `--war-list` seguidos emitiram diag-reset no meio da belt
+        // roxa e apagaram o enunciado publicado do step que estava executando).
+        if (!o.List && !o.GateOnly && !IsParallelChild)
+        {
+            // Bridge alvo reiniciada UMA vez por rodada — mesma granularidade do
+            // diag/reset (restart de processo zera contadores e sonda).
+            if (!RestartBridgeOnce(p, null)) return 3;
+            // Credencial RESOLVIDA (p.Api) e nao a opcao crua: com o.ApiKey nulo o
+            // reset ia sem Authorization e a bridge respondia 401, deixando sonda,
+            // contadores e painel da rodada anterior no lugar.
+            TestContext.ResetDiagnostics(clearProbe: true, bridge: p.Bridge, required: false, apiKey: p.Api,
+                clearPanel: true);
+            // Painel de observacao sobe junto com a WAR (start; sem restart se ja ativo).
+            EnsureGrafana(null);
+        }
         return RunLevel(o, p, o.Level,
             o.Stamp ?? Env("LEVEL_STAMP") ?? NowStamp(),
-            o.GateOnly, lockHeld: false, globalLog: null);
+            o.GateOnly, lockHeld: IsParallelChild, globalLog: null);
     }
 
     private static int RunLevel(
@@ -243,6 +310,7 @@ internal sealed class WarTemplate : CircuitTemplate
             DefaultTimeoutSeconds: p.StepTimeout,
             RequireGreen: p.RequireGreen,
             AcquireLock: !gateOnly && !lockHeld,
+            StopOnFirstFailure: o.StopOnFirstFailure,
             LogSink: globalLog is null ? null : line => globalLog.WriteLine(line)), template);
 
         if (gateOnly) return GateOnly(template, driver);
@@ -256,6 +324,153 @@ internal sealed class WarTemplate : CircuitTemplate
         template.OnRunEnd(driver, gate);
         return template.RequireGreen && !gate.Green ? 1 : 0;
     }
+
+    /// <summary>
+    /// Sincroniza o contexto da suíte com o alvo REAL da bateria. O WAR despacha
+    /// para <c>RunMain</c> antes do parse normal (<c>Program.Main</c>), então
+    /// <c>--bridge/--api-key/--mode</c> não populam <see cref="TestContext"/>: ele
+    /// ficaria no default <c>:4124</c> e qualquer mecanismo in-process miraria a
+    /// porta errada (o restart escolhe a unit pela porta: 4124 <c>bridge-gpu</c>,
+    /// 4125 <c>bridge-gpu2</c>, 4126 <c>bridge-cpu-forced</c>). O modo só muda em
+    /// bateria opencode pura (o default já é <c>bridge</c>).
+    /// </summary>
+    /// <param name="p">Caminhos/opções resolvidos da bateria.</param>
+    private static void SyncBridgeContext(WarPaths p)
+    {
+        TestContext.Bridge = p.Bridge;
+        TestContext.ApiKey = p.Api;
+        if (p.Modes.Contains("opencode", StringComparer.OrdinalIgnoreCase)
+            && !p.Modes.Contains("bridge", StringComparer.OrdinalIgnoreCase))
+            TestContext.Mode = "opencode";
+    }
+
+    /// <summary>
+    /// Reinicia a bridge alvo UMA vez por bateria — mesma granularidade do
+    /// <c>diag/reset</c>, nunca por nível. Restart troca o processo e zera os
+    /// contadores de <c>/api/metrics</c>, a sonda e os arquivos contados, que são
+    /// POR VIDA DO PROCESSO: reiniciar no início de cada nível picava a leitura do
+    /// painel (medido no L4 de 2026-10-31 — <c>uptime_seconds</c> voltava a zero no
+    /// L2 e os contadores de cada nível recomeçavam).
+    /// </summary>
+    /// <param name="p">Caminhos/opções resolvidos da bateria.</param>
+    /// <param name="globalLog">Log global da bateria (nulo no nível único).</param>
+    /// <returns>True quando a bridge subiu com status válido; false = fail-fast.</returns>
+    private static bool RestartBridgeOnce(WarPaths p, TextWriter? globalLog)
+    {
+        SyncBridgeContext(p);
+        try
+        {
+            TestContext.RestartBridge();
+            LogGlobal(globalLog, $"[restart] bridge alvo reiniciada uma vez por bateria: {p.Bridge}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LogGlobal(globalLog,
+                $"BLOCKED: restart da bridge alvo falhou ({p.Bridge}): {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Reinicia o <c>grafana-server</c> no começo da esteira inteira: o painel
+    /// recarrega as séries do <c>/api/test/probe</c> e a lista de steps do zero,
+    /// sem herdar cache da rodada anterior. Observabilidade não decide PASS/FAIL —
+    /// falha aqui vira linha de aviso no log global, nunca BLOCKED.
+    /// </summary>
+    /// <param name="globalLog">Log global da bateria (console de níveis).</param>
+    private static void RestartGrafana(TextWriter? globalLog)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("sudo", "-n systemctl restart grafana-server")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            using var proc = Process.Start(psi);
+            if (proc is null)
+            {
+                LogGlobal(globalLog, "[grafana] restart nao iniciado (sudo indisponivel)");
+                return;
+            }
+            string err = proc.StandardError.ReadToEnd();
+            if (!proc.WaitForExit(90000) || proc.ExitCode != 0)
+            {
+                LogGlobal(globalLog, $"[grafana] restart falhou (exit={proc.ExitCode}): {err.Trim()}");
+                return;
+            }
+            LogGlobal(globalLog, "[grafana] restart ok — painel recarrega a rodada do zero");
+        }
+        catch (Exception ex)
+        {
+            LogGlobal(globalLog, $"[grafana] restart indisponivel: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+        }
+    }
+
+    /// <summary>
+    /// Garante o painel de observacao de pe junto com a WAR. Unidade inativa vira
+    /// <c>start</c> em qualquer rodada (nivel isolado incluso); rodada de nivel
+    /// unico com o servico ja ativo NAO reinicia — o operador pode estar com o
+    /// painel aberto e o restart apagaria o estado que ele esta lendo. A bateria
+    /// inteira (L1..L4) segue com o restart de <see cref="RestartGrafana"/>.
+    /// Falha no painel nunca vira BLOCKED: observabilidade nao decide PASS/FAIL.
+    /// </summary>
+    /// <param name="globalLog">Log global da bateria (pode ser nulo em nivel unico).</param>
+    private static bool EnsureGrafana(TextWriter? globalLog)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("sudo", "-n systemctl is-active grafana-server")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            using var check = Process.Start(psi);
+            if (check is null)
+            {
+                LogGlobal(globalLog, "[grafana] estado indisponivel (sudo nao iniciou)");
+                return false;
+            }
+            string state = check.StandardOutput.ReadToEnd().Trim();
+            check.WaitForExit(30000);
+            if (state == "active")
+            {
+                LogGlobal(globalLog, "[grafana] ja ativo — painel preservado");
+                return true;
+            }
+            using var start = Process.Start(new ProcessStartInfo("sudo", "-n systemctl start grafana-server")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            });
+            if (start is null) return false;
+            string err = start.StandardError.ReadToEnd();
+            if (!start.WaitForExit(90000) || start.ExitCode != 0)
+            {
+                LogGlobal(globalLog, $"[grafana] start falhou (exit={start.ExitCode}): {err.Trim()}");
+                return false;
+            }
+            LogGlobal(globalLog, "[grafana] start ok — painel sobe junto com a WAR :4800");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LogGlobal(globalLog, $"[grafana] start indisponivel: {ex.GetType().Name} {ex.Message.Split('\n')[0]}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Processo filho de bateria em raias (<c>--war-parallel</c>): o pai ja
+    /// reiniciou a bridge alvo, zerou sonda/painel e passou o guard de rebuild.
+    /// O filho nao repete nada disso (senao cada level derrubaria a raia vizinha)
+    /// e usa o slot que o llama alocar — ponteiro de raia em <c>WAR_LANE</c>.
+    /// </summary>
+    private static bool IsParallelChild => Env("WAR_PARALLEL_CHILD") is "1" or "true" or "yes";
 
     private static int RunAll(WarOptions o, WarPaths p)
     {
@@ -284,9 +499,39 @@ internal sealed class WarTemplate : CircuitTemplate
         }
 
         int failed = 0;
+        // Sonda zerada UMA vez por bateria (o run isolado ja faz o mesmo por ser a propria rodada).
+        // So quando a bateria vai RODAR: `--war-all --war-list` é leitura e nao
+        // pode zerar um run em curso (mesmo guard do caminho de level unico).
+        if (!o.List)
+        {
+            // Bridge alvo reiniciada UMA vez por bateria — mesma granularidade do
+            // diag/reset. Medido no L4 de 2026-10-31: reiniciar no inicio de cada
+            // nivel zerava contadores/sonda/painel a cada nivel.
+            if (!RestartBridgeOnce(p, globalLog)) return 3;
+            // Credencial RESOLVIDA (p.Api) e nao a opcao crua: com o.ApiKey nulo o
+            // reset ia sem Authorization e a bridge respondia 401, deixando sonda,
+            // contadores e painel da rodada anterior no lugar.
+            TestContext.ResetDiagnostics(clearProbe: true, bridge: p.Bridge, required: false, apiKey: p.Api,
+                clearPanel: true);
+        }
+        // Esteira INTEIRA (L1..L4) recomeça também o Grafana: o painel relê as séries
+        // e o plugin Infinity do zero, sem arrastar cache/estado da rodada anterior.
+        // Nível isolado (`--war-level N`) não mexe no painel de quem está olhando.
+        if (!o.List)
+        {
+            // Bateria L1..L4 reinicia o painel; lista/level unico preserva o que
+            // o operador esta vendo (EnsureGrafana so faz start se estiver fora).
+            if (levels.Count > 1) RestartGrafana(globalLog);
+            else EnsureGrafana(globalLog);
+        }
+        if (o.Parallel && levels.Count > 1 && !o.List)
+            return RunParallel(o, p, levels, stamp, globalLog, driverSummary);
         LogGlobal(globalLog, $"=== run-all-levels {stamp} (levels: {string.Join(",", levels)}) ===");
         LogGlobal(globalLog, $"repo: {p.Root}");
         LogGlobal(globalLog, $"artefatos: {p.OutBase}");
+        LogGlobal(globalLog, o.StopOnFirstFailure
+            ? "fail-fast: ON (para no primeiro FAIL/STALE/BLOCKED e nao segue de nivel)"
+            : "fail-fast: OFF (--war-no-stop-on-fail: segue mesmo com FAIL)");
 
         foreach (int lvl in levels)
         {
@@ -307,8 +552,16 @@ internal sealed class WarTemplate : CircuitTemplate
             if (rc != 0)
             {
                 failed++;
+                if (o.StopOnFirstFailure)
+                {
+                    LogGlobal(globalLog,
+                        $"Level {lvl} VERMELHO (rc={rc}) — PARADA fail-fast: nao segue para o proximo nivel.");
+                    LogGlobal(globalLog,
+                        $"  retomar: dotnet run --project {p.TestProj} -c Release -- --war-level {lvl} --war-stamp {lvlStamp}");
+                    break;
+                }
                 LogGlobal(globalLog,
-                    $"Level {lvl} VERMELHO (rc={rc}) — registrado; SEGUINDO para o proximo nivel.");
+                    $"Level {lvl} VERMELHO (rc={rc}) — registrado; SEGUINDO para o proximo nivel (--war-no-stop-on-fail).");
                 LogGlobal(globalLog,
                     $"  retomar: dotnet run --project {p.TestProj} -c Release -- --war-level {lvl} --war-stamp {lvlStamp}");
             }
@@ -328,6 +581,121 @@ internal sealed class WarTemplate : CircuitTemplate
         }
         LogGlobal(globalLog,
             $"=== TODOS OS LEVELS DA TRILHA VERDES ({DateTime.Now:yyyy-MM-dd HH:mm:ss}) ===");
+        return 0;
+    }
+
+    /// <summary>
+    /// Bateria em raias (<c>--war-parallel</c>): dispara um filho por level e
+    /// espera todos. Cada filho roda com <c>--war-level N</c> e os ponteiros
+    /// <c>WAR_LANE=N</c> + <c>WAR_PARALLEL_CHILD=1</c>, entao nao reinicia a
+    /// bridge, nao zera sonda/painel do vizinho e nao repete o guard. Dentro da
+    /// raia os steps seguem sequenciais; o painel separa as linhas pelo campo
+    /// <c>level</c> publicado em <c>/api/test/step</c>. Fail-fast nao mata raia
+    /// ja disparada: FAIL fica registrado, o exit e' 1 e o resumo aponta o level.
+    /// </summary>
+    private static int RunParallel(WarOptions o, WarPaths p, List<int> levels, string stamp,
+        TextWriter globalLog, string driverSummary)
+    {
+        var bins = BinaryGuard.ForWar(p.BridgeDll, p.TestDll, p.WebTestDll);
+        var guard = BinaryGuard.Check(
+            new BinaryGuard.Binaries(bins.Sha512, p.BridgeDll + "\n" + p.TestDll + "\n" + p.WebTestDll),
+            Path.Combine(p.Root, "logs", ".rerun-guard.json"));
+        if (o.StopOnFirstFailure && !guard.Allowed)
+        {
+            LogGlobal(globalLog, $"BLOCKED: rerun-guard — {guard.Reason}");
+            return 3;
+        }
+        LogGlobal(globalLog, $"[guard] {guard.Reason}");
+        // Fail-fast em raias so vale DENTRO da raia: o pai nao mata processo irmao
+        // ja em curso (o level vermelho registra rc e o resumo aponta qual).
+        LogGlobal(globalLog, o.StopOnFirstFailure
+            ? "fail-fast: DENTRO de cada raia (level vermelho para a raia; raias irmas seguem ate o fim)"
+            : "fail-fast: OFF (--war-no-stop-on-fail)");
+
+        // Args do pai viram base do filho, sem o que e' por-level/por-run.
+        var raw = Environment.GetCommandLineArgs().Skip(1).ToList();
+        string[] dropWithValue =
+        {
+            "--war-level", "--war-levels", "--war-out", "--war-stamp",
+            "--war-from", "--war-to", "--war-resume-stamp", "--war-resume-level"
+        };
+        var childArgs = new List<string>();
+        for (int i = 0; i < raw.Count; i++)
+        {
+            string a = raw[i];
+            if (dropWithValue.Contains(a)) { i++; continue; }
+            if (a is "--war-all" or "--war-list" or "--war-gate-only" or "--war-parallel" or "--war-help")
+                continue;
+            childArgs.Add(a);
+        }
+
+        string exe = Environment.ProcessPath ?? "dotnet";
+        string self = Environment.GetCommandLineArgs()[0];
+        bool viaDotnet = Path.GetFileNameWithoutExtension(exe).Equals("dotnet",
+            StringComparison.OrdinalIgnoreCase);
+        string Quote(string s) => "'" + s.Replace("'", "'\\''") + "'";
+
+        var runs = new List<(int Level, Process Proc, string Dir)>();
+        foreach (int lvl in levels)
+        {
+            string dir = Path.Combine(p.OutBase, $"L{lvl}-{stamp}");
+            string console = Path.Combine(p.OutBase, $"L{lvl}-{stamp}.console.log");
+            var cmd = new StringBuilder();
+            cmd.Append("cd ").Append(Quote(p.Root)).Append(" && ");
+            cmd.Append(Quote(exe)).Append(' ');
+            if (viaDotnet) cmd.Append(Quote(self)).Append(' ');
+            foreach (string a in childArgs) cmd.Append(Quote(a)).Append(' ');
+            cmd.Append("--war-level ").Append(lvl).Append(' ');
+            cmd.Append("--war-out ").Append(Quote(p.OutBase)).Append(' ');
+            cmd.Append("> ").Append(Quote(console)).Append(" 2>&1");
+
+            var psi = new ProcessStartInfo("bash")
+            {
+                UseShellExecute = false,
+                WorkingDirectory = p.Root,
+            };
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add(cmd.ToString());
+            psi.Environment["WAR_PARALLEL_CHILD"] = "1";
+            psi.Environment["WAR_LANE"] = lvl.ToString(CultureInfo.InvariantCulture);
+            psi.Environment["LEVEL_STAMP"] = stamp;
+            psi.Environment["LEVEL_OUT"] = p.OutBase;
+
+            var proc = Process.Start(psi)
+                ?? throw new InvalidOperationException($"raia {lvl}: bash nao iniciou");
+            runs.Add((lvl, proc, dir));
+            LogGlobal(globalLog,
+                $"[raia {lvl}] disparada (slot livre do llama) -> {dir} (console: {Path.GetFileName(console)})");
+        }
+
+        int failed = 0;
+        foreach (var (lvl, proc, dir) in runs)
+        {
+            proc.WaitForExit();
+            int rc = proc.ExitCode;
+            proc.Dispose();
+            File.AppendAllText(driverSummary, $"{lvl}\t{rc}\t{stamp}\t{dir}\n");
+            if (rc != 0)
+            {
+                failed++;
+                LogGlobal(globalLog, $"############ RAIA {lvl} -> rc={rc} VERMELHA ({DateTime.Now:yyyy-MM-dd HH:mm:ss}) ############");
+            }
+            else
+            {
+                LogGlobal(globalLog, $"############ RAIA {lvl} -> rc=0 VERDE ({DateTime.Now:yyyy-MM-dd HH:mm:ss}) ############");
+            }
+        }
+
+        LogGlobal(globalLog, "");
+        if (failed > 0)
+        {
+            LogGlobal(globalLog,
+                $"=== RAIAS CONCLUIDAS COM {failed} LEVEL(S) VERMELHO(S) === (fail-fast nao aborta raia em curso)");
+            LogGlobal(globalLog, $"resumo: {driverSummary}");
+            return 1;
+        }
+        LogGlobal(globalLog,
+            $"=== TODAS AS RAIAS VERDES ({DateTime.Now:yyyy-MM-dd HH:mm:ss}) ===");
         return 0;
     }
 
@@ -377,6 +745,11 @@ internal sealed class WarTemplate : CircuitTemplate
         // step_end -> bridge (painel); o driver nao conhece a bridge.
         Environment.SetEnvironmentVariable("WAR_EVENT_URL", _p.Bridge + "/api/test/step");
         Environment.SetEnvironmentVariable("WAR_EVENT_KEY", _p.Api);
+
+        // O WAR despacha para RunMain ANTES do parse normal (Program.Main), entao
+        // --bridge/--api-key/--mode nao popolam o contexto da suite: ele ficaria no
+        // default :4124 e qualquer mecanismo in-process miraria a porta errada.
+        SyncBridgeContext(_p);
 
         driver.Publish(new JsonObject
         {
@@ -462,65 +835,182 @@ internal sealed class WarTemplate : CircuitTemplate
 
     public override IEnumerable<CircuitStepSpec> Steps(TestCircuitDriver driver)
     {
+        foreach (CircuitStepSpec step in AllSteps(driver))
+            if (MatchesStep(step.Name))
+                yield return step;
+    }
+
+    /// <summary>Filtro --war-only: substring (ou lista com virgula) do nome do step.</summary>
+    private bool MatchesStep(string name)
+    {
+        if (string.IsNullOrWhiteSpace(_o.OnlySteps)) return true;
+        foreach (string token in _o.OnlySteps.Split(',',
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            if (name.Contains(token, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Fatiamento de <c>integration-{mode}</c> (L1): um step por cenario, na ordem
+    /// do <c>Program.Run</c>. Mesmo motivo do <c>topics</c>: o step com seis testes
+    /// nao dizia no painel qual deles parou. Todos os tokens levam <c>=</c>
+    /// (nome exato) porque <c>--only</c> e' substring.
+    /// </summary>
+    private static readonly (string Suffix, string Test)[] IntegrationStepFilters =
+    {
+        ("stream", "E-stream-architect"),
+        ("review", "E-review-architect"),
+        ("iot", "E-iot-event-queue"),
+        ("error", "E-error-mitigation"),
+        ("fullcycle", "E-full-cycle-iot-queue-push"),
+        ("healthy", "E-healthy-concurrency")
+    };
+
+    /// <summary>
+    /// Fatiamento de <c>topics-{mode}</c> (L1): um step por tema, na ordem do
+    /// <c>Program.Run</c>. Mesmo motivo do <c>mission-algo</c> (L4): o step agregado
+    /// de dez cenarios nao dizia no painel qual deles falhou; aqui o nome do step
+    /// ja e o tema (<c>e-topics-ent-crud-bridge</c>, <c>e-topics-senior-erp-bridge</c>).
+    /// O CRUD vai num step so' (tres cenarios do mesmo tema, filtrados por
+    /// <c>E-ent-crud</c>); o resto e' um por teste.
+    /// </summary>
+    private static readonly (string Suffix, string Filter)[] TopicStepFilters =
+    {
+        ("senior-react", "E-senior-react"),
+        ("senior-bus", "E-senior-bus"),
+        ("senior-erp", "E-senior-erp"),
+        ("senior-arm", "E-senior-arm"),
+        ("ent-crud", "E-ent-crud"),
+        ("ent-worker", "E-ent-worker"),
+        ("ent-redis", "E-ent-redis"),
+        ("ent-dashboard", "E-ent-dashboard")
+    };
+
+    private IEnumerable<CircuitStepSpec> AllSteps(TestCircuitDriver driver)
+    {
         switch (_level)
         {
+            // L1: nucleo + integracao + topicos. Units primeiro (fail-fast
+            // barato); depois os cenarios de arquitetura e de dominio.
             case 1:
-                // L1 canônico: opencode primeiro (sem MainHarness; tails +
-                // anti-repeat) e bridge depois (MainHarness + tails + anti-repeat).
-                // Unidades por ultimo: o teste U-metrics-ring3-shell incrementa
-                // ring3 de proposito; rodar isso primeiro faria o painel mostrar
-                // ring3 subindo antes de qualquer cenario real.
-                foreach (string mode in new[] { "opencode", "bridge" })
+                // Units sao da bridge (HTTP), nao do opencode: roda uma vez.
+                yield return StepBridge(driver, "units", "bridge",
+                    new[] { "--only", "U-" });
+                foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"devpipe-{mode}", mode,
-                        new[] { "--only", "E-devpipe" });
-                    // Tools completas ja incluem o ciclo do antigo dual (pasta, git,
-                    // arquivo, edit, commits e historico_git.log).
-                    yield return StepBridge(driver, $"tools-full-{mode}", mode,
-                        new[] { "--only", "E-tools-full" });
-                    yield return StepBridge(driver, $"belts-build-{mode}", mode,
-                        new[] { "--only", "E-belts-build-direct", "--belts", "azul,verde" });
-                    yield return StepBridge(driver, $"belts-orch-{mode}", mode,
-                        new[] { "--only", "E-belts-direct", "--belts", "azul,verde" });
-                    yield return StepBridge(driver, $"units-{mode}", mode,
-                        new[] { "--only", "U-" });
+                    // Integracao UM A UM (2026-10-30): seis cenarios num step so'
+                    // escondia o culpado. Mesmo padrao do topics.
+                    foreach ((string suffix, string test) in IntegrationStepFilters)
+                        yield return StepBridge(driver, $"e-integration-{suffix}-{mode}", mode,
+                            new[] { "--only", "=" + test });
+                    // Topicos por TEMA (2026-10-30): o step agregado `topics-{mode}`
+                    // escondia QUAL dos dez testes parou (mesmo padrao do fatiamento
+                    // de mission-algo em L4). Cada tema vira step proprio no painel
+                    // (prefixo `e-topics-`) e o FAIL para nele, no nome do cenario.
+                    // Token sem `=`: substring de um so' casa o teste unico; o
+                    // `E-ent-crud` pega os tres CRUD de proposito (mesmo tema).
+                    foreach ((string suffix, string filter) in TopicStepFilters)
+                        yield return StepBridge(driver, $"e-topics-{suffix}-{mode}", mode,
+                            new[] { "--only", filter });
                 }
                 break;
 
+            // L2: tools completas + belts azul/verde (build e orch), UMA BELT
+            // POR STEP (2026-10-30): `--belts azul,verde` num step so' escondia
+            // em qual faixa parou.
             case 2:
-                foreach (string mode in new[] { "opencode", "bridge" })
+                foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"mission-tools-{mode}", mode,
-                        new[] { "--only", "E-mission-tools" });
-                    yield return StepBridge(driver, $"responses-tools-{mode}", mode,
-                        new[] { "--only", "E-responses-tools" });
-                    yield return StepBridge(driver, $"science-gpu-{mode}", mode,
-                        new[] { "--only", "E-science-gpu" });
-                    if (_p.Cpu)
-                        yield return StepBridge(driver, $"science-cpu-{mode}", mode,
-                            new[] { "--only", "E-science-cpu" });
-                    else
-                        driver.Log($"SKIP science-cpu-{mode} (LEVEL_CPU=0)");
-                    yield return StepBridge(driver, $"belts-build-roxa-{mode}", mode,
+                    yield return StepBridge(driver, $"e-responses-tools-{mode}", mode,
+                        new[] { "--only", "=E-responses-tools" });
+                    yield return StepBridge(driver, $"e-tools-full-{mode}", mode,
+                        new[] { "--only", "=E-tools-full" });
+                    // Ordem preservada: trilha Build primeiro, trilha Orch depois.
+                    foreach (string belt in new[] { "azul", "verde" })
+                        yield return StepBridge(driver, $"e-belts-{belt}-build-{mode}", mode,
+                            new[] { "--only", "E-belts-build-direct", "--belts", belt });
+                    foreach (string belt in new[] { "azul", "verde" })
+                        yield return StepBridge(driver, $"e-belts-{belt}-orch-{mode}", mode,
+                            new[] { "--only", "E-belts-direct", "--belts", belt });
+                }
+                break;
+
+            // L3: cientifico GPU + mission tools + belt roxa (build e orch).
+            case 3:
+                foreach (string mode in _p.Modes)
+                {
+                    yield return StepBridge(driver, $"e-science-gpu-{mode}", mode,
+                        new[] { "--only", "=E-science-gpu" });
+                    yield return StepBridge(driver, $"e-mission-tools-{mode}", mode,
+                        new[] { "--only", "=E-mission-tools" });
+                    yield return StepBridge(driver, $"e-belts-roxa-build-{mode}", mode,
                         new[] { "--only", "E-belts-build-direct", "--belts", "roxa" });
-                    yield return StepBridge(driver, $"belts-orch-roxa-{mode}", mode,
+                    yield return StepBridge(driver, $"e-belts-roxa-orch-{mode}", mode,
                         new[] { "--only", "E-belts-direct", "--belts", "roxa" });
                 }
                 break;
 
-            case 3:
-                foreach (string mode in new[] { "opencode", "bridge" })
+            // L4: mission algo em C# (hanoi + bin/btree/kmeans/sort) + belts
+            // marrom/preta (uma por step) + frontend (um teste por step) e Web UI.
+            // A trilha F# (bin/btree/sort) foi ARQUIVADA em 2026-10-30 (ver
+            // Archived/FsAlgoMissions.cs): o modelo alternava PASS/FAIL no mesmo
+            // enunciado e o FAIL bloqueava o L4.
+            case 4:
+                foreach (string mode in _p.Modes)
                 {
-                    yield return StepBridge(driver, $"belts-build-final-{mode}", mode,
-                        new[] { "--only", "E-belts-build-direct", "--belts", "marrom,preta" });
-                    yield return StepBridge(driver, $"belts-orch-final-{mode}", mode,
-                        new[] { "--only", "E-belts-direct", "--belts", "marrom,preta" });
+                    // Smoke de ctx PRIMEIRO (2s, sem GPU): força o 400
+                    // exceed_context_size contra o llama real e prova a escalada
+                    // nudge -> compactacao -> 413. E' o mecanismo que segura o
+                    // hanoi abaixo (substring pega E-ctx-overflow e -exhaust).
+                    yield return StepBridge(driver, $"e-ctx-overflow-{mode}", mode,
+                        new[] { "--only", "E-ctx-overflow" });
+                    yield return StepBridge(driver, $"e-algo-cs-hanoi-{mode}", mode,
+                        new[] { "--only", "=E-mission-algo-cs-hanoi" });
+                    yield return StepBridge(driver, $"e-algo-cs-primes-{mode}", mode,
+                        new[] { "--only", "=E-mission-algo-cs-primes" });
+                    yield return StepBridge(driver, $"e-algo-cs-bin-{mode}", mode,
+                        new[] { "--only", "=E-mission-algo-cs-bin" });
+                    yield return StepBridge(driver, $"e-algo-cs-btree-{mode}", mode,
+                        new[] { "--only", "=E-mission-algo-cs-btree" });
+                    yield return StepBridge(driver, $"e-algo-cs-kmeans-{mode}", mode,
+                        new[] { "--only", "=E-mission-algo-cs-kmeans" });
+                    yield return StepBridge(driver, $"e-algo-cs-sort-{mode}", mode,
+                        new[] { "--only", "=E-mission-algo-cs-sort" });
+                    foreach (string belt in new[] { "marrom", "preta" })
+                        yield return StepBridge(driver, $"e-belts-{belt}-build-{mode}", mode,
+                            new[] { "--only", "E-belts-build-direct", "--belts", belt });
+                    foreach (string belt in new[] { "marrom", "preta" })
+                        yield return StepBridge(driver, $"e-belts-{belt}-orch-{mode}", mode,
+                            new[] { "--only", "E-belts-direct", "--belts", belt });
+                    // Front mede pelo snapshot estatico (Razor/CSS/TSX) — o navegador
+                    // do --war-webdriver e' SO' do ultimo step (webui-integracao-topicos).
+                    // Medido 2026-10-30: com --webdriver aqui a sonda abria janela headed,
+                    // nao demonstrava nada e o baseline estourava Timeout 30000ms.
+                    // Front: a fase de EDICAO (E-front-edit*) exige a GPU2 (role exec).
+                    // Na trilha Q4-only (sem GPU2) o bloco inteiro e' pulado; com GPU2
+                    // cada teste vira step proprio (2026-10-30) — gen/edit/edit-razor/
+                    // edit-react/verify. `=` porque `E-front-edit` e' prefixo de
+                    // `-edit-razor`/`-edit-react`.
+                    if (TestContext.Gpu2Bridge is not null)
+                    {
+                        yield return StepBridge(driver, $"e-front-gen-{mode}", mode,
+                            new[] { "--only", "=E-front-gen" });
+                        yield return StepBridge(driver, $"e-front-edit-{mode}", mode,
+                            new[] { "--only", "=E-front-edit" });
+                        yield return StepBridge(driver, $"e-front-edit-razor-{mode}", mode,
+                            new[] { "--only", "=E-front-edit-razor" });
+                        yield return StepBridge(driver, $"e-front-edit-react-{mode}", mode,
+                            new[] { "--only", "=E-front-edit-react" });
+                        yield return StepBridge(driver, $"e-front-verify-{mode}", mode,
+                            new[] { "--only", "=E-front-verify" });
+                    }
                 }
                 yield return StepWeb(driver);
                 break;
 
             default:
-                throw new ArgumentException($"level invalido: {_level} (use 1..3)");
+                throw new ArgumentException($"level invalido: {_level} (use 1..4)");
         }
     }
 
@@ -540,6 +1030,11 @@ internal sealed class WarTemplate : CircuitTemplate
             ["green"] = gate.Green
         });
         driver.Log($"artefatos: {_out} (events.jsonl + summary.tsv)");
+        // Nao deixa a env vazar para os testes unitarios do proximo nivel:
+        // sem isso, UnitCircuitTests publica steps fake (bad/once/p1...) no
+        // /api/test/step e eles aparecem em "Steps concluidos".
+        Environment.SetEnvironmentVariable("WAR_EVENT_URL", null);
+        Environment.SetEnvironmentVariable("WAR_EVENT_KEY", null);
     }
 
     // ---------------------------------------------------------------------
@@ -578,16 +1073,42 @@ internal sealed class WarTemplate : CircuitTemplate
             Verdict: run => VerdictForTest(driver, run));
     }
 
+    /// <summary>URL da Web UI do step de integracao (<c>--war-webdriver-url</c>).</summary>
+    private string WebUrl() => string.IsNullOrWhiteSpace(_o.WebDriverUrl)
+        ? "http://127.0.0.1:4130"
+        : _o.WebDriverUrl!;
+
     private CircuitStepSpec StepWeb(TestCircuitDriver driver)
     {
         const string name = "webui-integracao-topicos";
         if (!File.Exists(_p.WebTestDll))
             driver.Log("ERRO: Web.Test nao buildado");
+        // --war-webdriver: a Web UI e' exercitada pelo navegador (Playwright), com a
+        // janela aberta quando --war-headed. Sem a flag o step roda so' unit+integracao
+        // HTTP, como antes.
+        // Faixas do step: azul (Orch executa/delega + face Plan em texto puro com o
+        // raciocínio na bolha) e moe (tópicos gerais, cada tema num subagente MoE).
+        string webUiBelts = string.IsNullOrWhiteSpace(_o.WebUiBelts) ? "azul,moe" : _o.WebUiBelts!;
+        var webArgs = _o.WebDriver
+            ? new[]
+            {
+                "exec", _p.WebTestDll, "--web", WebUrl(),
+                // phase "full": as duas faces da UI na mesma faixa — perfil declarado
+                // na faixa (orch/build, usa tools) + perfil Plan (sem tools, reasoning
+                // renderizado na bolha).
+                "--ui", "--phase", "full", "--belts", webUiBelts,
+                // smoke deterministico do hello (login + /Chat + engine) na mesma janela.
+                "--simple"
+            }
+            : new[] { "exec", _p.WebTestDll };
+        driver.Log(_o.WebDriver
+            ? $"[webui] Playwright em {WebUrl()} (headed={(_o.WebHeaded ? "1" : "0")}, belts={webUiBelts})"
+            : "[webui] sem --war-webdriver: so' unit + integracao HTTP");
         return new CircuitStepSpec(
             Name: name,
             Command: new CircuitCommand(
                 Execution.Resolve("dotnet"),
-                new[] { "exec", _p.WebTestDll }, _p.Root, ChildEnv()),
+                webArgs, _p.Root, ChildEnv()),
             TimeoutSeconds: _p.StepTimeout,
             Mode: "web",
             RunTag: _hashGit,
@@ -605,10 +1126,39 @@ internal sealed class WarTemplate : CircuitTemplate
                 && (_p.RetryAll || run.ExitCode is 124 or 137));
     }
 
+    /// <summary>
+    /// Trava de hash ANTES do step: se o binario (test/bridge) mudou desde o
+    /// <c>OnRunStart</c>, aborta na hora com BLOCKED em vez de gastar o step
+    /// inteiro para descobrir depois (medido 2026-11-03: 232s de GPU perdidos
+    /// em STALE porque o operador rebuildeu o PROD no meio da bateria). Editar
+    /// fonte/rebuidar durante a rodada e' erro de processo, nao resultado de teste.
+    /// </summary>
+    public override CircuitStepResult? BeforeStep(TestCircuitDriver driver, CircuitStepSpec step)
+    {
+        string nowTest = Hash(_p.TestDll);
+        string nowBridge = Hash(_p.BridgeDll);
+        if (nowTest == _initHashTest && nowBridge == _hashBridge) return null;
+
+        static string Short(string h) => h.Length >= 12 ? h[..12] : h;
+        string cause =
+            $"binario mudou durante o run (test {Short(_initHashTest)}->{Short(nowTest)}, " +
+            $"bridge {Short(_hashBridge)}->{Short(nowBridge)})";
+        driver.Publish(new JsonObject
+        {
+            ["t"] = "step_stale_precheck",
+            ["step"] = step.Name,
+            ["test_sha_inicio"] = _initHashTest,
+            ["test_sha_agora"] = nowTest,
+            ["bridge_sha_inicio"] = _hashBridge,
+            ["bridge_sha_agora"] = nowBridge
+        });
+        return new CircuitStepResult(step.Name, CircuitVerdict.Fail, 0, 3, cause, 0,
+            Path.Combine(_out, "steps", step.Name + ".test.log"));
+    }
+
     private CircuitStepOutcome VerdictForTest(
         TestCircuitDriver driver, CircuitStepRun run)
-    {
-        CircuitStepOutcome outcome = ParseLogVerdict(run.LogPath, run.ExitCode);
+    {        CircuitStepOutcome outcome = ParseLogVerdict(run.LogPath, run.ExitCode);
         if (Hash(_p.TestDll) != _initHashTest)
         {
             string now = Hash(_p.TestDll);
@@ -692,6 +1242,9 @@ internal sealed class WarTemplate : CircuitTemplate
         string text = File.Exists(logPath) ? File.ReadAllText(logPath) : "";
         if (RxInfra.IsMatch(text)) return "infra";
         if (text.Contains("calls=)", StringComparison.Ordinal)) return "executor";
+        // Antes de "bridge": o estouro de ctx termina em "bridge indisponivel" no
+        // log do cliente, mas a causa medida e' o 400 seco do llama.
+        if (RxContext.IsMatch(text)) return "contexto";
         if (RxBridge.IsMatch(text)) return "bridge";
         if (RxFixture.IsMatch(text)) return "fixture";
         return "undetermined";
@@ -704,6 +1257,14 @@ internal sealed class WarTemplate : CircuitTemplate
     {
         _pfFail.Clear();
         driver.Log("=== preflight ===");
+
+        // O restart da bridge alvo NAO roda aqui. O preflight e' POR NIVEL e restart
+        // de processo zera os contadores de /api/metrics, a sonda e os arquivos
+        // contados (sao por vida do processo) — reiniciar a cada nivel picava o
+        // painel. Ele acontece UMA vez por bateria, em Run()/RunAll(), junto do
+        // diag/reset (mesma granularidade). Medido no L4 de 2026-10-31:
+        // `uptime_seconds` voltava a zero no inicio do L2 e a leitura por nivel
+        // recomecava do zero.
 
         int upPort = PortOf(_p.Upstream, 4100);
         var health = HttpGet($"http://127.0.0.1:{upPort}/health", null);
@@ -720,7 +1281,10 @@ internal sealed class WarTemplate : CircuitTemplate
         if (props.Code == 200)
         {
             var j = TryJson(props.Body);
+            // llama expoe n_ctx em default_generation_settings (nao no top-level).
             nctx = Str(j, "n_ctx");
+            if (string.IsNullOrEmpty(nctx))
+                nctx = Str(j?["default_generation_settings"]?.AsObject(), "n_ctx");
             slots = Str(j, "total_slots");
             modelPath = Str(j, "model_path");
         }
@@ -758,9 +1322,11 @@ internal sealed class WarTemplate : CircuitTemplate
                 ["temperature"] = btemp,
                 ["main_harness"] = bmain,
                 ["harness_tails"] = btails,
+                ["anti_repeat"] = Str(st, "anti_repeat"),
+                ["slot"] = Str(st, "slot"),
                 ["context_tokens"] = bctx
             });
-            // Gate duro: o WAR sempre roda steps de bridge (L1..L3). Bridge
+            // Gate duro: o WAR sempre roda steps de bridge (L1..L4). Bridge
             // gerido sem MainHarness = modelo orfao de base, so tails. Nao e
             // aviso: aborta o preflight com a correcao explicita. O modo
             // opencode puro (fora do WAR) pode viver sem a base, porque usa o
@@ -773,6 +1339,70 @@ internal sealed class WarTemplate : CircuitTemplate
                     ["main_harness"] = bmain,
                     ["fix"] = "ligue --main-harness 1 na unit do bridge (WAR roda steps de bridge)"
                 });
+
+            // REGRA PRIMORDIAL: cauda de tools e obrigatoria para todo teste que
+            // ENUNCIA uso de tools. Sem ela o modelo perde o contrato operacional
+            // (read/write/edit/glob/...), que nao vai duplicado na prosa. O gate e
+            // o STATUS da bridge (da onde le os flags efetivos): as duas caudas
+            // ligadas (behavior + tools) e --tail-scope != off. `harness_tails` e'
+            // o alias legado: binario antigo so' expoe ele, entao cai nele.
+            string bscope = Str(st, "tail_scope");
+            bool tailsOk = !string.Equals(bscope, "off", StringComparison.OrdinalIgnoreCase)
+                    && On(st, "behavior_tail", "harness_tails")
+                    && On(st, "tools_tail_flag", "harness_tails");
+            var tailsEvidence = new JsonObject
+            {
+                ["bridge"] = _p.Bridge,
+                ["tail_scope"] = bscope,
+                ["harness_tails"] = btails,
+                ["behavior_tail"] = Str(st, "behavior_tail"),
+                ["tools_tail"] = Str(st, "tools_tail_flag"),
+                ["fix"] = "ligue --harness-behavior 1 --harness-tools 1 --tail-scope all|managed (ou o alias --harness-tails 1)"
+            };
+            if (tailsOk || !_o.NoTailsGate)
+                Pf(driver, "harness_tails_status", tailsOk, tailsEvidence);
+            else
+            {
+                // Relaxamento EXPLICITO do operador (--war-no-tails-gate): a
+                // bateria roda contra o modelo sem caudas e o preflight registra
+                // o motivo no evento e no console — nunca em silencio.
+                tailsEvidence["relaxado_por"] = "--war-no-tails-gate";
+                driver.Publish(new JsonObject
+                {
+                    ["t"] = "preflight_aviso",
+                    ["check"] = "harness_tails_status",
+                    ["ok"] = false,
+                    ["evidence"] = tailsEvidence
+                });
+                driver.Log($"preflight AVISO: harness_tails_status reprovado e RELAXADO por --war-no-tails-gate {tailsEvidence.ToJsonString()}");
+            }
+
+            // Anti-repeat: gate proprio, simetrico ao de tails. O padrao do
+            // laboratorio e anti-repeat LIGADO na bridge alvo; o operador que
+            // quer medir o modelo sem ele passa --war-no-anti-repeat-gate (o
+            // relaxamento fica registrado no preflight, nunca em silencio).
+            bool arOk = On(st, "anti_repeat", "anti_repeat");
+            var arEvidence = new JsonObject
+            {
+                ["bridge"] = _p.Bridge,
+                ["anti_repeat"] = Str(st, "anti_repeat"),
+                ["anti_repeat_flag"] = Str(st, "anti_repeat_flag"),
+                ["fix"] = "ligue --anti-repeat 1 (ou passe --war-no-anti-repeat-gate para medir sem ele)"
+            };
+            if (arOk || !_o.NoAntiRepeatGate)
+                Pf(driver, "anti_repeat_status", arOk, arEvidence);
+            else
+            {
+                arEvidence["relaxado_por"] = "--war-no-anti-repeat-gate";
+                driver.Publish(new JsonObject
+                {
+                    ["t"] = "preflight_aviso",
+                    ["check"] = "anti_repeat_status",
+                    ["ok"] = false,
+                    ["evidence"] = arEvidence
+                });
+                driver.Log($"preflight AVISO: anti_repeat_status reprovado e RELAXADO por --war-no-anti-repeat-gate {arEvidence.ToJsonString()}");
+            }
         }
 
         Pf(driver, "bridge_upstream",
@@ -782,21 +1412,43 @@ internal sealed class WarTemplate : CircuitTemplate
                 ["bridge_upstream"] = string.IsNullOrEmpty(bup) ? _p.Upstream : bup,
                 ["esperado"] = _p.Upstream
             });
+        // REGRA PRIMORDIAL: o host declara o ctx TOTAL (--context-tokens) e os slots
+        // (--context-slots); o llama reporta o ctx POR SLOT em /props.n_ctx (uma
+        // request so cabe num slot). O gate compara o por-slot da bridge (total /
+        // slots) com o do llama — mesma invariante, agora contando os slots
+        // (medido 2026-10-30: total 524288, -np 4, por-slot 131072). Antes o gate
+        // exigia total == n_ctx e reprovava a configuração certa (BLOCKED L1).
+        string bslots = Str(st, "context_slots");
+        string bctxSlot = bctx;
+        if (int.TryParse(bctx, out int ctxTotal) && int.TryParse(string.IsNullOrEmpty(bslots) ? "1" : bslots, out int nSlots) && nSlots > 0)
+            bctxSlot = (ctxTotal / nSlots).ToString();
         Pf(driver, "bridge_context_tokens",
-            string.IsNullOrEmpty(nctx) || string.IsNullOrEmpty(bctx) || nctx == bctx,
-            new JsonObject { ["context_tokens"] = bctx, ["n_ctx_slot"] = nctx });
+            string.IsNullOrEmpty(nctx) || string.IsNullOrEmpty(bctxSlot) || nctx == bctxSlot,
+            new JsonObject
+            {
+                ["context_tokens"] = bctx,
+                ["context_slots"] = bslots,
+                ["n_ctx_slot"] = nctx,
+                ["bridge_ctx_slot"] = bctxSlot
+            });
 
-        // Q3 nao faz parte do gate do Q4: checagem apenas informativa. A belt
-        // belts-orch chama :4125 por design, mas Q3 fora nao bloqueia o run.
-        string q3Bridge = (_p.BridgeQ3 ?? "http://127.0.0.1:4125").TrimEnd('/');
-        if (!string.Equals(q3Bridge, _p.Bridge.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+        // Linha GPU2 (Q3) NAO faz parte do gate do Q4: quando configurada
+        // (`--war-bridge-q3` / WAR_GPU2_BRIDGE) a checagem e' informativa; quando
+        // nao esta, a rodada e' Q4-only e as fases que dependem dela saem SKIP.
+        string? q3Bridge = _p.Cpu && !string.IsNullOrWhiteSpace(_p.BridgeQ3)
+            ? _p.BridgeQ3!.TrimEnd('/')
+            : null;
+        if (q3Bridge is not null && !string.Equals(q3Bridge, _p.Bridge.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
         {
             var q3status = HttpGet($"{q3Bridge}/api/status", _p.Api);
             var q3j = q3status.Code == 200 ? TryJson(q3status.Body) : null;
             string q3model = Str(q3j, "model");
             string q3up = Str(q3j, "upstream");
-            driver.Log($"AVISO: Q3 {q3Bridge} http={q3status.Code} model={q3model} upstream={q3up}"
-                + (string.IsNullOrEmpty(q3model) ? " (fora: belts-orch pode falhar)" : ""));
+            driver.Log($"GPU2 {q3Bridge} (diagnostico, fora do gate) http={q3status.Code} model={q3model} upstream={q3up}");
+        }
+        else if (q3Bridge is null)
+        {
+            driver.Log("GPU2 nao configurada nesta rodada (Q4-only): fases de edicao/companion saem SKIP");
         }
 
         Pf(driver, "test_binario", File.Exists(_p.TestDll),
@@ -811,6 +1463,21 @@ internal sealed class WarTemplate : CircuitTemplate
         {
             ["sha512"] = _sha512.Length >= 16 ? _sha512[..16] : _sha512,
             ["motivo"] = rerunGuard.Reason
+        });
+
+        // REGRA DO CRIADOR: fail-fast e guard de rebuild andam juntos. Com
+        // --war-stop-on-fail o guard e obrigatorio (nao existe flag para
+        // desligar); sem ele um PASS poderia sair com binario velho. A
+        // evidencia carrega o modo do driver que esta sendo verificado.
+        Pf(driver, "guard_ativo_fail_fast",
+            !_o.StopOnFirstFailure || rerunGuard.Allowed || IsParallelChild, new JsonObject
+        {
+            ["fail_fast"] = _o.StopOnFirstFailure,
+            ["guard"] = "regeracao-por-sha512",
+            ["modo"] = string.IsNullOrWhiteSpace(_o.Modes) ? "bridge" : _o.Modes,
+            ["estado"] = rerunGuard.Allowed ? "ok" : rerunGuard.Reason,
+            // Raia: o guard foi checado UMA vez no processo pai que disparou as raias.
+            ["guard_pai"] = IsParallelChild
         });
 
         string? opencode = Execution.FindOnPath("opencode");
@@ -928,7 +1595,17 @@ internal sealed class WarTemplate : CircuitTemplate
             // deve tratar o lock do proprio driver como runner concorrente.
             ["BRIDGE_UNDER_DRIVER"] = "1"
         };
-        if (!string.IsNullOrWhiteSpace(_p.BridgeQ3)) env["WAR_CPU_BRIDGE"] = _p.BridgeQ3!;
+        // Diagnostico do modelo sem caudas (--war-no-tails-gate): os filhos
+        // aceitam tails off no portao de fluxo (main_harness segue obrigatorio).
+        if (_o.NoTailsGate) env["BRIDGE_TAILS_OPTIONAL"] = "1";
+        // Diagnostico do modelo sem anti-repeat (--war-no-anti-repeat-gate).
+        if (_o.NoAntiRepeatGate) env["BRIDGE_ANTI_REPEAT_OPTIONAL"] = "1";
+        // Linha GPU2 (diagnostico/bancada). Nome semantico: WAR_GPU2_BRIDGE; o
+        // legado WAR_CPU_BRIDGE continua aceito pelos consumidores. `--war-no-cpu`
+        // mantem a rodada Q4-only e nao publica a linha para os filhos.
+        if (_p.Cpu && !string.IsNullOrWhiteSpace(_p.BridgeQ3)) env["WAR_GPU2_BRIDGE"] = _p.BridgeQ3!;
+        // Playwright: HEADED=1 e' lido por PlaywrightSetup.Headless() no Web.Test.
+        if (_o.WebHeaded) env["HEADED"] = "1";
         return env;
     }
 
@@ -982,6 +1659,17 @@ internal sealed class WarTemplate : CircuitTemplate
         try { return JsonNode.Parse(text) as JsonObject; }
         catch { return null; }
     }
+
+    /// <summary>
+    /// Flag booleano lido do status como texto, com fallback para o alias legado.
+    /// Binario novo expoe <c>behavior_tail</c>/<c>tools_tail_flag</c>; o antigo
+    /// so' tem <c>harness_tails</c>, que e' o alias das duas — sem o fallback o
+    /// preflight reprovaria uma bridge perfeita.
+    /// </summary>
+    private static bool On(JsonObject? obj, string key, string aliasWhenMissing)
+        => string.Equals(Str(obj, key), "true", StringComparison.OrdinalIgnoreCase)
+           || (Str(obj, key).Length == 0
+               && string.Equals(Str(obj, aliasWhenMissing), "true", StringComparison.OrdinalIgnoreCase));
 
     private static string Str(JsonObject? obj, string key)
     {
@@ -1087,13 +1775,13 @@ internal sealed class WarTemplate : CircuitTemplate
             var list = new List<int>();
             foreach (string part in o.Levels.Split(',',
                          StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                if (int.TryParse(part, out int v) && v is >= 1 and <= 3) list.Add(v);
-            return list.Count > 0 ? list : new List<int> { 1, 2, 3 };
+                if (int.TryParse(part, out int v) && v is >= 1 and <= 4) list.Add(v);
+            return list.Count > 0 ? list : new List<int> { 1, 2, 3, 4 };
         }
         var all = new List<int>();
         for (int i = o.From; i <= o.To; i++)
-            if (i is >= 1 and <= 3) all.Add(i);
-        return all.Count > 0 ? all : new List<int> { 1, 2, 3 };
+            if (i is >= 1 and <= 4) all.Add(i);
+        return all.Count > 0 ? all : new List<int> { 1, 2, 3, 4 };
     }
 
     private static void LogGlobal(TextWriter? log, string message)
@@ -1185,13 +1873,16 @@ internal sealed class WarTemplate : CircuitTemplate
         switch (_level)
         {
             case 1:
-                Console.WriteLine("Level 1 -> units, devpipe, tools-full (com ciclo git/arquivo), belts build/orch azul+verde (opencode primeiro; bridge tails ON depois)");
+                Console.WriteLine("Level 1 -> units (bridge), integracao (E-stream/E-review/E-iot/E-error/E-full-cycle/E-healthy) e topicos (E-senior/E-ent), bridge (default)");
                 break;
             case 2:
-                Console.WriteLine("Level 2 -> mission-tools, responses-tools, science-gpu, science-cpu(Q3), roxa build/orch (bridge+opencode); webui no L3");
+                Console.WriteLine("Level 2 -> responses-tools, tools-full, belts build/orch azul+verde, bridge (default)");
                 break;
             case 3:
-                Console.WriteLine("Level 3 -> belts marrom+preta build/orch (bridge+opencode), webui");
+                Console.WriteLine("Level 3 -> science-gpu, mission-tools, belts build/orch roxa, bridge (default)");
+                break;
+            case 4:
+                Console.WriteLine("Level 4 -> mission-algo C# (hanoi,bin,btree,kmeans,sort), belts build/orch marrom+preta, frontend pipeline (E-front), webui-integracao-topicos");
                 break;
             default:
                 Console.WriteLine($"Level {_level} invalido");
@@ -1214,10 +1905,13 @@ internal sealed class WarTemplate : CircuitTemplate
             switch (a)
             {
                 case "--war-level": o.Level = ParseInt(Next(), 1); break;
+                case "--war-parallel": o.Parallel = true; break;
+                case "--war-min-free-vram": o.MinFreeVram = ParseInt(Next(), 256); break;
                 case "--war-all": o.All = true; break;
                 case "--war-levels": o.Levels = Next(); o.All = true; break;
+                case "--war-only": o.OnlySteps = Next(); break;
                 case "--war-from": o.From = ParseInt(Next(), 1); o.All = true; break;
-                case "--war-to": o.To = ParseInt(Next(), 3); o.All = true; break;
+                case "--war-to": o.To = ParseInt(Next(), 4); o.All = true; break;
                 case "--war-stamp": o.Stamp = Next(); break;
                 case "--war-resume-stamp": o.ResumeStamp = Next(); o.All = true; break;
                 case "--war-resume-level": o.ResumeLevel = ParseInt(Next(), 1); o.All = true; break;
@@ -1232,8 +1926,14 @@ internal sealed class WarTemplate : CircuitTemplate
                 case "--war-bridge-q3": o.BridgeQ3 = Next(); break;
                 case "--war-blog": o.Blog = Next(); break;
                 case "--war-lock": o.Lock = Next(); break;
+                case "--war-mode":
+                case "--war-modes": o.Modes = Next(); break;
                 case "--war-pause-file": o.PauseFile = Next(); break;
                 case "--war-root": o.Root = Next(); break;
+                case "--war-webdriver": o.WebDriver = true; break;
+                case "--war-webdriver-url": o.WebDriverUrl = Next(); break;
+                case "--war-headed": o.WebHeaded = true; break;
+                case "--war-webui-belts": o.WebUiBelts = Next(); break;
                 case "--war-step-timeout": o.StepTimeout = ParseInt(Next(), 7200); break;
                 case "--war-retries": o.Retries = ParseInt(Next(), 1); break;
                 case "--war-retry-delay": o.RetryDelay = ParseInt(Next(), 5); break;
@@ -1241,6 +1941,11 @@ internal sealed class WarTemplate : CircuitTemplate
                 case "--war-rebuild": o.Rebuild = true; break;
                 case "--war-no-build":
                 case "--war-no-rebuild": o.NoBuild = true; break;
+                case "--war-stop-on-fail": o.StopOnFirstFailure = true; break;
+                case "--war-no-tails-gate": o.NoTailsGate = true; break;
+                case "--war-no-anti-repeat-gate": o.NoAntiRepeatGate = true; break;
+                case "--war-no-stop-on-fail":
+                case "--war-continue": o.StopOnFirstFailure = false; break;
                 case "--war-pause": o.Pause = true; break;
                 case "--war-resume": o.Resume = true; break;
                 case "--war-status": o.Status = true; break;
@@ -1262,9 +1967,9 @@ internal sealed class WarTemplate : CircuitTemplate
                     break;
             }
         }
-        if (o.Level is < 1 or > 3) throw new ArgumentException("--war-level deve ser 1..3");
-        if (o.From is < 1 or > 3) throw new ArgumentException("--war-from deve ser 1..3");
-        if (o.To is < 1 or > 3) throw new ArgumentException("--war-to deve ser 1..3");
+        if (o.Level is < 1 or > 4) throw new ArgumentException("--war-level deve ser 1..4");
+        if (o.From is < 1 or > 4) throw new ArgumentException("--war-from deve ser 1..4");
+        if (o.To is < 1 or > 4) throw new ArgumentException("--war-to deve ser 1..4");
         if (o.From > o.To) throw new ArgumentException("--war-from maior que --war-to");
         if (o.Retries is < 1 or > 10) throw new ArgumentException("--war-retries deve ser 1..10");
         if (o.Pause && o.Resume) throw new ArgumentException("--war-pause e --war-resume sao exclusivos");
@@ -1279,15 +1984,25 @@ internal sealed class WarTemplate : CircuitTemplate
         WarTemplate (Rochas.OpenCodeBridge.Test) — template WAR do TestCircuitDriver
 
         EXECUCAO
-          --war-level N            executa um level (1..3)
-          --war-all                executa 1 -> 3 em sequencia
-          --war-levels 1,2,3       levels explicitos
+          --war-level N            executa um level (1..4)
+          --war-all                executa 1 -> 4 em sequencia
+          --war-parallel           raias: um level por slot do llama, em paralelo
+                                   (bridge com --slot -1). Sequencial (default) honra
+                                   o fail-fast entre levels; em raias ele vale DENTRO
+                                   da raia (level vermelho para de rodar, irmaos seguem)
+          --war-min-free-vram N    piso de VRAM livre do preflight (default 512; lab full-VRAM usa menor)          --war-levels 1,2,3,4     levels explicitos
+          --war-only NAME          roda so steps cujo nome contem NAME (virgula = lista)
+          --war-modes bridge       modos (bridge|opencode), default "bridge"
           --war-from N --war-to N  faixa de levels
           --war-stamp STAMP        stamp do run (level unico)
           --war-resume-stamp S     retoma um stamp no --war-all
           --war-resume-level N     level do stamp retomado
           --war-gate-only          recalcula o gate sem executar steps
           --war-list               lista os steps do level
+          --war-stop-on-fail       para no primeiro FAIL/STALE/BLOCKED (default)
+          --war-no-tails-gate      relaxa o gate de tails do preflight (caudas off; diagnostico)
+          --war-no-anti-repeat-gate relaxa o gate de anti-repeat (diagnostico)
+          --war-no-stop-on-fail    segue mesmo com FAIL (mede placar completo)
           --war-require-green      gate vermelho derruba o exit (default)
           --war-no-require-green   nao derruba
 

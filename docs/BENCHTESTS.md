@@ -113,10 +113,10 @@ foi trazido para o código).
   `U-translate-profile-temp-wins`, `U-translate-breaker-verdicts`.
 
 ### Bateria
-`./scripts/run-battery-dual.sh` (background: `nohup ./scripts/run-battery-dual.sh > /tmp/opencode/battery.out 2>&1 &`)
+`./scripts/run-battery-dual.sh` (background: `nohup ./scripts/run-battery-dual.sh > logs/battery.out 2>&1 &`)
 roda Q4 e Q3 em paralelo; por modelo: unit → tools-dual → tópicos → tools-full/responses/devpipe/
 mitigação → belts → 1 pipe puro → opencode implícito (`--standalone`) → senior/enterprise/front/
-scripter/orch/arquitetura. Logs e `SUMMARY.txt` em `/tmp/opencode/battery/<stamp>/`.
+scripter/orch/arquitetura. Logs e `SUMMARY.txt` em `<repo>/logs/battery/<stamp>/` (nunca `/tmp`).
 
 ## 9. Bateria WAR v2 (3 sessões simultâneas, A/B de flags, retomada)
 
@@ -164,25 +164,217 @@ estrutura TSX (`createRoot`). O caminho de navegador fica atrás de `--front-web
 `HEADED=1` para o modo visível — gancho pronto para a Web UI `:4130` quando o parâmetro headed
 geral for criado.
 
-## 10. Level 1 — ordem das trilhas (`scripts/war/run-levels.sh`)
+### Fronteira Core x consumidores
 
-Level 1 é a subida antes da produção: **units → devpipe → belts Build → belts Orch**, cada
-bloco em dois passes (`--mode pure` e `--mode opencode`), fechando com a suíte web
-(integração + tópicos). As duas trilhas de belts já existiam como testes separados
-(`E-belts-build-direct` = role build implementa direto; `E-belts-direct` = role orch
-segmenta → Scripter → Exec); o runner só passou a executá-las **nesta ordem**.
+A suíte de testes é **consumidora** do Core, igual à Web UI, OpenCode e CLI.
+Ela não define catálogo/schema de tools, não executa tools por conta própria e
+não converte protocolo na mão. O caminho único é:
+
+- `Rochas.OpenCodeBridge.Core.ToolCatalog.Chat/Responses` para o schema;
+- `POST /api/tools/execute` (ou `BridgeToolExecutor`) para executar;
+- `Core.StackPreflight` para preflight de stack;
+- `Core.HarnessTails`/`MainHarness` para base e tails.
+
+No projeto de testes ficam apenas orquestração, enunciado, fixture, transporte
+HTTP, assertivas e evidência. Catálogo local (`Tools()`/`ToolCatalog()`),
+executor local (`Exec()`/`LocalExec()`), `Shell()` de tool, nomes paralelos
+(`read_file`/`write_file`/`edit_file`/`list_dir`) ou conversão manual
+chat→Responses são proibidos. Se o teste precisa de outra tool, a tool entra no
+Core e todos os consumidores passam a usá-la.
+
+A bateria frontend (`E-front-*`) segue a mesma regra: Gen/Edit/Verify usam o
+catálogo do Core e `POST /api/tools/execute`; os enunciados editam peças reais
+de MVC Razor e React, não um vocabulário próprio do teste.
+
+## 10. Disposição canônica dos LEVELS (L1 → L4)
+
+Ordem obrigatória da esteira WAR, válida para `WarTemplate` (`--war-level`)
+e para `scripts/war/run-levels.sh` (`--level`). Cada nível roda sozinho; os
+steps de um nível podem ser filtrados por `--war-only`; um teste dentro do
+step pode ser filtrado por `--only`.
+
+| Level | Ordem interna |
+|---|---|
+| **L1** | `units` (uma vez, bridge) → `e-integration-{tema}` (6 steps) → `e-topics-{tema}` (8 steps) |
+| **L2** | `e-responses-tools` → `e-tools-full` → belts **azul e verde**, uma belt por step (build + orch) |
+| **L3** | `e-science-gpu` → `e-mission-tools` → belt **roxa** (build + orch) |
+| **L4** | `e-algo-cs-hanoi` → `e-algo-cs-primes` → `e-algo-cs-{bin,btree,kmeans,sort}` → belts **marrom e preta**, uma belt por step (build + orch) → frontend `e-front-{gen,edit,edit-razor,edit-react,verify}` → `webui-integracao-topicos` |
+
+- **L1 `e-integration-{tema}`** (um teste por step): `e-integration-stream`
+  (`E-stream-architect`), `e-integration-review` (`E-review-architect`),
+  `e-integration-iot` (`E-iot-event-queue`), `e-integration-error`
+  (`E-error-mitigation`), `e-integration-fullcycle`
+  (`E-full-cycle-iot-queue-push`), `e-integration-healthy`
+  (`E-healthy-concurrency`).
+- **L1 `e-topics-{tema}`** (um tema por step): `e-topics-senior-react`,
+  `e-topics-senior-bus`, `e-topics-senior-erp`, `e-topics-senior-arm`,
+  `e-topics-ent-crud` (os três CRUD de uma vez: product/customer/saleinvoice),
+  `e-topics-ent-worker`, `e-topics-ent-redis`, `e-topics-ent-dashboard`.
+- **L4 frontend/web**: `E-front-gen`, `E-front-edit` (CSS),
+  `E-front-edit-razor`, `E-front-edit-react`, `E-front-verify` e
+  `webui-integracao-topicos` (Web.Test).
+- **`webui-integracao-topicos` (Web UI por navegador)**: com
+  `--war-webdriver` o step abre a janela (headed com `--war-headed`) e roda as
+  faixas `azul,moe` (`--war-webui-belts`): `azul` = perfil **Orch** executando/
+  delegando + face **Plan** com enunciado TEXTO PURO (zero tool call, raciocínio
+  na bolha); `moe` = tópicos gerais com **um subagente MoE por tema** (NASA,
+  esoterismo, cordas) e composição final. Sem a flag, o step roda só unit +
+  integração HTTP.
+
+### Rodar um nível sozinho
+
+```bash
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --war-level 1
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --war-level 4
+```
+
+### Rodar um step do nível
+
+`--war-only` aceita substring ou lista separada por vírgula:
+
+```bash
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --war-level 1 --war-only integration
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --war-level 4 --war-only e-belts-marrom-build,e-front-gen
+```
+
+(`integration` e `front` casam por substring nos steps `e-integration-*` e
+`e-front-*`; `belts-build-final`/`belts-orch-final` eram os nomes antigos dos
+steps de belt agregados — hoje é `e-belts-{cor}-{build,orch}`).
+
+### Rodar um teste individual
+
+O step é só o agrupamento; o teste específico é `--only` no runner:
+
+```bash
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --only E-front-edit-react --mode bridge
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --only E-senior-erp --mode bridge
+```
+
+`--only` casa por **substring** (é o que faz `--only E-front` pegar todas as
+frentes). Para exigir o nome **exato**, o token vai com `=` na frente:
+
+```bash
+# só a missão base; sem o '=', roda também -cs-bin/-cs-btree/-cs-kmeans/-cs-sort
+dotnet run --project Rochas.OpenCodeBridge.Test -c Release --no-build -- \
+  --only =E-mission-algo-cs-hanoi --mode bridge
+```
+
+### Scripts e trilha completa
+
+```bash
+./scripts/war/run-levels.sh --level 3
+./scripts/war/run-all-levels.sh --levels 1,2
+./scripts/war/run-all-levels.sh --from 3   # 3 -> 4
+```
+
+`--war-all` e `run-all-levels.sh` sem argumentos percorrem **1 → 2 → 3 → 4**,
+parando no primeiro gate vermelho. O modo padrão é **bridge**; para a raia
+opencode use `--war-modes opencode` ou `LEVEL_MODES=opencode`. Fail-fast é o
+padrão e pode ser declarado explicitamente com `--war-stop-on-fail`.
 
 > **`export PORT=<porta livre>`** antes dos blocos abaixo. A bridge é **de bancada**:
 > descartável, criada e morta na execução. Ela **não** entra em unit, firewall, `opencode.json`
 > nem em agente — o ambiente só conhece os serviços predefinidos (retrato em `LAB-SETUP.md` §12).
 > A bridge de bancada pode usar `--main-harness 1` para testar o modo
 > bridge e a Web UI; as units OpenCode `:4124/:4125/:4126` ficam em `0`.
+> **Regra WAR:** todos os testes da esteira rodam `--thinking off` (role build,
+> que já é off por perfil). Thinking on fica para Plan/Orch/MoE (planejamento,
+> sem tools complexas): em tools densas ele gasta raciocínio, ramifica e alucina
+> (ver `HISTORY.md`, 2026-10-19 "Suíte sempre no role Build").
+> **Regra (HARNESS POR MODO):** MainHarness on/off depende do MODO: bridge →
+> SEMPRE on; opencode → off (o opencode já carrega o seu harness no stream com
+> o llama). O discriminador é o CLIENTE (BridgeLane), nunca o sufixo do modelo.
+> `main_harness_scope:"managed-only"` é rótulo. Passthrough só dispara fora da
+> raia bridge.
+> **Trava (primordial):** `--mode bridge` + `--main-harness 0` não sobe
+> (exit 2, `ERRO DE ARGUMENTOS`). Sem o nosso harness só a raia
+> `--mode opencode`. **Fail-fast e guard andam juntos:** com
+> `--war-stop-on-fail` o preflight exige `guard_ativo_fail_fast`
+> (sha512 + modo na evidência); não há flag para desligar o guard.
+> **Tool tail é regra:** todo teste que enuncia tools exige
+> `--harness-tails 1` + `--tail-scope all|managed` (preflight
+> `harness_tails_status`). Pedido sem `tools` no array não recebe cauda de
+> tools. Tópico sem tools = perfil `plan` (0.3/on) e o corpo termina com
+> `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`; com tools = `build` (0.1/off).
+>
+> **Relaxamento explícito (diagnóstico):** `--war-no-tails-gate` transforma a
+> reprovação das caudas em `preflight_aviso` (com `relaxado_por` na evidência)
+> em vez de BLOCKED. Serve para medir o modelo **sem** caudas; o
+> `bridge_main_harness` continua gate duro. Simétrico para anti-repeat:
+> `--war-no-anti-repeat-gate` relaxa `anti_repeat_status`; `slot` só entra na
+> evidência (`/api/status` já expõe `anti_repeat` e `slot`).
+
+### Raias paralelas (um level por slot do llama)
+
+Com 4 slots no llama (`-np 4`) e a bridge sem pino (`--slot -1`), cada level
+roda numa raia própria:
+
+```bash
+sudo bash -c "cd /usr/src/opencodebridge && REPO=/usr/src/opencodebridge \
+  dotnet Rochas.OpenCodeBridge.Test/bin/Release/net10.0/Rochas.OpenCodeBridge.Test.dll \
+  --war-all --war-parallel --war-modes bridge --war-no-build --war-no-cpu \
+  --war-no-tails-gate --war-no-anti-repeat-gate \
+  --war-api-key guest@123 --war-bridge http://127.0.0.1:4124 \
+  --war-upstream http://127.0.0.1:4100 --war-out logs/levels/$STAMP"
+```
+
+- O pai reinicia a bridge UMA vez, zera sonda/painel (`diag/reset`) e passa o
+  guard de rebuild; cada filho (`WAR_PARALLEL_CHILD=1`, `WAR_LANE=N`) só roda
+  o seu level — sem restart, sem reset, sem lock próprio.
+- Steps **sequenciais dentro da raia** (o driver segue um por vez no level).
+- Console por raia: `logs/levels/<stamp>/L<N>-<stamp>.console.log`.
+- Painel: `POST /api/test/step` leva `level`; a tabela "Steps concluídos" traz
+  a coluna `raia`. Throughput/VRAM/tools seguem globais.
+- Fail-fast do pai não aborta raia já disparada; o exit agrega os rc.
+- **Os dois modos convivem:** `--war-all` sem `--war-parallel` = sequencial
+  (fail-fast entre levels); com `--war-parallel` = raias simultâneas, fail-fast
+  só dentro da raia. Mesmo template, mesmo gate, mesmo `driver-summary`.
+- **Piso de VRAM:** o preflight de cada step exige 512 MiB livres por padrão.
+  No lab full-VRAM (modelo + mmproj residentes em 4 slots) sobram ~500 MiB e
+  `vram livre` reprova → todo step sai `SKIP rc=3`. O operador declara o piso
+  real com `--war-min-free-vram 256` (env `WAR_MIN_FREE_VRAM`), e o valor
+  aparece no `[preflight]` de cada step. A env vale também no runner isolado
+  (`--only <teste>`), que usa o mesmo preflight:
+  `WAR_MIN_FREE_VRAM=256 dotnet …Rochas.OpenCodeBridge.Test.dll --only E-tools-full …`.
+
+### Rodadas de comparação dos knots (uma por vez, nunca juntas)
+
+Para medir o custo/benefício dos knots maleáveis (cauda de tools, anti-repeat),
+o experimento é **uma rodada completa L1..L4 por configuração**, com raias
+paralelas e fail-fast desligado (o placar inteiro por raia é o dado):
+
+| Rodada | Bridge alvo | Gates do WAR |
+|---|---|---|
+| 1 (baseline) | `--main-harness 1 --harness-tails 0 --tail-scope off --anti-repeat 0` | `--war-no-tails-gate --war-no-anti-repeat-gate` |
+| 2 | `+ --anti-repeat 1` | `--war-no-tails-gate` |
+| 3 | `+ --harness-tails 1 --tail-scope managed` | nenhum (gates duros) |
+
+Os dois scripts do lab fazem isso sem edição manual da unit:
+
+```bash
+scripts/lab/war-round.sh 1 0 0    # baseline: só main harness
+scripts/lab/war-round.sh 2 0 1    # + anti-repeat
+scripts/lab/war-round.sh 3 1 1    # + cauda de tools
+```
+
+`set-bridge-flags.sh` (usado pelo `war-round.sh`) reescreve só
+`--harness-tails`/`--tail-scope`/`--anti-repeat` no `ExecStart`, guarda backup da
+unit em `/tmp/opencode`, faz `daemon-reload` + `restart` e **falha rápido** se
+`--main-harness 1` não estiver lá ou se o `/api/status` responder
+`main_harness=false`/`mode!=bridge`. O main harness **não** é parâmetro de
+rodada: em modo bridge ele é gate duro.
 
 ```bash
 # bridge própria (para testar o build do repo, não o binário de produção)
 cd Rochas.OpenCodeBridge/bin/Release/net10.0
 dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4100 \
-  --model Gemma4-E4B-Q4 --thinking events --temperature 0.3 --max-tokens 16384 \
+  --model Gemma4-E4B-Q4 --thinking off --temperature 0.3 --max-tokens 16384 \
   --context-guard 1 --context-tokens 131072 --api-key guest@123 \
   --passthrough-responses true --main-harness 1 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
@@ -196,7 +388,7 @@ Artefatos: `logs/levels/L1-<stamp>/{summary.tsv,steps/,state/}` (disco da sda3);
 `STATE` do mesmo stamp (`LEVEL_STAMP=<stamp>`). Sem ordem fixa de faixas: `--belts azul,verde`
 filtra.
 
-### Raia Q3 (Level 1 texto-only)
+### Raia Q3 (opcional, texto-only)
 
 A `:4110` roda o UD-Q3 **sem mmproj**, então os testes de imagem (`E-devpipe-vision`,
 `E-devpipe-doc`, `E-devpipe-vision-tool`) não têm como passar. O runner trata isso por
@@ -205,8 +397,13 @@ ambiente, sem tocar no catálogo:
 ```bash
 # bridge Q3 dedicada (harness off, mesmo perfil da :4125)
 dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4110 \
+<<<<<<< HEAD
   --model Gemma4-E4B-UD-Q3 --thinking events --temperature 0.3 --max-tokens 16384 \
   --context-guard 1 --context-tokens 57344 --api-key guest@123 \
+=======
+  --model Gemma4-E4B-UD-Q3 --thinking off --temperature 0.3 --max-tokens 16384 \
+  --context-guard 1 --context-tokens 65536 --api-key guest@123 \
+>>>>>>> origin/main
   --passthrough-responses true --main-harness 1 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
   --log logs/bridge-q3-level1.log &
@@ -233,30 +430,62 @@ Duas variáveis mandam na raia: **`LEVEL_UPSTREAM`** vira `WAR_UPSTREAM` (o asse
 `LEVEL_UPSTREAM` termina em `:4110`, e `LEVEL_NO_VISION=0` força a execução dos testes de
 imagem. Sem essas variáveis o comportamento é o de antes (`:4100`, visão ligada).
 
-### Level 2 — bateria de tools + científico
+### L2 — tools + belts azul/verde
 
 `LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 2`
 
-Roda, em `--mode bridge` e `--mode opencode`: `E-tools-full`, `E-dual-tools`,
-`E-mission-tools`, `E-responses-tools`, `E-science-gpu` (Q4, bridge do level) e
-`E-science-cpu` (linha Q3, `WAR_CPU_BRIDGE` ou `:4125`), fechando com a suíte web.
-`LEVEL_CPU=0` pula o científico da linha Q3 (útil quando a `:4125` está em uso por
-sessão real). Artefatos no mesmo layout do Level 1.
+Roda, em `--mode bridge` (default), nesta ordem:
+`E-responses-tools` → `E-tools-full` → `belts-build` azul+verde →
+`belts-orch` azul+verde. As duas trilhas de belt são
+`E-belts-build-direct` (build implementa direto) e `E-belts-direct`
+(orch segmenta → Scripter → Exec). Não roda science, mission nem frontend.
 
-### Level 3 — pacote completo de belts (azul → preta)
+### L3 — science + mission tools + roxa
 
 `LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 3`
 
-Duas trilhas, nas cinco faixas (`azul,verde,roxa,marrom,preta`), em `--mode pure` e
-`--mode opencode`: **trilha Build** (`E-belts-build-direct` — role build implementa
-direto) e **trilha Orch** (`E-belts-direct` — orch segmenta → Scripter → Exec).
-Exige **harness ligado** na bridge; o runner consulta `/api/harness` e loga aviso se
-`main_harness` não estiver `true`:
+Roda, em `--mode bridge` (default), nesta ordem:
+`E-science-gpu` → `E-mission-tools` → `belts-build` roxa →
+`belts-orch` roxa. A linha `E-science-cpu` não entra neste nível; roda
+isolada com `--only E-science-cpu` quando a Q3 estiver dedicada.
+
+### L4 — mission algo + marrom/preta + web UI
+
+`LEVEL_BRIDGE=http://127.0.0.1:$PORT ./scripts/war/run-levels.sh --level 4`
+
+Roda, em `--mode bridge` (default), nesta ordem:
+`E-mission-algo-cs-hanoi` → `E-mission-algo-cs-primes` →
+`E-mission-algo-cs-{bin,btree,kmeans,sort}` →
+`belts-build` marrom+preta → `belts-orch` marrom+preta →
+`E-front-*` (Gen/Edit CSS/Razor/React/Verify) → `webui-integracao-topicos`
+(Web.Test: integração + tópicos).
+
+`E-mission-algo-cs-hanoi` (torre de Hanoi, C#), `E-mission-algo-cs-primes`
+(crivo de Eratostenes, C# — separado do Hanoi em 2026-11-03) e as quatro missões de algoritmo
+em C# (`E-mission-algo-cs-bin` busca binária, `-btree` árvore de busca,
+`-kmeans` K-Means e `-sort` quick sort + bubble sort) são testes **separados**,
+cada um no seu projeto/fonte e com aceite próprio. Misturar algoritmos num teste
+só mede capacidades diferentes com um veredito: o vermelho esconde qual metade
+falhou e as tentativas de uma contaminam as da outra.
+
+### Trilha F# arquivada (2026-10-30)
+
+Os três testes F# (`E-mission-algo-fs-bin`, `-btree`, `-sort`) saíram do gate e
+do `Program.cs` do projeto de teste: o modelo local alterna PASS/FAIL no **mesmo**
+enunciado e o FAIL de um F# bloqueava o L4 inteiro pelo fail-fast. O código, os
+aceites e a cauda de sintaxe (`FsMini`) ficam preservados em
+`Rochas.OpenCodeBridge.Test/Archived/` (`FsAlgoMissions.cs`, `FsMiniTail.cs`) —
+o cenário completo, o motivo e o roteiro de reativação estão no `README.md`
+daquela pasta. A trilha F# também não tem mais `kmeans`: esse algoritmo foi
+removido antes (2026-10-30) e segue coberto em C#.
+
+L3 e L4 exigem **harness ligado** na bridge; o runner consulta `/api/harness`
+e loga aviso se `main_harness` não estiver `true`:
 
 ```bash
 cd Rochas.OpenCodeBridge/bin/Release/net10.0
 dotnet Rochas.OpenCodeBridge.dll --port $PORT --upstream http://127.0.0.1:4100 \
-  --model Gemma4-E4B-Q4 --thinking events --temperature 0.3 --max-tokens 16384 \
+  --model Gemma4-E4B-Q4 --thinking off --temperature 0.3 --max-tokens 16384 \
   --context-guard 1 --context-tokens 131072 --api-key guest@123 \
   --passthrough-responses true --main-harness 1 --harness-tails 1 \
   --anti-repeat 1 --anti-repeat-retry 1 --anti-repeat-window 512 \
@@ -409,3 +638,59 @@ O raw contém código e caminhos do workspace. Guardar só em `/tmp`/disco local
 nunca commitar; o bundle é recriado a cada WAR. Para auditoria longa, copiar
 apenas `*.journey.json` e `*.opencode.meta.json` (sem raw) ou usar
 `opencode session export --sanitize`.
+
+## Testes cognitivos puros (2026-10-28)
+
+- `E-tools-full` e' exclusivamente cognitivo: o modelo recebe um enunciado
+  natural e executa as tools via `ToolAgent` + `Core.ToolCatalog`; a suite
+  valida o artefato em disco. Nao existe mais execucao direta de tools no
+  teste (`RunOnBridge` removido) — o objetivo e a capacidade cognitiva do
+  modelo, nao o Core (que tem seus proprios testes).
+- `E-ent-redis` (ex-`E-ent-garnet`): termo Garnet -> Redis, enunciado pede
+  gravacao via tool `write` em `ProductRepository.cs`; a suite le o arquivo e
+  aplica `CheckNoStub` + `IDistributedCache`/`RemoveAsync`. Renomeado apos
+  PASS=1 FAIL=0.
+- Enunciados agentivos sem coordenadas (`oldString=...`/`newString=...`):
+  objetivo + aceite, o modelo decide as tools.
+
+## Sem proibicao de ferramenta (2026-10-28)
+
+- Enunciado e help de tool nao proibem ferramenta fora da blacklist: o
+  modelo escolhe `curl`, `webfetch` ou `grep` do shell conforme a tarefa.
+  Proibicoes removidas: "nao use curl" (webfetch/fetch) e "nao use grep do
+  shell" (grep); MainHarness diz "Rede via webfetch/websearch ou shell".
+- `webfetch` publicado no `ToolCatalog` do Core (Chat/Responses, 8 tools):
+  o Core e a fonte unica do que o modelo pode chamar; sem isso o modelo em
+  bridge nem via a tool no schema.
+- `E-tools-full` pede "busque na internet" (sem nomear tool); o aceite aceita
+  qualquer caminho de rede — mede uso de rede, nao a escolha da ferramenta.
+- `ToolAgent` (nudge x2): segunda cutucada pede conclusao dos passos quando o
+  modelo para em prosa; nao responde a tarefa pelo modelo.
+
+## 9. Temperaturas dos perfis — tabela restaurada (2026-10-29)
+
+Base de medição da WAR/gate: **Build/Scripter/Exec 0.1** (thinking off),
+**Plan/Orch 0.3** (events), **MoE 0.5** (events); request sem sufixo cai no
+global **0.2**. É a escala anterior ao `50138b8`, que subiu a tabela inteira
+para 0.4/0.7/0.2 sem medição que a justificasse. Fonte única:
+`Core/RoleProfiles.cs`; espelho obrigatório: `appsettings.json` (sem rebuild do
+runtime a bridge continua no valor antigo). Atestação: `temperature_source=profile`
+no evento `response` do log da bridge.
+
+Efeito no bench: cenário com tools roda a 0.1 (menos variação de amostragem);
+texto puro (`-plan`, sem tools) roda a 0.3, que é onde a variação de elisão
+apareceu no `E-ent-crud-saleinvoice`.
+
+### 9.1 Granularidade do reset de diagnóstico (2026-10-29)
+
+Duas granularidades, de propósito:
+
+| dado | quando zera | por quê |
+|---|---|---|
+| contadores de `/api/metrics`, `files_generated` | **por bateria** (runner: `WarTemplate` no C# / `reset_once` no `run-levels.sh`, `?files=1`) | o painel de números mede a rodada da esteira inteira; zerar por step apagava a leitura a cada linha |
+| amostras da sonda (`ProbeSamples`) | **por bateria** (`WarTemplate.ResetDiagnosticsOnce`, `?probe=1`) | a curva de throughput/VRAM/tools precisa cobrir L1→L2→L3; o campo `step` da amostra já separa os passos |
+
+Antes disso o driver mandava `probe=1` em cada `step_start` e a curva dos steps
+anteriores desaparecia. O run isolado (`E-*`) continua limpando tudo: ele é a
+própria rodada. Prova de aceite: `GET /api/test/probe?limit=1000` após dois
+steps deve trazer **≥2 valores distintos de `step`** na mesma resposta.

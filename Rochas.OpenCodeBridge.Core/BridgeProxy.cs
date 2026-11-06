@@ -55,7 +55,12 @@ public static class BridgeProxy
         if (options.EnableThinking.HasValue)
             clone["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = options.EnableThinking.Value };
         string instructions = clone["instructions"]?.GetValue<string>() ?? "";
-        string composed = HarnessTails.Compose(instructions, options.Harness, options.HarnessBehaviorTail, options.HarnessToolsTail);
+        // Cauda de tools só quando o corpo leva tools: pedido texto-puro recebe a
+        // cauda de comportamento e NUNCA a de tools (o modelo devolveria JSON de
+        // tool como texto e truncaria — regra do harness).
+        bool hasTools = clone["tools"] is JsonArray { Count: > 0 };
+        string composed = HarnessTails.Compose(instructions, options.Harness,
+            options.HarnessBehaviorTail, options.HarnessToolsTail, hasTools);
         if (!string.IsNullOrWhiteSpace(composed)) clone["instructions"] = composed;
         else clone.Remove("instructions");
         clone["stream"] = stream;
@@ -99,6 +104,9 @@ public static class BridgeProxy
     {
         if (!options.Harness) return;
         if (body["messages"] is not JsonArray messages) return;
+        // Mesma regra do caminho Responses: sem tools no corpo, só a cauda de
+        // comportamento (a de tools ensinaria JSON de tool a quem não tem tool).
+        bool hasTools = body["tools"] is JsonArray { Count: > 0 };
         foreach (var node in messages)
         {
             if (node is not JsonObject msg) continue;
@@ -106,7 +114,7 @@ public static class BridgeProxy
             if (role is not ("system" or "developer")) continue;
             if (msg["content"] is JsonValue value && value.TryGetValue<string>(out string? text))
             {
-                msg["content"] = HarnessTails.Compose(text, true, options.HarnessBehaviorTail, options.HarnessToolsTail);
+                msg["content"] = HarnessTails.Compose(text, true, options.HarnessBehaviorTail, options.HarnessToolsTail, hasTools);
                 return;
             }
             if (msg["content"] is JsonArray parts)
@@ -115,7 +123,7 @@ public static class BridgeProxy
                 {
                     if (part is JsonObject po && po["text"] is JsonValue pv && pv.TryGetValue<string>(out string? ptext))
                     {
-                        po["text"] = HarnessTails.Compose(ptext, true, options.HarnessBehaviorTail, options.HarnessToolsTail);
+                        po["text"] = HarnessTails.Compose(ptext, true, options.HarnessBehaviorTail, options.HarnessToolsTail, hasTools);
                         return;
                     }
                 }

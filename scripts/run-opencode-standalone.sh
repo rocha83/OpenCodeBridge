@@ -3,15 +3,18 @@
 # Uso: ./run-opencode-standalone.sh --task oi|tools|write|devpipe|science|mission|all [--agent build|exec]
 set -uo pipefail
 
+REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
 TASK="${1:-all}"; [[ "$TASK" == "--task" ]] && TASK="${2:-all}"
 AGENT="${3:-build}"; [[ "${3:-}" == "--agent" ]] && AGENT="${4:-build}"
 MODEL="openai/Gemma4-E4B-Q4-build"
 [[ "$AGENT" == "exec" ]] && MODEL="llama/Gemma4-E4B-UD-Q3-exec"
 
-LOG=/tmp/opencode/standalone.log
-mkdir -p /tmp/opencode/standalone
+LOG="$REPO/logs/standalone.log"
+WORK="$REPO/logs/standalone"
+mkdir -p "$WORK"
 exec > >(tee -a "$LOG") 2>&1
-cd /tmp/opencode/standalone
+cd "$WORK"
 
 run() {
   local name="$1"; shift
@@ -28,7 +31,7 @@ run() {
 
 task_oi()      { run oi "responda apenas: ok" "ok"; }
 task_tools()   { run tools "Use a tool shell para rodar 'date +%F' e diga a data." "2026|202[0-9]"; }
-task_write()   { run write "Use a tool write para criar o arquivo /tmp/opencode/standalone/ok.txt com o conteudo 'ok' e depois leia com read para confirmar." "ok"; }
+task_write()   { run write "Use a tool write para criar o arquivo $WORK/ok.txt com o conteudo 'ok' e depois leia com read para confirmar." "ok"; }
 task_devpipe() { run devpipe "Use glob para listar os arquivos *.cs deste diretorio e diga quantos sao. Se nao houver, diga 0." "[0-9]"; }
 task_science() { run science "Qual a esperanca E[X] de uma exponencial de parametro lambda? Responda so texto, sem tools." "1/lambda|lambda"; }
 task_mission() { run mission "Use a tool shell para rodar exatamente: echo missao-ok; diga a saida." "missao-ok"; }

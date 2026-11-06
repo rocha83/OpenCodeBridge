@@ -52,13 +52,14 @@ internal static class Program
             }
             else if (args[i] == "--tool-agent-steps" && i + 1 < args.Length) TestContext.ToolAgentSteps = int.Parse(args[++i]);
             else if (args[i] == "--skip-unit") TestContext.SkipUnit = true;
+            else if (args[i] == "--no-stop-on-fail") TestContext.StopOnFail = false;
             else if (args[i] == "--front-webdriver" || args[i] == "--webdriver") TestContext.WebDriver = true;
             else if (args[i] == "--webdriver-url" && i + 1 < args.Length) TestContext.WebDriverUrl = args[++i];
             else if (args[i] == "--skip-cpu") TestContext.RunCpu = false;
             else if (args[i] == "--cpu") TestContext.RunCpu = true;
         }
         Console.WriteLine($"[test] bridge={TestContext.Bridge} llama={TestContext.Llama} skipE2E={TestContext.SkipE2E}");
-        Console.WriteLine($"[test] dual={TestContext.Dual} mode={TestContext.Mode} role={TestContext.Role}");
+        Console.WriteLine($"[test] dual={TestContext.Dual} mode={TestContext.Mode} role={TestContext.Role} stop_on_fail={TestContext.StopOnFail}");
         string? cred = TestContext.Jwt ?? TestContext.ApiKey;
         if (cred is not null) TestContext.Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
 
@@ -67,8 +68,11 @@ internal static class Program
         // (o lock e dele); fora do driver, runner concorrente e NO-GO.
         if (!TestContext.SkipPreflight)
         {
-            string q3 = Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE")
-                        ?? "http://127.0.0.1:4125";
+            // Linha GPU2 (diagnostico) e' OPCIONAL: pode ser a bridge GPU2
+            // (:4125) ou a CPU-forced (:4126). Nome semantico WAR_GPU2_BRIDGE;
+            // WAR_CPU_BRIDGE segue aceito como legado. Sem env = rodada Q4-only.
+            string? q3 = Environment.GetEnvironmentVariable("WAR_GPU2_BRIDGE")
+                         ?? Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE");
             var preflight = StackPreflight.Run(new StackPreflightOptions
             {
                 BridgeUrl = TestContext.Bridge,
@@ -80,6 +84,11 @@ internal static class Program
                 RequireQ3 = false,
                 RequireMainHarness = TestContext.Mode == "bridge",
                 ProbeModel = true,
+                // Piso de VRAM: default 512 MiB; o laboratorio full-VRAM declara
+                // o piso real pela env WAR_MIN_FREE_VRAM (vem de --war-min-free-vram).
+                MinFreeVramMiB = int.TryParse(Environment.GetEnvironmentVariable("WAR_MIN_FREE_VRAM"), out int minVram)
+                    ? minVram
+                    : 512,
                 CheckLock = Environment.GetEnvironmentVariable("BRIDGE_UNDER_DRIVER") != "1"
             });
             if (!preflight.Print())
@@ -106,12 +115,24 @@ internal static class Program
             return 4;
         }
 
+        // Run manual (fora do driver) comeca com o PAINEL limpo: enunciado,
+        // historico e steps da execucao anterior nao vazam para esta rodada —
+        // medido em 2026-10-29: linha `E-mission-tools` de um isolado anterior
+        // fez `U-diag-reset-panel` contar 2 steps. Na WAR quem zera e' o runner
+        // da esteira, UMA vez por nivel/run (`WAR_NO_RESET=1` no step).
+        if (Environment.GetEnvironmentVariable("WAR_STEP") is null
+            && Environment.GetEnvironmentVariable("WAR_NO_RESET") is null)
+            TestContext.ResetDiagnostics(clearProbe: true, required: false,
+                apiKey: cred, clearPanel: true);
+
         // ---- unit (bridge, sem modelo)
         if (!TestContext.SkipUnit)
         {
         TestContext.Run("U-tool-loop-context", UnitToolLoopContextTests.Run);
         TestContext.Run("U-status", UnitStatusTests.Status);
         TestContext.Run("U-metrics", UnitStatusTests.Metrics);
+        TestContext.Run("U-diag-reset", UnitStatusTests.DiagReset);
+        TestContext.Run("U-diag-reset-panel", UnitStatusTests.DiagResetPanel);
         TestContext.Run("U-models-passthrough", UnitStatusTests.ModelsPassthrough);
         TestContext.Run("U-translate-tools", UnitTranslateTests.TranslateTools);
         TestContext.Run("U-translate-without-stop", UnitTranslateTests.TranslateWithoutStop);
@@ -126,7 +147,16 @@ internal static class Program
         TestContext.Run("U-convert-coerced-narrated-find", UnitConvertTests.ConvertCoercedNarratedFindExec);
         TestContext.Run("U-convert-coerced-narrated-loose", UnitConvertTests.ConvertCoercedNarratedLooseQuotes);
         TestContext.Run("U-tools-execute", UnitToolsExecuteTests.ToolsExecute);
+        TestContext.Run("U-tools-path-hint", UnitToolsExecuteTests.PathHintApontaCaminhoReal);
+        TestContext.Run("U-tools-project-path-hint", UnitToolGuardTests.ProjectPathHint);
+        TestContext.Run("U-tools-elision-refused", UnitToolGuardTests.ElisionRefused);
+        TestContext.Run("U-tools-whole-file-rewrite", UnitToolGuardTests.WholeFileRewriteRefused);
+        TestContext.Run("U-tools-artifact-owner", UnitToolGuardTests.ArtifactOwnerAdopted);
+        TestContext.Run("U-slot-pin", UnitSlotPinTests.PinObject);
+        TestContext.Run("U-slot-pin-body", UnitSlotPinTests.PinString);
         TestContext.Run("U-tool-help", UnitToolHelpTests.Run);
+        TestContext.Run("U-tool-feedback-shell-cwd", UnitToolFeedbackTests.ShellReportsCwd);
+        TestContext.Run("U-tool-feedback-git-chain", UnitToolFeedbackTests.GitChainTeaching);
         TestContext.Run("U-git-tool-cycle", UnitToolsExecuteTests.GitToolCycle);
         TestContext.Run("U-toolstrategy-execute-shell", UnitToolStrategyTests.ExecuteToShell);
         TestContext.Run("U-toolstrategy-execute-write", UnitToolStrategyTests.ExecuteToWriteSingleQuotes);
@@ -150,6 +180,8 @@ internal static class Program
         TestContext.Run("U-main-harness-opencode-master", UnitMainHarnessTests.KeepsOpencodeMasterWithoutProfile);
         TestContext.Run("U-main-harness-dynamic", UnitMainHarnessTests.PreservesDynamicBlocks);
         TestContext.Run("U-main-harness-master", UnitMainHarnessTests.DropsMasterButKeepsEnv);
+        TestContext.Run("U-main-harness-tools-tail", UnitMainHarnessTests.TailsOnlyWithTools);
+        TestContext.Run("U-main-harness-workspace", UnitMainHarnessTests.KeepsWorkspaceFromClient);
         TestContext.Run("U-coding-journey", UnitCodingJourneyTests.AnalyzesBothModes);
         TestContext.Run("U-coding-journey-probe", UnitCodingJourneyTests.StepProbeWritesJourney);
         TestContext.Run("U-sampling-passthrough", UnitSamplingTests.CopiesKnownNumericKeys);
@@ -172,10 +204,43 @@ internal static class Program
         TestContext.Run("U-breaker-ignores-distinct-targets", UnitToolBreakerTests.IgnoresDistinctTargets);
         TestContext.Run("U-breaker-normalize-collapses", UnitToolBreakerTests.NormalizeCollapsesMutations);
         TestContext.Run("U-breaker-failure-markers", UnitToolBreakerTests.DetectsFailureMarkers);
+        TestContext.Run("U-breaker-compiler-loop", UnitToolBreakerTests.BreaksCompilerEditLoop);
+        TestContext.Run("U-breaker-same-error", UnitToolBreakerTests.TripsRepeatedSameError);
+        TestContext.Run("U-breaker-interleaved-loop", UnitToolBreakerTests.CountsInterleavedLoop);
         TestContext.Run("U-content-antireply-scopes", UnitToolBreakerTests.ContentScopeUsesHelperSubclasses);
+        TestContext.Run("U-flow-gate-no-request", UnitToolBreakerTests.FlowGateNoRequest);
+        TestContext.Run("U-flow-gate-applies", UnitToolBreakerTests.FlowGateApplies);
         TestContext.Run("U-tools-antireply-helpers", UnitToolBreakerTests.ToolScopeUsesHelperSubclasses);
         TestContext.Run("U-toolargs-literal-newline", UnitToolBreakerTests.FixesLiteralNewlineEscape);
         TestContext.Run("U-tails-path-simulation-rules", UnitToolBreakerTests.ToolsTailCarriesPathAndSimulationRules);
+        TestContext.Run("U-tails-cs-error-table", UnitToolBreakerTests.ToolsTailCarriesCsErrorTable);
+        TestContext.Run("U-cs-repair-missing-brace", UnitToolBreakerTests.CsRepairMissingBrace);
+        TestContext.Run("U-cs-repair-applies-brace", UnitToolBreakerTests.CsRepairAppliesMissingBrace);
+        TestContext.Run("U-cs-repair-unexpected-token", UnitToolBreakerTests.CsRepairUnexpectedToken);
+        TestContext.Run("U-cs-hint-counts-call-args", UnitToolBreakerTests.CsHintCountsCallArgs);
+        TestContext.Run("U-cs-repair-applies-extra-close", UnitToolBreakerTests.CsRepairAppliesExtraClose);
+        TestContext.Run("U-cs-hint-for-in", UnitToolBreakerTests.CsHintDetectsForIn);
+        TestContext.Run("U-cs-repair-applies-for-in", UnitToolBreakerTests.CsRepairForInOnlyAfterTwoRepeats);
+        TestContext.Run("U-context-compact", UnitToolBreakerTests.ContextCompact);
+        TestContext.Run("U-context-compact-recursive", UnitToolBreakerTests.ContextCompactRecursive);
+        TestContext.Run("U-context-overflow-detect", UnitToolBreakerTests.ContextOverflowDetect);
+        TestContext.Run("U-ctx-recover", UnitToolBreakerTests.ContextRecoveryPolicy);
+        TestContext.Run("U-tails-present-tools", UnitRetryTests.TailsOnlyPresentTools);
+        TestContext.Run("U-retry-temp-detour", UnitRetryTests.RetryTemperatureUsesDetourRole);
+        TestContext.Run("U-upstream-abort-nudge", UnitRetryTests.AbortNudgeRewritesTurn);
+        TestContext.Run("U-upstream-abort-detect", UnitRetryTests.DetectsAbortAndRetryHint);
+        TestContext.Run("U-role-permissions", UnitRetryTests.RolePermissionsInSystem);
+        TestContext.Run("U-tools-tail-marker", UnitRetryTests.ToolsTailMarker);
+        TestContext.Run("U-prompt-dedup", UnitRetryTests.PromptDedupInAgenticLoop);
+        // Trilha F# ARQUIVADA (2026-10-30): os pins U-fs-repair-* saíram do placar e
+        // vivem em Archived/FsRepairPins.cs; a trilha ativa é C# (CsSyntaxRepair).
+        // U-fsmini-covers-repair-codes ARQUIVADO em 2026-10-30 junto da trilha F#:
+        // o pin segue em UnitToolBreakerTests (compila), mas nao roda no placar ativo.
+        TestContext.Run("U-flow-gate", UnitToolBreakerTests.BridgeFlowGateCases);
+        TestContext.Run("U-antirepeat-args-window", UnitToolBreakerTests.AntiRepeatArgsWindowIsIndependent);
+        TestContext.Run("U-toolcall-salvage-notice", UnitToolBreakerTests.SalvageNoticeIsRecognizable);
+        TestContext.Run("U-belt-scripter-prompt", UnitBeltScenarioTests.ScripterPromptSeparatesDeliverableFromTask);
+        TestContext.Run("U-bridge-notice", UnitToolBreakerTests.BridgeNoticeFormatIsSingleSource);
         TestContext.Run("U-tails-tool-first", UnitToolBreakerTests.BehaviorTailForcesToolFirst);
         TestContext.Run("U-translate-temp-respeita-tunel", UnitToolBreakerTests.TranslateTempRespeitaTunel);
         TestContext.Run("U-translate-breaker-verdicts", UnitToolBreakerTests.TranslateBreakerVerdicts);
@@ -192,6 +257,7 @@ internal static class Program
         TestContext.Run("U-circuit-resume-done", UnitCircuitTests.ResumeSkipsDone);
         TestContext.Run("U-circuit-battery-stop", UnitCircuitTests.BatteryStopsOnFail);
         TestContext.Run("U-circuit-battery-resume", UnitCircuitTests.BatteryResumesAfterFail);
+        TestContext.Run("U-circuit-publish-run", UnitCircuitTests.PublishesRunBeforeVerdict);
         TestContext.Run("U-circuit-restart", UnitCircuitTests.RestartRetries);
         TestContext.Run("U-circuit-pause", UnitCircuitTests.PauseResumes);
         TestContext.Run("U-circuit-lock", UnitCircuitTests.LockExclusive);
@@ -262,6 +328,19 @@ internal static class Program
         if (TestContext.RunCpu) TestContext.Run("E-science-cpu", E2EScienceTests.ScienceCpu);
         else Console.WriteLine("[test] skip E-science-cpu (--skip-cpu)");
         TestContext.Run("E-mission-tools", E2EMissionTests.MissionTools);
+        // Smoke de ctx ANTES das missoes (L4): força o 400 exceed_context_size
+        // contra o llama real e prova a escalada da bridge (nudge -> compactacao
+        // -> 413). O mecanismo que segura o hanoi, medido em 2s e sem 30 turnos.
+        TestContext.Run("E-ctx-overflow", E2EContextOverflowTests.OverflowRecovers);
+        TestContext.Run("E-ctx-overflow-exhaust", E2EContextOverflowTests.OverflowExhausted);
+        TestContext.Run("E-mission-algo-cs-hanoi", E2EMissionTests.MissionAlgoCsHanoi);
+        TestContext.Run("E-mission-algo-cs-primes", E2EMissionTests.MissionAlgoCsPrimes);
+        TestContext.Run("E-mission-algo-cs-bin", E2EMissionTests.MissionAlgoCsBin);
+        TestContext.Run("E-mission-algo-cs-btree", E2EMissionTests.MissionAlgoCsBTree);
+        TestContext.Run("E-mission-algo-cs-kmeans", E2EMissionTests.MissionAlgoCsKMeans);
+        TestContext.Run("E-mission-algo-cs-sort", E2EMissionTests.MissionAlgoCsSort);
+        // Trilha F# ARQUIVADA em 2026-10-30: ver Archived/FsAlgoMissions.cs.
+        // Nao registrar aqui: teste arquivado nao consome GPU nem entra no placar.
             // Sonda direta do parser hermes no vLLM: so faz sentido no parser nativo.
             if (!TestContext.ServedIsCoder) TestContext.Run("E-vllm-tool-hermes", E2EToolTests.VllmToolHermes);
             else Console.WriteLine("[test] skip E-vllm-tool-hermes (perfil coder)");
@@ -293,12 +372,14 @@ internal static class Program
             TestContext.Run("E-ent-crud-customer", E2EEnterpriseTests.CrudCustomer);
             TestContext.Run("E-ent-crud-saleinvoice", E2EEnterpriseTests.CrudSaleInvoice);
             TestContext.Run("E-ent-worker", E2EEnterpriseTests.BackgroundWorker);
-            TestContext.Run("E-ent-garnet", E2EEnterpriseTests.GarnetCircuit);
+            TestContext.Run("E-ent-redis", E2EEnterpriseTests.RedisCircuit);
             TestContext.Run("E-ent-dashboard", E2EEnterpriseTests.ReactDashboard);
             // frontpipe: o 12B gera o front (MVC+React+Bootstrap+Tailwind), o E2B ajusta
             // pelos enunciados e a suite confere os estilos medidos no navegador.
             TestContext.Run("E-front-gen", E2EFrontPipeTests.Gen);
             TestContext.Run("E-front-edit", E2EFrontPipeTests.Edit);
+            TestContext.Run("E-front-edit-razor", E2EFrontPipeTests.EditRazor);
+            TestContext.Run("E-front-edit-react", E2EFrontPipeTests.EditReact);
             TestContext.Run("E-front-verify", E2EFrontPipeTests.Verify);
             // Scripter 12B compoe script bash (+ valida sintaxe); Scripter E2B gera companion .md; Exec (backlog) le companion e executa.
             TestContext.Run("E-scripter-gen", E2EScripterTests.ScripterGen);

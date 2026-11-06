@@ -13,8 +13,8 @@ public sealed class SubagentToolHandler : IToolHandler
     public string ToolName => "subagent";
 
     // Subagente = executor de script (mesmo papel do Scripter/Exec): determinismo
-    // manda, entao 0.2 (baixa, alinhado ao perfil scripter/exec). thinking ja vai off abaixo.
-    private const double FixedTemperature = 0.2;
+    // manda, entao 0.1 (baixa, alinhado ao perfil scripter/exec). thinking ja vai off abaixo.
+    private const double FixedTemperature = 0.1;
     private const string SubagentSystem =
         "Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga. Para o enunciado, componha script shell sh de implementacao em batch com CAMINHOS alternativos: o script traz um questionario interativo com parametros para o executor escolher o caminho; cada caminho deve ser executável pelo usuario ou pelo agente menor Gemma4-E4B-UD-Q3 com parametros. Quando nao interativo, o executor segue as opcoes 'Recomendadas' do questionario (marque-as no script). Ao final escreva o script na pasta atual com a tool write: o nome do script deve conter o titulo da fase + data e hora juliana (<titulo-da-fase>_<dia-do-ano+hora-minuto>.sh, com dia/hora informados no enunciado, ex.: reembolsos_2860113), valide a sintaxe com a tool shell usando 'bash -n <arquivo>', se a validação acusar erro corrija o script e valide de novo até limpar, porém não execute o script. O uso das tools write e shell (bash -n) é OBRIGATÓRIO em toda fase, sem elas o script não existe; 'não executar' refere-se apenas a rodar o script final, validar a sintaxe é validação, não execução. Estime o tempo de execução do script e registre na primeira linha como `# ETA: ~<minutos> min` (ex.: `# ETA: ~5 min`); se imprevisível, omita a linha.";
 

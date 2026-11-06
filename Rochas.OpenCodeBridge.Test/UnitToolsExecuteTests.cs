@@ -42,6 +42,58 @@ internal static class UnitToolsExecuteTests
 
     // Prova da tool git no /api/tools/execute: config/-C com role build e
     // negativa no plan. Sem isso o ciclo git do dual nao tem gate unitario.
+
+    /// <summary>
+    /// Path pedido sem a subpasta (o modelo fez cd no shell): edit e read devolvem
+    /// o caminho REAL do arquivo na falha, para a proxima chamada ser a certa —
+    /// foi o que derrubou E-tools-full ("marca EDITADO no arquivo").
+    /// </summary>
+    public static Task PathHintApontaCaminhoReal()
+    {
+        string ws = Path.Combine(Path.GetTempPath(), "tool-path-hint", Guid.NewGuid().ToString("N"));
+        string sub = Path.Combine(ws, "temp_dir");
+        Directory.CreateDirectory(sub);
+        try
+        {
+            File.WriteAllText(Path.Combine(sub, "random_file.txt"), "2026-10-28");
+            var ctx = new Rochas.OpenCodeBridge.Core.Tools.ToolContext
+            {
+                WorkspaceRoot = ws,
+                ExtraRoots = Array.Empty<string>()
+            };
+            string esperado = Path.Combine("temp_dir", "random_file.txt");
+
+            var edit = new Rochas.OpenCodeBridge.Core.Tools.EditToolHandler().Handle(
+                "{\"path\":\"random_file.txt\",\"oldString\":\"2026-10-28\",\"newString\":\"editado\"}", ctx);
+            TestContext.Check(!edit.Success, "edit com path sem subpasta deveria falhar");
+            TestContext.Check(edit.Error.Contains(esperado, StringComparison.Ordinal),
+                $"edit deveria apontar '{esperado}' (erro: '{edit.Error}')");
+
+            var read = new Rochas.OpenCodeBridge.Core.Tools.ReadToolHandler().Handle(
+                "{\"path\":\"random_file.txt\"}", ctx);
+            TestContext.Check(!read.Success, "read com path sem subpasta deveria falhar");
+            TestContext.Check(read.Error.Contains(esperado, StringComparison.Ordinal),
+                $"read deveria apontar '{esperado}' (erro: '{read.Error}')");
+
+            // Caminho certo funciona e a ferramenta nao inventa achado.
+            var editCerto = new Rochas.OpenCodeBridge.Core.Tools.EditToolHandler().Handle(
+                $"{{\"path\":\"{esperado.Replace("\\", "\\\\")}\",\"oldString\":\"2026-10-28\",\"newString\":\"editado\"}}", ctx);
+            TestContext.Check(editCerto.Success, $"edit no path certo deveria dar ok (erro: '{editCerto.Error}')");
+            TestContext.Check(File.ReadAllText(Path.Combine(sub, "random_file.txt")).Contains("editado"),
+                "conteudo editado de verdade");
+
+            // Sem achado util a mensagem fica a original (nao promete caminho errado).
+            var semAchado = new Rochas.OpenCodeBridge.Core.Tools.ReadToolHandler().Handle(
+                "{\"path\":\"nao-existe-nenhum.txt\"}", ctx);
+            TestContext.Check(!semAchado.Success && !semAchado.Error.Contains("existe em:", StringComparison.Ordinal),
+                $"sem achado nao pode prometer caminho (erro: '{semAchado.Error}')");
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            try { Directory.Delete(ws, true); } catch { }
+        }
+    }
     public static async Task GitToolCycle()
     {
         string dir = Path.Combine(Path.GetTempPath(), "opencode", "git-tool-" + Guid.NewGuid().ToString("N"));

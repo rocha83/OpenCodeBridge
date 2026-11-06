@@ -4,15 +4,47 @@ Detalhes de infraestrutura, configuração dos servidores llama, contextos, VRAM
 cenários de teste e referência completa de argumentos da bridge. O resumo
 expresso (componente, cenário de teste e harness) fica no `README.md`.
 
-## Snapshot atual (2026-10-23)
+## Snapshot atual (2026-10-30) — Q4 UD é o único modelo
+
+> **Regra do lab (2026-10-30): o Q4 UD não fala com outro modelo.** Ele é o
+> **único modelo ativo** nas linhas de GPU e de CPU. O **Q3 UD** e o **Q4 base**
+> foram **aposentados** — arquivos em **squashfs**, remoção física **pendente**
+> (config futura, ver runbook abaixo e HISTORY). A antiga linha **GPU2**
+> (`Gemma4-E4B-UD-Q3`) **não existe mais**.
 
 | linha | modelo | ctx | VRAM |
 |---|---|---|---|
-| GPU1 `:4100` | `Gemma4-E4B-Q4` — Gemma4 E4B **base original** `Q4_K_M` + mmproj **Q8_0** | `-c 131072 -np 1` = **1×128k** | (medir no host; chroot sem CUDA) |
-| GPU2 `:4110` | `Gemma4-E4B-UD-Q3` — Huihui Gemma4 E4B **abliterated** `IQ3_XXS`, **text-only** | `-c 114688 -np 2` = **2×56k** | (medir no host; chroot sem CUDA) |
-| CPU `:4120` | `Gemma4-E4B-Q4` — mesmo E4B base, **CPU puro** (`-ngl 0`) | `-c 131072 -np 1` = **1×128k** | 0 (RAM) |
+| GPU1 `:4100` | `Gemma4-E4B-UD` — Gemma4 E4B **UD (uncensored)** `Q4_K_M` + mmproj **Q8_0**, na **ext4** | `-c 524288 -np 4` = **4×128k** | ~10,8 / 12,2 GB (full `CUDA0`) |
+| CPU Forced `:4120` | `Gemma4-E4B-UD` — **o próprio Q4 UD**, **CPU puro** (`-ngl 0`) | `-c 131072 -np 1` = **1×128k** | 0 (RAM) |
 
-Temperatura: CLI base **0.2**; perfis do runtime (`appsettings.json`) **plan 0.4 / build 0.2 / orch 0.4 / moe 0.7 / scripter 0.2 / exec 0.2** (escala baixa **0.2**, média **0.4**, alta **0.7**); o `temperature` do modelo no `opencode.json` segue a mesma escala.
+**Arquivos do modelo (ext4, gravável):**
+`/media/mint/2a295c1a-afad-44fb-84dc-053406a7bbfb/opt/models/gemma-4-E4B-it-uncensored/`
+→ `gemma-4-E4B-it-uncensored-Q4_K_M.gguf` (~5,0 GiB) +
+`mmproj-gemma-4-E4B-it-Q8_0.gguf` (~534 MiB).
+
+**Endpoints:** llama `:4100` / bridge `:4124` (GPU full) ·
+llama `:4120` / bridge `:4125` (CPU Forced, `-ngl 0`).
+
+> **Runbook — ajuste das units no desktop (2026-10-30).** Conforme a transição
+> para Q4 UD único, ajustar as units systemd neste desktop:
+> 1. **Remover as units do Q3**: `llama-gpu2.service` (`:4110`) e
+>    `bridge-gpu2.service` (`:4125`) → `systemctl disable --now` e apagar os
+>    `.service` (Q3 aposentado).
+> 2. **Reapontar o CPU Forced** para o **próprio Q4 UD** com `-ngl 0` (mesmo
+>    arquivo GGUF da ext4) e mover a **bridge para `:4125`**
+>    (antes `bridge-cpu-forced` em `:4126`).
+> 3. **Q3/Q4-base no disco:** em squashfs (`/opt/models/gemma4-e4b-base/…`,
+>    `/opt/models/huihui-gemma4-e4b-abliterated/…`) — **não apagáveis agora**;
+>    remoção física = **config futura** quando o storage ficar gravável.
+
+> **Nota CPU Forced.** A linha **CPU** é **explícita e separada** da GPU1 — **não**
+> é "GPU2" nem disputa VRAM com a GPU1: `llama-cpu-forced.service` (`:4120`,
+> `-ngl 0 -t 4 -tb 4`) + `bridge-cpu-forced.service` (**`:4125`**). Carrega o
+> **mesmo arquivo do Q4 UD** mas com `-ngl 0`. Existe como **cenário de teste**
+> para **tarefas granulares de execução de scripts**, para medir/validar o
+> executor de scripts sem VRAM.
+
+Temperatura: CLI base **0.2**; perfis do runtime (`appsettings.json`) **plan 0.3 / build 0.1 / orch 0.3 / moe 0.5 / scripter 0.1 / exec 0.1** (escala baixa **0.1**, média **0.3**, alta **0.5**); o `temperature` do modelo no `opencode.json` segue a mesma escala.
 Detalhes de remaster em `/media/mint/Linux/remaster-update6.md`.
 
 **Dev × produção.** O desenvolvimento acontece em
@@ -26,19 +58,18 @@ lá; só `git pull --ff-only origin main` e redeploy (`dotnet build -c Release`
 
 | nome | o que é | endpoint |
 |---|---|---|
-| **GPU1** | `Gemma4-E4B-Q4` (E4B base original, `Q4_K_M`) — 100% GPU | llama `:4100` / bridge `:4124` |
-| **GPU2** | `Gemma4-E4B-UD-Q3` (E4B abliterated, `IQ3_XXS`) — 100% GPU | llama `:4110` / bridge `:4125` |
-| **CPU Forced** | `Gemma4-E4B-Q4` (`Q4_K_M`) — `-ngl 0` (CPU puro) | llama `:4120` / bridge `:4126` |
+| **GPU1** | `Gemma4-E4B-UD` (E4B **UD** = uncensored, `Q4_K_M`) — 100% GPU, na **ext4** | llama `:4100` / bridge `:4124` |
+| **CPU Forced** | `Gemma4-E4B-UD` (**o próprio Q4 UD**) — `-ngl 0` (CPU puro) | llama `:4120` / bridge **`:4125`** |
 
-Os dois primeiros rodam em **GPU full** (`-ngl 99`) e **TurboQuant** (`turbo3` no
-KV), convivendo em 12 GB de VRAM (RTX 3060, 12288 MiB).
+A **GPU1** roda em **GPU full** (`-ngl 99`) e **TurboQuant** (`turbo3` no KV),
+com `4×128k` de ctx em 12 GB de VRAM (RTX 3060, 12288 MiB).
 
-> **Nota CPU Forced.** A **GPU2** (`Gemma4-E4B-UD-Q3`) roda **100% em GPU**
-> (`-ngl 99`), sem offload. A linha **CPU** é explícita e separada:
-> `llama-cpu-forced.service` (`:4120`, `-ngl 0 -t 4 -tb 4`) +
-> `bridge-cpu-forced.service` (`:4126`). Ela existe como **cenário de teste**
-> para **tarefas granulares de execução de scripts** (`-ngl 0`, `-t/-tb`), para
-> medir/validar o executor de scripts sem disputar VRAM com a GPU1.
+> **Nota — linha GPU2 aposentada (2026-10-30).** A antiga **GPU2**
+> (`Gemma4-E4B-UD-Q3`, llama `:4110` / bridge `:4125`) **foi removida**; o
+> conceito de "GPU2" **não existe mais**. **Nunca** houve "CPU como GPU2":
+> CPU puro é sempre `*-cpu-forced` (`-ngl 0`). O **CPU Forced** passou a apontar
+> para o **próprio Q4 UD** e sua bridge ocupou a porta **`:4125`** (antes do Q3).
+> Definição completa e runbook: ver *Snapshot atual* no topo.
 
 ---
 
@@ -55,8 +86,17 @@ atrás de duas bridges:
 
 | provider | bridge | llama | papel |
 |---|---|---|---|
-| `openai` | `http://127.0.0.1:4124/v1` | `:4100` | GPU1 `Gemma4-E4B-Q4` (E4B base original Q4_K_M) |
-| `llama` | `http://127.0.0.1:4125/v1` | `:4110` | GPU2 `Gemma4-E4B-UD-Q3` (E4B abliterated IQ3_XXS) |
+| `openai` | `http://127.0.0.1:4124/v1` | `:4100` | GPU1 `Gemma4-E4B-UD` (E4B **UD** uncensored Q4_K_M) — **único modelo de produção** |
+
+> **Transição de providers (2026-10-30, Q4 UD único).** O `opencode.json` ainda
+> declara os ids **pré-transição**: `openai:Gemma4-E4B-Q4*` (Q4 base), um provider
+> `llama` em `:4125` com `Gemma4-E4B-UD-Q3*` (**Q3 aposentado**) e um `cpu` em
+> `:4126`. **Alvo:** `openai:4124` aponta p/ **`Gemma4-E4B-UD`** (sufixos
+> `-plan/-build/-orch/-moe/-scripter/-exec`); provider `llama` (Q3) **removido**;
+> `cpu` passa a **`Gemma4-E4B-UD`** em `:4125`. Reapontamento dos ids segue o
+> **runbook** no topo (as units são ajustadas no desktop antes do opencode.json).
+> A bridge `:4124` **já serve** `Gemma4-E4B-UD` (a resposta do modelo vem como
+> `Gemma4-E4B-UD-build`), mesmo que as chaves do json ainda digam `Q4`.
 
 ```json
 {
@@ -122,24 +162,38 @@ unit (`--temperature`/`--thinking`); id com sufixo **vence**.
 
 | id | temp | thinking | papel |
 |---|---|---|---|
-| `Gemma4-E4B-Q4` | 0.5 | events | global GPU1 (base da unit) |
-| `Gemma4-E4B-Q4-plan` | 0.4 | events | planeja |
-| `Gemma4-E4B-Q4-build` | 0.2 | off | executa |
-| `Gemma4-E4B-Q4-orch` | 0.4 | events | orquestra/delega |
-| `Gemma4-E4B-Q4-moe` | 0.7 | events | explora/generalista |
-| `Gemma4-E4B-Q4-scripter` | 0.2 | off | compõe scripts |
-| `Gemma4-E4B-UD-Q3` | 0.5 | events | global GPU2 (base da unit) |
-| `Gemma4-E4B-UD-Q3-plan` | 0.4 | events | planeja |
-| `Gemma4-E4B-UD-Q3-build` | 0.2 | off | executa |
-| `Gemma4-E4B-UD-Q3-moe` | 0.7 | events | explora |
-| `Gemma4-E4B-UD-Q3-scripter` | 0.2 | off | compõe/valida scripts |
-| `Gemma4-E4B-UD-Q3-exec` | 0.2 | off | valida **e executa** scripts |
+| `Gemma4-E4B-Q4` | 0.2 | off | global GPU1 (base da unit; `--thinking off`, ver 4.3) |
+| `Gemma4-E4B-Q4-plan` | 0.3 | events | planeja |
+| `Gemma4-E4B-Q4-build` | 0.1 | off | executa |
+| `Gemma4-E4B-Q4-orch` | 0.3 | events | orquestra/delega |
+| `Gemma4-E4B-Q4-moe` | 0.5 | events | explora/generalista |
+| `Gemma4-E4B-Q4-scripter` | 0.1 | off | compõe scripts |
+| `Gemma4-E4B-UD-Q3` | 0.2 | events | global GPU2 (base da unit) |
+| `Gemma4-E4B-UD-Q3-plan` | 0.3 | events | planeja |
+| `Gemma4-E4B-UD-Q3-build` | 0.1 | off | executa |
+| `Gemma4-E4B-UD-Q3-moe` | 0.5 | events | explora |
+| `Gemma4-E4B-UD-Q3-scripter` | 0.1 | off | compõe/valida scripts |
+| `Gemma4-E4B-UD-Q3-exec` | 0.1 | off | valida **e executa** scripts |
 
-Escala de temperatura: **0.2 baixa (execução) / 0.4 média (planejamento) / 0.7 alta (exploração)**;
-o global da unit é **0.2**. O `temperature` do `opencode.json` (0.4/0.2/0.4/0.7/0.2)
+Escala de temperatura: **0.1 baixa (execução) / 0.3 média (planejamento) / 0.5 alta (exploração)**;
+o global da unit é **0.2**. O `temperature` do `opencode.json` (0.3/0.1/0.3/0.5/0.1)
 segue a mesma escala.
-O thinking off vem do perfil (build/scripter/exec); as units atuais não usam
-`--thinking-off-roles`.
+O thinking efetivo vem do **perfil por sufixo, que PREVALECE sobre o global** —
+essa é a regra: os steps mandam ids com sufixo (`-plan`, `-orch`, `-build`) e
+cada um assume o thinking do **seu** role (`plan`/`orch` = on, porque os testes
+também usam Plan; `build`/`scripter`/`exec` = off). O global da bridge da GPU1 é
+**`--thinking off`** (`bridge-gpu.service`, ver §4.3.1) e vale **só** para o id
+**sem sufixo**, que é o que a maior parte dos steps do WAR serve: sem sufixo não
+há perfil, então o id cai no global e sai sem `reasoning_content`. Nenhuma unit
+usa `--thinking-off-roles`, porque o perfil já cobre as roles de execução.
+
+Como conferir (antes de qualquer bateria):
+
+```bash
+curl -s -H 'Authorization: Bearer guest@123' http://127.0.0.1:4124/api/status \
+  | jq '{thinking, mode, main_harness, harness_tails, tail_scope}'
+# {"thinking":"off","mode":"bridge","main_harness":true,"harness_tails":true,"tail_scope":"all"}
+```
 
 ### 1.3 Agents
 
@@ -147,16 +201,16 @@ O thinking off vem do perfil (build/scripter/exec); as units atuais não usam
 
 | agent | model | temp |
 |---|---|---|
-| `plan.md` | `openai/Gemma4-E4B-Q4-plan` | 0.4 |
-| `build.md` | `openai/Gemma4-E4B-Q4-build` | 0.2 |
-| `orch.md` | `openai/Gemma4-E4B-Q4-orch` | 0.4 |
-| `moe.md` | `openai/Gemma4-E4B-Q4-moe` | 0.7 |
-| `scripter.md` | `openai/Gemma4-E4B-Q4-scripter` | 0.2 |
-| `exec.md` | `llama/Gemma4-E4B-UD-Q3-exec` | 0.2 |
-| subagente `task` | `llama/Gemma4-E4B-UD-Q3-exec` | 0.2 |
+| `plan.md` | `openai/Gemma4-E4B-Q4-plan` | 0.3 |
+| `build.md` | `openai/Gemma4-E4B-Q4-build` | 0.1 |
+| `orch.md` | `openai/Gemma4-E4B-Q4-orch` | 0.3 |
+| `moe.md` | `openai/Gemma4-E4B-Q4-moe` | 0.5 |
+| `scripter.md` | `openai/Gemma4-E4B-Q4-scripter` | 0.1 |
+| `exec.md` | `llama/Gemma4-E4B-UD-Q3-exec` | 0.1 |
+| subagente `task` | `llama/Gemma4-E4B-UD-Q3-exec` | 0.1 |
 
 As temps acima são as do `opencode.json`; no runtime o **perfil da bridge**
-(plan/orch 0.4, build/scripter/exec 0.2, moe 0.7) vence pelo sufixo do id.
+(plan/orch 0.3, build/scripter/exec 0.1, moe 0.5) vence pelo sufixo do id.
 
 O Exec é **só GPU2** (como Plan/Build/Orch são só GPU1). O Scripter **valida**
 (`bash -n`) sem executar; o Exec **executa** (`bash <arquivo>`). Subagente
@@ -166,6 +220,15 @@ genérico `llama/Gemma4-E4B-UD-Q3` cai no `--thinking events` da unit e abre rea
 ---
 
 ## 2. Servidores llama (GPU full, 12 GB, TurboQuant)
+
+> **⚠️ Estado abaixo = pré-transição (Q4 base `:4100` + GPU2/Q3 `:4110`).**
+> Desde **2026-10-30 (Q4 UD único)**, o `llama-gpu` roda o **Q4 UD** na **ext4**
+> (`/media/mint/2a29…/opt/models/gemma-4-E4B-it-uncensored/gemma-4-E4B-it-uncensored-Q4_K_M.gguf`,
+> `-c 524288 -np 4` = 4×128k, full `CUDA0`), e a linha **GPU2 (`:4110`) foi
+> removida**. Os exemplos de unit e as rotas `/opt/models/…` abaixo documentam a
+> **configuração antiga** (Q4 base em squashfs + Q3) — mantida como histórico até
+> a limpeza física (config futura). Use o **Snapshot atual** (topo) como fonte da
+> config corrente.
 
 ### 2.1 Flags do `llama-server` usadas nesta linha
 
@@ -462,6 +525,7 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 | `--thinking` | `events` | `events` mostra `reasoning_content`; `off` descarta |
 | `--thinking-format` | `events` | nome canônico do formato de repasse do reasoning; `--thinking` é alias |
 | `--temperature` | `0.3` | global; perfil por sufixo do id vence |
+| `--aux-temp` | vazio | global do turno de retry; role por sufixo do id vence, valor ausente cai no perfil de desvio (`plan`) |
 | `--max-tokens` | `0` | teto de saída (0 = sem teto; llama/cliente decidem) |
 | `--coerced-max-tokens` / `--cpu-max-tokens` | `0` | teto da linha COAGIDA (upstream sem parser); `--cpu-max-tokens` é alias histórico ("cpu" era inferência por nome de modelo) |
 | `--tool-output-limit` | `0` | corte por resultado de tool (0 = integral) |
@@ -502,6 +566,22 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 | `--workspace` | cwd | raiz de `POST /api/tools/execute` |
 | `--main-harness` | `true` | substitui o system no caminho gerido (model sem sufixo) |
 | `--harness-tails` | `true` | liga as caudas (behavior/tools) conforme `tailScope`; `0` desliga |
+
+> **Regra (HARNESS POR MODO):** MainHarness on/off depende do MODO: bridge →
+> SEMPRE on; opencode → off (o opencode já carrega o seu harness no stream com
+> o llama). O discriminador é o CLIENTE (BridgeLane), nunca o sufixo do modelo.
+> Passthrough só dispara fora da raia bridge. Web UI (`ChatController`)
+> hardcoda `harness = true`.
+> **Trava (primordial):** `--mode bridge` + `--main-harness 0` NÃO sobe
+> (exit 2, `ERROR DE ARGUMENTOS`, `ArgumentException` em `ApplyMode`). A raia
+> sem o nosso harness é `--mode opencode`; as units `:4124/:4125/:4126` são
+> (ou devem ser) `mode=opencode`.
+> **Tool tail é regra:** qualquer teste que enuncia uso de tools exige
+> `--harness-tails 1` + `--tail-scope all|managed` (preflight
+> `harness_tails_status`). Request sem `tools` no array não recebe cauda de
+> tools (`hasTools:false`). Tópico sem tools usa perfil `plan` (0.3/on) e o
+> enunciado termina com `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`; com tools fica
+> `build` (0.1/off).
 
 > **Legado:** Qwen3/Qwen3.5 não são a linha atual; as flags marcadas (legado) não são usadas na linha Gemma 4.
 
@@ -571,7 +651,7 @@ Total: **não medido neste chroot (sem CUDA)**; medir no host (RTX 3060, 12288 M
 | `--anti-repeat` / `--anti-repeat-retry` | `1` | ambas as bridges |
 | `--main-harness` / `--harness-tails` / `--tail-scope` / `--legacy-harness` | `0` / `1` / `all` / `0` | todas (master do cliente intacto; tails nos dois caminhos) |
 | `--diagnostic` | `0` | ambas (sonda desligada) |
-| `--thinking` | `events` | ambas (formato de repasse; o thinking efetivo vem do perfil) |
+| `--thinking` | `off` (GPU1) / `events` (GPU2) | formato de repasse do reasoning; nos **testes** a bridge alvo roda `off` (§4.3.1), o thinking efetivo por role vem do perfil |
 | `--coerce-text-tools` / `--coerce-narrated` / `--tool-strategy` | `0` | ambas (upstream com parser nativo) |
 | `--anti-repeat-window` | `512` | ambas |
 | `--passthrough-responses` | `true` | ambas |
@@ -615,6 +695,18 @@ Consequências diretas (proibido para obter PASS):
 
 PASS que só existe depois de mudar a bridge, o schema do teste ou a instância é
 **PASS indevido**. O resultado honesto é FAIL, com a evidência.
+
+**Estadiamento das linhas (2026-10-30) — Q4 primeiro, GPU2 só no fim.** A esteira
+roda **Q4-only** (`:4124`, o gate). A linha **GPU2** (Q3 `:4125` ou CPU-forced
+`:4126`) entra apenas numa **rodada completa própria, no final**, publicada por
+`--war-bridge-q3 <url>` ou pela variável **`WAR_GPU2_BRIDGE`**
+(`WAR_CPU_BRIDGE` segue aceito como legado). Sem essa variável, as fases que
+dependem da GPU2 — `E-front-edit`, `E-front-edit-razor`, `E-front-edit-react`,
+`E-front-verify` (a cadeia consome os `after.json` da edição) e o companion do
+`E-scripter-gen` — saem **SKIP** com motivo explícito. Nunca se cai em `:4125`
+por default: falar com a GPU2 numa rodada Q4 é exatamente o cruzamento proibido
+acima. `--war-no-cpu` mantém a rodada Q4-only mesmo com `--war-bridge-q3`
+presente (a linha não vai para os filhos).
 
 **Horizonte estável de ctx/saída (não oscilar):**
 
@@ -704,6 +796,64 @@ de 30% dos diálogos da esteira (ex.: roxa build falhou nos 2 transportes, 2/2)
 é elegível para correção de enunciado/teste. Abaixo disso, registrar como flaky,
 não alterar a bridge nem os defaults. A correção mantém o aceite e é validada
 no gate Q4; o Q3 continua diagnóstico.
+
+**Belts build: workspace root e nudge `peg-gemma4` (2026-10-27).** Dois FAILs
+seguidos no L2, ambos no `belts-build-bridge`:
+
+1. `500 The model produced output that does not match the expected peg-gemma4
+   format` no turno 3 da faixa azul. É o parser do `llama.cpp` recusando a
+   saída do modelo; o teste não tem como corrigir o parser.
+2. `Access to the path /tmp/opencode/belts-build/azul/Startup/DependencyInjection.cs
+   is denied` no run seguinte. A tool `write` roda no processo da bridge como
+   root e deixava o workspace root-owned; o teste seguinte, como `mint`, não
+   conseguia apagar a pasta.
+
+Correção no teste, sem tocar em bridge/ctx/`max_tokens`/aceite:
+
+- workspace único por execução: `/tmp/opencode/belts-build/<timestamp>-<pid>/<belt>`,
+  sem reutilizar nem apagar pasta anterior root-owned;
+- POST do chat limitado a **duas tentativas**; a segunda, só em 500 +
+  `peg-gemma4`, anexa um nudge `user` curto pedindo UMA tool call `write`
+  (criação) ou `read` (revisão) com JSON completo. Se repetir, FAIL;
+- aceite inalterado: `>=3` arquivos, `>500` chars, arquivos reais no disco.
+
+Evidência: `logs/levels/L2-20261027-l2fix` = 4/4 PASS (537 s) e
+`logs/levels/L1-20261027-l1l2-l1` = 3/3 PASS (741 s). O nudge é falha
+transitória de formato; não substitui a correção de causa raiz no upstream.
+
+**Workspace de missão: sobras `root` e `TestContext.FreshWorkspace` (2026-10-29).**
+A mesma classe de falha voltou no `E-mission-tools` isolado, agora em `/tmp/e2e-mission`:
+
+```
+FAIL E-mission-tools: Access to the path
+'/tmp/e2e-mission/mfs/bin/Release/net10.0/mfs.pdb' is denied.        (0,1 s)
+```
+
+Causa: as tools rodam **dentro da bridge** (`POST /api/tools/execute`), então
+`bin/` e `obj/` dos projetos scaffolados aparecem `root:root` (conferido: `ls -la
+/tmp/e2e-mission/mfs` → `bin`/`obj` root, `Program.fs` do usuário). O teste roda
+como `mint` e o `Directory.Delete(ws, true)` do começo do passo estoura
+`UnauthorizedAccessException` **antes do primeiro turno do modelo** — o FAIL não
+diz nada sobre a capacidade do modelo e queima o step em 0,1 s.
+
+Regra (vale para qualquer passo E2E que scaffolde projeto):
+
+- **workspace único por execução** via `TestContext.FreshWorkspace("<prefixo>")`
+  (fonte única no `TestContext`, não copiar helper no teste). Ele tenta apagar o
+  path; se a remoção falhar por sobra `root`, devolve
+  `<prefixo>-<stamp>-<pid>` e loga `[ws] cleanup ignorado em ... (UnauthorizedAccessException); usando ...`
+  em vez de derrubar o teste. É o mesmo desenho já usado no `belts-build`
+  (`/tmp/opencode/belts-build/<stamp>-<pid>/<belt>`);
+- **o teste nunca chama `sudo`** (a suíte não tem senha e sujar permissão é
+  justamente o que se quer eliminar). Limpeza manual, quando for o caso:
+  `sudo rm -rf /tmp/e2e-mission /tmp/e2e-mission-algo`;
+- antes de diagnosticar um FAIL instantâneo, olhar dono dos diretórios:
+  `ls -la /tmp/e2e-*/<projeto>` — se `bin`/`obj` são `root`, o defeito é sobra de
+  rodada, não enunciado/aceite.
+
+Evidência: `PASS=4 FAIL=0` nos units (`U-tails-path-simulation-rules`,
+`U-fs-repair-comprehension`) e o `E-mission-tools` passou a gastar os turnos no
+modelo (F# compilou e imprimiu valores) em vez de morrer no mkdir.
 
 **Fail-fast e seleção de modo (`scripts/war/run-levels.sh`).** Duas variáveis
 de ambiente mudam a esteira sem tocar em aceite:
@@ -799,7 +949,7 @@ irredutíveis e a concisão; nada de orquestração/temperatura/harness — no m
 modo `bridge` é `MainHarness` + tails (só as tails incrementam).
 
 MODELOS LOCAIS (OpenCode via bridges C# :4124/:4125 → llama TurboQuant, nada vai p/ nuvem). Apenas 2 modelos para as 6 roles:
-- `openai/Gemma4-E4B-Q4` (bridge GPU :4124 → llama :4100 Gemma4 E4B base Q4_K_M 128k, temp 0.3, thinking events): base das roles Plan, Build, Orch, MoE e Scripter — a temperatura por role fica no `agents/*.md` (Plan/Orch 0.4, Build/Scripter 0.2, MoE 0.7). Tool calling nativo (template peg-gemma4).
+- `openai/Gemma4-E4B-Q4` (bridge GPU :4124 → llama :4100 Gemma4 E4B base Q4_K_M 128k, temp 0.3, thinking events): base das roles Plan, Build, Orch, MoE e Scripter — a temperatura por role fica no `agents/*.md` (Plan/Orch 0.3, Build/Scripter 0.1, MoE 0.5). Tool calling nativo (template peg-gemma4).
 - `llama/Gemma4-E4B-UD-Q3` (bridge GPU2 :4125 → llama :4110 Huihui Gemma4 E4B abliterated i1-IQ3_XXS 128k, base temp 0.3, thinking off): role **Exec** (Exec temp 0.1/off) — cria, valida (`bash -n`) e **executa** (`bash <arquivo>`) os scripts — e subagentes de micro-enunciado. **Roda 100% GPU** na segunda instância (GPU2, E4B UD-Q3); Plan/Build/Orch/MoE/Scripter na GPU1 (E4B Q4). Harness: checkbox "Execução de scripts" = token `exec` no CSV do agente (o Scripter NÃO tem `exec`; só valida).
 - Sem CLI externa: removidos CLI serve, web, ícones e scripts. Atomic Agent também removido.
 
@@ -818,7 +968,7 @@ REGRAS DO SUBAGENTE GPU2 E4B (vale para `llama/Gemma4-E4B-UD-Q3`, inegociáveis)
 
 PIPELINE PADRÃO: role `plan` (0.3) elucida e fatia em micro-enunciados -> role `build` (0.1) executa -> plan verifica o ACEITE de cada um.
 
-TEMPERATURA (perfis na bridge, espelhados no `opencode.json`): Plan 0.4 (média, planejar), Build 0.2 (baixa, executar), Orch 0.4, MoE 0.7 (alta, exploração), Scripter 0.2 e Exec 0.2 (determinismo).
+TEMPERATURA (perfis na bridge, espelhados no `opencode.json`): Plan 0.3 (média, planejar), Build 0.1 (baixa, executar), Orch 0.3, MoE 0.5 (alta, exploração), Scripter 0.1 e Exec 0.1 (determinismo).
 
 SYSTEM PROMPT GERAL (GPU E4B, amplo, propósitos gerais):
 Você é um arquiteto desenvolvedor de software generalista de esferas globais: artes, biologia, ciências, química, física (inclusive quântica), matemática, filosofia, sociologia, tecnologia e demais assuntos globais — além de arquitetura e engenharia de software, backend C# (DDD/SOLID), frontend (React/Blazor/Angular), dados e SQL, redes e infra, IoT/ARM embarcado. Atende qualquer pedido direto, com profundidade sob demanda, sem enrolação. Roteie sozinho: atue nas tarefas por completo, porém, quando solicitado, resuma em tarefas menores em fases, esteja ciente que a execução será por subagentes Gemma4 E4B UD-Q3 (`llama/Gemma4-E4B-UD-Q3`) com menos capacidade, que você agrega e verifica. Responda no idioma do usuário, tool calls completas e código diff ao editar arquivos.
@@ -854,8 +1004,8 @@ No deploy atual (pré-migração .NET 10), o `appsettings.json` do runtime fica 
 `/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net9.0`; depois do
 deploy do release `2.0.0`, o caminho passa a ser
 `/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0`. Os valores
-atuais são `profiles.plan.temperature = 0.4`, `profiles.orch.temperature = 0.4`,
-`build/scripter/exec = 0.2` e `moe = 0.7`; a unit passa `--temperature 0.2`
+atuais são `profiles.plan.temperature = 0.3`, `profiles.orch.temperature = 0.3`,
+`build/scripter/exec = 0.1` e `moe = 0.5`; a unit passa `--temperature 0.2`
 como base. As bridges foram reiniciadas depois do ajuste.
 
 Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `MAIN_HARNESS=0` e
@@ -864,11 +1014,13 @@ Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `MAIN_HARNESS=0` e
 ### 4.3 Units de produção (exemplo aplicado)
 
 ```ini
-# bridge-gpu.service  (GPU1 / E4B base) — linha única no unit
+# bridge-gpu.service  (GPU1 / E4B base) — linha única no unit (espelho do /etc real)
 ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
   --listen 0.0.0.0 --port 4124 --upstream http://127.0.0.1:4100 --model Gemma4-E4B-Q4 \
-  --thinking events --temperature 0.2 --max-tokens 16384 --api-key guest@123 \
-  --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 \
+  --thinking off --temperature 0.2 --max-tokens 16384 \
+  --context-guard 1 --context-tokens 524288 --context-slots 4 \
+  --api-key guest@123 --passthrough-responses true \
+  --mode bridge --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0 \
   --anti-repeat 1 --anti-repeat-retry 1 \
   --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 \
   --anti-repeat-window 512 --log /tmp/bridge-gpu.log
@@ -885,6 +1037,35 @@ ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll \
 
 A `bridge-cpu-forced.service` (`:4126`, `-ngl 0`) também roda
 `--main-harness 0 --harness-tails 1 --tail-scope all --anti-repeat-retry 1`.
+
+#### 4.3.1 Thinking off nos testes (regra)
+
+A esteira de testes (unit, integração e WAR) roda com **thinking desligado** na
+bridge alvo. A regra é **do setup da bridge**, não do driver: o `WarTemplate`
+confere `main_harness`/`harness_tails`/`context_tokens` no preflight e **não**
+força thinking — se a unit voltar a `--thinking events`, ninguém corrige por
+baixo e o run mede outra coisa.
+
+| o que | valor | onde |
+|---|---|---|
+| global da GPU1 | `--thinking off` | `bridge-gpu.service` |
+| perfil por sufixo (**prevalece** sobre o global) | `plan`/`orch` = on (os steps de teste usam Plan e Orch) · `build`/`scripter`/`exec` = off | `RoleProfiles` (tabela única no Core) |
+| id sem sufixo (a maior parte dos steps do WAR) | cai no global → **off** | `Program.cs` (`profThinkMid` vazio) |
+| `--thinking-off-roles` | não usado por nenhuma unit | o perfil já cobre as roles de execução |
+
+Motivo: thinking on em tools densas gasta raciocínio, ramifica e alucina
+(`AGENTS.md`, `docs/DRIVER-FIXES.md`). Thinking on fica para Plan/Orch/MoE.
+
+Conferência (rode antes do run; é o mesmo dado que o preflight lê):
+
+```bash
+curl -s -H 'Authorization: Bearer guest@123' http://127.0.0.1:4124/api/status \
+  | jq '{thinking, mode, main_harness, harness_tails, tail_scope, context_tokens, context_slots}'
+# thinking=off · mode=bridge · main_harness=true · harness_tails=true · tail_scope=all
+```
+
+O `GET /api/test/last-system` completa a prova do lado do request
+(`temperature`, `has_profile`, `main_harness`, `tools_tail`).
 
 Atalhos de desktop: `OpenCode Bridge GPU/CPU` reiniciam as units e mostram
 saúde; `Llama GPU`/`Llama CPU` regeneram e reiniciam os servidores;
@@ -929,6 +1110,21 @@ drawio -x -f png --size page -s 2.5 \
 ---
 
 ## 5. Build, testes e pipeline
+
+### Regra: reinício de bateria reinicia a bridge
+
+**Toda bateria E2E, em ambos os modos (`bridge` e `opencode`), começa com o reinício da bridge alvo.**
+
+```bash
+sudo systemctl restart bridge-gpu        # :4124
+sudo systemctl restart bridge-gpu2       # :4125
+sudo systemctl restart bridge-cpu-forced # :4126
+```
+
+Confirme `/api/status` antes do primeiro step; no `--mode bridge`, exija
+`main_harness=true`. Motivo: zera contadores/`ProbeSamples` e renova o pool
+HTTP dos dois lados; sem isso o segundo teste herda métricas e conexões do
+primeiro. Se o restart ou o status falhar, a bateria para com erro claro.
 
 ```bash
 dotnet build Rochas.OpenCodeBridge.slnx -c Release
@@ -1076,21 +1272,33 @@ Esta seção é a **memória de remaster**: o host é live USB (overlay), então
 abaixo precisa ser gravado na ISO/remaster — nada disso sobrevive a um reboot
 sem estar na imagem.
 
-### 9.1 Nomes, portas e units (fim da confusão CPU × GPU2)
+### 9.1 Nomes, portas e units (Q4 UD único, 2026-10-30)
 
 | papel | unit | porta | script (fonte da unit) | observação |
 |---|---|---|---|---|
+<<<<<<< HEAD
 | GPU1 (orquestrador) | `llama-gpu.service` | 4100 | `/usr/local/bin/start-llama-gpu.sh` | E4B **Q4_K_M** + mmproj, `-ot .*=CUDA0` |
 | **GPU2** (segunda instância, **GPU**) | `llama-gpu2.service` | 4110 | `/usr/local/bin/start-llama-gpu2.sh` | E4B UD-Q3, sem mmproj, `-ot` com embd/per-layer no host |
 | CPU puro (bancada) | `llama-cpu-forced.service` | 4120 | `/usr/local/bin/start-llama-cpu-forced.sh` | E4B Q4 base, `-ngl 0` |
 | bridge GPU1 | `bridge-gpu.service` | 4124 | `/usr/local/bin/start-bridge-gpu.sh` | Q4, guard 131072 |
 | **bridge GPU2** | `bridge-gpu2.service` | 4125 | `/usr/local/bin/start-bridge-gpu2.sh` | Q3, guard 57344 |
 | bridge CPU puro | `bridge-cpu-forced.service` | 4126 | `/usr/local/bin/start-bridge-cpu-forced.sh` | Q4 CPU, guard 131072 |
+=======
+| GPU1 (orquestrador) | `llama-gpu.service` | 4100 | `/usr/local/bin/start-llama-gpu.sh` | E4B **UD** `Q4_K_M` (ext4) + mmproj, `-ot .*=CUDA0`, `-c 524288 -np 4` |
+| CPU puro (bancada) | `llama-cpu-forced.service` | 4120 | `/usr/local/bin/start-llama-cpu-forced.sh` | **o próprio Q4 UD**, `-ngl 0` |
+| bridge GPU1 | `bridge-gpu.service` | 4124 | `/usr/local/bin/start-bridge-gpu.sh` | Q4 UD, guard 524288 |
+| bridge CPU puro | `bridge-cpu-forced.service` | **4125** | `/usr/local/bin/start-bridge-cpu-forced.sh` | Q4 UD CPU, guard 131072 |
+>>>>>>> origin/main
 
-- **Removidos** em 2026-10-23: `llama-cpu.service` e `bridge-cpu.service`
+- **Removidas em 2026-10-30** (Q3 aposentado): `llama-gpu2.service` (`:4110`) e
+  `bridge-gpu2.service` (`:4125`) → não recriar. A porta **`:4125`** passou ao
+  **bridge CPU Forced** (antes em `:4126`).
+- **Removidas** em 2026-10-23: `llama-cpu.service` e `bridge-cpu.service`
   (nomes enganosos — rodavam 100% GPU). Não recriar no remaster.
-- `GPU2` **não** é CPU. CPU puro é sempre `*-cpu-forced` (`-ngl 0`).
-- Regra de VRAM: **nunca** offload para CPU nas duas linhas GPU
+- **CPU puro é sempre `*-cpu-forced` (`-ngl 0`)** — uma linha própria, **nunca**
+  "GPU2". O conceito **GPU2** (e a antiga "confusão CPU × GPU2") **não existe
+  mais**: o Q4 UD é o único modelo em GPU e em CPU.
+- Regra de VRAM: **nunca** offload para CPU na linha GPU
   (`-ngl 99` fixo; sem `-nkvo`, sem `--no-op-offload`). Só o CPU-forced usa `-ngl 0`.
 
 ### 9.2 Launchers zenity (`/usr/local/bin`) — padrão único
@@ -1161,17 +1369,29 @@ Args gravados nas units (as três, `bridge-gpu`, `bridge-gpu2` e `bridge-cpu-for
   thinking em turno com tools (perda de UX/qualidade) — use-o só no caminho puro
   de testes/WebUI (`--tool-shim json --tool-shim-max-string 1200
   --tool-shim-min-calls 3`), nunca por padrão na ponte do OpenCode.
-- **context-guard: aceito, reportado — e hoje inerte.** `--context-tokens 131072`
-  aparece em `/api/status` (`config_groups.orcamento`), mas o 413
-  `context_compact_required` não dispara porque (a) a guarda vive só no ramo
-  agregado non-stream do `Passthrough` (chat) e (b) com `--anti-repeat-abort 1`
-  o request non-stream é atendido antes por `TryStreamAbortChat`, que não tem
-  guarda; e (c) o OpenCode usa `/v1/responses` (`HandleResponses`), também sem
-  guarda. Prova: instância descartável (porta efêmera) com `--context-tokens 1000`
-  recebeu prompt de 3734 tokens → **HTTP 200**. A proteção real hoje é o
-  `limit.context = 131072` do opencode + compactação do próprio cliente.
-  **Pendência para a próxima release:** estimar tokens na entrada (pré-flight)
-  e/ou plugar a guarda em `HandleResponses` e no ramo de stream-abort.
+- **context-guard: ativo nos dois sentidos (2026-10-31).** `--context-tokens` +
+  `--context-slots` entram em `/api/status` (`config_groups.orcamento`) e o 413
+  `context_compact_required` dispara pelo `usage.prompt_tokens` de resposta
+  **bem-sucedida** no ramo JSON do chat. O buraco medido no
+  `E-mission-algo-cs-hanoi` (140146 tokens contra 131072 por slot) era o 400
+  **seco** do llama (`exceed_context_size`): erro não tem `usage`, então a guarda
+  reativa nunca disparava e o corpo do erro ia cru. Agora o `Passthrough` chama
+  `ContextGuard.LooksLikeOverflow` no corpo do erro e escala:
+  **1) nudge** (`ContextGuard.NudgeText`, lembrete de economia — não corta
+  conteúdo), **2) compactação** (`ContextGuard.Compact`, teto de 70% do slot),
+  **3) 413** `context_compact_required`. Eventos `context-guard`
+  (`where=upstream-400`), `context-nudge` e `context-compact` ficam no log da
+  bridge; o driver WAR rotula a falha como `causa=contexto`.
+- **Estimativa de tokens calibrada no próprio llama** (`/tokenize`, 2026-10-31):
+  prosa 3.83 chars/token, C# 3.66, C# denso 3.22. O `chars/4` subestimava até
+  1.24x em código e a compactação virava no-op. `ContextGuard` usa **3.2** (pior
+  caso medido) para errar para cima; o corte é **recursivo** (janela preservada
+  8 → 4 → 2) quando os turnos recentes sozinhos já passam do teto.
+- **Caudas separadas** (`--harness-behavior` / `--harness-tools`, default ON):
+  behavior é conduta geral e entra sempre (independente do main harness); a
+  cauda de tools só entra quando o request traz o array `tools`. O
+  `--harness-tails` continua como **alias de compatibilidade** que liga/desliga
+  as duas (o preflight `harness_tails_status` segue lendo o status).
 - Com `--harness-tails 0` as tails não entram em nenhum caminho: o OpenCode já
   roda o "tubo puro". Não é preciso "configurar caminho puro" para ele — só para
   WebUI/testes sem sufixo.
@@ -1548,6 +1768,30 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
 
 ## Dependência Grafana — painel Observation
 
+- **Acesso:** `http://127.0.0.1:4800` (proxy Caddy `:4150`), credenciais do lab
+  **`admin` / `guest@123`** (mesma senha da bridge e dos testes). Senha mexer:
+  `sudo grafana cli --homepath /usr/share/grafana admin reset-admin-password guest@123`.
+- **Bloqueio de tentativas (encontrado 2026-10-29):** depois de erros de login o
+  Grafana responde `401` com *"too many consecutive incorrect login attempts …
+  temporarily blocked"* — **não** é a senha que mudou. Limpar a janela:
+  `sudo python3 -c "import sqlite3; c=sqlite3.connect('/var/lib/grafana/grafana.db'); c.execute('delete from login_attempt'); c.commit()"`.
+- **Dashboard:** `OpenCodeBridge Observation` (uid `opencodebridge`), 17 painéis
+  apontando para `${bridge}` — `mode=bridge`, `main_harness`, `tails`, métricas,
+  probes, steps e enunciado. Todo target usa `source: "url"` (sem isso o Infinity
+  **devolve 200 sem dados** — medição: mesmo payload sem `source` = 0 linhas).
+- **Layout (contrato de leitura, 2026-10-30):** primeira linha em `h=5`
+  (`🔀 Fluxo principal` à esquerda, `Modo / Main Harness` à direita), linhas de
+  baixo compactadas em 1 célula, e `Steps concluidos` (`y=25`, `h=8`) **acima**
+  de `Tools calls por step` (`y=33`, `h=6`) — a soma fecha `39`, onde começa a
+  linha de `Throughput/VRAM`. Mudou o JSON do repo? Rode
+  `sudo bash scripts/lab/install-grafana-observation.sh` (copia + provisioning +
+  restart + validação por API) e confira
+  `GET /api/dashboards/uid/opencodebridge`.
+- **Depois de reboot/limpeza do Grafana:** `/etc/grafana/provisioning` pode
+  voltar a ter **só `sample.yaml`** e `/var/lib/grafana/dashboards` ficar vazio
+  (painel sem datasource e sem dashboard, `/api/search` = `[]`). O mesmo
+  `install-grafana-observation.sh` é idempotente e resolve — ele também faz
+  `systemctl enable grafana-server` (medido 2026-10-30).
 - Plugin **`yesoreyeram-infinity-datasource`** é obrigatório para o dashboard `opencodebridge`
   (panels consultam `http://127.0.0.1:4124/api/metrics` e `/api/status` via Infinity).
   Instalar: `sudo grafana-cli --homepath /usr/share/grafana plugins install yesoreyeram-infinity-datasource`
@@ -1555,3 +1799,34 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
 - Panels `TestData` (sondas Serilog) funcionam nativamente sem plugin.
 - Provisionamento versionado em `observation/grafana/` (dashboard JSON + YAMLs), copiado para
   `/var/lib/grafana/dashboards` e `/etc/grafana/provisioning` pelo `OpenCodeBridge.Observation`.
+  Conferência de painel: `GET /api/datasources/uid/opencodebridge-infinity/health` e
+  `POST /api/ds/query` (um target por payload) — o próprio `scripts/deploy-pull.sh`
+  já reinicia `grafana-server` junto com a bridge para reaplicar o provisioning.
+
+## 15. Scripts operacionais de bancada (2026-10-29)
+
+Atalhos que substituem a sequência manual repetida em toda rodada. Todos derivam
+a raiz do repo da própria localização (`scripts/` → `..`) e usam
+`BRIDGE_API_KEY` (default `guest@123`) — nenhum guarda credencial no arquivo.
+
+| script | uso | o que faz |
+|---|---|---|
+| `scripts/bridge-restart.sh` | `bridge-restart.sh [4124\|4125\|4126] [--print-flags]` | reinicia a unit da bridge alvo (`bridge-gpu`/`bridge-gpu2`/`bridge-cpu-forced`), espera `/api/status` até 30 s e imprime modelo/mode/tails/uptime; com `--print-flags` imprime orçamento e janelas e **falha** se `main_harness`/`harness_tails` estiverem off |
+| `scripts/check-units.sh` | `check-units.sh [--only NOME] [--no-build]` | build Release + bateria de units (`--skip-e2e`), log em `logs/units-<stamp>.log`, sai com o rc do runner (fail-fast vale) |
+| `scripts/run-isolated.sh` | `run-isolated.sh E-mission-tools [--no-restart] [--port N] [--key K]` | reinicia a bridge (regra de bateria), roda **um** teste isolado com log em `logs/isolated/<teste>-<stamp>.log` e imprime veredito + `[ws]` + últimos 12 turnos do `_mission.log` |
+| `scripts/push-persist.sh` | `GITHUB_TOKEN=... push-persist.sh [--branch main]` | push do persistente para o `origin`, com o token **fora** do repo (env ou 1º arg), mascarado no log e conferido por `ls-remote` (HEAD == origin/main) |
+| `scripts/prod-repair-ownership.sh` | `prod-repair-ownership.sh [--dry-run]` | conserta o PROD quando `.git`/worktree ficaram de root (DRIVER-FIXES #21): `chown -R` + `git checkout -- .` (deploy-only, nunca `reset --hard`) e valida worktree limpo |
+
+Fluxo canônico de uma rodada:
+
+```bash
+scripts/bridge-restart.sh 4124 --print-flags
+scripts/check-units.sh --only U-tails,U-fs-repair
+scripts/run-isolated.sh E-mission-tools          # log em logs/isolated
+GITHUB_TOKEN=... scripts/push-persist.sh
+bash scripts/deploy-pull.sh                       # PROD: pull --rebase + build + restart
+```
+
+Regra de ouro continua a mesma: **restart** é para binário/pool; **zerar
+contador/painel** é `POST /api/diag/reset` (`?probe=1&files=1&panel=1` no início
+da bateria; `?files=1` no `step_start`).

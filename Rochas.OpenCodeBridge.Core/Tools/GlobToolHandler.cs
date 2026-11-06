@@ -44,7 +44,7 @@ public sealed class GlobToolHandler : IToolHandler
             searchDir = dirPart;
         }
 
-        if (!Directory.Exists(baseDir)) return ToolResult.Fail($"diretório não encontrado: '{subdir}'");
+        if (!Directory.Exists(baseDir)) return ToolResult.Fail(WorkspaceGuard.NotFound("diretório", subdir));
         int star = pat.IndexOf("**", StringComparison.Ordinal);
         if (star >= 0)
         {
@@ -54,7 +54,8 @@ public sealed class GlobToolHandler : IToolHandler
             if (!string.IsNullOrWhiteSpace(extra) && extra.IndexOf('*') < 0)
             {
                 searchDir = Path.Combine(baseDir, extra);
-                if (!Directory.Exists(searchDir)) return ToolResult.Fail($"diretório não encontrado: '{subdir}{Path.DirectorySeparatorChar}{extra}'");
+                if (!Directory.Exists(searchDir))
+                    return ToolResult.Fail(WorkspaceGuard.NotFound("diretório", subdir + Path.DirectorySeparatorChar + extra));
             }
         }
 

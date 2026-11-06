@@ -33,7 +33,7 @@ public sealed class GrepToolHandler : IToolHandler
             return ToolResult.Fail(why);
         // `path` pode ser arquivo (grep pontual, como no OpenCode) ou diretório.
         bool singleFile = File.Exists(baseDir);
-        if (!singleFile && !Directory.Exists(baseDir)) return ToolResult.Fail($"caminho não encontrado: '{subdir}'");
+        if (!singleFile && !Directory.Exists(baseDir)) return ToolResult.Fail(WorkspaceGuard.NotFound("caminho", subdir));
 
         try
         {

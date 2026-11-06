@@ -267,8 +267,11 @@ internal static class ToolExecutorTests
 
     private static void ShellEcho(ToolExecutor exec)
     {
+        // O shell anexa a linha "[shell] cwd desta chamada: ..." (contrato do Core,
+        // pinado em U-tool-feedback-shell-cwd); o contrato aqui e' o STDOUT do
+        // comando, nao a resposta inteira — igualdade exata virava falso negativo.
         var r = exec.Execute("shell", "{\"command\": \"echo ola\"}");
-        Check(r.Success && r.Output == "ola", "U-tool-shell-echo");
+        Check(r.Success && r.Output.StartsWith("ola", StringComparison.Ordinal), "U-tool-shell-echo");
     }
 
     private static void ShellDenied(ToolExecutor exec)
@@ -300,7 +303,7 @@ internal static class ToolExecutorTests
     private static void BashAlias(ToolExecutor exec)
     {
         var r = exec.Execute("bash", "{\"command\": \"echo via-bash\"}");
-        Check(r.Success && r.Output == "via-bash", "U-tool-bash-alias");
+        Check(r.Success && r.Output.StartsWith("via-bash", StringComparison.Ordinal), "U-tool-bash-alias");
     }
 
     private static void ReadWriteEditRoundtrip(ToolExecutor exec)

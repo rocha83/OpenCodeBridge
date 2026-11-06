@@ -8,4 +8,4 @@ providers:
     updateIntervalSeconds: 30
     allowUiUpdates: true
     options:
-      path: /media/mint/78AA0831AA07EB08/Projetos/Git/OpenCodeBridge/observation/grafana/dashboards
+      path: /var/lib/grafana/dashboards

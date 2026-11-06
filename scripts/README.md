@@ -27,6 +27,11 @@ clone (`/media/mint/78AA...`, `/media/mint/3686...`, `/usr/src/opencodebridge`).
 | script | o que faz |
 |---|---|
 | `run-bridge-stable.sh` | sobe a bridge com a cauda de comportamento e flags estáveis |
+| `bridge-restart.sh` | reinicia a bridge alvo (`4124/4125/4126`), espera `/api/status` e (com `--print-flags`) confere orçamento/tails |
+| `check-units.sh` | build Release + bateria de units (`--skip-e2e`), rc do runner |
+| `run-isolated.sh` | reinicia a bridge e roda **um** teste isolado, log em `logs/isolated/` + trail do modelo |
+| `push-persist.sh` | push do persistente com `GITHUB_TOKEN` fora do repo, conferido por `ls-remote` |
+| `prod-repair-ownership.sh` | conserta PROD com `.git`/worktree de root (DRIVER-FIXES #21) |
 | `health-check.sh` | smoke da Web UI (`/Account/Login`, `/Chat/Ping`) |
 | `bench-tok-s.sh` | tok/s do llama direto (média/mediana) |
 | `gate.sh` | gate de commit + build + suite web |
@@ -34,6 +39,16 @@ clone (`/media/mint/78AA...`, `/media/mint/3686...`, `/usr/src/opencodebridge`).
 
 ## Artefatos
 
-Baterias escrevem em `/tmp/opencode/` (`war/`, `levels/`, `battery/`). tmpfs é
-volátil: o que precisa sobreviver (script, doc, resultado) vai para o repo —
-`test-logs/` para logs e `HISTORY.md` para o registro.
+**Tudo dentro do repositório** — nada de artefato de teste em `/tmp/opencode`:
+
+| o que | onde |
+|---|---|
+| Bateria/WAR por nível | `logs/levels/L<N>-<stamp>/` (summary, events, probes) e `logs/levels/<stamp>.console.log` |
+| Teste isolado (`run-isolated.sh`) | `logs/isolated/<nome>_<stamp>.log` |
+| Sondas Serilog dos steps | `logs/levels/*/probes/*.probe.json` |
+| Pipeline e standalone | `logs/pipeline.log`, `logs/standalone.log`, `logs/standalone/` |
+| Guard de rebuild | `logs/.rerun-guard.json` |
+
+O único `/tmp` legítimo é o workspace de execução do teste (`/tmp/e2e-*`, volátil
+por desenho) e os locks (`/tmp/opencode/war.lock`). O registro consolidado de
+cada rodada e correção vai para `HISTORY.md` e `docs/DRIVER-FIXES.md`.

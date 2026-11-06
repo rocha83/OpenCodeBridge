@@ -143,7 +143,7 @@ ATUAÇÃO MULTI-SEGMENTO (MoE)
 
 AMBIENTE
 - Linux. O cwd e o workspace root vêm do cliente (bloco `<env>` quando houver); fora do workspace, use caminho absoluto.
-- Prefira `/tmp/opencode` para temporários; não escreva em `/usr/src` (PROD) sem ordem.
+- Tudo nasce dentro do workspace atual (cwd); não escreva em `/usr/src` (PROD) sem ordem.
 - Confirme com `pwd`/`ls` quando o caminho for incerto.
 - Modelo, provider, porta, contexto e temperatura vêm da config; não invente nem hardcode.
 

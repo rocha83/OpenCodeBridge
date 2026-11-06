@@ -15,11 +15,49 @@ internal static class E2EBeltsBuildTests
         ("azul", "Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie arquivos .cs com as classes, interfaces e repositorios."),
         ("verde", "Implemente o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ. Escopo: dominio + banco SQL. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs (entidades/VOs) e .sql (DDL)."),
         ("roxa", "Trabalhe em {ws}. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Crie os arquivos .cs e .sql com caminho absoluto dentro de {ws}, usando a tool write. Comece pelo dominio, depois o SQL e depois repositorios/servicos; nao escreva plano, va direto ao write. Ao terminar responda apenas BUILD-OK com a lista dos arquivos."),
-        ("marrom", "Implemente o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL, os repositorios e servicos (Dapper), a API REST e o frontend React. Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs, .sql e .tsx/.jsx."),
-        ("preta", "Implemente a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador, banco de dados SQL, repositorios e servicos, API REST, servicos bus, pipeline de Big Data com ML (regressao, classificacao, rede neural perceptron). Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs, .sql e scripts de treino."),
+        ("marrom", "Implemente o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL, os repositorios e servicos (Dapper), a API REST e o frontend React. Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Cada arquivo deve conter UMA responsabilidade (um artefato por arquivo: um .cs de dominio, um .sql de DDL, um .tsx de frontend); nao misture dominio, banco, API e frontend no mesmo arquivo. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs, .sql e .tsx/.jsx."),
+        ("preta", "Implemente a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador, banco de dados SQL, repositorios e servicos, API REST, servicos bus, pipeline de Big Data com ML (regressao, classificacao, rede neural perceptron). Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Cada arquivo deve conter UMA responsabilidade (um artefato por arquivo: um .cs de dominio, um .sql de DDL, um .py de treino); nao misture dominio, banco, API, bus e ML no mesmo arquivo. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: arquivos .cs, .sql e scripts de treino."),
     };
 
     static void Log(string msg) { Console.WriteLine(msg); Console.Out.Flush(); }
+
+    // Falha de formato/transporte do upstream nao e falha de assertiva. O retry
+    // e limitado a DUAS tentativas: a segunda leva um nudge curto (texto unico do
+    // Core) porque reenviar o mesmo historico as cegas repete o defeito. Cobre
+    // 500 peg-gemma4 e o 502 upstream_aborted (conexao encerrada no meio).
+    static async Task<JsonObject> PostChat(string key, int turn, JsonObject body, string toolName)
+    {
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            try { return await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", body); }
+            catch (Exception ex) when (attempt == 0 && IsUpstreamFormatFailure(ex))
+            {
+                Log($"  [belt-build:{key}] turno {turn}: {FirstLine(ex.Message)} — nudge 1/1 (tool={toolName})");
+                var msgs = body["messages"]?.AsArray()
+                    ?? throw new InvalidOperationException("historico sem messages no nudge de formato");
+                msgs.Add(new JsonObject
+                {
+                    ["role"] = "user",
+                    ["content"] = global::Rochas.OpenCodeBridge.Core.RetryNudge.Abort
+                        + $" Reemita UMA tool call {toolName} com JSON completo e valido."
+                });
+                await Task.Delay(1000);
+            }
+        }
+        throw new InvalidOperationException($"POST chat falhou apos nudge de formato (turno={turn}, tool={toolName})");
+    }
+
+    /// <summary>500 de parser (peg-gemma4) ou 502 de aborto do upstream.</summary>
+    static bool IsUpstreamFormatFailure(Exception ex)
+    {
+        string m = ex.Message;
+        return (m.Contains("-> 500", StringComparison.Ordinal)
+                && m.Contains("peg-gemma4", StringComparison.OrdinalIgnoreCase))
+            || m.Contains("-> 502", StringComparison.Ordinal)
+            || m.Contains("upstream_aborted", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static string FirstLine(string text) => text.Split('\n')[0];
     static void SaveResult(string key, string status, string detail)
     {
         try
@@ -37,22 +75,24 @@ internal static class E2EBeltsBuildTests
         if (!model.Contains("build")) model = model.Replace("-orch", "-build").Replace("-plan", "-build");
         if (!model.Contains("build")) model += "-build";
         Log($"[belts-build:direct] modelo {model} (bridge {TestContext.Bridge})");
-        var tools = new JsonArray
-        {
-            new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="write", ["description"]="escreve arquivo em disco", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"}, ["content"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path","content") } } }
-        };
+        // Array de tools COMPLETO: a regra do ToolBlacklist e' "bloqueia a chamada,
+        // nao esconde a tool" — o schema nao e' o lugar de restringir. O role build
+        // escreve/edita/le, compila e valida (shell) e versiona (git).
+        var tools = TestContext.Catalog();
         int pass = 0, fail = 0;
         var keysEnv = string.IsNullOrWhiteSpace(TestContext.BeltsFilter) ? Environment.GetEnvironmentVariable("BELTS_KEYS") : TestContext.BeltsFilter;
         var beltsToRun = string.IsNullOrWhiteSpace(keysEnv)
             ? Belts
             : Belts.Where(b => keysEnv.Split(',').Select(x=>x.Trim()).Contains(b.Key)).ToArray();
+        // Workspace unico por run: o bridge executa write como root, entao
+        // reutilizar a mesma pasta faz a limpeza do mint falhar com acesso
+        // negado no run seguinte. Pasta nova tambem preserva a evidencia.
+        string runTag = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Environment.ProcessId}";
+        string baseWs = System.IO.Path.Combine("/tmp/opencode/belts-build", runTag);
         foreach (var (key, prompt) in beltsToRun)
         {
-            string ws = System.IO.Path.Combine("/tmp/opencode/belts-build", key);
+            string ws = System.IO.Path.Combine(baseWs, key);
             System.IO.Directory.CreateDirectory(ws);
-            // limpa workspace da faixa para contagem limpa
-            foreach (var f in System.IO.Directory.GetFiles(ws)) System.IO.File.Delete(f);
-            foreach (var d in System.IO.Directory.GetDirectories(ws)) System.IO.Directory.Delete(d, true);
             Log($"  [belt-build:{key}] START ws={ws}");
             try
             {
@@ -69,8 +109,8 @@ internal static class E2EBeltsBuildTests
                 // >=3 arquivos e >500 chars reais em disco.
                 for (int turn = 0; turn < 14 && filesCreated < 8; turn++)
                 {
-                    var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                        new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["max_tokens"]=16384, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() });
+                    var r = await PostChat(key, turn,
+                        new JsonObject { ["model"]=model, ["temperature"]=0.3, ["stream"]=false, ["max_tokens"]=16384, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() }, "write");
                     var msg = r["choices"]?[0]?["message"]?.AsObject();
                     string content = msg?["content"]?.GetValue<string>() ?? "";
                     totalChars += content.Length;
@@ -112,42 +152,48 @@ internal static class E2EBeltsBuildTests
                         continue;
                     }
                     nudges = 0;
+                    bool progressed = false;
+                    int wroteNow = 0;
                     var echo = new JsonArray();
                     foreach (var (c, _) in parsed) echo.Add(new JsonObject { ["id"]=c["id"]?.GetValue<string>()??"", ["type"]="function", ["function"]=new JsonObject { ["name"]=c["function"]?["name"]?.GetValue<string>()??"", ["arguments"]=c["function"]?["arguments"]?.GetValue<string>()??"{}" } });
                     history.Add(new JsonObject { ["role"]="assistant", ["content"]=content, ["tool_calls"]=echo });
                     foreach (var (c, a) in parsed)
                     {
-                        string path = a["path"]?.GetValue<string>() ?? "";
+                        string tname = c["function"]?["name"]?.GetValue<string>() ?? "write";
                         string ctt = a["content"]?.GetValue<string>() ?? "";
-                        if (string.IsNullOrWhiteSpace(path)) path = $"artefato_{filesCreated}.txt";
-                        string full = System.IO.Path.Combine(ws, path);
-                        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
-                        System.IO.File.WriteAllText(full, ctt);
-                        filesCreated++;
-                        // Metrica de substancia: o artefato real e o conteudo
-                        // gravado em disco, nao o texto do assistant (que pode
-                        // ser so um resumo curto). Sem isto, um belt com 6
-                        // arquivos de ~4 KB era reprovado por chars=326.
-                        totalChars += ctt.Length;
-                        history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c["id"]?.GetValue<string>()??"", ["content"]=$"criado {path} ({ctt.Length} chars)" });
+                        var exec = await TestContext.ExecuteTool(tname, a, ws, model);
+                        bool execOk = exec["ok"]?.GetValue<bool>() == true;
+                        string outText = execOk
+                            ? exec["output"]?.GetValue<string>() ?? "ok"
+                            : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
+                        if (execOk) progressed = true;
+                        if (execOk && tname == "write")
+                        {
+                            filesCreated++;
+                            wroteNow++;
+                            // Metrica de substancia: o artefato real e o conteudo
+                            // gravado em disco, nao o texto do assistant (que pode
+                            // ser so um resumo curto).
+                            totalChars += ctt.Length;
+                        }
+                        history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c["id"]?.GetValue<string>()??"", ["content"]=outText });
                     }
-                    Log($"  [belt-build:{key}] turno {turn}: {parsed.Count} write(s), total arquivos={filesCreated}");
-                    if (filesCreated == lastFiles) stall++; else stall = 0;
+                    Log($"  [belt-build:{key}] turno {turn}: {parsed.Count} call(s) [{wroteNow} write], total arquivos={filesCreated}");
+                    // Progresso = arquivo novo OU tool executada com sucesso (build,
+                    // leitura, git): turno de validacao nao e' travamento.
+                    if (filesCreated == lastFiles && !progressed) stall++; else stall = 0;
                     lastFiles = filesCreated;
-                    if (stall >= 3) { Log($"  [belt-build:{key}] stall detectado (3 turnos sem arquivo), encerrando"); break; }
+                    if (stall >= 4) { Log($"  [belt-build:{key}] stall detectado (4 turnos sem progresso), encerrando"); break; }
                 }
                 // Fase de revisao: E4B le os arquivos criados e revisa.
                 if (filesCreated >= 3)
                 {
-                    var readTools = new JsonArray
-                    {
-                        new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="read", ["description"]="le arquivo", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["path"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("path") } } }
-                    };
+                    var readTools = TestContext.Catalog("read");
                     history.Add(new JsonObject { ["role"]="user", ["content"]="Revise os arquivos criados (leia-os com read) e responda REVIEW-OK com um resumo de 1 linha por arquivo." });
                     for (int turn = 0; turn < 4; turn++)
                     {
-                        var r2 = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                            new JsonObject { ["model"]=model, ["temperature"]=0.1, ["stream"]=false, ["max_tokens"]=2048, ["messages"]=history.DeepClone(), ["tools"]=readTools.DeepClone() });
+                        var r2 = await PostChat(key, 100 + turn,
+                            new JsonObject { ["model"]=model, ["temperature"]=0.1, ["stream"]=false, ["max_tokens"]=2048, ["messages"]=history.DeepClone(), ["tools"]=readTools.DeepClone() }, "read");
                         var msg2 = r2["choices"]?[0]?["message"]?.AsObject();
                         string content2 = msg2?["content"]?.GetValue<string>() ?? "";
                         totalChars += content2.Length;
@@ -159,10 +205,11 @@ internal static class E2EBeltsBuildTests
                         foreach (var c in calls2)
                         {
                             var a = JsonNode.Parse(c?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject();
-                            string path = a["path"]?.GetValue<string>() ?? "";
-                            string full = System.IO.Path.Combine(ws, path);
-                            string fileContent = System.IO.File.Exists(full) ? System.IO.File.ReadAllText(full) : "(nao existe)";
-                            history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c?["id"]?.GetValue<string>()??"", ["content"]=fileContent[..Math.Min(500,fileContent.Length)] });
+                            var exec = await TestContext.ExecuteTool("read", a, ws, model);
+                            string outText = exec["ok"]?.GetValue<bool>() == true
+                                ? exec["output"]?.GetValue<string>() ?? ""
+                                : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
+                            history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c?["id"]?.GetValue<string>()??"", ["content"]=outText[..Math.Min(500, outText.Length)] });
                         }
                     }
                 }

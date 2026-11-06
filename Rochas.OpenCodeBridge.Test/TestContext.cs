@@ -23,6 +23,16 @@ internal static class TestContext
 
     public static string? ApiKey;
 
+    /// <summary>
+    /// Teste declara que NAO serviu request de modelo (caminho de erro ou so' de
+    /// leitura): o portao de fluxo P1 nao tem o que conferir e nao julga. Zerado
+    /// pelo <see cref="Run"/> antes de cada teste, entao nao vaza para o proximo.
+    /// Caso medido (2026-10-30): `E-error-mitigation` manda corpo sem `input` e
+    /// espera 4xx — a bridge conta a tentativa mas nao grava `system-sent`, e o
+    /// portao acusava "registro anterior ao teste".
+    /// </summary>
+    public static bool NoModelFlow;
+
     // Stream history: o driver injeta WAR_JOURNEY_DIR por step. Sem a variavel
     // (unit/manual) nada e gravado, para nao poluir o disco nem o repo.
     static string? JourneyDir => Environment.GetEnvironmentVariable("WAR_JOURNEY_DIR") is { Length: > 0 } dir
@@ -40,7 +50,8 @@ internal static class TestContext
     public static string? Jwt;
     // 20 min: os E2E enterprise (crud-*/garnet/worker) geram muito e, sob carga da suite
     // inteira, passavam de 600s (visto 16/10); isolados ficam em ~110-215s.
-    public static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(120) };
+    public static HttpClient Http = NewHttp();
+    static HttpClient NewHttp() => new() { Timeout = TimeSpan.FromMinutes(120) };
 
     // Modelo servido pela bridge alvo (gemma|coder): expectativas por perfil.
     public static string ServedModel = "";
@@ -77,6 +88,32 @@ internal static class TestContext
     /// <summary>Bridge com --legacy-harness 1: unico modo em que ha coercao de tools.</summary>
     public static bool ServedLegacy;
 
+    /// <summary>
+    /// Bridge da linha GPU2 (Q3, diagnostico/bancada), OPCIONAL. Nome semantico:
+    /// <c>WAR_GPU2_BRIDGE</c>; <c>WAR_CPU_BRIDGE</c> segue aceito como legado.
+    /// Vazio = esteira Q4-only (o gate): quem depende da GPU2 passa por
+    /// <see cref="RequireGpu2"/> e recebe SKIP — nunca cai em <c>:4125</c> por default.
+    /// </summary>
+    public static string? Gpu2Bridge
+    {
+        get
+        {
+            string? v = Environment.GetEnvironmentVariable("WAR_GPU2_BRIDGE")
+                        ?? Environment.GetEnvironmentVariable("WAR_CPU_BRIDGE");
+            return string.IsNullOrWhiteSpace(v) ? null : v.TrimEnd('/');
+        }
+    }
+
+    /// <summary>Bridge da linha GPU2 ou SKIP explicito (a esteira Q4 nao cruza linha).</summary>
+    /// <param name="phase">Fase que exige a GPU2 (vai na mensagem do SKIP).</param>
+    public static string RequireGpu2(string phase)
+    {
+        string? url = Gpu2Bridge;
+        if (url is null)
+            Skip($"{phase}: linha GPU2 fora desta rodada (defina WAR_GPU2_BRIDGE para a esteira completa)");
+        return url!;
+    }
+
     /// <summary>Coercao de tool call so existe no modo legacy; fora dele e SKIP.</summary>
     public static void RequireCoercion()
     {
@@ -86,6 +123,11 @@ internal static class TestContext
     static int Passed;
     static int Failed;
     static int Skipped;
+    /// <summary>Fail-fast da rodada: no primeiro FAIL, o resto nao executa (nao gasta GPU).</summary>
+    public static bool StopOnFail = true;
+    /// <summary>Verdadeiro depois do primeiro FAIL quando <see cref="StopOnFail"/> esta ligado.</summary>
+    public static bool Aborted { get; private set; }
+    public static string AbortedAt { get; private set; } = "";
 
     /// <summary>Marca o teste como pulado (ex.: cobre caminho legado desligado).</summary>
     public sealed class SkipException : Exception
@@ -95,31 +137,239 @@ internal static class TestContext
 
     public static void Skip(string reason) => throw new SkipException(reason);
 
+    /// <summary>Reinicia a bridge alvo antes de cada step E2E e espera o status.</summary>
+    public static void RestartBridge()
+    {
+        string svc = BridgeService();
+        var psi = new ProcessStartInfo("sudo", $"-n systemctl restart {svc}")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        using var p = Process.Start(psi) ?? throw new Exception($"nao consegui executar sudo para {svc}");
+        string so = p.StandardOutput.ReadToEnd();
+        string se = p.StandardError.ReadToEnd();
+        if (!p.WaitForExit(30000) || p.ExitCode != 0)
+            throw new Exception($"restart {svc} falhou (exit={p.ExitCode}): {(se + so).Trim()}");
+        // O restart derruba as conexoes keep-alive dos dois lados: recria o
+        // HttpClient do runner para o primeiro step nao pegar conexao morta.
+        ResetHttp();
+        using var probeHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        string? cred = Jwt ?? ApiKey;
+        if (!string.IsNullOrWhiteSpace(cred))
+            probeHttp.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
+        var sw = Stopwatch.StartNew();
+        Exception? last = null;
+        while (sw.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            try
+            {
+                using var res = probeHttp.GetAsync(Bridge + "/api/status").GetAwaiter().GetResult();
+                if (res.IsSuccessStatusCode)
+                {
+                    var st = JsonNode.Parse(res.Content.ReadAsStringAsync().GetAwaiter().GetResult())?.AsObject();
+                    bool harness = st?["main_harness"]?.GetValue<bool>() ?? false;
+                    if (Mode != "bridge" || harness) return;
+                    last = new Exception("main_harness=false apos restart");
+                }
+            }
+            catch (Exception ex) { last = ex; }
+            Thread.Sleep(500);
+        }
+        throw new Exception($"bridge {svc} nao respondeu com status valido: {last?.Message}");
+    }
+
+    /// <summary>
+    /// Fonte única do reset de diagnóstico no lado do teste: POST
+    /// /api/diag/reset na bridge alvo, sem restart. Contadores e arquivos caem
+    /// sempre; a sonda só com <paramref name="clearProbe"/> — na WAR a sonda é
+    /// zerada uma vez por bateria, para o painel não perder a curva dos steps
+    /// anteriores.
+    /// </summary>
+    /// <param name="clearProbe">true zera também as amostras da sonda.</param>
+    /// <param name="bridge">URL alvo; null usa <see cref="Bridge"/>.</param>
+    /// <param name="required">true lança em falha (run isolado); false só avisa (WAR/painel).</param>
+    /// <param name="apiKey">Bearer explícito (ex.: o da WAR); null usa <see cref="Jwt"/> ou <see cref="ApiKey"/>.</param>
+    /// <param name="clearPanel">true zera também o painel (enunciado, histórico e
+    /// steps). Use só no início da bateria/run — no <c>step_start</c> apagaria o
+    /// enunciado em execução.</param>
+    public static void ResetDiagnostics(bool clearProbe = true, string? bridge = null, bool required = true,
+        string? apiKey = null, bool clearPanel = false)
+    {
+        string target = (bridge ?? Bridge).TrimEnd('/') +
+                        "/api/diag/reset?files=1" + (clearProbe ? "&probe=1" : "") +
+                        (clearPanel ? "&panel=1" : "");
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            string? cred = apiKey ?? Jwt ?? ApiKey;
+            if (!string.IsNullOrWhiteSpace(cred))
+                http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
+            using var res = http.PostAsync(target, new StringContent("")).GetAwaiter().GetResult();
+            if (!res.IsSuccessStatusCode)
+                throw new Exception($"HTTP {(int)res.StatusCode} " +
+                    res.Content.ReadAsStringAsync().GetAwaiter().GetResult().Trim());
+            if (!required)
+                Console.WriteLine($"OK: diagnostico zerado{(clearProbe ? " (sonda inclusa)" : "")} em {target}");
+        }
+        catch (Exception ex)
+        {
+            if (required) throw new Exception($"reset de diagnosticos falhou em {target}: {ex.Message}");
+            Console.WriteLine($"AVISO: reset de diagnostico falhou em {target}: {ex.Message}");
+        }
+    }
+
+    static string BridgeService()
+    {
+        int port = new Uri(Bridge).Port;
+        return port switch
+        {
+            4125 => "bridge-gpu2",
+            4126 => "bridge-cpu-forced",
+            _ => "bridge-gpu"
+        };
+    }
+
+    /// <summary>--only aceita nome unico ou lista separada por virgula (substring).</summary>
+    /// <remarks>
+    /// Token com `=` na frente exige o nome EXATO. Necessario desde 2026-10-30:
+    /// `E-mission-algo-cs` e' prefixo de `-cs-bin/-cs-btree/-cs-kmeans/-cs-sort`, e o
+    /// step do WAR que queria SO' a missao base rodava as cinco (4 PASS + 1 FAIL
+    /// dentro do step errado).
+    /// </remarks>
+    private static bool MatchesOnly(string name)
+    {
+        foreach (string token in Only.Split(',',
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (token.StartsWith('='))
+            {
+                if (name.Equals(token[1..], StringComparison.OrdinalIgnoreCase)) return true;
+                continue;
+            }
+            if (name.Contains(token, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Recria o HttpClient do runner preservando a credencial.</summary>
+    public static void ResetHttp()
+    {
+        Http = NewHttp();
+        string? cred = Jwt ?? ApiKey;
+        if (!string.IsNullOrWhiteSpace(cred))
+            Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cred);
+    }
+
     public static void Run(string name, Func<Task> fn)
     {
-        if (Only.Length > 0 && !name.Contains(Only, StringComparison.OrdinalIgnoreCase))
+        if (Only.Length > 0 && !MatchesOnly(name))
         {
             Console.WriteLine($"SKIP {name} (filtro --only)");
             return;
         }
+        // Fail-fast: apos o primeiro FAIL nada mais roda (sem GPU, sem rede).
+        if (Aborted)
+        {
+            Console.WriteLine($"SKIP {name} (fail-fast: rodada abortada em {AbortedAt})");
+            return;
+        }
         var t0 = DateTime.UtcNow;
+        // No WAR o driver ja publica step_end; aqui so o run isolado de E2E
+        // alimenta o painel (evita 100+ U-* no dicionario de steps).
+        bool panelStep = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAR_STEP"))
+                         && name.StartsWith("E-", StringComparison.Ordinal);
+        // Diagnostico: a limpeza e' UMA por bateria, no inicio (junto do rebuild +
+        // redeploy/restart): Program.cs limpa no run isolado e o WarTemplate limpa
+        // no inicio de cada nivel. O step NAO zera contador/sonda/painel — zerar
+        // por step apagava a leitura do run no Grafana e nao deixava ver os PASS
+        // acumulados (medido 2026-10-30).
+        // Run isolado tambem alimenta a sonda de 5s (tps/VRAM/GPU/tools). No WAR
+        // o driver e' o dono da sonda; aqui ela morre junto com o step.
+        StepProbe? probe = null;
+        if (panelStep)
+        {
+            string probeRoot = Path.Combine(Path.GetTempPath(), "opencodebridge-isolated", "run-" + Environment.ProcessId);
+            probe = StepProbe.Start(probeRoot, name, Mode, Bridge, ApiKey, null);
+            PublishStep(name, "RUN", 0).GetAwaiter().GetResult();
+        }
         try
         {
+            // Portao de fluxo (PENDINGS P1): vale para QUALQUER E2E em modo bridge.
+            // O delta de model_requests diz se ESTA bridge recebeu request no run —
+            // sem request nao ha fluxo a conferir (fase que usa bridge secundaria).
+            NoModelFlow = false;
+            long flowBefore = Mode == "bridge" && name.StartsWith("E-", StringComparison.Ordinal)
+                ? BridgeFlowGate.ModelRequests(Bridge)
+                : 0;
             fn().GetAwaiter().GetResult();
+            // Portao de fluxo (PENDINGS P1): vale para QUALQUER E2E em modo bridge,
+            // com a mesma mensagem e o mesmo dump. Em opencode nao roda (o cliente
+            // se auto-gerencia) e nos U-* nao ha request de modelo para conferir.
+            if (BridgeFlowGate.Applies(Mode, name, NoModelFlow))
+            {
+                var (missing, dump) = BridgeFlowGate.Probe(Bridge,
+                    new DateTimeOffset(t0).ToUnixTimeMilliseconds(), flowBefore);
+                if (missing.StartsWith("INCONCLUSIVO", StringComparison.Ordinal))
+                    Console.WriteLine($"  [flow] {name}: {missing} [{dump}]");
+                else if (missing.Length > 0)
+                    throw new Exception("fluxo bridge incompleto: " + missing + " [" + dump + "]");
+                else
+                    Console.WriteLine($"  [flow] {name}: {dump}");
+            }
             Passed++;
-            Console.WriteLine($"PASS {name} ({(DateTime.UtcNow - t0).TotalSeconds:F1}s)");
+            double secs = (DateTime.UtcNow - t0).TotalSeconds;
+            Console.WriteLine($"PASS {name} ({secs:F1}s)");
+            if (panelStep) PublishStep(name, "PASS", secs).GetAwaiter().GetResult();
         }
         catch (SkipException ex)
         {
             Skipped++;
             Console.WriteLine($"SKIP {name} ({ex.Message})");
+            if (panelStep) PublishStep(name, "SKIP", (DateTime.UtcNow - t0).TotalSeconds, ex.Message).GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
             Failed++;
             Console.WriteLine($"FAIL {name}: {ex.Message}");
+            if (StopOnFail)
+            {
+                Aborted = true;
+                AbortedAt = name;
+                Console.WriteLine($"[test] FAIL-FAST: rodada abortada no primeiro FAIL ({name})");
+            }
             if (Environment.GetEnvironmentVariable("E2E_STACK") == "1") Console.WriteLine(ex.ToString());
+            if (panelStep) PublishStep(name, "FAIL", (DateTime.UtcNow - t0).TotalSeconds, ex.Message).GetAwaiter().GetResult();
         }
+        finally
+        {
+            probe?.Dispose();
+        }
+    }
+
+    static readonly HttpClient StepHttp = new() { Timeout = TimeSpan.FromSeconds(3) };
+
+    /// <summary>Publica o step no painel (RUN/PASS/FAIL/SKIP) também no run isolado.</summary>
+    public static async Task PublishStep(string step, string verdict, double secs, string cause = "")
+    {
+        try
+        {
+            var body = new JsonObject
+            {
+                ["step"] = step,
+                ["mode"] = Mode,
+                ["verdict"] = verdict,
+                ["secs"] = secs,
+                ["cause"] = cause,
+            };
+            using var req = new HttpRequestMessage(HttpMethod.Post, Bridge + "/api/test/step");
+            if (!string.IsNullOrWhiteSpace(ApiKey))
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + ApiKey);
+            req.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+            using var _ = await StepHttp.SendAsync(req);
+        }
+        catch { }
     }
 
     public static void Check(bool cond, string msg)
@@ -457,63 +707,6 @@ internal static class TestContext
 
     /// <summary>Catálogo completo de tools de sistema (formato Responses).</summary>
     /// <returns>Array de tools.</returns>
-    public static JsonArray ToolCatalog() => new()
-    {
-        Fn("shell", "Executa um comando de console. Um comando por chamada; sem heredoc.", new JsonObject
-        {
-            ["command"] = new JsonObject { ["type"] = "string" }
-        }, "command"),
-        Fn("write", "Cria/sobrescreve um arquivo de texto.", new JsonObject
-        {
-            ["path"] = new JsonObject { ["type"] = "string" },
-            ["content"] = new JsonObject { ["type"] = "string" }
-        }, "path", "content"),
-        Fn("read", "Le um arquivo de texto.", new JsonObject
-        {
-            ["path"] = new JsonObject { ["type"] = "string" }
-        }, "path"),
-        Fn("edit", "Substitui um trecho exato de um arquivo.", new JsonObject
-        {
-            ["path"] = new JsonObject { ["type"] = "string" },
-            ["oldString"] = new JsonObject { ["type"] = "string" },
-            ["newString"] = new JsonObject { ["type"] = "string" }
-        }, "path", "oldString", "newString"),
-        Fn("glob", "Lista arquivos por padrao. Nao aceita alternancia com |.", new JsonObject
-        {
-            ["pattern"] = new JsonObject { ["type"] = "string" }
-        }, "pattern"),
-        Fn("grep", "Busca expressao regular no conteudo dos arquivos.", new JsonObject
-        {
-            ["pattern"] = new JsonObject { ["type"] = "string" }
-        }, "pattern"),
-        Fn("git", "Executa um comando git no repositorio. Leitura para todos; init/add/commit/config so para build/exec.", new JsonObject
-        {
-            ["command"] = new JsonObject { ["type"] = "string" },
-            ["path"] = new JsonObject { ["type"] = "string" }
-        }, "command")
-    };
-
-    static JsonObject Fn(string name, string description, JsonObject props, params string[] required)
-    {
-        var req = new JsonArray();
-        foreach (var r in required) req.Add(r);
-        return new JsonObject
-        {
-            ["type"] = "function",
-            ["function"] = new JsonObject
-            {
-                ["name"] = name,
-                ["description"] = description,
-                ["parameters"] = new JsonObject
-                {
-                    ["type"] = "object",
-                    ["properties"] = props,
-                    ["required"] = req
-                }
-            }
-        };
-    }
-
     /// <summary>
     /// Executa um enunciado agentico no modo corrente e devolve o texto final +
     /// histórico das tools executadas.
@@ -523,6 +716,86 @@ internal static class TestContext
     /// <param name="prompt">Enunciado.</param>
     /// <param name="steps">Máximo de rodadas de tool no modo puro.</param>
     /// <returns>Texto final do assistente e as tools executadas.</returns>
+    /// <summary>
+    /// Roda um enunciado agentico com N tentativas: pasta nova por tentativa e,
+    /// quando o aceite falha, a mensagem REAL da falha entra no enunciado da
+    /// proxima. Fonte unica desse padrao (E-tools-full e E-ent-redis usam este
+    /// metodo): medir uma saida estocastica numa unica amostra mede sorte, nao
+    /// capacidade. As assertivas NAO mudam entre tentativas — a tentativa extra
+    /// re-amostra o modelo com a falha explicita, sem afrouxar o contrato.
+    /// </summary>
+    /// <param name="label">Rotulo do log (ex.: "redis").</param>
+    /// <param name="dirRoot">Raiz onde as pastas das tentativas sao criadas.</param>
+    /// <param name="attempts">Numero de tentativas (>=1).</param>
+    /// <param name="attempt">Recebe (pasta da tentativa, feedback da falha anterior).</param>
+    /// <param name="retryHint">Orientacao do cenario para a nova tentativa (opcional).</param>
+    public static async Task<string> AgentAttempts(string label, string dirRoot, int attempts,
+        Func<string, string, Task> attempt, string? retryHint = null)
+    {
+        string feedback = "";
+        Exception? last = null;
+        for (int n = 1; n <= Math.Max(1, attempts); n++)
+        {
+            string dir = Path.Combine(dirRoot,
+                "agent-" + Environment.ProcessId + "-" + Mode + "-"
+                + DateTime.Now.ToString("HHmmss") + "-t" + n);
+            try
+            {
+                if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            }
+            catch (Exception ex)
+            {
+                // Conteudo criado pela bridge (root) pode nao ser removivel pelo
+                // teste: o dir novo e unico por horario, entao seguir sem apagar.
+                Console.WriteLine($"  [{label}] cleanup ignorado: {ex.GetType().Name}");
+            }
+            Directory.CreateDirectory(dir);
+            try
+            {
+                await attempt(dir, feedback);
+                return dir;
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+                Console.WriteLine($"  [{label}] tentativa {n} falhou: {ex.Message.Split('\n')[0]}");
+                feedback = "\n\nTENTATIVA ANTERIOR FALHOU: " + ex.Message
+                    + "\nRefaca do zero nesta pasta nova, cumprindo todos os requisitos do enunciado."
+                    + (retryHint is { Length: > 0 } ? "\n" + retryHint : "");
+            }
+        }
+        throw last!;
+    }
+
+    /// <summary>
+    /// Tentativas no MESMO diretorio: usado quando o enunciado e' sequencial ao
+    /// anterior (passo 2 AJUSTA o artefato do passo 1). O feedback carrega a
+    /// falha do aceite e proibe refazer o que ja esta versionado.
+    /// </summary>
+    public static async Task RetrySame(string label, string dir, int attempts,
+        Func<string, string, Task> attempt, string? retryHint = null)
+    {
+        string feedback = "";
+        Exception? last = null;
+        for (int n = 1; n <= Math.Max(1, attempts); n++)
+        {
+            try
+            {
+                await attempt(dir, feedback);
+                return;
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+                Console.WriteLine($"  [{label}] tentativa {n} falhou: {ex.Message.Split('\n')[0]}");
+                feedback = "\n\nTENTATIVA ANTERIOR FALHOU: " + ex.Message
+                    + "\nCorrija nesta mesma pasta, sem refazer os passos ja concluidos e sem trocar os nomes de arquivo do enunciado."
+                    + (retryHint is { Length: > 0 } ? "\n" + retryHint : "");
+            }
+        }
+        throw last!;
+    }
+
     public static Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps = 0)
         => ToolAgent(prompt, steps, null);
 
@@ -536,6 +809,38 @@ internal static class TestContext
         catch (Exception ex) { Console.WriteLine($"  [enunciado] publish falhou: {ex.Message}"); }
     }
 
+    /// <summary>
+    /// Executa uma tool pela bridge (consumidor unico dos testes). O catalogo,
+    /// o schema e os handlers continuam no Core; aqui so' vai o HTTP.
+    /// </summary>
+    /// <summary>
+    /// Filtro do catálogo canônico do Core para o cenário. Não cria schema:
+    /// apenas escolhe quais tools o modelo pode ver neste teste.
+    /// </summary>
+    public static JsonArray Catalog(params string[] names)
+    {
+        var arr = new JsonArray();
+        foreach (var t in global::Rochas.OpenCodeBridge.Core.ToolCatalog.Chat())
+        {
+            string name = t?["function"]?["name"]?.GetValue<string>() ?? "";
+            if (names.Length == 0 || names.Contains(name, StringComparer.Ordinal)) arr.Add(t!.DeepClone());
+        }
+        return arr;
+    }
+
+    public static async Task<JsonObject> ExecuteTool(string name, JsonNode? arguments, string? cwd = null, string? model = null)
+    {
+        var body = new JsonObject
+        {
+            ["name"] = name,
+            ["arguments"] = arguments?.DeepClone() ?? new JsonObject(),
+            ["model"] = string.IsNullOrWhiteSpace(model) ? SuiteModel : model
+        };
+        if (!string.IsNullOrWhiteSpace(cwd)) body["workspace"] = cwd;
+        try { return await PostObj(Bridge + "/api/tools/execute", body); }
+        catch (Exception ex) { return new JsonObject { ["ok"] = false, ["error"] = ex.Message }; }
+    }
+
     public static async Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps, string? cwd)
     {
         string enunciadoStep = Environment.GetEnvironmentVariable("WAR_STEP")
@@ -543,30 +848,30 @@ internal static class TestContext
         await PublishEnunciado(enunciadoStep, prompt);
         if (Mode == "opencode") return OpencodeRunDetailed(prompt, cwd);
         int max = steps > 0 ? steps : ToolAgentSteps;
-        var input = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = prompt });
+        var input = new JsonArray();
+        // Contexto de ambiente igual ao do cliente opencode: sem <env> o modelo
+        // nao sabe qual e a "pasta atual" e o MainHarness manda temporarios para
+        // /tmp/opencode, tirando os artefatos do dir do teste. E contexto real de
+        // ambiente, nao comando enxertado no enunciado.
+        if (!string.IsNullOrWhiteSpace(cwd))
+            input.Add(new JsonObject
+            {
+                ["role"] = "system",
+                ["content"] = "<env>\n  Working directory: " + cwd +
+                              "\n  Is directory a git repo: no\n  Platform: linux\n</env>"
+            });
+        input.Add(new JsonObject { ["role"] = "user", ["content"] = prompt });
         var calls = new List<string>();
         var journeyCalls = new JsonArray();
         var journeySw = Stopwatch.StartNew();
         string text = "";
-        bool nudged = false;
+        int nudges = 0;
+        const int MaxNudges = 2;
         for (int step = 0; step < max; step++)
         {
-            // /v1/responses espera a forma Responses ({type,name,description,parameters});
-            // ToolCatalog() e chat-style ({type,function:{...}}). Sem esta conversao a
-            // bridge nao reconhece a call de volta e o turno volta vazio (2 tok).
-            var respTools = new JsonArray();
-            foreach (var t in ToolCatalog())
-            {
-                if (t?["function"] is JsonObject fnObj)
-                    respTools.Add(new JsonObject
-                    {
-                        ["type"] = "function",
-                        ["name"] = fnObj["name"]?.DeepClone(),
-                        ["description"] = fnObj["description"]?.DeepClone(),
-                        ["parameters"] = fnObj["parameters"]?.DeepClone()
-                    });
-                else if (t is not null) respTools.Add(t.DeepClone());
-            }
+            // Forma Responses vem do Core; o teste nao reescreve schema nem faz
+            // conversao manual de chat para Responses.
+            var respTools = global::Rochas.OpenCodeBridge.Core.ToolCatalog.Responses();
             var res = await PostObj(Bridge + "/v1/responses", new JsonObject
             {
                 ["model"] = SuiteModel,
@@ -575,6 +880,12 @@ internal static class TestContext
                 ["stream"] = false
             });
             text = "";
+            // Progresso contado POR ITERACAO: o modelo pode devolver output vazio
+            // ou so prosa apos a primeira tool call. Antes, hasCall olhava o
+            // ULTIMO item do input (sempre function_call_output apos a 1a call),
+            // entao a cutucada nunca disparava e o loop girava gastando steps
+            // (medido em E-ent-redis: ~10 respostas vazias apos glob sem hit).
+            bool emittedCall = false;
             if (Environment.GetEnvironmentVariable("TCTX_DUMP") == "1")
                 Console.WriteLine($"  [dump] {res.ToJsonString()[..Math.Min(700, res.ToJsonString().Length)]}");
             if (res["output"] is JsonArray output)
@@ -593,6 +904,7 @@ internal static class TestContext
                     }
                     else if (type == "function_call")
                     {
+                        emittedCall = true;
                         string callId = item?["call_id"]?.GetValue<string>() ?? item?["id"]?.GetValue<string>() ?? "";
                         string name = item?["name"]?.GetValue<string>() ?? "";
                         string args = item?["arguments"]?.GetValue<string>() ?? "{}";
@@ -601,26 +913,18 @@ internal static class TestContext
                             ["type"] = "function_call", ["id"] = callId, ["call_id"] = callId,
                             ["name"] = name, ["arguments"] = args
                         });
-                        JsonObject exec;
                         var callSw = Stopwatch.StartNew();
-                        try
-                        {
-                            var execBody = new JsonObject
-                            {
-                                ["name"] = name,
-                                ["arguments"] = JsonNode.Parse(args) ?? new JsonObject(),
-                                // Role do agente: a tool git libera escrita só p/ build/exec.
-                                ["model"] = SuiteModel
-                            };
-                            // Harness resolve o diretorio da tarefa; o enunciado nao carrega path.
-                            if (!string.IsNullOrWhiteSpace(cwd)) execBody["workspace"] = cwd;
-                            exec = await PostObj(Bridge + "/api/tools/execute", execBody);
-                        }
-                        catch (Exception ex) { exec = new JsonObject { ["ok"] = false, ["error"] = ex.Message }; }
+                        JsonNode? callArgsNode = null;
+                        try { callArgsNode = JsonNode.Parse(args); } catch { }
+                        JsonObject exec = await ExecuteTool(name, callArgsNode, cwd);
                         callSw.Stop();
-                        string outText = exec["ok"]?.GetValue<bool>() == true
-                            ? (exec["output"]?.GetValue<string>() ?? "")
-                            : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
+                        string outText = global::Rochas.OpenCodeBridge.Core.Tools.BridgeToolExecutor.FormatResultForHistory(
+                            new global::Rochas.OpenCodeBridge.Core.Tools.ToolResult
+                            {
+                                Success = exec["ok"]?.GetValue<bool>() == true,
+                                Output = exec["output"]?.GetValue<string>() ?? "",
+                                Error = exec["error"]?.GetValue<string>() ?? "falha"
+                            });
                         bool callOk = exec["ok"]?.GetValue<bool>() == true;
                         calls.Add($"{name}({args}) -> {(callOk ? "ok" : "fail")}");
                         JsonNode? callArgs = null;
@@ -635,7 +939,13 @@ internal static class TestContext
                             ["ms"] = callSw.ElapsedMilliseconds
                         });
                         if (Environment.GetEnvironmentVariable("TCTX_DUMP") == "1")
-                            Console.WriteLine($"  [exec] {name} ok={exec["ok"]} out={(exec["output"]?.GetValue<string>() ?? exec["error"]?.GetValue<string>() ?? "")[..Math.Min(160, (exec["output"]?.GetValue<string>() ?? exec["error"]?.GetValue<string>() ?? "").Length)]}");
+                        {
+                            // Falha mostra o ERRO (output pode vir vazio e mascarar a causa).
+                            string seen = exec["ok"]?.GetValue<bool>() == true
+                                ? exec["output"]?.GetValue<string>() ?? ""
+                                : exec["error"]?.GetValue<string>() ?? "(sem erro)";
+                            Console.WriteLine($"  [exec] {name} ok={exec["ok"]} out={seen[..Math.Min(400, seen.Length)]}");
+                        }
                         input.Add(new JsonObject
                         {
                             ["type"] = "function_call_output", ["call_id"] = callId, ["output"] = outText
@@ -643,18 +953,23 @@ internal static class TestContext
                     }
                 }
             }
-            bool hasCall = input.Count > 0 && input[input.Count - 1]!["type"]?.GetValue<string>() == "function_call_output";
+            // Progresso = este response EMITIU uma tool call (nao o ultimo item
+            // do input, que fica true apos a 1a call mesmo com output vazio).
+            bool hasCall = emittedCall;
             if (!hasCall)
             {
-                // Turno vazio (2 tok, nenhuma tool): o modelo nao executou nada.
-                // Uma cutucada explicita e o loop segue; sem isso o caso morre
-                // sem artefato e o veredito vira FAIL por silencio do modelo.
-                if (text.Trim().Length > 0 || nudged) break;
-                nudged = true;
+                // Turno sem tool call: o modelo parou no meio da tarefa ou so
+                // resumiu em prosa. Cutucada explicita de continuacao (ate
+                // MaxNudges) e o loop segue; sem isso o caso morre sem artefato
+                // e o veredito vira FAIL por silencio do modelo.
+                if (nudges >= MaxNudges) break;
+                nudges++;
                 input.Add(new JsonObject
                 {
                     ["role"] = "user",
-                    ["content"] = "Voce nao emitiu nenhuma tool call. Execute a tarefa agora com as tools (write/edit/read); nao responda em prosa."
+                    ["content"] = nudges == 1 && text.Trim().Length == 0
+                        ? "Voce nao emitiu nenhuma tool call. Execute a tarefa agora com as tools (write/edit/read); nao responda em prosa."
+                        : "A tarefa ainda nao esta concluida. Continue de onde parou e finalize todos os passos do enunciado com as tools; nao responda em prosa."
                 });
                 continue;
             }
@@ -715,8 +1030,10 @@ internal static class TestContext
         if (url.Contains("/v1/", StringComparison.Ordinal))
         {
             string prompt = ExtractPrompt(body);
+            // JourneyStep cai em manual-<mode> quando nao ha WAR_STEP: o run
+            // isolado (--only) tambem alimenta o painel de enunciado.
             if (prompt.Length > 0)
-                await PublishEnunciado(Environment.GetEnvironmentVariable("WAR_STEP") ?? "model", prompt);
+                await PublishEnunciado(JourneyStep, prompt);
         }
         var t0 = DateTime.UtcNow;
         for (int attempt = 0; ; attempt++)
@@ -754,6 +1071,32 @@ internal static class TestContext
     /// O harness faz isso (nao o modelo) para os testes nao dependerem de o modelo acertar o
     /// `dotnet new`; o valor do teste fica em escrever o fonte e iterar ate rodar.
     /// </summary>
+    /// <summary>
+    /// Workspace limpo e UNICO por execucao para um teste E2E. Nunca derruba o
+    /// teste por sobra de rodada anterior: a bridge roda como root e deixa
+    /// bin/obj sem permissao para o usuario da suite; se a remocao falhar, devolve
+    /// um diretorio novo (sufixo stamp-pid) em vez de falhar em 0,1 s.
+    /// </summary>
+    /// <param name="prefix">Prefixo do diretorio (ex.: "e2e-mission").</param>
+    /// <returns>Caminho existente e vazio.</returns>
+    public static string FreshWorkspace(string prefix)
+    {
+        string baseDir = Path.Combine(Path.GetTempPath(), prefix);
+        try
+        {
+            if (Directory.Exists(baseDir)) Directory.Delete(baseDir, true);
+            Directory.CreateDirectory(baseDir);
+            return baseDir;
+        }
+        catch (Exception ex)
+        {
+            string alt = baseDir + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Environment.ProcessId;
+            Directory.CreateDirectory(alt);
+            Console.WriteLine($"  [ws] cleanup ignorado em {baseDir} ({ex.GetType().Name}); usando {alt}");
+            return alt;
+        }
+    }
+
     public static void ScaffoldProject(string name, string dir, string lang = "C#", string kind = "console", int secs = 180)
     {
         Directory.CreateDirectory(dir);
@@ -785,6 +1128,7 @@ internal static class TestContext
 
     public static int Summary()
     {
+        if (Aborted) Console.WriteLine($"[test] ABORTADO (fail-fast) no primeiro FAIL: {AbortedAt} — restantes nao executados");
         Console.WriteLine($"[test] PASS={Passed} FAIL={Failed} SKIP={Skipped}");
         return Failed == 0 ? 0 : 1;
     }
