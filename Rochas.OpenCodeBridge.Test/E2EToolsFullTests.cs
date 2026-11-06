@@ -4,18 +4,20 @@ using System.Text.RegularExpressions;
 
 namespace Rochas.OpenCodeBridge.Test;
 
-// E-tools-full como DIALOGO, na ordem exata do enunciado humano:
-//   1) voce sabe utilizar git?
-//   2) sabe adicionar arquivos?
-//   3) como faz para efetuar commit ja' com a mensagem?
-//   4) como voce criaria uma subpasta a partir da pasta atual?
-//   5) como voce acessaria a internet em busca de dados como meteorologia?
-//   6) como verificaria a hora no Linux e no Windows?
-//   7) como construiria um aplicativo console .NET C# hello world?
-//   8) como compilaria um app .NET e faria compilacao, publicacao e deploy em Docker?
-// Cada pergunta e' UMA mensagem; espera a resposta (prosa, sem tools) e so'
-// entao manda a ordem correspondente (com tools, function_call obrigatorio),
-// na MESMA conversa. A ordem reflete exatamente a pergunta anterior.
+// E-tools-full como DIALOGO em duas fases, na ordem do enunciado humano:
+//   FASE 1 — questionario: 8 perguntas, UMA por mensagem, esperando a resposta
+//   (prosa, sem tools) antes da proxima:
+//     1) voce sabe utilizar git?
+//     2) sabe adicionar arquivos?
+//     3) como faz para efetuar commit ja' com a mensagem?
+//     4) como voce criaria uma subpasta a partir da pasta atual?
+//     5) como voce acessaria a internet em busca de dados como meteorologia?
+//     6) como verificaria a hora no Linux e no Windows?
+//     7) como construiria um aplicativo console .NET C# hello world?
+//     8) como compilaria um app .NET e faria compilacao, publicacao e deploy em Docker?
+//   FASE 2 — depois do questionario, UMA mensagem em linguagem natural simples
+//   manda fazer tudo em sequencia, terminando com o .NET compilado e
+//   empacotado num zip (com prova de compilacao antes de zipar).
 // Transcript completo em <workspace>/dialogo.txt.
 internal static class E2EToolsFullTests
 {
@@ -110,7 +112,7 @@ internal static class E2EToolsFullTests
                 foreach (var item in output) _hist.Add(item?.DeepClone());
         }
 
-        /// <summary>Turno de pergunta: sem tools, o modelo responde em prosa.</summary>
+        /// <summary>Turno de pergunta: tools no schema, mas SEM call (tool_choice none).</summary>
         public async Task<string> Ask(string message)
         {
             Note("U", message);
@@ -120,6 +122,11 @@ internal static class E2EToolsFullTests
             {
                 ["model"] = TestContext.SuiteModel,
                 ["input"] = input,
+                // Sem `tools` o template do 4B despeja os tokens de tool call no
+                // texto (`<|tool_call>...`) ou devolve vazio — medido 2026-11-06.
+                // Com o schema presente e `tool_choice: none` ele responde prosa.
+                ["tools"] = global::Rochas.OpenCodeBridge.Core.ToolCatalog.Responses(),
+                ["tool_choice"] = "none",
                 ["stream"] = false
             };
             var res = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", body);
@@ -131,12 +138,13 @@ internal static class E2EToolsFullTests
         }
 
         /// <summary>Turno de execucao: com tools + function_call obrigatorio.</summary>
-        public async Task<string> Act(string message, int max = 4)
+        public async Task<string> Act(string message, int max = 16)
         {
             Note("U", message);
             _hist.Add(new JsonObject { ["role"] = "user", ["content"] = message });
             string text = "";
             int start = _ledger.Count;
+            string prevSig = "";
             for (int step = 0; step < max; step++)
             {
                 var body = new JsonObject
@@ -150,6 +158,7 @@ internal static class E2EToolsFullTests
                 var res = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", body);
                 text = TextOf(res);
                 int callsInTurn = 0;
+                var sig = new StringBuilder();
                 // Ordem do historico = ordem do output (call -> output -> call...),
                 // igual ao driver: o proximo request precisa ver o resultado
                 // imediatamente depois da call que o produziu.
@@ -161,6 +170,7 @@ internal static class E2EToolsFullTests
                     string name = item["name"]?.GetValue<string>() ?? "";
                     string args = item["arguments"]?.GetValue<string>() ?? "{}";
                     string callId = item["call_id"]?.GetValue<string>() ?? item["id"]?.GetValue<string>() ?? "";
+                    sig.Append(name).Append(args).Append(';');
                     JsonNode? parsed = null;
                     try { parsed = JsonNode.Parse(args); } catch { }
                     var exec = await TestContext.ExecuteTool(name, parsed, _cwd);
@@ -181,6 +191,11 @@ internal static class E2EToolsFullTests
                     });
                 }
                 if (callsInTurn == 0) break;
+                // Repetir EXATAMENTE o mesmo conjunto da rodada anterior = tarefa
+                // encerrada; sem isso o `required` faria o modelo encher rodadas.
+                string cur = sig.ToString();
+                if (cur.Length > 0 && cur == prevSig) break;
+                prevSig = cur;
             }
             var turn = _ledger.Skip(start).ToList();
             Note("A(tools)", (turn.Count == 0 ? "(nenhuma call) " : string.Join(" ; ", turn)) +
@@ -208,69 +223,72 @@ internal static class E2EToolsFullTests
         void Know(int i, string cap, string answer, bool ok)
         {
             known[i] = ok;
-            Console.WriteLine($"  [toolsfull:qa] sabe {cap}? {(ok ? "SIM" : "NAO")} ({Compact(answer, 90)})");
+            Console.WriteLine($"  [toolsfull:qa] sabe {cap}? {(ok ? "SIM" : "NAO")} ({Compact(answer, 80)})");
         }
         bool Has(string t, string pattern) => Regex.IsMatch(t, pattern, RegexOptions.IgnoreCase);
 
-        // 1) git -> inicializa repositorio
+        // ---------- FASE 1: questionario, uma pergunta por mensagem ----------
         string a1 = await dlg.Ask("Voce sabe utilizar git?");
         Know(0, "git", a1, Has(a1, @"git\s+init") && Has(a1, @"git\s+add") && Has(a1, @"git\s+commit"));
-        await dlg.Act("Entao usa o git agora nesta pasta, um passo por chamada: inicializa um repositorio e confirma com `git status`.", 3);
-        Soft(Directory.Exists(Path.Combine(dir, ".git")), "1-git: repositorio git iniciado na pasta atual");
 
-        // 2) adicionar arquivos -> cria + git add
         string a2 = await dlg.Ask("Sabe adicionar arquivos ao controle de versao?");
         Know(1, "add", a2, Has(a2, @"git\s+add"));
-        await dlg.Act("Agora adiciona um arquivo: cria `data.txt` com a data de hoje do sistema no formato AAAA-MM-DD " +
-                      "(so' a data) e adiciona ao controle de versao com `git add`.", 3);
-        string dataPath = Path.Combine(dir, "data.txt");
-        Soft(File.Exists(dataPath) && ReadText(dataPath).Contains(hoje, StringComparison.Ordinal),
-            $"2-add: data.txt com a data REAL ({hoje}) — conteudo='{Trecho(dataPath)}'");
-        var (stCode, stOut) = Run("git", dir, 30, "-c", "safe.directory=" + dir, "diff", "--cached", "--name-only");
-        Soft(stCode == 0 && stOut.Contains("data.txt", StringComparison.Ordinal),
-            $"2-add: data.txt no stage do git (staged='{Compact(stOut, 80)}')");
 
-        // 3) commit com mensagem -> commit + log
         string a3 = await dlg.Ask("Como faz para efetuar commit ja' com a mensagem?");
         Know(2, "commit-m", a3, Has(a3, @"git\s+commit\s+[^\n]*-[a-z]*m"));
-        await dlg.Act("Agora efetua o commit com a mensagem `data de hoje` e confirma com `git log`.", 3);
+
+        string a4 = await dlg.Ask("Como voce criaria uma subpasta a partir da pasta atual?");
+        Know(3, "subpasta", a4, Has(a4, @"mkdir"));
+
+        string a5 = await dlg.Ask("Como voce acessaria a internet em busca de dados como meteorologia?");
+        Know(4, "internet", a5, Has(a5, @"(curl|wget|fetch|webfetch|https?://|api)"));
+
+        string a6 = await dlg.Ask("Como verificaria a hora utilizando o sistema operacional Linux e o Windows?");
+        Know(5, "hora", a6, Has(a6, @"\bdate\b") && Has(a6, @"(Get-Date|time\s*/t|%time%|powershell|windows)"));
+
+        string a7 = await dlg.Ask("Como construiria um aplicativo console .NET C# hello world?");
+        Know(6, "console", a7, Has(a7, @"dotnet\s+new\s+console"));
+
+        string a8 = await dlg.Ask("Como compilaria um app .NET e realizaria a compilacao, a publicacao e o deploy em container Docker?");
+        Know(7, "publish", a8, Has(a8, @"dotnet\s+publish") && Has(a8, @"docker\s+build"));
+
+        Console.WriteLine($"  [toolsfull:qa] conhecimento: {known.Count(k => k)}/8");
+
+        // ---------- FASE 2: uma ordem em linguagem natural, tudo em sequencia ----------
+        await dlg.Act(
+            "Show. Agora faz tudo isso na pratica, nesta pasta, na ordem, um passo por chamada: " +
+            "inicializa o git; cria o arquivo data.txt com a data de hoje do sistema e adiciona ele ao git; " +
+            "faz o commit com a mensagem 'data de hoje' (se o git reclamar de identidade, configura o user.name e o user.email locais antes); " +
+            "cria a subpasta dados; busca o clima de Sao Paulo na URL " +
+            "https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m " +
+            "e grava a temperatura em dados/clima.txt; " +
+            "grava a data e a hora do sistema em dados/hora.txt; " +
+            "cria o app console hello com dotnet new console, deixa o Program.cs imprimindo Hello World e roda ele; " +
+            "compila e publica o hello; " +
+            "e no fim junta o hello compilado num zip chamado hello.zip — garante que compilou antes de zipar, " +
+            "e confere o zip com unzip -t e unzip -l.");
+
+        // Aceite de tudo que a ordem pediu.
+        Soft(Directory.Exists(Path.Combine(dir, ".git")), "1-git: repositorio git iniciado");
+        string dataPath = Path.Combine(dir, "data.txt");
+        Soft(File.Exists(dataPath) && ReadText(dataPath).Contains(hoje, StringComparison.Ordinal),
+            $"2-data: data.txt com a data REAL ({hoje}) — conteudo='{Trecho(dataPath)}'");
+
         var (c1, log1) = GitLog(dir);
         Soft(c1.Length >= 1 && log1.Contains("data de hoje", StringComparison.Ordinal),
             $"3-commit: commit 'data de hoje' (log: {Compact(log1, 160)})");
 
-        // 4) subpasta
-        string a4 = await dlg.Ask("Como voce criaria uma subpasta a partir da pasta atual?");
-        Know(3, "subpasta", a4, Has(a4, @"mkdir"));
-        await dlg.Act("Agora cria a subpasta `dados` nesta pasta.", 3);
         Soft(Directory.Exists(Path.Combine(dir, "dados")), "4-subpasta: 'dados' criada");
 
-        // 5) internet/meteorologia
-        string a5 = await dlg.Ask("Como voce acessaria a internet em busca de dados como meteorologia?");
-        Know(4, "internet", a5, Has(a5, @"(curl|wget|fetch|webfetch|https?://|api)"));
-        await dlg.Act("Agora busca o clima atual de Sao Paulo na URL " +
-                      "https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m " +
-                      "e grava a temperatura em `dados/clima.txt`.", 3);
         string climaPath = Path.Combine(dir, "dados", "clima.txt");
-        string clima = ReadText(climaPath);
-        Soft(File.Exists(climaPath), "5-internet: dados/clima.txt criado");
-        Soft(Regex.IsMatch(clima, @"-?\d+([.,]\d+)?\s*(°|C\b|graus)", RegexOptions.IgnoreCase),
-            $"5-internet: temperatura no clima.txt (conteudo='{Trecho(climaPath)}')");
+        Soft(File.Exists(climaPath) && Regex.IsMatch(ReadText(climaPath), @"-?\d+([.,]\d+)?\s*(°|C\b|graus)", RegexOptions.IgnoreCase),
+            $"5-clima: temperatura em dados/clima.txt (conteudo='{Trecho(climaPath)}')");
 
-        // 6) hora Linux/Windows
-        string a6 = await dlg.Ask("Como verificaria a hora utilizando o sistema operacional Linux e o Windows?");
-        Know(5, "hora", a6, Has(a6, @"\bdate\b") && Has(a6, @"(Get-Date|time\s*/t|%time%|powershell|windows)"));
-        await dlg.Act("Aqui estamos no Linux. Agora grava em `dados/hora.txt` a data e a hora do sistema.", 3);
         string horaPath = Path.Combine(dir, "dados", "hora.txt");
         string hora = ReadText(horaPath);
-        Soft(File.Exists(horaPath) && hora.Contains(hoje, StringComparison.Ordinal),
-            $"6-hora: dados/hora.txt com a data REAL ({hoje}) — conteudo='{Trecho(horaPath)}'");
-        Soft(Regex.IsMatch(hora, @"\d{1,2}:\d{2}"), $"6-hora: hora HH:MM no arquivo ('{Trecho(horaPath)}')");
+        Soft(File.Exists(horaPath) && hora.Contains(hoje, StringComparison.Ordinal) && Regex.IsMatch(hora, @"\d{1,2}:\d{2}"),
+            $"6-hora: data+hora reais em dados/hora.txt (conteudo='{Trecho(horaPath)}')");
 
-        // 7) console .NET hello world
-        string a7 = await dlg.Ask("Como construiria um aplicativo console .NET C# hello world?");
-        Know(6, "console", a7, Has(a7, @"dotnet\s+new\s+console"));
-        await dlg.Act("Agora cria o app console `hello` com `dotnet new console -o hello`, deixa o `hello/Program.cs` " +
-                      "imprimindo `Hello World` e roda com `dotnet run --project hello`.", 4);
         string proj = Path.Combine(dir, "hello");
         Soft(File.Exists(Path.Combine(proj, "hello.csproj")), "7-console: hello/hello.csproj criado");
         Soft(ReadText(Path.Combine(proj, "Program.cs")).Contains("Hello", StringComparison.Ordinal),
@@ -279,30 +297,25 @@ internal static class E2EToolsFullTests
         {
             var (rc, runOut) = Run("dotnet", dir, 180, "run", "--project", "hello");
             Soft(rc == 0 && runOut.Contains("Hello", StringComparison.Ordinal),
-                $"7-console: `dotnet run` imprimiu Hello (rc={rc}, out='{Compact(runOut, 90)}')");
+                $"7-console: `dotnet run` imprimiu Hello (rc={rc}, out='{Compact(runOut, 80)}')");
         }
 
-        // 8) compilacao + publicacao + docker
-        string a8 = await dlg.Ask("Como voce compilaria um app .NET e realizaria a compilacao, a publicacao e o deploy em container Docker?");
-        Know(7, "publish", a8, Has(a8, @"dotnet\s+publish") && Has(a8, @"docker\s+build"));
-        await dlg.Act("Agora compila (`dotnet build hello`), publica (`dotnet publish hello -c Release -o publish`) e cria " +
-                      "`hello/Dockerfile` com `FROM mcr.microsoft.com/dotnet/runtime` e `COPY publish /app`.", 5);
         string pub = Path.Combine(dir, "publish");
         Soft(Directory.Exists(pub) && Directory.GetFiles(pub, "hello*.dll").Length > 0,
             $"8-publish: publicacao em publish/ ({string.Join(", ", Directory.Exists(pub) ? Directory.GetFiles(pub).Select(Path.GetFileName).Take(5) : Array.Empty<string>())})");
-        string docker = ReadText(Path.Combine(proj, "Dockerfile"));
-        Soft(docker.Contains("FROM", StringComparison.OrdinalIgnoreCase) && docker.Contains("dotnet", StringComparison.OrdinalIgnoreCase),
-            $"8-docker: hello/Dockerfile com FROM dotnet (conteudo='{Compact(docker, 70)}')");
-        var (dockCode, _) = Run("docker", dir, 15, "info");
-        if (dockCode == 0)
-        {
-            var (bCode, bOut) = Run("docker", dir, 300, "build", "-t", "toolsfull-hello", "hello");
-            Soft(bCode == 0, $"8-docker: imagem construida (rc={bCode}, out='{Compact(bOut, 90)}')");
-        }
-        else Console.WriteLine("  [toolsfull:exec] SKIP 8-docker: daemon docker indisponivel nesta maquina");
 
-        Console.WriteLine($"  [toolsfull:qa] conhecimento: {known.Count(k => k)}/8");
-        File.AppendAllText(transcript, $"\nRESUMO: conhecimento {known.Count(k => k)}/8; execucao DIALOGO = {(fails.Count == 0 ? "VERDE" : fails.Count + " falha(s)")}\n");
+        string zip = Path.Combine(dir, "hello.zip");
+        Soft(File.Exists(zip), $"9-zip: hello.zip criado ({Compact(dir, 60)})");
+        if (File.Exists(zip))
+        {
+            var (lc, lout) = Run("unzip", dir, 30, "-l", "hello.zip");
+            Soft(lc == 0 && lout.Contains(".dll", StringComparison.OrdinalIgnoreCase),
+                $"9-zip: hello.zip contem o .NET compilado (.dll) — {(lc == 0 ? Compact(lout, 160) : "unzip -l falhou")}");
+            var (tc, _) = Run("unzip", dir, 30, "-t", "hello.zip");
+            Soft(tc == 0, "9-zip: unzip -t sem erro (pacote integro)");
+        }
+
+        File.AppendAllText(transcript, $"\nRESUMO: conhecimento {known.Count(k => k)}/8; execucao = {(fails.Count == 0 ? "VERDE" : fails.Count + " falha(s)")}\n");
         TestContext.Check(fails.Count == 0,
             $"[toolsfull] capacidades executadas com tools: {string.Join(" | ", fails)}");
         Console.WriteLine($"[toolsfull] dialogo concluido ({dlg.Calls.Count} calls) em {dir}");
