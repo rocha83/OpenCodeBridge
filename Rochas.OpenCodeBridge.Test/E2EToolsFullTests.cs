@@ -119,7 +119,7 @@ internal static class E2EToolsFullTests
             // Sem `tools` o schema nao entra; a frase abaixo pede prosa explicita.
             // Com tool_choice "none" o 4B devolvia 1-50 tokens (quase vazio) —
             // medido 2026-11-06; com a instrucao em texto ele responde.
-            string ask = message + "\n\nResponda em texto, sem usar ferramentas.";
+            string ask = message + "\n\nResponda-me aqui em TEXTO, sem usar tools.";
             var input = Input();
             input.Add(new JsonObject { ["role"] = "user", ["content"] = ask });
             var body = new JsonObject
@@ -265,7 +265,8 @@ internal static class E2EToolsFullTests
             "cria o app console hello com dotnet new console, deixa o Program.cs imprimindo Hello World e roda ele; " +
             "compila e publica o hello; " +
             "e no fim junta o hello compilado num zip chamado hello.zip — garante que compilou antes de zipar, " +
-            "e confere o zip com unzip -t e unzip -l.");
+            "e confere o zip com unzip -t e unzip -l."
+            + "\n\nUse as TOOLS do schema agora, um passo por chamada (tool call nativo). Nao responda com plano em texto.");
 
         // Aceite de tudo que a ordem pediu.
         Soft(Directory.Exists(Path.Combine(dir, ".git")), "1-git: repositorio git iniciado");
