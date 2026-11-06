@@ -892,7 +892,8 @@ internal static class TestContext
         string lastGitSub = "";
         // 4 = cadeia write->init->add->commit->log do E-tools-full; o modelo
         // encerra o turno depois do resultado da tool e cada continuacao custa 1.
-        const int MaxNudges = 4;
+        // TCTX_NUDGES=0 desliga a insistencia (observar o modelo cru).
+        int MaxNudges = int.TryParse(Environment.GetEnvironmentVariable("TCTX_NUDGES"), out int mn) ? mn : 4;
         for (int step = 0; step < max; step++)
         {
             // Forma Responses vem do Core; o teste nao reescreve schema nem faz
