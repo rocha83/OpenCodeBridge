@@ -907,10 +907,12 @@ internal static class TestContext
                 ["stream"] = false
             };
             // Sem tool_choice o 4B responde em TEXTO (narra o JSON da call) ou
-            // encerra o turno com 1 token depois do resultado. Nas primeiras
-            // rodadas o canal nativo e' obrigatorio; depois volta a auto para a
-            // resposta final poder ser prosa.
-            if (step < 4) reqBody["tool_choice"] = "required";
+            // encerra o turno com 1 token depois do resultado — medido em
+            // 2026-11-06: com harness minimo e sem cutucada ele para depois do
+            // `git add .` e nunca emite o commit. O cliente forca a call em
+            // TODAS as rodadas; so' a ultima fica `auto` para caber a resposta
+            // final em prosa. Nao ha nudge de texto (TCTX_NUDGES=0).
+            if (step < max - 1) reqBody["tool_choice"] = "required";
             var res = await PostObj(Bridge + "/v1/responses", reqBody);
             text = "";
             // Progresso contado POR ITERACAO: o modelo pode devolver output vazio
