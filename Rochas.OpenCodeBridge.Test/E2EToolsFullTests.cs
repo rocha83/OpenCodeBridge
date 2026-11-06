@@ -93,7 +93,7 @@ internal static class E2EToolsFullTests
     static string[] SplitAnswers(string text)
     {
         var marks = Regex.Matches(text, @"(?m)^\s*\**\s*([1-8])\s*[\)\.\-:]\s*");
-        var parts = new string[8];
+        var parts = Enumerable.Repeat("", 8).ToArray();
         for (int i = 0; i < marks.Count; i++)
         {
             int n = int.Parse(marks[i].Groups[1].Value);
