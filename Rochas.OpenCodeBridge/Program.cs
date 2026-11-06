@@ -2966,11 +2966,16 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         if (tools is { Count: > 0 })
         {
             chat["tools"] = tools;
-            // Honra tool_choice explicito do cliente (ex.: testes pedem
-            // "required"); so define padrao quando ausente: Coder precisa de
-            // "required" p/ emitir tool_calls nativo, Gemma decide sozinho
-            // ("auto", bake-off 3/3).
-            if (chat["tool_choice"] is null)
+            // Honra tool_choice explicito do CLIENTE (req). Antes lia-se
+            // chat["tool_choice"], que acabou de ser criado sem a chave — sempre
+            // nulo — e o pedido "required" virava "auto". Medido em 2026-11-06:
+            // o cliente forcava a call e o modelo encerrava o turno depois do
+            // `git add .` (3 rounds, sem commit). Padrao so' quando ausente:
+            // Coder precisa de "required" p/ emitir tool_calls nativo; Gemma
+            // decide sozinho ("auto", bake-off 3/3).
+            if (req["tool_choice"] is JsonNode wantedChoice)
+                chat["tool_choice"] = wantedChoice.DeepClone();
+            else
                 chat["tool_choice"] = IsCoder ? "required" : "auto";
             // parallel_tool_calls nao e forcado: o cliente/servidor decide.
             // (removida a ordem fixa de "1 call por resposta".)
