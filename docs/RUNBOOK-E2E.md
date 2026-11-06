@@ -24,6 +24,37 @@ Log: `/tmp/opencode/pipeline.log` (tee).
 | 3 | `curl /v1/responses` (oi, tópico geral) | resposta com conteúdo, sem `Decode error` |
 | 3b | Suíte com `--standalone` (opencode real, mesmos enunciados) | `E-standalone-*` PASS |
 
+## Thinking dos testes (default OFF)
+
+Desde 2026-11-06 o runner manda `chat_template_kwargs.enable_thinking=false`
+em todo POST `/v1/responses` e `/v1/chat/completions`, a menos que o teste ja
+envie o proprio `chat_template_kwargs`. Motivo: o template do Gemma 4 liga o
+canal de thought sozinho e, sob concorrencia, o turno pode terminar dentro
+dele (`content` vazio, `finish_reason=length`) — o assert de artefato cai por
+um motivo que nao e o artefato.
+
+- O perfil da role continua valendo (`-plan` = temp 0.3, `-build` = temp 0.1);
+  so o raciocinio e desligado no pedido.
+- `TestContext.PlanModel` = modelo servido + `-plan` (E2E senior/enterprise
+  medem Plan; nao trocar por Build para "fazer passar").
+- Asserts de reasoning so rodam com `TestContext.RequestThinking` ligado
+  (`--request-thinking on`); default `off`.
+- `--request-thinking on|off` no binario de teste (default `off`).
+
+Rodada WAR com tails + anti-repeat (config da unit `bridge-gpu`):
+
+```bash
+sudo bash scripts/lab/set-bridge-flags.sh 1 1 bridge-gpu
+
+dotnet Rochas.OpenCodeBridge.Test/bin/Release/net10.0/Rochas.OpenCodeBridge.Test.dll \
+  --war-level 1 --war-modes bridge --war-api-key guest@123 \
+  --war-bridge http://127.0.0.1:4124 --war-upstream http://127.0.0.1:4100 \
+  --war-out logs/levels/<stamp> --war-retries 1
+```
+
+Fail-fast e o default (para no primeiro FAIL e nao gasta GPU); so desligue com
+`--war-no-stop-on-fail`.
+
 ## Modo standalone (opencode real)
 
 A suíte desvia cada E2E para o **opencode CLI** rodando o **mesmo enunciado**

@@ -7,7 +7,7 @@ internal static class E2ESeniorTests
 {
     static JsonObject Req(string text, bool stream = false) => new()
     {
-        ["model"] = "openai/Gemma4-E4B-Q4-plan",
+        ["model"] = TestContext.PlanModel,
         ["stream"] = stream,
         ["input"] = new JsonArray(new JsonObject
         {
@@ -24,6 +24,22 @@ internal static class E2ESeniorTests
         return msg?["content"]?[0]?["text"]?.GetValue<string>() ?? "";
     }
 
+    // Diagnostico do modo de falha "thinking-only": output so com reasoning e sem message.
+    static string NoMsg(JsonObject r)
+    {
+        var output = r["output"]?.AsArray();
+        if (output is null) return " (sem output)";
+        if (output.Any(o => o?["type"]?.GetValue<string>() == "message")) return "";
+        int think = 0;
+        foreach (var o in output)
+        {
+            if (o?["type"]?.GetValue<string>() != "reasoning") continue;
+            think += o["content"]?.AsArray().Sum(c => c?["text"]?.GetValue<string>()?.Length ?? 0) ?? 0;
+            think += o["summary"]?.AsArray().Sum(c => c?["text"]?.GetValue<string>()?.Length ?? 0) ?? 0;
+        }
+        return think > 0 ? $" (reasoning sem message: {think} chars)" : " (sem reasoning e sem message)";
+    }
+
     public static async Task ReactEnterprise()
     {
         // Frontend senior: fetch concorrente com cancelamento + memoizacao.
@@ -34,7 +50,7 @@ internal static class E2ESeniorTests
             "Responda so com o codigo .tsx e 3 bullets de por que cada decisao evita bug em producao."));
         TestContext.Check(r["status"]?.GetValue<string>() == "completed", "react completed");
         string text = TextOf(r);
-        TestContext.Check(text.Length > 400, "react com codigo util");
+        TestContext.Check(text.Length > 400, "react com codigo util" + NoMsg(r));
         Console.WriteLine($"  [info] react abort={text.Contains("AbortController")} memo={text.Contains("useMemo")}");
     }
 
@@ -48,7 +64,7 @@ internal static class E2ESeniorTests
             "Responda em bullets curtos + DDL da outbox."));
         TestContext.Check(r["status"]?.GetValue<string>() == "completed", "bus completed");
         string text = TextOf(r);
-        TestContext.Check(text.Length > 400, "bus com conteudo util");
+        TestContext.Check(text.Length > 400, "bus com conteudo util" + NoMsg(r));
         Console.WriteLine($"  [info] bus idempotente={text.Contains("idempotente", StringComparison.OrdinalIgnoreCase)} outbox={text.Contains("outbox", StringComparison.OrdinalIgnoreCase)}");
     }
 
@@ -62,7 +78,7 @@ internal static class E2ESeniorTests
             "e o valor esperado de cada um."));
         TestContext.Check(r["status"]?.GetValue<string>() == "completed", "erp completed");
         string text = TextOf(r);
-        TestContext.Check(text.Length > 300, "erp com conteudo util");
+        TestContext.Check(text.Length > 300, "erp com conteudo util" + NoMsg(r));
         Console.WriteLine($"  [info] erp borda={text.Contains("8471")}");
     }
 
@@ -75,7 +91,7 @@ internal static class E2ESeniorTests
             "(init, loop, ISR curta) + 3 bullets do que quebraria sem DMA e sem STOP."));
         TestContext.Check(r["status"]?.GetValue<string>() == "completed", "arm completed");
         string text = TextOf(r);
-        TestContext.Check(text.Length > 400, "arm com conteudo util");
+        TestContext.Check(text.Length > 400, "arm com conteudo util" + NoMsg(r));
         Console.WriteLine($"  [info] arm dma={text.Contains("DMA")} stop={text.Contains("STOP")}");
     }
 }
