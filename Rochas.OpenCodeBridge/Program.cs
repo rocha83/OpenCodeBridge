@@ -1829,6 +1829,10 @@ internal static partial class Program
                     ["tails_opencode"] = false,
                     ["behavior_tail"] = BehaviorTailEnabled,
                     ["tools_tail"] = ToolsTailEnabled,
+                    // Modo observacao (breaker OFF): o unit do /api/translate
+                    // precisa saber se o deployment tem o breaker ligado.
+                    ["breaker_soft"] = BreakerSoft,
+                    ["breaker_hard"] = BreakerHard,
                     ["behavior_chars"] = BehaviorTailEffective.Length,
                     ["tools_chars"] = ToolsTailEffective.Length
                 });

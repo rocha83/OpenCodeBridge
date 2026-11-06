@@ -507,6 +507,11 @@ internal static class UnitToolBreakerTests
     public static async Task TranslateBreakerVerdicts()
     {
         await RequireNewBridge();
+        // Deployment de observacao desliga o breaker (--breaker-soft 0): o mapeamento
+        // 2/3/6 nao existe nele, entao o caso e' N/A (nao FAIL).
+        var status = await TestContext.GetObj(TestContext.Bridge + "/api/status");
+        if ((status["breaker_soft"]?.GetValue<int>() ?? 3) <= 0)
+            TestContext.Skip("bridge com breaker desligado (modo observacao: --breaker-soft 0)");
         string model = (TestContext.ServedModel.Length > 0 ? TestContext.ServedModel : "m") + "-build";
 
         JsonObject Body(int failures, string pathBase) => new()
