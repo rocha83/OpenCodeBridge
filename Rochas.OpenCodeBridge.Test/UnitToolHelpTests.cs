@@ -127,4 +127,24 @@ internal static class UnitToolHelpTests
             "help do catalogo cobre shell");
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// O help do shell tem que trazer o fluxo zip/unzip COMPLETO: empacotar,
+    /// listar, testar, extrair e conferir, com os erros reais. Sem isso o modelo
+    /// inventa a ordem (`zip . pacote.zip`) e o erro so' aparece na execucao.
+    /// </summary>
+    public static Task ZipFlowIsComplete()
+    {
+        string sh = ToolHelp.For("shell");
+        foreach (string step in new[]
+                 {
+                     "zip -qr pacote.zip", "unzip -l", "unzip -t", "unzip -o",
+                     "-d destino", "Zip file structure invalid", "name not matched"
+                 })
+            TestContext.Check(sh.Contains(step, StringComparison.Ordinal),
+                $"help do shell ensina zip/unzip: '{step}'");
+        TestContext.Check(ToolHelp.For("bash") == sh && ToolHelp.For("sh") == sh,
+            "shell/bash/sh vem da mesma fonte (sem copia divergente)");
+        return Task.CompletedTask;
+    }
 }
