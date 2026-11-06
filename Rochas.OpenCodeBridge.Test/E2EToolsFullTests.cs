@@ -137,7 +137,7 @@ internal static class E2EToolsFullTests
         }
 
         /// <summary>Turno de execucao: com tools + function_call obrigatorio.</summary>
-        public async Task<string> Act(string message, int max = 16)
+        public async Task<string> Act(string message, int max = 16, bool oneShot = false)
         {
             Note("U", message);
             _hist.Add(new JsonObject { ["role"] = "user", ["content"] = message });
@@ -153,7 +153,7 @@ internal static class E2EToolsFullTests
                     ["tools"] = global::Rochas.OpenCodeBridge.Core.ToolCatalog.Responses(),
                     ["stream"] = false
                 };
-                if (step < max - 1) body["tool_choice"] = "required";
+                if (oneShot || step < max - 1) body["tool_choice"] = "required";
                 var res = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", body);
                 text = TextOf(res);
                 int callsInTurn = 0;
@@ -190,6 +190,7 @@ internal static class E2EToolsFullTests
                     });
                 }
                 if (callsInTurn == 0) break;
+                if (oneShot) break;
                 // Repetir EXATAMENTE o mesmo conjunto da rodada anterior = tarefa
                 // encerrada; sem isso o `required` faria o modelo encher rodadas.
                 string cur = sig.ToString();
@@ -253,20 +254,25 @@ internal static class E2EToolsFullTests
 
         Console.WriteLine($"  [toolsfull:qa] conhecimento: {known.Count(k => k)}/8");
 
-        // ---------- FASE 2: uma ordem em linguagem natural, tudo em sequencia ----------
+        // ---------- FASE 2: uma etapa por mensagem (uma tool por etapa) ----------
+        // Depois de cada resposta em texto, a ordem curta daquela capacidade:
+        // request com tools + tool_choice=required, executa as calls do turno e para.
+        const string canal = "\n\nUse as TOOLS do schema agora (tool call nativo). Nao responda com plano em texto.";
+        async Task Etapa(string ordem) => await dlg.Act(ordem + canal, max: 4, oneShot: true);
+
+        await Etapa("Agora faz na pratica, nesta pasta: inicializa o git.");
+        await Etapa("Agora cria o arquivo data.txt com a data de hoje do sistema e adiciona ele ao git.");
+        await Etapa("Agora faz o commit com a mensagem 'data de hoje' (se o git reclamar de identidade, configura o user.name e o user.email locais antes).");
+        await Etapa("Agora cria a subpasta dados.");
+        await Etapa("Agora busca o clima de Sao Paulo na URL https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m e grava a temperatura em dados/clima.txt.");
+        await Etapa("Agora grava a data e a hora do sistema em dados/hora.txt.");
+        await Etapa("Agora cria o app console hello com dotnet new console, deixa o Program.cs imprimindo Hello World e roda ele.");
+
+        // ---------- FASE 3: sequencial final, so depois de todas as etapas ----------
         await dlg.Act(
-            "Show. Agora faz tudo isso na pratica, nesta pasta, na ordem, um passo por chamada: " +
-            "inicializa o git; cria o arquivo data.txt com a data de hoje do sistema e adiciona ele ao git; " +
-            "faz o commit com a mensagem 'data de hoje' (se o git reclamar de identidade, configura o user.name e o user.email locais antes); " +
-            "cria a subpasta dados; busca o clima de Sao Paulo na URL " +
-            "https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m " +
-            "e grava a temperatura em dados/clima.txt; " +
-            "grava a data e a hora do sistema em dados/hora.txt; " +
-            "cria o app console hello com dotnet new console, deixa o Program.cs imprimindo Hello World e roda ele; " +
-            "compila e publica o hello; " +
+            "Agora, em sequencia, um passo por chamada: compila e publica o hello, " +
             "e no fim junta o hello compilado num zip chamado hello.zip — garante que compilou antes de zipar, " +
-            "e confere o zip com unzip -t e unzip -l."
-            + "\n\nUse as TOOLS do schema agora, um passo por chamada (tool call nativo). Nao responda com plano em texto.");
+            "e confere o zip com unzip -t e unzip -l." + canal);
 
         // Aceite de tudo que a ordem pediu.
         Soft(Directory.Exists(Path.Combine(dir, ".git")), "1-git: repositorio git iniciado");
