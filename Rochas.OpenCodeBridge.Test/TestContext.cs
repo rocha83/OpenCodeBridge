@@ -887,6 +887,9 @@ internal static class TestContext
         var journeySw = Stopwatch.StartNew();
         string text = "";
         int nudges = 0;
+        // Ultimo subcomando git que deu certo: a cutucada cita o PROXIMO passo do
+        // fluxo (ToolHelp.GitFlow), em vez de uma frase generica sem alvo.
+        string lastGitSub = "";
         // 4 = cadeia write->init->add->commit->log do E-tools-full; o modelo
         // encerra o turno depois do resultado da tool e cada continuacao custa 1.
         const int MaxNudges = 4;
@@ -958,6 +961,9 @@ internal static class TestContext
                         calls.Add($"{name}({args}) -> {(callOk ? "ok" : "fail")}");
                         JsonNode? callArgs = null;
                         try { callArgs = JsonNode.Parse(args); } catch { }
+                        if (callOk && name == "git")
+                            lastGitSub = (callArgs?["command"]?.GetValue<string>() ?? "")
+                                .TrimStart().Split(' ')[0];
                         journeyCalls.Add(new JsonObject
                         {
                             ["round"] = step,
@@ -993,12 +999,15 @@ internal static class TestContext
                 // e o veredito vira FAIL por silencio do modelo.
                 if (nudges >= MaxNudges) break;
                 nudges++;
+                string nextStep = global::Rochas.OpenCodeBridge.Core.ToolHelp.NextGitStep(lastGitSub);
                 input.Add(new JsonObject
                 {
                     ["role"] = "user",
-                    ["content"] = nudges == 1 && text.Trim().Length == 0
-                        ? "Voce nao emitiu nenhuma tool call. Execute a tarefa agora com as tools (write/edit/read); nao responda em prosa."
-                        : "A tarefa ainda nao esta concluida. Continue de onde parou e finalize todos os passos do enunciado com as tools; nao responda em prosa."
+                    ["content"] = nextStep.Length > 0
+                        ? $"O turno parou sem tool call depois de `git {lastGitSub}`. Proximo passo do fluxo: {nextStep}. Um passo por chamada."
+                        : nudges == 1 && text.Trim().Length == 0
+                            ? "Voce nao emitiu nenhuma tool call. Execute a tarefa agora com as tools (write/edit/read); nao responda em prosa."
+                            : "A tarefa ainda nao esta concluida. Continue de onde parou e finalize todos os passos do enunciado com as tools; nao responda em prosa."
                 });
                 continue;
             }

@@ -52,7 +52,7 @@ internal static class UnitToolHelpTests
         // Receita comentada (exemplo de FORMA): o modelo copia a ordem certa —
         // init, arquivo, identidade, add, commit, log — em vez de encadear tudo
         // numa chamada so'.
-        TestContext.Check(git.Contains("EXEMPLO (FORMA, nao conteudo)", StringComparison.Ordinal)
+        TestContext.Check(git.Contains("PASSOS (um por chamada, nesta ordem", StringComparison.Ordinal)
             && git.Contains("\"command\":\"init\"", StringComparison.Ordinal)
             && git.Contains("\"command\":\"add .\"", StringComparison.Ordinal)
             && git.Contains("commit -m", StringComparison.Ordinal)

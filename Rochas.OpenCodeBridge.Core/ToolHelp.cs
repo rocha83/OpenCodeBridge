@@ -32,6 +32,45 @@ public static class ToolHelp
     /// <summary>Todos os helps curados (os units varrem a classe inteira daqui).</summary>
     public static IReadOnlyDictionary<string, string> All => Docs;
 
+    /// <summary>
+    /// Fluxo git PASSO A PASSO: fonte ÚNICA do help da tool e da cutucada de
+    /// continuacao. O 4B encerra o turno depois do `add` (medido 2026-11-06: 3/3
+    /// tentativas sem `commit`); a frase que o empurra sai daqui, nunca de uma
+    /// copia escrita a mao no teste. Path `./` e arquivo criado no proprio fluxo:
+    /// copiar a letra produz acao valida em qualquer workspace.
+    /// </summary>
+    static readonly (string Key, string Call)[] GitFlow =
+    {
+        ("init", "git {\"command\":\"init\",\"path\":\"./\"}"),
+        ("write", "write do arquivo que o pedido nomeia (conteudo = o do pedido)"),
+        ("user", "git {\"command\":\"config user.name \\\"seu nome\\\"\",\"path\":\"./\"}"),
+        ("email", "git {\"command\":\"config user.email \\\"voce@exemplo.com\\\"\",\"path\":\"./\"}"),
+        ("add", "git {\"command\":\"add .\",\"path\":\"./\"}"),
+        ("commit", "git {\"command\":\"commit -m \\\"mensagem do pedido\\\"\",\"path\":\"./\"}"),
+        ("log", "git {\"command\":\"log --oneline\",\"path\":\"./\"} (prova)"),
+    };
+
+    static string GitCall(string key) => Array.Find(GitFlow, s => s.Key == key).Call;
+
+    /// <summary>Fluxo git numerado, como vai no help da tool.</summary>
+    public static string GitFlowText =>
+        string.Join(" ", GitFlow.Select((s, i) => $"{i + 1}) {s.Call}"));
+
+    /// <summary>
+    /// Proximo passo do fluxo git depois do subcomando ja executado ("" = sem
+    /// proximo). O texto vem de <see cref="GitFlow"/>: help e cutucada nao
+    /// divergem na primeira edicao.
+    /// </summary>
+    /// <param name="subcommand">Subcomando git executado (init|add|commit|config).</param>
+    public static string NextGitStep(string? subcommand) => (subcommand ?? "").Trim().ToLowerInvariant() switch
+    {
+        "init" => GitCall("write") + " -> " + GitCall("user") + " -> " + GitCall("email"),
+        "config" => GitCall("add"),
+        "add" => GitCall("commit") + " -> " + GitCall("log"),
+        "commit" => GitCall("log"),
+        _ => ""
+    };
+
     static readonly Dictionary<string, string> Docs = new(StringComparer.OrdinalIgnoreCase)
     {
         ["shell"] = """USO: uma chamada = um comando; o cwd de cada chamada e' a RAIZ do workspace (subpasta: `cd dir && cmd`, vale so nesta chamada); script = write + `bash arquivo`; pacote = `zip -qr pacote.zip .` (nome do .zip primeiro; `Zip file structure invalid` = o 1o argumento nao e' .zip valido). AO CODIFICAR: monte o arquivo com write/edit e so entao use shell para build/teste/versionamento. DOTNET: com mais de um projeto, `--project` aponta o ARQUIVO do .csproj/.fsproj (a pasta e' ambigua); `dotnet new` so em pasta vazia. C# QUE COMPILA DE PRIMEIRA: membro de tipo publico tambem e' `public`; comparacao de generico = `EqualityComparer<T>.Default.Equals`; variavel lida fora do laco e' declarada ANTES do `for`. EX.: {"command":"ls -la"} · {"command":"dotnet build --project App.csproj"} · {"command":"dotnet test"}""",
@@ -43,10 +82,8 @@ public static class ToolHelp
         ["glob"] = """USO: `pattern` so glob (sem regex/alternancia); diretorio em `path`; 0 matches = use shell `ls`/`find`. EX.: {"pattern":"**/*.cs","path":"."} · {"pattern":"*.md"}""",
         ["grep"] = """USO: `pattern` e' regex; restrinja com `path`/`include`; use read para o contexto. EX.: {"pattern":"TODO","path":"."} · {"pattern":"class \w+","include":"*.cs"}""",
         ["git"] = "FORMAS (uma por chamada, mesmo `path`): " + Tools.GitCommandSyntax.Canonical
-            + ". ORDEM: config user.name/email ANTES do primeiro `commit`; depois `add .`, `commit -m`, `log --oneline`. "
+            + "PASSOS (um por chamada, nesta ordem; config ANTES do primeiro `commit`): " + GitFlowText + ". "
             + "NAO USE: `--bare`, `--path`, `--allow-empty` (o gate recusa e ensina a forma). "
-            + "EXEMPLO (FORMA, nao conteudo): git {\"command\":\"init\",\"path\":\"./\"} -> write {\"path\":\"README.md\",\"content\":\"# repo\"} -> "
-            + "git {\"command\":\"config user.name \\\"Ana\\\"\",\"path\":\"./\"} -> git {\"command\":\"config user.email \\\"ana@exemplo.com\\\"\",\"path\":\"./\"} -> git {\"command\":\"add .\",\"path\":\"./\"} -> git {\"command\":\"commit -m \\\"primeiro commit\\\"\",\"path\":\"./\"} -> git {\"command\":\"log --oneline\",\"path\":\"./\"}. "
             + "UM COMMIT POR PASSO: cada passo que muda arquivo termina com `add .` + `commit -m \"<mensagem do passo>\"`. "
             + "ERROS: `Author identity unknown` = falta o config; `nothing to commit` = arquivo mudou depois do add.",
         ["subagent"] = """USO: um micro-enunciado por call (OBJETIVO+ESCOPO+PROIBIDO+ACEITE); `prompt` completo; nao aninhe JSON; use a tool nativa, nunca shell/execute. Preserve o array `tools` e o system do role ao delegar; nao troque schema por prosa. EX.: {"agent":"build","description":"fix","prompt":"OBJETIVO: ... ESCOPO: ... PROIBIDO: ... ACEITE: ..."}""",
