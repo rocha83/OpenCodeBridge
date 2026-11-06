@@ -108,7 +108,15 @@ internal static class Program
 
         var runnerBins = BinaryGuard.ForRunner();
         Console.WriteLine($"[test] binaries_sha512={runnerBins.Sha512}");
-        var rerun = BinaryGuard.Check(runnerBins, BinaryGuard.DefaultStatePath());
+        // Step da esteira WAR (WAR_STEP): o guard e' do RUN, nao do step. O pai
+        // (WarTemplate) ja checou o hash uma vez; re-checar em cada step faz um
+        // FAIL de uma raia envenenar as irmaos que sobem no mesmo segundo
+        // (rc=4 "binarios inalterados" em units/e-science sem terem falhado).
+        bool warStep = Environment.GetEnvironmentVariable("WAR_STEP") is not null;
+        var rerun = warStep
+            ? new BinaryGuard.Verdict(true, "war-step: guard aplicado no run da esteira",
+                runnerBins, BinaryGuard.DefaultStatePath())
+            : BinaryGuard.Check(runnerBins, BinaryGuard.DefaultStatePath());
         if (!rerun.Allowed)
         {
             Console.WriteLine($"FAIL rerun-guard: {rerun.Reason}");
