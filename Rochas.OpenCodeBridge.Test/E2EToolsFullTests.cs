@@ -165,12 +165,13 @@ internal static class E2EToolsFullTests
         // S1 — subpasta + hora do sistema (o modelo citou `date` na fase 1;
         // agora tem que usar a tool e gravar a data REAL, nao inventar).
         await Step("pasta+hora",
-            "Beleza, agora vamos fazer na pratica, nesta pasta mesma (a pasta atual do trabalho). Ordem: " +
-            "1) cria a subpasta `dados`; " +
-            "2) descobre a data e a hora do sistema com a tool de shell (no Linux o comando e' o que voce respondeu; aqui e' Linux); " +
-            $"3) grava em `dados/hora.txt` a data de hoje no formato AAAA-MM-DD e a hora HH:MM. " +
-            (known[3] ? "Voce disse que sabe criar subpasta com mkdir — faz agora. " : "") +
-            "Usa as tools em cada passo, nao responde de cabeca.",
+            "Beleza, agora vamos fazer na pratica, nesta pasta mesma (a pasta atual do trabalho). " +
+            "Faca UM passo por chamada, nesta ordem, usando a tool indicada: " +
+            "1) tool `shell`: `mkdir -p dados`; " +
+            "2) tool `shell`: `date +%F` (a data REAL do sistema — nao invente); " +
+            "3) tool `write`: arquivo `dados/hora.txt` com o conteudo = a data impressa no passo 2. " +
+            (known[3] ? "Voce disse que sabe criar subpasta com mkdir — usa exatamente isso. " : "") +
+            "Nao responda de cabeca: execute cada passo com a tool.",
             () =>
             {
                 string sub = Path.Combine(dir, "dados");
@@ -184,14 +185,14 @@ internal static class E2EToolsFullTests
 
         // S2 — git: init/add/commit com mensagem (a pergunta 3 do questionario).
         await Step("git",
-            "Agora versiona o que voce fez. Ordem: " +
-            "1) `git init` nesta pasta; " +
-            "2) se o git reclamar de identidade, configura `user.name` e `user.email` locais antes de seguir; " +
-            "3) `git add .`; " +
-            "4) commit com a mensagem exatamente `data de hoje`; " +
-            "5) confirma com o log. " +
-            (known[2] ? "Voce disse que sabe fazer commit ja' com a mensagem — usa o mesmo comando agora. " : "") +
-            "Um passo por vez, com a tool.",
+            "Agora versiona o que voce fez. Faca UM passo por chamada, nesta ordem, usando as tools: " +
+            "1) tool `git`: `init` em `./`; " +
+            "2) tool `git`: `config user.name \"seu nome\"` e depois `config user.email \"voce@exemplo.com\"` em `./` (so' se o commit reclamar de identidade); " +
+            "3) tool `git`: `add .` em `./`; " +
+            "4) tool `git`: `commit -m \"data de hoje\"` em `./` (a mensagem e' exatamente essa); " +
+            "5) tool `git`: `log --oneline` em `./` para provar. " +
+            (known[2] ? "Voce disse que sabe fazer commit ja' com a mensagem — usa o mesmo comando. " : "") +
+            "Um passo por vez, sem pular para a prosa.",
             () =>
             {
                 Soft(Directory.Exists(Path.Combine(dir, ".git")), "repositorio git iniciado na pasta atual");
@@ -202,11 +203,12 @@ internal static class E2EToolsFullTests
 
         // S3 — internet: clima de Sao Paulo + segundo commit.
         await Step("internet+commit",
-            "Boa. Agora busca na internet o clima atual de Sao Paulo e versiona: " +
-            "1) usa a tool de fetch/webfetch (ou curl, como voce respondeu) na API publica " +
-            "https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m ; " +
-            "2) pega a temperatura atual e grava em `dados/clima.txt`; " +
-            "3) `git add .`; 4) commit com a mensagem exatamente `Added sao paulo weather`; 5) confirma com o log.",
+            "Boa. Agora busca o clima de Sao Paulo e versiona. Faca UM passo por chamada, nesta ordem: " +
+            "1) tool `webfetch` (ou `shell` com curl) na URL https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m ; " +
+            "2) tool `write`: arquivo `dados/clima.txt` com o conteudo = a temperatura que a URL devolveu (nao invente); " +
+            "3) tool `git`: `add .` em `./`; " +
+            "4) tool `git`: `commit -m \"Added sao paulo weather\"` em `./`; " +
+            "5) tool `git`: `log --oneline` em `./`.",
             () =>
             {
                 string arq = Path.Combine(dir, "dados", "clima.txt");
@@ -221,13 +223,13 @@ internal static class E2EToolsFullTests
 
         // S4 — .NET console hello world + publish + Dockerfile.
         await Step("dotnet",
-            "Por fim, o .NET: " +
-            "1) cria um app console C# chamado `hello` com o comando que voce respondeu (`dotnet new console -o hello`); " +
-            "2) deixa o `Program.cs` imprimindo `Hello World`; " +
-            "3) roda com `dotnet run --project hello`; " +
-            "4) publica com `dotnet publish hello -c Release -o publish`; " +
-            "5) cria um `Dockerfile` dentro de `hello` com `FROM mcr.microsoft.com/dotnet/runtime` copiando a publicacao. " +
-            "Usa as tools, um passo por vez.",
+            "Por fim, o .NET. Faca UM passo por chamada, nesta ordem: " +
+            "1) tool `shell`: `dotnet new console -o hello`; " +
+            "2) tool `write`: `hello/Program.cs` com `Console.WriteLine(\"Hello World\");`; " +
+            "3) tool `shell`: `dotnet run --project hello`; " +
+            "4) tool `shell`: `dotnet publish hello -c Release -o publish`; " +
+            "5) tool `write`: `hello/Dockerfile` com `FROM mcr.microsoft.com/dotnet/runtime` e `COPY publish /app`. " +
+            "Um passo por vez, com a tool.",
             () =>
             {
                 string proj = Path.Combine(dir, "hello");
