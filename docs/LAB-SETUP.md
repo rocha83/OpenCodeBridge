@@ -1276,19 +1276,10 @@ sem estar na imagem.
 
 | papel | unit | porta | script (fonte da unit) | observação |
 |---|---|---|---|---|
-<<<<<<< HEAD
-| GPU1 (orquestrador) | `llama-gpu.service` | 4100 | `/usr/local/bin/start-llama-gpu.sh` | E4B **Q4_K_M** + mmproj, `-ot .*=CUDA0` |
-| **GPU2** (segunda instância, **GPU**) | `llama-gpu2.service` | 4110 | `/usr/local/bin/start-llama-gpu2.sh` | E4B UD-Q3, sem mmproj, `-ot` com embd/per-layer no host |
-| CPU puro (bancada) | `llama-cpu-forced.service` | 4120 | `/usr/local/bin/start-llama-cpu-forced.sh` | E4B Q4 base, `-ngl 0` |
-| bridge GPU1 | `bridge-gpu.service` | 4124 | `/usr/local/bin/start-bridge-gpu.sh` | Q4, guard 131072 |
-| **bridge GPU2** | `bridge-gpu2.service` | 4125 | `/usr/local/bin/start-bridge-gpu2.sh` | Q3, guard 57344 |
-| bridge CPU puro | `bridge-cpu-forced.service` | 4126 | `/usr/local/bin/start-bridge-cpu-forced.sh` | Q4 CPU, guard 131072 |
-=======
 | GPU1 (orquestrador) | `llama-gpu.service` | 4100 | `/usr/local/bin/start-llama-gpu.sh` | E4B **UD** `Q4_K_M` (ext4) + mmproj, `-ot .*=CUDA0`, `-c 524288 -np 4` |
 | CPU puro (bancada) | `llama-cpu-forced.service` | 4120 | `/usr/local/bin/start-llama-cpu-forced.sh` | **o próprio Q4 UD**, `-ngl 0` |
 | bridge GPU1 | `bridge-gpu.service` | 4124 | `/usr/local/bin/start-bridge-gpu.sh` | Q4 UD, guard 524288 |
 | bridge CPU puro | `bridge-cpu-forced.service` | **4125** | `/usr/local/bin/start-bridge-cpu-forced.sh` | Q4 UD CPU, guard 131072 |
->>>>>>> origin/main
 
 - **Removidas em 2026-10-30** (Q3 aposentado): `llama-gpu2.service` (`:4110`) e
   `bridge-gpu2.service` (`:4125`) → não recriar. A porta **`:4125`** passou ao
