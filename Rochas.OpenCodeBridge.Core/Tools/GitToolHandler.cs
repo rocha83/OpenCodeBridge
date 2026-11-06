@@ -114,6 +114,15 @@ public sealed class GitToolHandler : IToolHandler
                 return ToolResult.Fail(whyC);
             repoDir = cdir;
         }
+        // Path inventado: em 2026-11-06 o modelo copiou `./notas/hoje.txt` do
+        // exemplo do help e TODA call de git rodou num diretorio inexistente
+        // ("not a git repository"), sem commit no repo real. Falhar aqui (falha
+        // de contrato, nao de git) devolve o repo que existe neste workspace.
+        // `init`/`clone` criam o diretorio: nesses dois o path pode nao existir.
+        if (!string.IsNullOrWhiteSpace(wantPath) && argv[subIdx] is not ("init" or "clone")
+            && !Directory.Exists(repoDir))
+            return ToolResult.Fail($"path '{wantPath}' nao existe — o repo deste passo e' \"./\" (raiz do workspace). "
+                + "Use `path` \"./\" e uma suboperacao por chamada (`add .`, depois `commit -m \"...\"`).");
 
         try
         {

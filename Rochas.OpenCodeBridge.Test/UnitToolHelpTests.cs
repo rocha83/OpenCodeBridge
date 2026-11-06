@@ -49,10 +49,10 @@ internal static class UnitToolHelpTests
             "help do git explica o sintoma de identidade ausente");
         TestContext.Check(!git.Contains("user.user.name", StringComparison.Ordinal),
             "help do git nao exibe a chave errada (so o certo e' copiavel)");
-        // Receita comentada (exemplo generalizado de SUCESSO): o modelo copia a
-        // ordem certa — init, arquivos com a pasta, identidade, add, commit, log —
-        // em vez de encadear tudo numa chamada so'.
-        TestContext.Check(git.Contains("EXEMPLO DE SUCESSO", StringComparison.Ordinal)
+        // Receita comentada (exemplo de FORMA): o modelo copia a ordem certa —
+        // init, arquivo, identidade, add, commit, log — em vez de encadear tudo
+        // numa chamada so'.
+        TestContext.Check(git.Contains("EXEMPLO (FORMA, nao conteudo)", StringComparison.Ordinal)
             && git.Contains("\"command\":\"init\"", StringComparison.Ordinal)
             && git.Contains("\"command\":\"add .\"", StringComparison.Ordinal)
             && git.Contains("commit -m", StringComparison.Ordinal)
@@ -60,12 +60,15 @@ internal static class UnitToolHelpTests
             "help do git traz o exemplo de sucesso do fluxo completo");
         // A dica ensina a forma CERTA e nunca exibe a errada: `<pasta>` e'
         // copiado ao pe' da letra (medido em E-tools-full 2026-11-03:
-        // `mkdir -p <pasta>` falhou). O exemplo usa nomes reais e o MESMO path,
-        // entao copiar a letra produz uma acao valida.
-        TestContext.Check(git.Contains("\"path\":\"notas\"", StringComparison.Ordinal)
+        // `mkdir -p <pasta>` falhou). Pasta INVENTADA tambem e' copiada: em
+        // 2026-11-06 o `notas` do exemplo foi para o `path` do git e o repo do
+        // passo nunca recebeu commit. O exemplo usa so' path valido em qualquer
+        // workspace (`./`) e o arquivo que ele mesmo cria.
+        TestContext.Check(git.Contains("\"path\":\"./\"", StringComparison.Ordinal)
+            && !git.Contains("notas", StringComparison.Ordinal)
             && !git.Contains("<pasta>", StringComparison.Ordinal)
             && !git.Contains("<arquivo>", StringComparison.Ordinal),
-            "exemplo do git e copiavel (nomes reais, mesmo path, sem placeholder)");
+            "exemplo do git e copiavel em qualquer workspace (path ./, sem pasta inventada)");
         string tailText = global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools;
         string mainText = global::Rochas.OpenCodeBridge.Core.MainHarness.Text;
         TestContext.Check(!tailText.Contains("<pasta>", StringComparison.Ordinal)

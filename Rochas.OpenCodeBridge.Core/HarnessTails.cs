@@ -109,6 +109,7 @@ public static class HarnessTails
     {
         (OneStepLine, Array.Empty<string[]>()),
         (IndependentLine, Array.Empty<string[]>()),
+        (ToolHelp.ExampleRule, Array.Empty<string[]>()),
         (ExecuteSandboxLine, Array.Empty<string[]>()),
         (OrderingLine, new[] { new[] { "write" }, new[] { "shell" } }),
     };
