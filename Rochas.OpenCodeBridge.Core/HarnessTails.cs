@@ -57,17 +57,16 @@ public static class HarnessTails
     public const string ToolsHeader =
         "MODO DE USO DAS TOOLS (regras transversais; o contrato de cada tool vai no schema):";
 
+    /// <summary>
+    /// Primeira regra da cauda: o canal da chamada e' o nativo. Sem esta linha o
+    /// modelo pequeno descreve o fluxo como dado (array de `tool_name`/`args`) em
+    /// vez de emitir a call — medido no E-tools-full de 2026-11-06.
+    /// </summary>
+    public const string NativeCallLine =
+        "SAIDA = function_call NATIVO: a chamada vai no campo de tool call da resposta, com os args do schema; NUNCA escreva a chamada como texto nem como JSON de `tool_name`/`args` (o cliente executa a call, nao le JSON do chat).";
+
     const string OneStepLine =
         "Um passo = uma acao; argumentos JSON completos; leia o resultado antes de repetir.";
-
-    const string JsonArgsLine =
-        "JSON DO ARGS: o conteudo de `write`/`edit` e' string JSON — quebra de linha = `\\n` (barra + n, dois caracteres) e aspas = `\\\"`; nunca quebre a linha crua dentro da string (o parser recusa).";
-
-    const string EditAppendLine =
-        "EDITAR ACRESCENTANDO: o `oldString` e' o trecho que CONTINUA no arquivo; o `newString` traz esse mesmo trecho + o texto novo, para o arquivo terminar com os dois.";
-
-    const string BigFileLine =
-        "ARQUIVO GRANDE: grave um `write` curto e complete com `edit` (args menor = menos risco de truncar).";
 
     const string IndependentLine =
         "Independentes no mesmo turno; dependentes esperam. Nao repita a mesma chamada/caminho; em loop, mude a abordagem.";
@@ -82,35 +81,6 @@ public static class HarnessTails
     /// </summary>
     public const string OrderingLine =
         "AO CODIFICAR: monte a solucao com `write`/`edit` (o arquivo e' o artefato); so entao use `shell` para build de validacao, execucao de testes ou versionamento do codigo.";
-
-    const string DotnetLine =
-        "DOTNET: com mais de um projeto na pasta, `--project` apontando a pasta e ambiguo: aponte o ARQUIVO do projeto (ex.: `notas/notas.fsproj` ou o `.csproj`).";
-
-    const string FileLine =
-        "ARQUIVO: pedido que manda criar/gravar arquivo entrega via `write` (conteudo completo); devolver o codigo em prosa no chat NAO conclui o pedido.";
-
-    const string ExistingProjectLine =
-        "PROJETO EXISTENTE: edite os arquivos do projeto; `dotnet new` so em pasta vazia (segundo .csproj/.fsproj na mesma pasta quebra o `dotnet run --project` apontando a pasta).";
-
-    const string FileRepoFlowLine =
-        "FLUXO ARQUIVO+REPO (nomes do exemplo; troque pelos do seu pedido): `mkdir` da pasta → `write` com o path da pasta (`notas/hoje.txt`) → `git init`/`add`/`commit` com o mesmo `path` → `git log` e a saida colada no historico (passo a passo comentado no help da tool git). UM COMMIT POR PASSO CONCLUIDO: cada passo do pedido que muda arquivo termina com `git add .` + `git commit -m \"<mensagem do passo>\"`; nao junte os passos num commit unico no fim (o `git log` tem que mostrar um commit por passo).";
-
-    const string ProofLine =
-        "PROVA: depois de `write`/`edit`, `read` o arquivo — o conteudo dele e' o texto que a tool devolveu; historico de comando e' a saida literal colada (ex.: `git log`, com os hashes que vieram).";
-
-    const string SubagentLine =
-        "SUBAGENTE: o schema de cada tool viaja no array `tools` do request; preserve o array e o system do role ao delegar; nao troque schema por prosa.";
-
-    /// <summary>
-    /// Exemplo POSITIVO do caminho inteiro (forma certa, nada do que nao existe):
-    /// o modelo copia o literal que a cauda mostra, entao o exemplo tem que
-    /// compilar e versionar de primeira. Entra quando ha escrita E execucao.
-    /// </summary>
-    const string HappyPathLine =
-        "EXEMPLO OTIMISTA (caminho que compila e versiona de primeira): " +
-        "`write` do arquivo completo -> `shell` `dotnet build <projeto>.csproj` -> `git add .` + `git commit -m \"<mensagem do passo>\"` -> `read` para a prova. " +
-        "No C# que compila de primeira: tipo de assinatura publica tambem e' `public` (`public sealed class Ponto { public int X; }` com `public IReadOnlyList<Ponto> Calcular()`); " +
-        "comparacao de generico usa `EqualityComparer<T>.Default.Equals(a, b)`; variavel lida fora do laco e' declarada ANTES do `for`.";
 
     /// <summary>
     /// Tabela de erros C#, GERADA da fonte única (<see cref="CsSyntaxRepair.Rules"/>).
@@ -130,23 +100,17 @@ public static class HarnessTails
             r.Code + " " + r.Cause + " -> " + r.CorrectForm.Replace("\n", " ").Replace("  ", " ") + ". "))
         + "SE O BUILD FALHAR: leia a linha `error CSxxxx`, aplique a forma da tabela e edite SO' o trecho; nao reescreva o arquivo igual.";
 
+    /// <summary>
+    /// Regras TRANSVERSAIS apenas. O contrato de cada tool (formas aceitas,
+    /// exemplos, ordem do fluxo arquivo+repo, prova) mora no help da tool
+    /// (ToolHelp) — a cauda fica curta e nao duplica o schema (DRY).
+    /// </summary>
     static readonly (string Text, string[][] Requires)[] Segments =
     {
         (OneStepLine, Array.Empty<string[]>()),
-        (JsonArgsLine, new[] { new[] { "write", "edit" } }),
-        (EditAppendLine, new[] { new[] { "edit" } }),
-        (BigFileLine, new[] { new[] { "write" }, new[] { "edit" } }),
         (IndependentLine, Array.Empty<string[]>()),
         (ExecuteSandboxLine, Array.Empty<string[]>()),
         (OrderingLine, new[] { new[] { "write" }, new[] { "shell" } }),
-        (DotnetLine, new[] { new[] { "shell" } }),
-        (CsErrorTableLine, new[] { new[] { "shell" } }),
-        (HappyPathLine, new[] { new[] { "write" }, new[] { "shell" } }),
-        (FileLine, new[] { new[] { "write" } }),
-        (ExistingProjectLine, new[] { new[] { "shell" } }),
-        (FileRepoFlowLine, new[] { new[] { "write" }, new[] { "shell" }, new[] { "git" } }),
-        (ProofLine, new[] { new[] { "read" }, new[] { "write", "edit" } }),
-        (SubagentLine, Array.Empty<string[]>()),
     };
 
     /// <summary>
@@ -203,6 +167,9 @@ public static class HarnessTails
     public static string ComposeTools(IReadOnlyCollection<string>? names)
     {
         var sb = new StringBuilder(ToolsHeader);
+        // Primeira instrucao da cauda: o canal (function_call), antes de qualquer
+        // detalhe de argumento. Sem ela o modelo narra o fluxo em texto.
+        sb.Append(' ').Append(NativeCallLine);
         string line = ToolsLine(names);
         if (line.Length > 0) sb.Append(' ').Append(line);
         foreach (var (text, requires) in Segments)

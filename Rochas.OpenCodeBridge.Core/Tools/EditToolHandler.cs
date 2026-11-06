@@ -21,9 +21,22 @@ public sealed class EditToolHandler : IToolHandler
         string newString = obj["newString"]?.GetValue<string>() ?? "";
         bool replaceAll = obj["replaceAll"]?.GetValue<bool>() ?? false;
         if (string.IsNullOrWhiteSpace(path)) return ToolResult.Fail("path é obrigatório");
-        if (string.IsNullOrEmpty(oldString)) return ToolResult.Fail("oldString é obrigatório");
+        if (string.IsNullOrEmpty(oldString))
+        {
+            // O modelo manda `oldString:null` quando nao sabe o texto exato (medido
+            // no E-tools-full de 2026-11-06: 2 calls seguidas). "obrigatorio" nao
+            // ensina nada; a ancora REAL do disco vai na mensagem (o modelo copia).
+            return ToolResult.Fail("edit: `oldString` veio nulo/vazio — a ancora e' um trecho que JA existe no arquivo. "
+                + AnchorHint(context, path)
+                + " ACRESCENTAR: newString = essa linha + trecho novo. Sem ancora, use `write` com o conteudo atual + a linha nova.");
+        }
         if (ToolContentGuard.Elided(newString, "edit") is string elided)
             return ToolResult.Fail(elided);
+        if (RepoPathGuard.GitInternal(path, "edit") is string inGit)
+        {
+            Metrics.CountToolDenial("ring2", "edit", "dotgit");
+            return ToolResult.Fail(inGit);
+        }
         // Reescrita total disfarcada de edit (arquivo inteiro no newString + ancora
         // de uma linha): aplicar como `edit` normal duplicaria o resto do arquivo
         // (CS1022). Em vez de recusar e esperar o modelo trocar para `write` (o que
@@ -104,6 +117,33 @@ public sealed class EditToolHandler : IToolHandler
         catch (Exception ex)
         {
             return ToolResult.Fail($"falha ao editar '{path}': {ex.Message}");
+        }
+    }
+
+    /// <summary>Primeiras linhas reais do arquivo, prontas para servir de ancora.</summary>
+    static string AnchorHint(ToolContext context, string path)
+    {
+        try
+        {
+            if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why, context.ExtraRoots))
+                return why;
+            if (!File.Exists(full))
+                return $"'{path}' ainda nao existe: crie com `write`.";
+            var lines = new List<string>();
+            foreach (string line in File.ReadAllLines(full))
+            {
+                string t = line.Trim();
+                if (t.Length == 0) continue;
+                lines.Add(t.Length > 80 ? t[..80] : t);
+                if (lines.Count == 3) break;
+            }
+            if (lines.Count == 0) return $"'{path}' esta vazio: grave o texto com `write`.";
+            return "Ancoras que existem em '" + path + "': "
+                + string.Join(" | ", lines.Select(l => "\"" + l + "\"")) + ".";
+        }
+        catch (Exception ex)
+        {
+            return $"(nao consegui ler '{path}': {ex.GetType().Name})";
         }
     }
 

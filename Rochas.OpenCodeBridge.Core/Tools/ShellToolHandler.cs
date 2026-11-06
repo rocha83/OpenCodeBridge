@@ -9,14 +9,6 @@ public sealed class ShellToolHandler : IToolHandler
 {
     public string ToolName => "shell";
 
-    private static readonly HashSet<string> Allowed = new(StringComparer.Ordinal)
-    {
-        "ls", "cat", "head", "tail", "echo", "sed", "grep", "find", "wc", "diff",
-        "file", "pwd", "date", "git", "dotnet", "python", "python3", "node",
-        "npm", "curl", "wget", "shell", "bash", "sh", "mkdir", "touch", "cp",
-        "bc", "expr", "awk", "zip", "unzip", "printf", "ps", "top", "pgrep",
-    };
-
     private static readonly string[] DeniedTokens =
     {
         "rm", "rmdir", "mv", "kill", "pkill", "killall", "reboot", "shutdown", "halt",
@@ -38,13 +30,14 @@ public sealed class ShellToolHandler : IToolHandler
         // Inspetor primeiro: negação uniforme em todos os caminhos (direto,
         // cadeia, payload bash -c). Checagens estruturais vêm depois.
         string command = ShellInspector.ExtractCommand(argumentsJson);
-        if (ShellInspector.Validate(command) is string whyInsp)
+        var gate = ShellGate.CheckCommand(command);
+        if (gate.Reason is string whyInsp)
         {
             // Anel 3: argv barrado. Contador sempre ativo + evento no log da
             // bridge (a bateria conta o evento dentro da janela da faixa).
-            Metrics.Deny("ring3", "shell", whyInsp);
+            Metrics.CountToolDenial("ring3", "shell", whyInsp);
             context.Log?.Invoke(new JsonObject { ["event"] = "tool-deny", ["tool"] = "shell", ["reason"] = whyInsp });
-            return ToolResult.Fail(whyInsp);
+            return ShellGate.RefuseReason(whyInsp);
         }
         var parts = SplitChain(command);
         if (parts.Count <= 1)
@@ -55,8 +48,8 @@ public sealed class ShellToolHandler : IToolHandler
                 return WithCwd(ToolResult.Fail(blockedSingle), context.WorkspaceRoot, context.WorkspaceRoot);
             if (ProjectPathBlocked(argv, context.WorkspaceRoot, context.WorkspaceRoot) is string missingProject)
                 return WithCwd(ToolResult.Fail(missingProject), context.WorkspaceRoot, context.WorkspaceRoot);
-            return WithCwd(ProcessRunner.Run(argv[0], argv[1..], context.WorkspaceRoot, context.TimeoutSeconds),
-                context.WorkspaceRoot, context.WorkspaceRoot);
+            var single = ProcessRunner.Run(argv[0], argv[1..], context.WorkspaceRoot, context.TimeoutSeconds);
+            return WithCwd(ShellGate.ExplainInvalidUsage(single, command), context.WorkspaceRoot, context.WorkspaceRoot);
         }
         // Cadeia com semântica set -e: roda em sequência, para no 1º erro, cd persiste.
         string dir = context.WorkspaceRoot;
@@ -85,7 +78,9 @@ public sealed class ShellToolHandler : IToolHandler
             var r = ProcessRunner.Run(argv[0], argv[1..], dir, context.TimeoutSeconds);
             if (!string.IsNullOrWhiteSpace(r.Output)) sb.AppendLine(r.Output.TrimEnd());
             if (!r.Success)
-                return WithCwd(ToolResult.Fail((sb.Length > 0 ? sb.ToString() + "\n" : "") + (r.Error ?? "falha")), dir, context.WorkspaceRoot);
+                return WithCwd(ShellGate.ExplainInvalidUsage(
+                    ToolResult.Fail((sb.Length > 0 ? sb.ToString() + "\n" : "") + (r.Error ?? "falha")), p),
+                    dir, context.WorkspaceRoot);
         }
         return WithCwd(ToolResult.Ok(sb.ToString().TrimEnd()), dir, context.WorkspaceRoot);
     }
@@ -187,12 +182,10 @@ public sealed class ShellToolHandler : IToolHandler
             return false;
         }
 
+        // Sem allowlist de 1o token: shell e' aberto e a politica e' blacklist
+        // (ShellInspector ja negou token/padrao de risco). Allowlist travava
+        // ferramenta legitima (sqlite3, gh, terraform) no dia a dia.
         string name = FirstToken(command);
-        if (!Allowed.Contains(name))
-        {
-            why = $"comando '{name}' fora do allowlist";
-            return false;
-        }
 
         // shell/bash/sh executam a string via bash -c (sintaxe shell liberada).
         if (name is "shell" or "bash" or "sh")

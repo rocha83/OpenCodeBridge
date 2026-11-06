@@ -956,7 +956,77 @@ internal static partial class Program
     /// <summary>Auth no upstream: repassa o Authorization do cliente ou usa a ApiKey configurada.</summary>
     /// <param name="req">Request upstream.</param>
     /// <param name="ctx">Contexto com os headers originais.</param>
-    static void WithAuth(HttpRequestMessage req, HttpListenerContext ctx)
+    /// <summary>
+    /// Turno degenerado: com tools no request, resposta que fecha em `max_tokens`
+    /// sem call UTIL — texto infinito (16.384 tok / 377,9 s) ou call com args
+    /// gigantes que o upstream nem parseia (57.288 chars / 386 s), ambos medidos
+    /// no E-tools-full de 2026-11-06. Um retry unico reforca o canal e corta o
+    /// teto: o pior caso vira ~2k tokens em vez de 6 minutos. Sem tools no
+    /// request nada muda (texto longo e' legitimo).
+    /// </summary>
+    static JsonObject RetryDegenerateTurn(HttpListenerContext? ctx, JsonObject chat, JsonObject chatJson,
+        int toolCount, string model)
+    {
+        if (toolCount <= 0) return chatJson;
+        var choice = chatJson["choices"] is JsonArray cs && cs.Count > 0 ? cs[0]?.AsObject() : null;
+        bool hasCall = false;
+        int argsChars = 0;
+        if (choice?["message"]?["tool_calls"] is JsonArray calls)
+            foreach (var c in calls)
+            {
+                hasCall = true;
+                argsChars += c?["function"]?["arguments"]?.GetValue<string>()?.Length ?? 0;
+            }
+        string finish = choice?["finish_reason"]?.GetValue<string>() ?? "";
+        int outTok = chatJson["usage"]?["completion_tokens"]?.GetValue<int>() ?? 0;
+        if (finish != "length" && !(MaxTokens > 0 && outTok >= MaxTokens)) return chatJson;
+        // Call que fechou dentro do teto de args e' turno normal: nao mexe.
+        if (hasCall && argsChars <= Rochas.OpenCodeBridge.Core.Tools.ToolArgGuard.MaxChars) return chatJson;
+
+        Metrics.CountDegenerateTurnRetry();
+        Log(new JsonObject
+        {
+            ["event"] = "upstream_degenerate_retry", ["model"] = model,
+            ["finish_reason"] = finish, ["output_tokens"] = outTok, ["max_tokens"] = MaxTokens,
+            ["has_tool_call"] = hasCall, ["args_chars"] = argsChars
+        });
+        try
+        {
+            var body = JsonNode.Parse(chat.ToJsonString(SerOpts))!.AsObject();
+            if (body["messages"] is JsonArray msgs)
+                msgs.Insert(0, new JsonObject
+                {
+                    ["role"] = "system",
+                    ["content"] = "SAIDA = function_call NATIVO: a proxima acao e' uma tool call do schema do request; "
+                        + "nao escreva texto longo, nao repita o enunciado, nao descreva o plano."
+                });
+            body["max_tokens"] = 2048;   // teto do retry: um turno perdido nao custa 6 minutos
+            body["stream"] = false;
+            var req = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/completions")
+            { Content = new StringContent(body.ToJsonString(SerOpts), Encoding.UTF8, "application/json") };
+            WithAuth(req, ctx);
+            using var resp = Http.Send(req, HttpCompletionOption.ResponseContentRead);
+            if (!resp.IsSuccessStatusCode) return chatJson;
+            string text = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            var retried = JsonNode.Parse(text)?.AsObject();
+            if (retried is null) return chatJson;
+            var rchoice = retried["choices"] is JsonArray rs && rs.Count > 0 ? rs[0]?.AsObject() : null;
+            Log(new JsonObject
+            {
+                ["event"] = "upstream_degenerate_retry_done",
+                ["has_tool_call"] = rchoice?["message"]?["tool_calls"] is JsonArray rt && rt.Count > 0,
+                ["output_tokens"] = retried["usage"]?["completion_tokens"]?.GetValue<int>() ?? 0
+            });
+            return retried;
+        }
+        catch (Exception ex)
+        {
+            Log(new JsonObject { ["event"] = "upstream_degenerate_retry_fail", ["error"] = ex.GetType().Name });
+            return chatJson;
+        }
+    }
+
+    static void WithAuth(HttpRequestMessage req, HttpListenerContext? ctx)
     {
         // A ApiKey da bridge e a credencial do UPSTREAM (llama --api-key).
         // O Bearer do cliente (JWT da Web) vale so na porta da bridge: repassa-lo
@@ -966,7 +1036,7 @@ internal static partial class Program
             req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ApiKey);
             return;
         }
-        string? incoming = ctx.Request.Headers["Authorization"];
+        string? incoming = ctx?.Request.Headers["Authorization"];
         if (!string.IsNullOrWhiteSpace(incoming)) req.Headers.TryAddWithoutValidation("Authorization", incoming.Trim());
     }
 
@@ -1481,7 +1551,7 @@ internal static partial class Program
                 }
                 tpsOut = elapsed > 0 ? outTok / elapsed : 0;
                 tpsTotal = elapsed > 0 ? (inTok + outTok) / elapsed : 0;
-                WriteJson(ctx, 200, new JsonObject
+                var metricsObj = new JsonObject
                 {
                     ["requests"] = TotalRequests, ["failed_requests"] = FailedRequests,
                     ["model_requests"] = ModelRequests,
@@ -1502,15 +1572,25 @@ internal static partial class Program
                     ["ring2_deny"] = Metrics.Ring2Deny,
                     ["ring3_deny"] = Metrics.Ring3Deny,
                     ["nudge_args"] = Metrics.NudgeArgs,
+                    ["breaker_nudge"] = Metrics.BreakerNudge,
+                    ["breaker_trip"] = Metrics.BreakerTripCount,
                     ["anti_repeat_content"] = Metrics.AntiRepeatContent,
                     ["anti_repeat_tools"] = Metrics.AntiRepeatTools,
+                    ["tool_arg_guard"] = Metrics.RejectedArgsCount,
+                    ["upstream_arg_retry"] = Metrics.ArgsRetryAfterUpstreamErrorCount,
+                    ["upstream_degenerate_retry"] = Metrics.DegenerateTurnRetryCount,
+                    ["git_repair"] = Metrics.GitCommandRepairCount,
                     // Abortos do upstream (conexao encerrada antes da resposta):
                     // retry com nudge e falha final (502 upstream_aborted).
                     ["upstream_abort"] = Metrics.UpstreamAbortCount,
                     ["upstream_abort_retry"] = Metrics.UpstreamAbortRetryCount,
                     ["tools_calls"] = ToolsCalls,
                     ["files_generated"] = GeneratedFiles.Count
-                });
+                };
+                // Portoes: DenyCounters e' a fonte unica (o dashboard le daqui).
+                foreach (var gate in Metrics.DenyCounters())
+                    metricsObj[gate.Key] = gate.Value?.DeepClone();
+                WriteJson(ctx, 200, metricsObj);
                 return;
             }
 
@@ -2787,7 +2867,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                     ["streak"] = verdict.Streak, ["distinct_targets"] = verdict.DistinctTargets,
                     ["soft"] = BreakerSoft, ["hard"] = BreakerHard
                 });
-                Metrics.BreakerTrip(verdict.Verdict.ToString().ToLowerInvariant());
+                Metrics.CountLoopBreakerVerdict(verdict.Verdict.ToString().ToLowerInvariant());
                 breakerState = verdict.Verdict.ToString().ToLowerInvariant();
                 if (verdict.Verdict == BreakerVerdict.Nudge)
                     loopGuard.ApplyNudge(messages, verdict.Notice);
@@ -3013,6 +3093,43 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         string responseBody = upstreamResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         if (!upstreamResponse.IsSuccessStatusCode)
         {
+            // Modelo degenerou a call (args truncados/lixo) e o upstream nao
+            // conseguiu parsear. Um 500 aqui mata a rodada inteira; devolver
+            // 200 com correcao mantem o loop de tools vivo e o modelo refaz.
+            if ((int)upstreamResponse.StatusCode >= 500
+                && responseBody.Contains("Failed to parse tool call arguments", StringComparison.Ordinal))
+            {
+                Metrics.CountArgsRetryAfterUpstreamError();
+                Log(new JsonObject
+                {
+                    ["event"] = "upstream_arg_retry", ["model"] = requestedModel,
+                    ["upstream_status"] = (int)upstreamResponse.StatusCode,
+                    ["chars"] = responseBody.Length
+                });
+                var retry = new JsonObject
+                {
+                    ["id"] = "resp_" + NewId(), ["object"] = "response",
+                    ["created_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    ["status"] = "completed", ["model"] = requestedModel,
+                    ["output"] = new JsonArray(new JsonObject
+                    {
+                        ["id"] = "msg_" + NewId(), ["type"] = "message",
+                        ["role"] = "assistant", ["status"] = "completed",
+                        ["content"] = new JsonArray(new JsonObject
+                        {
+                            ["type"] = "output_text",
+                            ["text"] = "A call anterior veio com argumentos truncados e nao pode ser lida. "
+                                + "Refaça a MESMA acao com argumentos curtos: uma suboperacao por call."
+                        })
+                    }),
+                    ["parallel_tool_calls"] = false, ["tool_choice"] = "auto",
+                    ["tools"] = new JsonArray(), ["temperature"] = temperature,
+                    ["usage"] = new JsonObject
+                    { ["input_tokens"] = 0, ["output_tokens"] = 0, ["total_tokens"] = 0 }
+                };
+                WriteJson(ctx, 200, retry);
+                return;
+            }
             // Repassa o erro do vLLM tal qual (opencode mostra a mensagem real)
             ctx.Response.StatusCode = (int)upstreamResponse.StatusCode;
             byte[] errorBytes = Encoding.UTF8.GetBytes(responseBody);
@@ -3025,6 +3142,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
         // 4.6) Converte a resposta chat -> objeto Responses
         var chatJson = JsonNode.Parse(responseBody)?.AsObject() ?? new JsonObject();
+        chatJson = RetryDegenerateTurn(ctx, chat, chatJson, toolCount, requestedModel);
         if (shimmed) ToolShim.TransformResponse(chatJson);
         var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0, chat["messages"]);
         RecordResponsesActivity(responseObj);
@@ -3362,7 +3480,7 @@ var shape = new StringBuilder();
     /// <returns>Chamada substituta (shell) com o texto corretivo.</returns>
     static (string Name, string Arguments) NudgeArgs(string name, string why, string original)
     {
-        Metrics.Deny("nudge", name, why);
+        Metrics.CountToolDenial("nudge", name, why);
         Log(new JsonObject { ["event"] = "tool-args-guide", ["tool"] = name, ["reason"] = why, ["len"] = original.Length });
         string msg = "printf '%s\\n' 'ERRO na tool " + name + ": " + why +
             ". Nao repita igual: reemita a chamada com JSON completo - " +
@@ -4090,7 +4208,7 @@ var shape = new StringBuilder();
                            && TryProfile(requestedModel, out _, out _);
             double detour = Sampling.DetourReference(hasRole, Profiles, AuxTemp);
             string? retryBody = RetryNudge.WithAbortNudge(body, current, detour);
-            Metrics.UpstreamAbort(true);
+            Metrics.CountUpstreamAbort(true);
             Log(new JsonObject
             {
                 ["event"] = "upstream-abort-retry",
@@ -4111,7 +4229,7 @@ var shape = new StringBuilder();
             }
             catch (Exception ex2) when (RetryNudge.IsUpstreamAbort(ex2))
             {
-                Metrics.UpstreamAbort(false);
+                Metrics.CountUpstreamAbort(false);
                 throw new RetryNudge.UpstreamAbortException(ex2.Message + " (apos 1 retry com nudge)", ex2);
             }
         }
@@ -4717,11 +4835,18 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                         if (AntiRepeat && acc.Args.Length >= ToolArgsAntiRepeatReply.ProbeMinChars && !argsProbeLogged.Contains(index))
                         {
                             string argsText = acc.Args.ToString();
-                            if (new ToolArgsAntiRepeatReply(AntiRepeatArgsWindow).IsRepeat(argsText))
+                            bool repeat = new ToolArgsAntiRepeatReply(AntiRepeatArgsWindow).IsRepeat(argsText);
+                            // Teto de args: acima de ToolArgGuard.MaxChars a call nao cabe
+                            // no parse do upstream (medido: 57.288 chars -> 500 em 4
+                            // tentativas, 386 s de geracao). Nao e' sonda: aborta.
+                            bool oversized = argsText.Length > Rochas.OpenCodeBridge.Core.Tools.ToolArgGuard.MaxChars;
+                            if (repeat || oversized)
                             {
                                 argsProbeLogged.Add(index);
+                                if (oversized) { repeatTrip = true; Metrics.CountAntiRepeatAlert(true); }
                                 Log(new JsonObject { ["event"] = "anti-repeat-args", ["tool"] = acc.Name,
-                                    ["chars"] = argsText.Length, ["window"] = AntiRepeatArgsWindow });
+                                    ["chars"] = argsText.Length, ["window"] = AntiRepeatArgsWindow,
+                                    ["mode"] = oversized ? "abort" : "probe" });
                             }
                         }
                     }
@@ -4861,7 +4986,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                 string roleB = RoleOfModel(requestedModel);
                 string bid = "risk_" + NewId();
                 PendingRisks[bid] = new PendingRisk(acc.Name, arguments, roleB);
-                Metrics.Deny("ring2", acc.Name, "papel");
+                Metrics.CountToolDenial("ring2", acc.Name, "papel");
                 Log(new JsonObject { ["event"] = "tool-ask", ["tool"] = acc.Name, ["role"] = roleB,
                                      ["reason"] = "papel", ["call_id"] = bid });
                 if (!msgOpen)
@@ -4906,7 +5031,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             }
             if (!riskOk && bannedHere.Contains(acc.Name))
             {
-                Metrics.Deny("ring2", acc.Name, "role");
+                Metrics.CountToolDenial("ring2", acc.Name, "role");
                 Log(new JsonObject { ["event"] = "tool-blocked", ["tool"] = acc.Name, ["role"] = RoleOfModel(requestedModel) });
                 if (!msgOpen)
                 {
@@ -5250,7 +5375,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                     string roleB = RoleOfModel(model);
                     string bid = "risk_" + NewId();
                     PendingRisks[bid] = new PendingRisk(nativeName, JsonToString(funcObj["arguments"]), roleB);
-                    Metrics.Deny("ring2", nativeName, "papel");
+                    Metrics.CountToolDenial("ring2", nativeName, "papel");
                     Log(new JsonObject { ["event"] = "tool-ask", ["tool"] = nativeName, ["role"] = roleB,
                                          ["reason"] = "papel", ["call_id"] = bid });
                     toolCalls.Add((bid, "question", RiskQuestionArgs(nativeName, JsonToString(funcObj["arguments"]), roleB, "papel")));
@@ -5260,7 +5385,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
                 }
                 if (!riskOk && BannedFor(model).Contains(nativeName))
                 {
-                    Metrics.Deny("ring2", nativeName, "role");
+                    Metrics.CountToolDenial("ring2", nativeName, "role");
                     Log(new JsonObject { ["event"] = "tool-blocked", ["tool"] = nativeName, ["role"] = RoleOfModel(model) });
                     if (blockedNotice.Length == 0)
                         blockedNotice = "\n\n" + string.Format(ToolBlockNotice, nativeName, RoleOfModel(model)) + "\n\n";
@@ -5652,11 +5777,11 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             if (eventName == "anti-repeat")
             {
                 AddEnunciadoMessage("anti-repeat", AntiRepeatNotice);
-                Metrics.AntiRepeatGate(false);
+                Metrics.CountAntiRepeatAlert(false);
             }
             else if (eventName == "anti-repeat-args" || eventName == "anti-repeat-loop" || eventName == "anti-repeat-salvage")
             {
-                Metrics.AntiRepeatGate(true);
+                Metrics.CountAntiRepeatAlert(true);
             }
             // --diagnostic-level metrics: mede sem guardar os corpos (o dump
             // integral passava de 280 MB numa rodada de belt, so de req/res).

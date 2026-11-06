@@ -66,8 +66,17 @@ public static class ToolCatalog
             }, "url"),
             Fn("git", "Executa um comando git no repositorio. Leitura para todos; init/add/commit/config so para build/exec.", new JsonObject
             {
-                ["command"] = new JsonObject { ["type"] = "string" },
-                ["path"] = new JsonObject { ["type"] = "string" }
+                ["command"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "comando git, UMA subopercao por chamada (mesmo `path` em todas). Formas: "
+                        + Tools.GitCommandSyntax.Canonical + "."
+                },
+                ["path"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "pasta do repositorio, relativa ao workspace; `./` = pasta atual. Nunca `.git` nem caminho absoluto."
+                }
             }, "command")
         };
         return ToolHelp.Apply(tools);

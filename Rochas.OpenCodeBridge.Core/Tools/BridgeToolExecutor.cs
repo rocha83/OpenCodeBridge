@@ -50,6 +50,23 @@ public sealed class BridgeToolExecutor
     {
         if (string.IsNullOrWhiteSpace(name))
             return ToolResult.Fail("tool sem nome");
+        // Argumento que carrega marcador de template e' saida degenerada do
+        // modelo, nao comando: executar isso grava lixo no workspace.
+        if (ToolArgGuard.InvalidReason(arguments) is string marker)
+        {
+            Metrics.CountRejectedArguments();
+            _log?.Invoke(new JsonObject
+            {
+                ["event"] = "tool_arg_guard",
+                ["tool"] = name,
+                ["marker"] = marker,
+                ["chars"] = arguments?.Length ?? 0
+            });
+            return ToolFeedback.InvalidUsage(
+                $"argumentos com lixo/tamanho invalido ({marker})",
+                "a call veio degenerada: token de template ou argumento acima do teto",
+                "repita a MESMA call com apenas os campos do schema, sem repetir tokens de conversa");
+        }
         string key = name is "bash" or "sh" ? "shell" : name is "webfetch" ? "fetch" : name is "task" ? "subagent" : name;
         if (!_handlers.TryGetValue(key, out IToolHandler? handler))
             return ToolResult.Fail($"tool desconhecida: '{name}' (válidas: shell, read, write, edit, grep, glob, fetch, git)");

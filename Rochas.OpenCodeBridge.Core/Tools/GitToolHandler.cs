@@ -48,6 +48,23 @@ public sealed class GitToolHandler : IToolHandler
                 "`git commit -m \"sua mensagem\"`, no mesmo `path` do repo (a receita completa esta na descrição da tool).");
         string repoDir = context.WorkspaceRoot;
         string wantPath = obj["path"]?.GetValue<string>() ?? "";
+        // Normaliza vocabulario de git antes de executar (`--bare`, `.git` como
+        // path, caminho de cache/absoluto do workspace). No-op em call valida;
+        // cada regra aplicada vira evento `git_repair` para medicao.
+        var repaired = GitArgRepair.Repair(command, wantPath, context.WorkspaceRoot);
+        if (repaired.Applied.Count > 0)
+        {
+            Metrics.CountGitCommandRepair();
+            context.Log?.Invoke(new JsonObject
+            {
+                ["event"] = "git_repair",
+                ["applied"] = new JsonArray(repaired.Applied.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()),
+                ["command"] = command,
+                ["path"] = wantPath
+            });
+            command = repaired.Command;
+            wantPath = repaired.Path;
+        }
         if (!string.IsNullOrWhiteSpace(wantPath))
         {
             if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, wantPath, out string resolved, out string whyPath, context.ExtraRoots))
@@ -86,6 +103,11 @@ public sealed class GitToolHandler : IToolHandler
             subIdx += 2;
         if (subIdx >= argv.Length || !allowed.Contains(argv[subIdx]))
             return ToolResult.Fail($"subcomando git não permitido para o role '{context.Role}' (permitidos: {allowedList})");
+        // Forma estrita: flag inventada (`--path`, `-f`, `--force-include-all`)
+        // nao executa, devolve a forma canonica. Medido no E-tools-full de
+        // 2026-11-06: o modelo inventava opcao e a call morria no git.
+        if (GitCommandSyntax.Validate(argv, subIdx) is string badForm)
+            return ToolResult.Fail(badForm);
         if (argv.Length > 2 && argv[1] == "-C")
         {
             if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, argv[2], out string cdir, out string whyC, context.ExtraRoots))
@@ -105,6 +127,11 @@ public sealed class GitToolHandler : IToolHandler
             var r = ProcessRunner.Run(argv[0], runArgs, repoDir, context.TimeoutSeconds);
             if (r.Success) return ToolResult.Ok(r.Output);
             string err = r.Error ?? "falha";
+            if (err.Contains("not a git repository", StringComparison.OrdinalIgnoreCase)
+                || err.Contains("not in a git directory", StringComparison.OrdinalIgnoreCase)
+                || err.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+                err += "\nDICA: nesta pasta o `path` e' \"./\" e o fluxo e' `init` -> `add .` -> `commit -m \"<msg>\"` " +
+                       "(um comando por chamada, sem `--bare`).";
             if (argv[subIdx] == "commit"
                 && (err.Contains("Author identity unknown", StringComparison.OrdinalIgnoreCase)
                     || err.Contains("Please tell me who you are", StringComparison.OrdinalIgnoreCase)

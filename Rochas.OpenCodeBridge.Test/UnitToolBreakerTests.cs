@@ -397,7 +397,10 @@ internal static class UnitToolBreakerTests
         string tail = global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools;
         TestContext.Check(tail.Contains("contrato de cada tool vai no schema"), "cauda aponta o schema como fonte");
         TestContext.Check(tail.Contains("bloqueio de role"), "cauda mantem bloqueio de role");
-        TestContext.Check(tail.Contains("--project"), "cauda aponta o arquivo do projeto no dotnet");
+        string shellHelp = global::Rochas.OpenCodeBridge.Core.ToolHelp.Apply(
+            System.Text.Json.Nodes.JsonNode.Parse("""[{"type":"function","function":{"name":"shell","description":"s"}}]""")!
+            .AsArray()).ToJsonString();
+        TestContext.Check(shellHelp.Contains("--project"), "help de shell aponta o arquivo do projeto no dotnet");
         TestContext.Check(!tail.Contains("GLOB: nao tem alternancia"), "cauda nao duplica doc de glob");
         TestContext.Check(!tail.Contains("git init <dir>"), "cauda nao duplica doc de git");
         TestContext.Check(!tail.Contains("CONCATENACAO DE COMANDOS"), "cauda nao duplica doc de shell");
@@ -412,44 +415,26 @@ internal static class UnitToolBreakerTests
     }
 
     /// <summary>
-    /// Tabela de erros C# na cauda de tools: o MESMO mapa do
-    /// <see cref="global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair"/> (fonte única,
-    /// gerado de `Rules`), presente quando o request tem `shell` — só ali existe
-    /// "build falhar". Instrui a forma CERTA ANTES do erro; o reparo in-flow entra
-    /// no retry quando o modelo ignora. Formato espelha o FsMini arquivado.
+    /// Tabela de erros C# DESLIGADA da cauda por enquanto (medicao A/B do
+    /// E-tools-full, 2026-11-06): com `shell` no request ela virava ~3,9k dos
+    /// ~7,2k de cauda (54%) e o modelo narrava o fluxo como JSON de `tool_name`/`args`
+    /// (0 calls nativos 2/2, contra 4-6 nativos 4/4 sem ela). A fonte unica segue
+    /// viva em CsSyntaxRepair.Rules, que gera o reparo in-flow no retry.
     /// </summary>
-    public static Task ToolsTailCarriesCsErrorTable()
+    public static Task ToolsTailHasNoCsErrorTable()
     {
         string tail = global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools;
-        TestContext.Check(tail.Contains("TABELA DE ERROS C#", StringComparison.Ordinal),
-            "cauda traz a tabela de erros C#");
-        // Cada código da tabela vem da fonte única (Rules), não de cópia à mão.
-        foreach (var rule in global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Rules)
-            TestContext.Check(tail.Contains(rule.Code, StringComparison.Ordinal),
-                "cauda cobre " + rule.Code + " (mesma fonte do CsSyntaxRepair)");
-        // CS1003 (medido no hanoi de 2026-10-31): ensina a forma certa, nunca o literal errado.
-        TestContext.Check(tail.Contains("if (flag[i] && flag[i + 2])", StringComparison.Ordinal),
-            "CS1003 ensina a forma CERTA (um `)` por `(`)");
-        TestContext.Check(!tail.Contains("flag[i + 2]))", StringComparison.Ordinal),
-            "a tabela NUNCA exibe o literal errado (o modelo copia o que ve)");
-        // CS1003 forma `for` com `in` (medido no kmeans do L4 de 2026-10-31: 617s de
-        // loop). A INSTRUCAO da cauda tem que ensinar `foreach` ANTES do erro — e' a
-        // prioridade do projeto (instruir primeiro, reparar so' como rede).
-        TestContext.Check(tail.Contains("C# nao tem `for` com `in`", StringComparison.Ordinal),
-            "CS1003 instrui que C# nao tem `for` com `in`");
-        TestContext.Check(tail.Contains("foreach (var item in colecao)", StringComparison.Ordinal),
-            "CS1003 mostra a forma CERTA com `foreach`");
-        TestContext.Check(!tail.Contains("for (var point in", StringComparison.Ordinal),
-            "a tabela nunca exibe a forma `for` com `in` como exemplo");
-        TestContext.Check(tail.Contains("aplique a forma da tabela e edite SO'", StringComparison.Ordinal),
-            "a tabela manda aplicar a forma e editar SÓ o trecho");
-        // Só com shell: sem execução não existe "build falhando".
-        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.HarnessTails.ComposeTools(new[] { "read", "write" })
+        TestContext.Check(!tail.Contains("TABELA DE ERROS C#", StringComparison.Ordinal),
+            "cauda NAO traz a tabela de erros C# (desligada por medicao)");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.HarnessTails.ComposeTools(new[] { "read", "shell" })
                 .Contains("TABELA DE ERROS C#", StringComparison.Ordinal),
-            "sem `shell` a tabela de erros nao entra (nao existe build falhando)");
-        TestContext.Check(global::Rochas.OpenCodeBridge.Core.HarnessTails.ComposeTools(new[] { "read", "shell" })
-                .Contains("TABELA DE ERROS C#", StringComparison.Ordinal),
-            "com `shell` a tabela de erros entra");
+            "com `shell` a tabela tambem nao entra");
+        // A fonte unica nao foi apagada: o reparo do retry continua gerando dica.
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Rules.Count > 0,
+            "CsSyntaxRepair.Rules preservado (a tabela volta sem copia manual)");
+        string hint = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
+            "class P { void M() {", "error CS1513: } expected");
+        TestContext.Check(hint.Length > 0, "reparo in-flow do retry continua ativo");
         return Task.CompletedTask;
     }
 

@@ -79,6 +79,9 @@ internal static class E2EToolsFullTests
         string body = ReadText(dataPath);
         TestContext.Check(body.Contains(DateTime.Now.ToString("yyyy"), StringComparison.Ordinal),
             $"[toolsfull:create] {DataFile} traz a data de hoje como texto (conteudo='{Trecho(dataPath)}')");
+        TestContext.Check(!body.Contains("data_de_hoje", StringComparison.Ordinal),
+            $"[toolsfull:create] {DataFile} traz a DATA do sistema como texto (ex.: 2026-11-06) na primeira linha, "
+            + $"nao um rotulo ou variavel no lugar da data (conteudo='{Trecho(dataPath)}')");
 
         string repo = dir;
         TestContext.Check(Directory.Exists(Path.Combine(repo, ".git")),
@@ -125,6 +128,9 @@ internal static class E2EToolsFullTests
         TestContext.Check(body.Contains(DateTime.Now.ToString("yyyy"), StringComparison.Ordinal),
             $"[toolsfull:adjust] a data que ja estava commitada continua em {DataFile} — o ajuste acrescenta, nao sobrescreve " +
             $"(conteudo='{Trecho(dataPath)}')");
+        TestContext.Check(!body.Contains("data_de_hoje", StringComparison.Ordinal),
+            $"[toolsfull:adjust] {DataFile} mantem a DATA do sistema como texto (ex.: 2026-11-06), sem rotulo no lugar dela "
+            + $"(conteudo='{Trecho(dataPath)}')");
         TestContext.Check(body.Contains("EDITADO", StringComparison.Ordinal)
             && body.Contains("Clima", StringComparison.OrdinalIgnoreCase),
             $"[toolsfull:adjust] linha 'ARQUIVO EDITADO - Clima: <temperatura>' no MESMO arquivo (conteudo='{Trecho(dataPath)}')");

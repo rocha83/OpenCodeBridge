@@ -29,6 +29,8 @@ public static class ShellInspector
         "/dev/sd", "/dev/nvme", "/dev/hd", "/dev/vd", "/dev/mmcblk", "of=/dev/", ":(){",
         // reset --hard apaga trabalho sem volta: sempre negado (sem excecao).
         "reset --hard",
+        // Publica ou apaga trabalho nao versionado: mesma classe de risco.
+        "git push", "git clean",
         // Remocao/truncamento por API (python/node): o vetor nao e o binario rm,
         // e o nome vem colado em "." e "(" — Contains, sem fronteira de token.
         "os.remove", "os.unlink", "unlinkSync", "rmSync", "rmtree", "shutil.rmtree", "fs.unlink",

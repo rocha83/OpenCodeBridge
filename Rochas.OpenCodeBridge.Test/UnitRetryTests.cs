@@ -71,7 +71,11 @@ internal static class UnitRetryTests
         string full = global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools;
         TestContext.Check(full.Contains("shell para executar comandos"),
             "default (sem filtro) descreve os comandos da shell");
-        TestContext.Check(full.Contains("--project"), "default mantem a regra do dotnet");
+        // A regra do dotnet saiu da cauda (ficou curta) e mora no help da tool.
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.ToolHelp.Apply(
+            System.Text.Json.Nodes.JsonNode.Parse("""[{"type":"function","function":{"name":"shell","description":"s"}}]""")!
+            .AsArray()).ToJsonString().Contains("--project"),
+            "help de shell mantem a regra do dotnet");
         TestContext.Check(full.Contains("bloqueio de role"), "default mantem bloqueio de role");
         return Task.CompletedTask;
     }

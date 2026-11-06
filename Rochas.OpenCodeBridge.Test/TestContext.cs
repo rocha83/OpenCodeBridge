@@ -83,6 +83,27 @@ internal static class TestContext
             return !hasRole && Role.Length > 0 ? m + "-" + Role : m;
         }
     }
+    // Modelo da role Plan: os E2E de artefato (senior/enterprise) medem o Plan,
+    // nao o Build. Mesmo servido, sufixo -plan (o bridge deriva o perfil do nome).
+    public static string PlanModel
+    {
+        get
+        {
+            string m = ServedModel.Length > 0 ? ServedModel : "gemma-4-12b";
+            return m.EndsWith("-plan", StringComparison.Ordinal) ? m : m + "-plan";
+        }
+    }
+    // Thinking nos pedidos do runner: DEFAULT OFF. O teste mede o ARTEFATO;
+    // sem o kwargs o template liga thinking sozinho e o turno pode morrer
+    // dentro do raciocinio (content vazio). Ligue com --request-thinking on.
+    public static bool RequestThinking;
+    public static JsonObject ApplyRequestThinking(JsonObject body)
+    {
+        if (RequestThinking) return body;
+        if (body["chat_template_kwargs"] is null)
+            body["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = false };
+        return body;
+    }
     // Modo thinking da bridge (events|off): asserts de reasoning só em events.
     public static string ServedThinking = "events";
     /// <summary>Bridge com --legacy-harness 1: unico modo em que ha coercao de tools.</summary>
@@ -119,7 +140,7 @@ internal static class TestContext
     {
         if (!ServedLegacy) Skip("bridge sem --legacy-harness 1 (coercao desligada por design)");
     }
-    public static bool WantsReasoning => ServedThinking == "events" && !ServedIsCoder;
+    public static bool WantsReasoning => ServedThinking == "events" && !ServedIsCoder && RequestThinking;
     static int Passed;
     static int Failed;
     static int Skipped;
@@ -866,19 +887,27 @@ internal static class TestContext
         var journeySw = Stopwatch.StartNew();
         string text = "";
         int nudges = 0;
-        const int MaxNudges = 2;
+        // 4 = cadeia write->init->add->commit->log do E-tools-full; o modelo
+        // encerra o turno depois do resultado da tool e cada continuacao custa 1.
+        const int MaxNudges = 4;
         for (int step = 0; step < max; step++)
         {
             // Forma Responses vem do Core; o teste nao reescreve schema nem faz
             // conversao manual de chat para Responses.
             var respTools = global::Rochas.OpenCodeBridge.Core.ToolCatalog.Responses();
-            var res = await PostObj(Bridge + "/v1/responses", new JsonObject
+            var reqBody = new JsonObject
             {
                 ["model"] = SuiteModel,
                 ["input"] = input.DeepClone(),
                 ["tools"] = respTools,
                 ["stream"] = false
-            });
+            };
+            // Sem tool_choice o 4B responde em TEXTO (narra o JSON da call) ou
+            // encerra o turno com 1 token depois do resultado. Nas primeiras
+            // rodadas o canal nativo e' obrigatorio; depois volta a auto para a
+            // resposta final poder ser prosa.
+            if (step < 4) reqBody["tool_choice"] = "required";
+            var res = await PostObj(Bridge + "/v1/responses", reqBody);
             text = "";
             // Progresso contado POR ITERACAO: o modelo pode devolver output vazio
             // ou so prosa apos a primeira tool call. Antes, hasCall olhava o
@@ -1025,6 +1054,12 @@ internal static class TestContext
 
     public static async Task<JsonObject> PostObj(string url, JsonNode body)
     {
+        // Default do runner: pedido de modelo vai SEM thinking (enable_thinking=false).
+        // O perfil da role (temp) continua valendo; so o raciocinio e desligado.
+        if (!RequestThinking && body is JsonObject rb
+            && (url.EndsWith("/v1/responses", StringComparison.Ordinal)
+                || url.EndsWith("/v1/chat/completions", StringComparison.Ordinal)))
+            body = ApplyRequestThinking(rb);
         // Todo prompt de modelo publicado vira o enunciado do painel (inclusive
         // belts/mission, que nao passam por ToolAgent).
         if (url.Contains("/v1/", StringComparison.Ordinal))

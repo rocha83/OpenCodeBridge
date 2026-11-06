@@ -22,6 +22,11 @@ public sealed class WriteToolHandler : IToolHandler
         if (content.Length > MaxChars) return ToolResult.Fail($"conteúdo grande demais ({content.Length} chars, teto {MaxChars})");
         if (ToolContentGuard.Elided(content, "write") is string elided)
             return ToolResult.Fail(elided);
+        if (RepoPathGuard.GitInternal(path, "write") is string inGit)
+        {
+            Metrics.CountToolDenial("ring2", "write", "dotgit");
+            return ToolResult.Fail(inGit);
+        }
 
         if (!WorkspaceGuard.TryResolve(context.WorkspaceRoot, path, out string full, out string why, context.ExtraRoots))
             return ToolResult.Fail(why);

@@ -13,14 +13,45 @@ internal static class UnitMetricsTests
         Metrics.Clear();
         TestContext.Check(Metrics.Ring2Deny == 0 && Metrics.Ring3Deny == 0 && Metrics.NudgeArgs == 0,
             "contadores zerados por Clear");
-        Metrics.Deny("ring2", "write", "role");
-        Metrics.Deny("ring3", "shell", "token 'rm' negado pelo inspetor");
-        Metrics.Deny("nudge", "edit", "faltou newString");
+        Metrics.CountToolDenial("ring2", "write", "role");
+        Metrics.CountToolDenial("ring3", "shell", "token 'rm' negado pelo inspetor");
+        Metrics.CountToolDenial("nudge", "edit", "faltou newString");
         var snap = Metrics.DenyCounters();
         TestContext.Check(snap["ring2_deny"]!.GetValue<long>() == 1
             && snap["ring3_deny"]!.GetValue<long>() == 1
             && snap["nudge_args"]!.GetValue<long>() == 1,
             "DenyCounters publica ring2/ring3/nudge");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Painel x API: todo portao que emite alerta tem que aparecer no painel de
+    /// gates do Grafana, lado a lado com o anti-repeat. Portao novo em
+    /// Metrics.AlertGateKeys sem coluna no dashboard quebra este teste.
+    /// </summary>
+    public static Task DashboardListsAlertGates()
+    {
+        string? dir = AppContext.BaseDirectory;
+        string? dash = null;
+        while (dir is not null && dash is null)
+        {
+            string probe = Path.Combine(dir, "observation", "grafana", "dashboards", "opencodebridge.json");
+            if (File.Exists(probe)) dash = probe;
+            dir = Path.GetDirectoryName(dir);
+        }
+        TestContext.Check(dash is not null, "dashboard JSON do Grafana encontrado");
+        if (dash is null) return Task.CompletedTask;
+        var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(dash))!.AsObject();
+        var panel = root["panels"]!.AsArray()
+            .First(x => x!["id"]!.GetValue<int>() == 5)!.AsObject();
+        var cols = (panel["targets"]![0]!["columns"]!.AsArray())
+            .Select(c => c!["selector"]!.GetValue<string>()).ToHashSet();
+        foreach (string key in Metrics.AlertGateKeys)
+            TestContext.Check(cols.Contains(key), $"painel de gates lista '{key}'");
+        TestContext.Check(cols.Count == Metrics.AlertGateKeys.Length,
+            $"painel tem exatamente os {Metrics.AlertGateKeys.Length} portoes (tem {cols.Count})");
+        TestContext.Check(Metrics.DenyCounters().Select(kv => kv.Key).ToHashSet()
+            .SetEquals(Metrics.AlertGateKeys), "DenyCounters publica exatamente os portoes de alerta");
         return Task.CompletedTask;
     }
 

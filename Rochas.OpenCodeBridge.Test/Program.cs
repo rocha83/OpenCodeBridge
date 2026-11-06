@@ -32,6 +32,8 @@ internal static class Program
             else if (args[i] == "--jwt" && i + 1 < args.Length) TestContext.Jwt = args[++i];
             else if (args[i] == "--role" && i + 1 < args.Length) TestContext.Role = args[++i];
             else if (args[i] == "--model" && i + 1 < args.Length) TestContext.Model = args[++i];
+            else if (args[i] == "--request-thinking" && i + 1 < args.Length)
+                TestContext.RequestThinking = args[++i] is "on" or "1" or "true" or "events";
             else if (args[i] == "--standalone") TestContext.Standalone = true;
             else if (args[i] == "--standalone-agent" && i + 1 < args.Length) TestContext.StandaloneAgent = args[++i];
             else if (args[i] == "--standalone-model" && i + 1 < args.Length) TestContext.StandaloneModel = args[++i];
@@ -102,7 +104,7 @@ internal static class Program
             TestContext.ServedModel = st["model"]?.GetValue<string>() ?? "";
             TestContext.ServedThinking = st["thinking"]?.GetValue<string>() ?? "events";
             TestContext.ServedLegacy = st["legacy_harness"]?.GetValue<bool>() ?? false;
-            Console.WriteLine($"[test] served={TestContext.ServedModel} coder={TestContext.ServedIsCoder} thinking={TestContext.ServedThinking} legacy={TestContext.ServedLegacy}");
+            Console.WriteLine($"[test] served={TestContext.ServedModel} coder={TestContext.ServedIsCoder} thinking={TestContext.ServedThinking} request_thinking={(TestContext.RequestThinking ? "on" : "off")} legacy={TestContext.ServedLegacy}");
         }
         catch (Exception ex) { Console.WriteLine($"[test] sem status: {ex.Message}"); }
 
@@ -221,7 +223,15 @@ internal static class Program
         TestContext.Run("U-tools-antireply-helpers", UnitToolBreakerTests.ToolScopeUsesHelperSubclasses);
         TestContext.Run("U-toolargs-literal-newline", UnitToolBreakerTests.FixesLiteralNewlineEscape);
         TestContext.Run("U-tails-path-simulation-rules", UnitToolBreakerTests.ToolsTailCarriesPathAndSimulationRules);
-        TestContext.Run("U-tails-cs-error-table", UnitToolBreakerTests.ToolsTailCarriesCsErrorTable);
+        TestContext.Run("U-tails-sem-tabela-cs", UnitToolBreakerTests.ToolsTailHasNoCsErrorTable);
+        TestContext.Run("U-git-arg-repair", UnitGitRepairTests.NormalizesVocabulary);
+        TestContext.Run("U-arg-guard", UnitToolArgGuardTests.RejectsTemplateGarbage);
+        TestContext.Run("U-git-syntax-reject", UnitGitSyntaxTests.RejectsInventedFlags);
+        TestContext.Run("U-git-syntax-ok", UnitGitSyntaxTests.AcceptsCanonicalForms);
+        TestContext.Run("U-git-help-forms", UnitGitHelpTests.HelpListsEveryAcceptedForm);
+        TestContext.Run("U-git-help-short", UnitGitHelpTests.HelpStaysShort);
+        TestContext.Run("U-repopath-guard", UnitRepoPathGuardTests.RefusesGitInternals);
+        TestContext.Run("U-edit-anchor", UnitEditAnchorTests.RefusalShowsRealAnchor);
         TestContext.Run("U-cs-repair-missing-brace", UnitToolBreakerTests.CsRepairMissingBrace);
         TestContext.Run("U-cs-repair-applies-brace", UnitToolBreakerTests.CsRepairAppliesMissingBrace);
         TestContext.Run("U-cs-repair-unexpected-token", UnitToolBreakerTests.CsRepairUnexpectedToken);
@@ -288,6 +298,10 @@ internal static class Program
         TestContext.Run("U-preflight-web-login", UnitStackPreflightTests.WebLogin);
         TestContext.Run("U-metrics-deny-counters", UnitMetricsTests.CountersIncrement);
         TestContext.Run("U-metrics-ring3-shell", UnitMetricsTests.ShellDenyIsRing3);
+        TestContext.Run("U-shell-gate-pre", UnitShellGateTests.PreIsBlacklist);
+        TestContext.Run("U-shell-gate-post", UnitShellGateTests.PostExplainsInvalid);
+        TestContext.Run("U-shell-gate-open", UnitShellGateTests.UnknownCommandRuns);
+        TestContext.Run("U-dashboard-alert-gates", UnitMetricsTests.DashboardListsAlertGates);
         TestContext.Run("U-sanitize-drops-reasoning", UnitBypassTests.SanitizeDropsReasoning);        TestContext.Run("U-translate-drops-reasoning", UnitBypassTests.TranslateDropsReasoning);
         TestContext.Run("U-sanitize-system-first", UnitBypassTests.SanitizeSystemFirst);
         TestContext.Run("U-translate-system-first", UnitBypassTests.TranslateSystemFirst);
