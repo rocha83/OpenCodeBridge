@@ -956,6 +956,10 @@ internal static partial class Program
     /// <summary>Auth no upstream: repassa o Authorization do cliente ou usa a ApiKey configurada.</summary>
     /// <param name="req">Request upstream.</param>
     /// <param name="ctx">Contexto com os headers originais.</param>
+    /// <summary>Prefixo de um texto para log (sem estourar a linha).</summary>
+    static string Head(string? text, int limit) =>
+        string.IsNullOrEmpty(text) ? "" : text.Length <= limit ? text : text[..limit];
+
     /// <summary>
     /// Turno degenerado: com tools no request, resposta que fecha em `max_tokens`
     /// sem call UTIL — texto infinito (16.384 tok / 377,9 s) ou call com args
@@ -1015,7 +1019,13 @@ internal static partial class Program
             {
                 ["event"] = "upstream_degenerate_retry_done",
                 ["has_tool_call"] = rchoice?["message"]?["tool_calls"] is JsonArray rt && rt.Count > 0,
-                ["output_tokens"] = retried["usage"]?["completion_tokens"]?.GetValue<int>() ?? 0
+                ["output_tokens"] = retried["usage"]?["completion_tokens"]?.GetValue<int>() ?? 0,
+                // Evidencia do retry vazio (medido 2026-11-06: 1 token, sem call):
+                // sem finish_reason/content nao da' para separar EOS imediato de
+                // recusa do template.
+                ["finish_reason"] = rchoice?["finish_reason"]?.GetValue<string>() ?? "",
+                ["prompt_tokens"] = retried["usage"]?["prompt_tokens"]?.GetValue<int>() ?? 0,
+                ["content_head"] = Head(rchoice?["message"]?["content"]?.GetValue<string>(), 200)
             });
             return retried;
         }

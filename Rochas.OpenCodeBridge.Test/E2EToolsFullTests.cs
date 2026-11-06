@@ -54,7 +54,8 @@ internal static class E2EToolsFullTests
     {
         const string basePrompt =
             "Trabalhe na pasta atual. Crie o arquivo data.txt com a data de hoje (a data do sistema) escrita como " +
-            "texto. Inicialize um repositorio git nesta mesma pasta, adicione o arquivo e faca o commit com a " +
+            "texto no formato AAAA-MM-DD; o arquivo tem so' a data, sem nome de variavel e sem '=' junto dela. " +
+            "Inicialize um repositorio git nesta mesma pasta, adicione o arquivo e faca o commit com a " +
             "mensagem 'data de hoje'; confirme com git log.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
@@ -79,9 +80,12 @@ internal static class E2EToolsFullTests
         string body = ReadText(dataPath);
         TestContext.Check(body.Contains(DateTime.Now.ToString("yyyy"), StringComparison.Ordinal),
             $"[toolsfull:create] {DataFile} traz a data de hoje como texto (conteudo='{Trecho(dataPath)}')");
+        // A recusa NAO repete o literal proibido nem o conteudo que o contem:
+        // o feedback volta ao modelo e ele copia o token (medido em 2026-11-06,
+        // 3/3 tentativas com o rotulo colado na data).
         TestContext.Check(!body.Contains("data_de_hoje", StringComparison.Ordinal),
-            $"[toolsfull:create] {DataFile} traz a DATA do sistema como texto (ex.: 2026-11-06) na primeira linha, "
-            + $"nao um rotulo ou variavel no lugar da data (conteudo='{Trecho(dataPath)}')");
+            $"[toolsfull:create] a primeira linha de {DataFile} e' SO' a data no formato AAAA-MM-DD "
+            + "(sem nome de variavel e sem '=' junto dela)");
 
         string repo = dir;
         TestContext.Check(Directory.Exists(Path.Combine(repo, ".git")),
@@ -129,8 +133,8 @@ internal static class E2EToolsFullTests
             $"[toolsfull:adjust] a data que ja estava commitada continua em {DataFile} — o ajuste acrescenta, nao sobrescreve " +
             $"(conteudo='{Trecho(dataPath)}')");
         TestContext.Check(!body.Contains("data_de_hoje", StringComparison.Ordinal),
-            $"[toolsfull:adjust] {DataFile} mantem a DATA do sistema como texto (ex.: 2026-11-06), sem rotulo no lugar dela "
-            + $"(conteudo='{Trecho(dataPath)}')");
+            $"[toolsfull:adjust] a primeira linha de {DataFile} continua sendo SO' a data no formato AAAA-MM-DD "
+            + "(sem nome de variavel e sem '=' junto dela)");
         TestContext.Check(body.Contains("EDITADO", StringComparison.Ordinal)
             && body.Contains("Clima", StringComparison.OrdinalIgnoreCase),
             $"[toolsfull:adjust] linha 'ARQUIVO EDITADO - Clima: <temperatura>' no MESMO arquivo (conteudo='{Trecho(dataPath)}')");
