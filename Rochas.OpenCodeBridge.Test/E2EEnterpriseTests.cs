@@ -74,7 +74,11 @@ internal static class E2EEnterpriseTests
         string text = TextOf(r);
         TestContext.Check(text.Length > 500, "customer com codigo util");
         CheckNoStub(text, "customer");
-        TestContext.Check(text.Contains("409") && (text.Contains("OFFSET", StringComparison.OrdinalIgnoreCase) || text.Contains("Skip", StringComparison.OrdinalIgnoreCase)), "customer com conflito+paginacao");
+        // 409 pode vir literal ou pelo helper idiomático do ASP.NET (Results.Conflict /
+        // ConflictHttpException) — ambos respondem 409. Paginação: OFFSET (SQL) ou Skip (LINQ).
+        bool has409 = text.Contains("409") || text.Contains("Conflict", StringComparison.OrdinalIgnoreCase);
+        bool hasPage = text.Contains("OFFSET", StringComparison.OrdinalIgnoreCase) || text.Contains("Skip", StringComparison.OrdinalIgnoreCase);
+        TestContext.Check(has409 && hasPage, "customer com conflito+paginacao");
         Console.WriteLine($"  [info] customer paginacao={text.Contains("pageSize")} email={text.Contains("Email")}");
     }
 
