@@ -2771,6 +2771,16 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         }
         catch { /* corpo inesperado: devolve cru */ }
         Log(new JsonObject { ["event"] = "coerced-chat", ["model"] = Model, ["count"] = coerced });
+        // Painel + metricas: este caminho devolvia o corpo sem passar pelo
+        // registro do Passthrough (activity vazio e t/s zerado no dashboard).
+        RecordChatActivity(json);
+        try
+        {
+            var met = JsonNode.Parse(json);
+            RecordChatUsage(met?["usage"], met?["timings"],
+                (DateTime.UtcNow - (startedAt == default ? DateTime.UtcNow : startedAt)).TotalSeconds);
+        }
+        catch { }
         // Sonda traffic FULL (só com DIAGNOSTICS): resposta integra.
         if (Diagnostic)
         {
