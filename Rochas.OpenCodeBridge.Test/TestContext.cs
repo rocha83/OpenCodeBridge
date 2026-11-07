@@ -927,7 +927,23 @@ internal static class TestContext
             // `git add .` e nunca emite o commit. O cliente forca a call em
             // TODAS as rodadas; so' a ultima fica `auto` para caber a resposta
             // final em prosa. Nao ha nudge de texto (TCTX_NUDGES=0).
-            if (step < max - 1) reqBody["tool_choice"] = "required";
+            // A/B do tool_choice: `required` em TODO turno faz o modelo que ja'
+            // terminou degenerar — sem call legal ele repete o relatorio ate' o
+            // teto (medido 2026-11-07: 12 turnos de 768 tok no L2 112622, sonda
+            // em /tmp/opencode/bridge-degenerate.jsonl). TCTX_TOOL_CHOICE
+            // = auto|first|required (default required) mede sem trocar o padrao.
+            string choiceMode = Environment.GetEnvironmentVariable("TCTX_TOOL_CHOICE") ?? "required";
+            if (choiceMode == "auto") { }
+            else if (choiceMode == "first") { if (step == 0) reqBody["tool_choice"] = "required"; }
+            // `until-commit`: forca a call so' ate o commit dar certo; depois
+            // libera `auto` para o modelo encerrar em prosa (sem o turno
+            // degenerado de fim de tarefa medido com `required` fixo).
+            else if (choiceMode == "until-commit")
+            {
+                bool committed = calls.Any(c => c.StartsWith("git(") && c.Contains("commit") && c.EndsWith("-> ok"));
+                if (!committed) reqBody["tool_choice"] = "required";
+            }
+            else if (step < max - 1) reqBody["tool_choice"] = "required";
             var res = await PostObj(Bridge + "/v1/responses", reqBody);
             text = "";
             // Progresso contado POR ITERACAO: o modelo pode devolver output vazio

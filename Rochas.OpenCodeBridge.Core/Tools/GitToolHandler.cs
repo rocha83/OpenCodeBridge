@@ -40,14 +40,29 @@ public sealed class GitToolHandler : IToolHandler
 
         string command = obj["command"]?.GetValue<string>() ?? "";
         if (string.IsNullOrWhiteSpace(command)) return ToolResult.Fail("command é obrigatório (ex.: 'git status')");
-        // Cadeia numa so chamada (`add . && commit -m x`) chega ao git como
-        // pathspec e o modelo abandona o passo. A resposta ensina a forma certa,
-        // suboperacao por suboperacao (mesmo padrao da DICA de identidade).
-        if (HasChain(command))
-            return ToolResult.Fail("uma suboperação por chamada: rode `git add .` agora e, na próxima, chame git de novo com " +
-                "`git commit -m \"sua mensagem\"`, no mesmo `path` do repo (a receita completa esta na descrição da tool).");
         string repoDir = context.WorkspaceRoot;
         string wantPath = obj["path"]?.GetValue<string>() ?? "";
+        // Cadeia `add . && commit -m "x"`: o modelo escreve assim naturalmente e,
+        // quando recusada, repete a mesma call ate' travar (medido 2026-11-07 no
+        // E-tools-full: 3 tentativas, zero commit). Agora roda em sequencia,
+        // parando no primeiro erro. Pipe (`|`) continua recusado: exige shell.
+        if (HasChain(command))
+        {
+            if (command.IndexOf('|') >= 0)
+                return ToolResult.Fail("pipe (`|`) não é aceito na tool git: rode uma suboperação por chamada.");
+            var parts = SplitChain(command);
+            if (parts.Count > 6)
+                return ToolResult.Fail($"cadeia longa demais ({parts.Count} suboperações): máximo 6.");
+            var outs = new System.Collections.Generic.List<string>();
+            foreach (string part in parts)
+            {
+                var one = new JsonObject { ["command"] = part, ["path"] = wantPath };
+                var r = Handle(one.ToJsonString(), context);
+                if (!r.Success) return r;
+                if (!string.IsNullOrWhiteSpace(r.Output)) outs.Add(r.Output.Trim());
+            }
+            return ToolResult.Ok(string.Join("\n", outs));
+        }
         // Normaliza vocabulario de git antes de executar (`--bare`, `.git` como
         // path, caminho de cache/absoluto do workspace). No-op em call valida;
         // cada regra aplicada vira evento `git_repair` para medicao.
@@ -173,6 +188,37 @@ public sealed class GitToolHandler : IToolHandler
             if (c == '&' && i + 1 < command.Length && command[i + 1] == '&') return true;
         }
         return false;
+    }
+
+    // Separa `add . && commit -m "a; b"` em suboperacoes, respeitando aspas.
+    // `;` e `&&` fora de aspas separam; nada mais e' interpretado (pipe e'
+    // recusado antes de chegar aqui).
+    private static System.Collections.Generic.List<string> SplitChain(string command)
+    {
+        var parts = new System.Collections.Generic.List<string>();
+        var cur = new System.Text.StringBuilder();
+        char quote = '\0';
+        for (int i = 0; i < command.Length; i++)
+        {
+            char c = command[i];
+            if (quote != '\0')
+            {
+                cur.Append(c);
+                if (c == quote) quote = '\0';
+                continue;
+            }
+            if (c == '"' || c == '\'') { quote = c; cur.Append(c); continue; }
+            if (c == ';' || (c == '&' && i + 1 < command.Length && command[i + 1] == '&'))
+            {
+                if (c == '&') i++;
+                parts.Add(cur.ToString().Trim());
+                cur.Clear();
+                continue;
+            }
+            cur.Append(c);
+        }
+        parts.Add(cur.ToString().Trim());
+        return parts.FindAll(p => p.Length > 0);
     }
 
     private static string[] Split(string command)
