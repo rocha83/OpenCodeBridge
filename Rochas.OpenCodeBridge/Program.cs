@@ -2363,7 +2363,7 @@ WriteJson(ctx, 200, new JsonObject
             if (node is not null && node["max_tokens"] is null && node["max_completion_tokens"] is null)
             {
                 bool cpuLinePt = CoerceFor();
-                int capPt = cpuLinePt ? CpuMaxTokens : MaxTokens;
+                int capPt = cpuLinePt && CpuMaxTokens > 0 ? CpuMaxTokens : MaxTokens;
                 if (capPt > 0)
                 {
                     node["max_tokens"] = capPt;
@@ -2936,7 +2936,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // nesses casos vale o teto da linha coagida e o stop proprio. Nao ha
         // mais inferencia por id de modelo ("cpu"): a capacidade define a linha.
         bool coercedLine = CoerceFor();
-        int cap = coercedLine ? CpuMaxTokens : MaxTokens;   // 0 = sem teto
+        int cap = coercedLine && CpuMaxTokens > 0 ? CpuMaxTokens : MaxTokens;   // 0 = sem teto
         // O pedido do cliente NAO limita a saida: o bridge ignora
         // max_tokens/max_output_tokens do corpo e usa apenas o teto do operador.
         // Motivo: Gemma 4 com thinking ON gasta centenas de tokens em raciocinio;
