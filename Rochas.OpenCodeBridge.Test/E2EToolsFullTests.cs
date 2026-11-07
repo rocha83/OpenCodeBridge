@@ -4,20 +4,11 @@ using System.Text.RegularExpressions;
 
 namespace Rochas.OpenCodeBridge.Test;
 
-// E-tools-full como DIALOGO em duas fases, na ordem do enunciado humano:
-//   FASE 1 — questionario: 8 perguntas, UMA por mensagem, esperando a resposta
-//   (prosa, sem tools) antes da proxima:
-//     1) voce sabe utilizar git?
-//     2) sabe adicionar arquivos?
-//     3) como faz para efetuar commit ja' com a mensagem?
-//     4) como voce criaria uma subpasta a partir da pasta atual?
-//     5) como voce acessaria a internet em busca de dados como meteorologia?
-//     6) como verificaria a hora no Linux e no Windows?
-//     7) como construiria um aplicativo console .NET C# hello world?
-//     8) como compilaria um app .NET e faria compilacao, publicacao e deploy em Docker?
-//   FASE 2 — depois do questionario, UMA mensagem em linguagem natural simples
-//   manda fazer tudo em sequencia, terminando com o .NET compilado e
-//   empacotado num zip (com prova de compilacao antes de zipar).
+// E-tools-full: UMA mensagem em linguagem natural simples, sem questionario
+// previo. O enunciado manda fazer tudo em sequencia, um passo por chamada
+// (git init/add/commit, data.txt, dados/clima.txt, dados/hora.txt, console
+// hello com dotnet new/run, publish, zip com prova de compilacao), e o aceite
+// verifica o efeito real no disco. Custo alvo: ~1 min (so as tool calls).
 // Transcript completo em <workspace>/dialogo.txt.
 internal static class E2EToolsFullTests
 {
@@ -212,7 +203,6 @@ internal static class E2EToolsFullTests
         File.WriteAllText(transcript, "DIALOGO E-tools-full (" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + ")\n\n");
         var dlg = new Dialog(dir, transcript);
         var fails = new List<string>();
-        var known = new bool[8];
         string hoje = DateTime.Now.ToString("yyyy-MM-dd");
 
         void Soft(bool ok, string label)
@@ -220,41 +210,7 @@ internal static class E2EToolsFullTests
             Console.WriteLine($"  [toolsfull:exec] {(ok ? "PASS" : "FAIL")} {label}");
             if (!ok) fails.Add(label);
         }
-        void Know(int i, string cap, string answer, bool ok)
-        {
-            known[i] = ok;
-            Console.WriteLine($"  [toolsfull:qa] sabe {cap}? {(ok ? "SIM" : "NAO")} ({Compact(answer, 80)})");
-        }
-        bool Has(string t, string pattern) => Regex.IsMatch(t, pattern, RegexOptions.IgnoreCase);
-
-        // ---------- FASE 1: questionario, uma pergunta por mensagem ----------
-        string a1 = await dlg.Ask("Voce sabe utilizar git?");
-        Know(0, "git", a1, Has(a1, @"git\s+init") && Has(a1, @"git\s+add") && Has(a1, @"git\s+commit"));
-
-        string a2 = await dlg.Ask("Sabe adicionar arquivos ao controle de versao?");
-        Know(1, "add", a2, Has(a2, @"git\s+add"));
-
-        string a3 = await dlg.Ask("Como faz para efetuar commit ja' com a mensagem?");
-        Know(2, "commit-m", a3, Has(a3, @"git\s+commit\s+[^\n]*-[a-z]*m"));
-
-        string a4 = await dlg.Ask("Como voce criaria uma subpasta a partir da pasta atual?");
-        Know(3, "subpasta", a4, Has(a4, @"mkdir"));
-
-        string a5 = await dlg.Ask("Como voce acessaria a internet em busca de dados como meteorologia?");
-        Know(4, "internet", a5, Has(a5, @"(curl|wget|fetch|webfetch|https?://|api)"));
-
-        string a6 = await dlg.Ask("Como verificaria a hora utilizando o sistema operacional Linux e o Windows?");
-        Know(5, "hora", a6, Has(a6, @"\bdate\b") && Has(a6, @"(Get-Date|time\s*/t|%time%|powershell|windows)"));
-
-        string a7 = await dlg.Ask("Como construiria um aplicativo console .NET C# hello world?");
-        Know(6, "console", a7, Has(a7, @"dotnet\s+new\s+console"));
-
-        string a8 = await dlg.Ask("Como compilaria um app .NET e realizaria a compilacao, a publicacao e o deploy em container Docker?");
-        Know(7, "publish", a8, Has(a8, @"dotnet\s+publish") && Has(a8, @"docker\s+build"));
-
-        Console.WriteLine($"  [toolsfull:qa] conhecimento: {known.Count(k => k)}/8");
-
-        // ---------- FASE 2: uma ordem em linguagem natural, tudo em sequencia ----------
+        // ---------- enunciado unico em linguagem natural, tudo em sequencia ----------
         await dlg.Act(
             "Show. Agora faz tudo isso na pratica, nesta pasta, na ordem, um passo por chamada: " +
             "inicializa o git; cria o arquivo data.txt com a data de hoje do sistema e adiciona ele ao git; " +
@@ -315,7 +271,7 @@ internal static class E2EToolsFullTests
             Soft(tc == 0, "9-zip: unzip -t sem erro (pacote integro)");
         }
 
-        File.AppendAllText(transcript, $"\nRESUMO: conhecimento {known.Count(k => k)}/8; execucao = {(fails.Count == 0 ? "VERDE" : fails.Count + " falha(s)")}\n");
+        File.AppendAllText(transcript, $"\nRESUMO: execucao = {(fails.Count == 0 ? "VERDE" : fails.Count + " falha(s)")}\n");
         TestContext.Check(fails.Count == 0,
             $"[toolsfull] capacidades executadas com tools: {string.Join(" | ", fails)}");
         Console.WriteLine($"[toolsfull] dialogo concluido ({dlg.Calls.Count} calls) em {dir}");
