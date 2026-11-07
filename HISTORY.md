@@ -1,5 +1,27 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Belts build: args inválidos instrumentados; a queda da verde era variância (2026-11-07, sessão 60)
+
+**Sintoma.** Na L2 (bateria 15:59) a faixa `verde` de `E-belts-build-direct`
+falhou em 384s com uma única linha de veredito: `turno 0: tool call com args
+invalidos/truncados — encerrando sem nudge` → `arquivos=0 chars=0`. O harness
+não guardava o `function.arguments` que falhou, então não dava para separar
+truncamento de upstream, JSON vazio ou escape quebrado. A faixa `azul` passou na
+mesma rodada (404,7s), então ambiente/bridge estavam saudáveis.
+
+**Decisão.**
+1. **Instrumentação sem mudar comportamento** (`E2EBeltsBuildTests`): no
+   `badArgs`, grava `/tmp/opencode/belts-badargs-{belt}-turn{N}.txt` com `tool`,
+   `len`, a exceção e o `arguments` **cru**, e loga `len` + os primeiros 300
+   chars. O dente continua encerrando sem nudge (nudge esconderia o defeito).
+2. **Re-rodar a verde isolada** antes de qualquer correção de código.
+
+**Medição.** Verde isolada: **PASS 787,9s** — `turno 0: 5 call(s) [3 write],
+total arquivos=3`, `turno 1: sem tools (chars=60014)` e
+`revisao: src/Domain/Refund.cs ...`, fechando `PASS arquivos=3 chars=60872`. Sem
+nenhum `belts-badargs-*.txt` na rodada: a queda anterior foi variância do turno 0
+(call malformada), não defeito de harness nem de enunciado.
+
 ## E-tools-full: enunciado literal + contrato case-insensitive (2026-11-07, sessão 59)
 
 **Sintoma.** L2 caiu em `E-tools-full` (`FAIL 163s`, 3 tentativas do create) com

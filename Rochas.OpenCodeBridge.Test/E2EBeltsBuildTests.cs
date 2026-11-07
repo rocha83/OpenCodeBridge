@@ -114,18 +114,40 @@ internal static class E2EBeltsBuildTests
                     // Reenviar JSON quebrado ao llama costuma virar 500 peg-gemma4.
                     var parsed = new System.Collections.Generic.List<(JsonObject Call, JsonObject Args)>();
                     bool badArgs = false;
+                    string badName = "", badRaw = "";
                     foreach (var c in calls)
                     {
                         try
                         {
                             var co = c as JsonObject ?? throw new FormatException("tool call nao e objeto");
-                            var a = JsonNode.Parse(co["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject();
+                            string raw = co["function"]?["arguments"]?.GetValue<string>() ?? "{}";
+                            var a = JsonNode.Parse(raw)?.AsObject();
                             if (a is null) throw new FormatException("args nao e objeto");
                             parsed.Add((co, a));
                         }
-                        catch
+                        catch (Exception ex)
                         {
                             badArgs = true;
+                            badName = c?["function"]?["name"]?.GetValue<string>() ?? "?";
+                            badRaw = c?["function"]?["arguments"]?.GetValue<string>() ?? "<sem arguments>";
+                            // Instrumentacao (2026-11-07): o veredito dizia so
+                            // "args invalidos/truncados" e o diagnostico virava
+                            // adivinhacao (384s de step, 0 arquivos, sem o cru).
+                            // Grava o arguments COMO VEIO + a excecao e loga o
+                            // inicio — comportamento do dente nao muda.
+                            try
+                            {
+                                string dump = Path.Combine("/tmp/opencode",
+                                    $"belts-badargs-{key}-turn{turn}.txt");
+                                File.WriteAllText(dump,
+                                    $"tool={badName}\nlen={badRaw.Length}\n" +
+                                    $"exception={ex.GetType().Name}: {ex.Message}\n\n{badRaw}\n");
+                                Log($"  [belt-build:{key}] turno {turn}: args invalidos em {dump} " +
+                                    $"(tool={badName}, len={badRaw.Length}, {ex.GetType().Name}: {ex.Message})");
+                                Log($"  [belt-build:{key}] turno {turn}: inicio dos args: " +
+                                    (badRaw.Length > 300 ? badRaw[..300] : badRaw).Replace("\n", " \\n "));
+                            }
+                            catch { }
                             break;
                         }
                     }
