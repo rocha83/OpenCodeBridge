@@ -9,6 +9,35 @@ public sealed class WriteToolHandler : IToolHandler
 
     private const int MaxChars = 1_000_000;
 
+    // Extensoes em que uma cerca de markdown no conteudo quebra o arquivo.
+    private static readonly HashSet<string> CodeExt = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".cs", ".csproj", ".sln", ".fs", ".vb", ".py", ".ts", ".tsx", ".js", ".jsx",
+        ".json", ".sql", ".sh", ".bash", ".java", ".go", ".rs", ".c", ".h", ".cpp",
+        ".hpp", ".css", ".html", ".xml", ".yml", ".yaml"
+    };
+
+    // O E4B as vezes devolve o arquivo inteiro em cerca de markdown:
+    //   ```csharp
+    //   Console.WriteLine("x");
+    //   ```
+    // e o .cs nao compila (CS1056, medido no L2 114217). Para extensao de codigo,
+    // remove 1 cerca externa; em .md/.txt o conteudo fica intacto.
+    private static string StripCodeFence(string content, string path)
+    {
+        if (!CodeExt.Contains(Path.GetExtension(path))) return content;
+        string t = content.Trim('\uFEFF', ' ', '\t', '\r', '\n');
+        if (!t.StartsWith("```", StringComparison.Ordinal)) return content;
+        int nl = t.IndexOf('\n');
+        if (nl < 0) return content;
+        string open = t[..nl].Trim();
+        if (open.Length < 3 || open.TrimStart('`').Length > 20) return content;
+        string body = t[(nl + 1)..];
+        int close = body.LastIndexOf("```", StringComparison.Ordinal);
+        if (close < 0 || body[(close + 3)..].Trim().Length > 0) return content;
+        return body[..close].TrimEnd() + "\n";
+    }
+
     public ToolResult Handle(string argumentsJson, ToolContext context)
     {
         JsonObject? obj;
@@ -17,7 +46,14 @@ public sealed class WriteToolHandler : IToolHandler
         if (obj is null) return ToolResult.Fail("argumentos inválidos: objeto JSON esperado");
 
         string path = obj["path"]?.GetValue<string>() ?? "";
-        string content = obj["content"]?.GetValue<string>() ?? "";
+        string rawContent = obj["content"]?.GetValue<string>() ?? "";
+        string content = StripCodeFence(rawContent, path);
+        if (!ReferenceEquals(content, rawContent))
+            context.Log?.Invoke(new JsonObject
+            {
+                ["event"] = "write_repair", ["applied"] = "code_fence", ["path"] = path,
+                ["chars_before"] = rawContent.Length, ["chars_after"] = content.Length
+            });
         if (string.IsNullOrWhiteSpace(path)) return ToolResult.Fail("path é obrigatório");
         if (content.Length > MaxChars) return ToolResult.Fail($"conteúdo grande demais ({content.Length} chars, teto {MaxChars})");
         if (ToolContentGuard.Elided(content, "write") is string elided)
