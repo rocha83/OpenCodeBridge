@@ -213,16 +213,20 @@ internal static class E2EToolsFullTests
         // ---------- enunciado unico em linguagem natural, tudo em sequencia ----------
         await dlg.Act(
             "Show. Agora faz tudo isso na pratica, nesta pasta, na ordem, um passo por chamada: " +
+            "configura a identidade local do git (user.name Teste e user.email teste@local); " +
             "inicializa o git; cria o arquivo data.txt com a data de hoje do sistema e adiciona ele ao git; " +
-            "faz o commit com a mensagem 'data de hoje' (se o git reclamar de identidade, configura o user.name e o user.email locais antes); " +
+            "faz o commit com a mensagem 'data de hoje'; " +
             "cria a subpasta dados; busca o clima de Sao Paulo na URL " +
             "https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m " +
             "e grava a temperatura em dados/clima.txt; " +
             "grava a data e a hora do sistema em dados/hora.txt; " +
-            "cria o app console hello com dotnet new console, deixa o Program.cs imprimindo Hello World e roda ele; " +
+            "cria o app console hello com dotnet new console, deixa o Program.cs completo e valido " +
+            "imprimindo Hello World (com as chaves fechadas) e roda ele; " +
             "compila e publica o hello; " +
             "e no fim junta o hello compilado num zip chamado hello.zip — garante que compilou antes de zipar, " +
-            "e confere o zip com unzip -t e unzip -l.");
+            "e confere o zip com unzip -t e unzip -l. " +
+            "Em cada arquivo grava SO o conteudo pedido (a temperatura no clima.txt; data e hora no hora.txt): " +
+            "nunca cole saida de comando, bloco de codigo ou mensagem de erro dentro do arquivo.");
 
         // Aceite de tudo que a ordem pediu.
         Soft(Directory.Exists(Path.Combine(dir, ".git")), "1-git: repositorio git iniciado");
