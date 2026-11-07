@@ -35,6 +35,23 @@ nome do journey; o enunciado/atividade era gravado sob o step velho.
    `grafana cli admin reset-admin-password` e revisão de painéis por
    `POST /api/ds/query` (um target por endpoint, provando o caminho real do
    Grafana, não só a bridge).
+5. O caminho que a WAR usa de verdade é `run-all-levels.sh -> run-levels.sh ->
+   dotnet Test.dll --only ...`; `WarTemplate` não entra nele. Por isso os três
+   guards foram replicados em `StackPreflight` (rodada isolada: `modo bridge` e
+   `coercao de tools`, tolerantes a binário antigo que não expõe o campo) e no
+   preflight do `run-levels.sh` (`bridge_modo`, `bridge_main_harness`,
+   `bridge_coercao` = nível BLOCKED antes de gastar GPU). O mesmo script ganhou
+   `ensure_painel`: sobe o `grafana-server` se estiver fora e revisa os 7
+   endpoints por `POST /api/ds/query`, imprimindo
+   `[painel] ds/query: N/7 endpoints com dado` — AVISO, nunca BLOCKED.
+
+**Entrega.** `2490616` (painel vivo + guards no WarTemplate) e `38ea46b`
+(guards no StackPreflight/run-levels + `ensure_painel`), push em
+`origin/main` e deploy em `/usr/src/opencodebridge` (`deploy-pull.sh` →
+pull --rebase + rebuild + restart `bridge-gpu`, `bridge-web`, `grafana-server`).
+Conferido pós-deploy: `mode=bridge`, `main_harness=true`,
+`coerce_text_tools=true`, `coerce_narrated=true`, `0.0.0.0:4800` (Grafana
+13.2.4) e `[painel] ds/query: 7/7`.
 
 **Medições.** L1 verde **15/15 (213s)**, com `E-ent-redis` **PASS 22,4s**
 (4.881 chars, `di=modern`) depois dos commits do enunciado; L2 na mesma rodada.

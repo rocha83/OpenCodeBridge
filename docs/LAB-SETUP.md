@@ -1838,6 +1838,13 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
   `bridge_modo`, `bridge_main_harness` e `bridge_coercao`. Tails
   (`harness_tails`) e `anti_repeat` continuam **AVISO**: são escolha do
   operador na unit, registrada no preflight.
+- **Onde os guards rodam:** o caminho da WAR é
+  `run-all-levels.sh -> run-levels.sh -> dotnet Test.dll --only ...`, então os
+  três gates vivem em `StackPreflight` (rodada isolada; campo ausente em bridge
+  antiga = check omitido) **e** no preflight do `run-levels.sh` (nível BLOCKED
+  antes do primeiro step). O mesmo `run-levels.sh` chama `ensure_painel`: sobe o
+  `grafana-server` se estiver fora e revisa os 7 endpoints por `POST
+  /api/ds/query` (`[painel] ds/query: N/7`) — AVISO, nunca BLOCKED.
 
 - **Acesso:** `http://127.0.0.1:4800` (proxy Caddy `:4150`), credenciais do lab
   **`admin` / `guest@123`** (mesma senha da bridge e dos testes). Senha mexer:
