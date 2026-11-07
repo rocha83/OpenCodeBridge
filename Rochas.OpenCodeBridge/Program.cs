@@ -59,6 +59,11 @@ internal static partial class Program
     static int ToolMaxTokens = 4096;                               // teto de turno COM tools (0 = desliga): divagacao de 16k tok custa ~6 min; 4k corta em ~100s
     static int ForcedToolMaxTokens = 768;                          // teto quando tool_choice=required: o turno TEM que ser call (args curtos); prosa ali e' degenerada
     static int DegenerateRetryMaxTokens = 512;                     // teto do retry de turno degenerado: e' resgate de 1 call, nao turno livre (2048 custava ~67s por retry)
+    // Sonda de stream do turno degenerado: JSONL com corpo COMPLETO (content,
+    // reasoning, tool_calls e as ultimas mensagens do request). Sem isso o log so'
+    // guarda 200 chars do retry e nao da' para ver o que o modelo entendeu.
+    // Vazio = desligada (default); --degenerate-probe <arquivo> liga.
+    static string DegenerateProbePath = "";
     static int CpuMaxTokens;                                       // teto da linha CPU: 0 = SEM TETO (deixa o llama controlar); >0 = clamp p/ conter divagacao em decode lento (~5 tok/s)
     static string ToolShimMode = "";                                // "json" = shim generico: remove tools, forca envelope JSON via grammar e converte de volta p/ tool_calls
     static int ToolShimMaxString = 2000;                            // cap de chars por string no grammar do shim (0 = sem cap)
@@ -472,6 +477,7 @@ internal static partial class Program
             if (cfg["toolMaxTokens"]?.GetValue<int>() is int tmt && tmt >= 0) ToolMaxTokens = tmt;
             if (cfg["forcedToolMaxTokens"]?.GetValue<int>() is int ftmt && ftmt >= 0) ForcedToolMaxTokens = ftmt;
             if (cfg["degenerateRetryMaxTokens"]?.GetValue<int>() is int drmt && drmt >= 0) DegenerateRetryMaxTokens = drmt;
+            if (cfg["degenerateProbe"]?.GetValue<string>() is string dprobe && dprobe.Trim().Length > 0) DegenerateProbePath = dprobe.Trim();
             if (cfg["toolOutputLimit"]?.GetValue<int>() is int tol && tol >= 0) ToolOutputLimit = tol;
             if (cfg["logPath"]?.GetValue<string>() is string log && log.Length > 0) LogPath = log;
             if (cfg["apiKey"]?.GetValue<string>() is string key && key.Length > 0) ApiKey = key;
@@ -974,6 +980,67 @@ internal static partial class Program
     /// teto: o pior caso vira ~2k tokens em vez de 6 minutos. Sem tools no
     /// request nada muda (texto longo e' legitimo).
     /// </summary>
+    // Sonda de comportamento: grava 1 linha JSONL por turno degenerado/retry com
+    // o corpo do upstream inteiro (capped) e o fim do request. Sem ela o log so'
+    // guarda 200 chars do retry e nao da' para ver o que o modelo entendeu.
+    static readonly object DegenerateProbeLock = new();
+    static void DegenerateProbe(string kind, string model, JsonObject? chatJson, JsonObject? request)
+    {
+        if (string.IsNullOrWhiteSpace(DegenerateProbePath)) return;
+        try
+        {
+            var o = new JsonObject
+            {
+                ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                ["kind"] = kind,
+                ["model"] = model
+            };
+            if (chatJson?["usage"] is JsonObject u)
+            {
+                o["prompt_tokens"] = u["prompt_tokens"]?.GetValue<int>() ?? 0;
+                o["output_tokens"] = u["completion_tokens"]?.GetValue<int>() ?? 0;
+            }
+            var choice = chatJson?["choices"] is JsonArray cs && cs.Count > 0 ? cs[0]?.AsObject() : null;
+            o["finish_reason"] = choice?["finish_reason"]?.GetValue<string>() ?? "";
+            var msg = choice?["message"]?.AsObject();
+            string content = msg?["content"]?.GetValue<string>() ?? "";
+            o["content"] = Head(content, 8000);
+            o["content_chars"] = content.Length;
+            string reasoning = msg?["reasoning_content"]?.GetValue<string>()
+                ?? msg?["reasoning"]?.GetValue<string>() ?? "";
+            if (reasoning.Length > 0) o["reasoning"] = Head(reasoning, 4000);
+            if (msg?["tool_calls"] is JsonArray tc && tc.Count > 0)
+            {
+                var arr = new JsonArray();
+                foreach (var c in tc)
+                    arr.Add(new JsonObject
+                    {
+                        ["name"] = c?["function"]?["name"]?.GetValue<string>() ?? "",
+                        ["args"] = Head(c?["function"]?["arguments"]?.GetValue<string>(), 2000)
+                    });
+                o["tool_calls"] = arr;
+            }
+            if (request?["messages"] is JsonArray msgs)
+            {
+                var tail = new JsonArray();
+                for (int i = Math.Max(0, msgs.Count - 4); i < msgs.Count; i++)
+                {
+                    var m = msgs[i]?.AsObject();
+                    tail.Add(new JsonObject
+                    {
+                        ["role"] = m?["role"]?.GetValue<string>() ?? "",
+                        ["content"] = Head(m?["content"]?.GetValue<string>(), 1200)
+                    });
+                }
+                o["messages_tail"] = tail;
+                o["messages_total"] = msgs.Count;
+            }
+            string line = o.ToJsonString(SerOpts);
+            lock (DegenerateProbeLock) File.AppendAllText(DegenerateProbePath, line + "\n");
+        }
+        catch { }
+    }
+
     static JsonObject RetryDegenerateTurn(HttpListenerContext? ctx, JsonObject chat, JsonObject chatJson,
         int toolCount, string model, int cap)
     {
@@ -994,12 +1061,19 @@ internal static partial class Program
         if (hasCall && argsChars <= Rochas.OpenCodeBridge.Core.Tools.ToolArgGuard.MaxChars) return chatJson;
 
         Metrics.CountDegenerateTurnRetry();
+        string degenContent = choice?["message"]?["content"]?.GetValue<string>() ?? "";
         Log(new JsonObject
         {
             ["event"] = "upstream_degenerate_retry", ["model"] = model,
             ["finish_reason"] = finish, ["output_tokens"] = outTok, ["max_tokens"] = MaxTokens,
-            ["has_tool_call"] = hasCall, ["args_chars"] = argsChars
+            ["has_tool_call"] = hasCall, ["args_chars"] = argsChars,
+            // Evidencia do turno que degenerou (antes so' o retry era amostrado):
+            // sem o texto nao da' para separar "nao entendeu o enunciado" de
+            // "entendeu e divagou". Completo fica na sonda (--degenerate-probe).
+            ["content_chars"] = degenContent.Length,
+            ["content_head"] = Head(degenContent, 600)
         });
+        DegenerateProbe("degenerate", model, chatJson, chat);
         try
         {
             var body = JsonNode.Parse(chat.ToJsonString(SerOpts))!.AsObject();
@@ -1037,6 +1111,7 @@ internal static partial class Program
                 ["prompt_tokens"] = retried["usage"]?["prompt_tokens"]?.GetValue<int>() ?? 0,
                 ["content_head"] = Head(rchoice?["message"]?["content"]?.GetValue<string>(), 200)
             });
+            DegenerateProbe("retry", model, retried, body);
             return retried;
         }
         catch (Exception ex)
@@ -1293,6 +1368,7 @@ internal static partial class Program
                 case "--tool-max-tokens": ToolMaxTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--forced-tool-max-tokens": ForcedToolMaxTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--degenerate-retry-max-tokens": DegenerateRetryMaxTokens = int.Parse(cliArgs[i + 1]); break;
+                case "--degenerate-probe": DegenerateProbePath = cliArgs[i + 1]; break;
                 case "--context-guard": ContextGuard = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--context-threshold": { double v = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); if (v >= 0.5 && v <= 0.99) ContextThreshold = v; break; }
                 case "--context-tokens": ContextTokens = int.Parse(cliArgs[i + 1]); break;
