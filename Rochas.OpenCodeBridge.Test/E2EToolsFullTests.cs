@@ -66,6 +66,20 @@ internal static class E2EToolsFullTests
         catch { return Array.Empty<string>(); }
     }
 
+    /// <summary>
+    /// Executa o app do enunciado: com .csproj usa `dotnet run --project`; sem
+    /// projeto usa o app de arquivo unico do .NET 10 (`dotnet run arquivo.cs`).
+    /// As duas formas sao "console C# compilado e executado pelo dotnet".
+    /// </summary>
+    static (int Code, string Out) RunApp(string dir)
+    {
+        string? proj = FindCsproj(dir);
+        if (proj is not null) return Run("dotnet", dir, 240, "run", "--project", proj, "-v", "q");
+        string? cs = CsFiles(dir).OrderBy(p => p.Length).FirstOrDefault();
+        if (cs is not null) return Run("dotnet", dir, 240, "run", Path.GetRelativePath(dir, cs));
+        return (-1, "sem .csproj e sem .cs na pasta");
+    }
+
     static (string[] Commits, string Log) GitLog(string repo)
     {
         string[] args = { "-c", "safe.directory=" + repo, "log", "--oneline" };
@@ -83,12 +97,11 @@ internal static class E2EToolsFullTests
     static async Task CreateAttempt(string dir, string feedback)
     {
         const string basePrompt =
-            "Trabalhe na pasta atual. Crie um projeto de console em C# usando o proprio dotnet (o projeto precisa " +
-            "compilar com o dotnet) e faca o app exibir em console a mensagem Hello World. Compile e execute o app " +
-            "com o dotnet, confirmando a mensagem na saida. Inicialize um repositorio git nesta mesma pasta, adicione " +
-            "os arquivos e faca o commit com a mensagem 'hello world console'; confirme com git log. " +
-            "Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever " +
-            "o que ja fez.";
+            "Trabalhe na pasta atual. Crie um app console em C# que exiba em console a mensagem Hello World. " +
+            "Compile e execute o app com o dotnet, confirmando a mensagem na saida. Inicialize um repositorio git " +
+            "nesta mesma pasta, adicione os arquivos e faca o commit com a mensagem 'hello world console'; " +
+            "confirme com git log. Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o " +
+            "enunciado e sem descrever o que ja fez.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         string parent = Path.GetDirectoryName(dir)!;
@@ -105,10 +118,11 @@ internal static class E2EToolsFullTests
             $"[toolsfull:create] nada criado fora da pasta corrente (em {parent}: {string.Join(", ", fora)})");
 
         string? proj = FindCsproj(dir);
-        TestContext.Check(proj is not null,
-            $"[toolsfull:create] projeto C# (.csproj) na pasta de trabalho " +
+        string[] fontes = CsFiles(dir);
+        TestContext.Check(proj is not null || fontes.Length > 0,
+            $"[toolsfull:create] app C# na pasta de trabalho (projeto .csproj ou arquivo .cs) " +
             $"(arquivos: {string.Join(", ", Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Select(p => Path.GetFileName(p)).Take(12))})");
-        string fonte = string.Join("\n", CsFiles(dir).Select(ReadText));
+        string fonte = string.Join("\n", fontes.Select(ReadText));
         TestContext.Check(fonte.Contains(MsgV1, StringComparison.Ordinal),
             $"[toolsfull:create] fonte exibe '{MsgV1}' (arquivos: {string.Join(", ", CsFiles(dir).Select(p => Path.GetFileName(p)))})");
 
@@ -121,9 +135,8 @@ internal static class E2EToolsFullTests
         TestContext.Check(commits.Length >= 1 && log.Contains("hello world console", StringComparison.OrdinalIgnoreCase),
             $"[toolsfull:create] commit 'hello world console' no repositorio (git log: {log.Trim().Replace("\n", " / ")}; calls={string.Join(";", calls)})");
 
-        if (proj is not null)
         {
-            var (code, outp) = Run("dotnet", dir, 240, "run", "--project", proj, "-v", "q");
+            var (code, outp) = RunApp(dir);
             TestContext.Check(code == 0 && outp.Contains(MsgV1, StringComparison.Ordinal),
                 $"[toolsfull:create] app compila e exibe '{MsgV1}' (rc={code}, saida='{TrechoTexto(outp)}')");
         }
@@ -159,9 +172,10 @@ internal static class E2EToolsFullTests
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
 
-        string? proj = FindCsproj(dir);
-        TestContext.Check(proj is not null, $"[toolsfull:adjust] projeto C# (.csproj) continua na pasta de trabalho");
-        string fonte = string.Join("\n", CsFiles(dir).Select(ReadText));
+        string[] fontes = CsFiles(dir);
+        TestContext.Check(FindCsproj(dir) is not null || fontes.Length > 0,
+            $"[toolsfull:adjust] app C# continua na pasta de trabalho (projeto .csproj ou arquivo .cs)");
+        string fonte = string.Join("\n", fontes.Select(ReadText));
         TestContext.Check(fonte.Contains(MsgV2, StringComparison.Ordinal),
             $"[toolsfull:adjust] fonte passa a exibir '{MsgV2}' (conteudo='{TrechoTexto(fonte)}')");
 
@@ -174,9 +188,8 @@ internal static class E2EToolsFullTests
         TestContext.Check(log.Contains("hello world v2", StringComparison.OrdinalIgnoreCase),
             $"[toolsfull:adjust] segundo commit com mensagem 'hello world v2' (log: {log.Trim().Replace("\n", " / ")})");
 
-        if (proj is not null)
         {
-            var (code, outp) = Run("dotnet", dir, 240, "run", "--project", proj, "-v", "q");
+            var (code, outp) = RunApp(dir);
             TestContext.Check(code == 0 && outp.Contains(MsgV2, StringComparison.Ordinal),
                 $"[toolsfull:adjust] app recompila e exibe '{MsgV2}' (rc={code}, saida='{TrechoTexto(outp)}')");
         }
