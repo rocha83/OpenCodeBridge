@@ -21,10 +21,9 @@ internal static class E2EBeltsBuildTests
 
     static void Log(string msg) { Console.WriteLine(msg); Console.Out.Flush(); }
 
-    // Falha de formato/transporte do upstream nao e falha de assertiva. O retry
-    // e limitado a DUAS tentativas: a segunda leva um nudge curto (texto unico do
-    // Core) porque reenviar o mesmo historico as cegas repete o defeito. Cobre
-    // 500 peg-gemma4 e o 502 upstream_aborted (conexao encerrada no meio).
+    // Falha de formato/transporte do upstream nao e falha de assertiva: uma
+    // segunda tentativa com o MESMO corpo, sem injetar mensagem no tunel
+    // (invariante docs/TUNEL-LLAMA.md). Cobre 500 peg-gemma4 e 502 upstream_aborted.
     static async Task<JsonObject> PostChat(string key, int turn, JsonObject body, string toolName)
     {
         for (int attempt = 0; attempt < 2; attempt++)
@@ -32,19 +31,11 @@ internal static class E2EBeltsBuildTests
             try { return await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", body); }
             catch (Exception ex) when (attempt == 0 && IsUpstreamFormatFailure(ex))
             {
-                Log($"  [belt-build:{key}] turno {turn}: {FirstLine(ex.Message)} — nudge 1/1 (tool={toolName})");
-                var msgs = body["messages"]?.AsArray()
-                    ?? throw new InvalidOperationException("historico sem messages no nudge de formato");
-                msgs.Add(new JsonObject
-                {
-                    ["role"] = "user",
-                    ["content"] = global::Rochas.OpenCodeBridge.Core.RetryNudge.Abort
-                        + $" Reemita UMA tool call {toolName} com JSON completo e valido."
-                });
+                Log($"  [belt-build:{key}] turno {turn}: {FirstLine(ex.Message)} — retry 1/1 (tool={toolName})");
                 await Task.Delay(1000);
             }
         }
-        throw new InvalidOperationException($"POST chat falhou apos nudge de formato (turno={turn}, tool={toolName})");
+        throw new InvalidOperationException($"POST chat falhou apos retry de transporte (turno={turn}, tool={toolName})");
     }
 
     /// <summary>500 de parser (peg-gemma4) ou 502 de aborto do upstream.</summary>
@@ -103,10 +94,9 @@ internal static class E2EBeltsBuildTests
                 int totalChars = 0;
                 int lastFiles = 0;
                 int stall = 0;
-                int nudges = 0;
-                // Watchers extras: a roxa alterna prosa e write; 10 turnos/2
-                // nudges cortavam uma recuperação legítima. O aceite continua
-                // >=3 arquivos e >500 chars reais em disco.
+                // Sem nudge no cliente (docs/TUNEL-LLAMA.md): turno sem tool call
+                // ou com args invalidos encerra a coleta e o aceite decide
+                // (>=3 arquivos e >500 chars reais em disco).
                 for (int turn = 0; turn < 14 && filesCreated < 8; turn++)
                 {
                     var r = await PostChat(key, turn,
@@ -117,12 +107,8 @@ internal static class E2EBeltsBuildTests
                     var calls = msg?["tool_calls"]?.AsArray();
                     if (calls is null || calls.Count == 0)
                     {
-                        Log($"  [belt-build:{key}] turno {turn}: sem tools (chars={content.Length}) — nudge {nudges + 1}");
-                        history.Add(new JsonObject { ["role"]="assistant", ["content"]=content });
-                        if (nudges >= 4) { Log($"  [belt-build:{key}] sem tools apos 4 nudges, encerrando"); break; }
-                        nudges++;
-                        history.Add(new JsonObject { ["role"]="user", ["content"]="Pouca fala, mais construcao: voce respondeu com texto mas NAO chamou a tool write. OBRIGATORIO agora: chame a tool write com path e content para criar o proximo arquivo real (.cs/.sql/.tsx). Nao explique, apenas chame write." });
-                        continue;
+                        Log($"  [belt-build:{key}] turno {turn}: sem tools (chars={content.Length}) — encerrando sem nudge");
+                        break;
                     }
                     // Parse primeiro: tool call truncada/invalida nao entra no historico.
                     // Reenviar JSON quebrado ao llama costuma virar 500 peg-gemma4.
@@ -145,13 +131,9 @@ internal static class E2EBeltsBuildTests
                     }
                     if (badArgs)
                     {
-                        Log($"  [belt-build:{key}] turno {turn}: tool call com args invalidos/truncados — nudge");
-                        nudges++;
-                        if (nudges > 4) { Log($"  [belt-build:{key}] args invalidos apos 4 nudges, encerrando"); break; }
-                        history.Add(new JsonObject { ["role"]="user", ["content"]="Sua ultima tool call veio com JSON invalido ou truncado. Reemita UMA tool call write com JSON completo: path string e content string. Nao inclua texto fora do JSON." });
-                        continue;
+                        Log($"  [belt-build:{key}] turno {turn}: tool call com args invalidos/truncados — encerrando sem nudge");
+                        break;
                     }
-                    nudges = 0;
                     bool progressed = false;
                     int wroteNow = 0;
                     var echo = new JsonArray();

@@ -1,0 +1,1 @@
+crie uma subpasta na pasta atual e dentro dela crie um projeto .net console usando o template padrao do dotnet, imprimindo 'hello world' no log do console. rode o projeto para provar que imprime hello world. trabalhe dentro da pasta enunciada acima, faca uso efetivo de tools com dialogo sucinto com o usuario a cada passo antes de executar a tool.

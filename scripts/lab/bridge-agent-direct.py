@@ -17,6 +17,7 @@ Saida: /tmp/opencode/direct-<ts>/ (workspace) + transcript.jsonl + run.log
 
 import argparse
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -27,6 +28,10 @@ from pathlib import Path
 BRIDGE = "http://127.0.0.1:4124"
 KEY = "guest@123"
 MODEL = "Gemma4-E4B-GK-Q4"
+
+# Guarda do piloto (mesma ideia da belt do mini-bridge-python): comando
+# destrutivo nao roda, volta como FAIL para o modelo.
+UNSAFE = re.compile(r"\b(sudo|mkfs|shutdown|reboot)\b|rm\s+-rf\s+/|:\s*\(\s*\)\s*\{")
 
 # Enunciado literal do operador (2026-11-07). Nao editar sem ordem explicita.
 ENUNCIADO = (
@@ -148,7 +153,10 @@ def execute(root: Path, name: str, args: dict):
             p.write_text(cur.replace(old, new, 1), encoding="utf-8")
             return True, f"ok: {args['path']} editado"
         if name == "shell":
-            r = subprocess.run(["bash", "-lc", args["command"]], cwd=str(root),
+            cmd = args["command"]
+            if UNSAFE.search(cmd):
+                return False, "bloqueado: comando sensivel (guarda do piloto)"
+            r = subprocess.run(["bash", "-lc", cmd], cwd=str(root),
                                capture_output=True, text=True, timeout=600)
             out = (r.stdout + r.stderr)[:4000]
             return r.returncode == 0, out
@@ -175,6 +183,8 @@ def main():
                     help="step do painel de enunciado/respostas (compartilhe entre rodadas paralelas)")
     ap.add_argument("--stop-on-repeat", type=int, default=0,
                     help="encerra apos N tool calls identicas seguidas (0 = desligado)")
+    ap.add_argument("--check-run", type=int, default=1,
+                    help="executa o artefato no fim e exige 'hello brazil' (1 = ligado)")
     a = ap.parse_args()
 
     prompt = Path(a.prompt_file).read_text(encoding="utf-8").strip() if a.prompt_file else ENUNCIADO
@@ -199,7 +209,6 @@ def main():
 
     messages = [{"role": "user", "content": prompt}]
     transcript.write(json.dumps({"role": "user", "content": prompt}, ensure_ascii=False) + "\n")
-    nudges = 0
     calls_total = 0
     error = ""
     last_sig, repeat = "", 0
@@ -242,16 +251,11 @@ def main():
         transcript.write(json.dumps(keep, ensure_ascii=False) + "\n")
 
         if not calls:
-            if nudges >= 3:
-                log("(sem tool call 4x: encerrando)")
-                break
-            nudges += 1
-            nudge = "Continue: execute a proxima acao do enunciado com uma tool call agora."
-            messages.append({"role": "user", "content": nudge})
-            transcript.write(json.dumps({"role": "user", "content": nudge}, ensure_ascii=False) + "\n")
-            continue
+            # Sem nudge no cliente (docs/TUNEL-LLAMA.md): turno sem tool call
+            # encerra o loop; o veredito sai do artefato.
+            log("(sem tool call: encerrando sem nudge)")
+            break
 
-        nudges = 0
         for c in calls:
             fn = c.get("function") or {}
             name = fn.get("name") or ""
@@ -307,6 +311,30 @@ def main():
         checks.append((f"2+ commits ({n})", n >= 2))
     checks.append(("arquivo de historico",
                    any(x.is_file() and "histor" in x.name.lower() for x in root.rglob("*"))))
+    # Prova de execucao (ideia da belt do mini-bridge-python): o artefato tem
+    # que rodar e imprimir 'hello brazil', nao so existir no disco.
+    run_out = ""
+    if a.check_run:
+        cmd = None
+        cwd = str(root)
+        if proj is not None:
+            cmd = ["dotnet", "run", "--project", str(proj)]
+            cwd = str(proj.parent)
+        else:
+            mains = sorted(root.rglob("main.py"))
+            if mains:
+                cmd = ["python3", str(mains[0])]
+                cwd = str(mains[0].parent)
+        if cmd is not None:
+            try:
+                rr = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=180)
+                run_out = (rr.stdout + rr.stderr).strip()[:600]
+                log(f"execucao {' '.join(cmd[:2])}: exit={rr.returncode}\n  {run_out[:400]}")
+            except Exception as e:
+                run_out = f"{type(e).__name__}: {e}"
+                log(f"execucao falhou: {run_out}")
+        checks.append(("artefato executa e imprime 'hello brazil'",
+                       "hello brazil" in run_out.lower()))
     ok = all(v for _, v in checks) and not error
     if error:
         log(f"erro nao tratado no loop: {error}")

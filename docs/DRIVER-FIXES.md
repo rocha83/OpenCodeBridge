@@ -2479,3 +2479,52 @@ bater o teto — não era incompreensão, era impossibilidade de encerrar.
 
 **Prova.** Repo final com `Program.cs` = `Console.WriteLine("Hello World v2");`
 e commits `hello world console` / `hello world v2`; sonda sem nenhuma linha.
+
+## 2026-11-07 — Túnel do llama é exclusivo do core; nudges do cliente removidos
+
+**Medido.** O `TestContext.ToolAgent` injetava mensagem `user` no túnel quando um
+turno terminava sem tool call (`TCTX_NUDGES`, default 4): variantes git-aware
+("próximo passo do fluxo"), turno vazio e "a tarefa ainda não está concluída".
+Isso aparecia no Grafana como mensagem extra no request e mascarava o modelo.
+
+**Decisão (arquitetura).** Só a bridge/core compõe o que vai ao llama. Teste,
+Web UI, Grafana e scripts são clientes/observadores. Documentado em todos os
+`.md` do repo (bloco `INVARIANTE-TUNEL-LLAMA:v1`) e na fonte única
+`docs/TUNEL-LLAMA.md`.
+
+**Correção.**
+
+1. `TestContext.ToolAgent`: nudge/continuation prompt removido; turno sem tool
+   call encerra o loop (`TCTX_NUDGES` deixou de existir).
+2. `E2EBeltsBuildTests`, `E2EBeltsTests` (scripter) e `E2EFrontPipeTests`:
+   empurrões/re-nudges removidos; o veredito sai do artefato.
+3. Harness/coerção continuam só na bridge (`main_harness`, tails,
+   `coerce_text_tools`, `coerce_narrated`, `degenerate_retry`).
+
+**Tools-full fatiado.** `e-tools-full-create` (projeto console + `Program.cs`
+com `hello world` + git init/config/add/commit) e `e-tools-full-update`
+(acha o `Program.cs` nomeado, troca para `hello brazil`, recompila, 2º commit e
+`historico` com o git log). Continuidade por handoff em
+`/tmp/opencode/toolsfull-chain/handoff.txt`.
+
+| step | antes (combinado) | agora (fatiado, sem nudge) |
+|---|---|---|
+| create | 190–255s FAIL | PASS 38s (20 calls) |
+| update | — | PASS 18s (10 calls) |
+
+**Prova.** `Program.cs` = `Console.WriteLine("hello brazil");`, 2+ commits,
+`historico` com o log e `dotnet run` imprimindo `hello brazil`.
+
+
+<!-- INVARIANTE-TUNEL-LLAMA:v1 -->
+## Invariante — túnel de stream do llama é exclusivo da bridge/core
+
+**Somente a bridge (`Rochas.OpenCodeBridge`, camada Core) fala com o llama-server.** Testes (`Rochas.OpenCodeBridge.Test`), `mini-bridge-python`, Web UI, Grafana e scripts são clientes/observadores: não injetam, não reescrevem, não "cutucam" e não reordenam mensagens dentro do túnel.
+
+- Cliente envia a **requisição** (`/v1/chat/completions`, `/v1/responses`); o stream do modelo volta repassado **sem edição** pelo core.
+- Proibido no cliente: nudge/continuation prompt, injeção de "próximo passo", reescrita de turno, reordenação ou truncamento de histórico.
+- Harness e coerção (`main_harness`, tails, `coerce_text_tools`, `coerce_narrated`, `degenerate_retry`) vivem **só** na bridge/core, atrás de flag.
+- Comportamento de teste se ajusta por **enunciado** ou **flag da bridge** — nunca editando o conteúdo do túnel no cliente.
+- Nudges de continuação do `TestContext.ToolAgent` foram **removidos em 2026-11-07** (`TCTX_NUDGES` não existe mais): turno sem tool call encerra o loop e o veredito sai do artefato.
+- Fonte única: `docs/TUNEL-LLAMA.md`.
+

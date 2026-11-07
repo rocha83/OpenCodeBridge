@@ -373,6 +373,10 @@ internal static class Program
             TestContext.Run("E-devpipe-tools", E2EDevPipeTests.DevPipeTools);
             // Teste de tools completo nos 2 modelos (GPU1 E4B-Q4 + GPU2 E4B-Q3) em paralelo.
             TestContext.Run("E-tools-full", E2EToolsFullTests.FullTools);
+            // Fatiado (2026-11-07): create e update em testes separados, com
+            // continuidade pelo handoff do artefato (/tmp/opencode/toolsfull-chain).
+            TestContext.Run("E-tools-full-create", E2EToolsFullTests.FullToolsCreate);
+            TestContext.Run("E-tools-full-update", E2EToolsFullTests.FullToolsUpdate);
             TestContext.Run("E-devpipe-infra", E2EDevPipeTests.DevPipeInfra);
             if (TestContext.NoVision)
                 Console.WriteLine("SKIP E-devpipe-vision (upstream sem mmproj)");

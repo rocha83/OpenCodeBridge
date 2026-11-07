@@ -924,8 +924,12 @@ internal sealed class WarTemplate : CircuitTemplate
                 {
                     yield return StepBridge(driver, $"e-responses-tools-{mode}", mode,
                         new[] { "--only", "=E-responses-tools" });
-                    yield return StepBridge(driver, $"e-tools-full-{mode}", mode,
-                        new[] { "--only", "=E-tools-full" });
+                    // tools-full fatiado (2026-11-07): create e update em steps
+                    // separados; a continuidade vem do handoff do artefato.
+                    yield return StepBridge(driver, "e-tools-full-create", mode,
+                        new[] { "--only", "=E-tools-full-create" });
+                    yield return StepBridge(driver, "e-tools-full-update", mode,
+                        new[] { "--only", "=E-tools-full-update" });
                     // Ordem preservada: trilha Build primeiro, trilha Orch depois.
                     foreach (string belt in new[] { "azul", "verde" })
                         yield return StepBridge(driver, $"e-belts-{belt}-build-{mode}", mode,

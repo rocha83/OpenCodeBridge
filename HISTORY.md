@@ -5506,3 +5506,38 @@ O Q4 Base estourava o slot (142701 > 131072) sem o guard disparar: `--context-to
 passou para o `ContextGuard` (`Compact`, 95% do ctx por-slot) — o `MainHarness` fica só
 com o enunciado. Cliente compacta antes de cada request e no 413; `CsSyntaxRepair.TryRepair`
 fecha `CS1513` deterministicamente. Detalhe e prova: `docs/DRIVER-FIXES.md` #56.
+
+## Túnel do llama é exclusivo do core; nudges do cliente removidos (2026-11-07)
+
+Só a bridge/core compõe o que vai ao llama-server. Teste, Web UI, Grafana e
+scripts são clientes/observadores: não injetam, não reescrevem e não cutucam
+mensagens no túnel. O invariante está documentado em **todos** os `.md` do repo
+(bloco `INVARIANTE-TUNEL-LLAMA:v1`) e na fonte única `docs/TUNEL-LLAMA.md`.
+
+Removidos: nudge de continuação do `TestContext.ToolAgent` (3 variantes,
+`TCTX_NUDGES` default 4 — a mensagem "A tarefa ainda nao esta concluida..."
+vista no Grafana), re-nudges do `E2EBeltsBuildTests`/`E2EBeltsTests` (scripter)
+e o empurrão do `E2EFrontPipeTests`. Turno sem tool call agora encerra o loop e
+o veredito sai do artefato (FAIL honesto). Harness/coerção continuam só na
+bridge, atrás de flag.
+
+Tools-full fatiado em `e-tools-full-create` + `e-tools-full-update` com
+continuidade por handoff (`/tmp/opencode/toolsfull-chain/handoff.txt`):
+create PASS 38s, update PASS 18s (antes: combinado 190–255s FAIL). Prova:
+`Program.cs` = `Console.WriteLine("hello brazil");`, 2+ commits, `historico`
+com o git log e `dotnet run` imprimindo `hello brazil`. Detalhe:
+`docs/DRIVER-FIXES.md` (2026-11-07).
+
+
+<!-- INVARIANTE-TUNEL-LLAMA:v1 -->
+## Invariante — túnel de stream do llama é exclusivo da bridge/core
+
+**Somente a bridge (`Rochas.OpenCodeBridge`, camada Core) fala com o llama-server.** Testes (`Rochas.OpenCodeBridge.Test`), `mini-bridge-python`, Web UI, Grafana e scripts são clientes/observadores: não injetam, não reescrevem, não "cutucam" e não reordenam mensagens dentro do túnel.
+
+- Cliente envia a **requisição** (`/v1/chat/completions`, `/v1/responses`); o stream do modelo volta repassado **sem edição** pelo core.
+- Proibido no cliente: nudge/continuation prompt, injeção de "próximo passo", reescrita de turno, reordenação ou truncamento de histórico.
+- Harness e coerção (`main_harness`, tails, `coerce_text_tools`, `coerce_narrated`, `degenerate_retry`) vivem **só** na bridge/core, atrás de flag.
+- Comportamento de teste se ajusta por **enunciado** ou **flag da bridge** — nunca editando o conteúdo do túnel no cliente.
+- Nudges de continuação do `TestContext.ToolAgent` foram **removidos em 2026-11-07** (`TCTX_NUDGES` não existe mais): turno sem tool call encerra o loop e o veredito sai do artefato.
+- Fonte única: `docs/TUNEL-LLAMA.md`.
+

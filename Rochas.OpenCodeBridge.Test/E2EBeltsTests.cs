@@ -391,17 +391,10 @@ internal static class E2EBeltsTests
                         var calls = msg?["tool_calls"]?.AsArray();
                         if (calls is null || calls.Count == 0)
                         {
-                            // Prosa sem tool_call no primeiro turno acontece (medido em
-                            // belts-orch roxa 19:56: 0 scripts em 26s). Watchers: ate
-                            // 4 nudges; o aceite continua exigindo .sh valido no
-                            // `bash -n` (execucao fica fora deste teste).
-                            if (turn < 4)
-                            {
-                                Log($"  [belt:{key}] scripter sem tool (chars={Str(msg?["content"]).Length}) — nudge {turn + 1}");
-                                sh.Add(new JsonObject { ["role"]="assistant", ["content"]=Str(msg?["content"]) });
-                                sh.Add(new JsonObject { ["role"]="user", ["content"]="Voce nao chamou nenhuma tool. Use write AGORA para gravar " + safeTitle + ".sh (bash puro, no maximo 80 linhas) e responda apenas SCRIPTER-OK." });
-                                continue;
-                            }
+                            // Prosa sem tool_call: sem nudge no cliente
+                            // (docs/TUNEL-LLAMA.md). Encerra e o aceite decide
+                            // (.sh valido no `bash -n`, execucao fora do teste).
+                            Log($"  [belt:{key}] scripter sem tool (chars={Str(msg?["content"]).Length}) — encerrando sem nudge");
                             break;
                         }
                         var echo = new JsonArray();

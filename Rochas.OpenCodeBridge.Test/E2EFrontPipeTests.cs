@@ -419,7 +419,7 @@ internal static class E2EFrontPipeTests
         double tokensOut = 0, secs = 0;
         string final = "";
         int exit = 3;
-        int nudges = 0;
+        // Sem nudge/empurrao no cliente (docs/TUNEL-LLAMA.md).
         // Erro da tool no FIM do ultimo turno: o turno sem tool call precisa dele
         // para nao aceitar "OK" com o artefato intacto (reset no topo do laco
         // zerava o valor antes da checagem e o empurrao nunca disparava).
@@ -452,35 +452,9 @@ internal static class E2EFrontPipeTests
 
             if (calls is null || calls.Count == 0)
             {
-                // Tool falhou no turno anterior e o modelo encerrou sem corrigir: o
-                // artefato continua no estado anterior. Um empurrao com o erro exato
-                // (a mensagem da tool ja' ensina a forma certa) antes de aceitar o
-                // "OK" — o Q3 fechava a fase sem aplicar nada (E-front-edit-react,
-                // `oldString ocorre 2x`, 2026-10-30).
-                // Turno vazio depois de um `read` (1 token, sem tool call) tambem
-                // encerrava a fase sem aplicar nada: o Q3 de 2026-10-30 respondeu
-                // vazio e o CSS ficou intacto (delta 2 virava antes=18 depois=18).
-                bool stalled = pendingError.Length == 0
-                    && content.Trim().Length == 0
-                    && stillPending?.Invoke() == true;
-                if ((pendingError.Length > 0 || stalled) && nudges < 1)
-                {
-                    nudges++;
-                    Console.WriteLine(pendingError.Length > 0
-                        ? $"  [front:{label}] tool falhou e o modelo encerrou: empurrao com o erro exato"
-                        : $"  [front:{label}] turno vazio e o artefato intacto: empurrao para aplicar a mudanca");
-                    history.Add(new JsonObject
-                    {
-                        ["role"] = "user",
-                        ["content"] = pendingError.Length > 0
-                            ? "A ultima tool FALHOU: " + pendingError
-                                + "\nAplique a correcao agora e so' entao responda OK."
-                            : "Sua resposta veio vazia e o arquivo NAO foi alterado. "
-                                + "Aplique a mudanca pedida com uma tool call (`edit` no trecho exato, "
-                                + "ou `write` com o arquivo inteiro) e so' entao responda OK."
-                    });
-                    continue;
-                }
+                // Sem empurrao no cliente (docs/TUNEL-LLAMA.md): turno sem tool
+                // call encerra a fase e o aceite do artefato decide. A mensagem
+                // final do modelo vai como esta (sem injecao de erro/cutucada).
                 final = content;
                 exit = Regex.IsMatch(content, @"\[tool_call\]|tool_call>|(?m)^\s*(read|write|edit|glob)\s*\(") ? 4 : 0;
                 break;

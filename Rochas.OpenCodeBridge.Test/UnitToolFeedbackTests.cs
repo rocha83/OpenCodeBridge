@@ -53,11 +53,16 @@ internal static class UnitToolFeedbackTests
             var ctx = new ToolContext { WorkspaceRoot = ws, Role = "build", TimeoutSeconds = 60 };
             var git = new GitToolHandler();
 
+            // Cadeia git e' EXECUTADA suboperacao por suboperacao (2026-11-07,
+            // docs/DRIVER-FIXES.md): no diretorio sem repo o `add .` falha e a
+            // cadeia para ali, devolvendo o erro do git + a DICA de fluxo. O que
+            // nao pode voltar e' a recusa antiga "uma suboperacao por chamada".
             var chain = git.Handle("""{"command":"add . && commit -m \"x\"","path":"."}""", ctx);
-            TestContext.Check(!chain.Success && chain.Error.Contains("uma suboperação por chamada", StringComparison.Ordinal),
-                "git com cadeia devolve a forma certa (err: " + chain.Error + ")");
-            TestContext.Check(chain.Error.Contains("git commit -m", StringComparison.Ordinal),
-                "git com cadeia ensina o commit isolado");
+            TestContext.Check(!chain.Success && !chain.Error.Contains("uma suboperação por chamada", StringComparison.Ordinal),
+                "git com cadeia executa suboperacao por vez (sem recusar a cadeia) (err: " + chain.Error + ")");
+            TestContext.Check(chain.Error.Contains("not a git repository", StringComparison.Ordinal)
+                    || chain.Error.Contains("init", StringComparison.Ordinal),
+                "git com cadeia para no primeiro erro e devolve a DICA de fluxo (err: " + chain.Error + ")");
 
             // `;` dentro de aspas e' mensagem, nao cadeia: o passo segue adiante.
             var semi = git.Handle("""{"command":"commit -m \"a; b\"","path":"."}""", ctx);

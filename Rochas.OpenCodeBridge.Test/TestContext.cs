@@ -897,14 +897,10 @@ internal static class TestContext
         var journeyCalls = new JsonArray();
         var journeySw = Stopwatch.StartNew();
         string text = "";
-        int nudges = 0;
-        // Ultimo subcomando git que deu certo: a cutucada cita o PROXIMO passo do
-        // fluxo (ToolHelp.GitFlow), em vez de uma frase generica sem alvo.
-        string lastGitSub = "";
-        // 4 = cadeia write->init->add->commit->log do E-tools-full; o modelo
-        // encerra o turno depois do resultado da tool e cada continuacao custa 1.
-        // TCTX_NUDGES=0 desliga a insistencia (observar o modelo cru).
-        int MaxNudges = int.TryParse(Environment.GetEnvironmentVariable("TCTX_NUDGES"), out int mn) ? mn : 4;
+        // INVARIANTE DO TUNEL (docs/TUNEL-LLAMA.md): o cliente de teste NAO
+        // injeta mensagem no tunel do modelo. Sem nudge/continuation prompt:
+        // turno que termina sem tool call encerra o loop e o veredito sai do
+        // artefato (FAIL honesto), nunca de uma cutucada do harness de teste.
         for (int step = 0; step < max; step++)
         {
             // Forma Responses vem do Core; o teste nao reescreve schema nem faz
@@ -926,7 +922,8 @@ internal static class TestContext
             // 2026-11-06: com harness minimo e sem cutucada ele para depois do
             // `git add .` e nunca emite o commit. O cliente forca a call em
             // TODAS as rodadas; so' a ultima fica `auto` para caber a resposta
-            // final em prosa. Nao ha nudge de texto (TCTX_NUDGES=0).
+            // final em prosa. Sem nudge de texto: turno sem call encerra o loop
+            // (invariante docs/TUNEL-LLAMA.md — o cliente nao injeta no tunel).
             // A/B do tool_choice: `required` em TODO turno faz o modelo que ja'
             // terminou degenerar — sem call legal ele repete o relatorio ate' o
             // teto (medido 2026-11-07: 12 turnos de 768 tok no L2 112622, sonda
@@ -995,9 +992,6 @@ internal static class TestContext
                         calls.Add($"{name}({args}) -> {(callOk ? "ok" : "fail")}");
                         JsonNode? callArgs = null;
                         try { callArgs = JsonNode.Parse(args); } catch { }
-                        if (callOk && name == "git")
-                            lastGitSub = (callArgs?["command"]?.GetValue<string>() ?? "")
-                                .TrimStart().Split(' ')[0];
                         journeyCalls.Add(new JsonObject
                         {
                             ["round"] = step,
@@ -1022,29 +1016,10 @@ internal static class TestContext
                     }
                 }
             }
-            // Progresso = este response EMITIU uma tool call (nao o ultimo item
-            // do input, que fica true apos a 1a call mesmo com output vazio).
-            bool hasCall = emittedCall;
-            if (!hasCall)
-            {
-                // Turno sem tool call: o modelo parou no meio da tarefa ou so
-                // resumiu em prosa. Cutucada explicita de continuacao (ate
-                // MaxNudges) e o loop segue; sem isso o caso morre sem artefato
-                // e o veredito vira FAIL por silencio do modelo.
-                if (nudges >= MaxNudges) break;
-                nudges++;
-                string nextStep = global::Rochas.OpenCodeBridge.Core.ToolHelp.NextGitStep(lastGitSub);
-                input.Add(new JsonObject
-                {
-                    ["role"] = "user",
-                    ["content"] = nextStep.Length > 0
-                        ? $"O turno parou sem tool call depois de `git {lastGitSub}`. Proximo passo do fluxo: {nextStep}. Um passo por chamada."
-                        : nudges == 1 && text.Trim().Length == 0
-                            ? "Voce nao emitiu nenhuma tool call. Execute a tarefa agora com as tools (write/edit/read); nao responda em prosa."
-                            : "A tarefa ainda nao esta concluida. Continue de onde parou e finalize todos os passos do enunciado com as tools; nao responda em prosa."
-                });
-                continue;
-            }
+            // Turno sem tool call: o modelo parou em prosa (ou vazio). O cliente
+            // NAO injeta continuacao no tunel (invariante docs/TUNEL-LLAMA.md):
+            // encerra aqui e o veredito e' decidido pelo artefato.
+            if (!emittedCall) break;
         }
         journeySw.Stop();
         if (JourneyDir is { Length: > 0 })

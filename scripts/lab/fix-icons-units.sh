@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Aplica o estado canônico de ícones, scripts e units do OpenCodeBridge.
 # Fonte: docs/11-FIX-ICONES-UNITS.md. Rode como root; NÃO reinicia serviços.
-# Política: bridges :4124/:4125/:4126 --main-harness 0; Web UI :4130 Core on.
+# Política: bridges :4124/:4126 --main-harness 0; Web UI :4130 Core on.
 set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -22,10 +22,8 @@ backup_one "/usr/local/bin/svc-common.sh"
 backup_one "/usr/local/bin/svc-firewall.sh"
 backup_one "/usr/local/bin/seed-bridge-probe.sh"
 backup_one "/usr/local/bin/start-llama-gpu.sh"
-backup_one "/usr/local/bin/start-llama-gpu2.sh"
 backup_one "/usr/local/bin/start-llama-cpu-forced.sh"
 backup_one "/usr/local/bin/start-bridge-gpu.sh"
-backup_one "/usr/local/bin/start-bridge-gpu2.sh"
 backup_one "/usr/local/bin/start-bridge-cpu-forced.sh"
 backup_one "/usr/local/bin/start-opencodeweb.sh"
 backup_one "/usr/local/bin/start-ocagent-web.sh"
@@ -34,19 +32,15 @@ backup_one "/usr/local/bin/start-opencode-web-moe.sh"
 backup_one "/usr/local/bin/start-opencode-app.sh"
 backup_one "/usr/local/bin/start-bridge-web.sh"
 backup_one "/etc/systemd/system/llama-gpu.service"
-backup_one "/etc/systemd/system/llama-gpu2.service"
 backup_one "/etc/systemd/system/llama-cpu-forced.service"
 backup_one "/etc/systemd/system/bridge-gpu.service"
-backup_one "/etc/systemd/system/bridge-gpu2.service"
 backup_one "/etc/systemd/system/bridge-cpu-forced.service"
 backup_one "/etc/systemd/system/bridge-web.service"
 backup_one "/etc/systemd/system/opencode-web-dev.service"
 backup_one "/etc/systemd/system/opencode-web-moe.service"
 backup_one "/home/mint/Desktop/Llama GPU.desktop"
-backup_one "/home/mint/Desktop/Llama GPU2.desktop"
 backup_one "/home/mint/Desktop/Llama CPU Forced.desktop"
 backup_one "/home/mint/Desktop/OpenCode Bridge GPU.desktop"
-backup_one "/home/mint/Desktop/OpenCode Bridge GPU2.desktop"
 backup_one "/home/mint/Desktop/OpenCode Bridge CPU Forced.desktop"
 backup_one "/home/mint/Desktop/OpenCode.desktop"
 backup_one "/home/mint/Desktop/OpenCode Web.desktop"
@@ -493,43 +487,6 @@ zenity --info --text="Llama GPU Q4 :$SVC_PORT | ctx $SVC_CTX | $SVC_SLOTS x $((S
 exit 0
 __FIX_ICONES_EOF_7F3A__
 
-cat > "/usr/local/bin/start-llama-gpu2.sh" <<'__FIX_ICONES_EOF_7F3A__'
-#!/bin/bash
-# Llama GPU2 (Gemma4 E4B QAT abliterated i1-IQ3_XXS, ctx 128k, padrao GPU -ngl 99): porta padrao 4110
-# Roda 100% GPU (-ngl 99). CPU puro e servico distinto: "Llama CPU Forced" (start-llama-cpu-forced.sh, :4120).
-source /usr/local/bin/svc-common.sh
-DEFAULTS=0
-[ "${1:-}" = "--defaults" ] && DEFAULTS=1
-[ "$DEFAULTS" -eq 1 ] || check_running "llama-gpu2" "4110" "Llama GPU2 E4B UD-Q3" || exit 0
-if [ "$DEFAULTS" -eq 1 ] || [ -z "${DISPLAY:-}" ] || ! command -v zenity >/dev/null 2>&1; then
-  SVC_PORT=4110; SVC_USER=mint; SVC_PASS=guest@123; SVC_CTX=114688; SVC_SLOTS=2
-  export SVC_PORT SVC_USER SVC_PASS SVC_CTX SVC_SLOTS
-  command -v fw_allow >/dev/null 2>&1 && fw_allow "$SVC_PORT" tcp "Llama GPU2 E4B UD-Q3"
-else
-  ask_llama_config "4110" "114688" "2" "Llama GPU2 E4B UD-Q3" || exit 0
-fi
-MODEL_FILE="${LLAMA_CPU_MODEL:-/opt/models/huihui-gemma4-e4b-abliterated/Huihui-gemma-4-E4B-it-qat-q4_0-unquantized-abliterated.i1-IQ3_XXS.gguf}"
-MMPROJ_FILE=""
-THREADS=$(nproc 2>/dev/null || echo 2)
-[ "$THREADS" -lt 2 ] && THREADS=2
-echo "$SVC_PASS" | sudo -S bash -c "
-  if [ ! -f \"$MODEL_FILE\" ]; then
-    /usr/local/bin/zenity --error --text=\"Modelo ausente: $MODEL_FILE\" 2>/dev/null
-    exit 1
-  fi
-  printf '[Unit]\nDescription=llama-server GPU2 (Gemma4 E4B UD-Q3, ctx %s, -np %s, turbo3)\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser=root\nEnvironment=HOME=/root\nEnvironment=TURBO_AUTO_ASYMMETRIC=0\nExecStart=/usr/local/bin/llama-server --alias Gemma4-E4B-UD-Q3 --host 127.0.0.1 --port %s -m $MODEL_FILE -c %s -np %s -ngl 99 -fa on -t $THREADS -tb $THREADS --cache-type-k turbo3 --cache-type-v turbo3 --no-host --load-mode none --op-offload -ot ^per_layer_token_embd.*=CUDA_Host,^token_embd.*=CUDA_Host,^blk.*=CUDA0,^output.*=CUDA0,^output_norm.*=CUDA0,^per_layer_model_proj.*=CUDA0,^per_layer_proj_norm.*=CUDA0 --prio 1 --prio-batch 1 --repeat-penalty 1.08 --dry-multiplier 0.0 --dry-penalty-last-n 1024 --api-key %s\nRestart=on-failure\nRestartSec=10\nTimeoutStartSec=300\nTimeoutStopSec=30\n\n[Install]\nWantedBy=multi-user.target\n' \"$SVC_CTX\" \"$SVC_SLOTS\" \"$SVC_PORT\" \"$SVC_CTX\" \"$SVC_SLOTS\" \"$SVC_PASS\" > /etc/systemd/system/llama-gpu2.service
-  systemctl daemon-reload
-  systemctl restart llama-gpu2
-"
-# Aguarda modelo carregar (ate 5 min) via /health
-for i in $(seq 1 60); do
-  sleep 5
-  curl -sf --max-time 3 "http://127.0.0.1:${SVC_PORT}/health" >/dev/null 2>&1 && break
-  [ "$i" -eq 60 ] && zenity --error --text="llama-gpu2 >5min (journalctl -u llama-gpu2)" 2>/dev/null && exit 1
-done
-zenity --info --text="Llama GPU2 UD-Q3 :$SVC_PORT | ctx $SVC_CTX | $SVC_SLOTS x $((SVC_CTX/SVC_SLOTS)) | CUDA" 2>/dev/null
-exit 0
-__FIX_ICONES_EOF_7F3A__
 
 cat > "/usr/local/bin/start-llama-cpu-forced.sh" <<'__FIX_ICONES_EOF_7F3A__'
 #!/bin/bash
@@ -601,37 +558,6 @@ else
 fi
 __FIX_ICONES_EOF_7F3A__
 
-cat > "/usr/local/bin/start-bridge-gpu2.sh" <<'__FIX_ICONES_EOF_7F3A__'
-#!/bin/bash
-# OpenCode Bridge GPU2 (:4125 -> llama :4110 Gemma4-E4B-UD-Q3): reinicia o unit
-source /usr/local/bin/svc-common.sh
-DEFAULTS=0
-[ "${1:-}" = "--defaults" ] && DEFAULTS=1
-if [ "$DEFAULTS" -eq 1 ] || [ -z "${DISPLAY:-}" ] || ! command -v zenity >/dev/null 2>&1; then
-  SVC_PORT=4125; SVC_UPSTREAM_URL=http://127.0.0.1:4110; SVC_UPSTREAM_KEY=guest@123; SVC_MODEL=Gemma4-E4B-UD-Q3; SVC_CTX=57344; SVC_USER=mint; SVC_PASS=guest@123; SVC_DIAG=ligado
-  export SVC_PORT SVC_UPSTREAM_URL SVC_UPSTREAM_KEY SVC_MODEL SVC_CTX SVC_USER SVC_PASS SVC_DIAG
-  command -v fw_allow >/dev/null 2>&1 && fw_allow "$SVC_PORT" tcp "OpenCode Bridge GPU2"
-else
-  ask_bridge_config "4125" "http://127.0.0.1:4110" "Gemma4-E4B-UD-Q3" "57344" "OpenCode Bridge GPU2" || exit 0
-fi
-DIAG_FLAGS=$(bridge_diag_flags)
-TAIL_FLAGS=$(bridge_tail_flags)
-echo "$SVC_PASS" | sudo -S bash -c "
-printf '[Unit]\nDescription=OpenCode Bridge GPU2 (:4125 -> llama :4110 Gemma4-E4B-UD-Q3)\nAfter=network-online.target llama-gpu2.service\nWants=network-online.target llama-gpu2.service\n\n[Service]\nType=simple\nUser=root\nEnvironment=HOME=/root\nWorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0\nExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port %s --upstream %s --model %s --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens %s --api-key %s --passthrough-responses true --main-harness 0 %s --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512 %s --log /tmp/bridge-gpu2.log\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' \"$SVC_PORT\" \"$SVC_UPSTREAM_URL\" \"$SVC_MODEL\" \"$SVC_CTX\" \"$SVC_UPSTREAM_KEY\" \"$TAIL_FLAGS\" \"$DIAG_FLAGS\" > /etc/systemd/system/bridge-gpu2.service
-  systemctl daemon-reload
-  systemctl restart bridge-gpu2
-"
-sleep 3
-STATE=$(systemctl is-active bridge-gpu2 2>/dev/null || echo "desconhecido")
-HEALTH=$(curl -s --max-time 3 http://127.0.0.1:${SVC_PORT}/api/status 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('model','?') + ' bypass=' + str(d.get('passthrough_responses','?')))" 2>/dev/null || echo "sem resposta")
-if [ "$STATE" = "active" ]; then
-  zenity --info --text="Bridge GPU2 ativa [:${SVC_PORT} -> ${SVC_UPSTREAM_URL}]\n$HEALTH" 2>/dev/null
-  exit 0
-else
-  zenity --error --text="Bridge GPU2: $STATE\n$HEALTH" 2>/dev/null
-  exit 1
-fi
-__FIX_ICONES_EOF_7F3A__
 
 cat > "/usr/local/bin/start-bridge-cpu-forced.sh" <<'__FIX_ICONES_EOF_7F3A__'
 #!/bin/bash
@@ -835,7 +761,7 @@ case "$ROLE" in
     UNIT=opencode-web-dev.service
     DEF_PORT=4210
     DEF_PASS='Developer.PCSS@LVP006'
-    DEF_BRIDGE=4125
+    DEF_BRIDGE=4126
     RUN_USER=dev-agent
     TITLE='OpenCode Web dev-agent (4210)'
     ;;
@@ -843,7 +769,7 @@ case "$ROLE" in
     UNIT=opencode-web-moe.service
     DEF_PORT=4220
     DEF_PASS='Convidado.PCSS@LVP006'
-    DEF_BRIDGE=4125
+    DEF_BRIDGE=4126
     RUN_USER=moe-agent
     TITLE='OpenCode Web moe-agent (4220)'
     ;;
@@ -979,24 +905,24 @@ __FIX_ICONES_EOF_7F3A__
 cat > "/usr/local/bin/start-opencode-app.sh" <<'__FIX_ICONES_EOF_7F3A__'
 #!/bin/bash
 # OpenCode (TUI): SEM gatilho de bridges no icone do desktop — abre o terminal e
-# usa a config assada no opencode.json (GPU1 :4124 / GPU2 :4125). Sobrescreve so por
-# env: OPENCODE_API_KEY, OPENCODE_GPU_BASE, OPENCODE_CPU_BASE (legado; GPU2).
+# usa a config assada no opencode.json (GPU1 :4124 / CPU :4126). Sobrescreve so por
+# env: OPENCODE_API_KEY, OPENCODE_GPU_BASE, OPENCODE_CPU_BASE (CPU forced).
 source /usr/local/bin/svc-common.sh
 
 API_KEY="${OPENCODE_API_KEY:-$SVC_DEF_PASS}"
 GPU_BASE="${OPENCODE_GPU_BASE:-http://127.0.0.1:4124}"
-CPU_BASE="${OPENCODE_CPU_BASE:-http://127.0.0.1:4125}"
+CPU_BASE="${OPENCODE_CPU_BASE:-http://127.0.0.1:4126}"
 
 # Reserva: chaves no ambiente que abre o opencode (o serve ressuscitado nasce sem elas).
 ESC_KEY=${API_KEY//\'/\'\\\'\'}
-gnome-terminal --working-directory="$HOME" --title="OpenCode (GPU1 $GPU_BASE / GPU2 $CPU_BASE)" \
+gnome-terminal --working-directory="$HOME" --title="OpenCode (GPU1 $GPU_BASE / CPU $CPU_BASE)" \
   -- bash -c "export OPENAI_API_KEY='$ESC_KEY' LLAMA_API_KEY='$ESC_KEY'; opencode; exec bash" 2>/dev/null &
 __FIX_ICONES_EOF_7F3A__
 
 cat > "/usr/local/bin/start-bridge-web.sh" <<'__FIX_ICONES_EOF_7F3A__'
 #!/bin/bash
 # Bridge Web :4130 (Rochas.OpenCodeBridge.Web): UI + nucleo in-process (Core).
-# NAO conhece porta de bridge: garante os llama upstream (:4100/:4110) e sobe a Web.
+# NAO conhece porta de bridge: garante os llama upstream (:4100 GPU / :4120 CPU) e sobe a Web.
 source /usr/local/bin/svc-common.sh
 # 0) Porta da propria Web UI (padrao 4130; janela pede, campo pre-preenchido).
 DEF_WEB_PORT=4130
@@ -1025,10 +951,10 @@ URL="http://127.0.0.1:$WEB_PORT"
 has_systemd() { [ -d /run/systemd/system ] && systemctl is-system-running >/dev/null 2>&1; }
 llama_ok() { curl -sf --max-time 2 "http://127.0.0.1:$1/health" >/dev/null 2>&1; }
 
-# 1) Upstreams llama (Q4 :4100 / Q3 :4110): sobem se faltarem (root via zenity).
+# 1) Upstreams llama (Q4 :4100 / CPU :4120): sobem se faltarem (root via zenity).
 need_llama=0
 llama_ok 4100 || need_llama=1
-llama_ok 4110 || need_llama=1
+llama_ok 4120 || need_llama=1
 if [ "$need_llama" -eq 1 ] && [ "$(id -u)" -ne 0 ]; then
   if [ -n "${DISPLAY:-}" ] && command -v zenity >/dev/null 2>&1; then
     PASS=$(zenity --password --title="Senha do sudo ($(id -un))" 2>/dev/null) || exit 0
@@ -1038,11 +964,10 @@ if [ "$need_llama" -eq 1 ] && [ "$(id -u)" -ne 0 ]; then
 fi
 if has_systemd; then
   llama_ok 4100 || sudo -n systemctl start llama-gpu 2>/dev/null || sudo systemctl start llama-gpu 2>/dev/null || true
-  llama_ok 4110 || sudo -n systemctl start llama-gpu2 2>/dev/null || sudo systemctl start llama-gpu2 2>/dev/null || true
 fi
-for _ in $(seq 1 90); do llama_ok 4100 && llama_ok 4110 && break; sleep 2; done
+for _ in $(seq 1 90); do llama_ok 4100 && break; sleep 2; done
 llama_ok 4100 || zenity --warning --text="llama Q4 (:4100) fora do ar - a Web sobe, mas agentes Q4 falham." 2>/dev/null || true
-llama_ok 4110 || zenity --warning --text="llama Q3 (:4110) fora do ar - a Web sobe, mas agentes Q3 falham." 2>/dev/null || true
+llama_ok 4120 || zenity --warning --text="llama CPU (:4120) fora do ar - a Web sobe, mas agentes CPU falham." 2>/dev/null || true
 
 # 2) Web UI (:4130)
 if curl -s --max-time 3 "$URL" >/dev/null 2>&1; then
@@ -1063,7 +988,7 @@ fi
 for _ in $(seq 1 30); do curl -s --max-time 2 "$URL" >/dev/null 2>&1 && break; sleep 1; done
 if curl -s --max-time 3 "$URL" >/dev/null 2>&1; then
   (xdg-open "$URL" 2>/dev/null || sensible-browser "$URL" 2>/dev/null || true) &
-  zenity --info --text="Bridge Web em $URL (llama :4100/:4110)" 2>/dev/null || true
+  zenity --info --text="Bridge Web em $URL (llama :4100/:4120)" 2>/dev/null || true
 else
   LOG=$(tail -n 5 /tmp/bridge-web.log 2>/dev/null)
   zenity --error --text="Bridge Web fora do ar ($URL).\n$LOG" 2>/dev/null || echo "ERRO: $URL fora do ar" >&2
@@ -1092,26 +1017,6 @@ TimeoutStopSec=60
 WantedBy=multi-user.target
 __FIX_ICONES_EOF_7F3A__
 
-cat > "/etc/systemd/system/llama-gpu2.service" <<'__FIX_ICONES_EOF_7F3A__'
-[Unit]
-Description=llama-server GPU2 (Gemma4 E4B UD-Q3, ctx 114688, -np 2, turbo3)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=root
-Environment=HOME=/root
-Environment=TURBO_AUTO_ASYMMETRIC=0
-ExecStart=/usr/local/bin/llama-server --alias Gemma4-E4B-UD-Q3 --host 127.0.0.1 --port 4110 -m /opt/models/huihui-gemma4-e4b-abliterated/Huihui-gemma-4-E4B-it-qat-q4_0-unquantized-abliterated.i1-IQ3_XXS.gguf -c 114688 -np 2 -ngl 99 -fa on -t 4 -tb 4 --cache-type-k turbo3 --cache-type-v turbo3 --no-host --load-mode none --op-offload -ot ^per_layer_token_embd.*=CUDA_Host,^token_embd.*=CUDA_Host,^blk.*=CUDA0,^output.*=CUDA0,^output_norm.*=CUDA0,^per_layer_model_proj.*=CUDA0,^per_layer_proj_norm.*=CUDA0 --prio 1 --prio-batch 1 --repeat-penalty 1.08 --dry-multiplier 0.0 --dry-penalty-last-n 1024 --api-key guest@123
-Restart=on-failure
-RestartSec=10
-TimeoutStartSec=300
-TimeoutStopSec=30
-
-[Install]
-WantedBy=multi-user.target
-__FIX_ICONES_EOF_7F3A__
 
 cat > "/etc/systemd/system/llama-cpu-forced.service" <<'__FIX_ICONES_EOF_7F3A__'
 [Unit]
@@ -1153,24 +1058,6 @@ RestartSec=10
 WantedBy=multi-user.target
 __FIX_ICONES_EOF_7F3A__
 
-cat > "/etc/systemd/system/bridge-gpu2.service" <<'__FIX_ICONES_EOF_7F3A__'
-[Unit]
-Description=OpenCode Bridge GPU2 (:4125 -> llama :4110 Gemma4-E4B-UD-Q3)
-After=network-online.target llama-gpu2.service
-Wants=network-online.target llama-gpu2.service
-
-[Service]
-Type=simple
-User=root
-Environment=HOME=/root
-WorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0
-ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port 4125 --upstream http://127.0.0.1:4110 --model Gemma4-E4B-UD-Q3 --thinking events --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens 57344 --api-key guest@123 --passthrough-responses true --main-harness 0 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-retry 1 --coerce-text-tools 0 --coerce-narrated 0 --tool-strategy 0 --anti-repeat-window 512  --log /tmp/bridge-gpu2.log
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-__FIX_ICONES_EOF_7F3A__
 
 cat > "/etc/systemd/system/bridge-cpu-forced.service" <<'__FIX_ICONES_EOF_7F3A__'
 [Unit]
@@ -1194,8 +1081,8 @@ __FIX_ICONES_EOF_7F3A__
 cat > "/etc/systemd/system/bridge-web.service" <<'__FIX_ICONES_EOF_7F3A__'
 [Unit]
 Description=Bridge Web UI (:4130 Rochas.OpenCodeBridge.Web)
-After=network-online.target llama-gpu.service llama-gpu2.service
-Wants=network-online.target llama-gpu.service llama-gpu2.service
+After=network-online.target llama-gpu.service
+Wants=network-online.target llama-gpu.service
 
 [Service]
 Type=simple
@@ -1270,25 +1157,12 @@ Categories=Development;System;
 StartupNotify=true
 __FIX_ICONES_EOF_7F3A__
 
-cat > "/home/mint/Desktop/Llama GPU2.desktop" <<'__FIX_ICONES_EOF_7F3A__'
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Llama GPU2 E4B UD-Q3
-Comment=Llama GPU2 (Gemma4 E4B UD-Q3 IQ3_XXS, ctx 131072, -ngl 99, KV turbo3, embd/per-layer no host) na porta 4110
-Exec=/usr/local/bin/start-llama-gpu2.sh
-Icon=/usr/share/pixmaps/svc-gear.svg
-Terminal=false
-Categories=Development;System;
-StartupNotify=true
-__FIX_ICONES_EOF_7F3A__
 
 cat > "/home/mint/Desktop/Llama CPU Forced.desktop" <<'__FIX_ICONES_EOF_7F3A__'
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=Llama CPU Forced E4B
-Comment=Bancada CPU pura (Gemma4 E4B Q4 base + mmproj, ctx 131072, -ngl 0) na porta 4120 - nao confundir com o GPU2
 Exec=/usr/local/bin/start-llama-cpu-forced.sh
 Icon=/usr/share/pixmaps/svc-gear.svg
 Terminal=false
@@ -1309,18 +1183,6 @@ Categories=Development;System;
 StartupNotify=true
 __FIX_ICONES_EOF_7F3A__
 
-cat > "/home/mint/Desktop/OpenCode Bridge GPU2.desktop" <<'__FIX_ICONES_EOF_7F3A__'
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=OpenCode Bridge GPU2
-Comment=Reinicia a bridge C# :4125 -> llama :4110 (Gemma4-E4B-UD-Q3, passthrough Responses, anti-repeat, context-guard 131072)
-Exec=/usr/local/bin/start-bridge-gpu2.sh
-Icon=/usr/share/icons/Mint-Y/apps/48/Terminal.png
-Terminal=false
-Categories=Development;System;
-StartupNotify=true
-__FIX_ICONES_EOF_7F3A__
 
 cat > "/home/mint/Desktop/OpenCode Bridge CPU Forced.desktop" <<'__FIX_ICONES_EOF_7F3A__'
 [Desktop Entry]
@@ -1340,7 +1202,7 @@ cat > "/home/mint/Desktop/OpenCode.desktop" <<'__FIX_ICONES_EOF_7F3A__'
 Version=1.0
 Type=Application
 Name=OpenCode
-Comment=OpenCode TUI (bridge GPU :4124 / CPU :4125, bypass llama)
+Comment=OpenCode TUI (bridge GPU :4124 / CPU :4126, bypass llama)
 Exec=/usr/local/bin/start-opencode-app.sh
 Icon=/usr/share/icons/Mint-Y/apps/48/Terminal.png
 Terminal=false
@@ -1352,7 +1214,7 @@ cat > "/home/mint/Desktop/OpenCode Web.desktop" <<'__FIX_ICONES_EOF_7F3A__'
 [Desktop Entry]
 Type=Application
 Name=OpenCode Web
-Comment=Iniciar OpenCode Web (bridge GPU :4124 / CPU :4125, bypass llama)
+Comment=Iniciar OpenCode Web (bridge GPU :4124 / CPU :4126, bypass llama)
 Exec=/usr/local/bin/start-opencodeweb.sh
 Icon=/usr/share/icons/Mint-Y/apps/48/Terminal.png
 Terminal=false
@@ -1446,14 +1308,10 @@ chmod 0755 "/usr/local/bin/seed-bridge-probe.sh"
 chown root:root "/usr/local/bin/seed-bridge-probe.sh"
 chmod 0755 "/usr/local/bin/start-llama-gpu.sh"
 chown root:root "/usr/local/bin/start-llama-gpu.sh"
-chmod 0755 "/usr/local/bin/start-llama-gpu2.sh"
-chown root:root "/usr/local/bin/start-llama-gpu2.sh"
 chmod 0755 "/usr/local/bin/start-llama-cpu-forced.sh"
 chown root:root "/usr/local/bin/start-llama-cpu-forced.sh"
 chmod 0755 "/usr/local/bin/start-bridge-gpu.sh"
 chown root:root "/usr/local/bin/start-bridge-gpu.sh"
-chmod 0755 "/usr/local/bin/start-bridge-gpu2.sh"
-chown root:root "/usr/local/bin/start-bridge-gpu2.sh"
 chmod 0755 "/usr/local/bin/start-bridge-cpu-forced.sh"
 chown root:root "/usr/local/bin/start-bridge-cpu-forced.sh"
 chmod 0755 "/usr/local/bin/start-opencodeweb.sh"
@@ -1470,14 +1328,10 @@ chmod 0755 "/usr/local/bin/start-bridge-web.sh"
 chown root:root "/usr/local/bin/start-bridge-web.sh"
 chmod 0644 "/etc/systemd/system/llama-gpu.service"
 chown root:root "/etc/systemd/system/llama-gpu.service"
-chmod 0644 "/etc/systemd/system/llama-gpu2.service"
-chown root:root "/etc/systemd/system/llama-gpu2.service"
 chmod 0644 "/etc/systemd/system/llama-cpu-forced.service"
 chown root:root "/etc/systemd/system/llama-cpu-forced.service"
 chmod 0644 "/etc/systemd/system/bridge-gpu.service"
 chown root:root "/etc/systemd/system/bridge-gpu.service"
-chmod 0644 "/etc/systemd/system/bridge-gpu2.service"
-chown root:root "/etc/systemd/system/bridge-gpu2.service"
 chmod 0644 "/etc/systemd/system/bridge-cpu-forced.service"
 chown root:root "/etc/systemd/system/bridge-cpu-forced.service"
 chmod 0644 "/etc/systemd/system/bridge-web.service"
@@ -1488,14 +1342,10 @@ chmod 0644 "/etc/systemd/system/opencode-web-moe.service"
 chown root:root "/etc/systemd/system/opencode-web-moe.service"
 chmod 0755 "/home/mint/Desktop/Llama GPU.desktop"
 chown mint:mint "/home/mint/Desktop/Llama GPU.desktop"
-chmod 0755 "/home/mint/Desktop/Llama GPU2.desktop"
-chown mint:mint "/home/mint/Desktop/Llama GPU2.desktop"
 chmod 0755 "/home/mint/Desktop/Llama CPU Forced.desktop"
 chown mint:mint "/home/mint/Desktop/Llama CPU Forced.desktop"
 chmod 0755 "/home/mint/Desktop/OpenCode Bridge GPU.desktop"
 chown mint:mint "/home/mint/Desktop/OpenCode Bridge GPU.desktop"
-chmod 0755 "/home/mint/Desktop/OpenCode Bridge GPU2.desktop"
-chown mint:mint "/home/mint/Desktop/OpenCode Bridge GPU2.desktop"
 chmod 0755 "/home/mint/Desktop/OpenCode Bridge CPU Forced.desktop"
 chown mint:mint "/home/mint/Desktop/OpenCode Bridge CPU Forced.desktop"
 chmod 0755 "/home/mint/Desktop/OpenCode.desktop"
@@ -1524,10 +1374,8 @@ bash -n "/usr/local/bin/svc-common.sh"
 bash -n "/usr/local/bin/svc-firewall.sh"
 bash -n "/usr/local/bin/seed-bridge-probe.sh"
 bash -n "/usr/local/bin/start-llama-gpu.sh"
-bash -n "/usr/local/bin/start-llama-gpu2.sh"
 bash -n "/usr/local/bin/start-llama-cpu-forced.sh"
 bash -n "/usr/local/bin/start-bridge-gpu.sh"
-bash -n "/usr/local/bin/start-bridge-gpu2.sh"
 bash -n "/usr/local/bin/start-bridge-cpu-forced.sh"
 bash -n "/usr/local/bin/start-opencodeweb.sh"
 bash -n "/usr/local/bin/start-ocagent-web.sh"

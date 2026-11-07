@@ -241,6 +241,204 @@ internal static class E2EToolsFullTests
         Console.WriteLine($"  [toolsfull:adjust] ok ({calls.Count} calls, texto={text.Length} chars)");
     }
 
+    // ---- tools-full FATIADO (2026-11-07) -------------------------------------
+    // O enunciado longo (criar + versionar + editar + versionar + historico) num
+    // ciclo curto fazia o E4B regredir o arquivo e nunca commitar. O mesmo
+    // roteiro vira dois testes com continuidade explicita: o create entrega o
+    // artefato e grava o caminho no handoff; o update reabre o MESMO Program.cs
+    // pelo nome, troca a mensagem, commita e grava o git log em `historico`.
+    const string MsgCreate = "hello world";
+    const string MsgUpdate = "hello brazil";
+    const string HandoffPath = "/tmp/opencode/toolsfull-chain/handoff.txt";
+
+    static void WriteHandoff(string dir)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(HandoffPath)!);
+        File.WriteAllText(HandoffPath, dir);
+    }
+
+    static string? ReadHandoff()
+    {
+        try { return File.Exists(HandoffPath) ? File.ReadAllText(HandoffPath).Trim() : null; }
+        catch { return null; }
+    }
+
+    /// <summary>Arquivo nomeado no enunciado (ex.: Program.cs), fora de bin/obj.</summary>
+    static string? FindNamedFile(string dir, string name)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(dir, name, SearchOption.AllDirectories)
+                .Where(p => !p.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)
+                         && !p.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
+                .OrderBy(p => p.Length)
+                .FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Enunciado 1 — CRIA: projeto console C# (template padrao) com o arquivo
+    /// Program.cs exibindo 'hello world', compilado/executado, e o primeiro
+    /// commit no repositorio iniciado nesta pasta. O nome do arquivo esta no
+    /// enunciado; o passo 2 vai busca-lo por esse nome.
+    /// </summary>
+    static async Task CreateSplitAttempt(string dir, string feedback)
+    {
+        const string basePrompt =
+            "Trabalhe na pasta atual, que ja tem o projeto console em C# chamado App.csproj, com o codigo no " +
+            "arquivo Program.cs na raiz (template padrao do dotnet). O Program.cs deve exibir 'hello world' no " +
+            "log do console: compile e execute com o dotnet e confirme a mensagem. " +
+            "Inicialize um repositorio git nesta mesma pasta com git init, configure nome e email do usuario, " +
+            "adicione os novos arquivos e faca o primeiro commit. Confirme com git log. Nao encerre antes do commit. " +
+            "Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
+        string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
+
+        if (FindCsproj(dir) is null && CsFiles(dir).Length == 0)
+        {
+            Run("dotnet", dir, 180, "new", "console", "-n", "App", "-o", ".", "--force");
+            File.WriteAllText(Path.Combine(dir, "Program.cs"),
+                "Console.WriteLine(\"hello world\");\n");
+        }
+
+        string parent = Path.GetDirectoryName(dir)!;
+        var antes = Directory.EnumerateFileSystemEntries(parent)
+            .Select(p => Path.GetFileName(p)!).ToHashSet(StringComparer.Ordinal);
+
+        var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir, stack: "C#/.NET");
+
+        string[] fora = Directory.EnumerateFileSystemEntries(parent)
+            .Where(p => Path.GetFileName(p) is string n && !antes.Contains(n)
+                        && !string.Equals(Path.GetFullPath(p), Path.GetFullPath(dir), StringComparison.Ordinal))
+            .Select(p => Path.GetFileName(p)!).ToArray();
+        TestContext.Check(fora.Length == 0,
+            $"[toolsfull:create] nada criado fora da pasta corrente (em {parent}: {string.Join(", ", fora)})");
+
+        TestContext.Check(FindCsproj(dir) is not null || CsFiles(dir).Length > 0,
+            $"[toolsfull:create] app C# na pasta de trabalho (arquivos: " +
+            $"{string.Join(", ", Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Select(p => Path.GetFileName(p)).Take(12))})");
+        TestContext.Check(FindNamedFile(dir, "Program.cs") is not null,
+            $"[toolsfull:create] arquivo nomeado Program.cs na pasta (arquivos: " +
+            $"{string.Join(", ", CsFiles(dir).Select(p => Path.GetFileName(p)))})");
+
+        string fonte = string.Join("\n", CsFiles(dir).Select(ReadText));
+        TestContext.Check(fonte.Contains(MsgCreate, StringComparison.Ordinal),
+            $"[toolsfull:create] fonte exibe '{MsgCreate}' (arquivos: {string.Join(", ", CsFiles(dir).Select(p => Path.GetFileName(p)))})");
+
+        TestContext.Check(Directory.Exists(Path.Combine(dir, ".git")),
+            $"[toolsfull:create] repositorio git iniciado na pasta de trabalho " +
+            $"(subpastas: {string.Join(", ", Directory.GetDirectories(dir, "*", SearchOption.AllDirectories).Select(Path.GetFileName))})");
+
+        var (commits, log) = GitLog(dir);
+        TestContext.Check(commits.Length >= 1,
+            $"[toolsfull:create] primeiro commit no repositorio (git log: {log.Trim().Replace("\n", " / ")}; calls={string.Join(";", calls)})");
+
+        {
+            var (code, outp) = RunApp(dir);
+            TestContext.Check(code == 0 && outp.Contains(MsgCreate, StringComparison.Ordinal),
+                $"[toolsfull:create] app compila e exibe '{MsgCreate}' (rc={code}, saida='{TrechoTexto(outp)}')");
+        }
+
+        if (TestContext.Mode == "bridge")
+        {
+            TestContext.Check(calls.Count > 0, $"[toolsfull:create] tools executadas (calls={calls.Count})");
+            bool used(string p) => calls.Any(c => c.StartsWith(p));
+            TestContext.Check(used("write(") || used("edit(") || used("shell("),
+                $"[toolsfull:create] fonte gravada por tool (calls={string.Join(";", calls)})");
+            TestContext.Check(calls.Any(c => c.StartsWith("shell(") && c.Contains("dotnet")),
+                $"[toolsfull:create] compilacao/execucao com dotnet por tool (calls={string.Join(";", calls)})");
+            TestContext.Check(used("git(") || calls.Any(c => c.StartsWith("shell(") && c.Contains("git")),
+                $"[toolsfull:create] git executado por tool (calls={string.Join(";", calls)})");
+        }
+        Console.WriteLine($"  [toolsfull:create] ok ({calls.Count} calls, texto={text.Length} chars)");
+    }
+
+    /// <summary>
+    /// Enunciado 2 — ATUALIZA: busca o Program.cs nomeado no enunciado 1 no MESMO
+    /// repositorio, troca a mensagem para 'hello brazil', recompila/executa,
+    /// faz o segundo commit e grava o git log no arquivo `historico`.
+    /// </summary>
+    static async Task UpdateSplitAttempt(string dir, string feedback)
+    {
+        const string basePrompt =
+            "Na pasta atual existe o projeto console em C# (App.csproj) com o codigo no arquivo Program.cs na raiz, " +
+            "ja compilado e commitado com a mensagem 'hello world'. Abra esse Program.cs e troque a mensagem exibida " +
+            "de 'hello world' para 'hello brazil', mantendo o resto do programa. " +
+            "Recompile e execute de novo para confirmar 'hello brazil' na saida. Adicione a mudanca e faca um novo " +
+            "git commit com a alteracao. Depois grave a saida do git log no arquivo 'historico' na raiz desta pasta. " +
+            "Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
+        string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
+
+        var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir, stack: "C#/.NET");
+
+        string? nomeado = FindNamedFile(dir, "Program.cs");
+        TestContext.Check(nomeado is not null,
+            $"[toolsfull:update] arquivo nomeado Program.cs localizado (arquivos: " +
+            $"{string.Join(", ", CsFiles(dir).Select(p => Path.GetFileName(p)))})");
+
+        string fonte = string.Join("\n", CsFiles(dir).Select(ReadText));
+        TestContext.Check(fonte.Contains(MsgUpdate, StringComparison.Ordinal),
+            $"[toolsfull:update] fonte passa a exibir '{MsgUpdate}' (conteudo='{TrechoTexto(fonte)}')");
+
+        {
+            var (code, outp) = RunApp(dir);
+            TestContext.Check(code == 0 && outp.Contains(MsgUpdate, StringComparison.Ordinal),
+                $"[toolsfull:update] app recompila e exibe '{MsgUpdate}' (rc={code}, saida='{TrechoTexto(outp)}')");
+        }
+
+        var (commits, log) = GitLog(dir);
+        TestContext.Check(commits.Length >= 2,
+            $"[toolsfull:update] 2 commits no repo (git log: {log.Trim().Replace("\n", " / ")}; calls={string.Join(";", calls)})");
+
+        string? hist = Directory.EnumerateFiles(dir, "*histor*", SearchOption.AllDirectories)
+            .Where(p => !p.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)
+                     && !p.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
+            .OrderBy(p => p.Length).FirstOrDefault();
+        TestContext.Check(hist is not null,
+            $"[toolsfull:update] arquivo de historico na pasta (arquivos: " +
+            $"{string.Join(", ", Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Select(p => Path.GetFileName(p)).Take(14))})");
+        string histTxt = ReadText(hist!);
+        TestContext.Check(histTxt.Contains("hello", StringComparison.OrdinalIgnoreCase),
+            $"[toolsfull:update] historico contem o git log (conteudo='{TrechoTexto(histTxt)}')");
+
+        if (TestContext.Mode == "bridge")
+        {
+            bool used(string p) => calls.Any(c => c.StartsWith(p));
+            TestContext.Check(used("edit(") || used("write("),
+                $"[toolsfull:update] arquivo ajustado por tool (calls={string.Join(";", calls)})");
+            // "Busque o arquivo nomeado": a tool tem que referenciar Program.cs.
+            // O read nao e' exigido: o edit so' acerta o oldString se o modelo
+            // souber o conteudo (medido em 2026-11-07: acertou sem read).
+            TestContext.Check(calls.Any(c => c.Contains("Program.cs")),
+                $"[toolsfull:update] arquivo nomeado Program.cs referenciado na tool (calls={string.Join(";", calls)})");
+            TestContext.Check(calls.Any(c => c.StartsWith("shell(") && c.Contains("dotnet")),
+                $"[toolsfull:update] recompilacao com dotnet por tool (calls={string.Join(";", calls)})");
+            TestContext.Check(used("git(") || calls.Any(c => c.StartsWith("shell(") && c.Contains("git")),
+                $"[toolsfull:update] git executado por tool (calls={string.Join(";", calls)})");
+        }
+        Console.WriteLine($"  [toolsfull:update] ok ({calls.Count} calls, texto={text.Length} chars)");
+    }
+
+    /// <summary>Step WAR `e-tools-full-create`: entrega o artefato e grava o handoff.</summary>
+    public static async Task FullToolsCreate()
+    {
+        string dir = await TestContext.AgentAttempts("toolsfull:create", "/tmp/opencode/toolsfull-create", 3,
+            CreateSplitAttempt, retryHint: "na pasta de trabalho, com o projeto console C# criado pelo proprio dotnet (compilando e executando).");
+        WriteHandoff(dir);
+        Console.WriteLine($"[toolsfull:create] artefato em {dir} (handoff: {HandoffPath})");
+    }
+
+    /// <summary>Step WAR `e-tools-full-update`: continua o artefato do create (handoff).</summary>
+    public static async Task FullToolsUpdate()
+    {
+        string? dir = ReadHandoff();
+        if (dir is null || !Directory.Exists(dir) || !Directory.Exists(Path.Combine(dir, ".git")))
+            throw new Exception("sem artefato do create: rode e-tools-full-create antes (handoff " + HandoffPath + ")");
+        await TestContext.RetrySame("toolsfull:update", dir, 3,
+            UpdateSplitAttempt, retryHint: "no MESMO repositorio e no MESMO Program.cs (troque a mensagem, commite e gere o historico).");
+        Console.WriteLine($"[toolsfull:update] artefato atualizado em {dir}");
+    }
+
     public static async Task FullTools()
     {
         // Dois enunciados sequenciais no MESMO diretorio: o primeiro cria,
