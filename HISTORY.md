@@ -1,5 +1,22 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Degenerados do E-tools-full: sonda, git em cadeia e `until-commit` (2026-11-07, sessão 55)
+
+**Motivo.** 12 turnos de 768 tokens por rodada, sem conteúdo no log. A sonda
+(`--degenerate-probe`) mostrou o modelo repetindo o próprio relatório de
+conclusão: ele terminava e não conseguia encerrar.
+
+**Decisões.** (1) `GitToolHandler` aceita `&&`/`;` e executa em sequência — a
+recusa fazia o E4B repetir a mesma call; (2) `tool_choice=required` só até um
+`git commit` dar certo, depois `auto` (`TCTX_TOOL_CHOICE=until-commit`, novo
+default); (3) sonda de stream ligada na unit em
+`/tmp/opencode/bridge-degenerate.jsonl`, com content 8k, reasoning 4k,
+tool_calls e as 4 últimas mensagens do request.
+
+**Medições.** `required` = 12 degenerados, PASS 190s; `auto` = 0 degenerados,
+FAIL 84s (para antes do commit); `until-commit` + cadeia = **0 degenerados,
+PASS 45s**. Detalhe na entrada 77 de `docs/DRIVER-FIXES.md`.
+
 ## `E-tools-full`: hello world C# no lugar do data.txt/clima (2026-11-07, sessão 54)
 
 **Motivo.** O step era o único vermelho do L2 e o FAIL era do enunciado: o passo

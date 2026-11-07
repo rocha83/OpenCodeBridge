@@ -2439,3 +2439,43 @@ enunciado, não o modelo.
 **O que fica.** O step mede o loop de dev (rodar, versionar, editar, recompilar,
 versionar), não scaffold de linguagem. `RunApp` aceita projeto ou arquivo único —
 as duas formas são "console C# compilado pelo dotnet".
+
+## 77. Git em cadeia + `tool_choice` até o commit: 12 degenerados → 0, 190s → 45s (2026-11-07)
+
+**Sintoma.** O `E-tools-full` pagava 12 turnos degenerados de 768 tokens por
+rodada. O log só mostrava `finish=length` e `has_tool_call=false`; o conteúdo do
+turno que degenerou nunca era amostrado.
+
+**Sonda.** `--degenerate-probe <arquivo>` grava 1 linha JSONL por turno com
+`content` (8k), `reasoning` (4k), `tool_calls` (args 2k), `finish_reason`,
+tokens e as 4 últimas mensagens do request. Com ela o texto apareceu: o modelo
+**repetia o próprio relatório de conclusão** (~8x o mesmo bloco de `git log`) até
+bater o teto — não era incompreensão, era impossibilidade de encerrar.
+
+**Causa dupla.**
+
+1. `TestContext` mandava `tool_choice=required` em todo turno. Com a tarefa
+   concluída e steps sobrando, o modelo não tinha call legal e não podia parar.
+2. `GitToolHandler` recusava cadeia (`add . && commit -m x`) por design. O E4B
+   escreve a cadeia naturalmente, recebia o ensinamento e **repetia a mesma
+   call** — no modo `required`, repetição vira anti-repeat + degenerado.
+
+**Correção.**
+
+1. `GitToolHandler` separa `&&`/`;` fora de aspas e executa suboperação por
+   suboperação no mesmo repo, parando no primeiro erro (pipe continua recusado,
+   cadeia > 6 recusada).
+2. `TCTX_TOOL_CHOICE=until-commit` (novo default): `required` só até um
+   `git commit` bem-sucedido, depois `auto`. Para steps sem commit o
+   comportamento é idêntico ao `required`.
+
+**Medições (step isolado, mesma bridge).**
+
+| `tool_choice` | degenerados | resultado |
+|---|---|---|
+| `required` | 12 × 768 tok | PASS 190s |
+| `auto` | 0 | FAIL 84s (para antes do 2º commit) |
+| `until-commit` + cadeia | 0 | **PASS 45s** (create 18 calls, adjust 10) |
+
+**Prova.** Repo final com `Program.cs` = `Console.WriteLine("Hello World v2");`
+e commits `hello world console` / `hello world v2`; sonda sem nenhuma linha.
