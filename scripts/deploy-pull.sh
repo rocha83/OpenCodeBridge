@@ -12,6 +12,10 @@ if ! git remote get-url persist >/dev/null 2>&1; then
   git remote add persist "$PERSIST"
 fi
 
+# O checkout vem do volume USB, que nao guarda bit de execucao: sem isto todo
+# chmod +x aparece como "alteracao local" e o deploy aborta.
+git config core.filemode false
+
 # Nunca reset --hard: o PROD so avanca por fast-forward/rebase do persistente.
 if [ -n "$(git status --porcelain)" ]; then
   echo "ERRO: $ROOT tem alteracao local; PROD e somente deploy (pull + rebuild)." >&2
