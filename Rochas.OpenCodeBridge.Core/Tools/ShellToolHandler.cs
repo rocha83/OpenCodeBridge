@@ -44,6 +44,7 @@ public sealed class ShellToolHandler : IToolHandler
         {
             if (!TryBuildArgv(argumentsJson, out string[] argv, out string why))
                 return WithCwd(ToolResult.Fail(why), context.WorkspaceRoot, context.WorkspaceRoot);
+            argv = RepairDotnetProjectFlag(argv, context);
             if (ProjectScaffoldBlocked(argv, context.WorkspaceRoot) is string blockedSingle)
                 return WithCwd(ToolResult.Fail(blockedSingle), context.WorkspaceRoot, context.WorkspaceRoot);
             if (ProjectPathBlocked(argv, context.WorkspaceRoot, context.WorkspaceRoot) is string missingProject)
@@ -71,6 +72,7 @@ public sealed class ShellToolHandler : IToolHandler
             }
             if (!TryBuildArgvFromCommand(p, out string[] argv, out string why))
                 return WithCwd(ToolResult.Fail(sb.Length > 0 ? sb.ToString() + "\n" + why : why), dir, context.WorkspaceRoot);
+            argv = RepairDotnetProjectFlag(argv, context);
             if (ProjectScaffoldBlocked(argv, dir) is string blockedStep)
                 return WithCwd(ToolResult.Fail(sb.Length > 0 ? sb.ToString() + "\n" + blockedStep : blockedStep), dir, context.WorkspaceRoot);
             if (ProjectPathBlocked(argv, dir, context.WorkspaceRoot) is string missingStep)
@@ -267,8 +269,35 @@ public sealed class ShellToolHandler : IToolHandler
         if (proj is null) return null;
         string full = Path.IsPathRooted(target) ? target : Path.Combine(dir, target);
         return $"'{target}' ja tem projeto ({proj}): nao crie outro. Edite o fonte existente e rode " +
-               $"`dotnet build --project {full}` ou `dotnet run --project {full}` " +
-               $"(com mais de um .csproj, passe o arquivo: --project {Path.Combine(full, proj)}).";
+               $"`dotnet build {proj}` ou `dotnet run --project {full}` " +
+               $"(com mais de um .csproj, passe o arquivo: {Path.Combine(full, proj)}).";
+    }
+
+    // `dotnet build --project App.csproj` nao existe (MSB1001): o E4B copia do
+    // `dotnet run --project` e repete a call ate' travar (medido 2026-11-07,
+    // E-tools-full 114446: build falhou 3x, nunca commitou). Reescreve para a
+    // forma posicional. So' `--project` (em build/test/publish/pack/restore);
+    // `-p` em build e' --property e nao pode ser tocado.
+    static string[] RepairDotnetProjectFlag(string[] argv, ToolContext ctx)
+    {
+        if (argv.Length < 3) return argv;
+        if (!Path.GetFileName(argv[0]).Equals("dotnet", StringComparison.OrdinalIgnoreCase)) return argv;
+        if (argv[1] is not ("build" or "test" or "publish" or "pack" or "restore")) return argv;
+        var outp = new List<string> { argv[0], argv[1] };
+        bool applied = false;
+        for (int i = 2; i < argv.Length; i++)
+        {
+            if (argv[i] == "--project" && i + 1 < argv.Length) { outp.Add(argv[i + 1]); i++; applied = true; continue; }
+            if (argv[i].StartsWith("--project=", StringComparison.Ordinal)) { outp.Add(argv[i]["--project=".Length..]); applied = true; continue; }
+            outp.Add(argv[i]);
+        }
+        if (!applied) return argv;
+        ctx.Log?.Invoke(new JsonObject
+        {
+            ["event"] = "shell_repair", ["applied"] = "dotnet_project_flag",
+            ["from"] = string.Join(" ", argv), ["to"] = string.Join(" ", outp)
+        });
+        return outp.ToArray();
     }
 
     // `dotnet run --project <arquivo>` com caminho que NAO existe: o console
