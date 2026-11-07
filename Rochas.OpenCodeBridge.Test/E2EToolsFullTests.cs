@@ -213,26 +213,28 @@ internal static class E2EToolsFullTests
         // ---------- enunciado unico em linguagem natural, tudo em sequencia ----------
         await dlg.Act(
             "Show. Agora faz tudo isso na pratica, nesta pasta, na ordem, um passo por chamada: " +
-            "configura a identidade local do git (user.name Teste e user.email teste@local); " +
-            "inicializa o git; cria o arquivo data.txt com a data de hoje do sistema e adiciona ele ao git; " +
+            "inicializa o git; configura a identidade local (user.name Teste e user.email teste@local); " +
+            "cria o arquivo data.txt com a data de hoje do sistema e adiciona ele ao git; " +
             "faz o commit com a mensagem 'data de hoje'; " +
             "cria a subpasta dados; busca o clima de Sao Paulo na URL " +
             "https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m " +
-            "e grava a temperatura em dados/clima.txt; " +
+            "e grava SO a temperatura em graus Celsius, no formato 24.3 C, em dados/clima.txt; " +
             "grava a data e a hora do sistema em dados/hora.txt; " +
-            "cria o app console hello com dotnet new console, deixa o Program.cs completo e valido " +
-            "imprimindo Hello World (com as chaves fechadas) e roda ele; " +
-            "compila e publica o hello; " +
-            "e no fim junta o hello compilado num zip chamado hello.zip — garante que compilou antes de zipar, " +
+            "cria o app console com dotnet new console -o hello, deixa hello/Program.cs completo e valido " +
+            "imprimindo Hello World e roda com dotnet run --project hello; " +
+            "publica com dotnet publish hello -c Release -o publish; " +
+            "e no fim junta o hello compilado num zip hello.zip — garante que compilou antes de zipar, " +
             "e confere o zip com unzip -t e unzip -l. " +
-            "Em cada arquivo grava SO o conteudo pedido (a temperatura no clima.txt; data e hora no hora.txt): " +
-            "nunca cole saida de comando, bloco de codigo ou mensagem de erro dentro do arquivo.");
+            "Em cada arquivo grava SO o conteudo pedido: nunca cole saida de comando, bloco de codigo " +
+            "ou mensagem de erro dentro do arquivo.", max: 40);
 
         // Aceite de tudo que a ordem pediu.
         Soft(Directory.Exists(Path.Combine(dir, ".git")), "1-git: repositorio git iniciado");
         string dataPath = Path.Combine(dir, "data.txt");
-        Soft(File.Exists(dataPath) && ReadText(dataPath).Contains(hoje, StringComparison.Ordinal),
-            $"2-data: data.txt com a data REAL ({hoje}) — conteudo='{Trecho(dataPath)}'");
+        string dataBody = ReadText(dataPath);
+        Soft(File.Exists(dataPath) && dataBody.Contains(hoje, StringComparison.Ordinal)
+             && !dataBody.Contains("[stderr]", StringComparison.Ordinal),
+            $"2-data: data.txt com a data REAL e sem lixo ({hoje}) — conteudo='{Trecho(dataPath)}'");
 
         var (c1, log1) = GitLog(dir);
         Soft(c1.Length >= 1 && log1.Contains("data de hoje", StringComparison.Ordinal),
@@ -241,13 +243,18 @@ internal static class E2EToolsFullTests
         Soft(Directory.Exists(Path.Combine(dir, "dados")), "4-subpasta: 'dados' criada");
 
         string climaPath = Path.Combine(dir, "dados", "clima.txt");
-        Soft(File.Exists(climaPath) && Regex.IsMatch(ReadText(climaPath), @"-?\d+([.,]\d+)?\s*(°|C\b|graus)", RegexOptions.IgnoreCase),
-            $"5-clima: temperatura em dados/clima.txt (conteudo='{Trecho(climaPath)}')");
+        string clima = ReadText(climaPath);
+        Soft(File.Exists(climaPath) && !clima.TrimStart().StartsWith("{", StringComparison.Ordinal)
+             && !clima.Contains("[stderr]", StringComparison.Ordinal)
+             && Regex.IsMatch(clima, @"-?\d+([.,]\d+)?\s*(°|C\b|graus)", RegexOptions.IgnoreCase),
+            $"5-clima: so a temperatura em dados/clima.txt (conteudo='{Trecho(climaPath)}')");
 
         string horaPath = Path.Combine(dir, "dados", "hora.txt");
         string hora = ReadText(horaPath);
-        Soft(File.Exists(horaPath) && hora.Contains(hoje, StringComparison.Ordinal) && Regex.IsMatch(hora, @"\d{1,2}:\d{2}"),
-            $"6-hora: data+hora reais em dados/hora.txt (conteudo='{Trecho(horaPath)}')");
+        Soft(File.Exists(horaPath) && hora.Contains(hoje, StringComparison.Ordinal)
+             && Regex.IsMatch(hora, @"\d{1,2}:\d{2}")
+             && !hora.Contains("[stderr]", StringComparison.Ordinal),
+            $"6-hora: data+hora reais e sem lixo em dados/hora.txt (conteudo='{Trecho(horaPath)}')");
 
         string proj = Path.Combine(dir, "hello");
         Soft(File.Exists(Path.Combine(proj, "hello.csproj")), "7-console: hello/hello.csproj criado");
