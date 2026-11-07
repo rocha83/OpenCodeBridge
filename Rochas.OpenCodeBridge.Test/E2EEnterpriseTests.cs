@@ -95,14 +95,23 @@ internal static class E2EEnterpriseTests
                 last = TextOf(r);
                 bool ok = contract(last);
                 if (ok) { pass++; if (firstPass.Length == 0) firstPass = last; }
-                else if (samples == 1) Console.WriteLine($"  [contract] {label}: nao atendido (len={last.Length})");
+                else if (samples == 1)
+                {
+                    // Uma amostra: devolve o texto REAL para o assert do cenario
+                    // apontar o motivo exato (transacao? detalhe?) + fail-dump.
+                    Console.WriteLine($"  [contract] {label}: nao atendido (len={last.Length})");
+                    FailDump(label, last);
+                }
             }
             if (samples > 1)
                 Console.WriteLine($"  [stability] {label} amostra {n}/{samples}: status={status} len={last.Length} ok={pass}");
         }
         if (samples > 1)
             Console.WriteLine($"  [stability] {label} taxa={pass}/{samples} (minimo {minPass})");
-        return (pass >= minPass ? firstPass : "", status);
+        // Abaixo do minimo em N>1 e' reprovacao explicita (nao "quase passou").
+        if (samples > 1 && pass < minPass)
+            TestContext.Check(false, $"{label} estabilidade {pass}/{samples} < minimo {minPass}");
+        return (samples == 1 ? last : firstPass, status);
     }
 
     /// <summary>
