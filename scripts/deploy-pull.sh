@@ -19,6 +19,9 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 git pull --rebase persist main
+# O volume USB nao guarda bit de execucao (todos os scripts vem 100644):
+# restaura o +x no PROD logo apos o pull, senao run-all-levels falha com rc=126.
+chmod +x scripts/*.sh scripts/war/*.sh scripts/diag/*.sh 2>/dev/null || true
 dotnet build Rochas.OpenCodeBridge.slnx -c Release --nologo -v:minimal
 # REGRA: rebuild exige restart da bridge (binario novo + pool HTTP). Zerar
 # contador NAO exige restart: POST /api/diag/reset?probe=1&files=1 zera os
