@@ -186,6 +186,11 @@ public static class HarnessTails
             string only = names.Contains("write", StringComparer.OrdinalIgnoreCase) ? "`write`" : "`edit`";
             built = built.Replace("`write`/`edit`", only, StringComparison.Ordinal);
         }
+        // Tabela de erros C#: o texto existia (CsErrorTableLine) mas nenhum ponto
+        // o anexava — o modelo repetia CS1056/CS0103 sem nunca ver a forma certa.
+        // Entra no loop de codigo (escrita + execucao), nao em pedido de leitura.
+        if (Satisfied(new[] { new[] { "write", "edit" }, new[] { "shell" } }, names))
+            built += " " + CsErrorTableLine;
         return built;
     }
 

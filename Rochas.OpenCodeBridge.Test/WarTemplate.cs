@@ -1359,10 +1359,13 @@ internal sealed class WarTemplate : CircuitTemplate
                 ["tools_tail"] = Str(st, "tools_tail_flag"),
                 ["fix"] = "ligue --harness-behavior 1 --harness-tools 1 --tail-scope all|managed (ou o alias --harness-tails 1)"
             };
-            if (tailsOk || !_o.NoTailsGate)
-                Pf(driver, "harness_tails_status", tailsOk, tailsEvidence);
+            // Unica regra irrefutavel do WAR: modo bridge + main harness ligados.
+            // Caudas sao AVISO (o operador liga/desliga na unit); nunca bloqueiam.
+            if (tailsOk)
+                Pf(driver, "harness_tails_status", true, tailsEvidence);
             else
             {
+                tailsEvidence["aviso"] = "caudas desligadas na bridge (nao bloqueia: regra do WAR e' bridge + main harness)";
                 // Relaxamento EXPLICITO do operador (--war-no-tails-gate): a
                 // bateria roda contra o modelo sem caudas e o preflight registra
                 // o motivo no evento e no console — nunca em silencio.
@@ -1374,7 +1377,7 @@ internal sealed class WarTemplate : CircuitTemplate
                     ["ok"] = false,
                     ["evidence"] = tailsEvidence
                 });
-                driver.Log($"preflight AVISO: harness_tails_status reprovado e RELAXADO por --war-no-tails-gate {tailsEvidence.ToJsonString()}");
+                driver.Log($"preflight AVISO: harness_tails_status {tailsEvidence.ToJsonString()}");
             }
 
             // Anti-repeat: gate proprio, simetrico ao de tails. O padrao do
@@ -1389,11 +1392,12 @@ internal sealed class WarTemplate : CircuitTemplate
                 ["anti_repeat_flag"] = Str(st, "anti_repeat_flag"),
                 ["fix"] = "ligue --anti-repeat 1 (ou passe --war-no-anti-repeat-gate para medir sem ele)"
             };
-            if (arOk || !_o.NoAntiRepeatGate)
-                Pf(driver, "anti_repeat_status", arOk, arEvidence);
+            // Anti-repeat nao e' regra do WAR: se estiver off, avisa e segue.
+            if (arOk)
+                Pf(driver, "anti_repeat_status", true, arEvidence);
             else
             {
-                arEvidence["relaxado_por"] = "--war-no-anti-repeat-gate";
+                arEvidence["aviso"] = "anti-repeat desligado na bridge (nao bloqueia: regra do WAR e' bridge + main harness)";
                 driver.Publish(new JsonObject
                 {
                     ["t"] = "preflight_aviso",
@@ -1401,7 +1405,7 @@ internal sealed class WarTemplate : CircuitTemplate
                     ["ok"] = false,
                     ["evidence"] = arEvidence
                 });
-                driver.Log($"preflight AVISO: anti_repeat_status reprovado e RELAXADO por --war-no-anti-repeat-gate {arEvidence.ToJsonString()}");
+                driver.Log($"preflight AVISO: anti_repeat_status {arEvidence.ToJsonString()}");
             }
         }
 
