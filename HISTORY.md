@@ -1,5 +1,44 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Painel vivo na WAR: rótulo do step, revisão de todos os painéis e 0.0.0.0:4800 (2026-11-07, sessão 56)
+
+**Sintoma.** Durante L1/L2 os painéis "Enunciado do teste em execução" e
+"Respostas do agente" mostravam `manual-bridge` (rótulo do run isolado da rodada
+anterior) enquanto o step real era `e-topics-ent-redis-bridge` — impressão de
+painel congelado. Não havia, na abertura da bateria, prova de que TODOS os
+targets do dashboard tinham dado.
+
+**Causa.** No caminho `run-levels.sh -> dotnet run --only E-*` o teste roda em
+processo e ninguém exporta `WAR_STEP` (ele só existe no filho disparado pelo
+`WarTemplate`). `TestContext` caía em `manual-<mode>` no rótulo do painel e no
+nome do journey; o enunciado/atividade era gravado sob o step velho.
+
+**Decisões.**
+1. `WAR_PANEL_STEP` (novo): o run-levels exporta o nome do step da esteira e
+   `TestContext.PanelStep` vira a fonte única do rótulo (`WAR_PANEL_STEP` >
+   `WAR_STEP` > `manual-<mode>`). No início do step o runner publica
+   `POST /api/test/enunciado {step, prompt:""}` — `SetEnunciado` limpa
+   histórico/atividade na troca de step, então o painel não herda a rodada
+   anterior. `JourneyStep` e o enunciado do `ToolAgent` usam o mesmo rótulo.
+2. `WarTemplate.ReviewPanels`: no início da bateria, depois de subir o Grafana,
+   consulta cada endpoint que o dashboard consome (`/api/status`, `/api/metrics`,
+   `/api/test/steps?war=1`, `/api/test/probe[/latest]`, `/api/test/activity`,
+   `/api/test/enunciado/messages`) + `/api/health` + o dashboard por uid e grava
+   `[painel] revisao: bridge=N/7 endpoints com dado ...`. Falha é AVISO (a WAR
+   não vira BLOCKED por observabilidade).
+3. Guards duros do preflight: além de `bridge_main_harness`, entram
+   `bridge_coercao` (`coerce_text_tools` e `coerce_narrated`) e `bridge_modo`
+   (`mode=bridge`) — mesma família: WAR mede o caminho bridge com harness e
+   coerção ligados.
+4. `install-grafana-observation.sh`: `http_addr = 0.0.0.0` explícito (painel
+   público em `:4800`), senha `guest@123` reaplicada por
+   `grafana cli admin reset-admin-password` e revisão de painéis por
+   `POST /api/ds/query` (um target por endpoint, provando o caminho real do
+   Grafana, não só a bridge).
+
+**Medições.** L1 verde **15/15 (213s)**, com `E-ent-redis` **PASS 22,4s**
+(4.881 chars, `di=modern`) depois dos commits do enunciado; L2 na mesma rodada.
+
 ## Degenerados do E-tools-full: sonda, git em cadeia e `until-commit` (2026-11-07, sessão 55)
 
 **Motivo.** 12 turnos de 768 tokens por rodada, sem conteúdo no log. A sonda

@@ -1804,6 +1804,41 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
 
 ## Dependência Grafana — painel Observation
 
+### Regra (2026-11-07): o painel é parte da esteira
+
+- **A WAR sobe o Grafana sozinha** no início de toda rodada: `start` quando o
+  serviço está fora (`--war-level N` não derruba o painel de quem está olhando) e
+  **restart** na bateria L1..L4, para reler provisioning/dashboard/datasource.
+- **Todos os painéis são revisados** antes do primeiro step
+  (`WarTemplate.ReviewPanels`): cada target do dashboard
+  (`/api/status`, `/api/metrics`, `/api/test/steps?war=1`,
+  `/api/test/probe[/latest]`, `/api/test/activity`,
+  `/api/test/enunciado/messages`) + `/api/health` + `GET
+  /api/dashboards/uid/opencodebridge` são consultados e o log global recebe
+  `[painel] revisao: bridge=N/7 endpoints com dado, grafana=... — ...`.
+  **Falha de painel nunca vira BLOCKED**: é AVISO e lista o endpoint sem dado.
+- **Endereço público:** `0.0.0.0:4800` — `http_addr = 0.0.0.0` explícito no
+  `/etc/grafana/grafana.ini` (aplicado/reparado por
+  `scripts/lab/install-grafana-observation.sh`; `http_addr` vazio já escutava em
+  todas as interfaces, o valor explícito tira a dependência do default).
+- **Senha:** `guest@123` (a mesma da bridge e dos testes). O installer reaplica
+  com `grafana cli --homepath /usr/share/grafana admin reset-admin-password`
+  (idempotente; `GRAFANA_RESET_PASS=0` desliga).
+- **Dashboard:** `OpenCodeBridge Observation` (uid `opencodebridge`, 17 painéis),
+  todo target com `source: "url"` e `${bridge}`; conferência de painel pelo
+  caminho real do Grafana: `POST /api/ds/query` (o installer faz um target por
+  endpoint e imprime `[painel] ds/query: N/7 endpoints com dado`).
+- **Rótulo do step no painel:** `WAR_PANEL_STEP` (nome do step da esteira, ex.
+  `e-topics-ent-redis-bridge`) — o run-levels exporta por step e o runner
+  publica o enunciado vazio no início (`SetEnunciado` limpa histórico/atividade
+  na troca). Sem isso, tudo caía em `manual-bridge` e o painel parecia
+  congelado (medido 2026-11-07).
+- **Guards obrigatórios da bridge (gate DURO do preflight):** `mode=bridge`,
+  `main_harness=true`, `coerce_text_tools=true`, `coerce_narrated=true` —
+  `bridge_modo`, `bridge_main_harness` e `bridge_coercao`. Tails
+  (`harness_tails`) e `anti_repeat` continuam **AVISO**: são escolha do
+  operador na unit, registrada no preflight.
+
 - **Acesso:** `http://127.0.0.1:4800` (proxy Caddy `:4150`), credenciais do lab
   **`admin` / `guest@123`** (mesma senha da bridge e dos testes). Senha mexer:
   `sudo grafana cli --homepath /usr/share/grafana admin reset-admin-password guest@123`.

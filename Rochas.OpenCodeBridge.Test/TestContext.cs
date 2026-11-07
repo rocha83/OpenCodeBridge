@@ -37,11 +37,30 @@ internal static class TestContext
     // (unit/manual) nada e gravado, para nao poluir o disco nem o repo.
     static string? JourneyDir => Environment.GetEnvironmentVariable("WAR_JOURNEY_DIR") is { Length: > 0 } dir
         ? dir : null;
+    /// <summary>
+    /// Rotulo do step NO PAINEL (Grafana). Precedencia: <c>WAR_PANEL_STEP</c>
+    /// (nome do step na esteira, ex. <c>e-topics-ent-redis-bridge</c>, exportado
+    /// pelo run-levels) &gt; <c>WAR_STEP</c> (filho disparado pelo driver) &gt;
+    /// <c>manual-&lt;mode&gt;</c> no run isolado. Sem o prefixo o painel
+    /// "Enunciado"/"Respostas do agente" herdava o step do run anterior
+    /// (medido 2026-11-07: tudo caia em <c>manual-bridge</c> no L1/L2).
+    /// </summary>
+    public static string PanelStep
+    {
+        get
+        {
+            string? label = Environment.GetEnvironmentVariable("WAR_PANEL_STEP");
+            if (!string.IsNullOrWhiteSpace(label)) return label!;
+            string? war = Environment.GetEnvironmentVariable("WAR_STEP");
+            return string.IsNullOrWhiteSpace(war) ? "manual-" + Mode : war!;
+        }
+    }
+
     static string JourneyStep
     {
         get
         {
-            string raw = Environment.GetEnvironmentVariable("WAR_STEP") ?? "manual-" + Mode;
+            string raw = PanelStep;
             foreach (char c in Path.GetInvalidFileNameChars()) raw = raw.Replace(c, '_');
             return raw.Replace('/', '_').Replace('\\', '_');
         }
@@ -314,6 +333,11 @@ internal static class TestContext
             string probeRoot = Path.Combine(Path.GetTempPath(), "opencodebridge-isolated", "run-" + Environment.ProcessId);
             probe = StepProbe.Start(probeRoot, name, Mode, Bridge, ApiKey, null);
             PublishStep(name, "RUN", 0).GetAwaiter().GetResult();
+            // Rotula o step no painel ANTES do primeiro request: enunciado e
+            // respostas passam a cair sob o nome do step da esteira, sem herdar
+            // o rotulo do run anterior (SetEnunciado limpa historico/atividade
+            // quando o step muda; prompt vazio nao grava linha de enunciado).
+            PublishEnunciado(PanelStep, "").GetAwaiter().GetResult();
         }
         try
         {
@@ -864,8 +888,7 @@ internal static class TestContext
 
     public static async Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps, string? cwd, string? stack = null)
     {
-        string enunciadoStep = Environment.GetEnvironmentVariable("WAR_STEP")
-            ?? "E-tools-full/agent/" + Mode;
+        string enunciadoStep = PanelStep;
         await PublishEnunciado(enunciadoStep, prompt);
         if (Mode == "opencode") return OpencodeRunDetailed(prompt, cwd);
         int max = steps > 0 ? steps : ToolAgentSteps;

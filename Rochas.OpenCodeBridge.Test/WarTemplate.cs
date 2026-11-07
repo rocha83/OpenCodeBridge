@@ -289,6 +289,7 @@ internal sealed class WarTemplate : CircuitTemplate
                 clearPanel: true);
             // Painel de observacao sobe junto com a WAR (start; sem restart se ja ativo).
             EnsureGrafana(null);
+            ReviewPanels(null);
         }
         return RunLevel(o, p, o.Level,
             o.Stamp ?? Env("LEVEL_STAMP") ?? NowStamp(),
@@ -472,6 +473,53 @@ internal sealed class WarTemplate : CircuitTemplate
     /// </summary>
     private static bool IsParallelChild => Env("WAR_PARALLEL_CHILD") is "1" or "true" or "yes";
 
+    /// <summary>
+    /// Revisao do painel: percorre TODOS os endpoints que o dashboard
+    /// <c>OpenCodeBridge Observation</c> consome (status, metrics, steps,
+    /// sonda, activity e enunciado) mais o proprio Grafana (:4800), provando que
+    /// cada painel tem dado vivo. Observabilidade NAO decide PASS/FAIL: falha
+    /// aqui vira linha de aviso no log global e segue a bateria (mesma regra do
+    /// <see cref="EnsureGrafana"/>).
+    /// </summary>
+    /// <param name="globalLog">Log global da bateria (nulo em nivel unico).</param>
+    private static void ReviewPanels(TextWriter? globalLog)
+    {
+        string bridge = TestContext.Bridge;
+        var alvos = new[]
+        {
+            ("status", "/api/status"),
+            ("metrics", "/api/metrics"),
+            ("steps", "/api/test/steps?war=1"),
+            ("probe-latest", "/api/test/probe/latest"),
+            ("probe", "/api/test/probe?limit=1000"),
+            ("activity", "/api/test/activity?limit=6"),
+            ("enunciado", "/api/test/enunciado/messages"),
+        };
+        var falhas = new List<string>();
+        int ok = 0;
+        foreach (var (nome, path) in alvos)
+        {
+            var (code, body) = HttpGet(bridge + path, TestContext.ApiKey);
+            bool bom = code == 200 && body.Trim().Length > 0;
+            if (bom) ok++;
+            else falhas.Add($"{nome}(http={code},bytes={body.Length})");
+        }
+        string grafana = Env("GRAFANA_URL") ?? "http://127.0.0.1:4800";
+        var (gcode, gbody) = HttpGet(grafana + "/api/health", null);
+        if (gcode != 200) falhas.Add($"grafana/api/health(http={gcode})");
+        var (dcode, dbody) = HttpGet(grafana + "/api/dashboards/uid/opencodebridge", null);
+        if (dcode != 200 || !dbody.Contains("\"OpenCodeBridge Observation\""))
+            falhas.Add($"grafana/dashboard(http={dcode})");
+
+        string resumo = $"[painel] revisao: bridge={ok}/{alvos.Length} endpoints com dado, "
+                        + $"grafana={grafana} http={gcode}, dashboard=http={dcode}";
+        if (falhas.Count == 0)
+            LogGlobal(globalLog, resumo + " — todos os paineis com dado");
+        else
+            LogGlobal(globalLog, resumo + " — AVISO sem dado: " + string.Join(", ", falhas)
+                                    + " (observabilidade nao bloqueia a WAR)");
+    }
+
     private static int RunAll(WarOptions o, WarPaths p)
     {
         var levels = LevelsToRun(o);
@@ -523,6 +571,9 @@ internal sealed class WarTemplate : CircuitTemplate
             // o operador esta vendo (EnsureGrafana so faz start se estiver fora).
             if (levels.Count > 1) RestartGrafana(globalLog);
             else EnsureGrafana(globalLog);
+            // Revisao de TODOS os paineis (bridge + Grafana) logo apos subir o
+            // painel: se algo estiver sem dado, o log global diz qual endpoint.
+            ReviewPanels(globalLog);
         }
         if (o.Parallel && levels.Count > 1 && !o.List)
             return RunParallel(o, p, levels, stamp, globalLog, driverSummary);
@@ -1308,6 +1359,7 @@ internal sealed class WarTemplate : CircuitTemplate
         string btails = Str(st, "harness_tails");
         string bctx = Str(st, "context_tokens");
         string btemp = Str(st, "temperature");
+        string bmode = Str(st, "mode");
         if (string.IsNullOrEmpty(model))
         {
             Pf(driver, "bridge_status", false, new JsonObject
@@ -1342,6 +1394,35 @@ internal sealed class WarTemplate : CircuitTemplate
                     ["bridge"] = _p.Bridge,
                     ["main_harness"] = bmain,
                     ["fix"] = "ligue --main-harness 1 na unit do bridge (WAR roda steps de bridge)"
+                });
+
+            // Coercao de tools: mesma familia do main harness, tambem OBRIGATORIA.
+            // Sem `coerce-text-tools`/`coerce-narrated` o E4B narra a chamada em
+            // prosa e o step reprova por comportamento do modelo, nao por infra —
+            // o WAR mediria o defeito que ele mesmo introduziu. Gate duro, com a
+            // correcao no evento (o operador conserta a unit, nao o teste).
+            bool coerceOk = On(st, "coerce_text_tools", "coerce_text_tools")
+                            && On(st, "coerce_narrated", "coerce_narrated");
+            Pf(driver, "bridge_coercao",
+                coerceOk,
+                new JsonObject
+                {
+                    ["bridge"] = _p.Bridge,
+                    ["coerce_text_tools"] = Str(st, "coerce_text_tools"),
+                    ["coerce_narrated"] = Str(st, "coerce_narrated"),
+                    ["fix"] = "ligue --coerce-text-tools 1 --coerce-narrated 1 na unit do bridge"
+                });
+
+            // Modo: o WAR mede o caminho gerido pela bridge, nunca o opencode
+            // puro. Status em outro modo = preflight BLOCKED (mesma regra do
+            // main harness: bridge + harness + coercao).
+            Pf(driver, "bridge_modo",
+                string.Equals(bmode, "bridge", StringComparison.OrdinalIgnoreCase),
+                new JsonObject
+                {
+                    ["bridge"] = _p.Bridge,
+                    ["mode"] = bmode,
+                    ["fix"] = "suba a bridge com --mode bridge (WAR roda steps de bridge)"
                 });
 
             // REGRA PRIMORDIAL: cauda de tools e obrigatoria para todo teste que

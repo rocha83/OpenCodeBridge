@@ -253,7 +253,11 @@ _step_bridge() { # nome + args do runner
   [ -f "$BLOG" ] && b0=$(wc -l < "$BLOG")
   local t0; t0=$(date +%s)
   log "=== $name :: $*"
-  WAR_NO_RESET=1 timeout "${LEVEL_STEP_TIMEOUT:-7200}" dotnet run --project "$TESTPROJ" -c Release --no-build -- \
+  # Rotulo do step no painel Grafana (enunciado/atividade): aqui o runner roda
+  # em PROCESSO, entao WAR_STEP (que so' existe no filho do WarTemplate) nao e'
+  # definido. Sem WAR_PANEL_STEP o painel herda "manual-bridge" da rodada
+  # anterior e parece congelado (medido 2026-11-07).
+  WAR_PANEL_STEP="$name" WAR_NO_RESET=1 timeout "${LEVEL_STEP_TIMEOUT:-7200}" dotnet run --project "$TESTPROJ" -c Release --no-build -- \
       --api-key "$API" --bridge "$BRIDGE" "$@" > "$STEPS/$name.test.log" 2>&1
   local rc=$?
   local secs=$(( $(date +%s) - t0 ))
