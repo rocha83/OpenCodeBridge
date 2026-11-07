@@ -3183,7 +3183,12 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
 
         // 4.6) Converte a resposta chat -> objeto Responses
         var chatJson = JsonNode.Parse(responseBody)?.AsObject() ?? new JsonObject();
-        chatJson = RetryDegenerateTurn(ctx, chat, chatJson, toolCount, requestedModel);
+        // Retry de turno degenerado: default LIGADO. O cliente pode desligar
+        // ("degenerate_retry": false no corpo) para medir o comportamento cru
+        // do modelo, sem a segunda tentativa do transporte.
+        bool degenRetry = true;
+        try { degenRetry = req["degenerate_retry"]?.GetValue<bool>() ?? true; } catch { }
+        if (degenRetry) chatJson = RetryDegenerateTurn(ctx, chat, chatJson, toolCount, requestedModel);
         if (shimmed) ToolShim.TransformResponse(chatJson);
         var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0, chat["messages"]);
         RecordResponsesActivity(responseObj);
