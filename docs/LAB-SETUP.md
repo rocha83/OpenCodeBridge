@@ -4,7 +4,38 @@ Detalhes de infraestrutura, configuração dos servidores llama, contextos, VRAM
 cenários de teste e referência completa de argumentos da bridge. O resumo
 expresso (componente, cenário de teste e harness) fica no `README.md`.
 
-## Snapshot atual (2026-10-30) — Q4 UD é o único modelo
+## Snapshot atual (2026-11-07) — Q4_K_M Imatrix retreinado, linha "só main harness"
+
+> Este snapshot **substitui** o de 2026-10-30 abaixo (mantido como histórico).
+
+| item | valor |
+|---|---|
+| modelo GPU1 `:4100` | `Gemma4-E4B-UCD-IT_Principal-GK-DS-Retrained-Q4_K_M-Imatrix.gguf` (5,3 GB) em `/media/mint/FT/models/gguf/` + `…-mmproj-bf16.gguf` |
+| ctx/slots | `-c 114688 -np 1` (**1×112k**) — **não** `458752 -np 4` |
+| KV cache | `--cache-type-k turbo3 --cache-type-v turbo3` (TurboQuant, só neste fork) |
+| VRAM medida | 10,6 GB ocioso / 10,7 GB após request (12,2 GB totais) |
+| bridge `:4124` | `--main-harness 1 --harness-tails 0 --harness-behavior 0 --harness-tools 0 --anti-repeat 0 --coerce-text-tools 1 --coerce-narrated 0 --temperature 0.2 --max-tokens 16384` |
+| portão de fluxo (teste) | exige **só main harness**; `BRIDGE_TAILS_OPTIONAL=0` reativa a exigência de tails/tools_tail |
+
+**Por que o ctx caiu.** Com `-c 458752 -np 4` (turbo3) o GGUF novo subia em
+11.979/12.288 MiB e abortava (SIGABRT / `cudaMalloc failed: out of memory`) na
+primeira requisição: o preflight do WAR via "Connection refused" e os 15 steps do
+L1 saíam SKIP sem rodar teste. `229376 -np 2` estabilizou (10,47 GB); `114688
+-np 1` é o que roda hoje — folga suficiente para o preflight (mínimo 512 MiB
+livres) e para o compute buffer depois do primeiro request.
+
+**Formato de tool call do GGUF (template nativo, "fix july 2026").**
+
+```
+<|tool_call>call:NOME{chave:<|"|>valor<|"|>,outra:3}<tool_call|>
+```
+
+strings delimitadas por `<|"|>` e argumentos no estilo `chave:valor` (não JSON).
+A bridge lê esse formato **no texto** (`Core/GemmaToolCalls.cs`) quando ele vaza
+no `content`; a coerção texto→`tool_calls` só roda com `--coerce-text-tools 1`.
+Sem o leitor, o markup chegava cru ao cliente (medido em 2026-11-07).
+
+## Snapshot (2026-10-30) — Q4 UD é o único modelo
 
 > **Regra do lab (2026-10-30): o Q4 UD não fala com outro modelo.** Ele é o
 > **único modelo ativo** nas linhas de GPU e de CPU. O **Q3 UD** e o **Q4 base**

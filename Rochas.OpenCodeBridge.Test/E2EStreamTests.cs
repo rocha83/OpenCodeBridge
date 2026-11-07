@@ -69,6 +69,6 @@ internal static class E2EStreamTests
         var msg = output.FirstOrDefault(o => o?["type"]?.GetValue<string>() == "message")?.AsObject();
         string text = msg?["content"]?[0]?["text"]?.GetValue<string>() ?? "";
         bool hasCall = output.Any(o => o?["type"]?.GetValue<string>() == "function_call");
-        TestContext.Check(text.Length > 20 || (TestContext.ServedIsCoder && hasCall), "review tem texto util");
+        TestContext.Check(text.Length > 20 || hasCall, "review tem texto util ou call");
     }
 }

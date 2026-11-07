@@ -1,5 +1,64 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Tool call canônico do Gemma 4, coerção por modelo e linha "só main harness" (2026-11-07, sessão 52)
+
+**Motivo.** Quatro defeitos medidos com o GGUF novo
+(`Gemma4-E4B-UCD-IT_Principal-GK-DS-Retrained-Q4_K_M-Imatrix`, template nativo
+"fix july 2026"):
+
+1. o template emite a call como
+   `<|tool_call>call:NOME{chave:<|"|>valor<|"|>}<tool_call|>`; sem `tool_choice`
+   forçado o bloco chega como **texto** no `content` e a bridge devolvia o markup
+   cru ao cliente (2 respostas do `E-tools-full` de 06/11) — a ordem virava prosa;
+2. `-c 458752 -np 4` (turbo3) com o GGUF novo subia em **11.979/12.288 MiB** e
+   abortava (`SIGABRT` / `cudaMalloc failed: out of memory`) na primeira
+   requisição: o preflight do WAR via "Connection refused" e os 15 steps do L1
+   saíam SKIP sem rodar teste;
+3. o portão de fluxo (`BridgeFlowGate`) exigia as **tails**; a política passou a
+   ser **só main harness** (`--harness-tails 0 --harness-tools 0`);
+4. o stop `[END_OF_TEXT]` era injetado por `CoerceFor()` (proxy de "linha CPU")
+   em **dois** pontos; com coerção ligada na GPU o stop entrava em request com
+   `tools` e truncava a tool call (`U-translate-without-stop` pegou).
+
+**Decisões.**
+
+- **Leitor do formato canônico em Core.** `Core/GemmaToolCalls.cs` (`ReCall`,
+  `Extract`, `HasCall`, `Strip`, `TryParseObject`/`TryReadValue`) entende string
+  delimitada por `<|"|>`, objeto/array aninhados, número, booleano e `null`.
+  Ligado em `ToolCoercion.ExtractTextToolCalls` (primeiro formato testado) e em
+  `TextToolMarkers`; `CoerceChatCalls` remove o markup do `content` depois de
+  coagir (o cliente não vê token cru junto da call).
+- **Coerção ligada na linha GPU** (`--coerce-text-tools 1`): rede de segurança
+  para a call vazada em texto. Execução continua preferindo
+  `tool_choice: required` (call nativa, sem depender de coerção).
+- **Classes por modelo** (o padrão do `GemmaToolCalls`):
+  `Web/Services/QwenToolCalls.cs` (hermes `<tool_call>`, plural `<tools>`,
+  `<function>`) e `Web/Services/DeepSeekToolCalls.cs` (fence json + variante de
+  chave única, tokens V3, XML `<tool_name>`, `<attempt_completion>`).
+  `ToolsCoercion` ficou só como orquestrador (allowlist/catálogo, nome canônico,
+  montagem do `ToolCall`) — comportamento idêntico ao anterior.
+- **Stop de CPU não é coerção.** `[END_OF_TEXT]` só entra com
+  `--cpu-max-tokens > 0`, tanto no chat quanto em `/api/translate`.
+- **Portão de fluxo**: exige só `main_harness`; `BRIDGE_TAILS_OPTIONAL=0`
+  reativa a exigência de tails/tools_tail para diagnóstico.
+- **VRAM**: `-c 114688 -np 1` (1×112k). `229376 -np 2` também estabiliza
+  (10,47 GB), mas o preflight exige ≥512 MiB livres — com `-np 1` sobram ~1,5 GB.
+- **Deploy**: o volume USB não guarda bit de execução (scripts vêm `100644`) —
+  `deploy-pull.sh` agora faz `chmod +x scripts/**` após o pull e fixa
+  `core.filemode=false` no PROD (sem isso o `chmod` conta como alteração local e
+  o deploy aborta; com ele, o `run-all-levels` morria em rc=126).
+- **Teste**: `E-review-architect` aceita call nativa
+  (`text.Length > 20 || hasCall`) — o request anuncia `tools`, então a call é
+  resposta legítima.
+
+**Prova.** `U-gemma-tool-calls` (8 asserts: simples, tipos, múltiplas, strip,
+wiring na coerção, chat coagido, prosa) PASS; suíte de units
+**PASS=166 FAIL=0 SKIP=7** com `--coerce-text-tools 1`; `E-tools-full` subiu de
+**1/9 → 4/9** asserts (git, data, commit, subpasta) e as respostas de
+conhecimento pararam de vazar markup (5/8); build Release 0 erros; L1 verde até
+o ponto corrigido (units + `E-stream-architect` + `E-review-architect`).
+
+
 ## System único no loop agentico, valor auxiliar de desvio e prova honesta da cauda de tools (2026-10-30, sessão 43)
 
 **Motivo.** Três defeitos medidos na rodada L1→L4 com Q4 base:
