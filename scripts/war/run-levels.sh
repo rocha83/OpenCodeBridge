@@ -165,14 +165,14 @@ preflight() {
     pf "llama_$up_port" false "{\"port\":$up_port,\"health\":\"$(jesc "$health")\"}"
   fi
   # 2) bridge alvo: params efetivos (o que o teste realmente recebe)
-  local st bmodel bup btemp bpw bmain btails bctx
+  local st bmodel bup btemp bpw bmain btails bctx bslots bctxslot
   st=$(curl -s -m 8 -H "Authorization: Bearer $API" "$BRIDGE/api/status" 2>/dev/null)
   bmodel=$(json_get "$st" model); bup=$(json_get "$st" upstream)
   btemp=$(json_get "$st" temperature); bpw=$(json_get "$st" profile_temp_wins)
   bmain=$(json_get "$st" main_harness); btails=$(json_get "$st" harness_tails)
-  bctx=$(json_get "$st" context_tokens)
+  bctx=$(json_get "$st" context_tokens); bslots=$(json_get "$st" context_slots)
   if [ -n "$bmodel" ]; then
-    pf "bridge_status" true "{\"bridge\":\"$(jesc "$BRIDGE")\",\"model\":\"$(jesc "$bmodel")\",\"upstream\":\"$(jesc "$bup")\",\"temperature\":$( [ -n "$btemp" ] && echo "$btemp" || echo 0 ),\"profile_temp_wins\":${bpw:-null},\"main_harness\":${bmain:-null},\"harness_tails\":${btails:-null},\"context_tokens\":${bctx:-0}}"
+    pf "bridge_status" true "{\"bridge\":\"$(jesc "$BRIDGE")\",\"model\":\"$(jesc "$bmodel")\",\"upstream\":\"$(jesc "$bup")\",\"temperature\":$( [ -n "$btemp" ] && echo "$btemp" || echo 0 ),\"profile_temp_wins\":${bpw:-null},\"main_harness\":${bmain:-null},\"harness_tails\":${btails:-null},\"context_tokens\":${bctx:-0},\"context_slots\":${bslots:-1}}"
   else
     pf "bridge_status" false "{\"bridge\":\"$(jesc "$BRIDGE")\"}"
   fi
@@ -182,10 +182,17 @@ preflight() {
   else
     pf "bridge_upstream" true "{\"bridge_upstream\":\"$(jesc "${bup:-$WAR_UPSTREAM}")\"}"
   fi
-  if [ -n "$nctx" ] && [ -n "$bctx" ] && [ "$bctx" != "$nctx" ]; then
-    pf "bridge_context_tokens" false "{\"context_tokens\":$bctx,\"n_ctx_slot\":$nctx}"
+  # A bridge declara o ctx TOTAL (--context-tokens) e os slots (--context-slots);
+  # o llama reporta o ctx POR SLOT em /props.n_ctx (uma request cabe num slot).
+  # Compara total/slots com o por-slot do llama — mesma invariante do WarTemplate.
+  bctxslot="$bctx"
+  if [ -n "$bctx" ] && [ -n "$bslots" ] && [ "$bslots" -gt 0 ] 2>/dev/null; then
+    bctxslot=$((bctx / bslots))
+  fi
+  if [ -n "$nctx" ] && [ -n "$bctxslot" ] && [ "$bctxslot" != "$nctx" ]; then
+    pf "bridge_context_tokens" false "{\"context_tokens\":${bctx:-0},\"context_slots\":${bslots:-1},\"bridge_ctx_slot\":${bctxslot:-0},\"n_ctx_slot\":$nctx}"
   else
-    pf "bridge_context_tokens" true "{\"context_tokens\":${bctx:-0},\"n_ctx_slot\":${nctx:-0}}"
+    pf "bridge_context_tokens" true "{\"context_tokens\":${bctx:-0},\"context_slots\":${bslots:-1},\"bridge_ctx_slot\":${bctxslot:-0},\"n_ctx_slot\":${nctx:-0}}"
   fi
   # 4) binarios dos testes
   [ -f "$TESTDLL" ] && pf "test_binario" true "{\"sha\":\"$INIT_HASH_TEST\"}" \
