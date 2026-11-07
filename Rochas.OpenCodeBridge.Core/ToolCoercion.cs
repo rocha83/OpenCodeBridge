@@ -17,7 +17,7 @@ public static class ToolCoercion
 
     /// <summary>Marcadores que anunciam tool call no texto.</summary>
     public static readonly string[] TextToolMarkers =
-        { "[Assistant tool call]", "<tool_call>", "<tools>", "<function>" };
+        { "[Assistant tool call]", "<tool_call>", "<|tool_call>", "<tools>", "<function>" };
 
     /// <summary>Fenced ```json{"name":..}``` (formato pedido por alguns templates).</summary>
     public static readonly Regex ReFencedCall = new(@"```(?:json)?\s*(\{\s*""name""\s*:[\s\S]*?\})\s*```", RegexOptions.Compiled);
@@ -94,7 +94,13 @@ public static class ToolCoercion
     {
         var list = new List<(string, string)>();
         if (string.IsNullOrEmpty(content)) return list;
-        foreach (Match m in ReToolTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
+        // Canonico do Gemma 3/4 (template nativo): <|tool_call>call:nome{...}<tool_call|>.
+        // Vem primeiro porque e' o formato do nosso GGUF; os demais sao legado.
+        foreach (var (name, args) in GemmaToolCalls.Extract(content))
+            TryAddTextCall(new JsonObject { ["name"] = name, ["arguments"] = args }
+                .ToJsonString(TextGrammar.JsonOpts), list, known);
+        if (list.Count == 0)
+            foreach (Match m in ReToolTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
         if (list.Count == 0)
             foreach (Match m in ReToolsTag.Matches(content)) TryAddTextCall(m.Groups[1].Value, list, known);
         if (list.Count == 0)

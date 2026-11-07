@@ -139,6 +139,7 @@ internal static class Program
         if (!TestContext.SkipUnit)
         {
         TestContext.Run("U-tool-loop-context", UnitToolLoopContextTests.Run);
+        TestContext.Run("U-gemma-tool-calls", UnitGemmaToolCallsTests.Run);
         TestContext.Run("U-status", UnitStatusTests.Status);
         TestContext.Run("U-metrics", UnitStatusTests.Metrics);
         TestContext.Run("U-diag-reset", UnitStatusTests.DiagReset);
