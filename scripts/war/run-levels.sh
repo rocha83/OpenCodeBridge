@@ -135,6 +135,64 @@ pf() { # check ok evidence-json
 }
 json_get() { grep -o "\"$2\":[^,}]*" <<<"$1" 2>/dev/null | head -1 | sed "s/\"$2\"://; s/\"//g"; }
 
+# --- painel de observacao ----------------------------------------------------
+# Regra do lab: a esteira WAR sobe o Grafana (:4800, escuta 0.0.0.0) e revisa
+# TODOS os paineis antes do primeiro step. Observabilidade nao decide PASS/FAIL:
+# painel fora do ar vira AVISO e a bateria segue (mesma regra do WarTemplate).
+GRAFANA_PORT="${LEVEL_GRAFANA_PORT:-4800}"
+GRAFANA_URL="${LEVEL_GRAFANA_URL:-http://127.0.0.1:$GRAFANA_PORT}"
+ensure_painel() {
+  if systemctl is-active --quiet grafana-server 2>/dev/null; then
+    log "[painel] grafana-server ativo em :$GRAFANA_PORT (escuta publica 0.0.0.0)"
+  elif sudo -n systemctl start grafana-server 2>/dev/null; then
+    log "[painel] grafana-server iniciado pela esteira (:$GRAFANA_PORT)"
+  else
+    log "[painel] AVISO: grafana-server fora do ar e o start falhou (sudo -n)"
+    return 0
+  fi
+  local i
+  for i in $(seq 1 20); do
+    curl -sf -m 2 "$GRAFANA_URL/api/health" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  python3 - "$GRAFANA_URL" "$BRIDGE" <<'PY' 2>/dev/null
+import json, sys, urllib.request
+grafana, bridge = sys.argv[1].rstrip('/'), sys.argv[2].rstrip('/')
+alvos = ["/api/status", "/api/metrics", "/api/test/steps?war=1",
+         "/api/test/probe/latest", "/api/test/probe?limit=1000",
+         "/api/test/activity?limit=6", "/api/test/enunciado/messages"]
+ok, falhas = 0, []
+for path in alvos:
+    body = json.dumps({"queries": [{"refId": "A",
+        "datasource": {"uid": "opencodebridge-infinity", "type": "yesoreyeram-infinity-datasource"},
+        "type": "json", "source": "url", "format": "table", "url": bridge + path,
+        "url_options": {"method": "GET"}, "root_selector": "",
+        "columns": [{"selector": "mode", "text": "mode", "type": "string"}]}],
+        "from": "now-6h", "to": "now"}).encode()
+    req = urllib.request.Request(grafana + "/api/ds/query", data=body,
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            j = json.loads(r.read() or b"{}")
+        res = (j.get("results") or {}).get("A") or {}
+        has = bool((res.get("frames") or [{}])[0].get("data"))
+        if res.get("status") == 200 and has:
+            ok += 1
+        else:
+            falhas.append(f"{path}(status={res.get('status')},data={has})")
+    except Exception as e:
+        falhas.append(f"{path}({e.__class__.__name__})")
+print(f"[painel] ds/query: {ok}/{len(alvos)} endpoints com dado")
+if falhas:
+    print("[painel] AVISO sem dado: " + ", ".join(falhas))
+PY
+  if grep -q '"mode":"bridge"' <<<"$(curl -s -m 3 -H "Authorization: Bearer $API" "$BRIDGE/api/status" 2>/dev/null)"; then
+    log "[painel] bridge em mode=bridge (caminho gerido)"
+  else
+    log "[painel] AVISO: bridge fora de mode=bridge"
+  fi
+}
+
 # Limpeza UNICA do nivel: contadores, arquivos, sonda e painel. E' o unico
 # reset da bateria — cada step roda com WAR_NO_RESET=1 e nao zera mais nada
 # (zerar por step apagava a leitura do run: throughput/tools/arquivos voltavam
@@ -151,6 +209,7 @@ reset_once() {
 
 preflight() {
   log "=== preflight ==="
+  ensure_painel
   # 1) llama do upstream (health + ctx por slot)
   local up_port; up_port=$(sed -E 's#.*:([0-9]+).*#\1#' <<<"$WAR_UPSTREAM")
   local health props nctx slots alias
@@ -175,6 +234,26 @@ preflight() {
     pf "bridge_status" true "{\"bridge\":\"$(jesc "$BRIDGE")\",\"model\":\"$(jesc "$bmodel")\",\"upstream\":\"$(jesc "$bup")\",\"temperature\":$( [ -n "$btemp" ] && echo "$btemp" || echo 0 ),\"profile_temp_wins\":${bpw:-null},\"main_harness\":${bmain:-null},\"harness_tails\":${btails:-null},\"context_tokens\":${bctx:-0},\"context_slots\":${bslots:-1}}"
   else
     pf "bridge_status" false "{\"bridge\":\"$(jesc "$BRIDGE")\"}"
+  fi
+  # 2b) guards obrigatorios da bridge alvo (mesma familia do main harness):
+  # modo bridge, harness base e coercao de tools. Sem eles o WAR mede defeito
+  # de infra como se fosse de modelo — o nivel para no preflight.
+  local bmode bct bcn
+  bmode=$(json_get "$st" mode); bct=$(json_get "$st" coerce_text_tools); bcn=$(json_get "$st" coerce_narrated)
+  if [ "$bmode" = "bridge" ]; then
+    pf "bridge_modo" true "{\"mode\":\"$bmode\"}"
+  else
+    pf "bridge_modo" false "{\"mode\":\"$(jesc "${bmode:-?}")\",\"fix\":\"suba a bridge com --mode bridge\"}"
+  fi
+  if [ "$bmain" = "true" ]; then
+    pf "bridge_main_harness" true "{\"main_harness\":\"$bmain\"}"
+  else
+    pf "bridge_main_harness" false "{\"main_harness\":\"$(jesc "${bmain:-?}")\",\"fix\":\"ligue --main-harness 1 na unit\"}"
+  fi
+  if [ "$bct" = "true" ] && [ "$bcn" = "true" ]; then
+    pf "bridge_coercao" true "{\"coerce_text_tools\":\"$bct\",\"coerce_narrated\":\"$bcn\"}"
+  else
+    pf "bridge_coercao" false "{\"coerce_text_tools\":\"$(jesc "${bct:-?}")\",\"coerce_narrated\":\"$(jesc "${bcn:-?}")\",\"fix\":\"ligue --coerce-text-tools 1 --coerce-narrated 1\"}"
   fi
   # 3) coerencia bridge <-> upstream (modelo e ctx do slot)
   if [ -n "$bup" ] && [ "$bup" != "$WAR_UPSTREAM" ]; then

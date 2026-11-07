@@ -120,6 +120,24 @@ public static class StackPreflight
                 result.Add("main harness bridge", mainHarness,
                     $"main_harness={(mainHarness ? "true" : "false")} " +
                     "(modo bridge/Web exige a base; ligue --main-harness 1)");
+
+                // Guards da mesma familia: o WAR so mede o caminho gerido pela
+                // bridge. Campos ausentes = bridge antiga (compatibilidade); se
+                // o status EXPÕE o campo, o valor tem que ser o esperado.
+                string modo = q4["mode"]?.GetValue<string>() ?? "";
+                if (modo.Length > 0)
+                    result.Add("modo bridge",
+                        string.Equals(modo, "bridge", StringComparison.OrdinalIgnoreCase),
+                        $"mode={modo} (suba a bridge com --mode bridge)");
+
+                bool? coerceTextTools = q4["coerce_text_tools"]?.GetValue<bool>();
+                bool? coerceNarrated = q4["coerce_narrated"]?.GetValue<bool>();
+                if (coerceTextTools is not null || coerceNarrated is not null)
+                    result.Add("coercao de tools",
+                        coerceTextTools == true && coerceNarrated == true,
+                        $"coerce_text_tools={coerceTextTools?.ToString().ToLowerInvariant() ?? "?"} " +
+                        $"coerce_narrated={coerceNarrated?.ToString().ToLowerInvariant() ?? "?"} " +
+                        "(ligue --coerce-text-tools 1 --coerce-narrated 1)");
             }
             var (ok, detail) = CheckLlama(http, options.BridgeUrl, options.ApiKey);
             result.Add("llama-gpu", ok, detail);
