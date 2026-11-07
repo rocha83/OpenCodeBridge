@@ -83,11 +83,12 @@ internal static class E2EToolsFullTests
     static async Task CreateAttempt(string dir, string feedback)
     {
         const string basePrompt =
-            "Trabalhe na pasta atual. Crie um app console em C# que exiba em console a mensagem Hello World. " +
-            "Compile e execute o app com o dotnet, confirmando a mensagem na saida. Inicialize um repositorio git " +
-            "nesta mesma pasta, adicione os arquivos e faca o commit com a mensagem 'hello world console'; " +
-            "confirme com git log. Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o " +
-            "enunciado e sem descrever o que ja fez.";
+            "Trabalhe na pasta atual. Crie um projeto de console em C# usando o proprio dotnet (o projeto precisa " +
+            "compilar com o dotnet) e faca o app exibir em console a mensagem Hello World. Compile e execute o app " +
+            "com o dotnet, confirmando a mensagem na saida. Inicialize um repositorio git nesta mesma pasta, adicione " +
+            "os arquivos e faca o commit com a mensagem 'hello world console'; confirme com git log. " +
+            "Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever " +
+            "o que ja fez.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         string parent = Path.GetDirectoryName(dir)!;
@@ -203,7 +204,7 @@ internal static class E2EToolsFullTests
         // tem pasta nova por tentativa (estado limpo); o passo 2 repete no mesmo
         // diretorio para nao perder o commit do passo 1.
         string dir = await TestContext.AgentAttempts("toolsfull:create", "/tmp/opencode/toolsfull-agent", 3,
-            CreateAttempt, retryHint: "na pasta de trabalho, com o app console C# compilando e executando pelo dotnet.");
+            CreateAttempt, retryHint: "na pasta de trabalho, com o projeto console C# criado pelo proprio dotnet (compilando e executando).");
         await TestContext.RetrySame("toolsfull:adjust", dir, 3,
             AdjustAttempt, retryHint: "no MESMO repositorio e no MESMO app (troque a mensagem e recompile, sem apagar o programa).");
         Console.WriteLine("[toolsfull] cenario agentico (criar+compilar+versionar, ajustar+recompilar+versionar) concluido");
