@@ -423,12 +423,19 @@ internal static class UnitToolBreakerTests
     /// </summary>
     public static Task ToolsTailHasNoCsErrorTable()
     {
+        // 2026-11-07: a tabela C# voltou a ser ATIVA na cauda (commit fb3f05d,
+        // "tabela C# ativa na cauda; WAR so' exige bridge + main harness"). O
+        // que se garante agora e' presenca pela fonte unica (CsSyntaxRepair.Rules),
+        // sem copia manual.
         string tail = global::Rochas.OpenCodeBridge.Core.HarnessTails.DefaultTools;
-        TestContext.Check(!tail.Contains("TABELA DE ERROS C#", StringComparison.Ordinal),
-            "cauda NAO traz a tabela de erros C# (desligada por medicao)");
-        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.HarnessTails.ComposeTools(new[] { "read", "shell" })
+        TestContext.Check(tail.Contains("TABELA DE ERROS C#", StringComparison.Ordinal),
+            "cauda traz a tabela de erros C# (ativa por medicao)");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.HarnessTails.ComposeTools(new[] { "read", "shell", "write" })
                 .Contains("TABELA DE ERROS C#", StringComparison.Ordinal),
-            "com `shell` a tabela tambem nao entra");
+            "no loop de codigo (write+shell) a tabela entra");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.HarnessTails.ComposeTools(new[] { "read" })
+                .Contains("TABELA DE ERROS C#", StringComparison.Ordinal),
+            "em pedido so' de leitura a tabela nao entra");
         // A fonte unica nao foi apagada: o reparo do retry continua gerando dica.
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Rules.Count > 0,
             "CsSyntaxRepair.Rules preservado (a tabela volta sem copia manual)");
