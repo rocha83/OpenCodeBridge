@@ -111,8 +111,9 @@ internal static class E2EToolsFullTests
     static async Task CreateAttempt(string dir, string feedback)
     {
         const string basePrompt =
-            "Trabalhe na pasta atual, que ja tem um projeto console em C# chamado App.csproj com o app. Veja os " +
-            "arquivos da pasta antes de agir. Compile e execute com o dotnet e confirme a mensagem exibida. " +
+            "Trabalhe na pasta atual, que ja tem um projeto console em C# chamado App.csproj com o app. O codigo " +
+            "esta no arquivo Program.cs na raiz desta pasta (nao crie subpasta nem outro projeto). Compile e " +
+            "execute com o dotnet e confirme a mensagem exibida. " +
             "Inicialize um repositorio git nesta mesma pasta, adicione os arquivos e faca o commit com a mensagem " +
             "'hello world console'; confirme com git log. Nao encerre antes do commit. Aja com ferramentas: uma " +
             "tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
@@ -193,7 +194,8 @@ internal static class E2EToolsFullTests
     {
         const string basePrompt =
             "Na pasta atual existe um app console em C# (App.csproj) que exibe Hello World, ja compilado e commitado. " +
-            "Leia o codigo e troque a mensagem exibida para Hello World v2, mantendo o resto do programa. " +
+            "O codigo esta no arquivo Program.cs na raiz desta pasta. Leia esse arquivo e troque a mensagem exibida " +
+            "para Hello World v2, mantendo o resto do programa. " +
             "Recompile e execute de novo, confirmando a nova mensagem na saida. Adicione a mudanca e faca o commit " +
             "com a mensagem 'hello world v2'; confirme com git log. Aja com ferramentas: uma tool call por vez, " +
             "sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
