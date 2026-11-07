@@ -3,16 +3,18 @@ using System.Text.Json.Nodes;
 namespace Rochas.OpenCodeBridge.Test;
 
 // Teste de tools COMPLETO: read, write, edit, glob, grep, git (init/add/commit/log)
-// e busca web. Dois enunciados SEQUENCIAIS sobre o MESMO repositorio, cada um com
+// e compilacao. Dois enunciados SEQUENCIAIS sobre o MESMO repositorio, cada um com
 // versionamento proprio:
-//   1) cria e versiona  (data.txt com a data + commit 'data de hoje')
-//   2) ajusta e versiona (linha do clima no MESMO arquivo + commit
-//      "Added sao paulo weather")
-// Enunciado curto de dev humano: objetivo + contrato observavel, com o NOME do
-// arquivo declarado (o aceite confere o artefato em disco).
+//   1) cria e versiona  (app console C# exibindo Hello World + commit
+//      'hello world console')
+//   2) ajusta e versiona (troca a mensagem para Hello World v2, recompila e
+//      commita 'hello world v2')
+// Enunciado curto de dev humano, em linguagem natural (sem receita de codigo):
+// objetivo + contrato observavel. O aceite compila e EXECUTA o app de verdade.
 internal static class E2EToolsFullTests
 {
-    const string DataFile = "data.txt";
+    const string MsgV1 = "Hello World";
+    const string MsgV2 = "Hello World v2";
 
     static (int Code, string Out) Run(string exe, string cwd, int secs, params string[] args)
     {
@@ -31,10 +33,37 @@ internal static class E2EToolsFullTests
         catch { return ""; }
     }
 
-    static string Trecho(string f)
+    static string TrechoTexto(string t)
     {
-        string t = ReadText(f).Replace('\n', ' ').Trim();
-        return t[..Math.Min(70, t.Length)];
+        string s = (t ?? "").Replace('\n', ' ').Replace('\r', ' ').Trim();
+        return s[..Math.Min(90, s.Length)];
+    }
+
+    /// <summary>Primeiro .csproj fora de bin/obj (o app do enunciado).</summary>
+    static string? FindCsproj(string dir)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(dir, "*.csproj", SearchOption.AllDirectories)
+                .Where(p => !p.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)
+                         && !p.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
+                .OrderBy(p => p.Length)
+                .FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Fontes .cs fora de bin/obj (conteudo somado para o aceite).</summary>
+    static string[] CsFiles(string dir)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories)
+                .Where(p => !p.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)
+                         && !p.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
+                .ToArray();
+        }
+        catch { return Array.Empty<string>(); }
     }
 
     static (string[] Commits, string Log) GitLog(string repo)
@@ -47,16 +76,18 @@ internal static class E2EToolsFullTests
     }
 
     /// <summary>
-    /// Passo 1 — CRIA E VERSIONA: `data.txt` na pasta de trabalho com a data de
-    /// hoje e o commit 'data de hoje'. Aceite = artefato em disco + o commit.
+    /// Passo 1 — CRIA, COMPILA E VERSIONA: app console C# que exibe Hello World,
+    /// compilado/executado com dotnet, no repositorio com o commit
+    /// 'hello world console'. Aceite = fonte + app executando + commit.
     /// </summary>
     static async Task CreateAttempt(string dir, string feedback)
     {
         const string basePrompt =
-            "Trabalhe na pasta atual. Crie o arquivo data.txt com a data de hoje (a data do sistema) escrita como " +
-            "texto. Inicialize um repositorio git nesta mesma pasta, adicione o arquivo e faca o commit com a " +
-            "mensagem 'data de hoje'; confirme com git log. Aja com ferramentas: uma tool call por vez, "
-            + "sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
+            "Trabalhe na pasta atual. Crie um app console em C# que exiba em console a mensagem Hello World. " +
+            "Compile e execute o app com o dotnet, confirmando a mensagem na saida. Inicialize um repositorio git " +
+            "nesta mesma pasta, adicione os arquivos e faca o commit com a mensagem 'hello world console'; " +
+            "confirme com git log. Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o " +
+            "enunciado e sem descrever o que ja fez.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         string parent = Path.GetDirectoryName(dir)!;
@@ -72,17 +103,13 @@ internal static class E2EToolsFullTests
         TestContext.Check(fora.Length == 0,
             $"[toolsfull:create] nada criado fora da pasta corrente (em {parent}: {string.Join(", ", fora)})");
 
-        string dataPath = Path.Combine(dir, DataFile);
-        TestContext.Check(File.Exists(dataPath),
-            $"[toolsfull:create] arquivo {DataFile} criado na pasta de trabalho — nome exato do enunciado " +
-            $"(subpastas: {string.Join(", ", Directory.GetDirectories(dir).Select(Path.GetFileName))}; " +
-            $"arquivos: {string.Join(", ", Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Select(Path.GetFileName))})");
-        string body = ReadText(dataPath);
-        TestContext.Check(body.Contains(DateTime.Now.ToString("yyyy"), StringComparison.Ordinal),
-            $"[toolsfull:create] {DataFile} traz a data de hoje como texto (conteudo='{Trecho(dataPath)}')");
-        TestContext.Check(!body.Contains("data_de_hoje", StringComparison.Ordinal),
-            $"[toolsfull:create] {DataFile} traz a DATA do sistema como texto (ex.: 2026-11-06) na primeira linha, "
-            + $"nao um rotulo ou variavel no lugar da data (conteudo='{Trecho(dataPath)}')");
+        string? proj = FindCsproj(dir);
+        TestContext.Check(proj is not null,
+            $"[toolsfull:create] projeto C# (.csproj) na pasta de trabalho " +
+            $"(arquivos: {string.Join(", ", Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Select(p => Path.GetFileName(p)).Take(12))})");
+        string fonte = string.Join("\n", CsFiles(dir).Select(ReadText));
+        TestContext.Check(fonte.Contains(MsgV1, StringComparison.Ordinal),
+            $"[toolsfull:create] fonte exibe '{MsgV1}' (arquivos: {string.Join(", ", CsFiles(dir).Select(p => Path.GetFileName(p)))})");
 
         string repo = dir;
         TestContext.Check(Directory.Exists(Path.Combine(repo, ".git")),
@@ -90,15 +117,24 @@ internal static class E2EToolsFullTests
             $"(subpastas: {string.Join(", ", Directory.GetDirectories(dir, "*", SearchOption.AllDirectories).Select(Path.GetFileName))})");
 
         var (commits, log) = GitLog(repo);
-        TestContext.Check(commits.Length >= 1 && log.Contains("data de hoje"),
-            $"[toolsfull:create] commit 'data de hoje' no repositorio (git log: {log.Trim().Replace("\n", " / ")}; calls={string.Join(";", calls)})");
+        TestContext.Check(commits.Length >= 1 && log.Contains("hello world console", StringComparison.OrdinalIgnoreCase),
+            $"[toolsfull:create] commit 'hello world console' no repositorio (git log: {log.Trim().Replace("\n", " / ")}; calls={string.Join(";", calls)})");
+
+        if (proj is not null)
+        {
+            var (code, outp) = Run("dotnet", dir, 240, "run", "--project", proj, "-v", "q");
+            TestContext.Check(code == 0 && outp.Contains(MsgV1, StringComparison.Ordinal),
+                $"[toolsfull:create] app compila e exibe '{MsgV1}' (rc={code}, saida='{TrechoTexto(outp)}')");
+        }
 
         if (TestContext.Mode == "bridge")
         {
             TestContext.Check(calls.Count > 0, $"[toolsfull:create] tools executadas (calls={calls.Count})");
             bool used(string p) => calls.Any(c => c.StartsWith(p));
-            TestContext.Check(used("write(") || used("shell("),
-                $"[toolsfull:create] arquivo gravado por tool (calls={string.Join(";", calls)})");
+            TestContext.Check(used("write(") || used("edit(") || used("shell("),
+                $"[toolsfull:create] fonte gravada por tool (calls={string.Join(";", calls)})");
+            TestContext.Check(calls.Any(c => c.StartsWith("shell(") && c.Contains("dotnet")),
+                $"[toolsfull:create] compilacao/execucao com dotnet por tool (calls={string.Join(";", calls)})");
             TestContext.Check(used("git(") || calls.Any(c => c.StartsWith("shell(") && c.Contains("git")),
                 $"[toolsfull:create] git executado por tool (calls={string.Join(";", calls)})");
         }
@@ -106,44 +142,43 @@ internal static class E2EToolsFullTests
     }
 
     /// <summary>
-    /// Passo 2 — AJUSTA E VERSIONA: acrescenta a linha do clima no MESMO
-    /// `data.txt` (sem perder a data ja commitada) e commita
-    /// 'Added sao paulo weather'. Roda depois do passo 1, no mesmo diretorio.
+    /// Passo 2 — AJUSTA, RECOMPILA E VERSIONA: troca a mensagem exibida no MESMO
+    /// app de Hello World para Hello World v2, recompila/executa e commita
+    /// 'hello world v2'. Roda depois do passo 1, no mesmo diretorio.
     /// </summary>
     static async Task AdjustAttempt(string dir, string feedback)
     {
         const string basePrompt =
-            "Na pasta atual existe um repositorio git com o arquivo data.txt ja commitado com a data de hoje. " +
-            "Busque o clima de Sao Paulo agora em https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m " +
-            "e acrescente em data.txt, na linha de baixo da data (a data ja gravada continua no arquivo), a linha " +
-            "'ARQUIVO EDITADO - Clima: ' seguida da temperatura retornada. Adicione a mudanca e faca o commit " +
-            "com a mensagem 'Added sao paulo weather'; confirme com git log. Aja com ferramentas: uma tool call "
-            + "por vez, sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
+            "Na pasta atual existe um app console em C# que exibe Hello World, ja compilado e commitado. " +
+            "Leia o codigo e troque a mensagem exibida para Hello World v2, mantendo o resto do programa. " +
+            "Recompile e execute de novo, confirmando a nova mensagem na saida. Adicione a mudanca e faca o commit " +
+            "com a mensagem 'hello world v2'; confirme com git log. Aja com ferramentas: uma tool call por vez, " +
+            "sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
 
-        string repo = dir;
-        string dataPath = Path.Combine(dir, DataFile);
-        TestContext.Check(File.Exists(dataPath), $"[toolsfull:adjust] {DataFile} continua existindo");
-        string body = ReadText(dataPath);
-        TestContext.Check(body.Contains(DateTime.Now.ToString("yyyy"), StringComparison.Ordinal),
-            $"[toolsfull:adjust] a data que ja estava commitada continua em {DataFile} — o ajuste acrescenta, nao sobrescreve " +
-            $"(conteudo='{Trecho(dataPath)}')");
-        TestContext.Check(!body.Contains("data_de_hoje", StringComparison.Ordinal),
-            $"[toolsfull:adjust] {DataFile} mantem a DATA do sistema como texto (ex.: 2026-11-06), sem rotulo no lugar dela "
-            + $"(conteudo='{Trecho(dataPath)}')");
-        TestContext.Check(body.Contains("EDITADO", StringComparison.Ordinal)
-            && body.Contains("Clima", StringComparison.OrdinalIgnoreCase),
-            $"[toolsfull:adjust] linha 'ARQUIVO EDITADO - Clima: <temperatura>' no MESMO arquivo (conteudo='{Trecho(dataPath)}')");
+        string? proj = FindCsproj(dir);
+        TestContext.Check(proj is not null, $"[toolsfull:adjust] projeto C# (.csproj) continua na pasta de trabalho");
+        string fonte = string.Join("\n", CsFiles(dir).Select(ReadText));
+        TestContext.Check(fonte.Contains(MsgV2, StringComparison.Ordinal),
+            $"[toolsfull:adjust] fonte passa a exibir '{MsgV2}' (conteudo='{TrechoTexto(fonte)}')");
 
+        string repo = dir;
         var (commits, log) = GitLog(repo);
         TestContext.Check(commits.Length >= 2,
             $"[toolsfull:adjust] 2 commits no repo (git log: {log.Trim().Replace("\n", " / ")}; calls={string.Join(";", calls)})");
-        TestContext.Check(log.Contains("data de hoje"),
-            $"[toolsfull:adjust] primeiro commit com mensagem 'data de hoje' (log: {log.Trim().Replace("\n", " / ")})");
-        TestContext.Check(log.Contains("Added sao paulo weather"),
-            $"[toolsfull:adjust] segundo commit com mensagem 'Added sao paulo weather' (log: {log.Trim().Replace("\n", " / ")})");
+        TestContext.Check(log.Contains("hello world console", StringComparison.OrdinalIgnoreCase),
+            $"[toolsfull:adjust] primeiro commit com mensagem 'hello world console' (log: {log.Trim().Replace("\n", " / ")})");
+        TestContext.Check(log.Contains("hello world v2", StringComparison.OrdinalIgnoreCase),
+            $"[toolsfull:adjust] segundo commit com mensagem 'hello world v2' (log: {log.Trim().Replace("\n", " / ")})");
+
+        if (proj is not null)
+        {
+            var (code, outp) = Run("dotnet", dir, 240, "run", "--project", proj, "-v", "q");
+            TestContext.Check(code == 0 && outp.Contains(MsgV2, StringComparison.Ordinal),
+                $"[toolsfull:adjust] app recompila e exibe '{MsgV2}' (rc={code}, saida='{TrechoTexto(outp)}')");
+        }
 
         if (TestContext.Mode == "bridge")
         {
@@ -151,25 +186,26 @@ internal static class E2EToolsFullTests
             TestContext.Check(used("edit(") || used("write("),
                 $"[toolsfull:adjust] arquivo ajustado por tool (calls={string.Join(";", calls)})");
             TestContext.Check(used("read(") || used("glob(") || used("grep(")
-                || calls.Any(c => c.StartsWith("shell(") && (c.Contains("ls") || c.Contains("find") || c.Contains("grep") || c.Contains("cat"))),
-                $"[toolsfull:adjust] arquivos conferidos por tool (calls={string.Join(";", calls)})");
-            bool web = used("webfetch(") || used("fetch(") || used("websearch(")
-                || calls.Any(c => c.StartsWith("shell(") && (c.Contains("curl") || c.Contains("wget") || c.Contains("http")));
-            TestContext.Check(web, $"[toolsfull:adjust] busca web executada (calls={string.Join(";", calls)})");
+                || calls.Any(c => c.StartsWith("shell(") && (c.Contains("cat") || c.Contains("grep") || c.Contains("ls"))),
+                $"[toolsfull:adjust] codigo conferido por tool (calls={string.Join(";", calls)})");
+            TestContext.Check(calls.Any(c => c.StartsWith("shell(") && c.Contains("dotnet")),
+                $"[toolsfull:adjust] recompilacao com dotnet por tool (calls={string.Join(";", calls)})");
+            TestContext.Check(used("git(") || calls.Any(c => c.StartsWith("shell(") && c.Contains("git")),
+                $"[toolsfull:adjust] git executado por tool (calls={string.Join(";", calls)})");
         }
         Console.WriteLine($"  [toolsfull:adjust] ok ({calls.Count} calls, texto={text.Length} chars)");
     }
 
     public static async Task FullTools()
     {
-        // Dois enunciados sequenciais no MESMO diretorio: o primeiro cria e
-        // versiona, o segundo ajusta e versiona. O passo 1 tem pasta nova por
-        // tentativa (estado limpo); o passo 2 repete no mesmo diretorio para
-        // nao perder o commit do passo 1.
+        // Dois enunciados sequenciais no MESMO diretorio: o primeiro cria,
+        // compila e versiona; o segundo ajusta, recompila e versiona. O passo 1
+        // tem pasta nova por tentativa (estado limpo); o passo 2 repete no mesmo
+        // diretorio para nao perder o commit do passo 1.
         string dir = await TestContext.AgentAttempts("toolsfull:create", "/tmp/opencode/toolsfull-agent", 3,
-            CreateAttempt, retryHint: "com o nome de arquivo do enunciado (data.txt) na pasta de trabalho.");
+            CreateAttempt, retryHint: "na pasta de trabalho, com o app console C# compilando e executando pelo dotnet.");
         await TestContext.RetrySame("toolsfull:adjust", dir, 3,
-            AdjustAttempt, retryHint: "no MESMO repositorio e no MESMO data.txt do passo anterior (acrescente, nao sobrescreva).");
-        Console.WriteLine("[toolsfull] cenario agentico (criar+versionar, ajustar+versionar) concluido");
+            AdjustAttempt, retryHint: "no MESMO repositorio e no MESMO app (troque a mensagem e recompile, sem apagar o programa).");
+        Console.WriteLine("[toolsfull] cenario agentico (criar+compilar+versionar, ajustar+recompilar+versionar) concluido");
     }
 }
