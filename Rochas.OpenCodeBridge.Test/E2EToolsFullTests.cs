@@ -254,43 +254,19 @@ internal static class E2EToolsFullTests
 
         Console.WriteLine($"  [toolsfull:qa] conhecimento: {known.Count(k => k)}/8");
 
-        // ---------- FASE 2: pergunta a tool/arg, depois a ordem da etapa ----------
-        // Antes de mandar usar tools, pergunta se ele PODE usar a tool X com o arg Y
-        // (resposta em TEXTO); so entao a ordem curta de execucao daquela etapa.
-        const string canal = "\n\nUse as TOOLS do schema agora (tool call nativo). Nao responda com plano em texto.";
-        async Task Etapa(string pergunta, string ordem)
-        {
-            await dlg.Ask(pergunta);
-            await dlg.Act(ordem + canal, max: 4, oneShot: true);
-        }
-
-        await Etapa(
-            "Voce pode usar a tool shell com o comando `git init` nesta pasta?",
-            "Entao usa a tool shell com `git init` agora.");
-        await Etapa(
-            "Voce pode usar a tool write para criar data.txt com a data de hoje, e a tool git com `add data.txt`?",
-            "Entao usa as tools write e git agora.");
-        await Etapa(
-            "Voce pode usar a tool git com `commit -m \"data de hoje\"`?",
-            "Entao usa a tool git agora.");
-        await Etapa(
-            "Voce pode usar a tool shell com `mkdir -p dados`?",
-            "Entao usa a tool shell agora.");
-        await Etapa(
-            "Voce pode usar a tool webfetch na URL https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m e a tool write para gravar a temperatura em dados/clima.txt?",
-            "Entao usa as tools webfetch e write agora.");
-        await Etapa(
-            "Voce pode usar a tool shell com `date +%Y-%m-%d_%H:%M` e a tool write para gravar em dados/hora.txt?",
-            "Entao usa as tools shell e write agora.");
-        await Etapa(
-            "Voce pode usar a tool shell com `dotnet new console -o hello` e a tool write para o Program.cs imprimir Hello World?",
-            "Entao usa as tools shell e write agora.");
-
-        // ---------- FASE 3: sequencial final, so depois de todas as etapas ----------
+        // ---------- FASE 2: uma ordem em linguagem natural, tudo em sequencia ----------
         await dlg.Act(
-            "Agora, em sequencia, um passo por chamada: compila e publica o hello, " +
+            "Show. Agora faz tudo isso na pratica, nesta pasta, na ordem, um passo por chamada: " +
+            "inicializa o git; cria o arquivo data.txt com a data de hoje do sistema e adiciona ele ao git; " +
+            "faz o commit com a mensagem 'data de hoje' (se o git reclamar de identidade, configura o user.name e o user.email locais antes); " +
+            "cria a subpasta dados; busca o clima de Sao Paulo na URL " +
+            "https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m " +
+            "e grava a temperatura em dados/clima.txt; " +
+            "grava a data e a hora do sistema em dados/hora.txt; " +
+            "cria o app console hello com dotnet new console, deixa o Program.cs imprimindo Hello World e roda ele; " +
+            "compila e publica o hello; " +
             "e no fim junta o hello compilado num zip chamado hello.zip — garante que compilou antes de zipar, " +
-            "e confere o zip com unzip -t e unzip -l." + canal);
+            "e confere o zip com unzip -t e unzip -l.");
 
         // Aceite de tudo que a ordem pediu.
         Soft(Directory.Exists(Path.Combine(dir, ".git")), "1-git: repositorio git iniciado");
