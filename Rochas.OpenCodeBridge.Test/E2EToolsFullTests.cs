@@ -110,12 +110,20 @@ internal static class E2EToolsFullTests
     /// </summary>
     static async Task CreateAttempt(string dir, string feedback)
     {
+        // Literal no enunciado (2026-11-07): o E4B reescreveu o Program.cs da
+        // fixture ("Hello World") como "hello world" e o app rodava — o assert
+        // case-sensitive era o unico motivo do FAIL. O enunciado passa a citar a
+        // linha exata e o commit como ULTIMA tool call; o contrato compara sem
+        // caixa (rede de seguranca, nao afrouxamento do artefato).
         const string basePrompt =
             "Trabalhe na pasta atual, que ja tem um projeto console em C# chamado App.csproj com o app. O codigo " +
             "esta no arquivo Program.cs na raiz desta pasta (nao crie subpasta nem outro projeto). Compile e " +
-            "execute com o dotnet e confirme a mensagem exibida. " +
+            "execute com o dotnet e confirme a mensagem exibida. O Program.cs deve exibir exatamente Hello World, " +
+            "com a linha Console.WriteLine(\"Hello World\"); — nao troque a capitalizacao nem reescreva o arquivo " +
+            "com outra mensagem. " +
             "Inicialize um repositorio git nesta mesma pasta, adicione os arquivos e faca o commit com a mensagem " +
-            "'hello world console'; confirme com git log. Nao encerre antes do commit. Aja com ferramentas: uma " +
+            "'hello world console' (git commit -m 'hello world console'); confirme com git log. A ULTIMA tool call " +
+            "da resposta deve ser o commit: nao encerre antes do repositorio ter o commit. Aja com ferramentas: uma " +
             "tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
@@ -153,8 +161,8 @@ internal static class E2EToolsFullTests
             $"[toolsfull:create] app C# na pasta de trabalho (projeto .csproj ou arquivo .cs) " +
             $"(arquivos: {string.Join(", ", Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Select(p => Path.GetFileName(p)).Take(12))})");
         string fonte = string.Join("\n", fontes.Select(ReadText));
-        TestContext.Check(fonte.Contains(MsgV1, StringComparison.Ordinal),
-            $"[toolsfull:create] fonte exibe '{MsgV1}' (arquivos: {string.Join(", ", CsFiles(dir).Select(p => Path.GetFileName(p)))})");
+        TestContext.Check(fonte.Contains(MsgV1, StringComparison.OrdinalIgnoreCase),
+            $"[toolsfull:create] fonte exibe '{MsgV1}' (case-insensitive; arquivos: {string.Join(", ", CsFiles(dir).Select(p => Path.GetFileName(p)))})");
 
         string repo = dir;
         TestContext.Check(Directory.Exists(Path.Combine(repo, ".git")),
@@ -167,8 +175,8 @@ internal static class E2EToolsFullTests
 
         {
             var (code, outp) = RunApp(dir);
-            TestContext.Check(code == 0 && outp.Contains(MsgV1, StringComparison.Ordinal),
-                $"[toolsfull:create] app compila e exibe '{MsgV1}' (rc={code}, saida='{TrechoTexto(outp)}')");
+            TestContext.Check(code == 0 && outp.Contains(MsgV1, StringComparison.OrdinalIgnoreCase),
+                $"[toolsfull:create] app compila e exibe '{MsgV1}' (case-insensitive; rc={code}, saida='{TrechoTexto(outp)}')");
         }
 
         if (TestContext.Mode == "bridge")
@@ -195,10 +203,11 @@ internal static class E2EToolsFullTests
         const string basePrompt =
             "Na pasta atual existe um app console em C# (App.csproj) que exibe Hello World, ja compilado e commitado. " +
             "O codigo esta no arquivo Program.cs na raiz desta pasta. Leia esse arquivo e troque a mensagem exibida " +
-            "para Hello World v2, mantendo o resto do programa. " +
+            "para Hello World v2, mantendo o resto do programa: a linha deve ficar Console.WriteLine(\"Hello World v2\"); " +
+            "(mesma capitalizacao). " +
             "Recompile e execute de novo, confirmando a nova mensagem na saida. Adicione a mudanca e faca o commit " +
-            "com a mensagem 'hello world v2'; confirme com git log. Aja com ferramentas: uma tool call por vez, " +
-            "sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
+            "com a mensagem 'hello world v2'; confirme com git log. A ULTIMA tool call da resposta deve ser o commit. " +
+            "Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir, stack: "C#/.NET");
@@ -207,8 +216,8 @@ internal static class E2EToolsFullTests
         TestContext.Check(FindCsproj(dir) is not null || fontes.Length > 0,
             $"[toolsfull:adjust] app C# continua na pasta de trabalho (projeto .csproj ou arquivo .cs)");
         string fonte = string.Join("\n", fontes.Select(ReadText));
-        TestContext.Check(fonte.Contains(MsgV2, StringComparison.Ordinal),
-            $"[toolsfull:adjust] fonte passa a exibir '{MsgV2}' (conteudo='{TrechoTexto(fonte)}')");
+        TestContext.Check(fonte.Contains(MsgV2, StringComparison.OrdinalIgnoreCase),
+            $"[toolsfull:adjust] fonte passa a exibir '{MsgV2}' (case-insensitive; conteudo='{TrechoTexto(fonte)}')");
 
         string repo = dir;
         var (commits, log) = GitLog(repo);
@@ -221,8 +230,8 @@ internal static class E2EToolsFullTests
 
         {
             var (code, outp) = RunApp(dir);
-            TestContext.Check(code == 0 && outp.Contains(MsgV2, StringComparison.Ordinal),
-                $"[toolsfull:adjust] app recompila e exibe '{MsgV2}' (rc={code}, saida='{TrechoTexto(outp)}')");
+            TestContext.Check(code == 0 && outp.Contains(MsgV2, StringComparison.OrdinalIgnoreCase),
+                $"[toolsfull:adjust] app recompila e exibe '{MsgV2}' (case-insensitive; rc={code}, saida='{TrechoTexto(outp)}')");
         }
 
         if (TestContext.Mode == "bridge")
