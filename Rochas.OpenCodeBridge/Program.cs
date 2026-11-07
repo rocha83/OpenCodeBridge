@@ -2229,10 +2229,12 @@ WriteJson(ctx, 200, new JsonObject
                     }
                     if (node["temperature"] is null && !double.IsNaN(profTemp))
                         node["temperature"] = profTemp;
-                    // Linha CPU: o 3B entra em loop de filler ([END_OF_TEXT])
-                    // quando divaga — stop dedicado (só aqui; Responses/chat
-                    // nativo do vLLM jamais recebe stop automático).
-                    if (node["stop"] is null && CoerceFor())
+                    // Linha CPU (3B): o modelo entra em loop de filler
+                    // ([END_OF_TEXT]) quando divaga — stop dedicado. Marcador da
+                    // linha CPU = --cpu-max-tokens > 0; NAO usar CoerceFor(): com
+                    // coercao de texto ligada na GPU o stop entraria no request
+                    // com tools e truncaria a tool call (U-translate-without-stop).
+                    if (node["stop"] is null && CpuMaxTokens > 0)
                         node["stop"] = new JsonArray("[END_OF_TEXT]");
                     outBody = node.ToJsonString(SerOpts);
                 }
