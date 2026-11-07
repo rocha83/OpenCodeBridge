@@ -58,6 +58,7 @@ internal static partial class Program
     static int MaxTokens;                                          // teto de saida da linha GPU: 0 = SEM TETO (a infra/llama controla via -c/--n-predict e o cliente decide via max_tokens); >0 = clamp
     static int ToolMaxTokens = 4096;                               // teto de turno COM tools (0 = desliga): divagacao de 16k tok custa ~6 min; 4k corta em ~100s
     static int ForcedToolMaxTokens = 768;                          // teto quando tool_choice=required: o turno TEM que ser call (args curtos); prosa ali e' degenerada
+    static int DegenerateRetryMaxTokens = 512;                     // teto do retry de turno degenerado: e' resgate de 1 call, nao turno livre (2048 custava ~67s por retry)
     static int CpuMaxTokens;                                       // teto da linha CPU: 0 = SEM TETO (deixa o llama controlar); >0 = clamp p/ conter divagacao em decode lento (~5 tok/s)
     static string ToolShimMode = "";                                // "json" = shim generico: remove tools, forca envelope JSON via grammar e converte de volta p/ tool_calls
     static int ToolShimMaxString = 2000;                            // cap de chars por string no grammar do shim (0 = sem cap)
@@ -470,6 +471,7 @@ internal static partial class Program
             if (cfg["cpuMaxTokens"]?.GetValue<int>() is int cmt && cmt >= 0) CpuMaxTokens = cmt;
             if (cfg["toolMaxTokens"]?.GetValue<int>() is int tmt && tmt >= 0) ToolMaxTokens = tmt;
             if (cfg["forcedToolMaxTokens"]?.GetValue<int>() is int ftmt && ftmt >= 0) ForcedToolMaxTokens = ftmt;
+            if (cfg["degenerateRetryMaxTokens"]?.GetValue<int>() is int drmt && drmt >= 0) DegenerateRetryMaxTokens = drmt;
             if (cfg["toolOutputLimit"]?.GetValue<int>() is int tol && tol >= 0) ToolOutputLimit = tol;
             if (cfg["logPath"]?.GetValue<string>() is string log && log.Length > 0) LogPath = log;
             if (cfg["apiKey"]?.GetValue<string>() is string key && key.Length > 0) ApiKey = key;
@@ -973,7 +975,7 @@ internal static partial class Program
     /// request nada muda (texto longo e' legitimo).
     /// </summary>
     static JsonObject RetryDegenerateTurn(HttpListenerContext? ctx, JsonObject chat, JsonObject chatJson,
-        int toolCount, string model)
+        int toolCount, string model, int cap)
     {
         if (toolCount <= 0) return chatJson;
         var choice = chatJson["choices"] is JsonArray cs && cs.Count > 0 ? cs[0]?.AsObject() : null;
@@ -1008,7 +1010,11 @@ internal static partial class Program
                     ["content"] = "SAIDA = function_call NATIVO: a proxima acao e' uma tool call do schema do request; "
                         + "nao escreva texto longo, nao repita o enunciado, nao descreva o plano."
                 });
-            body["max_tokens"] = 2048;   // teto do retry: um turno perdido nao custa 6 minutos
+            // Teto do retry: resgate de 1 call, nao turno livre. Nunca acima do
+            // teto do request que degenerou (o 2048 fixo custava ~67s por retry).
+            int retryCap = DegenerateRetryMaxTokens;
+            if (cap > 0 && (retryCap <= 0 || cap < retryCap)) retryCap = cap;
+            body["max_tokens"] = retryCap > 0 ? retryCap : 2048;
             body["stream"] = false;
             var req = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/completions")
             { Content = new StringContent(body.ToJsonString(SerOpts), Encoding.UTF8, "application/json") };
@@ -1286,6 +1292,7 @@ internal static partial class Program
                 case "--coerced-max-tokens": case "--cpu-max-tokens": CpuMaxTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--tool-max-tokens": ToolMaxTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--forced-tool-max-tokens": ForcedToolMaxTokens = int.Parse(cliArgs[i + 1]); break;
+                case "--degenerate-retry-max-tokens": DegenerateRetryMaxTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--context-guard": ContextGuard = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--context-threshold": { double v = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); if (v >= 0.5 && v <= 0.99) ContextThreshold = v; break; }
                 case "--context-tokens": ContextTokens = int.Parse(cliArgs[i + 1]); break;
@@ -1871,7 +1878,7 @@ internal static partial class Program
                 // Dry-run: mostra o /v1/chat/completions que SERIA enviado ao
                 // vLLM, sem chamar o modelo. Util p/ depurar a traducao.
                 var req = JsonNode.Parse(ReadBody(ctx))?.AsObject() ?? new JsonObject();
-                var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out string thinking, out int toolCount, out string tempSource, out string? breakerTrip, out string breakerState);
+                var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out string thinking, out int toolCount, out string tempSource, out string? breakerTrip, out string breakerState, out int cap);
                 WriteJson(ctx, 200, new JsonObject
                 {
                     ["requested_model"] = requestedModel,
@@ -2756,7 +2763,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
     /// <param name="toolCount">No. de tools convertidas.</param>
     /// <returns>Body p/ /v1/chat/completions.</returns>
     static JsonObject BuildChatRequest(JsonObject req, out string requestedModel, out double temperature, out string thinking, out int toolCount)
-        => BuildChatRequest(req, out requestedModel, out temperature, out thinking, out toolCount, out _, out _, out _);
+        => BuildChatRequest(req, out requestedModel, out temperature, out thinking, out toolCount, out _, out _, out _, out _);
 
     /// <summary>Tradução completa com procedência da temperatura e veredito do breaker.</summary>
     /// <param name="req">Request Responses.</param>
@@ -2769,8 +2776,10 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
     /// <param name="breakerState">Estado do breaker: "none" | "nudge" | "trip".</param>
     /// <returns>Body p/ /v1/chat/completions.</returns>
     static JsonObject BuildChatRequest(JsonObject req, out string requestedModel, out double temperature,
-        out string thinking, out int toolCount, out string tempSource, out string? breakerTrip, out string breakerState)
+        out string thinking, out int toolCount, out string tempSource, out string? breakerTrip, out string breakerState,
+        out int cap)
     {
+        cap = 0;
         breakerTrip = null;
         breakerState = "none";
         // O opencode manda "openai/Gemma4-E4B-Q4" mas o Llama so conhece o id
@@ -2942,7 +2951,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // nesses casos vale o teto da linha coagida e o stop proprio. Nao ha
         // mais inferencia por id de modelo ("cpu"): a capacidade define a linha.
         bool coercedLine = CoerceFor();
-        int cap = coercedLine && CpuMaxTokens > 0 ? CpuMaxTokens : MaxTokens;   // 0 = sem teto
+        cap = coercedLine && CpuMaxTokens > 0 ? CpuMaxTokens : MaxTokens;   // 0 = sem teto
         // Turno COM tools: teto curto. Medido em 2026-11-07 (GK-Q4): uma unica
         // geracao passou de 4.246 tok e seguia aos 100s (o teto de 16k permitia
         // ~6 min por turno antes do retry degenerado entrar). 4k cobre qualquer
@@ -3075,7 +3084,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         }
         bool wantStream = req["stream"]?.GetValue<bool>() ?? false;
         var chat = BuildChatRequest(req, out string requestedModel, out double temperature, out string thinking,
-            out int toolCount, out string tempSource, out string? breakerTrip, out string breakerState);
+            out int toolCount, out string tempSource, out string? breakerTrip, out string breakerState, out int cap);
 
         // Breaker trip: o turno ja esta perdido (N falhas no mesmo alvo). Nao
         // chama o modelo; devolve o aviso como mensagem final (o cliente mostra
@@ -3188,7 +3197,7 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
         // do modelo, sem a segunda tentativa do transporte.
         bool degenRetry = true;
         try { degenRetry = req["degenerate_retry"]?.GetValue<bool>() ?? true; } catch { }
-        if (degenRetry) chatJson = RetryDegenerateTurn(ctx, chat, chatJson, toolCount, requestedModel);
+        if (degenRetry) chatJson = RetryDegenerateTurn(ctx, chat, chatJson, toolCount, requestedModel, cap);
         if (shimmed) ToolShim.TransformResponse(chatJson);
         var responseObj = ChatToResponses(chatJson, requestedModel, temperature, thinking, toolCount > 0, chat["messages"]);
         RecordResponsesActivity(responseObj);
