@@ -2,18 +2,20 @@
 
 ## Tool call canônico do Gemma 4, coerção por modelo e linha "só main harness" (2026-11-07, sessão 52)
 
-**Motivo.** Quatro defeitos medidos com o GGUF novo
+**Motivo.** Quatro pontos medidos com o GGUF novo
 (`Gemma4-E4B-UCD-IT_Principal-GK-DS-Retrained-Q4_K_M-Imatrix`, template nativo
 "fix july 2026"):
 
-1. o template emite a call como
-   `<|tool_call>call:NOME{chave:<|"|>valor<|"|>}<tool_call|>`; sem `tool_choice`
-   forçado o bloco chega como **texto** no `content` e a bridge devolvia o markup
-   cru ao cliente (2 respostas do `E-tools-full` de 06/11) — a ordem virava prosa;
-2. `-c 458752 -np 4` (turbo3) com o GGUF novo subia em **11.979/12.288 MiB** e
-   abortava (`SIGABRT` / `cudaMalloc failed: out of memory`) na primeira
-   requisição: o preflight do WAR via "Connection refused" e os 15 steps do L1
-   saíam SKIP sem rodar teste;
+1. o template passou a emitir a call no formato canônico
+   `<|tool_call>call:NOME{chave:<|"|>valor<|"|>}<tool_call|>` — mudança **correta**
+   do modelo, e trazer o fix para a bridge é o que faltava (não é defeito do
+   GGUF). Sem `tool_choice` forçado o bloco chega como **texto** no `content`;
+   sem leitor, a bridge devolvia o markup cru ao cliente (2 respostas do
+   `E-tools-full` de 06/11) e a ordem virava prosa;
+2. `-c 458752 -np 4` (= **4×112k**, turbo3) com o GGUF novo subia em
+   **11.979/12.288 MiB** e abortava (`SIGABRT` / `cudaMalloc failed: out of
+   memory`) na primeira requisição: o preflight do WAR via "Connection refused" e
+   os 15 steps do L1 saíam SKIP sem rodar teste;
 3. o portão de fluxo (`BridgeFlowGate`) exigia as **tails**; a política passou a
    ser **só main harness** (`--harness-tails 0 --harness-tools 0`);
 4. o stop `[END_OF_TEXT]` era injetado por `CoerceFor()` (proxy de "linha CPU")
@@ -144,7 +146,8 @@ modelo** — *"o Q4 UD não fala com outro modelo"*. As linhas **GPU2 (Q3)** e
 - **Q3 UD (aposentado, squashfs):** `/opt/models/huihui-gemma4-e4b-abliterated/Huihui-gemma-4-E4B-it-qat-q4_0-unquantized-abliterated.i1-IQ3_XXS.gguf` — remoção física **pendente (config futura)**.
 - **Q4 base (aposentado, squashfs):** `/opt/models/gemma4-e4b-base/google_gemma-4-E4B-it-Q4_K_M.gguf` (+ `mmproj-gemma-4-E4B-it-Q8_0.gguf`) — remoção física **pendente (config futura)**.
 
-**Config llama do Q4 UD (idem à atual):** `-c 524288 -np 4` = **4×128k**, full
+**Config llama do Q4 UD (histórico de 2026-10-30; hoje `-c 458752 -np 4` = 4×112k
+— ver sessão 52):** `-c 524288 -np 4` = **4×128k**, full
 `CUDA0` (`-ot .*=CUDA0`, `-ngl 99`), KV `turbo3`, `--prio 2/2`, mmproj na GPU.
 Bridge `:4124` com `--context-tokens 524288 --mode bridge --main-harness 1
 --harness-tails 1`. (VRAM ~10,8/12,2 GB; ~40 t/s.)

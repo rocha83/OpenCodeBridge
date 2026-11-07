@@ -11,7 +11,7 @@ expresso (componente, cenário de teste e harness) fica no `README.md`.
 | item | valor |
 |---|---|
 | modelo GPU1 `:4100` | `Gemma4-E4B-UCD-IT_Principal-GK-DS-Retrained-Q4_K_M-Imatrix.gguf` (5,3 GB) em `/media/mint/FT/models/gguf/` + `…-mmproj-bf16.gguf` |
-| ctx/slots | `-c 114688 -np 1` (**1×112k**) — **não** `458752 -np 4` |
+| ctx/slots | `-c 114688 -np 1` (**1×112k**) — **não** `458752 -np 4` (= 4×112k, aposentado) |
 | KV cache | `--cache-type-k turbo3 --cache-type-v turbo3` (TurboQuant, só neste fork) |
 | VRAM medida | 10,6 GB ocioso / 10,7 GB após request (12,2 GB totais) |
 | bridge `:4124` | `--main-harness 1 --harness-tails 0 --harness-behavior 0 --harness-tools 0 --anti-repeat 0 --coerce-text-tools 1 --coerce-narrated 0 --temperature 0.2 --max-tokens 16384` |
@@ -35,7 +35,7 @@ A bridge lê esse formato **no texto** (`Core/GemmaToolCalls.cs`) quando ele vaz
 no `content`; a coerção texto→`tool_calls` só roda com `--coerce-text-tools 1`.
 Sem o leitor, o markup chegava cru ao cliente (medido em 2026-11-07).
 
-## Snapshot (2026-10-30) — Q4 UD é o único modelo
+## Snapshot (2026-10-30, histórico) — Q4 UD era o único modelo
 
 > **Regra do lab (2026-10-30): o Q4 UD não fala com outro modelo.** Ele é o
 > **único modelo ativo** nas linhas de GPU e de CPU. O **Q3 UD** e o **Q4 base**
