@@ -905,9 +905,10 @@ internal static class TestContext
                 ["input"] = input.DeepClone(),
                 ["tools"] = respTools,
                 ["stream"] = false,
-                // Medicao crua do tool agent: sem o retry de turno degenerado
-                // do transporte. TCTX_DEGEN_RETRY=1 reabilita (compara A/B).
-                ["degenerate_retry"] = Environment.GetEnvironmentVariable("TCTX_DEGEN_RETRY") == "1"
+                // Retry de turno degenerado do transporte: LIGADO por default
+                // (mesmo comportamento da bridge). TCTX_DEGEN_RETRY=0 desliga
+                // para medir o comportamento cru do modelo (A/B).
+                ["degenerate_retry"] = Environment.GetEnvironmentVariable("TCTX_DEGEN_RETRY") != "0"
             };
             // Sem tool_choice o 4B responde em TEXTO (narra o JSON da call) ou
             // encerra o turno com 1 token depois do resultado — medido em
