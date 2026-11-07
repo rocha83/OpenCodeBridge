@@ -132,8 +132,9 @@ internal static class E2EEnterpriseTests
             "C# .NET 9 + Redis (StackExchange.Redis): repositorio de Product com cache-aside " +
             "(IDistributedCache, sliding 5min), fallback Postgres + repopula; PUT/DELETE invalidam a chave " +
             "com cache.RemoveAsync; stampede controlado por lock por chave e circuit-breaker simples (3 falhas) " +
-            "quando o Redis cai. Entregue o repositorio + o registro no DI e diga o que acontece quando o " +
-            "Redis esta fora. So codigo + 3 bullets de borda."));
+            "quando o Redis cai. Entregue em DOIS blocos de codigo: (1) o repositorio de Product e " +
+            "(2) o registro no DI no Program.cs (builder.Services.AddStackExchangeRedisCache + AddScoped " +
+            "do repositorio). Diga em 3 bullets o que acontece quando o Redis esta fora."));
         TestContext.Check(r["status"]?.GetValue<string>() == "completed", "redis completed");
         string text = TextOf(r);
         TestContext.Check(text.Length > 500, "redis com codigo util");
