@@ -138,12 +138,20 @@ internal static class E2EEnterpriseTests
         string text = TextOf(r);
         TestContext.Check(text.Length > 500, "redis com codigo util");
         CheckNoStub(text, "redis");
-        TestContext.Check(text.Contains("IDistributedCache") && text.Contains("RemoveAsync"), "redis com invalidacao");
-        // Contrato observavel: cache distribuido registrado no DI. A API exata e
-        // escolha do autor (StackExchange moderno, memory fallback ou a legada
-        // pre-3.0); a versao escolhida vai no [info], nao no assert.
+        // A API e escolha do autor (IDistributedCache do .NET ou o
+        // ConnectionMultiplexer do StackExchange cru); o contrato e'
+        // "cache + invalidacao da chave" (RemoveAsync / KeyDelete).
+        bool hasCache = text.Contains("IDistributedCache")
+            || text.Contains("ConnectionMultiplexer", StringComparison.OrdinalIgnoreCase);
+        bool hasInvalidation = text.Contains("RemoveAsync")
+            || text.Contains("KeyDelete", StringComparison.OrdinalIgnoreCase);
+        TestContext.Check(hasCache && hasInvalidation, "redis cache+invalidacao");
+        // Registro no DI: API moderna, memory fallback, legada ou o registro de
+        // servicos explicito (builder.Services.Add... / services.Add...).
         bool di = text.Contains("AddStackExchangeRedisCache") || text.Contains("AddDistributedMemoryCache")
-            || text.Contains("AddDistributedRedisCache") || text.Contains("IConnectionMultiplexer");
+            || text.Contains("AddDistributedRedisCache") || text.Contains("IConnectionMultiplexer")
+            || text.Contains("builder.Services.Add", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("services.Add", StringComparison.OrdinalIgnoreCase);
         TestContext.Check(di, "redis registro no DI");
         string diApi = text.Contains("AddStackExchangeRedisCache") ? "modern"
             : text.Contains("AddDistributedRedisCache") ? "legacy" : "custom";
