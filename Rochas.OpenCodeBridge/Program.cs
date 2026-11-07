@@ -56,6 +56,7 @@ internal static partial class Program
     static double Temperature = 0.2;                                 // global (sem role): escala baixa 0.1 / media 0.2 / alta 0.4; tool calling continua deterministico via tool_choice
     static double AuxTemp = double.NaN;                            // temperatura AUXILIAR do turno de retry/reconsideracao (--aux-temp); NaN = usa a do role de desvio (plan)
     static int MaxTokens;                                          // teto de saida da linha GPU: 0 = SEM TETO (a infra/llama controla via -c/--n-predict e o cliente decide via max_tokens); >0 = clamp
+    static int ToolMaxTokens = 4096;                               // teto de turno COM tools (0 = desliga): divagacao de 16k tok custa ~6 min; 4k corta em ~100s
     static int CpuMaxTokens;                                       // teto da linha CPU: 0 = SEM TETO (deixa o llama controlar); >0 = clamp p/ conter divagacao em decode lento (~5 tok/s)
     static string ToolShimMode = "";                                // "json" = shim generico: remove tools, forca envelope JSON via grammar e converte de volta p/ tool_calls
     static int ToolShimMaxString = 2000;                            // cap de chars por string no grammar do shim (0 = sem cap)
@@ -466,6 +467,7 @@ internal static partial class Program
             if (cfg["auxTemp"]?.GetValue<double>() is double at) AuxTemp = at;
             if (cfg["maxTokens"]?.GetValue<int>() is int mt && mt >= 0) MaxTokens = mt;
             if (cfg["cpuMaxTokens"]?.GetValue<int>() is int cmt && cmt >= 0) CpuMaxTokens = cmt;
+            if (cfg["toolMaxTokens"]?.GetValue<int>() is int tmt && tmt >= 0) ToolMaxTokens = tmt;
             if (cfg["toolOutputLimit"]?.GetValue<int>() is int tol && tol >= 0) ToolOutputLimit = tol;
             if (cfg["logPath"]?.GetValue<string>() is string log && log.Length > 0) LogPath = log;
             if (cfg["apiKey"]?.GetValue<string>() is string key && key.Length > 0) ApiKey = key;
@@ -1280,6 +1282,7 @@ internal static partial class Program
                 // Teto da linha COAGIDA (upstream sem parser). --cpu-max-tokens e
                 // alias historico: "cpu" era a inferencia por nome de modelo.
                 case "--coerced-max-tokens": case "--cpu-max-tokens": CpuMaxTokens = int.Parse(cliArgs[i + 1]); break;
+                case "--tool-max-tokens": ToolMaxTokens = int.Parse(cliArgs[i + 1]); break;
                 case "--context-guard": ContextGuard = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--context-threshold": { double v = double.Parse(cliArgs[i + 1], CultureInfo.InvariantCulture); if (v >= 0.5 && v <= 0.99) ContextThreshold = v; break; }
                 case "--context-tokens": ContextTokens = int.Parse(cliArgs[i + 1]); break;
@@ -2937,6 +2940,11 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // mais inferencia por id de modelo ("cpu"): a capacidade define a linha.
         bool coercedLine = CoerceFor();
         int cap = coercedLine && CpuMaxTokens > 0 ? CpuMaxTokens : MaxTokens;   // 0 = sem teto
+        // Turno COM tools: teto curto. Medido em 2026-11-07 (GK-Q4): uma unica
+        // geracao passou de 4.246 tok e seguia aos 100s (o teto de 16k permitia
+        // ~6 min por turno antes do retry degenerado entrar). 4k cobre qualquer
+        // call (args < 2k) + prosa final e limita o pior caso a ~100s.
+        if (toolCount > 0 && ToolMaxTokens > 0 && (cap == 0 || cap > ToolMaxTokens)) cap = ToolMaxTokens;
         // O pedido do cliente NAO limita a saida: o bridge ignora
         // max_tokens/max_output_tokens do corpo e usa apenas o teto do operador.
         // Motivo: Gemma 4 com thinking ON gasta centenas de tokens em raciocinio;
