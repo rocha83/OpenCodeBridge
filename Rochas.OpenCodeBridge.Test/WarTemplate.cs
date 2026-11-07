@@ -934,7 +934,10 @@ internal sealed class WarTemplate : CircuitTemplate
         ("senior-arm", "E-senior-arm"),
         ("ent-crud", "E-ent-crud"),
         ("ent-worker", "E-ent-worker"),
-        ("ent-redis", "E-ent-redis"),
+        // Redis em dois steps (2026-11-07): bloco (1) repositorio e (2) DI; o
+        // passo (2) continua o (1) pelo handoff do artefato.
+        ("ent-redis-cache", "E-ent-redis-cache"),
+        ("ent-redis-di", "E-ent-redis-di"),
         ("ent-dashboard", "E-ent-dashboard")
     };
 

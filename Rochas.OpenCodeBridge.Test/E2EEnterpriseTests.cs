@@ -237,47 +237,117 @@ internal static class E2EEnterpriseTests
         Console.WriteLine($"  [info] worker retry={text.Contains("retry", StringComparison.OrdinalIgnoreCase)} deadletter={text.Contains("dead", StringComparison.OrdinalIgnoreCase)}");
     }
 
-    public static async Task RedisCircuit()
+    // --- Redis fatiado em DOIS steps (2026-11-07) ---------------------------
+    // Ate aqui o cenario pedia DOIS blocos no mesmo texto (repositorio + DI) e
+    // media os tres contratos de uma vez: medido 2 FAILs em 3 rodadas
+    // (`len=3199` e `len=5126`, sem `RemoveAsync` — a invalidacao e o bloco (2)
+    // ficavam depois do ponto em que o texto terminava) contra PASS isolado de
+    // 22,4s/22,9s. Mesmo remedio do E-tools-full: um artefato por step e a
+    // continuidade pelo handoff do artefato. O bloco (1) fica em disco e vira
+    // contexto do bloco (2) — o segundo step continua o primeiro de verdade.
+
+    /// <summary>Bloco (1) do Redis (repositorio) — contexto do bloco (2).</summary>
+    const string RedisHandoffPath = "/tmp/opencode/redis-chain/block1.md";
+
+    static void WriteRedisHandoff(string text)
     {
-        // Circuito assincrono com Redis: cache-aside + invalidacao + antifalha.
+        Directory.CreateDirectory(Path.GetDirectoryName(RedisHandoffPath)!);
+        File.WriteAllText(RedisHandoffPath, text);
+    }
+
+    static string? ReadRedisHandoff()
+    {
+        try { return File.Exists(RedisHandoffPath) ? File.ReadAllText(RedisHandoffPath).Trim() : null; }
+        catch (IOException) { return null; }
+    }
+
+    // A API de cache e' escolha do autor: IDistributedCache
+    // (`Remove`/`RemoveAsync`) ou o ConnectionMultiplexer do StackExchange
+    // (`KeyDelete`). As tres APAGAM a chave — o que nao vale e' so descrever a
+    // invalidacao em prosa sem a chamada no codigo.
+    static bool RedisHasCache(string t) => t.Contains("IDistributedCache")
+        || t.Contains("ConnectionMultiplexer", StringComparison.OrdinalIgnoreCase);
+
+    static bool RedisHasInvalidation(string t) => t.Contains("RemoveAsync")
+        || t.Contains("Remove(")
+        || t.Contains("KeyDelete", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Step WAR `e-topics-ent-redis-cache`: bloco (1), o repositorio cache-aside.</summary>
+    public static async Task RedisCacheAside()
+    {
         // A linha E-ent e' CONCEITUAL: texto puro via /v1/responses (o modelo
         // entrega o codigo no texto). O caminho de tool (write em disco, git,
         // shell) fica nas trilhas E-tools — aqui nao se pede call.
         const string prompt =
-            "C# .NET 9 + Redis (StackExchange.Redis): repositorio de Product com cache-aside " +
-            "(IDistributedCache, sliding 5min), fallback Postgres + repopula; PUT/DELETE invalidam a chave " +
-            "com cache.RemoveAsync; stampede controlado por lock por chave e circuit-breaker simples (3 falhas) " +
-            "quando o Redis cai. Entregue em DOIS blocos de codigo: (1) o repositorio de Product e " +
-            "(2) o registro no DI no Program.cs (builder.Services.AddStackExchangeRedisCache + AddScoped " +
-            "do repositorio). Diga em 3 bullets o que acontece quando o Redis esta fora.";
-        // A API e escolha do autor (IDistributedCache do .NET ou o
-        // ConnectionMultiplexer do StackExchange cru); o contrato e'
-        // "cache + invalidacao da chave" (RemoveAsync / KeyDelete).
-        static bool HasCache(string t) => t.Contains("IDistributedCache")
-            || t.Contains("ConnectionMultiplexer", StringComparison.OrdinalIgnoreCase);
-        static bool HasInvalidation(string t) => t.Contains("RemoveAsync")
-            || t.Contains("KeyDelete", StringComparison.OrdinalIgnoreCase);
-        // Registro no DI: API moderna, memory fallback, legada ou o registro de
-        // servicos explicito (builder.Services.Add... / services.Add...).
-        static bool HasDi(string t) => t.Contains("AddStackExchangeRedisCache") || t.Contains("AddDistributedMemoryCache")
-            || t.Contains("AddDistributedRedisCache") || t.Contains("IConnectionMultiplexer")
-            || t.Contains("builder.Services.Add", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("services.Add", StringComparison.OrdinalIgnoreCase);
-        var (text, status) = await Ask("redis", prompt,
-            t => t.Length > 500 && StubReason(t) == "" && HasCache(t) && HasInvalidation(t) && HasDi(t));
-        TestContext.Check(status == "completed", "redis completed");
-        TestContext.Check(text.Length > 500, "redis com codigo util");
-        CheckNoStub(text, "redis");
-        bool hasCache = HasCache(text);
-        bool hasInvalidation = HasInvalidation(text);
-        if (!(hasCache && hasInvalidation)) FailDump("redis", text);
-        TestContext.Check(hasCache && hasInvalidation, "redis cache+invalidacao");
-        bool di = HasDi(text);
-        if (!di) FailDump("redis-di", text);
-        TestContext.Check(di, "redis registro no DI");
-        string diApi = text.Contains("AddStackExchangeRedisCache") ? "modern"
-            : text.Contains("AddDistributedRedisCache") ? "legacy" : "custom";
-        Console.WriteLine($"  [info] redis sliding={text.Contains("Sliding", StringComparison.OrdinalIgnoreCase)} circuito={text.Contains("circuit", StringComparison.OrdinalIgnoreCase)} di={diApi}");
+            "C# .NET 9 + Redis (StackExchange.Redis): repositorio ProductRepository com cache-aside " +
+            "(IDistributedCache, sliding 5min): GetAsync le do cache, em miss cai no Postgres (Dapper) e repopula; " +
+            "SetAsync e DeleteAsync do repositorio INVALIDAM a chave com cache.RemoveAsync; stampede controlado " +
+            "por lock por chave e circuit-breaker simples (3 falhas) quando o Redis cai. Entregue SO O BLOCO (1): " +
+            "a classe do repositorio COMPLETA (usings, construtor, GetAsync, SetAsync, DeleteAsync com RemoveAsync, " +
+            "lock e breaker) + 3 bullets do que acontece quando o Redis esta fora.";
+        var (text, status) = await Ask("redis-cache", prompt,
+            t => t.Length > 500 && StubReason(t) == "" && RedisHasCache(t) && RedisHasInvalidation(t));
+        TestContext.Check(status == "completed", "redis-cache completed");
+        TestContext.Check(text.Length > 500, "redis-cache com codigo util");
+        CheckNoStub(text, "redis-cache");
+        bool hasCache = RedisHasCache(text);
+        bool hasInvalidation = RedisHasInvalidation(text);
+        if (!(hasCache && hasInvalidation)) FailDump("redis-cache", text);
+        // Handoff antes do assert: o step seguinte precisa do bloco (1) mesmo que
+        // este veredito seja FAIL (a causa do FAIL fica no log do step).
+        if (hasCache && hasInvalidation) WriteRedisHandoff(text);
+        TestContext.Check(hasCache && hasInvalidation, "redis-cache cache+invalidacao");
+        Console.WriteLine($"  [info] redis-cache sliding={text.Contains("Sliding", StringComparison.OrdinalIgnoreCase)} " +
+            $"lock={text.Contains("lock", StringComparison.OrdinalIgnoreCase)} " +
+            $"circuito={text.Contains("circuit", StringComparison.OrdinalIgnoreCase)} handoff={RedisHandoffPath}");
+    }
+
+    /// <summary>
+    /// Step WAR `e-topics-ent-redis-di`: continua o bloco (1) do
+    /// `e-topics-ent-redis-cache` (handoff em disco) e entrega SO o bloco (2) —
+    /// o registro no DI. Sem o bloco (1) o step falha com a causa exata: nao
+    /// existe "refaca o repositorio aqui".
+    /// </summary>
+    public static async Task RedisDi()
+    {
+        string? repo = ReadRedisHandoff();
+        if (string.IsNullOrWhiteSpace(repo))
+            throw new Exception("sem bloco (1) do redis: rode e-topics-ent-redis-cache antes (handoff " +
+                RedisHandoffPath + ")");
+        const string head =
+            "CONTINUACAO do step anterior. O bloco (1) ja esta pronto (repositorio ProductRepository com " +
+            "IDistributedCache e cache.RemoveAsync) e vai abaixo como CONTEXTO — NAO reescreva, NAO repita e NAO " +
+            "resuma esse repositorio. Entregue SO O BLOCO (2): o trecho de Program.cs de uma Minimal API .NET 9 que " +
+            "registra Redis e repositorio no DI, exatamente com builder.Services.AddStackExchangeRedisCache(options => { " +
+            "options.Configuration = builder.Configuration.GetConnectionString(\"Redis\"); options.InstanceName = " +
+            "\"ProductCache:\"; }) e builder.Services.AddScoped<IProductRepository, ProductRepository>(); (o construtor " +
+            "recebe IDistributedCache e a connection string do Postgres). Formato: comecar a resposta com ```csharp e a " +
+            "linha var builder = WebApplication.CreateBuilder(args);, sem explicacao antes do codigo, e terminar com " +
+            "3 bullets de configuracao/ambiente (ConnectionStrings:Redis, InstanceName, Redis fora).";
+        // Contrato do bloco (2): registro de Redis no DI + repositorio scoped.
+        // `builder.Services.Add` generico NAO prova Redis e nao fecha o contrato.
+        static bool HasRedisDi(string t) => t.Contains("AddStackExchangeRedisCache")
+            || t.Contains("AddDistributedRedisCache") || t.Contains("IConnectionMultiplexer");
+        static bool HasScoped(string t) => t.Contains("AddScoped")
+            && (t.Contains("ProductRepository") || t.Contains("IProductRepository"));
+        // Ordem deliberada: o artefato do step anterior vem PRIMEIRO e a
+        // instrucao por ULTIMO (o que esta colado na geracao e' o "entregue so
+        // o bloco (2)"), senao o modelo recomeca o repositorio — medido.
+        var (text, status) = await Ask("redis-di",
+            "--- REPOSITORIO DO STEP ANTERIOR (bloco 1, CONTEXTO) ---\n" + repo +
+            "\n--- FIM DO CONTEXTO ---\n\n" + head,
+            t => t.Length > 300 && StubReason(t) == "" && HasRedisDi(t) && HasScoped(t));
+        TestContext.Check(status == "completed", "redis-di completed");
+        TestContext.Check(text.Length > 300, "redis-di com trecho util");
+        CheckNoStub(text, "redis-di");
+        bool redisDi = HasRedisDi(text);
+        bool scoped = HasScoped(text);
+        if (!(redisDi && scoped)) FailDump("redis-di", text);
+        TestContext.Check(redisDi, "redis-di registro do Redis");
+        TestContext.Check(scoped, "redis-di repositorio scoped");
+        string api = text.Contains("AddStackExchangeRedisCache") ? "modern"
+            : text.Contains("AddDistributedRedisCache") ? "legacy" : "multiplexer";
+        Console.WriteLine($"  [info] redis-di api={api} scoped={scoped} contexto={repo.Length} chars");
     }
 
     public static async Task ReactDashboard()

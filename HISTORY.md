@@ -1,5 +1,46 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Redis fatiado em dois steps: bloco (1) repositório e bloco (2) DI, com handoff (2026-11-07, sessão 57)
+
+**Sintoma.** `E-ent-redis` virou o step mais instável da L1: em três rodadas do
+mesmo binário, FAIL `len=3199` (13:24), PASS `len=4881 di=modern` (13:54) e FAIL
+`len=5126` (14:17) — sempre o mesmo assert, `redis cache+invalidacao`. Rodadas
+isoladas do mesmo teste passavam (PASS 22,4s / 22,9s), então não era regressão de
+código nem "o modelo não sabe Redis": nos três casos o texto trazia
+`IDistributedCache`, `StackExchange.Redis` e os usings certos.
+
+**Medição (sonda com o envelope idêntico ao teste, 3 amostras).** `status=completed`
+nas 3, sem `incomplete_details`; 2/3 fecharam os três contratos (4.357 e 4.508
+chars, 1.304 e 1.569 tokens) e 1/3 entregou 6.215 chars **sem `RemoveAsync` no
+código** — a invalidação aparecia só na prosa dos bullets. Segunda sonda (2
+amostras) mostrou as formas que o modelo usa quando acerta: `RemoveAsync`,
+`DistributedCache.Default.RemoveAsync` e `KeyDelete`. Ou seja: o defeito é o
+enunciado pedir **dois artefatos num texto só** (repositório + DI) com o
+`RemoveAsync` e o bloco (2) no fim — não é falta de conhecimento do domínio.
+
+**Decisão (mesmo remédio do `E-tools-full` create/update).** O cenário virou dois
+steps, um artefato por step, com continuidade pelo artefato:
+1. `E-ent-redis-cache` (`e-topics-ent-redis-cache-{mode}`): bloco (1) sozinho — o
+   repositório cache-aside com `RemoveAsync`, lock por chave e breaker. Contrato:
+   `IDistributedCache`/`ConnectionMultiplexer` **e** invalidação real
+   (`RemoveAsync`, `Remove(` ou `KeyDelete`); grava o texto em
+   `/tmp/opencode/redis-chain/block1.md`.
+2. `E-ent-redis-di` (`e-topics-ent-redis-di-{mode}`): bloco (2) como
+   continuação — recebe o bloco (1) do handoff como contexto e entrega o trecho
+   do `Program.cs`. Contrato: Redis no DI (`AddStackExchangeRedisCache`/
+   `AddDistributedRedisCache`/`IConnectionMultiplexer`) **e** `AddScoped` do
+   repositório — `builder.Services.Add` genérico não fecha (não prova Redis).
+   Sem o bloco (1) o step falha com a causa exata ("rode ...-cache antes").
+
+**Ajuste medido no bloco (2).** A primeira versão colava a instrução antes do
+contexto: o modelo recomeçou o repositório (`len=2644`, sem `AddScoped`) — FAIL.
+Invertendo a ordem (artefato primeiro, instrução por último: "não reescreva,
+comece com ```csharp + `var builder = WebApplication.CreateBuilder(args);`") o
+step passou em 5,2s. Ordem do prompt conta tanto quanto o enunciado.
+
+**Medições.** `E-ent-redis-cache` PASS 13,5s; `E-ent-redis-di` PASS 5,2s (handoff
+de 2.564 chars) na validação isolada antes da bateria.
+
 ## Painel vivo na WAR: rótulo do step, revisão de todos os painéis e 0.0.0.0:4800 (2026-11-07, sessão 56)
 
 **Sintoma.** Durante L1/L2 os painéis "Enunciado do teste em execução" e

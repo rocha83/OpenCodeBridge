@@ -1829,7 +1829,7 @@ Regra: execução no live grava log/artefato em **disco não volátil** — `log
   caminho real do Grafana: `POST /api/ds/query` (o installer faz um target por
   endpoint e imprime `[painel] ds/query: N/7 endpoints com dado`).
 - **Rótulo do step no painel:** `WAR_PANEL_STEP` (nome do step da esteira, ex.
-  `e-topics-ent-redis-bridge`) — o run-levels exporta por step e o runner
+  `e-topics-ent-redis-cache-bridge`) — o run-levels exporta por step e o runner
   publica o enunciado vazio no início (`SetEnunciado` limpa histórico/atividade
   na troca). Sem isso, tudo caía em `manual-bridge` e o painel parecia
   congelado (medido 2026-11-07).

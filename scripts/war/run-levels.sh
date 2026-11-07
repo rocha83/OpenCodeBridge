@@ -471,7 +471,10 @@ case "$LEVEL" in
       step_bridge "e-topics-senior-arm-$mode"     --only E-senior-arm            --mode "$mode"
       step_bridge "e-topics-ent-crud-$mode"       --only E-ent-crud              --mode "$mode"
       step_bridge "e-topics-ent-worker-$mode"     --only =E-ent-worker           --mode "$mode"
-      step_bridge "e-topics-ent-redis-$mode"      --only =E-ent-redis            --mode "$mode"
+      # Redis em dois steps (2026-11-07): bloco (1) repositorio, bloco (2) DI —
+      # o (2) continua o (1) pelo handoff /tmp/opencode/redis-chain/block1.md.
+      step_bridge "e-topics-ent-redis-cache-$mode" --only =E-ent-redis-cache     --mode "$mode"
+      step_bridge "e-topics-ent-redis-di-$mode"    --only =E-ent-redis-di        --mode "$mode"
       step_bridge "e-topics-ent-dashboard-$mode"  --only =E-ent-dashboard        --mode "$mode"
     done
     ;;

@@ -366,7 +366,7 @@ Cada level roda os steps em série (`MaxParallelSteps=1`), nos dois modos
 
 | Level | Steps |
 |---|---|
-| **L1** | `units` uma vez (`U-`, bridge), `e-integration-{tema}-{bridge}` (um teste por step: `stream`, `review`, `iot`, `error`, `fullcycle`, `healthy`), `e-topics-{tema}-{bridge}` (um tema por step: `senior-react`, `senior-bus`, `senior-erp`, `senior-arm`, `ent-crud` (3 CRUD), `ent-worker`, `ent-redis`, `ent-dashboard`). |
+| **L1** | `units` uma vez (`U-`, bridge), `e-integration-{tema}-{bridge}` (um teste por step: `stream`, `review`, `iot`, `error`, `fullcycle`, `healthy`), `e-topics-{tema}-{bridge}` (um tema por step: `senior-react`, `senior-bus`, `senior-erp`, `senior-arm`, `ent-crud` (3 CRUD), `ent-worker`, `ent-redis-cache` + `ent-redis-di` (repositório e DI, continuidade por handoff), `ent-dashboard`). |
 | **L2** | `e-responses-tools-{bridge}`, `e-tools-full-{bridge}`, `e-belts-{azul,verde}-{build,orch}-{bridge}` (uma belt por step). |
 | **L3** | `e-science-gpu-{bridge}`, `e-mission-tools-{bridge}`, `e-belts-roxa-{build,orch}-{bridge}`. |
 | **L4** | `e-algo-cs-{hanoi,bin,btree,kmeans,sort}-{bridge}`, `e-belts-{marrom,preta}-{build,orch}-{bridge}`, `e-front-{gen,edit,edit-razor,edit-react,verify}-{bridge}` (só com GPU2), `webui-integracao-topicos`. |

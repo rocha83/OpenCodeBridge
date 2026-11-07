@@ -400,7 +400,10 @@ internal static class Program
             TestContext.Run("E-ent-crud-customer", E2EEnterpriseTests.CrudCustomer);
             TestContext.Run("E-ent-crud-saleinvoice", E2EEnterpriseTests.CrudSaleInvoice);
             TestContext.Run("E-ent-worker", E2EEnterpriseTests.BackgroundWorker);
-            TestContext.Run("E-ent-redis", E2EEnterpriseTests.RedisCircuit);
+            // Redis fatiado (2026-11-07): bloco (1) repositorio e bloco (2) DI em
+            // steps separados; o (2) continua pelo handoff do (1).
+            TestContext.Run("E-ent-redis-cache", E2EEnterpriseTests.RedisCacheAside);
+            TestContext.Run("E-ent-redis-di", E2EEnterpriseTests.RedisDi);
             TestContext.Run("E-ent-dashboard", E2EEnterpriseTests.ReactDashboard);
             // frontpipe: o 12B gera o front (MVC+React+Bootstrap+Tailwind), o E2B ajusta
             // pelos enunciados e a suite confere os estilos medidos no navegador.

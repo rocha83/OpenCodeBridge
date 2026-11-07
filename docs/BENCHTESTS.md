@@ -209,7 +209,9 @@ step pode ser filtrado por `--only`.
 - **L1 `e-topics-{tema}`** (um tema por step): `e-topics-senior-react`,
   `e-topics-senior-bus`, `e-topics-senior-erp`, `e-topics-senior-arm`,
   `e-topics-ent-crud` (os três CRUD de uma vez: product/customer/saleinvoice),
-  `e-topics-ent-worker`, `e-topics-ent-redis`, `e-topics-ent-dashboard`.
+  `e-topics-ent-worker`, `e-topics-ent-redis-cache` + `e-topics-ent-redis-di`
+  (dois steps: repositório e DI, o segundo continua o primeiro pelo handoff),
+  `e-topics-ent-dashboard`.
 - **L4 frontend/web**: `E-front-gen`, `E-front-edit` (CSS),
   `E-front-edit-razor`, `E-front-edit-react`, `E-front-verify` e
   `webui-integracao-topicos` (Web.Test).
@@ -645,6 +647,13 @@ apenas `*.journey.json` e `*.opencode.meta.json` (sem raw) ou usar
   gravacao via tool `write` em `ProductRepository.cs`; a suite le o arquivo e
   aplica `CheckNoStub` + `IDistributedCache`/`RemoveAsync`. Renomeado apos
   PASS=1 FAIL=0.
+- `E-ent-redis` fatiado (2026-11-07) em `E-ent-redis-cache` (bloco 1: o
+  repositório cache-aside, contrato `IDistributedCache`/`ConnectionMultiplexer`
+  + `RemoveAsync`/`Remove(`/`KeyDelete`) e `E-ent-redis-di` (bloco 2: o DI,
+  contrato `AddStackExchangeRedisCache`/`AddDistributedRedisCache`/
+  `IConnectionMultiplexer` + `AddScoped` do repositório). O segundo step recebe
+  o bloco 1 em `/tmp/opencode/redis-chain/block1.md` como contexto e falha com
+  causa explícita se o primeiro não rodou.
 - Enunciados agentivos sem coordenadas (`oldString=...`/`newString=...`):
   objetivo + aceite, o modelo decide as tools.
 
