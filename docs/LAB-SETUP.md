@@ -246,16 +246,16 @@ curl -s -H 'Authorization: Bearer guest@123' http://127.0.0.1:4124/api/status \
 
 | agent | model | temp |
 |---|---|---|
-| `plan.md` | `openai/Gemma4-E4B-Q4-plan` | 0.3 |
+| `plan.md` | `openai/Gemma4-E4B-Q4-plan` | 0.2 |
 | `build.md` | `openai/Gemma4-E4B-Q4-build` | 0.1 |
-| `orch.md` | `openai/Gemma4-E4B-Q4-orch` | 0.3 |
-| `moe.md` | `openai/Gemma4-E4B-Q4-moe` | 0.5 |
+| `orch.md` | `openai/Gemma4-E4B-Q4-orch` | 0.2 |
+| `moe.md` | `openai/Gemma4-E4B-Q4-moe` | 0.4 |
 | `scripter.md` | `openai/Gemma4-E4B-Q4-scripter` | 0.1 |
 | `exec.md` | `llama/Gemma4-E4B-UD-Q3-exec` | 0.1 |
 | subagente `task` | `llama/Gemma4-E4B-UD-Q3-exec` | 0.1 |
 
 As temps acima são as do `opencode.json`; no runtime o **perfil da bridge**
-(plan/orch 0.3, build/scripter/exec 0.1, moe 0.5) vence pelo sufixo do id.
+(plan/orch 0.2, build/scripter/exec 0.1, moe 0.4) vence pelo sufixo do id.
 
 O Exec é **só GPU2** (como Plan/Build/Orch são só GPU1). O Scripter **valida**
 (`bash -n`) sem executar; o Exec **executa** (`bash <arquivo>`). Subagente
@@ -569,7 +569,7 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 | `--model` | `Gemma4-E4B-Q4` | id servido pelo upstream (deve casar o `--alias`) |
 | `--thinking` | `events` | `events` mostra `reasoning_content`; `off` descarta |
 | `--thinking-format` | `events` | nome canônico do formato de repasse do reasoning; `--thinking` é alias |
-| `--temperature` | `0.3` | global; perfil por sufixo do id vence |
+| `--temperature` | `0.2` | global; perfil por sufixo do id vence |
 | `--aux-temp` | vazio | global do turno de retry; role por sufixo do id vence, valor ausente cai no perfil de desvio (`plan`) |
 | `--max-tokens` | `0` | teto de saída (0 = sem teto; llama/cliente decidem) |
 | `--coerced-max-tokens` / `--cpu-max-tokens` | `0` | teto da linha COAGIDA (upstream sem parser); `--cpu-max-tokens` é alias histórico ("cpu" era inferência por nome de modelo) |
@@ -624,7 +624,7 @@ Uso: `dotnet Rochas.OpenCodeBridge.dll --chave valor ...` (ou direto
 > **Tool tail é regra:** qualquer teste que enuncia uso de tools exige
 > `--harness-tails 1` + `--tail-scope all|managed` (preflight
 > `harness_tails_status`). Request sem `tools` no array não recebe cauda de
-> tools (`hasTools:false`). Tópico sem tools usa perfil `plan` (0.3/on) e o
+> tools (`hasTools:false`). Tópico sem tools usa perfil `plan` (0.2/on) e o
 > enunciado termina com `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`; com tools fica
 > `build` (0.1/off).
 
@@ -994,8 +994,8 @@ irredutíveis e a concisão; nada de orquestração/temperatura/harness — no m
 modo `bridge` é `MainHarness` + tails (só as tails incrementam).
 
 MODELOS LOCAIS (OpenCode via bridges C# :4124/:4125 → llama TurboQuant, nada vai p/ nuvem). Apenas 2 modelos para as 6 roles:
-- `openai/Gemma4-E4B-Q4` (bridge GPU :4124 → llama :4100 Gemma4 E4B base Q4_K_M 128k, temp 0.3, thinking events): base das roles Plan, Build, Orch, MoE e Scripter — a temperatura por role fica no `agents/*.md` (Plan/Orch 0.3, Build/Scripter 0.1, MoE 0.5). Tool calling nativo (template peg-gemma4).
-- `llama/Gemma4-E4B-UD-Q3` (bridge GPU2 :4125 → llama :4110 Huihui Gemma4 E4B abliterated i1-IQ3_XXS 128k, base temp 0.3, thinking off): role **Exec** (Exec temp 0.1/off) — cria, valida (`bash -n`) e **executa** (`bash <arquivo>`) os scripts — e subagentes de micro-enunciado. **Roda 100% GPU** na segunda instância (GPU2, E4B UD-Q3); Plan/Build/Orch/MoE/Scripter na GPU1 (E4B Q4). Harness: checkbox "Execução de scripts" = token `exec` no CSV do agente (o Scripter NÃO tem `exec`; só valida).
+- `openai/Gemma4-E4B-Q4` (bridge GPU :4124 → llama :4100 Gemma4 E4B GK-Q4 128k, base temp 0.2, thinking events): base das roles Plan, Build, Orch, MoE e Scripter — a temperatura por role fica no `agents/*.md` (Plan/Orch 0.2, Build/Scripter 0.1, MoE 0.4). Tool calling nativo (template peg-gemma4).
+- `llama/Gemma4-E4B-UD-Q3` (bridge GPU2 :4125 → llama :4110 Huihui Gemma4 E4B abliterated i1-IQ3_XXS 128k, base temp 0.2, thinking off): role **Exec** (Exec temp 0.1/off) — cria, valida (`bash -n`) e **executa** (`bash <arquivo>`) os scripts — e subagentes de micro-enunciado. **Roda 100% GPU** na segunda instância (GPU2, E4B UD-Q3); Plan/Build/Orch/MoE/Scripter na GPU1 (E4B Q4). Harness: checkbox "Execução de scripts" = token `exec` no CSV do agente (o Scripter NÃO tem `exec`; só valida).
 - Sem CLI externa: removidos CLI serve, web, ícones e scripts. Atomic Agent também removido.
 
 ORQUESTRAÇÃO MULTI-AGENTE (GPU1 e GPU2 têm 128k — dividir sempre):
@@ -1011,9 +1011,9 @@ REGRAS DO SUBAGENTE GPU2 E4B (vale para `llama/Gemma4-E4B-UD-Q3`, inegociáveis)
 4. NÃO TOQUE em arquivos existentes que não pertençam ao enunciado: sem "melhorias de passagem", sem reformatar vizinho, sem renomear. Leitura fora do escopo só via `read`/`grep`, nunca `edit`.
 5. Todo enunciado termina com o ACEITE executado de verdade (ação real nas tools, não micro-enunciado de faz-de-conta): anexe a evidência (trecho do log/teste) no retorno.
 
-PIPELINE PADRÃO: role `plan` (0.3) elucida e fatia em micro-enunciados -> role `build` (0.1) executa -> plan verifica o ACEITE de cada um.
+PIPELINE PADRÃO: role `plan` (0.2) elucida e fatia em micro-enunciados -> role `build` (0.1) executa -> plan verifica o ACEITE de cada um.
 
-TEMPERATURA (perfis na bridge, espelhados no `opencode.json`): Plan 0.3 (média, planejar), Build 0.1 (baixa, executar), Orch 0.3, MoE 0.5 (alta, exploração), Scripter 0.1 e Exec 0.1 (determinismo).
+TEMPERATURA (perfis na bridge, espelhados no `opencode.json`): Plan 0.2 (média-baixa, planejar), Build 0.1 (baixa, executar), Orch 0.2, MoE 0.4 (média-alta, exploração), Scripter 0.1 e Exec 0.1 (determinismo). Modelo base (sem sufixo) = 0.2. Tabela canônica: `docs/TEMPERATURA-ROLES.md`.
 
 SYSTEM PROMPT GERAL (GPU E4B, amplo, propósitos gerais):
 Você é um arquiteto desenvolvedor de software generalista de esferas globais: artes, biologia, ciências, química, física (inclusive quântica), matemática, filosofia, sociologia, tecnologia e demais assuntos globais — além de arquitetura e engenharia de software, backend C# (DDD/SOLID), frontend (React/Blazor/Angular), dados e SQL, redes e infra, IoT/ARM embarcado. Atende qualquer pedido direto, com profundidade sob demanda, sem enrolação. Roteie sozinho: atue nas tarefas por completo, porém, quando solicitado, resuma em tarefas menores em fases, esteja ciente que a execução será por subagentes Gemma4 E4B UD-Q3 (`llama/Gemma4-E4B-UD-Q3`) com menos capacidade, que você agrega e verifica. Responda no idioma do usuário, tool calls completas e código diff ao editar arquivos.
@@ -1049,8 +1049,8 @@ No deploy atual (pré-migração .NET 10), o `appsettings.json` do runtime fica 
 `/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net9.0`; depois do
 deploy do release `2.0.0`, o caminho passa a ser
 `/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0`. Os valores
-atuais são `profiles.plan.temperature = 0.3`, `profiles.orch.temperature = 0.3`,
-`build/scripter/exec = 0.1` e `moe = 0.5`; a unit passa `--temperature 0.2`
+atuais são `profiles.plan.temperature = 0.2`, `profiles.orch.temperature = 0.2`,
+`build/scripter/exec = 0.1` e `moe = 0.4`; a unit passa `--temperature 0.2`
 como base. As bridges foram reiniciadas depois do ajuste.
 
 Variáveis de ambiente: `DIAGNOSTIC=1` liga a sonda; `MAIN_HARNESS=0` e

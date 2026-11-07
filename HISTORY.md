@@ -14,7 +14,8 @@ E-ent repetia); (c) não registra a taxa, então não mede nada.
    `build`/`scripter`/`exec` seguem **0.1**; modelo base (sem sufixo) **0.2**.
    Fonte única `Core/RoleProfiles.cs`; espelhos `appsettings.json`, os três
    `appsettings.*-example.json`, `opencode.json` dos homes (11 modelos Gemma4;
-   nuvem intocada), `~/.config/opencode/AGENTS.md` e o seeder da Web UI.
+   nuvem intocada), o frontmatter `temperature:` de `~/.config/opencode/agents/*.md`,
+   `~/.config/opencode/AGENTS.md` e o seeder da Web UI.
 2. **Retry removido do gate**: `WAR_ENT_SAMPLES` ausente = **1 amostra**, um
    veredito (`[fail-dump]`/`[contract]` no log). Estabilidade é **opt-in**:
    `WAR_ENT_SAMPLES=N` + `WAR_ENT_MIN_PASS=k` roda N amostras fixas, loga

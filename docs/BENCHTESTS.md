@@ -300,7 +300,7 @@ padrão e pode ser declarado explicitamente com `--war-stop-on-fail`.
 > **Tool tail é regra:** todo teste que enuncia tools exige
 > `--harness-tails 1` + `--tail-scope all|managed` (preflight
 > `harness_tails_status`). Pedido sem `tools` no array não recebe cauda de
-> tools. Tópico sem tools = perfil `plan` (0.3/on) e o corpo termina com
+> tools. Tópico sem tools = perfil `plan` (0.2/on) e o corpo termina com
 > `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`; com tools = `build` (0.1/off).
 >
 > **Relaxamento explícito (diagnóstico):** `--war-no-tails-gate` transforma a

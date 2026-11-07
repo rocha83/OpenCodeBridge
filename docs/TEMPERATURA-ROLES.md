@@ -33,6 +33,7 @@ Mudar temperatura **não** é editar um arquivo só. A lista completa:
 | 4 | `Rochas.OpenCodeBridge/appsettings.4125.cpu-example.json` | perfis + `temperature` global | exemplo versionado da GPU2/CPU |
 | 5 | `Rochas.OpenCodeBridge/appsettings.4124.orch-off-example.json` | override `orch` | exemplo de `thinking off` |
 | 6 | `~/.config/opencode/opencode.json` (mint, dev-agent, moe-agent) | `providers.*.models.*.temperature` e o rótulo `name` | **cliente**; o perfil do role vence no túnel, mas o valor do cliente aparece em `temperature_source=request` |
+| 6b | `~/.config/opencode/agents/*.md` | frontmatter `temperature:` | **vence o `opencode.json`** no agente correspondente (plan/orch/moe/build/scripter/exec) |
 | 7 | `~/.config/opencode/AGENTS.md` | seção `TEMPERATURA` e descrição dos modelos | instruções do agente |
 | 8 | `Rochas.OpenCodeBridge.Web/Data/AgentSeeder.cs` | seeds 1–10 + `PromoteRoleTemperatures` + `MigrateLegacyConfig` | banco SQLite da Web UI; migração roda a cada boot |
 | 9 | `Rochas.OpenCodeBridge.Web/Controllers/AgentsController.cs` | `DefaultAgent()` | preset do form "Novo agente" |
@@ -109,6 +110,8 @@ O que **não** se faz: retry no assert. Ver §6.
 4. `~/.config/opencode/opencode.json` de **todos** os homes (ou rode
    `scripts/war/promote-creativity.sh --apply`, que grava backup
    `.bak-temps-<stamp>` e atualiza o rótulo `name`).
+4b. `~/.config/opencode/agents/*.md` → frontmatter `temperature:` (vence o
+   `opencode.json` no agente; `plan`/`orch`/`moe` são os que mudam).
 5. `~/.config/opencode/AGENTS.md` (seção `TEMPERATURA`).
 6. `AgentSeeder.cs` → seeds + `PromoteRoleTemperatures` + `MigrateLegacyConfig`.
 7. `AgentsController.DefaultAgent()` e o fallback de `ToolExecutor`.
