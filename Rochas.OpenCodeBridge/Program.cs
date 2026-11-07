@@ -2992,10 +2992,11 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                   && !string.IsNullOrEmpty(stop.GetValue<string>());
             if (hasStop) chat["stop"] = stop.DeepClone();
         }
-        // Linha CPU sem parser: o 3B entra em loop de filler ([END_OF_TEXT])
-        // quando divaga — stop dedicado corta o loop sem afetar tool calls
-        // (elas nunca vem nativas aqui, só via coercion do texto).
-        else if (coercedLine) chat["stop"] = new JsonArray("[END_OF_TEXT]");
+        // Linha CPU sem parser (--cpu-max-tokens > 0): o 3B entra em loop de
+        // filler ([END_OF_TEXT]) quando divaga — stop dedicado corta o loop.
+        // NAO usar CoerceFor(): coercao de texto ligada na GPU injetaria stop em
+        // request com tools e truncaria a tool call (U-translate-without-stop).
+        else if (CpuMaxTokens > 0) chat["stop"] = new JsonArray("[END_OF_TEXT]");
         // Pino de slot: id_slot fixo no upstream (um level por slot). Sem pino
         // (-1) o llama continua escolhendo o slot livre.
         SlotPin.Apply(chat, Slot);
