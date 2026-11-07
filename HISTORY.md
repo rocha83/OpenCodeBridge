@@ -1,5 +1,32 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Worker: ciclo de vida explícito no enunciado (2026-11-07, sessão 58)
+
+**Sintoma.** `E-ent-worker` FAIL `worker com ciclo de vida` (`len=5265`, 1.255
+tokens em 26s): o texto trouxe `MessageOutbox : IAsyncDisposable` com loop
+próprio e `CancellationTokenSource` — `BackgroundService` **0 ocorrências**,
+`CancellationToken` 1 (do `_cts`). O mesmo step havia passado em 13:54 (24,9s),
+14:05 (12,4s) e 14:14 (31,7s).
+
+**Causa.** O enunciado citava "BackgroundService" só no começo da frase ("C# .NET
+9 + Postgres BackgroundService: worker que drena ...") e pedia o comportamento
+(lote, retry, dead-letter, token), não a **classe-base nem a assinatura**. O
+modelo escolheu o ciclo de vida por conta própria e entregou algo fora do host.
+
+**Decisão (opção 1: contrato mantido, enunciado explícito).**
+1. Prompt passa a exigir "UMA classe `OutboxWorker` que HERDA `BackgroundService`
+   (`Microsoft.Extensions.Hosting`) e sobrescreve `protected override async Task
+   ExecuteAsync(CancellationToken stoppingToken)`", com a proibição explícita de
+   loop próprio em `IAsyncDisposable`/`Task.Run` solto.
+2. Contrato de ciclo de vida passa a exigir os três: `BackgroundService` +
+   `ExecuteAsync` + `CancellationToken` (antes só os dois primeiros — o
+   `ExecuteAsync` era justamente o que faltava).
+3. `FailDump` no FAIL (antes o step não dumpava o texto, o diagnóstico ficou só
+   no log do assert).
+
+**Medição.** Isolado após o ajuste: `PASS 13,7s` (`base=True executeasync=True
+retry=True deadletter=True`).
+
 ## Redis fatiado em dois steps: bloco (1) repositório e bloco (2) DI, com handoff (2026-11-07, sessão 57)
 
 **Sintoma.** `E-ent-redis` virou o step mais instável da L1: em três rodadas do

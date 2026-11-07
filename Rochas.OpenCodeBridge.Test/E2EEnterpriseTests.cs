@@ -221,20 +221,35 @@ internal static class E2EEnterpriseTests
 
     public static async Task BackgroundWorker()
     {
-        // Worker assincrono: IHostedService drenando outbox com retry e stop gracioso.
+        // Worker assincrono: BackgroundService drenando outbox com retry e stop
+        // gracioso. O enunciado diz a CLASSE-BASE e a ASSINATURA explicitamente
+        // (2026-11-07): sem isso o E4B entregou `MessageOutbox : IAsyncDisposable`
+        // com loop proprio e `CancellationTokenSource` — sem `BackgroundService`,
+        // ou seja, fora do ciclo de vida do host (FAIL `len=5265`, 0 ocorrencias
+        // de BackgroundService contra 1 de CancellationToken).
         const string prompt =
-            "C# .NET 9 + Postgres BackgroundService: worker que drena a tabela outbox (payload jsonb) em lote de 50 a cada 5s, publica no " +
-            "barramento com retry exponencial + jitter (max 5 tentativas, depois dead-letter), respeita " +
-            "CancellationToken em todo await (stop gracioso sem perder a mensagem da vez) e registra throughput " +
-            "no log a cada minuto. Entregue o worker completo + DDL da dead-letter. So codigo + 3 bullets.";
-        static bool Lifecycle(string t) => t.Contains("BackgroundService") && t.Contains("CancellationToken");
+            "C# .NET 9 + Postgres: entregue UMA classe OutboxWorker que HERDA BackgroundService " +
+            "(Microsoft.Extensions.Hosting) e sobrescreve " +
+            "protected override async Task ExecuteAsync(CancellationToken stoppingToken): drena a tabela outbox " +
+            "(payload jsonb) em lote de 50 a cada 5s, publica no barramento com retry exponencial + jitter " +
+            "(max 5 tentativas, depois dead-letter), passa o stoppingToken em TODO await (stop gracioso sem perder " +
+            "a mensagem da vez) e registra throughput no log a cada minuto. NAO use loop proprio em classe " +
+            "IAsyncDisposable nem Task.Run solto: o host controla o ciclo de vida. Entregue o worker completo + " +
+            "DDL da dead-letter. So codigo + 3 bullets.";
+        // Ciclo de vida do host: base BackgroundService + ExecuteAsync + token.
+        static bool Lifecycle(string t) => t.Contains("BackgroundService")
+            && t.Contains("ExecuteAsync") && t.Contains("CancellationToken");
         var (text, status) = await Ask("worker", prompt,
             t => t.Length > 500 && StubReason(t) == "" && Lifecycle(t));
         TestContext.Check(status == "completed", "worker completed");
         TestContext.Check(text.Length > 500, "worker com codigo util");
         CheckNoStub(text, "worker");
-        TestContext.Check(text.Contains("BackgroundService") && text.Contains("CancellationToken"), "worker com ciclo de vida");
-        Console.WriteLine($"  [info] worker retry={text.Contains("retry", StringComparison.OrdinalIgnoreCase)} deadletter={text.Contains("dead", StringComparison.OrdinalIgnoreCase)}");
+        if (!Lifecycle(text)) FailDump("worker", text);
+        TestContext.Check(Lifecycle(text), "worker com ciclo de vida");
+        Console.WriteLine($"  [info] worker base={text.Contains("BackgroundService")} " +
+            $"executeasync={text.Contains("ExecuteAsync")} " +
+            $"retry={text.Contains("retry", StringComparison.OrdinalIgnoreCase)} " +
+            $"deadletter={text.Contains("dead", StringComparison.OrdinalIgnoreCase)}");
     }
 
     // --- Redis fatiado em DOIS steps (2026-11-07) ---------------------------
