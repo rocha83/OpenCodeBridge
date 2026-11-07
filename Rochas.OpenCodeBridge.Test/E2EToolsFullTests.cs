@@ -123,7 +123,15 @@ internal static class E2EToolsFullTests
         // (App/, src/app/) quando o nome do projeto nao e' obvio. O teste entrega
         // o repo como um dev encontraria: App.csproj + Program.cs na raiz.
         if (FindCsproj(dir) is null && CsFiles(dir).Length == 0)
+        {
             Run("dotnet", dir, 180, "new", "console", "-n", "App", "-o", ".", "--force");
+            // Fixture deterministica: o template escreve "Hello, World!" (com
+            // virgula) e o enunciado fala "Hello World" — o edit do passo 2
+            // errava o oldString por causa da virgula e o modelo caia em loop
+            // (12 anti-repeat em 112622: shell 6x, git 4x, write 3x).
+            File.WriteAllText(Path.Combine(dir, "Program.cs"),
+                "Console.WriteLine(\"Hello World\");\n");
+        }
 
         string parent = Path.GetDirectoryName(dir)!;
         var antes = Directory.EnumerateFileSystemEntries(parent)
