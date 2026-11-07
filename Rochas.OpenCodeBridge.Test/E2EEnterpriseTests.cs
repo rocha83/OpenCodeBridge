@@ -122,59 +122,32 @@ internal static class E2EEnterpriseTests
         Console.WriteLine($"  [info] worker retry={text.Contains("retry", StringComparison.OrdinalIgnoreCase)} deadletter={text.Contains("dead", StringComparison.OrdinalIgnoreCase)}");
     }
 
-    public static Task RedisCircuit()
+    public static async Task RedisCircuit()
     {
         // Circuito assincrono com Redis: cache-aside + invalidacao + antifalha.
-        // Diferente dos demais E-ent (texto puro via /v1/responses), este pede
-        // ARQUIVO escrito com a tool write — o modelo grava e a suite le o disco
-        // (mesmo caminho do mission: ToolAgent + ToolCatalog do Core).
-        // 3 tentativas com a falha REAL realimentada (TestContext.AgentAttempts):
-        // o modelo as vezes entrega leitura/escrita no cache e encerra sem a
-        // invalidacao. Pasta nova por tentativa; as assertivas nao mudam.
-        return TestContext.AgentAttempts("redis", Path.Combine(Path.GetTempPath(), "e2e-redis"), 3,
-            RedisAttempt);
-    }
-
-    static async Task RedisAttempt(string dir, string feedback)
-    {
-        var (_, calls) = await TestContext.ToolAgent(
-            "C# .NET 9 + Redis (StackExchange.Redis): repositorio de Product com cache-aside (IDistributedCache, " +
-            "sliding 5min), fallback Postgres + repopula; PUT/DELETE invalidam a chave com cache.RemoveAsync; " +
-            "stampede controlado por lock por chave e circuit-breaker simples (3 falhas) quando o Redis cai. " +
-            "Grave os arquivos na raiz do workspace (repositorio de Product + registro no DI), APIs do .NET 8+. So tool calls, sem prosa."
-            + feedback,
-            // Orcamento medido (2026-10-29): o cenario entrega 2+ artefatos
-            // (repositorio + registro no DI). Com 14 gastou 14/14 em exploracao
-            // (git/shell/glob) e fechou o DI com mock; com 20 o registro real
-            // saiu em 19 chamadas (di=modern). Teto 24 = medido + margem de
-            // variacao, ainda na faixa dos demais cenarios multi-artefato
-            // (16..28). O aceite nao muda.
-            24, dir);
-        // O modelo pode inventar outros nomes de artefato; localiza por CONTEUDO,
-        // nao por nomenclatura fixa (contrato e o codigo, nao o nome do arquivo).
-        string repo = "", startup = "";
-        foreach (var f in Directory.GetFiles(dir, "*.cs", SearchOption.AllDirectories))
-        {
-            if (f.IndexOf(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar, StringComparison.Ordinal) >= 0) continue;
-            if (f.IndexOf(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar, StringComparison.Ordinal) >= 0) continue;
-            var t = File.ReadAllText(f);
-            if (string.IsNullOrEmpty(repo) && t.Contains("IDistributedCache") && t.Contains("RemoveAsync")) repo = t;
-            if (string.IsNullOrEmpty(startup) && (t.Contains("AddStackExchangeRedisCache") || t.Contains("AddDistributedMemoryCache")
-                || t.Contains("AddDistributedRedisCache") || t.Contains("IConnectionMultiplexer"))) startup = t;
-        }
-        if (string.IsNullOrEmpty(startup)) startup = repo;
-        TestContext.Check(repo.Length > 500, "redis repositorio com codigo util (len=" + repo.Length + ")");
-        CheckNoStub(repo, "redis");
-        TestContext.Check(repo.Contains("IDistributedCache") && repo.Contains("RemoveAsync"), "redis com invalidacao");
+        // A linha E-ent e' CONCEITUAL: texto puro via /v1/responses (o modelo
+        // entrega o codigo no texto). O caminho de tool (write em disco, git,
+        // shell) fica nas trilhas E-tools — aqui nao se pede call.
+        var r = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", Req(
+            "C# .NET 9 + Redis (StackExchange.Redis): repositorio de Product com cache-aside " +
+            "(IDistributedCache, sliding 5min), fallback Postgres + repopula; PUT/DELETE invalidam a chave " +
+            "com cache.RemoveAsync; stampede controlado por lock por chave e circuit-breaker simples (3 falhas) " +
+            "quando o Redis cai. Entregue o repositorio + o registro no DI e diga o que acontece quando o " +
+            "Redis esta fora. So codigo + 3 bullets de borda."));
+        TestContext.Check(r["status"]?.GetValue<string>() == "completed", "redis completed");
+        string text = TextOf(r);
+        TestContext.Check(text.Length > 500, "redis com codigo util");
+        CheckNoStub(text, "redis");
+        TestContext.Check(text.Contains("IDistributedCache") && text.Contains("RemoveAsync"), "redis com invalidacao");
         // Contrato observavel: cache distribuido registrado no DI. A API exata e
         // escolha do autor (StackExchange moderno, memory fallback ou a legada
         // pre-3.0); a versao escolhida vai no [info], nao no assert.
-        bool di = startup.Contains("AddStackExchangeRedisCache") || startup.Contains("AddDistributedMemoryCache")
-            || startup.Contains("AddDistributedRedisCache") || startup.Contains("IConnectionMultiplexer");
-        TestContext.Check(di, "redis registro no DI (Startup.cs, len=" + startup.Length + ", calls=" + calls.Count + ")");
-        string diApi = startup.Contains("AddStackExchangeRedisCache") ? "modern"
-            : startup.Contains("AddDistributedRedisCache") ? "legacy" : "custom";
-        Console.WriteLine($"  [info] redis sliding={repo.Contains("Sliding", StringComparison.OrdinalIgnoreCase)} circuito={repo.Contains("circuit", StringComparison.OrdinalIgnoreCase)} calls={calls.Count} di={diApi}");
+        bool di = text.Contains("AddStackExchangeRedisCache") || text.Contains("AddDistributedMemoryCache")
+            || text.Contains("AddDistributedRedisCache") || text.Contains("IConnectionMultiplexer");
+        TestContext.Check(di, "redis registro no DI");
+        string diApi = text.Contains("AddStackExchangeRedisCache") ? "modern"
+            : text.Contains("AddDistributedRedisCache") ? "legacy" : "custom";
+        Console.WriteLine($"  [info] redis sliding={text.Contains("Sliding", StringComparison.OrdinalIgnoreCase)} circuito={text.Contains("circuit", StringComparison.OrdinalIgnoreCase)} di={diApi}");
     }
 
     public static async Task ReactDashboard()
