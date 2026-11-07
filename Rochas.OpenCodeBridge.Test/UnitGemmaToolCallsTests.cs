@@ -18,6 +18,7 @@ internal static class UnitGemmaToolCallsTests
         Multiplas();
         StripDeMarkup();
         WiringNaCoercao();
+        CoercaoChatLimpa();
         ProsaSemCall();
         return Task.CompletedTask;
     }
@@ -72,6 +73,30 @@ internal static class UnitGemmaToolCallsTests
         TestContext.Check(calls.Count > 0 && calls[0].Name == "write", "gemma coerce: nome=write");
         TestContext.Check(calls.Count > 0 && calls[0].Arguments.Contains("\"path\""), "gemma coerce: arguments JSON");
         TestContext.Check(ToolCoercion.TextToolMarkerIndex(s) == 0, "gemma coerce: marcador <|tool_call> reconhecido");
+    }
+
+    static void CoercaoChatLimpa()
+    {
+        var root = new JsonObject
+        {
+            ["choices"] = new JsonArray(new JsonObject
+            {
+                ["message"] = new JsonObject
+                {
+                    ["role"] = "assistant",
+                    ["content"] = "vou criar o arquivo\n<|tool_call>call:write{content:<|\"|>a<|\"|>,path:<|\"|>a.txt<|\"|>}<tool_call|>"
+                },
+                ["finish_reason"] = "stop"
+            })
+        };
+        int n = ToolCoercion.CoerceChatCalls(root, new List<string> { "write" });
+        var msg = root["choices"]![0]!["message"]!.AsObject();
+        TestContext.Check(n == 1, "gemma chat: uma call coagida");
+        TestContext.Check(msg["tool_calls"] is JsonArray { Count: 1 }, "gemma chat: tool_calls no message");
+        TestContext.Check(!(msg["content"]?.GetValue<string>() ?? "").Contains("tool_call"),
+            "gemma chat: markup removido do content");
+        TestContext.Check(root["choices"]![0]!["finish_reason"]?.GetValue<string>() == "tool_calls",
+            "gemma chat: finish_reason=tool_calls");
     }
 
     static void ProsaSemCall()

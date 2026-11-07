@@ -197,6 +197,13 @@ public static class ToolCoercion
                     ["function"] = new JsonObject { ["name"] = Name, ["arguments"] = Arguments }
                 });
             msg["tool_calls"] = arr;
+            // O markup canonico do Gemma virava call: deixa-lo no content faria o
+            // cliente renderizar o token cru junto da call executada.
+            if (GemmaToolCalls.HasCall(content))
+            {
+                string rest = GemmaToolCalls.Strip(content);
+                msg["content"] = rest.Length == 0 ? "" : rest;
+            }
             if (root!["choices"]!.AsArray()[0]?.AsObject() is JsonObject first)
                 first["finish_reason"] = "tool_calls";
             return calls.Count;
