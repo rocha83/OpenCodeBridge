@@ -931,8 +931,8 @@ internal static class TestContext
             // terminou degenerar — sem call legal ele repete o relatorio ate' o
             // teto (medido 2026-11-07: 12 turnos de 768 tok no L2 112622, sonda
             // em /tmp/opencode/bridge-degenerate.jsonl). TCTX_TOOL_CHOICE
-            // = auto|first|required (default required) mede sem trocar o padrao.
-            string choiceMode = Environment.GetEnvironmentVariable("TCTX_TOOL_CHOICE") ?? "required";
+            // = auto|first|until-commit|required (default until-commit) mede sem trocar o padrao.
+            string choiceMode = Environment.GetEnvironmentVariable("TCTX_TOOL_CHOICE") ?? "until-commit";
             if (choiceMode == "auto") { }
             else if (choiceMode == "first") { if (step == 0) reqBody["tool_choice"] = "required"; }
             // `until-commit`: forca a call so' ate o commit dar certo; depois
@@ -941,7 +941,7 @@ internal static class TestContext
             else if (choiceMode == "until-commit")
             {
                 bool committed = calls.Any(c => c.StartsWith("git(") && c.Contains("commit") && c.EndsWith("-> ok"));
-                if (!committed) reqBody["tool_choice"] = "required";
+                if (!committed && step < max - 1) reqBody["tool_choice"] = "required";
             }
             else if (step < max - 1) reqBody["tool_choice"] = "required";
             var res = await PostObj(Bridge + "/v1/responses", reqBody);
