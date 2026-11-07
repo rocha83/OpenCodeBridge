@@ -195,12 +195,17 @@ Perfis padrão (tabela única do Core, `RoleProfiles.DefaultCopy()`):
 
 | role | temperatura | thinking |
 |---|---|---|
-| `plan` | 0.5 | on |
-| `orch` | 0.5 | on |
-| `moe` | 0.5 | on |
-| `build` | 0.2 | off |
+| `plan` | 0.2 | on |
+| `orch` | 0.2 | on |
+| `moe` | 0.4 | on |
+| `build` | 0.1 | off |
 | `scripter` | 0.1 | off |
 | `exec` | 0.1 | off |
+
+Modelo base (id sem sufixo de role) cai no global **0.2**. A tabela acima é a
+escala do lab desde 2026-11-07 (antes: plan/orch 0.3, moe 0.5); o porquê, a
+medição que motivou a descida e o passo a passo para mudar de novo estão em
+[`docs/TEMPERATURA-ROLES.md`](docs/TEMPERATURA-ROLES.md).
 
 **API.**
 
@@ -210,7 +215,7 @@ curl -s -X POST http://127.0.0.1:4124/api/translate \
   -H 'Authorization: Bearer guest@123' -H 'Content-Type: application/json' \
   -d '{"model":"Gemma4-E4B-Q4-build","input":"ping"}' \
   | jq '{requested_model,temperature,temperature_source,thinking}'
-# {"requested_model":"Gemma4-E4B-Q4-build","temperature":0.2,"temperature_source":"profile","thinking":"off"}
+# {"requested_model":"Gemma4-E4B-Q4-build","temperature":0.1,"temperature_source":"profile","thinking":"off"}
 ```
 
 **C# (Core).**
@@ -1253,7 +1258,7 @@ curl -s -X POST http://127.0.0.1:4124/api/translate \
   -H 'Authorization: Bearer guest@123' -H 'Content-Type: application/json' \
   -d '{"model":"Gemma4-E4B-Q4-build","input":"ping"}' \
   | jq '{requested_model,temperature,temperature_source,thinking}'
-# {"requested_model":"Gemma4-E4B-Q4-build","temperature":0.2,"temperature_source":"profile","thinking":"off"}
+# {"requested_model":"Gemma4-E4B-Q4-build","temperature":0.1,"temperature_source":"profile","thinking":"off"}
 ```
 
 **C# (Core).**
@@ -2218,7 +2223,7 @@ curl -s -X POST http://127.0.0.1:4124/api/translate \
   -H 'Authorization: Bearer guest@123' -H 'Content-Type: application/json' \
   -d '{"model":"Gemma4-E4B-Q4-build","input":"ping"}' \
   | jq '{requested_model,temperature,temperature_source,thinking}'
-# {"requested_model":"Gemma4-E4B-Q4-build","temperature":0.2,"temperature_source":"profile","thinking":"off"}
+# {"requested_model":"Gemma4-E4B-Q4-build","temperature":0.1,"temperature_source":"profile","thinking":"off"}
 ```
 
 **C# (Core).**

@@ -33,7 +33,7 @@ canal de thought sozinho e, sob concorrencia, o turno pode terminar dentro
 dele (`content` vazio, `finish_reason=length`) — o assert de artefato cai por
 um motivo que nao e o artefato.
 
-- O perfil da role continua valendo (`-plan` = temp 0.3, `-build` = temp 0.1);
+- O perfil da role continua valendo (`-plan` = temp 0.2, `-build` = temp 0.1);
   so o raciocinio e desligado no pedido.
 - `TestContext.PlanModel` = modelo servido + `-plan` (E2E senior/enterprise
   medem Plan; nao trocar por Build para "fazer passar").

@@ -77,7 +77,7 @@ internal static partial class Program
                   "content": {
                     "application/json": {
                       "example": {
-                        "model": "openai/Gemma4-E4B-Q4",
+                        "model": "openai/Gemma4-E4B-GK-Q4",
                         "stream": true,
                         "instructions": "seja breve",
                         "input": [
@@ -116,7 +116,7 @@ internal static partial class Program
                   "content": {
                     "application/json": {
                       "example": {
-                        "model": "Gemma4-E4B-Q4",
+                        "model": "Gemma4-E4B-GK-Q4",
                         "messages": [
                           {
                             "role": "user",
@@ -143,7 +143,7 @@ internal static partial class Program
                   "content": {
                     "application/json": {
                       "example": {
-                        "model": "Gemma4-E4B-Q4",
+                        "model": "Gemma4-E4B-GK-Q4",
                         "prompt": "diga ok",
                         "max_tokens": 50
                       }
@@ -188,7 +188,7 @@ internal static partial class Program
                   "content": {
                     "application/json": {
                       "example": {
-                        "model": "openai/Gemma4-E4B-Q4",
+                        "model": "openai/Gemma4-E4B-GK-Q4",
                         "instructions": "x",
                         "input": "oi",
                         "tools": [
@@ -219,7 +219,7 @@ internal static partial class Program
                   "content": {
                     "application/json": {
                       "example": {
-                        "model": "Gemma4-E4B-Q4",
+                        "model": "Gemma4-E4B-GK-Q4",
                         "temperature": 0,
                         "completion": {
                           "choices": [

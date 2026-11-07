@@ -10,7 +10,7 @@ public sealed record BridgeOptions
     public string UpstreamUrl { get; init; } = "http://127.0.0.1:4100";
 
     /// <summary>Modelo servido pelo llama (alias do --alias).</summary>
-    public string Model { get; init; } = "Gemma4-E4B-Q4";
+    public string Model { get; init; } = "Gemma4-E4B-GK-Q4";
 
     /// <summary>Chave do llama (--api-key). Vazio = sem Authorization.</summary>
     public string ApiKey { get; init; } = "";

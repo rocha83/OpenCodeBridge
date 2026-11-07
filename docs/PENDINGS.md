@@ -6,20 +6,23 @@
 alucinação, erro de manipulação de tools e sem aumento de repetição. A série só começa
 com os três níveis (L1/L2/L3) fechados em verde nas raias Q4 **e** Q3.
 
-**Alvo de temperatura (volta próxima de como era antes):**
+**Decisão 2026-11-07 (substitui o alvo 0.5/0.8/0.2):** a escala do lab passou a ser
+**plan/orch 0.2, moe 0.4, build/scripter/exec 0.1** (tabela canônica e medição em
+`TEMPERATURA-ROLES.md`). A promoção de criatividade fica **congelada** até a linha
+E-ent fechar estável com N amostras fixas — sem retry no gate.
 
 | role | temp |
 |---|---|
-| `plan`, `orch` | 0.5 |
-| `moe` | 0.8 |
-| `build`, `scripter`, `exec` | 0.2 |
+| `plan`, `orch` | 0.2 |
+| `moe` | 0.4 |
+| `build`, `scripter`, `exec` | 0.1 |
 
 **Escopo da promoção:**
 
 1. **Configs do opencode (TODOS os homes)** — `scripts/war/promote-creativity.sh`
    (dry-run por padrão; `--apply` grava com backup `.bak-temps-<stamp>`). Cobre
    `mint`, `dev-agent` e `moe-agent`, e atualiza também o rótulo
-   `(Thinking On, 0.3)` do campo `name`. Modelo base (sem sufixo de role) fica intacto.
+   `(Thinking On, 0.2)` do campo `name`. Modelo base (sem sufixo de role) fica intacto.
 2. **Seeder da Web UI** — `Rochas.OpenCodeBridge.Web/Data/AgentSeeder.cs`:
    `PromoteRoleTemperatures` (idempotente; só `Gemma4-E4B%` ativos; preserva agentes
    custom). Exige `dotnet build -c Release` + restart de `bridge-web` para valer no banco.

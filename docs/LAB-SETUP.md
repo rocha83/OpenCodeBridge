@@ -11,18 +11,21 @@ expresso (componente, cenário de teste e harness) fica no `README.md`.
 | item | valor |
 |---|---|
 | modelo GPU1 `:4100` | `Gemma4-E4B-UCD-IT_Principal-GK-DS-Retrained-Q4_K_M-Imatrix.gguf` (5,3 GB) em `/media/mint/FT/models/gguf/` + `…-mmproj-bf16.gguf` |
-| ctx/slots | `-c 114688 -np 1` (**1×112k**) — **não** `458752 -np 4` (= 4×112k, aposentado) |
+| ctx/slots | `-c 524288 -np 4` (**4×128k**, `n_ctx_slot 131072`) |
 | KV cache | `--cache-type-k turbo3 --cache-type-v turbo3` (TurboQuant, só neste fork) |
-| VRAM medida | 10,6 GB ocioso / 10,7 GB após request (12,2 GB totais) |
+| mmproj / visão | carregado na **CPU** (sem `--mmproj-offload`, sem `-ot .*=CUDA0`) — quase não usamos visão e isso libera ~1 GB de VRAM |
+| VRAM medida | 9,8 GB com a bridge no ar (12,2 GB totais); ~2,5 GB livres para compute |
+| GPU2 | **aposentada**: `llama-gpu2.service` (`:4110`) stopped + disabled |
 | bridge `:4124` | `--main-harness 1 --harness-tails 0 --harness-behavior 0 --harness-tools 0 --anti-repeat 0 --coerce-text-tools 1 --coerce-narrated 0 --temperature 0.2 --max-tokens 16384` |
 | portão de fluxo (teste) | exige **só main harness**; `BRIDGE_TAILS_OPTIONAL=0` reativa a exigência de tails/tools_tail |
 
-**Por que o ctx caiu.** Com `-c 458752 -np 4` (turbo3) o GGUF novo subia em
-11.979/12.288 MiB e abortava (SIGABRT / `cudaMalloc failed: out of memory`) na
-primeira requisição: o preflight do WAR via "Connection refused" e os 15 steps do
-L1 saíam SKIP sem rodar teste. `229376 -np 2` estabilizou (10,47 GB); `114688
--np 1` é o que roda hoje — folga suficiente para o preflight (mínimo 512 MiB
-livres) e para o compute buffer depois do primeiro request.
+**Por que o ctx caiu antes (e por que 4×128k volta a caber).** O OOM de
+`-c 458752 -np 4` e `-c 393216 -np 3` **não era o KV cache**: o `-ot .*=CUDA0`
+forçava também os tensores do **mmproj** (946 MB bf16) para a GPU, e o
+`clip_model_loader` morria em `cudaMalloc failed: out of memory` (593 MiB) logo
+após o KV. Com uma GPU só o default já é CUDA0, então o override é inútil: sem
+ele (e sem `--mmproj-offload`) a visão fica na CPU e o KV turbo3 cabe em
+**4×128k**. A GPU2 (`:4110`, 2,5 GB) foi aposentada para liberar o resto.
 
 **Formato de tool call do GGUF (template nativo, "fix july 2026").**
 
@@ -75,7 +78,7 @@ llama `:4120` / bridge `:4125` (CPU Forced, `-ngl 0`).
 > para **tarefas granulares de execução de scripts**, para medir/validar o
 > executor de scripts sem VRAM.
 
-Temperatura: CLI base **0.2**; perfis do runtime (`appsettings.json`) **plan 0.3 / build 0.1 / orch 0.3 / moe 0.5 / scripter 0.1 / exec 0.1** (escala baixa **0.1**, média **0.3**, alta **0.5**); o `temperature` do modelo no `opencode.json` segue a mesma escala.
+Temperatura: CLI base **0.2**; perfis do runtime (`appsettings.json`) **plan 0.2 / build 0.1 / orch 0.2 / moe 0.4 / scripter 0.1 / exec 0.1** (escala baixa **0.1**, média **0.2**, alta **0.4**); o `temperature` do modelo no `opencode.json` segue a mesma escala (base sem sufixo = 0.2). Fonte única, histórico das escalas e política de variância: [`TEMPERATURA-ROLES.md`](TEMPERATURA-ROLES.md).
 Detalhes de remaster em `/media/mint/Linux/remaster-update6.md`.
 
 **Dev × produção.** O desenvolvimento acontece em
@@ -141,7 +144,7 @@ atrás de duas bridges:
           "tool_call": true,
           "compatibility": { "reasoningField": "reasoning_content" },
           "limit": { "context": 131072, "output": 16384 },
-          "temperature": 0.3
+          "temperature": 0.2
         }
       }
     },
@@ -156,7 +159,7 @@ atrás de duas bridges:
           "tool_call": true,
           "compatibility": { "reasoningField": "reasoning_content" },
           "limit": { "context": 57344, "output": 16384 },
-          "temperature": 0.3
+          "temperature": 0.2
         }
       }
     }
@@ -194,21 +197,32 @@ unit (`--temperature`/`--thinking`); id com sufixo **vence**.
 | id | temp | thinking | papel |
 |---|---|---|---|
 | `Gemma4-E4B-Q4` | 0.2 | off | global GPU1 (base da unit; `--thinking off`, ver 4.3) |
-| `Gemma4-E4B-Q4-plan` | 0.3 | events | planeja |
+| `Gemma4-E4B-Q4-plan` | 0.2 | events | planeja |
 | `Gemma4-E4B-Q4-build` | 0.1 | off | executa |
-| `Gemma4-E4B-Q4-orch` | 0.3 | events | orquestra/delega |
-| `Gemma4-E4B-Q4-moe` | 0.5 | events | explora/generalista |
+| `Gemma4-E4B-Q4-orch` | 0.2 | events | orquestra/delega |
+| `Gemma4-E4B-Q4-moe` | 0.4 | events | explora/generalista |
 | `Gemma4-E4B-Q4-scripter` | 0.1 | off | compõe scripts |
 | `Gemma4-E4B-UD-Q3` | 0.2 | events | global GPU2 (base da unit) |
-| `Gemma4-E4B-UD-Q3-plan` | 0.3 | events | planeja |
+| `Gemma4-E4B-UD-Q3-plan` | 0.2 | events | planeja |
 | `Gemma4-E4B-UD-Q3-build` | 0.1 | off | executa |
-| `Gemma4-E4B-UD-Q3-moe` | 0.5 | events | explora |
+| `Gemma4-E4B-UD-Q3-moe` | 0.4 | events | explora |
 | `Gemma4-E4B-UD-Q3-scripter` | 0.1 | off | compõe/valida scripts |
 | `Gemma4-E4B-UD-Q3-exec` | 0.1 | off | valida **e executa** scripts |
 
-Escala de temperatura: **0.1 baixa (execução) / 0.3 média (planejamento) / 0.5 alta (exploração)**;
-o global da unit é **0.2**. O `temperature` do `opencode.json` (0.3/0.1/0.3/0.5/0.1)
-segue a mesma escala.
+Escala de temperatura: **0.1 baixa (execução) / 0.2 média-baixa (planejamento) / 0.4 média-alta (exploração)**;
+o global da unit é **0.2**. O `temperature` do `opencode.json` (0.2/0.1/0.2/0.4/0.1) segue a mesma escala.
+Motivo da descida de 0.3/0.5 para 0.2/0.4 em 2026-11-07 (variância medida na
+linha E-ent, texto puro) e o procedimento para mudar de novo: [`TEMPERATURA-ROLES.md`](TEMPERATURA-ROLES.md).
+
+> **Ids servidos (2026-11-07).** A GPU1 serve `Gemma4-E4B-GK-Q4` (GGUF
+> retreinado `...-GK-DS-Retrained-Q4_K_M-Imatrix`). Os ids `Gemma4-E4B-Q4*`
+> continuam aceitos como **alias na bridge** (ela encaminha o `Model`
+> configurado e devolve o id pedido como eco), mas quem fala **direto** com o
+> llama (Web UI, `UpstreamUrl=:4100`) precisa usar `Gemma4-E4B-GK-Q4`.
+> `Gemma4-E4B-UD-Q3` é a linha GPU2 (aposentada, `:4110`/`:4125`) e
+> `Gemma4-E4B-Q4` é a CPU Forced (`:4120`/`:4126`). Ids `gemma-4-12b` e
+> `gemma-4-e2b` estão mortos e são migrados pelo seeder (GK-Q4 na GPU, E4B-Q4
+> na CPU).
 O thinking efetivo vem do **perfil por sufixo, que PREVALECE sobre o global** —
 essa é a regra: os steps mandam ids com sufixo (`-plan`, `-orch`, `-build`) e
 cada um assume o thinking do **seu** role (`plan`/`orch` = on, porque os testes

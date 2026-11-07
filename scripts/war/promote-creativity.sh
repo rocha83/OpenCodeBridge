@@ -2,11 +2,11 @@
 # ============================================================================
 # Promove a TEMPERATURA dos roles Gemma4 nos configs do opencode (criatividade).
 #
-# Alvo (proximo de como estavam antes):
-#   plan/orch .......... 0.5
-#   moe ................ 0.8
-#   build/scripter/exec . 0.2
-#   modelo base (sem sufixo de role) ..... intacto
+# Alvo (escala do lab, 2026-11-07 — ver docs/TEMPERATURA-ROLES.md):
+#   plan/orch .......... 0.2
+#   moe ................ 0.4
+#   build/scripter/exec . 0.1
+#   modelo base (sem sufixo de role) ..... intacto (0.2 no opencode.json = global da bridge)
 #
 # Toca TODOS os homes com config do opencode (mint, dev-agent, moe-agent) e
 # atualiza tambem o rotulo "— Plan (Thinking On, 0.3)" do campo `name`.
@@ -34,7 +34,7 @@ for f in "${CONFIGS[@]}"; do
     python3 - "$f" "$APPLY" "$STAMP" <<'PY' || RC=1
 import json, re, shutil, sys
 path, apply_flag, stamp = sys.argv[1], sys.argv[2] == "1", sys.argv[3]
-TARGET = {"-plan": 0.5, "-orch": 0.5, "-moe": 0.8, "-build": 0.2, "-scripter": 0.2, "-exec": 0.2}
+TARGET = {"-plan": 0.2, "-orch": 0.2, "-moe": 0.4, "-build": 0.1, "-scripter": 0.1, "-exec": 0.1}
 with open(path, encoding="utf-8") as fh:
     doc = json.load(fh)
 changes = []
@@ -72,7 +72,7 @@ PY
     sudo python3 - "$f" "$APPLY" "$STAMP" <<'PY' || RC=1
 import json, re, shutil, sys
 path, apply_flag, stamp = sys.argv[1], sys.argv[2] == "1", sys.argv[3]
-TARGET = {"-plan": 0.5, "-orch": 0.5, "-moe": 0.8, "-build": 0.2, "-scripter": 0.2, "-exec": 0.2}
+TARGET = {"-plan": 0.2, "-orch": 0.2, "-moe": 0.4, "-build": 0.1, "-scripter": 0.1, "-exec": 0.1}
 with open(path, encoding="utf-8") as fh:
     doc = json.load(fh)
 changes = []

@@ -10,55 +10,57 @@ public static class AgentSeeder
         double Temp, string Thinking, string Prompt, string Role, string Mode,
         double Tps, int Active, string Tools);
 
-    // Snapshot da config atual: Gemma4 E4B Q4 ctx 128k na GPU :4124; Gemma4
-    // E4B UD-Q3 (GPU2) ctx 128k em :4110/:4125; E4B Q4 CPU Forced em :4120/:4126. Temperaturas: baixa 0.1
-    // (Build/Exec), Scripter 0.1, média 0.3 (Plan/Orch), alta 0.5 (MoE).
+    // Snapshot da config atual: Gemma4 E4B **GK-Q4** (GGUF retreinado
+    // Gemma4-E4B-UCD-IT_Principal-GK-DS-Retrained-Q4_K_M-Imatrix) ctx 128k na GPU
+    // :4124; Gemma4 E4B UD-Q3 (GPU2, aposentada) ctx 128k em :4110/:4125; E4B Q4
+    // CPU Forced em :4120/:4126. Temperaturas (2026-11-07): baixa 0.1
+    // (Build/Scripter/Exec), média 0.2 (Plan/Orch), média-alta 0.4 (MoE).
     // Scripter e Exec compartilham o prompt; só o Exec tem 'exec' no harness
     // (Scripter cria+valida com 'bash -n'; Exec valida e executa 'bash <arquivo>').
     private static readonly Seed[] Seeds =
     [
-        new(1, "Agente Generalista Global - MoE (GPU)", "Gemma4-E4B-Q4", "http://127.0.0.1:4124",
-            0.7, "events",
+        new(1, "Agente Generalista Global - MoE (GPU)", "Gemma4-E4B-GK-Q4", "http://127.0.0.1:4124",
+            0.4, "events",
             "Voce e um agente autonomo generalista senior entende sobre todos assuntos em esfera global delega tarefas a subagentes quando entende que o contexto ficou moderado (128k), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
             "planner", "Plan", 30.0, 1,
             "fetch,display,subagent"),
-        new(2, "Engenheiro de Software - Plan (GPU)", "Gemma4-E4B-Q4", "http://127.0.0.1:4124",
-            0.4, "events",
+        new(2, "Engenheiro de Software - Plan (GPU)", "Gemma4-E4B-GK-Q4", "http://127.0.0.1:4124",
+            0.2, "events",
             "Voce e um agente autonomo arquiteto engenheiro de software e dados (ML e NN) senior adepto das melhores praticas SOLID, design DDD clean arch e uso de ORM, delega tarefas a subagentes quando entende o contexto moderado (128k), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
             "executor", "Plan", 30.0, 1,
             "glob,read,grep,git,fetch,display,subagent"),
-        new(3, "Desenvolvedor de Software - Build (GPU)", "Gemma4-E4B-Q4", "http://127.0.0.1:4124",
-            0.2, "off",
+        new(3, "Desenvolvedor de Software - Build (GPU)", "Gemma4-E4B-GK-Q4", "http://127.0.0.1:4124",
+            0.1, "off",
             "Voce e um agente autonomo arquiteto desenvolvedor de software e dados (ML e NN) senior, executa todas as tools e implementa os artefatos e testes conforme enunciado seguindo as melhores praticas de desenvolvimento, delega tarefas a subagentes quando entende o contexto moderado (128k), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
             "orchestrator", "Build", 30.0, 1,
             "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec,install,subagent"),
-        new(4, "Engenheiro de Software - Orch (GPU)", "Gemma4-E4B-Q4", "http://127.0.0.1:4124",
-            0.4, "events",
+        new(4, "Engenheiro de Software - Orch (GPU)", "Gemma4-E4B-GK-Q4", "http://127.0.0.1:4124",
+            0.2, "events",
             "Voce e um agente arquiteto engenheiro de software e dados (ML e NN) senior, analise o enunciado expanda o compreendido divida em fases e delegue para subagentes desenvolvedores senior (porem menor capacidade de inferencia), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito. ",
             "executor", "Build", 30.0, 1,
             "glob,read,grep,git,fetch,display,subagent"),
         new(5, "Agente Generalista Global - MoE (GPU2)", "Gemma4-E4B-UD-Q3", "http://127.0.0.1:4125",
-            0.7, "events",
+            0.4, "events",
             "Voce e um agente autonomo generalista senior entende sobre todos assuntos em esfera global delega tarefas a subagentes quando entende que o contexto ficou limitado (128k), nunca se auto-apresente salvo pedido direto",
             "executor", "Plan", 2.5, 1,
             "fetch,display,subagent"),
-        new(6, "Desenvolvedor de Software - Scripter (GPU)", "Gemma4-E4B-Q4", "http://127.0.0.1:4124",
-            0.2, "off",
+        new(6, "Desenvolvedor de Software - Scripter (GPU)", "Gemma4-E4B-GK-Q4", "http://127.0.0.1:4124",
+            0.1, "off",
             "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
             "", "Build", 30.0, 1,
             "glob,read,grep,git,fetch,display,write,edit,proc,shell,install"),
         new(7, "Engenheiro de Software - Plan (GPU2)", "Gemma4-E4B-UD-Q3", "http://127.0.0.1:4125",
-            0.4, "events",
+            0.2, "events",
             "Voce e um agente autonomo arquiteto engenheiro de software e dados (ML e NN) senior adepto das melhores praticas SOLID, design DDD clean arch e uso de ORM, delega tarefas a subagentes quando entende que o contexto ficou limitado (128k), nunca se auto-apresente salvo pedido direto",
             "executor", "Plan", 2.5, 1,
             "glob,read,grep,git,fetch,display,subagent"),
         new(8, "Desenvolvedor de Software - Scripter (GPU2)", "Gemma4-E4B-UD-Q3", "http://127.0.0.1:4125",
-            0.2, "off",
+            0.1, "off",
             "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto ",
             "", "Build", 2.5, 1,
             "glob,read,grep,git,fetch,display,write,edit,proc,shell"),
         new(9, "Desenvolvedor de Software - Build (GPU2)", "Gemma4-E4B-UD-Q3", "http://127.0.0.1:4125",
-            0.2, "off",
+            0.1, "off",
             "Voce e um agente autonomo arquiteto desenvolvedor de software e dados (ML e NN) senior, executa todas as tools e implementa os artefatos e testes conforme enunciado seguindo as melhores praticas de desenvolvimento, delega tarefas a subagentes quando entende que o contexto ficou limitado (128k), nunca se auto-apresente salvo pedido direto",
             "orchestrator", "Build", 2.5, 1,
             "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec,subagent"),
@@ -66,7 +68,7 @@ public static class AgentSeeder
         // 'Executar scripts' (exec) — valida ('bash -n') e ENTÃO executa
         // ('bash <arquivo>'). Scripter cria+valida; Exec cria+valida+executa.
         new(10, "Desenvolvedor de Software - Exec (GPU2)", "Gemma4-E4B-UD-Q3", "http://127.0.0.1:4125",
-            0.2, "off",
+            0.1, "off",
             "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto. Diferenca do Scripter: valide a sintaxe com 'bash -n <arquivo>' e ENTAO EXECUTE com 'bash <arquivo>', reportando a saida; se o script falhar, leia o erro, corrija e execute de novo ate passar.",
             "", "Build", 2.5, 1,
             "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec"),
@@ -98,6 +100,7 @@ public static class AgentSeeder
             try { cmd.ExecuteNonQuery(); } catch { /* seed best-effort */ }
         }
         MigrateLegacyConfig(conn);
+        MigrateGpuModelId(conn);
         MigrateUpstreamUrls(conn);
         RenameQ3Agents(conn);
         NormalizeAgentNames(conn);
@@ -105,9 +108,9 @@ public static class AgentSeeder
         PromoteRoleTemperatures(conn);
     }
 
-    // Temperaturas por role: plan/orch 0.3, moe 0.5, build/exec 0.1,
-    // scripter 0.1. Idempotente: roda a cada boot e só toca agentes
-    // Gemma4 E4B ativos; modelo base e agentes custom ficam intactos.
+    // Temperaturas por role (escala do lab 2026-11-07): plan/orch 0.2,
+    // moe 0.4, build/scripter/exec 0.1. Idempotente: roda a cada boot e só
+    // toca agentes Gemma4 E4B ativos; modelo base e agentes custom ficam intactos.
     private static void PromoteRoleTemperatures(SqliteConnection conn)
     {
         try
@@ -115,8 +118,8 @@ public static class AgentSeeder
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
                 UPDATE agents SET temperature = CASE
-                    WHEN name LIKE '%MoE%' THEN 0.5
-                    WHEN name LIKE '%Plan%' OR name LIKE '%Orch%' THEN 0.3
+                    WHEN name LIKE '%MoE%' THEN 0.4
+                    WHEN name LIKE '%Plan%' OR name LIKE '%Orch%' THEN 0.2
                     WHEN name LIKE '%Build%' OR name LIKE '%Exec%' THEN 0.1
                     WHEN name LIKE '%Scripter%' THEN 0.1
                     ELSE temperature END
@@ -128,25 +131,26 @@ public static class AgentSeeder
         catch { /* migração best-effort */ }
     }
 
-    // Ids mortos (gemma-4-12b / gemma-4-e2b) não existem mais nas units. Atualiza
-    // só essas linhas para a linha E4B e a escala baixa 0.2 / média 0.4 / alta 0.7;
-    // preserva prompts/tools/edições fora de nome/modelo/temperatura/contexto.
+    // Ids mortos (gemma-4-12b / gemma-4-e2b) não existem mais nas units. A linha
+    // 12B vira a GPU atual (GK-Q4, GGUF retreinado); o E2B (executor barato) vira
+    // a linha CPU Forced (E4B Q4, :4120/:4126). Escala baixa 0.1 / média 0.2 /
+    // média-alta 0.4; preserva prompts/tools/edições fora de nome/modelo/temp/ctx.
     private static void MigrateLegacyConfig(SqliteConnection conn)
     {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             UPDATE agents
             SET model = CASE model
-                    WHEN 'gemma-4-12b' THEN 'Gemma4-E4B-Q4'
-                    WHEN 'gemma-4-e2b' THEN 'Gemma4-E4B-UD-Q3'
+                    WHEN 'gemma-4-12b' THEN 'Gemma4-E4B-GK-Q4'
+                    WHEN 'gemma-4-e2b' THEN 'Gemma4-E4B-Q4'
                     ELSE model END,
                 name = replace(replace(replace(name,
                     'Gemma4 12B', 'Gemma4 E4B'),
                     'Gemma4 E2B', 'Gemma4 E4B'),
                     'Gemma4 E4B Q3', 'Gemma4 E4B UD-Q3'),
                 temperature = CASE
-                    WHEN name LIKE '%MoE%' THEN 0.5
-                    WHEN name LIKE '%Plan%' OR name LIKE '%Orch%' THEN 0.3
+                    WHEN name LIKE '%MoE%' THEN 0.4
+                    WHEN name LIKE '%Plan%' OR name LIKE '%Orch%' THEN 0.2
                     WHEN name LIKE '%Build%' OR name LIKE '%Exec%' THEN 0.1
                     WHEN name LIKE '%Scripter%' THEN 0.1
                     ELSE 0.1 END,
@@ -157,6 +161,24 @@ public static class AgentSeeder
             WHERE model IN ('gemma-4-12b', 'gemma-4-e2b');
             """;
         try { cmd.ExecuteNonQuery(); } catch { /* migração best-effort */ }
+    }
+
+    // Migração: a GPU (:4124) passou a servir o GGUF retreinado com alias
+    // "Gemma4-E4B-GK-Q4". Agentes antigos apontando para :4124 com o id velho
+    // ("Gemma4-E4B-Q4") são renomeados; a linha CPU (:4126) mantém o id Q4.
+    private static void MigrateGpuModelId(SqliteConnection conn)
+    {
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                UPDATE agents SET model = 'Gemma4-E4B-GK-Q4'
+                WHERE model = 'Gemma4-E4B-Q4'
+                  AND (bridge_url LIKE '%:4124%' OR upstream_url LIKE '%:4100%');
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        catch { /* migração best-effort */ }
     }
 
     // Migração: UD-Q3 é a linha GPU2 (:4110/:4125), não CPU. O CPU Forced é
@@ -185,8 +207,9 @@ public static class AgentSeeder
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
                 UPDATE agents
-                SET name = replace(replace(name,
+                SET name = replace(replace(replace(name,
                     ' - Gemma4 E4B UD-Q3 GPU2', ' (GPU2)'),
+                    ' - Gemma4 E4B GK-Q4 GPU', ' (GPU)'),
                     ' - Gemma4 E4B Q4 GPU', ' (GPU)')
                 WHERE name LIKE '% - Gemma4 E4B %';
                 """;

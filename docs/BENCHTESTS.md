@@ -689,3 +689,36 @@ Antes disso o driver mandava `probe=1` em cada `step_start` e a curva dos steps
 anteriores desaparecia. O run isolado (`E-*`) continua limpando tudo: ele é a
 própria rodada. Prova de aceite: `GET /api/test/probe?limit=1000` após dois
 steps deve trazer **≥2 valores distintos de `step`** na mesma resposta.
+
+## 10. Escala 0.1 / 0.2 / 0.4 e retry removido do gate (2026-11-07)
+
+Substitui a escala da §9 (0.1/0.3/0.5). Motivo medido na linha **E-ent**
+(conceitual, texto puro, `-plan`): o conteúdo saía certo e a **forma** variava
+entre amostras — artefato sem o literal `409` (usou `Results.Conflict`),
+paginação só com `LIMIT`, `NotImplementedException` num CRUD simples e prosa de
+~14k tokens num step que deveria devolver código.
+
+Duas correções, nesta ordem:
+
+1. **Enunciado fixa o contrato**: dialeto Postgres explícito
+   (`LIMIT ? OFFSET ?`, `UNIQUE(email)`, `BEGIN/COMMIT/ROLLBACK`, `jsonb`) e
+   `SEM TOOL CALLS` nos steps conceituais. Asserts passam a aceitar o contrato,
+   não um literal único (`409` **ou** `Conflict` **ou** `UNIQUE`; `OFFSET`
+   **ou** `LIMIT` **ou** `Skip`/`pageSize`).
+2. **Temperatura desce na fonte**: Plan/Orch **0.2**, MoE **0.4**;
+   Build/Scripter/Exec seguem **0.1**. Fonte única `Core/RoleProfiles.cs` +
+   espelho `appsettings.json` + `opencode.json` + seeder da Web UI.
+
+**Retry saiu do gate.** `WAR_ENT_SAMPLES` ausente = 1 amostra, um veredito
+(`[fail-dump]` com 800 chars + `[contract]` com o motivo). Medição de
+estabilidade é opt-in: `WAR_ENT_SAMPLES=N` + `WAR_ENT_MIN_PASS=k` roda N
+amostras fixas, loga `[stability] taxa=k/N` e reprova abaixo do mínimo — N não
+cresce até passar. Justificativa: retry no assert esconde regressão (95%→60%
+por amostra continua "verde" com 2 tentativas) e cria política assimétrica
+entre steps. Detalhes e checklist: `TEMPERATURA-ROLES.md`.
+
+Aceite desta rodada: com a escala nova **e sem retry**, o aceite é a bateria
+L1→L2 completa (`scripts/war/run-all-levels.sh --levels 1,2`); o resultado
+(step a step e taxa de estabilidade, se medida) fica no `HISTORY.md` e em
+`logs/levels/`. Estado imediatamente anterior: `--only E-ent` = 6/6 **com
+retry** a 0.3 — o que motivou remover o retry e descer a temperatura.

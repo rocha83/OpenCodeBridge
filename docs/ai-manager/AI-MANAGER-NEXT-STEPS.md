@@ -387,7 +387,7 @@ O AI.Manager monta um manifesto **resolvido**: sem placeholders pendentes, sem d
       "title": "Cadastro de clientes e fornecedores",
       "prompt": "Trabalhe em {ws}...",
       "workspace": { "template": "belts-build", "clean": true },
-      "model": { "role": "build", "temperature": 0.3, "thinking": "events" },
+      "model": { "role": "build", "temperature": 0.1, "thinking": "off" },
       "tools": { "mode": "required", "allow": ["write"] },
       "loop": { "maxTurns": 10, "maxNudges": 2, "review": true },
       "assertions": [

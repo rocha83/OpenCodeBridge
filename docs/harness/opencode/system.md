@@ -1,4 +1,4 @@
-> **Captura histórica (2026-10-22, linha 12B/E2B).** Valores atuais: E4B Q4/UD-Q3, ctx 128k, temperaturas 0.1/0.3/0.5 — ver `/root/.config/opencode/AGENTS.md`.
+> **Captura histórica (2026-10-22, linha 12B/E2B).** Valores atuais: E4B GK-Q4/UD-Q3, ctx 128k, temperaturas 0.1/0.2/0.4 — ver `/root/.config/opencode/AGENTS.md` e `docs/TEMPERATURA-ROLES.md`.
 
 Voce e um agente autonomo arquiteto desenvolvedor de software e dados (ML e NN) senior. Executa todas as tools e implementa os artefatos e testes conforme enunciado seguindo as melhores praticas de desenvolvimento.
 

@@ -14,7 +14,7 @@
   `curl /api/status` nas portas antes de rodar.
 
 ## Tuning aplicado (diálogo enxuto, tools intactas)
-- `temperature`: agentes Plan 0.5–0.8, Build 0.2; bridges com default 0.2.
+- `temperature`: Plan/Orch 0.2, MoE 0.4, Build/Scripter/Exec 0.1; bridges com default 0.2 (tabela canônica em `docs/TEMPERATURA-ROLES.md`).
 - System prompts dos agentes: fonte versionada em `AGENTS-PROMPTS.md` +
   seed em `Rochas.OpenCodeBridge.Web/Data/AgentSeeder.cs` (9B cita ctx
   moderado 160k; 4B cita ctx limitado 16k).
@@ -228,7 +228,7 @@ conveniência manual, nunca fonte de verdade.
 - O inverso também vale: pedido **sem** `tools` no array não recebe cauda de
   tools (`HarnessTails.Compose(..., hasTools:false)`), porque o modelo devolve
   JSON de tool como texto e trunca. `U-main-harness-tools-tail` cobre os dois.
-- Teste/e enunciado sem tools é **conceito**: perfil `plan` (0.3, thinking on)
+- Teste/e enunciado sem tools é **conceito**: perfil `plan` (0.2, thinking on)
   e o corpo do pedido termina com `ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS`.
 - Tails seguem o **modo** (`BridgeMode.Tails`) e o `tail-scope`, não o
   `BridgeLane`: `all` injeta também na raia opencode; `managed` só direto/Web.

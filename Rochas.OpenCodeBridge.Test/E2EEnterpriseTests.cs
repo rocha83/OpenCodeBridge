@@ -43,8 +43,8 @@ internal static class E2EEnterpriseTests
     }
 
     /// <summary>
-    /// Motivo de stub (mesmas regras do <see cref="CheckNoStub"/>), para o retry
-    /// de contrato: vazio = sem stub.
+    /// Motivo de stub (mesmas regras do <see cref="CheckNoStub"/>), para o
+    /// contrato do cenario: vazio = sem stub.
     /// </summary>
     static string StubReason(string text)
     {
@@ -57,30 +57,52 @@ internal static class E2EEnterpriseTests
     }
 
     /// <summary>
-    /// Pede o artefato em TEXTO e repete UMA vez quando o contrato do cenario
-    /// nao e' atendido. A linha E-ent e' conceitual e o modelo varia com
-    /// temperature 0.3 (medido 2026-11-07: amostras sem o literal 409/UNIQUE,
-    /// com NotImplementedException e com paginacao so LIMIT). O retry fica
-    /// logado e os asserts continuam valendo sobre a ultima amostra.
+    /// Amostras do step (WAR_ENT_SAMPLES, default 1). O default 1 E' o gate:
+    /// uma amostra, contrato, temperatura baixa. N &gt; 1 e' medicao de
+    /// estabilidade (opt-in), nunca "tentar ate passar".
     /// </summary>
-    static async Task<(string Text, string Status)> Ask(string label, string prompt,
-        Func<string, bool> contract, int attempts = 2)
+    static int Samples => int.TryParse(Environment.GetEnvironmentVariable("WAR_ENT_SAMPLES"), out int n) && n > 0 ? n : 1;
+
+    /// <summary>Amostras que precisam atender o contrato (WAR_ENT_MIN_PASS, default = Samples).</summary>
+    static int MinPass
     {
-        string text = "", status = "";
-        for (int n = 1; n <= attempts; n++)
+        get
+        {
+            int k = int.TryParse(Environment.GetEnvironmentVariable("WAR_ENT_MIN_PASS"), out int v) && v > 0 ? v : Samples;
+            return Math.Min(k, Samples);
+        }
+    }
+
+    /// <summary>
+    /// Pede o artefato em TEXTO e aplica o contrato do cenario. Com o default
+    /// (WAR_ENT_SAMPLES=1) NAO ha retry: uma amostra, um veredito — o gate mede
+    /// o comportamento em vez de esconder a variancia. Com N &gt; 1 (opt-in,
+    /// diagnostico de estabilidade) roda N amostras FIXAS, exige
+    /// WAR_ENT_MIN_PASS e loga a taxa; N nunca cresce ate passar. Abaixo do
+    /// minimo devolve texto vazio para o assert reprovar (nao "quase passou").
+    /// </summary>
+    static async Task<(string Text, string Status)> Ask(string label, string prompt, Func<string, bool> contract)
+    {
+        int samples = Samples, minPass = MinPass;
+        string last = "", firstPass = "", status = "";
+        int pass = 0;
+        for (int n = 1; n <= samples; n++)
         {
             var r = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", Req(prompt));
             status = r["status"]?.GetValue<string>() ?? "";
-            if (status != "completed")
+            if (status == "completed")
             {
-                Console.WriteLine($"  [retry] {label} {n}/{attempts}: status={status}");
-                continue;
+                last = TextOf(r);
+                bool ok = contract(last);
+                if (ok) { pass++; if (firstPass.Length == 0) firstPass = last; }
+                else if (samples == 1) Console.WriteLine($"  [contract] {label}: nao atendido (len={last.Length})");
             }
-            text = TextOf(r);
-            if (contract(text)) return (text, status);
-            Console.WriteLine($"  [retry] {label} {n}/{attempts}: contrato nao atendido (len={text.Length})");
+            if (samples > 1)
+                Console.WriteLine($"  [stability] {label} amostra {n}/{samples}: status={status} len={last.Length} ok={pass}");
         }
-        return (text, status);
+        if (samples > 1)
+            Console.WriteLine($"  [stability] {label} taxa={pass}/{samples} (minimo {minPass})");
+        return (pass >= minPass ? firstPass : "", status);
     }
 
     /// <summary>

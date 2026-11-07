@@ -1,5 +1,39 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Escala 0.1/0.2/0.4, ids novos (GK-Q4) no seeder e retry fora do gate (2026-11-07, sessão 53)
+
+**Motivo.** A linha E-ent (conceitual, texto puro, `-plan`) fechou 6/6 apenas
+com **retry** de contrato a `temperature 0.3`. O retry foi avaliado como
+gambiarra de gate: (a) esconde regressão — taxa por amostra de 95%→60% continua
+"verde" com 2 tentativas; (b) cria política assimétrica entre steps (só a linha
+E-ent repetia); (c) não registra a taxa, então não mede nada.
+
+**Decisões.**
+
+1. **Temperatura desce na fonte**: `plan`/`orch` **0.3→0.2**, `moe` **0.5→0.4**;
+   `build`/`scripter`/`exec` seguem **0.1**; modelo base (sem sufixo) **0.2**.
+   Fonte única `Core/RoleProfiles.cs`; espelhos `appsettings.json`, os três
+   `appsettings.*-example.json`, `opencode.json` dos homes (11 modelos Gemma4;
+   nuvem intocada), `~/.config/opencode/AGENTS.md` e o seeder da Web UI.
+2. **Retry removido do gate**: `WAR_ENT_SAMPLES` ausente = **1 amostra**, um
+   veredito (`[fail-dump]`/`[contract]` no log). Estabilidade é **opt-in**:
+   `WAR_ENT_SAMPLES=N` + `WAR_ENT_MIN_PASS=k` roda N amostras fixas, loga
+   `[stability] taxa=k/N` e reprova abaixo do mínimo — N não cresce até passar.
+3. **Ids novos no seeder/UI**: a GPU1 serve `Gemma4-E4B-GK-Q4` (GGUF
+   retreinado); a Web UI fala **direto** com o llama (`UpstreamUrl=:4100`), então
+   os seeds 1/2/3/4/6 e o preset do form passam a usar GK-Q4. Migração
+   `MigrateGpuModelId` renomeia agentes antigos de `:4124`/`:4100`; a migração
+   legada manda `gemma-4-12b`→GK-Q4 e `gemma-4-e2b`→E4B-Q4 (CPU `:4126`).
+   `Gemma4-E4B-UD-Q3` permanece como linha GPU2 (aposentada).
+4. **Documento canônico**: `docs/TEMPERATURA-ROLES.md` (tabela, onde cada valor
+   mora, precedência, medição, checklist de mudança, política de variância,
+   verificação, armadilhas e histórico das escalas). `LAB-SETUP`, `README`,
+   `RUNBOOK-E2E`, `AGENTS-PROMPTS`, `PENDINGS`, `BENCHTESTS` e `system.md`
+   atualizados; `promote-creativity.sh` normaliza para a escala nova.
+
+**Evidência.** Antes: `--only E-ent` 6/6 com 1 retry (`customer`, len=3756).
+Depois: build Release verde e WAR L1→L2 (resultado na entrada seguinte).
+
 ## Tool call canônico do Gemma 4, coerção por modelo e linha "só main harness" (2026-11-07, sessão 52)
 
 **Motivo.** Quatro pontos medidos com o GGUF novo

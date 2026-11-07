@@ -60,8 +60,8 @@ Voce e o agente MoE: generalista senior em todas as areas do conhecimento, respo
 - `agents/scripter.md` / `agents/exec.md` (GPU e CPU) usam **uma frase de papel**, como os demais:
   Scripter = "compoe scripts bash e companions .md a partir do enunciado"; Exec = "valida e executa
   scripts shell Linux devolvendo a saida real".
-- Build id 9 (referência do atomic agent no backend CPU): `Desenvolvedor de Software - Build - E4B UD-Q3 CPU`, temp 0.2/off, tps 2.5.
-- Exec id 10 (`CPU`, temp 0.2/off): **mesmo prompt do Scripter**, harness **com** `exec` — valida (`bash -n`) e **executa** (`bash <arquivo>`). Só CPU (E4B UD-Q3).
+- Build id 9 (referência do atomic agent no backend CPU): `Desenvolvedor de Software - Build - E4B UD-Q3 CPU`, temp 0.1/off, tps 2.5.
+- Exec id 10 (`CPU`, temp 0.1/off): **mesmo prompt do Scripter**, harness **com** `exec` — valida (`bash -n`) e **executa** (`bash <arquivo>`). Só CPU (E4B UD-Q3).
 
 ## Legado — agente principal 9B (não é o seed atual)
 
@@ -96,7 +96,7 @@ Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga, comp
   (fetch), chama subagentes. Sem escrita direta.
 - **Build (id 2, executor/build)**: tudo do plan menos `subagent`, mais
   escrita liberada no backstop.
-- **Subagente** (`SubagentToolHandler.cs`): hardcoded build — temp 0.2 fixa,
+- **Subagente** (`SubagentToolHandler.cs`): hardcoded build — temp 0.1 fixa,
   thinking off, system fixo, só `write/edit/shell` (shell travado: `bash -n`,
   zip/unzip, navegação; nada executa), sem `subagent` (sem recursão). Não lê
   o Mode do banco. Gate de escopo (`SubagentScopeGate`): recusa prompt que
@@ -208,7 +208,7 @@ Você é um agente desenvolvedor senior .net c# e react.js que nao dialoga. Para
   `subagent` (sem recursão); workspace = `bin` do site.
 - Tetos de saída vêm da bridge (o chat não envia `max_tokens`); o subagente
   roda no modelo do chamador, com o teto da bridge dele.
-- Topologia: **Plan** (seed id 2, temp 0.3) delega via `subagent` no PRÓPRIO
+- Topologia: **Plan** (seed id 2, temp 0.2) delega via `subagent` no PRÓPRIO
   modelo; **Orch** delega à **CPU E4B UD-Q3** (sessão com executor CPU selecionado,
   temp 0.1) pelos endpoints Decompose/Orchestrate.
   `UseResponsesBypass=true`: chat é conversa pura (sem ToolExecutor no loop);

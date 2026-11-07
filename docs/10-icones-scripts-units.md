@@ -83,7 +83,7 @@ As três units de bridge são geradas com o mesmo núcleo:
 ```
 
 Política canônica: as três bridges (`:4124`, `:4125` e `:4126`) usam
-`--main-harness 0`; a `bridge-cpu-forced` usa `--temperature 0.5` e está
+`--main-harness 0`; a `bridge-cpu-forced` usa `--temperature 0.2` e está
 inativa. Todas ficam com diagnóstico `off` por default; `metrics` só quando o
 combo `Diagnostico` for `ligado` (opt-in de teste/Grafana). O combo
 `Tail harness` abre no valor de `harnessTails` do `appsettings.json` e pode ser

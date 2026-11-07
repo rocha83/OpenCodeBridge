@@ -27,15 +27,15 @@ public static class RoleProfiles
     /// <summary>Tabela default imutável (fonte única dos valores por role).</summary>
     static readonly Dictionary<string, RoleProfile> Defaults = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["plan"] = new(0.3, "events"),
+        ["plan"] = new(0.2, "events"),
         ["build"] = new(0.1, "off"),
-        ["orch"] = new(0.3, "events"),
-        ["moe"] = new(0.5, "events"),
+        ["orch"] = new(0.2, "events"),
+        ["moe"] = new(0.4, "events"),
         ["scripter"] = new(0.1, "off"),
         ["exec"] = new(0.1, "off"),
     };
 
-    /// <summary>Tabela default: plan 0.3/events, build 0.1/off, orch 0.3/events, moe 0.5/events, scripter 0.1/off, exec 0.1/off.</summary>
+    /// <summary>Tabela default: plan 0.2/events, build 0.1/off, orch 0.2/events, moe 0.4/events, scripter 0.1/off, exec 0.1/off.</summary>
     /// <returns>Cópia mutável da tabela.</returns>
     public static Dictionary<string, RoleProfile> DefaultCopy() => new(Defaults, StringComparer.OrdinalIgnoreCase);
 
