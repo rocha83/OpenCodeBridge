@@ -55,7 +55,8 @@ internal static class E2EToolsFullTests
         const string basePrompt =
             "Trabalhe na pasta atual. Crie o arquivo data.txt com a data de hoje (a data do sistema) escrita como " +
             "texto. Inicialize um repositorio git nesta mesma pasta, adicione o arquivo e faca o commit com a " +
-            "mensagem 'data de hoje'; confirme com git log.";
+            "mensagem 'data de hoje'; confirme com git log. Aja com ferramentas: uma tool call por vez, "
+            + "sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         string parent = Path.GetDirectoryName(dir)!;
@@ -116,7 +117,8 @@ internal static class E2EToolsFullTests
             "Busque o clima de Sao Paulo agora em https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m " +
             "e acrescente em data.txt, na linha de baixo da data (a data ja gravada continua no arquivo), a linha " +
             "'ARQUIVO EDITADO - Clima: ' seguida da temperatura retornada. Adicione a mudanca e faca o commit " +
-            "com a mensagem 'Added sao paulo weather'; confirme com git log.";
+            "com a mensagem 'Added sao paulo weather'; confirme com git log. Aja com ferramentas: uma tool call "
+            + "por vez, sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
