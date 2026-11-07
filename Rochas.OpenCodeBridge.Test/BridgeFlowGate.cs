@@ -84,9 +84,14 @@ internal static class BridgeFlowGate
         return (Check(rec, testStartMs, TailsOptional()), rec is null ? "registro vazio" : Describe(rec));
     }
 
-    /// <summary>Opt-in do run de diagnostico (WAR --war-no-tails-gate).</summary>
+    /// <summary>
+    /// Regra vigente: o fluxo bridge e' SO' main harness — as caudas deixaram de
+    /// ser obrigatorias (2026-11-07, a pedido do operador). O portao estrito das
+    /// caudas continua disponivel como opt-in para diagnostico:
+    /// <c>BRIDGE_TAILS_OPTIONAL=0</c> reativa a exigencia de tails/tools_tail.
+    /// </summary>
     static bool TailsOptional ()
-        => Environment.GetEnvironmentVariable("BRIDGE_TAILS_OPTIONAL") == "1";
+        => Environment.GetEnvironmentVariable("BRIDGE_TAILS_OPTIONAL") != "0";
 
     /// <summary>
     /// Probe que sabe se o teste mandou request para ESTA bridge: o contador
