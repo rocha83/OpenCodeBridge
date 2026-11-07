@@ -2397,3 +2397,45 @@ Continuação do #75, com cinco amostras isoladas do mesmo teste:
 **Medição de 1 slot × 128k** (llama `-c 131072 -np 1`, bridge
 `--context-tokens 131072 --context-slots 1`): `iso-b6/b7/b8/b9` em 85–170 s contra
 287 s do `iso-b5` (4 × 114688) no mesmo teste, VRAM 9,3 GiB contra 11,6 GiB.
+
+## 76. `E-tools-full`: hello world C# compilado (enunciado e aceite) (2026-11-07)
+
+**Sintoma.** O cenário antigo (`data.txt` com a data do sistema + clima da
+open-meteo) falhava no passo 2: o modelo chutava o `oldString` do `edit`
+(`"10/11/2026\n-47380\ndata_ok=true\n"`), errava 8 `edit` seguidos e fechava com
+`write`, sobrescrevendo a data já commitada. Nenhum `read` no transcript.
+
+**Causa.** O conteúdo do arquivo era imprevisível (data do sistema) e o passo 2
+abre com transcript novo: sem `read`, o `edit` vira adivinhação. O FAIL media o
+enunciado, não o modelo.
+
+**Correção (sem receita de código no enunciado).**
+
+1. Cenário: app console C# que exibe `Hello World`, compilado/executado com
+   `dotnet` e versionado; o passo 2 troca a mensagem para `Hello World v2`,
+   recompila e commita.
+2. Aceite compila e **executa** de verdade (`RunApp`: `dotnet run --project`
+   quando há `.csproj`; `dotnet run arquivo.cs`, app de arquivo único do .NET 10,
+   quando não há).
+3. Scaffold entregue pelo teste (`dotnet new console -n App -o .`): medido que o
+   E4B não monta `.csproj` válido (sem `ImplicitUsings`) nem código com
+   `using System` (`CS0103 'Console'`), e inventa `App/`/`src/app/` quando o
+   nome do projeto não é óbvio.
+4. `ToolAgent(..., stack:)` injeta contexto de domínio ("desenvolvedor C#/.NET
+   sênior") — o main harness só declara "dev sênior generalista".
+
+**Medições (mesmo binário/teste, só o maquinário muda).**
+
+| rodada | config | resultado |
+|---|---|---|
+| `104438` | retry degenerado 2048 | PASS 443s (6 retries × ~67s) |
+| `105419` | retry 512 | PASS 170s |
+| `105801` | enunciado "projeto pelo dotnet" | FAIL 46s (3/3 sem `.csproj`) |
+| `110023` | `RunApp` tolerante | PASS 112s |
+| `110918` | csproj sem `ImplicitUsings` | FAIL 91s (CS0103; aceite ainda preferia o projeto) |
+| `111804` | sem nome de projeto | FAIL 43s (inventa `App/App.csproj`) |
+| `112301` | `App.csproj` + persona de stack | PASS 190s (1 tentativa: 14/21 calls) |
+
+**O que fica.** O step mede o loop de dev (rodar, versionar, editar, recompilar,
+versionar), não scaffold de linguagem. `RunApp` aceita projeto ou arquivo único —
+as duas formas são "console C# compilado pelo dotnet".

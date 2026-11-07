@@ -1,5 +1,24 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## `E-tools-full`: hello world C# no lugar do data.txt/clima (2026-11-07, sessão 54)
+
+**Motivo.** O step era o único vermelho do L2 e o FAIL era do enunciado: o passo
+2 chutava o `oldString` do `edit` (data do sistema imprevisível), errava 8x e
+sobrescrevia com `write`.
+
+**Decisões.** Enunciado em linguagem natural (app console C# que exibe Hello
+World → `dotnet` build/run → `git` commit; passo 2 troca para `Hello World v2`,
+recompila e commita). O aceite compila e executa de verdade; o projeto entra
+pronto (`dotnet new console -n App -o .`) porque o E4B não monta `.csproj`
+válido (CS0103 por falta de `ImplicitUsings`). `ToolAgent` ganhou `stack:`
+opt-in (contexto "desenvolvedor C#/.NET sênior") — o main harness só declara
+generalista. Retry de turno degenerado caiu de 2048 fixo para 512 (era ~67s por
+retry; o E-tools-full gastou 400s só nisso).
+
+**Medições.** 443s → 170s (retry 512) → 112s (aceite tolerante) → PASS 190s com
+`App.csproj` + persona. Detalhe completo na entrada 76 de
+`docs/DRIVER-FIXES.md`.
+
 ## Escala 0.1/0.2/0.4, ids novos (GK-Q4) no seeder e retry fora do gate (2026-11-07, sessão 53)
 
 **Motivo.** A linha E-ent (conceitual, texto puro, `-plan`) fechou 6/6 apenas
