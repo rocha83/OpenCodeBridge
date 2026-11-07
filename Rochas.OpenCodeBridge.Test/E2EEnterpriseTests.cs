@@ -42,6 +42,17 @@ internal static class E2EEnterpriseTests
         TestContext.Check(!hasEllipsisComment || !shallowCode, ctx + " sem esqueleto");
     }
 
+    /// <summary>
+    /// Quando um assert de conteudo cai, o log do step mostra o que o modelo
+    /// entregou — sem isso o diagnostico vira adivinhacao de qual token faltou.
+    /// </summary>
+    static void FailDump(string ctx, string text)
+    {
+        string head = text.Length > 800 ? text[..800] : text;
+        Console.WriteLine($"  [fail-dump] {ctx} ({text.Length} chars): " +
+            head.Replace("\r", "").Replace("\n", " | "));
+    }
+
     public static async Task CrudProduct()
     {
         // CRUD simples: Product (Minimal API + Dapper, validacao de borda).
@@ -65,19 +76,29 @@ internal static class E2EEnterpriseTests
     public static async Task CrudCustomer()
     {
         // CRUD simples: Customer (paginacao + filtro + unicidade de email).
+        // O dialeto e' FIXO (Postgres) — sem isso o modelo variava entre
+        // OFFSET/FETCH (SQL Server), Skip (LINQ) e LIMIT puro, e o assert caia.
         var r = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", Req(
-            "C# .NET 9 Minimal API + Dapper: CRUD de Customer (Id, Name, Email, CreatedAt). " +
-            "Entregue: GET /api/customers com paginacao (?page, ?pageSize, max 100) e filtro ?q por nome/email, " +
-            "POST rejeitando email duplicado (409) e email invalido (400), PUT e DELETE com 404, indice no email. " +
-            "So codigo + 3 bullets de borda."));
+            "C# .NET 9 Minimal API + Dapper + Postgres: CRUD de Customer (Id, Name, Email, CreatedAt). " +
+            "Entregue: GET /api/customers com paginacao SQL usando LIMIT ? OFFSET ? (?page, ?pageSize, max 100) " +
+            "e filtro ?q por nome/email (ILIKE), POST rejeitando email duplicado pela constraint UNIQUE(email) " +
+            "respondendo 409 (Results.Conflict) e email invalido respondendo 400, PUT e DELETE com 404, " +
+            "indice no email. So codigo + 3 bullets de borda."));
         TestContext.Check(r["status"]?.GetValue<string>() == "completed", "customer completed");
         string text = TextOf(r);
         TestContext.Check(text.Length > 500, "customer com codigo util");
         CheckNoStub(text, "customer");
-        // 409 pode vir literal ou pelo helper idiomático do ASP.NET (Results.Conflict /
-        // ConflictHttpException) — ambos respondem 409. Paginação: OFFSET (SQL) ou Skip (LINQ).
-        bool has409 = text.Contains("409") || text.Contains("Conflict", StringComparison.OrdinalIgnoreCase);
-        bool hasPage = text.Contains("OFFSET", StringComparison.OrdinalIgnoreCase) || text.Contains("Skip", StringComparison.OrdinalIgnoreCase);
+        // Contrato (nao literal): duplicado = 409|Conflict|duplicad|UNIQUE;
+        // paginacao = OFFSET|LIMIT|Skip|pageSize (o dialeto agora esta fixado).
+        bool has409 = text.Contains("409")
+            || text.Contains("Conflict", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("duplicad", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase);
+        bool hasPage = text.Contains("OFFSET", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("LIMIT", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("Skip", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("pageSize", StringComparison.OrdinalIgnoreCase);
+        if (!(has409 && hasPage)) FailDump("customer", text);
         TestContext.Check(has409 && hasPage, "customer com conflito+paginacao");
         Console.WriteLine($"  [info] customer paginacao={text.Contains("pageSize")} email={text.Contains("Email")}");
     }
@@ -86,8 +107,8 @@ internal static class E2EEnterpriseTests
     {
         // CRUD composto header+detail: SaleInvoice com itens em transacao.
         var r = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", Req(
-            "C# .NET 9 + Dapper: POST /api/saleinvoices cria SaleInvoice (header: CustomerId, Date) + Items " +
-            "(detail: ProductId, Qty, UnitPrice) em UMA transacao: total = soma(Qty*UnitPrice), valida estoque " +
+            "C# .NET 9 + Dapper + Postgres: POST /api/saleinvoices cria SaleInvoice (header: CustomerId, Date) + Items " +
+            "(detail: ProductId, Qty, UnitPrice) em UMA transacao (BEGIN/COMMIT/ROLLBACK): total = soma(Qty*UnitPrice), valida estoque " +
             "suficiente de cada produto (409 se faltar, com rollback total) e da baixa no estoque no mesmo commit. " +
             "GET /api/saleinvoices/{id} retorna header + items. Mostre: DDL das 2 tabelas e o que acontece " +
             "se o 3o item estourar o estoque. So codigo + 3 bullets."));
@@ -95,7 +116,9 @@ internal static class E2EEnterpriseTests
         string text = TextOf(r);
         TestContext.Check(text.Length > 600, "saleinvoice com codigo util");
         CheckNoStub(text, "saleinvoice");
-        TestContext.Check(text.Contains("BeginTransaction", StringComparison.OrdinalIgnoreCase) || text.Contains("Transaction", StringComparison.OrdinalIgnoreCase), "saleinvoice transacional");
+        bool transacional = text.Contains("BeginTransaction", StringComparison.OrdinalIgnoreCase) || text.Contains("Transaction", StringComparison.OrdinalIgnoreCase);
+        if (!transacional) FailDump("saleinvoice", text);
+        TestContext.Check(transacional, "saleinvoice transacional");
         // Detalhe pode vir como Items, SaleInvoiceItems ou Item: o que importa e
         // a linha de detalhe existir (ProductId + Qty/Quantity) no codigo.
         bool hasDetail = text.Contains("Items", StringComparison.OrdinalIgnoreCase)
@@ -110,7 +133,7 @@ internal static class E2EEnterpriseTests
     {
         // Worker assincrono: IHostedService drenando outbox com retry e stop gracioso.
         var r = await TestContext.PostObj(TestContext.Bridge + "/v1/responses", Req(
-            "C# .NET 9 BackgroundService: worker que drena a tabela outbox em lote de 50 a cada 5s, publica no " +
+            "C# .NET 9 + Postgres BackgroundService: worker que drena a tabela outbox (payload jsonb) em lote de 50 a cada 5s, publica no " +
             "barramento com retry exponencial + jitter (max 5 tentativas, depois dead-letter), respeita " +
             "CancellationToken em todo await (stop gracioso sem perder a mensagem da vez) e registra throughput " +
             "no log a cada minuto. Entregue o worker completo + DDL da dead-letter. So codigo + 3 bullets."));
