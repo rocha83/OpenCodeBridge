@@ -190,8 +190,9 @@ internal static class E2EEnterpriseTests
             "C# .NET 9 + Dapper + Postgres: POST /api/saleinvoices cria SaleInvoice (header: CustomerId, Date) + Items " +
             "(detail: ProductId, Qty, UnitPrice) em UMA transacao (BEGIN/COMMIT/ROLLBACK): total = soma(Qty*UnitPrice), valida estoque " +
             "suficiente de cada produto (409 se faltar, com rollback total) e da baixa no estoque no mesmo commit. " +
-            "GET /api/saleinvoices/{id} retorna header + items. Mostre: DDL das 2 tabelas e o que acontece " +
-            "se o 3o item estourar o estoque. So codigo + 3 bullets.";
+            "GET /api/saleinvoices/{id} retorna header + items. Entregue o codigo COMPLETO: DDL das 2 tabelas + " +
+            "o handler POST inteiro (BeginTransaction/Commit/Rollback) + o SELECT do GET; nao resuma nem use elipses. " +
+            "Mostre tambem o que acontece se o 3o item estourar o estoque. So codigo + 3 bullets.";
         // Detalhe pode vir como Items, SaleInvoiceItems ou Item: o que importa e
         // a linha de detalhe existir (ProductId + Qty/Quantity) no codigo.
         static bool HasDetail(string t) => t.Contains("Items", StringComparison.OrdinalIgnoreCase)
@@ -201,9 +202,9 @@ internal static class E2EEnterpriseTests
         static bool Transacional(string t) => t.Contains("BeginTransaction", StringComparison.OrdinalIgnoreCase)
             || t.Contains("Transaction", StringComparison.OrdinalIgnoreCase);
         var (text, status) = await Ask("saleinvoice", prompt,
-            t => t.Length > 600 && StubReason(t) == "" && Transacional(t) && HasDetail(t));
+            t => t.Length > 1200 && StubReason(t) == "" && Transacional(t) && HasDetail(t));
         TestContext.Check(status == "completed", "saleinvoice completed");
-        TestContext.Check(text.Length > 600, "saleinvoice com codigo util");
+        TestContext.Check(text.Length > 1200, "saleinvoice com codigo util");
         CheckNoStub(text, "saleinvoice");
         bool transacional = text.Contains("BeginTransaction", StringComparison.OrdinalIgnoreCase) || text.Contains("Transaction", StringComparison.OrdinalIgnoreCase);
         if (!transacional) FailDump("saleinvoice", text);
