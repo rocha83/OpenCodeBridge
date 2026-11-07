@@ -111,19 +111,19 @@ internal static class E2EToolsFullTests
     static async Task CreateAttempt(string dir, string feedback)
     {
         const string basePrompt =
-            "Trabalhe na pasta atual, que ja tem um projeto console em C#. Compile e execute com o dotnet e " +
-            "confirme a mensagem exibida. Inicialize um repositorio git nesta mesma pasta, adicione os arquivos e " +
-            "faca o commit com a mensagem 'hello world console'; confirme com git log. Nao encerre antes do commit. " +
-            "Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever " +
-            "o que ja fez.";
+            "Trabalhe na pasta atual, que ja tem um projeto console em C# chamado App.csproj com o app. Veja os " +
+            "arquivos da pasta antes de agir. Compile e execute com o dotnet e confirme a mensagem exibida. " +
+            "Inicialize um repositorio git nesta mesma pasta, adicione os arquivos e faca o commit com a mensagem " +
+            "'hello world console'; confirme com git log. Nao encerre antes do commit. Aja com ferramentas: uma " +
+            "tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
         // Scaffold do projeto: o E4B nao monta csproj valido de cabeca (medido:
-        // CS0103 'Console' por falta de ImplicitUsings). O teste entrega o repo
-        // como um dev encontraria; o modelo faz o loop que interessa — rodar,
-        // versionar, editar, recompilar, versionar.
+        // CS0103 'Console' por falta de ImplicitUsings) e inventa estrutura
+        // (App/, src/app/) quando o nome do projeto nao e' obvio. O teste entrega
+        // o repo como um dev encontraria: App.csproj + Program.cs na raiz.
         if (FindCsproj(dir) is null && CsFiles(dir).Length == 0)
-            Run("dotnet", dir, 180, "new", "console", "--force", "-o", ".");
+            Run("dotnet", dir, 180, "new", "console", "-n", "App", "-o", ".", "--force");
 
         string parent = Path.GetDirectoryName(dir)!;
         var antes = Directory.EnumerateFileSystemEntries(parent)
@@ -184,7 +184,7 @@ internal static class E2EToolsFullTests
     static async Task AdjustAttempt(string dir, string feedback)
     {
         const string basePrompt =
-            "Na pasta atual existe um app console em C# que exibe Hello World, ja compilado e commitado. " +
+            "Na pasta atual existe um app console em C# (App.csproj) que exibe Hello World, ja compilado e commitado. " +
             "Leia o codigo e troque a mensagem exibida para Hello World v2, mantendo o resto do programa. " +
             "Recompile e execute de novo, confirmando a nova mensagem na saida. Adicione a mudanca e faca o commit " +
             "com a mensagem 'hello world v2'; confirme com git log. Aja com ferramentas: uma tool call por vez, " +
