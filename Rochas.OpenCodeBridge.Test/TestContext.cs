@@ -862,7 +862,7 @@ internal static class TestContext
         catch (Exception ex) { return new JsonObject { ["ok"] = false, ["error"] = ex.Message }; }
     }
 
-    public static async Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps, string? cwd)
+    public static async Task<(string Text, List<string> Calls)> ToolAgent(string prompt, int steps, string? cwd, string? stack = null)
     {
         string enunciadoStep = Environment.GetEnvironmentVariable("WAR_STEP")
             ?? "E-tools-full/agent/" + Mode;
@@ -880,6 +880,17 @@ internal static class TestContext
                 ["role"] = "system",
                 ["content"] = "<env>\n  Working directory: " + cwd +
                               "\n  Is directory a git repo: no\n  Platform: linux\n</env>"
+            });
+        // Contexto de DOMINIO (stack) do step: o main harness so' declara
+        // "dev senior generalista". Em tarefa de codigo o modelo precisa saber a
+        // stack — medido: csproj sem ImplicitUsings e codigo sem `using System`
+        // (CS0103) porque nada no request dizia C#/.NET.
+        if (!string.IsNullOrWhiteSpace(stack))
+            input.Add(new JsonObject
+            {
+                ["role"] = "system",
+                ["content"] = "Voce e um desenvolvedor " + stack + " senior. Use o toolchain da stack " +
+                              "(dotnet para build e execucao) e preserve a estrutura do projeto existente."
             });
         input.Add(new JsonObject { ["role"] = "user", ["content"] = prompt });
         var calls = new List<string>();

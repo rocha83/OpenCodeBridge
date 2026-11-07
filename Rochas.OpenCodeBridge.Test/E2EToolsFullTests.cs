@@ -129,7 +129,7 @@ internal static class E2EToolsFullTests
         var antes = Directory.EnumerateFileSystemEntries(parent)
             .Select(p => Path.GetFileName(p)!).ToHashSet(StringComparer.Ordinal);
 
-        var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
+        var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir, stack: "C#/.NET");
 
         string[] fora = Directory.EnumerateFileSystemEntries(parent)
             .Where(p => Path.GetFileName(p) is string n && !antes.Contains(n)
@@ -191,7 +191,7 @@ internal static class E2EToolsFullTests
             "sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.";
         string prompt = feedback.Length == 0 ? basePrompt : basePrompt + feedback;
 
-        var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir);
+        var (text, calls) = await TestContext.ToolAgent(prompt, 24, dir, stack: "C#/.NET");
 
         string[] fontes = CsFiles(dir);
         TestContext.Check(FindCsproj(dir) is not null || fontes.Length > 0,
