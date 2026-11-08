@@ -26,7 +26,7 @@ internal static class E2EBeltsTests
     /// </summary>
     static string OrchEnunciado(string escopo) =>
         "Componha scripts shell .sh com shebang que construam usando internamente comandos para escrita dos arquivos que atendam o requisito do enunciado a seguir:  *** " + escopo +
-        " ***, segmente em tarefas menores e delegue utilizando a tool subagent a agentes Scripter, a criacao de um script bash .sh que implemente o escopo da subtarefa enunciada";
+        " ***, segmente em tarefas menores e delegue CADA UMA pela tool subagent com agent=\"scripter\" e model=\"llama/Gemma4-E4B-UD-Q3\" (description=titulo de 3 palavras ASCII, prompt=micro-enunciado completo da subtarefa), para a criacao de um script bash .sh que implemente o escopo da subtarefa enunciada";
 
     /// <summary>System do role Orch igual ao opencode: corpo do agents/orch.md
     /// (sem frontmatter). Sem isso a bridge usa so o OrchSystem curto, o main

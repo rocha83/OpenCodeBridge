@@ -86,6 +86,11 @@ public static class ToolCatalog
                     ["type"] = "string",
                     ["description"] = "nome do agente alvo (obrigatorio), copiado da lista acima: define o system prompt e as tools do subagente."
                 },
+                ["model"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "modelo do subagente (opcional; para o scripter use llama/Gemma4-E4B-UD-Q3)."
+                },
                 ["prompt"] = new JsonObject
                 {
                     ["type"] = "string",
