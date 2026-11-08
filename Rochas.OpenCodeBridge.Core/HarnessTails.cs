@@ -83,6 +83,50 @@ public static class HarnessTails
         "AO CODIFICAR: monte a solucao com `write`/`edit` (o arquivo e' o artefato); so entao use `shell` para build de validacao, execucao de testes ou versionamento do codigo.";
 
     /// <summary>
+    /// Projeto .NET que JA existe na pasta. O modelo pequeno cria um segundo
+    /// `Program.cs` em subpasta (o glob do SDK inclui tudo e o build quebra com
+    /// dois pontos de entrada) e usa `dotnet build --project` (flag que so'
+    /// existe no run). Nao manda CRIAR `.csproj` aqui: quando a entrega e' um
+    /// `.sh`, o layout vai dentro do script (ver BuilderExample).
+    /// </summary>
+    const string ProjectLayoutLine =
+        "PROJETO .NET: se a pasta JA tem `.csproj`, edite o `.cs` da raiz desse projeto " +
+        "(um segundo `Program.cs` em subpasta entra no build e duplica o ponto de entrada); " +
+        "dependencia de pacote se declara com `<PackageReference>` no `.csproj` " +
+        "(ex.: Dapper 2.1.89, Microsoft.Data.Sqlite 10.0.12, do cache NuGet local); " +
+        "`dotnet build <nome>.csproj` NAO aceita `--project`.";
+
+    /// <summary>
+    /// Exemplo otimista do script construtor: hello world em C# criado do zero
+    /// DENTRO do .sh (csproj + Program.cs por heredoc + `dotnet build`). E' a
+    /// forma, nao o conteudo — o modelo copia o formato e troca nomes/pastas.
+    /// </summary>
+    /// <remarks>
+    /// Entrou no lugar da regra textual "crie um .csproj": o E4B lia a regra
+    /// como ordem de gravar o artefato solto e abandonava o `.sh` (medido no
+    /// verde da belt de 2026-11-08: 0 scripts, 3 `.cs`/`.sql` soltos).
+    /// </remarks>
+    public const string BuilderExample =
+        """
+        SCRIPT SHELL BASH CONSTRUTOR DE ARTEFATOS (FORMA; nomes e pastas sao exemplo):
+        #!/usr/bin/env bash
+        set -e
+        mkdir -p src/Hello
+        cat > src/Hello/Hello.csproj <<'EOF'
+        <Project Sdk="Microsoft.NET.Sdk">
+          <PropertyGroup>
+            <OutputType>Exe</OutputType>
+            <TargetFramework>net10.0</TargetFramework>
+          </PropertyGroup>
+        </Project>
+        EOF
+        cat > src/Hello/Program.cs <<'EOF'
+        Console.WriteLine("hello world");
+        EOF
+        dotnet build src/Hello/Hello.csproj -c Release
+        """;
+
+    /// <summary>
     /// Tabela de erros C#, GERADA da fonte única (<see cref="CsSyntaxRepair.Rules"/>).
     /// A cauda instrui ANTES do erro; o <c>CsSyntaxRepair</c> repara no retry quando
     /// o modelo ignora. Duas cópias divergem na primeira edição — aqui só se compõe
@@ -128,7 +172,9 @@ public static class HarnessTails
         (ToolHelp.ExampleRule, Array.Empty<string[]>()),
         (ExecuteSandboxLine, Array.Empty<string[]>()),
         (OrderingLine, new[] { new[] { "write" }, new[] { "shell" } }),
+        (ProjectLayoutLine, new[] { new[] { "write", "edit" }, new[] { "shell" } }),
         (BuilderScriptLine, new[] { new[] { "write", "edit" }, new[] { "shell" } }),
+        (BuilderExample, new[] { new[] { "write", "edit" }, new[] { "shell" } }),
     };
 
     /// <summary>
