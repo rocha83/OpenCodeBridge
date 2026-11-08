@@ -31,6 +31,10 @@ dotnet build Rochas.OpenCodeBridge.slnx -c Release --nologo -v:minimal
 # contador NAO exige restart: POST /api/diag/reset?probe=1&files=1 zera os
 # diagnosticos sem downtime. O Grafana entra no mesmo ciclo para reaplicar
 # provisioning e recarregar dashboard/datasource.
+# A config de producao mora no repo (deploy/systemd/), nunca solta em /etc:
+# o que versionamos e' o que roda.
+install -m 644 deploy/systemd/bridge-gpu.service /etc/systemd/system/bridge-gpu.service
+systemctl daemon-reload
 systemctl restart bridge-gpu bridge-web grafana-server
 # Grafana sobe em ~5-10s (varia com o deb); bridge responde em ~2s. Espera com
 # teto explicito: reprovar o deploy por pressa e' falso negativo.
