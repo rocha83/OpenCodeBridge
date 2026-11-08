@@ -90,7 +90,7 @@ internal static partial class Program
     //   native (padrao) = devolve tool_calls estruturados (vLLM / llama + parser)
     //   none            = devolve texto puro; a bridge coagia e sintetiza
     static string UpstreamParser = "native";
-    static bool AntiRepeat = true;                               // AntiRepeat: observa o thinking em stream e conteve repeticao
+    static bool AntiRepeat = false;                              // AntiRepeat: observa o thinking em stream e conteve repeticao (default OFF: so liga por flag)
     // Declaracao EXPLICITA do operador (CLI/appsettings) para o anti-repeat:
     // o modo bridge liga por padrao, mas nao pode reverter um `--anti-repeat 0`
     // (precedencia "CLI vence o modo").
@@ -101,8 +101,10 @@ internal static partial class Program
     // manter o detector e o retry pos-hoc.
     static bool AntiRepeatAbort = true;
     // Switch das tails (--harness-tails). Nao e o inibidor mestre da bridge:
-    // mainHarness e harnessTails sao switches independentes.
-    static bool TailsEnabled = true;
+    // mainHarness e harnessTails sao switches independentes. Default OFF:
+    // tailScope="none" ja impede injecao; o switch tambem nasce desligado para
+    // /api/status nao dizer "tails on" quando nada entra.
+    static bool TailsEnabled = false;
     // Coerção de tool call NARRADA: o modelo escreveu a chamada no corpo da mensagem
     // ("[Assistant tool call]: nome({...})") em vez de emitir tool_calls estruturados.
     // Diferente de CoerceFor (que cobre modelo sem parser nenhum): aqui ja houve intencao
@@ -125,7 +127,7 @@ internal static partial class Program
     // Retry de contencao do anti-repeat: 1 segunda chamada ao modelo com o aviso,
     // descartando a janela repetida. Governado por --anti-repeat-retry, nao pelo
     // LegacyHarness (ver o bloco do retry).
-    static bool AntiRepeatRetry = true;
+    static bool AntiRepeatRetry = false;
     // Repasse opcional de parametros de amostragem do cliente ao upstream
     // (repeat_penalty, dry_*, top_p/k, min_p, seed...). Desligado por padrao:
     // sem a flag a bridge continua montando o body como antes. Nao e politica:
@@ -162,9 +164,9 @@ internal static partial class Program
     // Onde as caudas valem (--tail-scope / appsettings tailScope):
     //   managed = padrao historico: so cliente direto/Web, com --harness-tails 1;
     //   all     = tambem no caminho opencode (model com sufixo de role);
-    //   off     = nenhuma cauda, em nenhum caminho.
-    // Pedido do operador (2026-10-24): guard de tools ligado nos DOIS caminhos.
-    static string TailScope = "managed";
+    //   off/none = nenhuma cauda, em nenhum caminho.
+    // Default OFF ("none"): cauda so entra por flag explicita (--tail-scope).
+    static string TailScope = "none";
     // Main harness (--main-harness): substitui o system do cliente no caminho
     // gerido (model sem sufixo de role) pelo resumo unico do Core e dispensa as
     // tails nesse caminho. Opencode (sufixo) segue com o system do cliente; para
@@ -206,14 +208,14 @@ internal static partial class Program
     // segue o das caudas (off desliga; opencode so com "all").
     static bool BehaviorTailOn() =>
         BehaviorTailEnabled
-        && TailScope != "off"
+        && TailScope is not ("off" or "none")
         && (Mode?.Tails ?? true)
         && (TailScope == "all" || !OpencodeClient.Value)
         && BehaviorTailEffective.Length > 0;
     // Cauda de TOOLS: como usar as tools, so quando o request traz o array.
     static bool ToolsTailOn() =>
         ToolsTailEnabled
-        && TailScope != "off"
+        && TailScope is not ("off" or "none")
         && (Mode?.Tails ?? true)
         && (TailScope == "all" || !OpencodeClient.Value)
         && ToolsTailEffective.Length > 0;
@@ -502,7 +504,7 @@ internal static partial class Program
             if (cfg["harnessBehaviorTail"]?.GetValue<string>() is string bt) { HarnessBehaviorTail = bt; BehaviorTailCustom = true; }
             if (cfg["harnessBehavior"]?.GetValue<bool>() is bool hb) BehaviorTailEnabled = hb;
             if (cfg["harnessTools"]?.GetValue<bool>() is bool htb) ToolsTailEnabled = htb;
-            if (cfg["tailScope"]?.GetValue<string>() is string tsp && tsp is "managed" or "all" or "off") TailScope = tsp;
+            if (cfg["tailScope"]?.GetValue<string>() is string tsp && tsp is "managed" or "all" or "off" or "none") TailScope = tsp;
             if (cfg["breakerSoft"]?.GetValue<int>() is int bsoft && bsoft >= 0) BreakerSoft = bsoft;
             if (cfg["breakerHard"]?.GetValue<int>() is int bhard && bhard >= 0) BreakerHard = bhard;
             if (cfg["antiRepeatRetry"]?.GetValue<bool>() is bool arr) AntiRepeatRetry = arr;
@@ -1329,7 +1331,7 @@ internal static partial class Program
                 case "--harness-behavior": BehaviorTailEnabled = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--harness-tools": ToolsTailEnabled = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--tail-scope":
-                    if (cliArgs[i + 1] is "managed" or "all" or "off") TailScope = cliArgs[i + 1];
+                    if (cliArgs[i + 1] is "managed" or "all" or "off" or "none") TailScope = cliArgs[i + 1];
                     break;
                 case "--main-harness": MainHarnessOn = cliArgs[i + 1] is not "false" and not "0"; break;
                 case "--mode":

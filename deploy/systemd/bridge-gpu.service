@@ -8,13 +8,12 @@ Type=simple
 User=root
 Environment=HOME=/root
 WorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10.0
-# CONFIG MINIMA. So' o que a bridge precisa para servir e o que o preflight da WAR
-# exige: rede/processo, serving (temp/teto/ctx), protocolo e os 3 guards
-# obrigatorios (mode=bridge, main_harness=1, coercao de tools). Toda alavanca de
-# harness/anti-repeat fica explicitamente em 0 — os defaults do codigo sao ON
-# (harness-tails, tail-scope managed, anti-repeat true), entao o desligamento
-# precisa ser dito aqui para o modelo nao ser influenciado.
-ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port 4124 --mode bridge --upstream http://127.0.0.1:4100 --model Gemma4-E4B-GK-Q4 --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens 524288 --context-slots 4 --api-key guest@123 --passthrough-responses true --main-harness 1 --coerce-text-tools 1 --coerce-narrated 1 --harness-tails 0 --harness-behavior 0 --harness-tools 0 --tail-scope off --anti-repeat 0 --breaker-soft 0
+# CONFIG MINIMA. Nada de harness/anti-repeat aqui: os defaults do codigo sao
+# o desligado (AntiRepeat=false, AntiRepeatRetry=false, TailScope="none") e
+# so ligam por flag explicita. Ficam aqui apenas rede/processo, serving
+# (temp/teto/ctx) e os 3 guards obrigatorios do preflight da WAR
+# (mode=bridge, main_harness=1, coercao de tools).
+ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port 4124 --mode bridge --upstream http://127.0.0.1:4100 --model Gemma4-E4B-GK-Q4 --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens 524288 --context-slots 4 --api-key guest@123 --passthrough-responses true --main-harness 1 --coerce-text-tools 1 --coerce-narrated 1
 Restart=on-failure
 RestartSec=10
 
