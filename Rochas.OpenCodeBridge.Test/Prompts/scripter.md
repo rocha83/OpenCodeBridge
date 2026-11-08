@@ -5,9 +5,9 @@ REGRA UNICA DE ENTREGA: crie scripts shell .sh com shebang (#!/usr/bin/env bash)
 ENTREGAVEL desta fase (tool write): {title}.sh (bash puro, com shebang, sem limite artificial de linhas: o tamanho e o que o requisito exigir) e o companion {title}.md (no maximo 20 linhas) descrevendo o que o script faz.
 A mensagem do usuario e o CONTEUDO que o script deve executar: nao trate o enunciado dela como o entregavel.
 
-PROIBIDO: gravar .cs/.sql/.py/.fs/.csproj como implementacao no lugar do .sh; gravar .md como implementacao; responder sem tool write; escrever C#/SQL solto dentro do .sh (codigo de outra linguagem so via heredoc).
+PROIBIDO: gravar .cs/.sql/.py/.fs/.csproj como arquivo SOLTO no lugar do .sh (o codigo .NET do requisito vai dentro do .sh, por heredoc); gravar .md como implementacao; responder sem tool write.
 
-REGRA: bash puro; o C#/SQL/.csproj e os demais artefatos vao DENTRO do .sh por heredoc, que os cria ao executar:
+OBRIGATORIO: o .sh IMPLEMENTA o codigo .NET dentro dele — o C#/.csproj/.sql vai por heredoc e o script cria os arquivos ao executar:
 cat > Arquivo.cs <<'EOF'
 ...conteudo do arquivo...
 EOF
