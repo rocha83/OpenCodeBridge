@@ -32,12 +32,6 @@ internal static class E2EBeltsTests
     const string OrchSystem = "Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas menores e atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada. Nao nomeie arquivo, path nem extensao: descreva o escopo por dominio tecnico e stack (linguagem, framework, banco, API).";
 
     /// <summary>
-    /// Reforco da retentativa do Orch: repete o contrato que a resposta anterior
-    /// nao cumpriu. Nada alem disso — o contrato exigido nao muda.
-    /// </summary>
-    const string OrchRetryAsk = "\n\nSUA RESPOSTA ANTERIOR NAO FOI O JSON ARRAY EXIGIDO (veio prosa). Responda SOMENTE com o JSON array de tarefas, sem texto antes ou depois.";
-
-    /// <summary>
     /// Enunciado do Orch (ponta da cadeia de belts): o requisito entra no
     /// *** escopo *** e a ordem de entrega vem junto da segmentacao. O Build tem
     /// enunciado proprio (E2EBeltsBuildTests) e NAO usa este template.
@@ -325,30 +319,23 @@ internal static class E2EBeltsTests
             try
             {
                 // 1) Orch (E4B) segmenta o enunciado em tarefas atomicas.
-                // No modo opencode o Orch roda pelo CLI real (agent=orch);
-                // no bridge, chamada direta /v1/chat/completions.
-                // A segmentacao e re-amostrada ate 3x quando a resposta vem em
-                // prosa em vez do JSON array do contrato (orch.md ja exige o
-                // array): o enunciado "arquitetura de ecossistema" (preta) puxa
-                // narrativa e temp 0.3 varia — medido 2026-10-29, 399 chars de
-                // prosa com zero tarefas. O contrato NAO muda entre tentativas.
+                // Uma chamada, sem retry/nudge: o veredito sai do artefato.
                 string orchContent = "";
                 JsonArray tasks = new();
-                for (int attempt = 1; attempt <= 3; attempt++)
                 {
-                    string ask = OrchEnunciado(prompt.Replace("{ws}", ws)) + (attempt == 1 ? "" : OrchRetryAsk);
+                    string ask = OrchEnunciado(prompt.Replace("{ws}", ws));
                     if (TestContext.Mode == "opencode")
                     {
-                        Log($"  [belt:{key}] 1/3 Orch via opencode (agent=orch, tentativa {attempt})...");
-                        string orchPrompt = OrchSystem + "\n\nENUNCIADO:\n" + ask;
+                        Log($"  [belt:{key}] 1/3 Orch via opencode (agent=orch)...");
+                        string orchPrompt = OrchSystem + "\n\n" + ask;
                         orchContent = TestContext.OpencodeRun(orchPrompt, ws, agent: "orch");
                     }
                     else
                     {
-                        Log($"  [belt:{key}] 1/3 Orch via bridge (tentativa {attempt})...");
+                        Log($"  [belt:{key}] 1/3 Orch via bridge...");
                         var orchHistory = new JsonArray(
                             new JsonObject { ["role"]="system", ["content"]=LoadOrchSystem() },
-                            new JsonObject { ["role"]="user", ["content"]="ENUNCIADO (na pasta atual):\n" + ask });
+                            new JsonObject { ["role"]="user", ["content"]=ask });
                         var orchR = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
                             new JsonObject { ["model"]=orchModel, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
                         orchContent = Str(orchR["choices"]?[0]?["message"]?["content"]);
@@ -356,34 +343,16 @@ internal static class E2EBeltsTests
                     string rawLog = orchContent.Replace("\r", " ").Replace("\n", "\\n");
                     Log($"  [belt:{key}] Orch raw: {rawLog[..Math.Min(400, rawLog.Length)]}");
                     tasks = ExtractTaskArray(orchContent);
-                    if (tasks.Count > 0) break;
-                    Log($"  [belt:{key}] Orch tentativa {attempt}/3 sem JSON array (chars={orchContent.Length})");
                 }
                 TestContext.Check(tasks.Count > 0,
                     $"[{key}] Orch segmentou em JSON array (chars={orchContent.Length}, " +
                     $"amostra='{orchContent[..Math.Min(180, orchContent.Length)]}')");
                 Log($"  [belt:{key}] Orch: {tasks.Count} tarefas");
 
-                // Grounding: sem isso o Scripter escreve as cegas e inventa caminhos
-                // (ex.: ./data/reembolsos.db, DataAccessLayer/*.csproj). O inventario
-                // real entra no system prompt e vira contrato de path.
-                var ground = new System.Text.StringBuilder();
-                ground.AppendLine("FATOS DO AMBIENTE (nao invente caminhos fora desta lista):");
-                ground.AppendLine("- workspace=" + ws + " e o cwd de execucao; ele comeca VAZIO.");
-                ground.AppendLine("- /usr/src/opencodebridge existe (repo do produto), mas NAO e o workspace da tarefa.");
-                foreach (var exe in new[] { "dotnet", "sqlite3", "python3", "psql", "sqlplus" })
-                {
-                    var (c, _) = Run("bash", ws, 10, "-lc", "command -v " + exe + " >/dev/null 2>&1");
-                    ground.AppendLine($"- {(c == 0 ? "tem" : "NAO tem")} {exe} no PATH");
-                }
-                ground.AppendLine("- NAO existe banco previo, .csproj previo nem servidor SQL ativo.");
-                ground.AppendLine("- Todo path citado deve ser relativo ao cwd ou criado pelo script (mkdir -p).");
-                ground.AppendLine("- O script e bash puro: C#/SQL so via heredoc ou arquivo separado, NUNCA solto no .sh.");
-                string grounded = ground.ToString();
+                string grounded = "";
 
                 // 2) Scripter (E4B) compoe script bash + companion .md para cada tarefa.
                 Log($"  [belt:{key}] 2/3 Scripter compondo scripts...");
-                int scriptsOk = 0;
                 foreach (var t in tasks)
                 {
                     string title = Str(t?["title"], "tarefa");
@@ -527,16 +496,26 @@ internal static class E2EBeltsTests
                     integrityOk++;
                 }
 
-                // 4) Valida artefatos: Scripter compôs e todo .sh restante e integro.
-                // O veredito sai SO' do artefato: o consumidor nao cutuca, nao
-                // devolve erro de sintaxe ao modelo nem reescreve a tarefa.
-                scriptsOk = integrityOk;
-                Log($"  [belt:{key}] validando: scripts={scriptsOk} integros={integrityOk} descartados={discarded}");
-                TestContext.Check(scriptsOk > 0, $"[{key}] Scripter compôs {scriptsOk} scripts válidos");
-                TestContext.Check(integrityOk > 0,
-                    $"[{key}] scripts .sh íntegros no workspace ({integrityOk} ok, {discarded} descartados)");
-                Log($"  [belt:{key}] PASS: {scriptsOk} scripts, {integrityOk} integros, {discarded} descartados");
-                SaveResult(key, "PASS", $"{scriptsOk} scripts, {integrityOk} integros, {discarded} descartados");
+                // 4) Veredito por CONTEUDO do artefato (nunca por quantidade):
+                // todo .sh restante passou no gate acima; alem disso o script tem
+                // que CONSTRUIR os artefatos .NET do enunciado (heredoc + codigo).
+                bool shOk = false;
+                string shWhy = "nenhum .sh constroi artefato .NET";
+                foreach (var f in System.IO.Directory.GetFiles(ws, "*.sh", System.IO.SearchOption.AllDirectories))
+                {
+                    string body = System.IO.File.ReadAllText(f);
+                    bool heredoc = body.Contains("<<", StringComparison.Ordinal);
+                    bool dotnetContent = body.Contains("class ", StringComparison.Ordinal)
+                                      || body.Contains("namespace ", StringComparison.Ordinal)
+                                      || body.Contains(".csproj", StringComparison.OrdinalIgnoreCase)
+                                      || body.Contains("dotnet ", StringComparison.Ordinal);
+                    if (heredoc && dotnetContent) { shOk = true; shWhy = ""; break; }
+                }
+                Log($"  [belt:{key}] artefatos: integros={integrityOk} descartados={discarded} " +
+                    $"conteudoNet={(shOk ? "ok" : shWhy)}");
+                TestContext.Check(shOk,
+                    $"[{key}] .sh atende ao enunciado (shebang, bash -n, heredoc criando artefato .NET)");
+                SaveResult(key, "PASS", $"integros={integrityOk} descartados={discarded} conteudoNet={(shOk ? "ok" : "nao")}");
                 pass++;
             }
             catch (Exception ex)

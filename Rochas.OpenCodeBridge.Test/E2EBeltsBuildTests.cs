@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Rochas.OpenCodeBridge.Core.Tools;
 
 namespace Rochas.OpenCodeBridge.Test;
 
@@ -21,22 +22,10 @@ internal static class E2EBeltsBuildTests
 
     static void Log(string msg) { Console.WriteLine(msg); Console.Out.Flush(); }
 
-    // Falha de formato/transporte do upstream nao e falha de assertiva: uma
-    // segunda tentativa com o MESMO corpo, sem injetar mensagem no tunel
-    // (invariante docs/TUNEL-LLAMA.md). Cobre 500 peg-gemma4 e 502 upstream_aborted.
-    static async Task<JsonObject> PostChat(string key, int turn, JsonObject body, string toolName)
-    {
-        for (int attempt = 0; attempt < 2; attempt++)
-        {
-            try { return await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", body); }
-            catch (Exception ex) when (attempt == 0 && IsUpstreamFormatFailure(ex))
-            {
-                Log($"  [belt-build:{key}] turno {turn}: {FirstLine(ex.Message)} — retry 1/1 (tool={toolName})");
-                await Task.Delay(1000);
-            }
-        }
-        throw new InvalidOperationException($"POST chat falhou apos retry de transporte (turno={turn}, tool={toolName})");
-    }
+    // Uma chamada, sem retry: 500 peg-gemma4 / 502 upstream_aborted sao resultado
+    // do turno e viram FAIL honesto (invariante docs/TUNEL-LLAMA.md).
+    static Task<JsonObject> PostChat(string key, int turn, JsonObject body, string toolName) =>
+        TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", body);
 
     /// <summary>500 de parser (peg-gemma4) ou 502 de aborto do upstream.</summary>
     static bool IsUpstreamFormatFailure(Exception ex)
@@ -58,6 +47,52 @@ internal static class E2EBeltsBuildTests
             System.IO.File.WriteAllText(path, $"{{\"key\":\"{key}\",\"status\":\"{status}\",\"detail\":\"{detail.Replace("\"","'").Replace("\\","/")}\",\"when\":\"{DateTime.UtcNow:o}\"}}");
         }
         catch { }
+    }
+
+    static (int Code, string Out) Run(string exe, string cwd, int secs, params string[] args)
+    {
+        var r = ProcessRunner.Run(exe, args, cwd, secs);
+        return (r.Success ? 0 : 1, r.Success ? r.Output : r.Error);
+    }
+
+    /// <summary>
+    /// O conteudo do workspace atende o enunciado do belt? Le o texto (codigo e
+    /// DDL) e exige os elementos que o enunciado pede. NUNCA conta artefatos.
+    /// </summary>
+    static bool ContentMatchesEnunciado(string key, string ws)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var f in System.IO.Directory.GetFiles(ws, "*", System.IO.SearchOption.AllDirectories))
+        {
+            string ext = System.IO.Path.GetExtension(f).ToLowerInvariant();
+            if (ext is not (".cs" or ".sql" or ".csproj" or ".tsx")) continue;
+            try { sb.AppendLine(System.IO.File.ReadAllText(f)); } catch { }
+        }
+        string all = sb.ToString();
+        if (all.Trim().Length == 0) return false;
+        bool hasClass = all.Contains("class ", StringComparison.Ordinal);
+        bool hasTable = all.Contains("CREATE TABLE", StringComparison.OrdinalIgnoreCase);
+        bool hasRepo = all.Contains("Repository", StringComparison.OrdinalIgnoreCase)
+                    || all.Contains("Repositorio", StringComparison.OrdinalIgnoreCase);
+        bool hasOrm = all.Contains("DbContext", StringComparison.Ordinal)
+                   || all.Contains("EntityFrameworkCore", StringComparison.Ordinal)
+                   || all.Contains("Sqlite", StringComparison.OrdinalIgnoreCase)
+                   || all.Contains("Dapper", StringComparison.Ordinal);
+        bool hasReembolso = all.Contains("reembolso", StringComparison.OrdinalIgnoreCase)
+                         || all.Contains("reimbursement", StringComparison.OrdinalIgnoreCase);
+        bool hasCadastro = all.Contains("cliente", StringComparison.OrdinalIgnoreCase)
+                        && all.Contains("fornecedor", StringComparison.OrdinalIgnoreCase);
+        bool hasPortal = all.Contains("colaborador", StringComparison.OrdinalIgnoreCase)
+                      || all.Contains("portal", StringComparison.OrdinalIgnoreCase);
+        return key switch
+        {
+            "azul" => hasClass && hasRepo && hasOrm && hasReembolso,
+            "verde" => hasClass && hasTable && hasReembolso,
+            "roxa" => hasClass && hasCadastro,
+            "marrom" => hasClass && hasTable && hasReembolso,
+            "preta" => hasClass && hasPortal,
+            _ => hasClass
+        };
     }
 
     public static async Task Direct()
@@ -97,10 +132,10 @@ internal static class E2EBeltsBuildTests
                 // Sem nudge no cliente (docs/TUNEL-LLAMA.md): turno sem tool call
                 // ou com args invalidos encerra a coleta e o aceite decide
                 // (>=3 arquivos e >500 chars reais em disco).
-                for (int turn = 0; turn < 14 && filesCreated < 8; turn++)
+                for (int turn = 0; turn < 14; turn++)
                 {
                     var r = await PostChat(key, turn,
-                        new JsonObject { ["model"]=model, ["stream"]=false, ["max_tokens"]=16384, ["tool_choice"]="required", ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() }, "write");
+                        new JsonObject { ["model"]=model, ["stream"]=false, ["max_tokens"]=16384, ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() }, "write");
                     var msg = r["choices"]?[0]?["message"]?.AsObject();
                     string content = msg?["content"]?.GetValue<string>() ?? "";
                     totalChars += content.Length;
@@ -189,37 +224,21 @@ internal static class E2EBeltsBuildTests
                     lastFiles = filesCreated;
                     if (stall >= 4) { Log($"  [belt-build:{key}] stall detectado (4 turnos sem progresso), encerrando"); break; }
                 }
-                // Fase de revisao: E4B le os arquivos criados e revisa.
-                if (filesCreated >= 3)
+
+                // Aceite por CONTEUDO + build. Quantidade de artefatos NAO e' assert:
+                // o que vale e' o codigo atender o enunciado e compilar.
+                var (brc, bout) = Run("dotnet", ws, 300, "build", "--nologo", "-v:q");
+                bool buildOk = brc == 0;
+                bool contentOk = ContentMatchesEnunciado(key, ws);
+                bool ok = buildOk && contentOk;
+                Log($"  [belt-build:{key}] {(ok ? "PASS" : "FAIL")} build={(buildOk ? "ok" : "rc=" + brc)} " +
+                    $"conteudo={(contentOk ? "atende" : "nao atende")}");
+                if (!buildOk)
                 {
-                    var readTools = TestContext.Catalog("read");
-                    history.Add(new JsonObject { ["role"]="user", ["content"]="Revise os arquivos criados (leia-os com read) e responda REVIEW-OK com um resumo de 1 linha por arquivo." });
-                    for (int turn = 0; turn < 4; turn++)
-                    {
-                        var r2 = await PostChat(key, 100 + turn,
-                            new JsonObject { ["model"]=model, ["temperature"]=0.1, ["stream"]=false, ["max_tokens"]=2048, ["messages"]=history.DeepClone(), ["tools"]=readTools.DeepClone() }, "read");
-                        var msg2 = r2["choices"]?[0]?["message"]?.AsObject();
-                        string content2 = msg2?["content"]?.GetValue<string>() ?? "";
-                        totalChars += content2.Length;
-                        var calls2 = msg2?["tool_calls"]?.AsArray();
-                        if (calls2 is null || calls2.Count == 0) { Log($"  [belt-build:{key}] revisao: {content2[..Math.Min(80,content2.Length)]}"); break; }
-                        var echo2 = new JsonArray();
-                        foreach (var c in calls2) echo2.Add(new JsonObject { ["id"]=c?["id"]?.GetValue<string>()??"", ["type"]="function", ["function"]=new JsonObject { ["name"]=c?["function"]?["name"]?.GetValue<string>()??"", ["arguments"]=c?["function"]?["arguments"]?.GetValue<string>()??"{}" } });
-                        history.Add(new JsonObject { ["role"]="assistant", ["content"]=content2, ["tool_calls"]=echo2 });
-                        foreach (var c in calls2)
-                        {
-                            var a = JsonNode.Parse(c?["function"]?["arguments"]?.GetValue<string>() ?? "{}")?.AsObject() ?? new JsonObject();
-                            var exec = await TestContext.ExecuteTool("read", a, ws, model);
-                            string outText = exec["ok"]?.GetValue<bool>() == true
-                                ? exec["output"]?.GetValue<string>() ?? ""
-                                : "ERRO: " + (exec["error"]?.GetValue<string>() ?? "falha");
-                            history.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=c?["id"]?.GetValue<string>()??"", ["content"]=outText[..Math.Min(500, outText.Length)] });
-                        }
-                    }
+                    string one = bout.Replace("\n", " | ");
+                    Log($"  [belt-build:{key}] build: {one[..Math.Min(600, one.Length)]}");
                 }
-                bool ok = filesCreated >= 3 && totalChars > 500;
-                Log($"  [belt-build:{key}] {(ok ? "PASS" : "FAIL")} arquivos={filesCreated} chars={totalChars}");
-                SaveResult(key, ok ? "PASS" : "FAIL", $"arquivos={filesCreated} chars={totalChars}");
+                SaveResult(key, ok ? "PASS" : "FAIL", $"build={(buildOk ? "ok" : "rc" + brc)} conteudo={(contentOk ? "ok" : "nao")}");
                 if (ok) pass++; else fail++;
             }
             catch (Exception ex)
