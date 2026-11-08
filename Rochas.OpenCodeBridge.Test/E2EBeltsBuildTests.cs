@@ -5,9 +5,9 @@ namespace Rochas.OpenCodeBridge.Test;
 
 // Belts (azul->preta) Trilha BUILD: E4B (role build) implementa DIRETAMENTE os
 // artefatos do enunciado usando tools reais (write) em loop de turnos, delegando
-// sub-tarefas quando fizer sentido. Asserts rigorosos: >=3 arquivos criados,
-// conteudo substancial (>2000 chars somados), e artefatos reais (arquivos
-// existem em disco no workspace). Sem execucao de script nesta trilha.
+// sub-tarefas quando fizer sentido. Aceite: o CONTEUDO atende o enunciado e o
+// workspace compila (`dotnet build` rc=0). Quantidade de artefatos nunca e'
+// assert nem instrucao ao modelo. Sem execucao de script nesta trilha.
 // Resultados parciais em /tmp/opencode/belts-build/<key>_result.json.
 internal static class E2EBeltsBuildTests
 {
@@ -123,15 +123,15 @@ internal static class E2EBeltsBuildTests
             try
             {
                 var history = new JsonArray(
-                    new JsonObject { ["role"]="system", ["content"]=$"Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Trabalhe em {ws}. Implemente os artefatos pedidos direto no disco, sem plano e sem prosa. Crie pelo menos 3 arquivos .cs/.sql/.tsx usando caminhos absolutos dentro de {ws}. Ao terminar responda apenas BUILD-OK com o resumo dos arquivos." },
+                    new JsonObject { ["role"]="system", ["content"]=$"Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Trabalhe em {ws}. Implemente os artefatos pedidos direto no disco, sem plano e sem prosa, usando caminhos absolutos dentro de {ws}. Ao terminar responda apenas BUILD-OK com o resumo do que entregou." },
                     new JsonObject { ["role"]="user", ["content"]=prompt.Replace("{ws}", ws) });
                 int filesCreated = 0;
                 int totalChars = 0;
                 int lastFiles = 0;
                 int stall = 0;
                 // Sem nudge no cliente (docs/TUNEL-LLAMA.md): turno sem tool call
-                // ou com args invalidos encerra a coleta e o aceite decide
-                // (>=3 arquivos e >500 chars reais em disco).
+                // ou com args invalidos encerra a coleta e o aceite (conteudo +
+                // `dotnet build`) decide. Nada de meta de quantidade.
                 for (int turn = 0; turn < 14; turn++)
                 {
                     var r = await PostChat(key, turn,

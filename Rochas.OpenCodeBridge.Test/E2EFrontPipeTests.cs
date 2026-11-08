@@ -551,7 +551,7 @@ internal static class E2EFrontPipeTests
 
         const string sys = "Voce e dev front-end senior (React 18 sem JSX + ASP.NET Core MVC). " +
             "Responda SOMENTE com tool calls estruturadas, uma por resposta; jamais escreva a chamada como texto. " +
-            "Caminhos das tools sao relativos a raiz do workspace. Ao concluir os 3 arquivos, responda apenas FRONTPIPE-GEN-OK.";
+            "Caminhos das tools sao relativos a raiz do workspace. Ao concluir os artefatos do enunciado, responda apenas FRONTPIPE-GEN-OK.";
         string prompt = Enunciado("gen.md");
         string dump = Path.Combine(Ws, "gen", "transcript.json");
         var sum = TestContext.Standalone
