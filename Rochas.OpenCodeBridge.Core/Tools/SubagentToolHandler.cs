@@ -161,20 +161,12 @@ public sealed class SubagentToolHandler : IToolHandler
                 var names = new List<string>();
                 foreach (var tc0 in calls)
                     names.Add(tc0?["function"]?["name"]?.GetValue<string>() ?? "?");
-                context.Log?.Invoke(new JsonObject
-                {
-                    ["event"] = "subagent_turn",
-                    ["agent"] = agent?.Name ?? "",
-                    ["turn"] = turn,
-                    ["calls"] = calls.Count,
-                    ["tools"] = string.Join(",", names)
-                });
-
                 // echo assistant + execute tools
                 var echo = new JsonArray();
                 foreach (var tc1 in calls) echo.Add(new JsonObject { ["id"]=tc1?["id"]?.GetValue<string>()??"", ["type"]="function", ["function"]=new JsonObject { ["name"]=tc1?["function"]?["name"]?.GetValue<string>()??"", ["arguments"]=tc1?["function"]?["arguments"]?.GetValue<string>()??"{}" } });
                 messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = text, ["tool_calls"] = echo });
 
+                var written = new List<string>();
                 foreach (var tc2 in calls)
                 {
                     string name = tc2?["function"]?["name"]?.GetValue<string>() ?? "";
@@ -204,10 +196,24 @@ public sealed class SubagentToolHandler : IToolHandler
                     }
 
                     var res = executor.Execute(name, ajson, context.TimeoutSeconds);
+                    if (res.Success && name is "write" or "edit")
+                    {
+                        try { string wp = JsonNode.Parse(ajson)?["path"]?.GetValue<string>() ?? ""; if (wp.Length > 0) written.Add(wp); } catch { }
+                    }
                     string outp = res.Success ? res.Output : res.Error;
                     if (outp.Length > 2000) outp = outp[..2000] + "...(truncado)";
                     messages.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = tc2?["id"]?.GetValue<string>() ?? "", ["content"] = outp });
                 }
+
+                context.Log?.Invoke(new JsonObject
+                {
+                    ["event"] = "subagent_turn",
+                    ["agent"] = agent?.Name ?? "",
+                    ["turn"] = turn,
+                    ["calls"] = calls.Count,
+                    ["tools"] = string.Join(",", names),
+                    ["paths"] = string.Join("|", written)
+                });
             }
             return ToolResult.Ok("(loop esgotado)");
         }

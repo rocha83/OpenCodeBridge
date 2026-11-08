@@ -5938,6 +5938,16 @@ var chatRequest = new HttpRequestMessage(HttpMethod.Post, Upstream + "/v1/chat/c
             {
                 Metrics.CountAntiRepeatAlert(true);
             }
+            // Arquivos criados DENTRO de um subagente: o handler executa as tools
+            // por conta propria (BridgeToolExecutor), entao o write nunca passa
+            // por RecordToolCall. O turno traz os paths efetivados e o painel
+            // "Arquivos gerados" soma igual ao write do agente principal.
+            else if (eventName == "subagent_turn")
+            {
+                string wrote = obj["paths"]?.GetValue<string>() ?? "";
+                foreach (string one in wrote.Split('|', StringSplitOptions.RemoveEmptyEntries))
+                    RecordToolCall("write", new JsonObject { ["path"] = one.Trim() }.ToJsonString());
+            }
             // --diagnostic-level metrics: mede sem guardar os corpos (o dump
             // integral passava de 280 MB numa rodada de belt, so de req/res).
             if (DiagnosticLevel == "metrics") { obj.Remove("req"); obj.Remove("res"); }
