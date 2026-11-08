@@ -69,6 +69,16 @@ public sealed class SubagentToolHandler : IToolHandler
         string model = args["model"]?.GetValue<string>() ?? "";
         double temp = args["temperature"]?.GetValue<double>() ?? (agent?.Temperature ?? 0.1);
 
+        // O handler posta DIRETO no upstream: o /v1/chat/completions da bridge (que
+        // injeta as caudas do harness) fica fora do caminho, entao o subagente nunca
+        // via a cauda de tools — nem a receita do script construtor. Composta aqui a
+        // partir das tools DESTE agente (mesma fonte: HarnessTails).
+        var toolsForAgent = ToolsFor(agent);
+        var toolNames = new List<string>();
+        foreach (var t in toolsForAgent) toolNames.Add(t?["function"]?["name"]?.GetValue<string>() ?? "");
+        if (toolNames.Count > 0)
+            system = system.TrimEnd() + "\n\n" + HarnessTails.ComposeTools(toolNames);
+
         string ws = args["workspace"]?.GetValue<string>() ?? context.WorkspaceRoot;
         if (string.IsNullOrWhiteSpace(ws)) ws = context.WorkspaceRoot;
         string upstream = string.IsNullOrWhiteSpace(context.UpstreamUrl) ? "http://127.0.0.1:4100" : context.UpstreamUrl;
@@ -89,6 +99,7 @@ public sealed class SubagentToolHandler : IToolHandler
             ["temp"] = temp,
             ["tools"] = agent is null || agent.Tools.Count == 0 ? "(todas)" : string.Join(",", agent.Tools),
             ["chars"] = prompt.Length,
+            ["system_chars"] = system.Length,
             ["prompt"] = prompt
         });
 
@@ -105,7 +116,7 @@ public sealed class SubagentToolHandler : IToolHandler
                     ["temperature"] = temp,
                     ["stream"] = false,
                     ["messages"] = messages.DeepClone(),
-                    ["tools"] = ToolsFor(agent)
+                    ["tools"] = toolsForAgent
                 };
                 if (!string.IsNullOrWhiteSpace(model)) body["model"] = model;
 
