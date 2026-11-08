@@ -121,6 +121,38 @@ public static class CsSyntaxRepair
         new("CS1001", "identificador esperado (cabecalho do arquivo recomecado dentro do corpo)",
             "`using`, `namespace` e `class` ficam UMA vez, no TOPO do arquivo, e dentro de um metodo so entram instrucoes — " +
             "o arquivo nao recomeca no meio; para trocar tudo, mande o arquivo COMPLETO com `write`, do topo ao ultimo `}`, uma unica vez"),
+        new("CS0246", "tipo/namespace nao encontrado (falta `using`, falta `PackageReference`, ou o tipo nao existe na biblioteca)",
+            "importe o namespace do tipo e so use API que existe no pacote referenciado; sem EF Core, use Dapper + Microsoft.Data.Sqlite:\n"
+            + "using Dapper;\nusing Microsoft.Data.Sqlite;\n"
+            + "var conn = new SqliteConnection(\"Data Source=app.db\");\n"
+            + "var itens = conn.Query<Reembolso>(\"SELECT id, valor FROM reembolsos\").ToList();\n"
+            + "e no `.csproj` declare `<PackageReference Include=\"Dapper\" Version=\"2.1.89\" />` e " +
+            "`<PackageReference Include=\"Microsoft.Data.Sqlite\" Version=\"10.0.12\" />` (versoes do cache NuGet local)"),
+        new("CS0535", "classe declara a interface mas nao implementa todos os membros dela",
+            "implemente TODO membro da interface com a MESMA assinatura (nome, parametros e retorno):\n"
+            + "public sealed class RepositorioItem : IRepositorio<Item>\n{\n"
+            + "    public Task<List<Item>> BuscarAsync() => Task.FromResult(new List<Item>());\n}"),
+        new("CS0101", "o mesmo tipo foi declarado duas vezes (dois arquivos com a mesma classe)",
+            "cada tipo tem UM arquivo e UMA declaracao; para alterar, use `edit` no arquivo que ja existe — " +
+            "`write` num arquivo novo com a mesma classe duplica o tipo"),
+        new("CS1061", "membro inexistente no tipo (ex.: `IsMatch` chamado no `string`)",
+            "`IsMatch` pertence ao `Regex`, nao ao `string`:\n"
+            + "using System.Text.RegularExpressions;\n"
+            + "bool ok = Regex.IsMatch(texto, @\"^\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}$\");"),
+        new("CS1503", "argumento com tipo incompativel (ex.: `string` onde o generico `T` e' esperado)",
+            "no codigo generico nao passe literal `string` para `T`: crie o item com o tipo concreto ou construa o objeto inteiro:\n"
+            + "var itens = new List<Reembolso> { new Reembolso { Id = 1 } };"),
+        new("CS1950", "inicializador de colecao com argumento invalido para `Add` do tipo",
+            "dentro de `{ }` va o VALOR do tipo da colecao, nao um texto:\n"
+            + "var itens = new List<Reembolso> { new Reembolso { Id = 1, Valor = 10m } };"),
+        new("MSB1003", "`dotnet build` nao achou arquivo de projeto no diretorio",
+            "rode o build apontando o projeto existente, com nome: `dotnet build Reembolsos.csproj` (build NAO aceita `--project`); " +
+            "se nao existir, crie o `.csproj` com nome primeiro"),
+        new("MSB4025", "`.csproj` malformado/truncado (XML sem fechar)",
+            "o `.csproj` e' XML completo, do `<Project Sdk=\"Microsoft.NET.Sdk\">` ao `</Project>`:\n"
+            + "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <TargetFramework>net10.0</TargetFramework>\n  </PropertyGroup>\n</Project>"),
+        new("NETSDK1045", "TargetFramework acima do SDK instalado",
+            "use `net10.0` (SDK da maquina) no `.csproj`: <TargetFramework>net10.0</TargetFramework>"),
     };
 
     static string SuggestForCode(string source, string compilerError)

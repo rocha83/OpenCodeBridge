@@ -16,7 +16,7 @@ WorkingDirectory=/usr/src/opencodebridge/Rochas.OpenCodeBridge/bin/Release/net10
 # unico jeito de dizer "desligado" sem tirar o modo. Ficam aqui apenas
 # rede/processo, serving (temp/teto/ctx) e os 3 guards obrigatorios do
 # preflight da WAR (mode=bridge, main_harness=1, coercao de tools).
-ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port 4124 --mode bridge --upstream http://127.0.0.1:4100 --model Gemma4-E4B-GK-Q4 --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens 524288 --context-slots 4 --api-key guest@123 --passthrough-responses true --main-harness 1 --coerce-text-tools 1 --coerce-narrated 1 --anti-repeat 0 --log /tmp/bridge-gpu.log --diagnostic 1 --diagnostic-level dump
+ExecStart=/usr/share/dotnet/dotnet Rochas.OpenCodeBridge.dll --listen 0.0.0.0 --port 4124 --mode bridge --upstream http://127.0.0.1:4100 --model Gemma4-E4B-GK-Q4 --temperature 0.2 --max-tokens 16384 --context-guard 1 --context-tokens 524288 --context-slots 4 --api-key guest@123 --passthrough-responses true --main-harness 1 --coerce-text-tools 1 --coerce-narrated 1 --anti-repeat 0 --harness-tails 1 --tail-scope managed --log /tmp/bridge-gpu.log --diagnostic 1 --diagnostic-level dump
 Restart=on-failure
 RestartSec=10
 
