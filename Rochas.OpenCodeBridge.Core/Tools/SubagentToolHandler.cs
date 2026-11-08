@@ -128,6 +128,8 @@ public sealed class SubagentToolHandler : IToolHandler
             if (!string.IsNullOrWhiteSpace(context.ApiKey))
                 http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", context.ApiKey);
 
+            var delivered = new List<string>();
+            bool reminded = false;
             for (int turn = 0; turn < 8; turn++)
             {
                 var body = new JsonObject
@@ -157,7 +159,25 @@ public sealed class SubagentToolHandler : IToolHandler
                 }
 
                 if (calls is null || calls.Count == 0)
+                {
+                    // O role que so' grava .sh/.md nao terminou so' porque respondeu
+                    // texto: o pedido do usuario (C#) puxa o modelo para o artefato
+                    // errado e ele desiste. Uma correcao, no loop que ja' existe.
+                    if (!reminded && agent is not null && agent.WriteExtensions.Count > 0 && delivered.Count == 0)
+                    {
+                        reminded = true;
+                        messages.Add(new JsonObject
+                        {
+                            ["role"] = "user",
+                            ["content"] = $"Entrega incompleta: nenhum arquivo {string.Join("/", agent.WriteExtensions)} foi gravado. "
+                                + $"Grave AGORA com write o path \"{title}.sh\" (shebang #!/usr/bin/env bash) contendo os artefatos por heredoc "
+                                + "e o dotnet build no fim. Nao responda texto antes de gravar."
+                        });
+                        context.Log?.Invoke(new JsonObject { ["event"] = "subagent_nudge", ["agent"] = agent.Name, ["id"] = title, ["turn"] = turn });
+                        continue;
+                    }
                     return ToolResult.Ok(text.Length > 0 ? text : "(sem resposta)");
+                }
 
                 var names = new List<string>();
                 foreach (var tc0 in calls)
@@ -196,7 +216,8 @@ public sealed class SubagentToolHandler : IToolHandler
                                 ["tool_call_id"] = tc2?["id"]?.GetValue<string>() ?? "",
                                 ["content"] = $"{name} recusado: o agente '{agent.Name}' grava apenas "
                                     + string.Join(",", agent.WriteExtensions) + $"; '{p}' nao e' permitido. "
-                                    + $"Grave UM .sh (write) com shebang que CRIA {p} por heredoc e valide com bash -n."
+                                    + $"Chame write com path=\"{title}.sh\" (raiz do workspace, shebang #!/usr/bin/env bash); "
+                                    + $"o conteudo de '{p}' vai DENTRO do .sh, criado por heredoc, e o proprio script roda dotnet build."
                             });
                             continue;
                         }
@@ -218,7 +239,7 @@ public sealed class SubagentToolHandler : IToolHandler
                     }
                     if (res.Success && name is "write" or "edit")
                     {
-                        try { string wp = JsonNode.Parse(ajson)?["path"]?.GetValue<string>() ?? ""; if (wp.Length > 0) written.Add(wp); } catch { }
+                        try { string wp = JsonNode.Parse(ajson)?["path"]?.GetValue<string>() ?? ""; if (wp.Length > 0) { written.Add(wp); delivered.Add(wp); } } catch { }
                     }
                     string outp = res.Success ? res.Output : res.Error;
                     if (outp.Length > 2000) outp = outp[..2000] + "...(truncado)";

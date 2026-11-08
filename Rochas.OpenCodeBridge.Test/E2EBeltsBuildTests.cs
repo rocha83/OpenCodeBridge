@@ -128,11 +128,17 @@ internal static class E2EBeltsBuildTests
             string ws = System.IO.Path.Combine(baseWs, key);
             System.IO.Directory.CreateDirectory(ws);
             Log($"  [belt-build:{key}] START ws={ws}");
+            // Step proprio por belt+trilha (build) no painel; sob o WAR o driver manda.
+            string step = key + "-build";
+            bool ownStep = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAR_STEP"))
+                        && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAR_PANEL_STEP"));
+            if (ownStep) await TestContext.PublishStep(step, "RUN", 0);
             try
             {
                 var history = new JsonArray(
                     new JsonObject { ["role"]="system", ["content"]=$"Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Trabalhe em {ws}. Implemente os artefatos pedidos direto no disco, sem plano e sem prosa, usando caminhos relativos a raiz do workspace ({ws}). O entregavel tem de compilar: comece escrevendo o .csproj (com nome, TargetFramework `net10.0`) na raiz do workspace e, ao final, compilar usando `dotnet build` ate rc=0. Ao terminar responda apenas BUILD-OK com o resumo do que entregou." },
                     new JsonObject { ["role"]="user", ["content"]=prompt.Replace("{ws}", ws) });
+                if (ownStep) await TestContext.PublishEnunciado(step, prompt.Replace("{ws}", ws));
                 int filesCreated = 0;
                 int totalChars = 0;
                 int lastFiles = 0;
@@ -261,12 +267,14 @@ internal static class E2EBeltsBuildTests
                     Log($"  [belt-build:{key}] build: {one[..Math.Min(600, one.Length)]}");
                 }
                 SaveResult(key, ok ? "PASS" : "FAIL", $"build={(buildOk ? "ok" : "rc" + brc)} conteudo={(contentOk ? "ok" : "nao")}");
+                if (ownStep) await TestContext.PublishStep(step, ok ? "PASS" : "FAIL", 0, buildOk ? "" : "build rc=" + brc);
                 if (ok) pass++; else fail++;
             }
             catch (Exception ex)
             {
                 Log($"  [belt-build:{key}] FAIL: {ex.Message.Split('\n')[0]}");
                 SaveResult(key, "FAIL", ex.Message.Split('\n')[0]);
+                if (ownStep) await TestContext.PublishStep(step, "FAIL", 0, ex.Message.Split('\n')[0]);
                 fail++;
             }
         }

@@ -208,6 +208,13 @@ internal static class E2EBeltsTests
             // Workspace limpo: sobras de uma belt anterior inflariam scriptsOk/execOk.
             FreshWorkspace(ws);
             Log($"  [belt:{key}] START ws={ws}"); 
+            // Step proprio por belt+trilha no painel: `--belts azul,verde` num run
+            // isolado jogava as duas faixas sob "E-belts-direct" e o Grafana nao
+            // mostrava qual entregou. Sob o WAR o nome do step e' do driver.
+            string step = key + "-orch";
+            bool ownStep = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAR_STEP"))
+                        && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAR_PANEL_STEP"));
+            if (ownStep) await TestContext.PublishStep(step, "RUN", 0);
             try
             {
                 // 1) Orch: quem orquestra E' O MODELO. O consumidor so' conduz o
@@ -216,6 +223,7 @@ internal static class E2EBeltsTests
                 // segmentacao, nenhum JSON array de tarefas, nenhum prompt de
                 // Scripter montado no cliente.
                 string ask = OrchEnunciado(prompt.Replace("{ws}", ws));
+                if (ownStep) await TestContext.PublishEnunciado(step, ask);
                 if (TestContext.Mode == "opencode")
                 {
                     Log($"  [belt:{key}] Orch via opencode (agent=orch)...");
@@ -375,12 +383,14 @@ internal static class E2EBeltsTests
                 TestContext.Check(shOk,
                     $"[{key}] .sh atende ao enunciado (shebang, bash -n, heredoc criando artefato .NET)");
                 SaveResult(key, "PASS", $"integros={integrityOk} descartados={discarded} conteudoNet={(shOk ? "ok" : "nao")}");
+                if (ownStep) await TestContext.PublishStep(step, "PASS", 0);
                 pass++;
             }
             catch (Exception ex)
             {
                 Log($"  [belt:{key}] FAIL: {ex.Message.Split('\n')[0]}");
                 SaveResult(key, "FAIL", ex.Message.Split('\n')[0]);
+                if (ownStep) await TestContext.PublishStep(step, "FAIL", 0, ex.Message.Split('\n')[0]);
                 fail++;
             }
         }
