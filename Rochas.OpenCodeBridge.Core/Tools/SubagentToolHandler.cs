@@ -12,6 +12,22 @@ public sealed class SubagentToolHandler : IToolHandler
 {
     public string ToolName => "subagent";
 
+    /// <summary>Tools do subagente: as liberadas no frontmatter do agente
+    /// (`effect: allow`); sem agente/lista vazia = todas. Nunca inclui
+    /// `subagent` (sem delegacao recursiva).</summary>
+    static JsonArray ToolsFor(AgentSpec? agent)
+    {
+        if (agent is null || agent.Tools.Count == 0) return (JsonArray)ToolDefs.DeepClone()!;
+        var arr = new JsonArray();
+        foreach (var t in ToolDefs)
+        {
+            string n = t?["function"]?["name"]?.GetValue<string>() ?? "";
+            string canon = n is "fetch" or "webfetch" ? "webfetch" : n;
+            if (agent.Tools.Contains(canon) || agent.Tools.Contains(n)) arr.Add(t!.DeepClone());
+        }
+        return arr.Count > 0 ? arr : (JsonArray)ToolDefs.DeepClone()!;
+    }
+
     static readonly JsonArray ToolDefs = ToolHelp.Apply(new()
     {
         new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="shell", ["description"]="executa comando shell", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["command"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("command") } } },
@@ -24,8 +40,7 @@ public sealed class SubagentToolHandler : IToolHandler
         new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="git", ["description"]="git somente-leitura", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["command"]=new JsonObject{["type"]="string"}, ["path"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("command") } } },
     });
 
-    public ToolResult Handle(string argumentsJson, ToolContext context)
-    {
+    public ToolResult Handle(string argumentsJson, ToolContext context)    {
         JsonObject args;
         try { args = JsonNode.Parse(argumentsJson)?.AsObject() ?? new JsonObject(); }
         catch { args = new JsonObject(); }
@@ -34,9 +49,21 @@ public sealed class SubagentToolHandler : IToolHandler
         if (string.IsNullOrWhiteSpace(prompt))
             return ToolResult.Fail("subagent: argumento 'prompt' obrigatorio");
 
-        string system = args["system"]?.GetValue<string>() ?? "Voce e um agente desenvolvedor senior. Execute a tarefa usando as tools disponiveis e responda de forma concisa em pt-br.";
+        // Agente alvo: nome (ou parte) do diretorio de agentes. Sem isso o
+        // subagente rodava como "dev generico" e a role pedida (ex.: scripter,
+        // que exige .sh com shebang/heredoc) nao existia no caminho bridge.
+        string agentName = args["agent"]?.GetValue<string>() ?? args["subagent_type"]?.GetValue<string>() ?? "";
+        AgentSpec? agent = AgentCatalog.Resolve(agentName);
+        if (agentName.Length > 0 && agent is null)
+            return ToolResult.Fail($"subagent: agente '{agentName}' nao existe no diretorio de agentes "
+                + $"({AgentCatalog.Dir()}); disponiveis: {AgentCatalog.Describe()}");
+
+        string system = args["system"]?.GetValue<string>()
+            ?? (agent is not null && agent.System.Length > 0
+                ? agent.System
+                : "Voce e um agente desenvolvedor senior. Execute a tarefa usando as tools disponiveis e responda de forma concisa em pt-br.");
         string model = args["model"]?.GetValue<string>() ?? "";
-        double temp = args["temperature"]?.GetValue<double>() ?? 0.1;
+        double temp = args["temperature"]?.GetValue<double>() ?? (agent?.Temperature ?? 0.1);
 
         string ws = args["workspace"]?.GetValue<string>() ?? context.WorkspaceRoot;
         if (string.IsNullOrWhiteSpace(ws)) ws = context.WorkspaceRoot;
@@ -60,7 +87,7 @@ public sealed class SubagentToolHandler : IToolHandler
                     ["temperature"] = temp,
                     ["stream"] = false,
                     ["messages"] = messages.DeepClone(),
-                    ["tools"] = ToolDefs.DeepClone()
+                    ["tools"] = ToolsFor(agent)
                 };
                 if (!string.IsNullOrWhiteSpace(model)) body["model"] = model;
 

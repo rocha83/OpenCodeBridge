@@ -78,12 +78,18 @@ public static class ToolCatalog
                     ["description"] = "pasta do repositorio, relativa ao workspace; `./` = pasta atual. Nunca `.git` nem caminho absoluto."
                 }
             }, "command"),
-            Fn("subagent", "Delega um micro-enunciado a um subagente, que executa as tools no workspace e devolve o resultado. Uma tarefa por chamada; nao aninhe delegacao.", new JsonObject
+            Fn("subagent", "Delega um micro-enunciado a um subagente, que executa as tools no workspace e devolve o resultado. Uma tarefa por chamada; nao aninhe delegacao. Agentes disponiveis: "
+                + (AgentCatalog.Describe() is { Length: > 0 } ag ? ag : "(nenhum configurado)") + ".", new JsonObject
             {
                 ["prompt"] = new JsonObject
                 {
                     ["type"] = "string",
                     ["description"] = "micro-enunciado completo: OBJETIVO (1 frase) + ESCOPO + PROIBIDO + ACEITE (comando exato). Sem narrativa e sem cerca."
+                },
+                ["agent"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "agente alvo pelo nome ou parte dele (ex.: scripter): define o system prompt e as tools do subagente."
                 },
                 ["description"] = new JsonObject
                 {
