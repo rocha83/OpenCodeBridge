@@ -24,8 +24,8 @@ internal static class UnitBeltScenarioTests
         TestContext.Check(!sys.Contains("Program.fs") && !sys.Contains("printfn"),
             "system do Scripter sem literal F# (trilha arquivada)");
         string task = E2EBeltsTests.ScripterTask("Criar `src/Domain/Reimbursement.cs`");
-        TestContext.Check(task.Contains("TAREFA A EXECUTAR") && task.Contains("src/Domain/Reimbursement.cs"),
-            "tarefa do Orch entra como conteudo, separada do entregavel");
+        TestContext.Check(task == "Criar `src/Domain/Reimbursement.cs`",
+            "enunciado do Scripter passa intacto (consumidor nao embrulha prompt)");
         return Task.CompletedTask;
     }
 }

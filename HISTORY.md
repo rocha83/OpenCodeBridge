@@ -1,5 +1,50 @@
 # HISTORY.md — sessão de construção da bridge C# (`llama-ocode-bridge`)
 
+## Consumidor não vira harness: prompts em asset, sem gate/nudge (2026-11-07, sessão 61)
+
+**Regra aplicada** (`TEST-DRIVER.md` §1 "Fronteira Core x consumidor"; `AGENTS.md`
+"teste WAR se adapta à bridge"): o teste chama o Core com **enunciado +
+parâmetros**, executa a sequência e emite o veredito **do artefato**. Nada mais.
+
+**Removido de `E2EBeltsTests`:**
+1. **gate corretivo** de sintaxe — laço de 2 retries que devolvia `bash -n` ao
+   modelo e re-amostrava 4 turnos com `SCRIPTER-REWRITE`.
+2. **prompt de role em C#** — `ScripterSystem` era string builder de 12 linhas;
+   virou asset pinado `Prompts/scripter.md` (mesma fonte para bridge e opencode),
+   carregado por `LoadPromptAsset()` com `{title}`. O `Prompts/orch.md` recebeu o
+   enunciado canônico do Orch: *"Componha scripts shell .sh com shebang que
+   construam \*\*\* escopo \*\*\*, segmente em tarefas menores e delegue a subagentes
+   Scripter, a criação de um script .sh que implemente o escopo da subtarefa
+   enunciada"* (Build intacto: enunciado próprio em `E2EBeltsBuildTests`).
+3. **embrulho de enunciado** — `ScripterTask` prefixava "TAREFA A EXECUTAR…";
+   agora passa o enunciado do Orch intacto (pin do unit atualizado).
+4. **veredito duplicado** — `scriptsOk` vinha do gate; agora `scriptsOk =
+   integrityOk` (shebang, sem tool colada, `bash -n`).
+
+**Duas correções de aceite (não são alavancas de PASS):**
+- `ProcessRunner` devolve `stdout + "[stderr]" + stderr` no mesmo campo: cortar na
+  1ª linha do erro jogava fora a mensagem do bash (`exit 2: ` sem motivo). Log
+  passa a mostrar até 240 chars úteis.
+- integridade varria só a raiz (`GetFiles(ws, "*.sh")`): o Scripter entrega em
+  subpasta quando o Orch segmenta por diretório (`src/Financeiro/base-backend.sh`)
+  e o veredito contava `scripts=0` com o artefato no disco. Agora
+  `SearchOption.AllDirectories`.
+
+**Config de bridge restaurada ao PASS de 31/10 (flag, não código):**
+`--harness-tails 1 --harness-behavior 1 --harness-tools 1 --tail-scope all
+--anti-repeat 1`. Unit anterior subia com `tails 0 / scope off`; no PASS de
+31/10 o fluxo registrava `harness_tails=true tail_scope=all`.
+
+**Comportamento medido do E4B (belt azul, driver limpo):**
+| rodada | Orch | Scripter | artefato |
+|---|---|---|---|
+| A | vazio → markdown → 1 tarefa | `.cs` 63 + **`.sh` 152 válido** (heredoc) + 6 reescritas | **contrato cumprido** |
+| B | tool-call texto → markdown → 2 tarefas | 3 `.cs`, depois **8× `write` sem `path`** | degeneração, 0 `.sh` |
+
+Ou seja: o `.sh` aparece **por amostra**, e a falha restante não é de driver nem de
+prompt — é variância do modelo (turno que não emite tool call / args degenerados).
+Registro honesto: a belt mede isso; não há nudge nem guard no consumidor.
+
 ## Belts build: args inválidos instrumentados; a queda da verde era variância (2026-11-07, sessão 60)
 
 **Sintoma.** Na L2 (bateria 15:59) a faixa `verde` de `E-belts-build-direct`

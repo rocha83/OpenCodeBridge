@@ -12,7 +12,7 @@ internal static class E2EBeltsTests
     {
         ("azul", "Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
         ("verde", "Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ. Escopo: dominio + banco SQL. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
-        ("roxa", "Trabalhe no workspace da tarefa. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Entregue a implementacao em arquivos .cs e .sql no workspace da tarefa."),
+        ("roxa", "Trabalhe no workspace da tarefa. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Entregue a implementacao completa no workspace da tarefa (backend .NET C# + banco SQL)."),
         ("marrom", "Especifique o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL, os repositorios e servicos (Dapper), a API REST e o frontend React. Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
         ("preta", "Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador, banco de dados SQL, repositorios e servicos, API REST, servicos bus, pipeline de Big Data com ML (regressao, classificacao, rede neural perceptron). Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
     };
@@ -29,7 +29,7 @@ internal static class E2EBeltsTests
         return b.ToString();
     }
 
-    const string OrchSystem = "Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada.";
+    const string OrchSystem = "Componha scripts shell .sh com shebang que construam *** escopo ***, segmente em tarefas menores e delegue a subagentes Scripter, a criacao de um script .sh que implemente o escopo da subtarefa enunciada. Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada. Nao nomeie arquivos/paths/extensoes no prompt: descreva o escopo por dominio tecnico e stack (linguagem, framework, banco, API) — quem compoe o entregavel e o Scripter (.sh com shebang).";
 
     /// <summary>
     /// Reforco da retentativa do Orch: repete o contrato que a resposta anterior
@@ -37,10 +37,57 @@ internal static class E2EBeltsTests
     /// </summary>
     const string OrchRetryAsk = "\n\nSUA RESPOSTA ANTERIOR NAO FOI O JSON ARRAY EXIGIDO (veio prosa). Responda SOMENTE com o JSON array de tarefas, sem texto antes ou depois.";
 
+    /// <summary>
+    /// Enunciado do Orch (ponta da cadeia de belts): o requisito entra no
+    /// *** escopo *** e a ordem de entrega vem junto da segmentacao. O Build tem
+    /// enunciado proprio (E2EBeltsBuildTests) e NAO usa este template.
+    /// </summary>
+    static string OrchEnunciado(string escopo) =>
+        "Componha scripts shell .sh com shebang que construam " + escopo +
+        ", segmente em tarefas menores e delegue a subagentes Scripter, a criacao de um script .sh que implemente o escopo da subtarefa enunciada";
+
     /// <summary>System do role Orch igual ao opencode: corpo do agents/orch.md
     /// (sem frontmatter). Sem isso a bridge usa so o OrchSystem curto, o main
     /// harness generico fala em "tool nativa" e o modelo vaza call:shell em vez
     /// de devolver o JSON array. Fallback = OrchSystem se o arquivo nao existir.</summary>
+    /// <summary>
+    /// Carrega um asset de prompt pinado do repo (<c>Prompts/&lt;file&gt;</c>), com
+    /// fallback para <c>~/.config/opencode/agents/&lt;file&gt;</c>. O consumidor
+    /// apenas LE o contrato do role: texto de role nao mora no codigo do teste.
+    /// </summary>
+    static string LoadPromptAsset(string file, string fallback)
+    {
+        var candidates = new List<string>
+        {
+            System.IO.Path.Combine(AppContext.BaseDirectory, "Prompts", file)
+        };
+        try
+        {
+            string home = Environment.GetEnvironmentVariable("HOME") ?? "";
+            if (home.Length == 0)
+                home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (home.Length > 0)
+                candidates.Add(System.IO.Path.Combine(home, ".config", "opencode", "agents", file));
+        }
+        catch { }
+        foreach (string path in candidates)
+        {
+            try
+            {
+                if (!System.IO.File.Exists(path)) continue;
+                string raw = System.IO.File.ReadAllText(path);
+                var parts = raw.Split("---", 3, StringSplitOptions.None);
+                string body = parts.Length >= 3 ? parts[2].Trim() : raw.Trim();
+                if (body.Length == 0) continue;
+                Log($"  [prompt-asset] source={path} chars={body.Length}");
+                return body;
+            }
+            catch { }
+        }
+        Log($"  [prompt-asset] FALLBACK curto ({file} ausente)");
+        return fallback;
+    }
+
     static string LoadOrchSystem()
     {
         var candidates = new List<string>
@@ -116,28 +163,37 @@ internal static class E2EBeltsTests
         return best;
     }
 
-    /// <summary>Scripter via opencode real: o CLI executa a tool write e entrega .sh/.md no workspace.</summary>
-    /// <returns>true se o .sh existe e passa em bash -n.</returns>
     /// <summary>
-    /// Contrato do Scripter — fonte unica das duas raias (bridge e opencode).
-    /// O ENTREGAVEL desta fase e' o script bash + companion; a tarefa do Orch e' o
-    /// CONTEUDO que o script executa. Sem essa separacao o modelo obedece a tarefa
-    /// (que cita `src/Domain/*.cs` e `db/*.sql`) e nunca grava o `.sh`: medido em
-    /// e-belts-marrom-orch de 2026-10-31 — 0 scripts e 6 reescritas dos mesmos dois
-    /// arquivos em 8 turnos, enquanto a belt azul (mesmo codigo, tarefa sem paths de
-    /// artefato) gravou `.cs` + `.sh` + `.md` e passou.
+    /// Contrato do Scripter — fonte unica: asset pinado <c>Prompts/scripter.md</c>
+    /// (mesmo para bridge e opencode), com <c>{title}</c> substituido pelo titulo
+    /// normalizado da tarefa. O ENTREGAVEL e' o script bash + companion; a tarefa
+    /// do Orch e' o CONTEUDO que o script executa.
+    /// Historico: sem essa separacao o modelo obedece a tarefa (que cita
+    /// `src/Domain/*.cs` e `db/*.sql`) e nunca grava o `.sh` — medido no
+    /// e-belts-marrom-orch de 2026-10-31 (0 scripts, 6 reescritas em 8 turnos) e
+    /// reincidente em 2026-11-07 no e-belts-azul-orch (Orch segmentou citando
+    /// `Data/*.cs`, Scripter gravou `.cs`, `scripts=0`).
+    /// A REGRA UNICA DE ENTREGA (`.sh` com shebang construindo os artefatos via
+    /// heredoc) e a lista de PROIBIDO por extensao vivem no ASSET, nao no codigo
+    /// do consumidor (`TEST-DRIVER.md` §1: teste so' chama o Core com enunciado
+    /// e parametros).
     /// </summary>
     internal static string ScripterSystem(string safeTitle, string grounded) =>
-        "Voce e o Scripter (role scripter, E4B). Voce NAO executa a tarefa: voce ESCREVE o script bash que a executa.\n" +
-        "ENTREGAVEL desta fase (tool write): " + safeTitle + ".sh (bash puro, com shebang, no maximo 80 linhas) e o companion " +
-        safeTitle + ".md (no maximo 20 linhas) descrevendo o que o script faz.\n" +
-        "Os arquivos que a tarefa cita (.cs, .sql, ...) sao criados PELO script (heredoc ou arquivo separado), nunca por voce.\n" +
-        "Ao terminar responda apenas SCRIPTER-OK.\n\n" + grounded +
-        "REGRA: bash puro; nunca escreva C#/SQL dentro do .sh (use heredoc ou arquivo separado).";
+        LoadPromptAsset("scripter.md", ScripterFallback).Replace("{title}", safeTitle).TrimEnd()
+        + "\n\n" + grounded;
 
-    /// <summary>Conteudo da tarefa: o que o script deve fazer (nao o entregavel).</summary>
-    internal static string ScripterTask(string taskPrompt) =>
-        "TAREFA A EXECUTAR (conteudo do script, nao o entregavel):\n" + taskPrompt;
+    /// <summary>
+    /// Contrato do role quando o asset pinado nao existe. Curto de proposito:
+    /// o texto real mora em <c>Prompts/scripter.md</c>; estoque de role no
+    /// codigo do teste e' o que a regra "teste so' chama o Core" proibe.
+    /// </summary>
+    const string ScripterFallback =
+        "Voce e o Scripter (role scripter, E4B). Voce NAO executa a tarefa: escreve o script .sh com shebang "
+        + "(#!/usr/bin/env bash) que realiza a implementacao dos artefatos do requisito, via heredoc. "
+        + "Entregue {title}.sh e o companion {title}.md. Responda apenas SCRIPTER-OK.";
+
+    /// <summary>Enunciado entregue ao Scripter: a tarefa do Orch passa intacta.</summary>
+    internal static string ScripterTask(string taskPrompt) => taskPrompt;
 
     static bool ScriptViaOpencode(string key, string ws, string safeTitle, string taskPrompt, string grounded)
     {
@@ -298,7 +354,7 @@ internal static class E2EBeltsTests
                 JsonArray tasks = new();
                 for (int attempt = 1; attempt <= 3; attempt++)
                 {
-                    string ask = prompt.Replace("{ws}", ws) + (attempt == 1 ? "" : OrchRetryAsk);
+                    string ask = OrchEnunciado(prompt.Replace("{ws}", ws)) + (attempt == 1 ? "" : OrchRetryAsk);
                     if (TestContext.Mode == "opencode")
                     {
                         Log($"  [belt:{key}] 1/3 Orch via opencode (agent=orch, tentativa {attempt})...");
@@ -355,7 +411,7 @@ internal static class E2EBeltsTests
                     // com as tools de escrita do proprio opencode; nada de PostObj direto.
                     if (TestContext.Mode == "opencode")
                     {
-                        if (ScriptViaOpencode(key, ws, safeTitle, taskPrompt, grounded)) scriptsOk++;
+                        if (ScriptViaOpencode(key, ws, safeTitle, taskPrompt, grounded)) { /* veredito sai do artefato */ }
                         continue;
                     }
                     string scriptPath = System.IO.Path.Combine(ws, safeTitle + ".sh");
@@ -443,77 +499,17 @@ internal static class E2EBeltsTests
                     string? produced = ResolveScript();
                     if (produced is not null && !System.IO.File.Exists(scriptPath))
                         Log($"  [belt:{key}] script resolvido: {System.IO.Path.GetFileName(produced)}");
-                    for (int gate = 0; produced is not null && gate < 3; gate++)
-                    {
-                        string script = System.IO.File.ReadAllText(produced);
-                        string? err = null;
-                        if (script.Contains("write{") || script.Contains("\"path\":") || script.Contains("```"))
-                            err = "conteudo do .sh tem chamada de tool colada (write{...}) ou bloco markdown";
-                        else
-                        {
-                            var (code, outp) = Run("bash", ws, 60, "-n", System.IO.Path.GetFileName(produced));
-                            if (code != 0) err = outp.Trim();
-                        }
-                        if (err is null)
-                        {
-                            scriptsOk++;
-                            Log($"  [belt:{key}] script OK: {System.IO.Path.GetFileName(produced)} ({script.Length} bytes)");
-                            break;
-                        }
-                        Log($"  [belt:{key}] script SYNTAX FAIL: {System.IO.Path.GetFileName(produced)}: {err.Split('\n')[0]}");
-                        if (gate == 2) break;
-
-                        // Gate corretivo: erro de sintaxe volta ao Scripter (2 retries)
-                        // em vez de executar um script que ja sabemos invalido.
-                        Log($"  [belt:{key}] gate: devolvendo erro ao Scripter (retry {gate + 1}/2)");
-                        sh.Add(new JsonObject { ["role"] = "assistant", ["content"] = "SCRIPTER-REWRITE" });
-                        sh.Add(new JsonObject { ["role"] = "user", ["content"] = "O script falhou em `bash -n`:\n" + err + "\nReescreva o arquivo " + System.IO.Path.GetFileName(produced) + " via write corrigindo a sintaxe. Bash puro; nunca C#/SQL solto. Responda SCRIPTER-OK." });
-                        for (int turn = 0; turn < 4; turn++)
-                        {
-                            JsonObject r;
-                            try
-                            {
-                                r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                                    new JsonObject { ["model"]=scripterModel, ["temperature"]=0.2, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
-                            }
-                            catch (Exception ex)
-                            {
-                                Log($"  [belt:{key}] post scripter (gate) falhou: {ex.Message.Split('\n')[0]}");
-                                global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Apply(sh);
-                                continue;
-                            }
-                            var msg = r["choices"]?[0]?["message"]?.AsObject();
-                            var calls = msg?["tool_calls"]?.AsArray();
-                            if (calls is null || calls.Count == 0) break;
-                            var echo = new JsonArray();
-                            foreach (var c in calls) echo.Add(new JsonObject { ["id"]=Str(c?["id"]), ["type"]="function", ["function"]=new JsonObject { ["name"]=Str(c?["function"]?["name"]), ["arguments"]=Str(c?["function"]?["arguments"], "{}") } });
-                            sh.Add(new JsonObject { ["role"]="assistant", ["content"]=Str(msg?["content"]), ["tool_calls"]=echo });
-                            foreach (var c in calls)
-                            {
-                                string callId = Str(c?["id"]);
-                                string argsJson = Str(c?["function"]?["arguments"], "{}");
-                                JsonObject a;
-                                try { a = JsonNode.Parse(argsJson)?.AsObject() ?? new JsonObject(); }
-                                catch { sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]="ERRO: arguments invalidos/truncados" }); continue; }
-                                string p2 = Str(a["path"]);
-                                var exec2 = await TestContext.ExecuteTool("write", a, ws, scripterModel);
-                                string out2 = exec2["ok"]?.GetValue<bool>() == true
-                                    ? exec2["output"]?.GetValue<string>() ?? "ok"
-                                    : "ERRO: " + (exec2["error"]?.GetValue<string>() ?? "falha");
-                                if (exec2["ok"]?.GetValue<bool>() == true && p2.EndsWith(".sh", StringComparison.OrdinalIgnoreCase))
-                                    writtenScripts.Add(System.IO.Path.Combine(ws, p2));
-                                sh.Add(new JsonObject { ["role"]="tool", ["tool_call_id"]=callId, ["content"]=out2 });
-                            }
-                        }
-                        produced = ResolveScript();
-                    }
                 }
 
                 // 3) Integridade dos .sh gerados: shebang, sem tool colada e
                 // `bash -n` limpo. Execucao fica fora deste teste (testar depois).
                 Log($"  [belt:{key}] 3/3 integridade dos scripts...");
                 int integrityOk = 0, discarded = 0;
-                foreach (var f in System.IO.Directory.GetFiles(ws, "*.sh"))
+                // O Scripter escolhe o diretorio do entregavel (o Orch segmenta em
+                // pastas, ex. src/Financeiro): o aceite tem de olhar o workspace
+                // inteiro, nao so' a raiz — senao o artefato existe e o veredito
+                // conta zero (medido 2026-11-07 20:59).
+                foreach (var f in System.IO.Directory.GetFiles(ws, "*.sh", System.IO.SearchOption.AllDirectories))
                 {
                     string name = System.IO.Path.GetFileName(f);
                     string body = System.IO.File.ReadAllText(f);
@@ -526,7 +522,15 @@ internal static class E2EBeltsTests
                     else
                     {
                         var (syntax, syntaxErr) = Run("bash", ws, 60, "-n", name);
-                        if (syntax != 0) why = syntaxErr.Trim().Split('\n')[0];
+                        if (syntax != 0)
+                        {
+                            // `ProcessRunner` devolve stdout+`[stderr]`+stderr no mesmo
+                            // campo: cortar na 1a linha jogava fora a mensagem do bash
+                            // (que vem depois de "exit 2: \n[stderr]") — medido em
+                            // 2026-11-07 20:55, create_model.sh DESCARTADO sem motivo.
+                            string full = syntaxErr.Trim().Replace("\n", " | ");
+                            why = full[..Math.Min(240, full.Length)];
+                        }
                     }
 
                     if (why is not null)
@@ -542,6 +546,9 @@ internal static class E2EBeltsTests
                 }
 
                 // 4) Valida artefatos: Scripter compôs e todo .sh restante e integro.
+                // O veredito sai SO' do artefato: o consumidor nao cutuca, nao
+                // devolve erro de sintaxe ao modelo nem reescreve a tarefa.
+                scriptsOk = integrityOk;
                 Log($"  [belt:{key}] validando: scripts={scriptsOk} integros={integrityOk} descartados={discarded}");
                 TestContext.Check(scriptsOk > 0, $"[{key}] Scripter compôs {scriptsOk} scripts válidos");
                 TestContext.Check(integrityOk > 0,

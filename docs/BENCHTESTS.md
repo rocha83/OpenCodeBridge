@@ -506,8 +506,25 @@ Supervisor (orch Q4)  ── lê o catálogo E-* e GERA a fila de micro-enunciad
 - **Micro-enunciado** (formato canônico em `../AGENTS.md`): `OBJETIVO` (1 frase) +
   `ESCOPO` (arquivos exatos) + `PROIBIDO` (o que não tocar) + `ACEITE` (comando exato).
   Um micro por chamada `task`; ao subagente volta só o **erro** (trecho), não o log inteiro.
+- **Enunciado de belt não nomeia artefato**: o texto entregue ao Orch cita
+  **tecnologia/stack** (linguagem, framework, banco, API, serviço) e o resultado
+  esperado — nunca `src/X.cs`, `db/*.sql` nem extensão (`.cs/.sql/.sh/.md`). Quem
+  decide os arquivos do entregável é o **Scripter** (`.sh` com shebang que cria os
+  artefatos via heredoc). Exceção: teste **encadeado/sequencial**, que cita o arquivo
+  de handoff porque o step seguinte depende dele. "Arquivos exatos" no micro-enunciado
+  vale para delegação **dentro de repo existente** (Build/Exec), não para belt em
+  workspace vazio — medido em `e-belts-azul-orch` (2026-11-07): a linha `ESCOPO
+  (arquivos exatos)` do `Prompts/orch.md` fazia o Orch inventar `src/Data/*.cs` e o
+  Scripter gravar os `.cs` como entregável (`scripts=0`, FAIL).
 - **Supervisor não improvisa**: a fila sai do catálogo `E-*`; ele só ordena, segmenta
   e re-despacha. Micro que estoura ctx/ambiguidade é **refatiado em dois**.
+- **Consumidor não vira harness** (`TEST-DRIVER.md` §1): o teste **não embrulha
+  prompt de role** (contrato mora em `Prompts/orch.md` e `Prompts/scripter.md`,
+  lidos do repo), **não devolve erro de sintaxe ao modelo**, **não faz gate
+  corretivo** nem nudge de entregável. Ele envia enunciado + parâmetros, executa a
+  sequência e emite o veredito **do artefato**. Removido em 2026-11-07
+  (`E2EBeltsTests`): gate de `bash -n` com 2 retries e `TAREFA A EXECUTAR` no turno
+  do usuário — o comportamento medido passa a ser o do modelo, não o do driver.
 - **Aceite por artefato** (arquivo/log/número), nunca "parece bom"; o supervisor
   re-executa o ACEITE de cada micro antes de avançar (≤2 tentativas por micro).
 
