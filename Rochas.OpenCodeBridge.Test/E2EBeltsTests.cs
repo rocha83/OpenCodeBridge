@@ -26,7 +26,7 @@ internal static class E2EBeltsTests
     /// </summary>
     static string OrchEnunciado(string escopo) =>
         "Componha scripts shell .sh com shebang que construam usando internamente comandos para escrita dos arquivos que atendam o requisito do enunciado a seguir:  *** " + escopo +
-        " ***, segmente em tarefas menores e delegue utilizando a tool subagent a agentes Scripter, a criacao de um script bash .sh que implemente o escopo da subtarefa enunciada";
+        " ***, segmente em tarefas menores e delegue utilizando a tool subagent a agentes Scripter, a criacao de um script bash .sh que implemente o escopo da subtarefa enunciada. RECEITA OBRIGATORIA de cada .sh (troque os <campos>, sem caminho fixo): (1) primeira linha #!/usr/bin/env bash e depois set -e; (2) mkdir -p <pasta> (sempre -p, o script roda em workspace vazio); (3) cat > <pasta>/<projeto>.csproj <<'EOF' ... <Project Sdk='Microsoft.NET.Sdk'><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project> ... EOF; (4) cat > <pasta>/<Arquivo>.cs <<'EOF' ... codigo do requisito ... EOF (um heredoc por arquivo); (5) ultima linha dotnet build <pasta>/<projeto>.csproj -c Release (o .csproj vai como argumento POSICIONAL, nunca use --project), com exit 1 se o build falhar. O entregavel e' o .sh com esses heredocs: nao grave .cs/.csproj solto.";
 
     /// <summary>System do role Orch igual ao opencode: corpo do agents/orch.md
     /// (sem frontmatter). Sem isso a bridge usa so o OrchSystem curto, o main
