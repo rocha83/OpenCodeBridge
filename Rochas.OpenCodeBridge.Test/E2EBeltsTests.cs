@@ -187,8 +187,7 @@ internal static class E2EBeltsTests
         + "Entregue {title}.sh e o companion {title}.md. Responda apenas SCRIPTER-OK.";
 
     /// <summary>Enunciado entregue ao Scripter: a tarefa do Orch passa intacta.</summary>
-    internal static string ScripterTask(string taskPrompt) => taskPrompt
-        + "\n\nEntregue APENAS um script .sh (shebang, valido em `bash -n`, com heredoc que gera os artefatos pedidos). NAO escreva arquivos .cs/.sql/.tsx diretamente com tools; o .sh e' o entregavel.";
+    internal static string ScripterTask(string taskPrompt) => taskPrompt;
 
     static bool ScriptViaOpencode(string key, string ws, string safeTitle, string taskPrompt, string grounded)
     {
@@ -324,12 +323,11 @@ internal static class E2EBeltsTests
                 string orchContent = "";
                 JsonArray tasks = new();
                 {
-                    string ask = OrchEnunciado(prompt.Replace("{ws}", ws))
-                        + "\n\nResponda SOMENTE com o JSON array de tarefas (sem texto antes ou depois).";
+                    string ask = OrchEnunciado(prompt.Replace("{ws}", ws));
                     if (TestContext.Mode == "opencode")
                     {
                         Log($"  [belt:{key}] 1/3 Orch via opencode (agent=orch)...");
-                        string orchPrompt = OrchSystem + "\n\n" + ask;
+                        string orchPrompt = LoadOrchSystem() + "\n\n" + ask;
                         orchContent = TestContext.OpencodeRun(orchPrompt, ws, agent: "orch");
                     }
                     else

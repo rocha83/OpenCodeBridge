@@ -2516,6 +2516,39 @@ com `hello world` + git init/config/add/commit) e `e-tools-full-update`
 `historico` com o log e `dotnet run` imprimindo `hello brazil`.
 
 
+## 81. Enunciados/system dos belts azul+verde tinham ambiguidade que virava FAIL
+
+**Sintoma** — `E-belts-build-direct` (azul/verde) e `E-belts-direct` falhavam com
+`conteudo=atende build=rc=1` (modelo não corrigia) e o Scripter ora escrevia `.cs`
+solto, ora 8x `write -> ERRO: path é obrigatório`. Cada rodada apontava uma
+instrução diferente em conflito.
+
+**Causa** — auditoria dos textos (2026-11-08) achou contradição direta entre o que
+o teste pede e o que o harness/role já diz:
+
+| Onde | Conflito | Resolução |
+|---|---|---|
+| `HarnessTails.ProjectLayoutLine` | "não mude o `.csproj`" x teste pedindo para **criar** o projeto | pasta vazia = crie um `.csproj` com nome; pasta com projeto = edite o `.cs` da raiz |
+| system do belt + enunciado roxa x `MainHarness` | "caminhos **absolutos**" x "`path` **relativo** à raiz" | relativo nos dois (o modelo vê os dois textos) |
+| verde/roxa/marrom/preta | critério de compilar **duplicado** (abertura + fecho) | uma única vez, no fecho |
+| `ScripterTask` (teste) | "**APENAS** um `.sh`" x `scripter.md` exige `.sh` **+** companion `.md` | regra fica só no system; user = conteúdo |
+| `Prompts/orch.md` x teste | "responda só o JSON array" no system **e** repetido no user (nudge de cliente) | contrato só no `orch.md` |
+| `Prompts/orch.md` | "não nomeie arquivo" x o `title` vira nome do `.sh` (saiu com acento) | `title` = 3 palavras ASCII, sem acento/espaço |
+| `Prompts/orch.md` | bloco `INVARIANTE-TUNEL-LLAMA` (doc de bridge/teste) colado no role | removido do role |
+| `MainHarness` x loop do belt | "`write` só para arquivo novo" x 8x `write -> atualizado` no mesmo arquivo | explícito: arquivo existente altera-se por `edit` |
+| marrom/preta | enunciado pedia React/ML, assert olhava só `class`+`CREATE TABLE` | assert por escopo: `hasFront` (marrom) e `hasMl` (preta) |
+
+**Correção (texto, nada de artefato novo)** — `ProjectLayoutLine`, `MainHarness`,
+`Prompts/orch.md`, `Prompts/scripter.md`, `ScripterTask`/`Orch` do teste e o
+`ContentMatchesEnunciado` (que nunca conta arquivos: só conteúdo).
+
+**Prova** — `dotnet build -c Release`: 0 erro(s). Rodadas anteriores mostram o
+efeito medido: `conteudo=atende` em azul/verde/roxa/marrom/preta, com o build
+falhando em erro real de código (`CS0246`, `CS1056`, `CS0535`, `MSB4025`), não em
+instrução contraditória.
+
+---
+
 <!-- INVARIANTE-TUNEL-LLAMA:v1 -->
 ## Invariante — túnel de stream do llama é exclusivo da bridge/core
 
