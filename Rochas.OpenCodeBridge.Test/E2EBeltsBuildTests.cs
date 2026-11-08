@@ -123,7 +123,7 @@ internal static class E2EBeltsBuildTests
             try
             {
                 var history = new JsonArray(
-                    new JsonObject { ["role"]="system", ["content"]=$"Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Trabalhe em {ws}. Implemente os artefatos pedidos direto no disco, sem plano e sem prosa, usando caminhos absolutos dentro de {ws}. Ao terminar responda apenas BUILD-OK com o resumo do que entregou." },
+                    new JsonObject { ["role"]="system", ["content"]=$"Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Trabalhe em {ws}. Implemente os artefatos pedidos direto no disco, sem plano e sem prosa, usando caminhos absolutos dentro de {ws}. O entregavel tem de compilar: crie o projeto .csproj e rode `dotnet build` ate rc=0. Ao terminar responda apenas BUILD-OK com o resumo do que entregou." },
                     new JsonObject { ["role"]="user", ["content"]=prompt.Replace("{ws}", ws) });
                 int filesCreated = 0;
                 int totalChars = 0;
