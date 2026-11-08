@@ -81,28 +81,22 @@ public static class ToolCatalog
             Fn("subagent", "Delega um micro-enunciado a um subagente, que executa as tools no workspace e devolve o resultado. Uma tarefa por chamada; nao aninhe delegacao. Agentes disponiveis: "
                 + (AgentCatalog.Describe() is { Length: > 0 } ag ? ag : "(nenhum configurado)") + ".", new JsonObject
             {
+                ["agent"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "nome do agente alvo (obrigatorio), copiado da lista acima: define o system prompt e as tools do subagente."
+                },
                 ["prompt"] = new JsonObject
                 {
                     ["type"] = "string",
                     ["description"] = "micro-enunciado completo: OBJETIVO (1 frase) + ESCOPO + PROIBIDO + ACEITE (comando exato). Sem narrativa e sem cerca."
                 },
-                ["agent"] = new JsonObject
-                {
-                    ["type"] = "string",
-                    ["description"] = "agente alvo pelo nome ou parte dele (ex.: scripter): define o system prompt e as tools do subagente."
-                },
                 ["description"] = new JsonObject
                 {
                     ["type"] = "string",
                     ["description"] = "titulo curto da tarefa (3 palavras ASCII); o cliente usa como rotulo do artefato."
-                },
-                ["model"] = new JsonObject
-                {
-                    ["type"] = "string",
-                    ["description"] = "modelo do subagente (sufixo de role, ex.: ...-scripter); omitido = modelo base."
-                },
-                ["temperature"] = new JsonObject { ["type"] = "number" }
-            }, "agent", "description", "prompt")
+                }
+            }, "agent", "prompt", "description")
         };
         return ToolHelp.Apply(tools);
     }

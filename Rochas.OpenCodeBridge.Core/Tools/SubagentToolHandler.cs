@@ -89,7 +89,7 @@ public sealed class SubagentToolHandler : IToolHandler
             ["temp"] = temp,
             ["tools"] = agent is null || agent.Tools.Count == 0 ? "(todas)" : string.Join(",", agent.Tools),
             ["chars"] = prompt.Length,
-            ["head"] = prompt.Length > 200 ? prompt[..200] : prompt
+            ["prompt"] = prompt
         });
 
         try
@@ -129,12 +129,16 @@ public sealed class SubagentToolHandler : IToolHandler
                 if (calls is null || calls.Count == 0)
                     return ToolResult.Ok(text.Length > 0 ? text : "(sem resposta)");
 
+                var names = new List<string>();
+                foreach (var tc0 in calls)
+                    names.Add(tc0?["function"]?["name"]?.GetValue<string>() ?? "?");
                 context.Log?.Invoke(new JsonObject
                 {
                     ["event"] = "subagent_turn",
                     ["agent"] = agent?.Name ?? "",
                     ["turn"] = turn,
-                    ["calls"] = calls.Count
+                    ["calls"] = calls.Count,
+                    ["tools"] = string.Join(",", names)
                 });
 
                 // echo assistant + execute tools
