@@ -885,15 +885,25 @@ internal static partial class Program
     /// <summary>Resume uma tool call para o painel (path/comando/pattern).</summary>
     static string FormatToolCall(string name, string args)
     {
-        string path = "", cmd = "", pattern = "";
+        string path = "", cmd = "", pattern = "", agent = "", desc = "", taskPrompt = "";
         try
         {
             var a = JsonNode.Parse(args)?.AsObject();
             path = a?["path"]?.GetValue<string>() ?? "";
             cmd = a?["command"]?.GetValue<string>() ?? "";
             pattern = a?["pattern"]?.GetValue<string>() ?? "";
+            agent = a?["agent"]?.GetValue<string>() ?? a?["subagent_type"]?.GetValue<string>() ?? "";
+            desc = a?["description"]?.GetValue<string>() ?? "";
+            taskPrompt = a?["prompt"]?.GetValue<string>() ?? a?["task"]?.GetValue<string>() ?? "";
         }
         catch { }
+        // Delegacao: o painel precisa ver PARA QUEM e O QUE foi pedido (sem o
+        // prompt inteiro de 3k); antes a linha saia como "subagent" e nada mais.
+        if (name is "subagent" or "task")
+        {
+            if (taskPrompt.Length > 300) taskPrompt = taskPrompt[..300] + "…";
+            return "subagent " + agent + " [" + desc + "]: " + taskPrompt;
+        }
         if (name.Equals("write", StringComparison.OrdinalIgnoreCase) && path.Length > 0) return "write " + path;
         if (name.Equals("edit", StringComparison.OrdinalIgnoreCase) && path.Length > 0) return "edit " + path;
         if (cmd.Length > 0) return name + ": " + cmd;
