@@ -180,6 +180,15 @@ internal static class TestContext
     /// <summary>Reinicia a bridge alvo antes de cada step E2E e espera o status.</summary>
     public static void RestartBridge()
     {
+        // Raia opencode pura: a bridge e' tubo e quem define as flags e' o
+        // operador. Restart pela unit traria main harness/tails de volta e
+        // contaminaria a medicao do caminho livre.
+        if (Mode == "opencode")
+        {
+            Console.WriteLine("  [restart] skip: modo opencode puro (bridge do operador)");
+            ResetHttp();
+            return;
+        }
         string svc = BridgeService();
         var psi = new ProcessStartInfo("sudo", $"-n systemctl restart {svc}")
         {

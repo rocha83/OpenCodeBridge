@@ -1385,11 +1385,17 @@ internal sealed class WarTemplate : CircuitTemplate
                 ["slot"] = Str(st, "slot"),
                 ["context_tokens"] = bctx
             });
+            // Bateria opencode pura: o harness e' do CLI e a bridge e' tubo. Os
+            // gates de main harness/coercao/modo so valem na raia bridge.
+            bool bridgeLane = _p.Modes.Contains("bridge", StringComparer.OrdinalIgnoreCase);
+
             // Gate duro: o WAR sempre roda steps de bridge (L1..L4). Bridge
             // gerido sem MainHarness = modelo orfao de base, so tails. Nao e
             // aviso: aborta o preflight com a correcao explicita. O modo
             // opencode puro (fora do WAR) pode viver sem a base, porque usa o
             // harness do proprio CLI.
+            if (bridgeLane)
+            {
             Pf(driver, "bridge_main_harness",
                 string.Equals(bmain, "true", StringComparison.OrdinalIgnoreCase),
                 new JsonObject
@@ -1427,6 +1433,40 @@ internal sealed class WarTemplate : CircuitTemplate
                     ["mode"] = bmode,
                     ["fix"] = "suba a bridge com --mode bridge (WAR roda steps de bridge)"
                 });
+            }
+            else
+            {
+                // Raia opencode pura: nao e' "nao checar" — o preflight EXIGE o
+                // tubo limpo. Com qualquer um desses ligado o lane mede o harness
+                // da bridge, nao o do CLI, e o resultado nao vale.
+                Pf(driver, "opencode_main_harness_off",
+                    string.Equals(bmain, "false", StringComparison.OrdinalIgnoreCase),
+                    new JsonObject
+                    {
+                        ["bridge"] = _p.Bridge,
+                        ["main_harness"] = bmain,
+                        ["fix"] = "suba a bridge com --mode opencode --main-harness 0"
+                    });
+                bool coerceOff = !On(st, "coerce_text_tools", "coerce_text_tools")
+                                 && !On(st, "coerce_narrated", "coerce_narrated");
+                Pf(driver, "opencode_sem_coercao",
+                    coerceOff,
+                    new JsonObject
+                    {
+                        ["bridge"] = _p.Bridge,
+                        ["coerce_text_tools"] = Str(st, "coerce_text_tools"),
+                        ["coerce_narrated"] = Str(st, "coerce_narrated"),
+                        ["fix"] = "desligue --coerce-text-tools 0 --coerce-narrated 0"
+                    });
+                Pf(driver, "opencode_modo",
+                    string.Equals(bmode, "opencode", StringComparison.OrdinalIgnoreCase),
+                    new JsonObject
+                    {
+                        ["bridge"] = _p.Bridge,
+                        ["mode"] = bmode,
+                        ["fix"] = "suba a bridge com --mode opencode"
+                    });
+            }
 
             // REGRA PRIMORDIAL: cauda de tools e obrigatoria para todo teste que
             // ENUNCIA uso de tools. Sem ela o modelo perde o contrato operacional
@@ -1449,7 +1489,13 @@ internal sealed class WarTemplate : CircuitTemplate
             };
             // Unica regra irrefutavel do WAR: modo bridge + main harness ligados.
             // Caudas sao AVISO (o operador liga/desliga na unit); nunca bloqueiam.
-            if (tailsOk)
+            if (!bridgeLane)
+            {
+                tailsEvidence["regra"] = "opencode puro: caudas tem de estar OFF";
+                tailsEvidence["fix"] = "desligue --harness-tails 0 --tail-scope off";
+                Pf(driver, "opencode_sem_caudas", !tailsOk, tailsEvidence);
+            }
+            else if (tailsOk)
                 Pf(driver, "harness_tails_status", true, tailsEvidence);
             else
             {
@@ -1481,7 +1527,13 @@ internal sealed class WarTemplate : CircuitTemplate
                 ["fix"] = "ligue --anti-repeat 1 (ou passe --war-no-anti-repeat-gate para medir sem ele)"
             };
             // Anti-repeat nao e' regra do WAR: se estiver off, avisa e segue.
-            if (arOk)
+            if (!bridgeLane)
+            {
+                arEvidence["regra"] = "opencode puro: anti-repeat tem de estar OFF";
+                arEvidence["fix"] = "desligue --anti-repeat 0";
+                Pf(driver, "opencode_sem_anti_repeat", !arOk, arEvidence);
+            }
+            else if (arOk)
                 Pf(driver, "anti_repeat_status", true, arEvidence);
             else
             {
