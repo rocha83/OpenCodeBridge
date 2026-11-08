@@ -328,8 +328,11 @@ _step_bridge() { # nome + args do runner
   for a in "$@"; do [ "$prev" = "--mode" ] && mode="$a"; prev="$a"; done
   local attempt; attempt=$(( $(cat "$STATE/$name.attempt" 2>/dev/null || echo 0) + 1 )); echo "$attempt" > "$STATE/$name.attempt"
   emit "{\"t\":\"step_start\",\"step\":\"$name\",\"mode\":\"$mode\",\"attempt\":$attempt,\"run\":\"$HASH_GIT\"}"
-  local b0=0 a0=0
+  local b0=0 a0=0 s0=0 s1=0
   [ -f "$BLOG" ] && b0=$(wc -l < "$BLOG")
+  # Sonda com rolling diario: o arquivo ativo carrega a data no nome.
+  local slog; slog=$(ls -1t /tmp/bridge-sonda-4124*.log 2>/dev/null | head -1)
+  [ -n "$slog" ] && [ -f "$slog" ] && s0=$(wc -l < "$slog")
   local t0; t0=$(date +%s)
   log "=== $name :: $*"
   # Rotulo do step no painel Grafana (enunciado/atividade): aqui o runner roda
@@ -342,6 +345,8 @@ _step_bridge() { # nome + args do runner
   local secs=$(( $(date +%s) - t0 ))
   [ -f "$BLOG" ] && a0=$(wc -l < "$BLOG")
   tail -n +"$((b0 + 1))" "$BLOG" 2>/dev/null | head -n "$((a0 - b0))" > "$STEPS/$name.bridge.log"
+  [ -n "$slog" ] && [ -f "$slog" ] && s1=$(wc -l < "$slog")
+  [ -n "$slog" ] && tail -n +"$((s0 + 1))" "$slog" 2>/dev/null | head -n "$((s1 - s0))" > "$STEPS/$name.sonda.log"
   local verdict=SKIP cause=""
   grep -q '^FAIL ' "$STEPS/$name.test.log" && verdict=FAIL
   grep -q '^PASS ' "$STEPS/$name.test.log" && [ "$verdict" = SKIP ] && verdict=PASS
