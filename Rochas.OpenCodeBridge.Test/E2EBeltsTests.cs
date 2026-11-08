@@ -43,8 +43,8 @@ internal static class E2EBeltsTests
     /// enunciado proprio (E2EBeltsBuildTests) e NAO usa este template.
     /// </summary>
     static string OrchEnunciado(string escopo) =>
-        "Componha scripts shell .sh com shebang que construam " + escopo.TrimEnd(' ', '.') +
-        ", segmente em tarefas menores e delegue a subagentes Scripter, a criacao de um script .sh que implemente o escopo da subtarefa enunciada";
+        "Componha scripts shell .sh com shebang que construam usando internamente comandos para escrita dos arquivos que atendam o requisito do enunciado a seguir:  *** " + escopo +
+        " ***, segmente em tarefas menores e delegue utilizando a tool subagent a agentes Scripter, a criacao de um script bash .sh que implemente o escopo da subtarefa enunciada";
 
     /// <summary>System do role Orch igual ao opencode: corpo do agents/orch.md
     /// (sem frontmatter). Sem isso a bridge usa so o OrchSystem curto, o main
