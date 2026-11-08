@@ -102,7 +102,7 @@ public static class ToolCatalog
                     ["description"] = "modelo do subagente (sufixo de role, ex.: ...-scripter); omitido = modelo base."
                 },
                 ["temperature"] = new JsonObject { ["type"] = "number" }
-            }, "prompt")
+            }, "agent", "description", "prompt")
         };
         return ToolHelp.Apply(tools);
     }
