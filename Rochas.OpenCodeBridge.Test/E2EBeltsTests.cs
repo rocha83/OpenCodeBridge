@@ -350,7 +350,7 @@ internal static class E2EBeltsTests
                             new JsonObject { ["role"]="system", ["content"]=LoadOrchSystem() },
                             new JsonObject { ["role"]="user", ["content"]="ENUNCIADO (na pasta atual):\n" + ask });
                         var orchR = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                            new JsonObject { ["model"]=orchModel, ["temperature"]=0.3, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
+                            new JsonObject { ["model"]=orchModel, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
                         orchContent = Str(orchR["choices"]?[0]?["message"]?["content"]);
                     }
                     string rawLog = orchContent.Replace("\r", " ").Replace("\n", "\\n");
@@ -415,7 +415,7 @@ internal static class E2EBeltsTests
                         try
                         {
                             r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                                new JsonObject { ["model"]=scripterModel, ["temperature"]=0.2, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
+                                new JsonObject { ["model"]=scripterModel, ["stream"]=false, ["messages"]=sh.DeepClone(), ["tools"]=tools.DeepClone() });
                         }
                         catch (Exception ex)
                         {

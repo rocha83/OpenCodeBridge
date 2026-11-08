@@ -76,6 +76,11 @@ temperature do corpo do request  >  perfil do role (sufixo do model id)  >  glob
 - `--profile-temp-wins` inverte o primeiro par (perfil vence o cliente). O
   default é **cliente vence**; por isso o `opencode.json` precisa espelhar a
   tabela: se ele mandar 0.5, o role roda 0.5 mesmo com o perfil em 0.4.
+- O **teste/WAR não manda `temperature`**: o request vai sem a chave e vale o
+  perfil do role (`orch` 0.2, `build`/`scripter`/`exec` 0.1, `moe` 0.4; sem
+  sufixo, global 0.2). As belts fixavam 0.3 (`orch`) e 0.2 (`scripter`) — valores
+  legados — e mascaravam o perfil; corrigido em 2026-11-07. Teste que precisar
+  provar `temperature_source` usa os unitários (`U-translate`, `U-sampling`).
 - O turno de **retry/reconsideração** usa a temperatura do role `plan`
   (`RoleProfiles.DetourRole`), via `Sampling.ForRetry`, e nunca esfria um turno
   que já estava mais quente. `--aux-temp` é o análogo global do desvio.
