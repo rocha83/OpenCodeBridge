@@ -2079,7 +2079,10 @@ WriteJson(ctx, 200, new JsonObject
                 if (ToolOutputLimit > 0 && output.Length > ToolOutputLimit) output = output[..ToolOutputLimit];
                 string error = result.Success ? "" : result.Error;
                 if (ToolOutputLimit > 0 && error.Length > ToolOutputLimit) error = error[..ToolOutputLimit];
-                Log(new JsonObject { ["event"] = "tool_exec", ["tool"] = name, ["ok"] = result.Success });
+                // ok=false sozinho nao dizia NADA: o motivo (agente ausente, guard de
+                // workspace, upstream HTTP) ficava so' com o cliente do teste.
+                Log(new JsonObject { ["event"] = "tool_exec", ["tool"] = name, ["ok"] = result.Success, ["error"] = Head(error, 200) });
+                if (!result.Success) RecordAgentActivity("tool-fail", name + ": " + Head(error, 300));
                 WriteJson(ctx, 200, new JsonObject
                 {
                     ["ok"] = result.Success, ["output"] = output, ["error"] = error

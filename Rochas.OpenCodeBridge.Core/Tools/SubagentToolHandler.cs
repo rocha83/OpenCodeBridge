@@ -113,6 +113,7 @@ public sealed class SubagentToolHandler : IToolHandler
         {
             ["event"] = "subagent",
             ["agent"] = agent?.Name ?? "",
+            ["id"] = title,
             ["asked"] = agentName,
             ["temp"] = temp,
             ["tools"] = agent is null || agent.Tools.Count == 0 ? "(todas)" : string.Join(",", agent.Tools),
@@ -167,6 +168,11 @@ public sealed class SubagentToolHandler : IToolHandler
                 messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = text, ["tool_calls"] = echo });
 
                 var written = new List<string>();
+                // Resumo por call para a sonda: nome + path/command/pattern (curto).
+                // Antes o turno dizia apenas QUAIS tools — nao dava para saber o que
+                // cada subagente realmente fez nem onde falhou.
+                var acts = new List<string>();
+                int okCount = 0;
                 foreach (var tc2 in calls)
                 {
                     string name = tc2?["function"]?["name"]?.GetValue<string>() ?? "";
@@ -183,6 +189,7 @@ public sealed class SubagentToolHandler : IToolHandler
                         string ext = System.IO.Path.GetExtension(p).ToLowerInvariant();
                         if (!agent.WriteExtensions.Contains(ext))
                         {
+                            acts.Add(name + ":" + p + "(recusado)");
                             messages.Add(new JsonObject
                             {
                                 ["role"] = "tool",
@@ -196,6 +203,19 @@ public sealed class SubagentToolHandler : IToolHandler
                     }
 
                     var res = executor.Execute(name, ajson, context.TimeoutSeconds);
+                    if (res.Success) okCount++;
+                    {
+                        string brief = "";
+                        try
+                        {
+                            var aj = JsonNode.Parse(ajson)?.AsObject();
+                            brief = aj?["path"]?.GetValue<string>() ?? aj?["command"]?.GetValue<string>() ?? aj?["pattern"]?.GetValue<string>() ?? "";
+                        }
+                        catch { }
+                        brief = brief.Replace("\n", " ").Replace("|", "/");
+                        if (brief.Length > 120) brief = brief[..120] + "\u2026";
+                        acts.Add((res.Success ? "" : "FALHOU ") + name + (brief.Length > 0 ? ":" + brief : ""));
+                    }
                     if (res.Success && name is "write" or "edit")
                     {
                         try { string wp = JsonNode.Parse(ajson)?["path"]?.GetValue<string>() ?? ""; if (wp.Length > 0) written.Add(wp); } catch { }
@@ -209,9 +229,12 @@ public sealed class SubagentToolHandler : IToolHandler
                 {
                     ["event"] = "subagent_turn",
                     ["agent"] = agent?.Name ?? "",
+                    ["id"] = title,
                     ["turn"] = turn,
                     ["calls"] = calls.Count,
+                    ["ok"] = okCount,
                     ["tools"] = string.Join(",", names),
+                    ["acts"] = string.Join(" | ", acts),
                     ["paths"] = string.Join("|", written)
                 });
             }
