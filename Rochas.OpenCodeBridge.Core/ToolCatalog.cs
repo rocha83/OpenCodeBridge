@@ -89,7 +89,7 @@ public static class ToolCatalog
                 ["model"] = new JsonObject
                 {
                     ["type"] = "string",
-                    ["description"] = "modelo do subagente (opcional; para o scripter use llama/Gemma4-E4B-UD-Q3)."
+                    ["description"] = "modelo do subagente (opcional; para o scripter use openai/Gemma4-E4B-Q4-scripter)."
                 },
                 ["prompt"] = new JsonObject
                 {
