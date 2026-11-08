@@ -1057,9 +1057,9 @@ internal static partial class Program
     static JsonObject RetryDegenerateTurn(HttpListenerContext? ctx, JsonObject chat, JsonObject chatJson,
         int toolCount, string model, int cap)
     {
-        // Raia opencode: a bridge e' tunel + coercao do template. Retry de turno
-        // degenerado e' resgate (segunda tentativa) — fora do contrato dessa raia.
-        if (Mode == BridgeMode.Opencode) return chatJson;
+        // Raia opencode: a resposta ja' chega inteira (responseBody bufferizado
+        // antes do SSE), entao o resgate de 1 turno vale aqui tambem — e' o que
+        // evita a sessao morrer no EOS silencioso ("foi e nunca mais voltou").
         if (toolCount <= 0) return chatJson;
         var choice = chatJson["choices"] is JsonArray cs && cs.Count > 0 ? cs[0]?.AsObject() : null;
         bool hasCall = false;
@@ -1072,12 +1072,17 @@ internal static partial class Program
             }
         string finish = choice?["finish_reason"]?.GetValue<string>() ?? "";
         int outTok = chatJson["usage"]?["completion_tokens"]?.GetValue<int>() ?? 0;
-        if (finish != "length" && !(MaxTokens > 0 && outTok >= MaxTokens)) return chatJson;
+        string firstContent = choice?["message"]?["content"]?.GetValue<string>() ?? "";
+        bool truncated = finish == "length" || (MaxTokens > 0 && outTok >= MaxTokens);
+        // EOS silencioso (turno sem call e sem texto util): a sessao encerra sem
+        // acao e o run "nunca mais volta". Resgate unico, com nudge de call.
+        bool silentEos = !hasCall && firstContent.Trim().Length < 3;
+        if (!truncated && !silentEos) return chatJson;
         // Call que fechou dentro do teto de args e' turno normal: nao mexe.
-        if (hasCall && argsChars <= Rochas.OpenCodeBridge.Core.Tools.ToolArgGuard.MaxChars) return chatJson;
+        if (truncated && hasCall && argsChars <= Rochas.OpenCodeBridge.Core.Tools.ToolArgGuard.MaxChars) return chatJson;
 
         Metrics.CountDegenerateTurnRetry();
-        string degenContent = choice?["message"]?["content"]?.GetValue<string>() ?? "";
+        string degenContent = firstContent;
         Log(new JsonObject
         {
             ["event"] = "upstream_degenerate_retry", ["model"] = model,
@@ -3559,7 +3564,7 @@ var shape = new StringBuilder();
         return HarnessTails.Compose(sys, true,
             behaviorOn ? HarnessBehaviorTail : "",
             toolsOn ? HarnessToolsTail : "",
-            hasTools, toolNames);
+            hasTools, toolNames, HarnessTails.RoleOf(modelId));
     }
 
     /// <summary>

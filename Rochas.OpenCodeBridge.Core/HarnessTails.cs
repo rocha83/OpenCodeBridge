@@ -83,6 +83,33 @@ public static class HarnessTails
         "AO CODIFICAR: monte a solucao com `write`/`edit` (o arquivo e' o artefato); so entao use `shell` para build de validacao, execucao de testes ou versionamento do codigo.";
 
     /// <summary>
+    /// Regra de ENTREGA do role build: implementacao no workspace e' a
+    /// prioridade; script so' quando o pedido pedir script. Sem esta linha a
+    /// cauda de tools (receita de .sh) empurrava o build para o script mesmo em
+    /// pedido de implementacao.
+    /// </summary>
+    public const string BuildModeLine =
+        ".NET C# MODO BUILD: PRIORIDADE NAS IMPLEMENTACOES QUANDO NAO PEDIDO DE OUTRA FORMA — " +
+        "escreva o `.cs` e o `.csproj` no workspace e compile com `dotnet build`; " +
+        "entregue `.sh` apenas quando o enunciado pedir script.";
+
+    /// <summary>
+    /// Regra de ENTREGA do role scripter: o script e' ferramenta, nao default.
+    /// </summary>
+    public const string ScripterModeLine =
+        "SHELL SCRIPT MODO SCRIPTER: EXECUTAR CONSTRUCAO POR SCRIPT SOMENTE QUANDO ENUNCIADO PELO USUARIO — " +
+        "sem pedido explicito de script, nao invente `.sh`; o `.sh` e' o entregavel e " +
+        "todo artefato (.cs/.csproj/.sql) nasce DENTRO dele por heredoc.";
+
+    /// <summary>
+    /// Regra do role orch: so' segmenta e delega — nunca implementa. O trabalho
+    /// de escrita/compilacao e' do subagente chamado.
+    /// </summary>
+    public const string OrchModeLine =
+        "MODO ORCH: apenas segmenta o enunciado em subtarefas e delega via `subagent`; " +
+        "nao implementa, nao escreve artefato e nao compila — a execucao e' do subagente.";
+
+    /// <summary>
     /// Projeto .NET que JA existe na pasta. O modelo pequeno cria um segundo
     /// `Program.cs` em subpasta (o glob do SDK inclui tudo e o build quebra com
     /// dois pontos de entrada) e usa `dotnet build --project` (flag que so'
@@ -165,16 +192,25 @@ public static class HarnessTails
     /// exemplos, ordem do fluxo arquivo+repo, prova) mora no help da tool
     /// (ToolHelp) — a cauda fica curta e nao duplica o schema (DRY).
     /// </summary>
-    static readonly (string Text, string[][] Requires)[] Segments =
+    /// <summary>
+    /// Roles que recebem a receita de script construtor. Vazio na lista = o
+    /// caminho managed (sem sufixo de role), que continua recebendo tudo.
+    /// </summary>
+    static readonly string[] ScripterRoles = { "scripter", "" };
+
+    static readonly (string Text, string[][] Requires, string[] Roles)[] Segments =
     {
-        (OneStepLine, Array.Empty<string[]>()),
-        (IndependentLine, Array.Empty<string[]>()),
-        (ToolHelp.ExampleRule, Array.Empty<string[]>()),
-        (ExecuteSandboxLine, Array.Empty<string[]>()),
-        (OrderingLine, new[] { new[] { "write" }, new[] { "shell" } }),
-        (ProjectLayoutLine, new[] { new[] { "write", "edit" }, new[] { "shell" } }),
-        (BuilderScriptLine, new[] { new[] { "write", "edit" }, new[] { "shell" } }),
-        (BuilderExample, new[] { new[] { "write", "edit" }, new[] { "shell" } }),
+        (OneStepLine, Array.Empty<string[]>(), Array.Empty<string>()),
+        (IndependentLine, Array.Empty<string[]>(), Array.Empty<string>()),
+        (ToolHelp.ExampleRule, Array.Empty<string[]>(), Array.Empty<string>()),
+        (ExecuteSandboxLine, Array.Empty<string[]>(), Array.Empty<string>()),
+        (OrderingLine, new[] { new[] { "write" }, new[] { "shell" } }, Array.Empty<string>()),
+        (ProjectLayoutLine, new[] { new[] { "write", "edit" }, new[] { "shell" } }, Array.Empty<string>()),
+        (BuilderScriptLine, new[] { new[] { "write", "edit" }, new[] { "shell" } }, ScripterRoles),
+        (BuilderExample, new[] { new[] { "write", "edit" }, new[] { "shell" } }, ScripterRoles),
+        (BuildModeLine, Array.Empty<string[]>(), new[] { "build" }),
+        (ScripterModeLine, Array.Empty<string[]>(), ScripterRoles),
+        (OrchModeLine, Array.Empty<string[]>(), new[] { "orch" }),
     };
 
     /// <summary>
@@ -222,13 +258,38 @@ public static class HarnessTails
         return true;
     }
 
+    /// <summary>Roles conhecidos do deployment (sufixo do model id).</summary>
+    static readonly string[] Roles = { "plan", "build", "orch", "moe", "scripter", "exec" };
+
+    /// <summary>
+    /// Role do model id (ex.: <c>Gemma4-E4B-Q4-scripter</c> -> "scripter").
+    /// Sem sufixo de role (caminho managed) devolve "" — a cauda sai completa.
+    /// </summary>
+    /// <param name="modelId">Model id do request.</param>
+    /// <returns>Role em minusculas ou vazio.</returns>
+    public static string RoleOf(string? modelId)
+    {
+        if (string.IsNullOrEmpty(modelId)) return "";
+        string id = modelId;
+        foreach (string r in Roles)
+            if (id.EndsWith("-" + r, StringComparison.OrdinalIgnoreCase)) return r;
+        return "";
+    }
+
+    /// <summary>
+    /// A linha vale para o role? Lista vazia = vale para todos; lista com "" =
+    /// vale tambem no caminho managed (modelo sem sufixo de role).
+    /// </summary>
+    static bool RoleAllows(string[] roles, string role)
+        => roles.Length == 0 || Array.IndexOf(roles, role) >= 0;
+
     /// <summary>
     /// Monta a cauda de tools para o conjunto de tools do request. Com `names`
     /// nulo devolve o texto completo (mesmo resultado de <see cref="DefaultTools"/>).
     /// </summary>
     /// <param name="names">Nomes das tools no array `tools` (null = todas).</param>
     /// <returns>Cauda de tools.</returns>
-    public static string ComposeTools(IReadOnlyCollection<string>? names)
+    public static string ComposeTools(IReadOnlyCollection<string>? names, string role = "")
     {
         var sb = new StringBuilder(ToolsHeader);
         // Primeira instrucao da cauda: o canal (function_call), antes de qualquer
@@ -236,9 +297,9 @@ public static class HarnessTails
         sb.Append(' ').Append(NativeCallLine);
         string line = ToolsLine(names);
         if (line.Length > 0) sb.Append(' ').Append(line);
-        foreach (var (text, requires) in Segments)
+        foreach (var (text, requires, roles) in Segments)
         {
-            if (!Satisfied(requires, names)) continue;
+            if (!Satisfied(requires, names) || !RoleAllows(roles, role)) continue;
             sb.Append(' ').Append(text);
         }
         string built = sb.ToString();
@@ -305,7 +366,7 @@ public static class HarnessTails
     /// default, ela é recomposta só com o que existe (null = todas).</param>
     /// <returns>System prompt composto.</returns>
     public static string Compose(string? system, bool harness, string? behavior, string? tools,
-        bool hasTools = true, IReadOnlyCollection<string>? toolNames = null)
+        bool hasTools = true, IReadOnlyCollection<string>? toolNames = null, string role = "")
     {
         if (!harness) return system ?? "";
         // O cliente reenvia o system do turno anterior: cortar a cauda ja'
@@ -327,7 +388,7 @@ public static class HarnessTails
         {
             // Override do operador e' literal; o default entra composto pelo schema.
             string tail = string.Equals(tools, DefaultTools, StringComparison.Ordinal)
-                ? ComposeTools(toolNames)
+                ? ComposeTools(toolNames, role)
                 : tools;
             t = (t.Length > 0 ? t + "\n\n" : "") + tail;
         }

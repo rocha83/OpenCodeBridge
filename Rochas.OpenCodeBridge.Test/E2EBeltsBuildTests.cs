@@ -13,7 +13,7 @@ internal static class E2EBeltsBuildTests
 {
     static readonly (string Key, string Prompt)[] Belts =
     {
-        ("azul", "Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie um arquivo de projeto com nome (ex.: `Reembolsos.csproj`, net10.0, nao `.csproj` sem nome) e os .cs com implementacao efetiva (classes concretas com logica real, nao apenas especificacao de interfaces), interfaces e repositorios; compilar usando `dotnet build` ate rc=0. Persistencia com Dapper + Microsoft.Data.Sqlite (presentes no cache NuGet local); nao use EF Core."),
+        ("azul", "Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie um arquivo de projeto com nome (ex.: `Reembolsos.csproj`, net10.0, nao `.csproj` sem nome) e os .cs com implementacao efetiva (classes concretas com logica real, nao apenas especificacao de interfaces), interfaces e repositorios; compilar usando `dotnet build` ate rc=0. Persistencia com Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 — versoes EXATAS do cache NuGet local, use essas versoes no PackageReference; nao use EF Core."),
         ("verde", "Implemente o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ. Escopo: dominio + banco SQL. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie um .csproj com nome (ex.: `Dominio.csproj`, net10.0, nao `.csproj` sem nome) e os .cs com implementacao efetiva (classes concretas com logica real, nao apenas interfaces) e os .sql (DDL); compilar usando `dotnet build` ate rc=0. Dominio POCO sem atributos de ORM (sem `[Table]`, sem EF Core): o SQL vai nos arquivos .sql."),
         ("roxa", "Trabalhe em {ws}. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Crie os arquivos .cs e .sql com caminho relativo a raiz do workspace, usando a tool write. Comece pelo dominio, depois o SQL e depois repositorios/servicos; nao escreva plano, va direto ao write. Inclua um .csproj com nome (ex.: `Cadastros.csproj`, net10.0, nao `.csproj` sem nome) e implemente classes concretas com logica real (nao apenas interfaces); compilar usando `dotnet build` ate rc=0. Ao terminar responda apenas BUILD-OK com a lista dos arquivos."),
         ("marrom", "Implemente o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL, os repositorios e servicos (Dapper), a API REST e o frontend React. Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Cada arquivo deve conter UMA responsabilidade (um artefato por arquivo: um .cs de dominio, um .sql de DDL, um .tsx de frontend); nao misture dominio, banco, API e frontend no mesmo arquivo. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie um .csproj com nome (ex.: `Reembolsos.csproj`, net10.0, nao `.csproj` sem nome) para o backend .NET, os .cs com implementacao efetiva (classes concretas, nao apenas interfaces), .sql e .tsx/.jsx; compilar usando `dotnet build` ate rc=0 no backend."),
@@ -136,7 +136,18 @@ internal static class E2EBeltsBuildTests
             try
             {
                 var history = new JsonArray(
-                    new JsonObject { ["role"]="system", ["content"]=$"Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Trabalhe em {ws}. Implemente os artefatos pedidos direto no disco, sem plano e sem prosa, usando caminhos relativos a raiz do workspace ({ws}). O entregavel tem de compilar: comece escrevendo o .csproj (com nome, TargetFramework `net10.0`) na raiz do workspace e, ao final, compilar usando `dotnet build` ate rc=0. Ao terminar responda apenas BUILD-OK com o resumo do que entregou." },
+                    new JsonObject { ["role"]="system", ["content"]=$@"Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Trabalhe em {ws}.
+REGRAS OBRIGATORIAS (uma por linha):
+1. Entregue apenas artefatos de DADOS: dominio, repositorio e o .csproj. Nao crie Programa.cs, Main, console, demo, teste ou README.
+2. Comece pelo .csproj na raiz, com nome explicito, TargetFramework net10.0 e OutputType Library.
+3. O .csproj leva PackageReference Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12.
+4. Cada .cs tem apenas codigo: uma declaracao de namespace de escopo de arquivo, um tipo principal, sem crase e sem markdown.
+5. Arquivo que usa IDbConnection/QueryAsync/ExecuteAsync: using System.Data; using Dapper; using Microsoft.Data.Sqlite; no topo.
+6. Cada write tem no maximo 120 linhas; arquivo maior completa com edit.
+7. Rode dotnet build no .csproj e corrija o erro CSxxxx apontado ate rc=0.
+8. So responda BUILD-OK depois de dotnet build rc=0; nunca com build quebrado.
+9. Dapper: use apenas connection.Query<T>(sql, new {{ }}) e connection.Execute(sql, new {{ }}); nao use AddDynamicParameters, DbContext nem APIs de EF.
+Use caminhos relativos a raiz do workspace." },
                     new JsonObject { ["role"]="user", ["content"]=prompt.Replace("{ws}", ws) });
                 if (ownStep) await TestContext.PublishEnunciado(step, prompt.Replace("{ws}", ws));
                 int filesCreated = 0;
@@ -149,7 +160,7 @@ internal static class E2EBeltsBuildTests
                 for (int turn = 0; turn < 14; turn++)
                 {
                     var r = await PostChat(key, turn,
-                        new JsonObject { ["model"]=model, ["stream"]=false, ["max_tokens"]=16384, ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() }, "write");
+                        new JsonObject { ["model"]=model, ["stream"]=false, ["max_tokens"]=24576, ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() }, "write");
                     var msg = r["choices"]?[0]?["message"]?.AsObject();
                     string content = msg?["content"]?.GetValue<string>() ?? "";
                     totalChars += content.Length;
