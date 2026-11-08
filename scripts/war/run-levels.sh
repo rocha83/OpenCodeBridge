@@ -240,6 +240,37 @@ preflight() {
   # de infra como se fosse de modelo — o nivel para no preflight.
   local bmode bct bcn
   bmode=$(json_get "$st" mode); bct=$(json_get "$st" coerce_text_tools); bcn=$(json_get "$st" coerce_narrated)
+  local bar bscope
+  bar=$(json_get "$st" anti_repeat); bscope=$(json_get "$st" tail_scope)
+  if [ "$MODES" = "opencode" ]; then
+    # Raia opencode pura: o harness e' do CLI, a bridge e' tubo. O preflight
+    # EXIGE tudo desligado — nao e' "aceitar qualquer coisa".
+    if [ "$bmode" = "opencode" ]; then
+      pf "opencode_modo" true "{\"mode\":\"$bmode\"}"
+    else
+      pf "opencode_modo" false "{\"mode\":\"$(jesc "${bmode:-?}")\",\"fix\":\"suba a bridge com --mode opencode\"}"
+    fi
+    if [ "$bmain" = "false" ]; then
+      pf "opencode_main_harness_off" true "{\"main_harness\":\"$bmain\"}"
+    else
+      pf "opencode_main_harness_off" false "{\"main_harness\":\"$(jesc "${bmain:-?}")\",\"fix\":\"desligue --main-harness 0\"}"
+    fi
+    if [ "$bct" = "false" ] && [ "$bcn" = "false" ]; then
+      pf "opencode_sem_coercao" true "{\"coerce_text_tools\":\"$bct\",\"coerce_narrated\":\"$bcn\"}"
+    else
+      pf "opencode_sem_coercao" false "{\"coerce_text_tools\":\"$(jesc "${bct:-?}")\",\"coerce_narrated\":\"$(jesc "${bcn:-?}")\",\"fix\":\"desligue --coerce-text-tools 0 --coerce-narrated 0\"}"
+    fi
+    if [ "$bscope" = "off" ] && [ "$btails" = "false" ]; then
+      pf "opencode_sem_caudas" true "{\"tail_scope\":\"$bscope\",\"harness_tails\":\"$btails\"}"
+    else
+      pf "opencode_sem_caudas" false "{\"tail_scope\":\"$(jesc "${bscope:-?}")\",\"harness_tails\":\"$(jesc "${btails:-?}")\",\"fix\":\"desligue --harness-tails 0 --tail-scope off\"}"
+    fi
+    if [ "$bar" = "false" ]; then
+      pf "opencode_sem_anti_repeat" true "{\"anti_repeat\":\"$bar\"}"
+    else
+      pf "opencode_sem_anti_repeat" false "{\"anti_repeat\":\"$(jesc "${bar:-?}")\",\"fix\":\"desligue --anti-repeat 0\"}"
+    fi
+  else
   if [ "$bmode" = "bridge" ]; then
     pf "bridge_modo" true "{\"mode\":\"$bmode\"}"
   else
@@ -255,6 +286,7 @@ preflight() {
   else
     pf "bridge_coercao" false "{\"coerce_text_tools\":\"$(jesc "${bct:-?}")\",\"coerce_narrated\":\"$(jesc "${bcn:-?}")\",\"fix\":\"ligue --coerce-text-tools 1 --coerce-narrated 1\"}"
   fi
+  fi
   # 3) coerencia bridge <-> upstream (modelo e ctx do slot)
   if [ -n "$bup" ] && [ "$bup" != "$WAR_UPSTREAM" ]; then
     pf "bridge_upstream" false "{\"bridge_upstream\":\"$(jesc "$bup")\",\"esperado\":\"$(jesc "$WAR_UPSTREAM")\"}"
@@ -268,7 +300,11 @@ preflight() {
   if [ -n "$bctx" ] && [ -n "$bslots" ] && [ "$bslots" -gt 0 ] 2>/dev/null; then
     bctxslot=$((bctx / bslots))
   fi
-  if [ -n "$nctx" ] && [ -n "$bctxslot" ] && [ "$bctxslot" != "$nctx" ]; then
+  # Raia opencode: a bridge e' tubo e nao declara orcamento de contexto — a
+  # invariante total/slots x n_ctx do llama so vale no caminho gerido.
+  if [ "$MODES" = "opencode" ]; then
+    pf "bridge_context_tokens" true "{\"nao_aplicavel\":\"raia opencode (bridge tubo)\"}"
+  elif [ -n "$nctx" ] && [ -n "$bctxslot" ] && [ "$bctxslot" != "$nctx" ]; then
     pf "bridge_context_tokens" false "{\"context_tokens\":${bctx:-0},\"context_slots\":${bslots:-1},\"bridge_ctx_slot\":${bctxslot:-0},\"n_ctx_slot\":$nctx}"
   else
     pf "bridge_context_tokens" true "{\"context_tokens\":${bctx:-0},\"context_slots\":${bslots:-1},\"bridge_ctx_slot\":${bctxslot:-0},\"n_ctx_slot\":${nctx:-0}}"
