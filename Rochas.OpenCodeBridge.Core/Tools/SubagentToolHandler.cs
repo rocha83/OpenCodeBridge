@@ -134,7 +134,7 @@ public sealed class SubagentToolHandler : IToolHandler
                     ["temperature"] = temp,
                     ["stream"] = false,
                     ["messages"] = messages.DeepClone(),
-                    ["tools"] = toolsForAgent
+                    ["tools"] = toolsForAgent.DeepClone()
                 };
                 if (!string.IsNullOrWhiteSpace(model)) body["model"] = model;
 
