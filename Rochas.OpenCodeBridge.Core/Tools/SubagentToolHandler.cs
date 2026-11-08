@@ -40,7 +40,8 @@ public sealed class SubagentToolHandler : IToolHandler
         new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="git", ["description"]="git somente-leitura", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["command"]=new JsonObject{["type"]="string"}, ["path"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("command") } } },
     });
 
-    public ToolResult Handle(string argumentsJson, ToolContext context)    {
+    public ToolResult Handle(string argumentsJson, ToolContext context)
+    {
         JsonObject args;
         try { args = JsonNode.Parse(argumentsJson)?.AsObject() ?? new JsonObject(); }
         catch { args = new JsonObject(); }
@@ -73,6 +74,20 @@ public sealed class SubagentToolHandler : IToolHandler
         var messages = new JsonArray(
             new JsonObject { ["role"] = "system", ["content"] = system },
             new JsonObject { ["role"] = "user", ["content"] = prompt });
+
+        // Observabilidade do Core: com um agente resolvido, o `/api/tools/execute`
+        // so' devolvia ok/erro — nao dava para separar "agente errado" de "prompt
+        // errado" sem esperar o step inteiro.
+        context.Log?.Invoke(new JsonObject
+        {
+            ["event"] = "subagent",
+            ["agent"] = agent?.Name ?? "",
+            ["asked"] = agentName,
+            ["temp"] = temp,
+            ["tools"] = agent is null || agent.Tools.Count == 0 ? "(todas)" : string.Join(",", agent.Tools),
+            ["chars"] = prompt.Length,
+            ["head"] = prompt.Length > 200 ? prompt[..200] : prompt
+        });
 
         try
         {
@@ -110,6 +125,14 @@ public sealed class SubagentToolHandler : IToolHandler
 
                 if (calls is null || calls.Count == 0)
                     return ToolResult.Ok(text.Length > 0 ? text : "(sem resposta)");
+
+                context.Log?.Invoke(new JsonObject
+                {
+                    ["event"] = "subagent_turn",
+                    ["agent"] = agent?.Name ?? "",
+                    ["turn"] = turn,
+                    ["calls"] = calls.Count
+                });
 
                 // echo assistant + execute tools
                 var echo = new JsonArray();
