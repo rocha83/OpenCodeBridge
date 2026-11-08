@@ -146,7 +146,6 @@ public sealed class SubagentToolHandler : IToolHandler
                 foreach (var tc1 in calls) echo.Add(new JsonObject { ["id"]=tc1?["id"]?.GetValue<string>()??"", ["type"]="function", ["function"]=new JsonObject { ["name"]=tc1?["function"]?["name"]?.GetValue<string>()??"", ["arguments"]=tc1?["function"]?["arguments"]?.GetValue<string>()??"{}" } });
                 messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = text, ["tool_calls"] = echo });
 
-                string refused = "";
                 foreach (var tc2 in calls)
                 {
                     string name = tc2?["function"]?["name"]?.GetValue<string>() ?? "";
@@ -171,7 +170,6 @@ public sealed class SubagentToolHandler : IToolHandler
                                     + string.Join(",", agent.WriteExtensions) + $"; '{p}' nao e' permitido. "
                                     + $"Grave UM .sh (write) com shebang que CRIA {p} por heredoc e valide com bash -n."
                             });
-                            refused = p;
                             continue;
                         }
                     }
@@ -180,20 +178,6 @@ public sealed class SubagentToolHandler : IToolHandler
                     string outp = res.Success ? res.Output : res.Error;
                     if (outp.Length > 2000) outp = outp[..2000] + "...(truncado)";
                     messages.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = tc2?["id"]?.GetValue<string>() ?? "", ["content"] = outp });
-                }
-
-                // O E4B tende a encerrar em prosa depois de uma recusa: a proxima
-                // acao vai como turno de USUARIO (recencia), senao ele desiste.
-                if (refused.Length > 0)
-                {
-                    messages.Add(new JsonObject
-                    {
-                        ["role"] = "user",
-                        ["content"] = $"PROXIMA ACAO OBRIGATORIA: chame write com path terminando em .sh e content com "
-                            + "#!/usr/bin/env bash + set -e + heredoc que cria " + refused
-                            + " (cat > " + refused + " <<'EOF' ... EOF) e dotnet build no .csproj criado. "
-                            + "Nao responda texto antes de existir o .sh."
-                    });
                 }
             }
             return ToolResult.Ok("(loop esgotado)");

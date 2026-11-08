@@ -117,6 +117,22 @@ public static class HarnessTails
         + "SE O BUILD FALHAR: leia a linha `error CSxxxx`, aplique a forma da tabela e edite SO' o trecho; nao reescreva o arquivo igual.";
 
     /// <summary>
+    /// Receita do script CONSTRUTOR: quando o pedido quer um <c>.sh</c> que cria
+    /// os artefatos — e o E4B entregava o artefato solto ou usava
+    /// <c>dotnet build --project</c> (flag que so' existe no `run`) — medido em
+    /// 2026-11-08 nas sondas do Scripter. Forma otimista, sem nome/caminho fixo:
+    /// o modelo copia o formato e troca os campos.
+    /// </summary>
+    public const string BuilderScriptLine =
+        "SCRIPT CONSTRUTOR (pedido de .sh que cria os artefatos): forma que roda em pasta VAZIA — " +
+        "primeira linha `#!/usr/bin/env bash`, depois `set -e`; " +
+        "`mkdir -p <pasta>` (sempre -p); " +
+        "`cat > <pasta>/<projeto>.csproj <<'EOF' ... <Project Sdk='Microsoft.NET.Sdk'> ... EOF`; " +
+        "um heredoc por arquivo: `cat > <pasta>/<Arquivo>.cs <<'EOF' ... EOF`; " +
+        "fecha com `dotnet build <pasta>/<projeto>.csproj -c Release` (o .csproj vai como argumento posicional; `dotnet build` NAO aceita `--project`) e `exit 1` se falhar. " +
+        "O artefato solto (.cs/.csproj/.sql) nao e' a entrega: a entrega e' o .sh que os cria.";
+
+    /// <summary>
     /// Regras TRANSVERSAIS apenas. O contrato de cada tool (formas aceitas,
     /// exemplos, ordem do fluxo arquivo+repo, prova) mora no help da tool
     /// (ToolHelp) — a cauda fica curta e nao duplica o schema (DRY).
@@ -129,6 +145,7 @@ public static class HarnessTails
         (ExecuteSandboxLine, Array.Empty<string[]>()),
         (OrderingLine, new[] { new[] { "write" }, new[] { "shell" } }),
         (ProjectLayoutLine, new[] { new[] { "write", "edit" }, new[] { "shell" } }),
+        (BuilderScriptLine, new[] { new[] { "write", "edit" }, new[] { "shell" } }),
     };
 
     /// <summary>
