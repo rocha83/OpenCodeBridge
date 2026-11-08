@@ -234,8 +234,22 @@ internal static class E2EBeltsBuildTests
                 }
 
                 // Aceite por CONTEUDO + build. Quantidade de artefatos NAO e' assert:
-                // o que vale e' o codigo atender o enunciado e compilar.
-                var (brc, bout) = Run("dotnet", ws, 300, "build", "--nologo", "-v:q");
+                // o que vale e' o codigo atender o enunciado e compilar. O projeto
+                // pode ter sido criado em subpasta: compila-se o `.csproj` que
+                // existir, onde ele estiver (sem obrigar layout).
+                var projects = System.IO.Directory.GetFiles(ws, "*.csproj", System.IO.SearchOption.AllDirectories);
+                int brc; string bout;
+                if (projects.Length == 0) { brc = 1; bout = "nenhum .csproj no workspace"; }
+                else
+                {
+                    brc = 0; bout = "";
+                    foreach (string pj in projects)
+                    {
+                        var (rc, o) = Run("dotnet", System.IO.Path.GetDirectoryName(pj)!, 300,
+                            "build", System.IO.Path.GetFileName(pj), "--nologo", "-v:q");
+                        if (rc != 0) { brc = rc; bout = pj + ": " + o; break; }
+                    }
+                }
                 bool buildOk = brc == 0;
                 bool contentOk = ContentMatchesEnunciado(key, ws);
                 bool ok = buildOk && contentOk;
