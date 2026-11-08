@@ -10,7 +10,7 @@ internal static class E2EBeltsTests
 {
     static readonly (string Key, string Prompt)[] Belts =
     {
-        ("azul", "Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
+        ("azul", "Aplicacao backend .NET C# que realize uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#."),
         ("verde", "Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ. Escopo: dominio + banco SQL. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
         ("roxa", "Trabalhe no workspace da tarefa. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Entregue a implementacao completa no workspace da tarefa (backend .NET C# + banco SQL)."),
         ("marrom", "Especifique o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL, os repositorios e servicos (Dapper), a API REST e o frontend React. Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
@@ -29,7 +29,7 @@ internal static class E2EBeltsTests
         return b.ToString();
     }
 
-    const string OrchSystem = "Componha scripts shell .sh com shebang que construam *** escopo ***, segmente em tarefas menores e delegue a subagentes Scripter, a criacao de um script .sh que implemente o escopo da subtarefa enunciada. Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada. Nao nomeie arquivos/paths/extensoes no prompt: descreva o escopo por dominio tecnico e stack (linguagem, framework, banco, API) — quem compoe o entregavel e o Scripter (.sh com shebang).";
+    const string OrchSystem = "Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas menores e atomicas (max 5) e responde SOMENTE com JSON array: [{\"title\":\"...\",\"prompt\":\"...\"}]. Nao execute nada. Nao nomeie arquivo, path nem extensao: descreva o escopo por dominio tecnico e stack (linguagem, framework, banco, API).";
 
     /// <summary>
     /// Reforco da retentativa do Orch: repete o contrato que a resposta anterior
@@ -43,7 +43,7 @@ internal static class E2EBeltsTests
     /// enunciado proprio (E2EBeltsBuildTests) e NAO usa este template.
     /// </summary>
     static string OrchEnunciado(string escopo) =>
-        "Componha scripts shell .sh com shebang que construam " + escopo +
+        "Componha scripts shell .sh com shebang que construam " + escopo.TrimEnd(' ', '.') +
         ", segmente em tarefas menores e delegue a subagentes Scripter, a criacao de um script .sh que implemente o escopo da subtarefa enunciada";
 
     /// <summary>System do role Orch igual ao opencode: corpo do agents/orch.md
@@ -197,41 +197,23 @@ internal static class E2EBeltsTests
 
     static bool ScriptViaOpencode(string key, string ws, string safeTitle, string taskPrompt, string grounded)
     {
+        // Uma chamada, sem retry de driver: o consumidor envia enunciado +
+        // parametros e o veredito sai do artefato (TEST-DRIVER.md §1).
         string scriptName = safeTitle + ".sh";
         string prompt = ScripterSystem(safeTitle, grounded) + "\n\n"
                       + ScripterTask(taskPrompt) + "\n\nworkspace=" + ws;
-        for (int attempt = 0; attempt < 3; attempt++)
+        Log($"  [belt:{key}] scripter via opencode (agent=scripter)");
+        TestContext.OpencodeRun(prompt, ws, agent: "scripter");
+        string? produced = ResolveScript(ws, safeTitle, scriptName);
+        if (produced is null)
         {
-            Log($"  [belt:{key}] scripter via opencode (agent=scripter) tentativa {attempt + 1}/3...");
-            try
-            {
-                TestContext.OpencodeRun(prompt, ws, agent: "scripter");
-            }
-            catch (Exception ex)
-            {
-                Log($"  [belt:{key}] scripter opencode falhou: {ex.Message.Split('\n')[0]}");
-                prompt = "O turno anterior falhou. Reenvie com UMA tool write de JSON valido; script com no maximo 60 linhas, sem C#/SQL solto e sem quebrar strings.\n\nTAREFA:\n" + taskPrompt;
-                continue;
-            }
-            string? produced = ResolveScript(ws, safeTitle, scriptName);
-            if (produced is null)
-            {
-                Log($"  [belt:{key}] scripter opencode nao gerou .sh");
-                prompt = "Voce nao gravou o arquivo " + scriptName + ". Use a tool write AGORA para criar " + scriptName + " (bash puro, no maximo 80 linhas) e responda apenas SCRIPTER-OK.\n\nTAREFA:\n" + taskPrompt;
-                continue;
-            }
-            string? err = ValidateScript(ws, produced);
-            if (err is null)
-            {
-                string body = System.IO.File.ReadAllText(produced);
-                Log($"  [belt:{key}] script OK: {System.IO.Path.GetFileName(produced)} ({body.Length} bytes)");
-                return true;
-            }
-            Log($"  [belt:{key}] script SYNTAX FAIL: {System.IO.Path.GetFileName(produced)}: {err.Split('\n')[0]}");
-            prompt = "O script " + System.IO.Path.GetFileName(produced) + " falhou em `bash -n`:\n" + err +
-                "\nReescreva o arquivo via tool write corrigindo a sintaxe. Bash puro; nunca C#/SQL solto. Responda SCRIPTER-OK.\n\nTAREFA:\n" + taskPrompt;
+            Log($"  [belt:{key}] scripter opencode nao gerou .sh");
+            return false;
         }
-        return false;
+        string? err = ValidateScript(ws, produced);
+        Log($"  [belt:{key}] script {(err is null ? "OK" : "SYNTAX FAIL")}: {System.IO.Path.GetFileName(produced)}"
+            + (err is null ? "" : ": " + err.Replace("\n", " | ")));
+        return err is null;
     }
 
     static string? ResolveScript(string ws, string safeTitle, string scriptName)

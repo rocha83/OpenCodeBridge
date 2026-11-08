@@ -202,17 +202,6 @@ internal static class E2EDevPipeTests
         // path exato e o aceite; o retry x3 absorve variacao residual do VL.
         bool nameOk = name == "read";
         bool exact = ArgsMatchPath(args, "/tmp/vlimg/placa.png");
-        for (int attempt = 1; attempt <= 3 && !(nameOk && exact); attempt++)
-        {
-            var retry = await TestContext.PostObj(bridge + "/v1/chat/completions", body);
-            var retryTc = retry["choices"]?[0]?["message"]?["tool_calls"]?.AsArray();
-            var retryFn = retryTc is { Count: > 0 } ? retryTc[0]?["function"] : null;
-            name = retryFn?["name"]?.GetValue<string>() ?? "";
-            args = retryFn?["arguments"]?.GetValue<string>() ?? "";
-            Console.WriteLine($"[devpipe] vision-tool retry {attempt}: name={name} args={args}");
-            nameOk = name == "read";
-            exact = ArgsMatchPath(args, "/tmp/vlimg/placa.png");
-        }
 
         TestContext.Check(nameOk, "visao+tool chama read");
         TestContext.Check(exact, "visao+tool path exato");
