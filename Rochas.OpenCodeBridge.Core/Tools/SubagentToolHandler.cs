@@ -150,6 +150,30 @@ public sealed class SubagentToolHandler : IToolHandler
                 {
                     string name = tc2?["function"]?["name"]?.GetValue<string>() ?? "";
                     string ajson = tc2?["function"]?["arguments"]?.GetValue<string>() ?? "{}";
+
+                    // Politica de escrita do role (frontmatter `write_ext`): o Scripter
+                    // grava SO' o .sh/.md — o .cs/.sql vai DENTRO do .sh por heredoc.
+                    // Recusar no turno (com a instrucao) faz o modelo corrigir em vez
+                    // de entregar o artefato errado e so' falhar no aceite.
+                    if (agent is not null && agent.WriteExtensions.Count > 0 && name is "write" or "edit")
+                    {
+                        string p = "";
+                        try { p = JsonNode.Parse(ajson)?["path"]?.GetValue<string>() ?? ""; } catch { }
+                        string ext = System.IO.Path.GetExtension(p).ToLowerInvariant();
+                        if (!agent.WriteExtensions.Contains(ext))
+                        {
+                            messages.Add(new JsonObject
+                            {
+                                ["role"] = "tool",
+                                ["tool_call_id"] = tc2?["id"]?.GetValue<string>() ?? "",
+                                ["content"] = $"{name} recusado: o agente '{agent.Name}' grava apenas "
+                                    + string.Join(",", agent.WriteExtensions) + $"; '{p}' nao e' permitido. "
+                                    + $"Grave UM .sh (write) com shebang que CRIA {p} por heredoc e valide com bash -n."
+                            });
+                            continue;
+                        }
+                    }
+
                     var res = executor.Execute(name, ajson, context.TimeoutSeconds);
                     string outp = res.Success ? res.Output : res.Error;
                     if (outp.Length > 2000) outp = outp[..2000] + "...(truncado)";

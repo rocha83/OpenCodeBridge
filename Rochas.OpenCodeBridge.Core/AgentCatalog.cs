@@ -18,6 +18,8 @@ public sealed class AgentSpec
     public string System { get; init; } = "";
     /// <summary>Tools com <c>effect: allow</c> no frontmatter (vazio = todas).</summary>
     public HashSet<string> Tools { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Extensoes que o role pode gravar (frontmatter <c>write_ext: .sh,.md</c>; vazio = qualquer).</summary>
+    public List<string> WriteExtensions { get; init; } = new();
 }
 
 /// <summary>Leitor do diretório de agentes (env <c>BRIDGE_AGENTS_DIR</c> &gt; <c>~/.config/opencode/agents</c>).</summary>
@@ -108,6 +110,10 @@ public static class AgentCatalog
         double temp = 0.1;
         if (meta.TryGetValue("temperature", out string? ts))
             double.TryParse(ts, NumberStyles.Float, CultureInfo.InvariantCulture, out temp);
+        var writeExt = new List<string>();
+        if (meta.TryGetValue("write_ext", out string? we))
+            foreach (string e in we.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries))
+                writeExt.Add(e.StartsWith('.') ? e.ToLowerInvariant() : "." + e.ToLowerInvariant());
         return new AgentSpec
         {
             Name = name,
@@ -116,6 +122,7 @@ public static class AgentCatalog
             Temperature = temp,
             System = body.Trim(),
             Tools = allowed,
+            WriteExtensions = writeExt,
         };
     }
 }
