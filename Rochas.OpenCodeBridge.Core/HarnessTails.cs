@@ -83,22 +83,6 @@ public static class HarnessTails
         "AO CODIFICAR: monte a solucao com `write`/`edit` (o arquivo e' o artefato); so entao use `shell` para build de validacao, execucao de testes ou versionamento do codigo.";
 
     /// <summary>
-    /// Projeto .NET que JA existe na pasta. O modelo pequeno cria um segundo
-    /// `Program.cs` em subpasta (o glob do SDK inclui tudo e o build quebra com
-    /// dois pontos de entrada), cria/edita outro `.csproj` e usa
-    /// `dotnet build --project` (flag que so' existe no run). Medido no L2
-    /// 115425: 3 tentativas de adjust, todas com o projeto quebrado.
-    /// </summary>
-    const string ProjectLayoutLine =
-        "PROJETO .NET: se a pasta JA tem `.csproj`, edite o `.cs` da raiz desse projeto " +
-        "(um segundo `Program.cs` em subpasta entra no build e duplica o ponto de entrada); " +
-        "se a pasta esta' VAZIA, crie UM `.csproj` com nome. Dependencia de pacote se declara " +
-        "com `<PackageReference>` no `.csproj` (ex.: Dapper 2.1.89, Microsoft.Data.Sqlite 10.0.12, " +
-        "do cache NuGet local) — sem referencia o `using` do pacote quebra no build. " +
-        "Comandos: `dotnet build <nome>.csproj` (build NAO aceita `--project`) e " +
-        "`dotnet run --project <nome>.csproj`.";
-
-    /// <summary>
     /// Tabela de erros C#, GERADA da fonte única (<see cref="CsSyntaxRepair.Rules"/>).
     /// A cauda instrui ANTES do erro; o <c>CsSyntaxRepair</c> repara no retry quando
     /// o modelo ignora. Duas cópias divergem na primeira edição — aqui só se compõe
@@ -144,7 +128,6 @@ public static class HarnessTails
         (ToolHelp.ExampleRule, Array.Empty<string[]>()),
         (ExecuteSandboxLine, Array.Empty<string[]>()),
         (OrderingLine, new[] { new[] { "write" }, new[] { "shell" } }),
-        (ProjectLayoutLine, new[] { new[] { "write", "edit" }, new[] { "shell" } }),
         (BuilderScriptLine, new[] { new[] { "write", "edit" }, new[] { "shell" } }),
     };
 
