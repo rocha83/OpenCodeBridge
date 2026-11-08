@@ -40,6 +40,18 @@ public sealed class SubagentToolHandler : IToolHandler
         new JsonObject { ["type"]="function", ["function"]=new JsonObject { ["name"]="git", ["description"]="git somente-leitura", ["parameters"]=new JsonObject { ["type"]="object", ["properties"]=new JsonObject { ["command"]=new JsonObject{["type"]="string"}, ["path"]=new JsonObject{["type"]="string"} }, ["required"]=new JsonArray("command") } } },
     });
 
+    static string Slug(string raw)
+    {
+        var b = new System.Text.StringBuilder();
+        foreach (char c in raw)
+        {
+            if (char.IsLetterOrDigit(c)) b.Append(char.ToLowerInvariant(c));
+            else if (b.Length > 0 && b[^1] != '-') b.Append('-');
+            if (b.Length >= 40) break;
+        }
+        return b.ToString().Trim('-');
+    }
+
     public ToolResult Handle(string argumentsJson, ToolContext context)
     {
         JsonObject args;
@@ -78,6 +90,12 @@ public sealed class SubagentToolHandler : IToolHandler
         foreach (var t in toolsForAgent) toolNames.Add(t?["function"]?["name"]?.GetValue<string>() ?? "");
         if (toolNames.Count > 0)
             system = system.TrimEnd() + "\n\n" + HarnessTails.ComposeTools(toolNames);
+
+        // O contrato do role nomeia o entregavel como `{title}` (ex.: {title}.sh):
+        // no caminho bridge ninguem substituia e o modelo escrevia o literal. O
+        // titulo vem do `description` do Orch (3 palavras ASCII), como no opencode.
+        string title = Slug((args["description"]?.GetValue<string>() ?? "").Trim());
+        if (title.Length > 0) system = system.Replace("{title}", title);
 
         string ws = args["workspace"]?.GetValue<string>() ?? context.WorkspaceRoot;
         if (string.IsNullOrWhiteSpace(ws)) ws = context.WorkspaceRoot;
