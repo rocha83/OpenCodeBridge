@@ -90,11 +90,11 @@ public static class HarnessTails
     /// 115425: 3 tentativas de adjust, todas com o projeto quebrado.
     /// </summary>
     const string ProjectLayoutLine =
-        "PROJETO .NET QUE JA EXISTE: edite o `.cs` da raiz do projeto que ja' esta' na pasta " +
+        "PROJETO .NET: se a pasta JA tem `.csproj`, edite o `.cs` da raiz desse projeto " +
         "(um segundo `Program.cs` em subpasta entra no build e duplica o ponto de entrada); " +
-        "nao crie um segundo `.csproj`. Dependencia que falta se resolve ACRESCENTANDO " +
-        "`<PackageReference>` no `.csproj` existente (ex.: Dapper 2.1.89, Microsoft.Data.Sqlite 10.0.12, " +
-        "do cache NuGet local) — sem referencia de pacote o `using` do pacote quebra no build. " +
+        "se a pasta esta' VAZIA, crie UM `.csproj` com nome. Dependencia de pacote se declara " +
+        "com `<PackageReference>` no `.csproj` (ex.: Dapper 2.1.89, Microsoft.Data.Sqlite 10.0.12, " +
+        "do cache NuGet local) — sem referencia o `using` do pacote quebra no build. " +
         "Comandos: `dotnet build <nome>.csproj` (build NAO aceita `--project`) e " +
         "`dotnet run --project <nome>.csproj`.";
 
