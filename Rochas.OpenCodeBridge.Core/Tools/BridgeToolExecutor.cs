@@ -69,7 +69,7 @@ public sealed class BridgeToolExecutor
         }
         string key = name is "bash" or "sh" ? "shell" : name is "webfetch" ? "fetch" : name is "task" ? "subagent" : name;
         if (!_handlers.TryGetValue(key, out IToolHandler? handler))
-            return ToolResult.Fail($"tool desconhecida: '{name}' (válidas: shell, read, write, edit, grep, glob, fetch, git)");
+            return ToolResult.Fail($"tool desconhecida: '{name}' (válidas: shell, read, write, edit, grep, glob, fetch, git, subagent)");
         // Bridge: os cenarios do deployment moram em /tmp/opencode, logo /tmp e raiz
         // extra legitima (a Web NAO herda isso — la o workspace e o jail).
         var context = new ToolContext

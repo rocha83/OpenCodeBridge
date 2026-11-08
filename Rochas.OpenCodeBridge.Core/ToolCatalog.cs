@@ -20,7 +20,7 @@ namespace Rochas.OpenCodeBridge.Core;
 public static class ToolCatalog
 {
     /// <summary>Tools no shape <c>chat/completions</c>.</summary>
-    /// <returns>Array de tools (8).</returns>
+    /// <returns>Array de tools (9).</returns>
     public static JsonArray Chat()
     {
         var tools = new JsonArray
@@ -77,7 +77,26 @@ public static class ToolCatalog
                     ["type"] = "string",
                     ["description"] = "pasta do repositorio, relativa ao workspace; `./` = pasta atual. Nunca `.git` nem caminho absoluto."
                 }
-            }, "command")
+            }, "command"),
+            Fn("subagent", "Delega um micro-enunciado a um subagente, que executa as tools no workspace e devolve o resultado. Uma tarefa por chamada; nao aninhe delegacao.", new JsonObject
+            {
+                ["prompt"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "micro-enunciado completo: OBJETIVO (1 frase) + ESCOPO + PROIBIDO + ACEITE (comando exato). Sem narrativa e sem cerca."
+                },
+                ["description"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "titulo curto da tarefa (3 palavras ASCII); o cliente usa como rotulo do artefato."
+                },
+                ["model"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "modelo do subagente (sufixo de role, ex.: ...-scripter); omitido = modelo base."
+                },
+                ["temperature"] = new JsonObject { ["type"] = "number" }
+            }, "prompt")
         };
         return ToolHelp.Apply(tools);
     }

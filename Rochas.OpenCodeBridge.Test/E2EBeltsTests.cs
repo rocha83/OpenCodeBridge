@@ -115,6 +115,34 @@ internal static class E2EBeltsTests
         return OrchSystem;
     }
 
+    /// <summary>
+    /// Converte as tool calls de delegacao (`subagent`, alias `task`) no MESMO
+    /// array {title,prompt} que o resto da belt consome. Le o ARTEFATO emitido
+    /// (a call + o `arguments`), sem reescrever argumento: quem escolheu o
+    /// conteudo foi o modelo.
+    /// </summary>
+    static JsonArray TasksFromCalls(JsonArray? calls)
+    {
+        var arr = new JsonArray();
+        if (calls is null) return arr;
+        foreach (var c in calls)
+        {
+            string name = Str(c?["function"]?["name"]);
+            if (name is not ("subagent" or "task")) continue;
+            JsonObject? a = null;
+            try { a = JsonNode.Parse(Str(c?["function"]?["arguments"], "{}"))?.AsObject(); } catch { }
+            string prompt = Str(a?["prompt"]);
+            if (prompt.Length == 0) prompt = Str(a?["task"]);
+            if (prompt.Length == 0) continue;
+            string title = Str(a?["description"]);
+            if (title.Length == 0) title = Str(a?["title"]);
+            if (title.Length == 0) title = prompt.Split(' ', '\n')[0];
+            if (title.Length > 40) title = title[..40];
+            arr.Add(new JsonObject { ["title"] = title, ["prompt"] = prompt });
+        }
+        return arr;
+    }
+
     /// <summary>Extrai o JSON array de tarefas do texto do Orch (bridge ou opencode com logs).</summary>
     static JsonArray ExtractTaskArray(string text)
     {
@@ -322,6 +350,7 @@ internal static class E2EBeltsTests
                 // Uma chamada, sem retry/nudge: o veredito sai do artefato.
                 string orchContent = "";
                 JsonArray tasks = new();
+                bool viaCall = false;
                 {
                     string ask = OrchEnunciado(prompt.Replace("{ws}", ws));
                     if (TestContext.Mode == "opencode")
@@ -336,17 +365,23 @@ internal static class E2EBeltsTests
                         var orchHistory = new JsonArray(
                             new JsonObject { ["role"]="system", ["content"]=LoadOrchSystem() },
                             new JsonObject { ["role"]="user", ["content"]=ask });
+                        // Array LIMITADO do role coordinator: leitura + delegacao.
+                        // O Orch nao escreve (o Scripter executa a tarefa lida da call).
+                        var orchTools = TestContext.Catalog("read", "glob", "grep", "subagent");
                         var orchR = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions",
-                            new JsonObject { ["model"]=orchModel, ["stream"]=false, ["messages"]=orchHistory.DeepClone() });
-                        orchContent = Str(orchR["choices"]?[0]?["message"]?["content"]);
+                            new JsonObject { ["model"]=orchModel, ["stream"]=false, ["messages"]=orchHistory.DeepClone(), ["tools"]=orchTools.DeepClone() });
+                        var orchMsg = orchR["choices"]?[0]?["message"]?.AsObject();
+                        orchContent = Str(orchMsg?["content"]);
+                        tasks = TasksFromCalls(orchMsg?["tool_calls"]?.AsArray());
+                        viaCall = tasks.Count > 0;
                     }
                     string rawLog = orchContent.Replace("\r", " ").Replace("\n", "\\n");
                     Log($"  [belt:{key}] Orch raw: {rawLog[..Math.Min(400, rawLog.Length)]}");
-                    tasks = ExtractTaskArray(orchContent);
+                    if (tasks.Count == 0) tasks = ExtractTaskArray(orchContent);
                 }
                 TestContext.Check(tasks.Count > 0,
-                    $"[{key}] Orch segmentou em JSON array (chars={orchContent.Length}, " +
-                    $"amostra='{orchContent[..Math.Min(180, orchContent.Length)]}')");
+                    $"[{key}] Orch delegou >=1 tarefa via {(viaCall ? "tool_calls" : "JSON array")} " +
+                    $"(chars={orchContent.Length}, amostra='{orchContent[..Math.Min(180, orchContent.Length)]}')");
                 Log($"  [belt:{key}] Orch: {tasks.Count} tarefas");
 
                 string grounded = "";
