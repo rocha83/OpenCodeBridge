@@ -2432,7 +2432,9 @@ WriteJson(ctx, 200, new JsonObject
             if (node is not null
                 && node["messages"] is JsonArray fm)
             {
-                string fmodel = node["model"]?.GetValue<string>() ?? "";
+                // Role vem do model PEDIDO (reqModel): node["model"] ja' foi
+                // reescrito para o id servido e perde o sufixo de role.
+                string fmodel = reqModel.Length > 0 ? reqModel : node["model"]?.GetValue<string>() ?? "";
                 bool fHasTools = node["tools"] is JsonArray ftools && ftools.Count > 0;
                 foreach (var m in fm)
                 {
