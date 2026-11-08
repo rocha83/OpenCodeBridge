@@ -281,6 +281,8 @@ internal static class E2EBeltsTests
                         foreach (var (c, a) in parsed)
                         {
                             string name = Str(c["function"]?["name"]);
+                            string argLog = Str(c["function"]?["arguments"], "{}").Replace("\n", " ");
+                            Log($"  [belt:{key}] call {name}: {argLog[..Math.Min(200, argLog.Length)]}");
                             var exec = await TestContext.ExecuteTool(name, a, ws, orchModel);
                             bool ok = exec["ok"]?.GetValue<bool>() == true;
                             string outText = ok
