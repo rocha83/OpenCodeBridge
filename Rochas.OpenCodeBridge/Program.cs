@@ -1057,6 +1057,9 @@ internal static partial class Program
     static JsonObject RetryDegenerateTurn(HttpListenerContext? ctx, JsonObject chat, JsonObject chatJson,
         int toolCount, string model, int cap)
     {
+        // Raia opencode: a bridge e' tunel + coercao do template. Retry de turno
+        // degenerado e' resgate (segunda tentativa) — fora do contrato dessa raia.
+        if (Mode == BridgeMode.Opencode) return chatJson;
         if (toolCount <= 0) return chatJson;
         var choice = chatJson["choices"] is JsonArray cs && cs.Count > 0 ? cs[0]?.AsObject() : null;
         bool hasCall = false;
@@ -3638,6 +3641,13 @@ var shape = new StringBuilder();
     /// <returns>Chamada substituta (shell) com o texto corretivo.</returns>
     static (string Name, string Arguments) NudgeArgs(string name, string why, string original)
     {
+        // Raia opencode: nao substitui a chamada por shell corretivo nem inventa
+        // mensagem — args invalidos sao do cliente/CLI. So registra a observacao.
+        if (Mode == BridgeMode.Opencode)
+        {
+            Log(new JsonObject { ["event"] = "tool-args-guide-skip", ["tool"] = name, ["reason"] = why });
+            return (name, original);
+        }
         Metrics.CountToolDenial("nudge", name, why);
         Log(new JsonObject { ["event"] = "tool-args-guide", ["tool"] = name, ["reason"] = why, ["len"] = original.Length });
         string msg = "printf '%s\\n' 'ERRO na tool " + name + ": " + why +
