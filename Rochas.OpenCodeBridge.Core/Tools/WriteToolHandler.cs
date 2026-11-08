@@ -54,7 +54,7 @@ public sealed class WriteToolHandler : IToolHandler
                 ["event"] = "write_repair", ["applied"] = "code_fence", ["path"] = path,
                 ["chars_before"] = rawContent.Length, ["chars_after"] = content.Length
             });
-        if (string.IsNullOrWhiteSpace(path)) return ToolResult.Fail("path é obrigatório");
+        if (string.IsNullOrWhiteSpace(path)) return ToolResult.Fail("path é obrigatório: informe \"path\" (relativo ao workspace) e \"content\" (texto completo do arquivo)");
         if (content.Length > MaxChars) return ToolResult.Fail($"conteúdo grande demais ({content.Length} chars, teto {MaxChars})");
         if (ToolContentGuard.Elided(content, "write") is string elided)
             return ToolResult.Fail(elided);

@@ -20,7 +20,7 @@ public sealed class EditToolHandler : IToolHandler
         string oldString = obj["oldString"]?.GetValue<string>() ?? "";
         string newString = obj["newString"]?.GetValue<string>() ?? "";
         bool replaceAll = obj["replaceAll"]?.GetValue<bool>() ?? false;
-        if (string.IsNullOrWhiteSpace(path)) return ToolResult.Fail("path é obrigatório");
+        if (string.IsNullOrWhiteSpace(path)) return ToolResult.Fail("path é obrigatório: informe \"path\" (relativo ao workspace), \"oldString\" e \"newString\"");
         if (string.IsNullOrEmpty(oldString))
         {
             // O modelo manda `oldString:null` quando nao sabe o texto exato (medido
