@@ -497,18 +497,23 @@ internal static class TestContext
         Directory.CreateDirectory(dir);
         var psi = OpencodePsi(dir);
         string useAgent = string.IsNullOrWhiteSpace(agent) ? StandaloneAgent : agent;
-        // Agent explicito pede modelo da role; sem agent explicito, --standalone-model
-        // (quando o teste setou) tem prioridade, como antes.
-        string useModel = !string.IsNullOrWhiteSpace(model)
+        // Modelo NAO e' escolha do teste na raia opencode: o modelo da role vive no
+        // frontmatter do agente (sufixo -orch/-build/...). O nome servido pela bridge
+        // (ex.: Gemma4-E4B-GK-Q4) nao existe no catalogo do CLI e vira
+        // "Model unavailable". So passa --model se o caller pediu explicitamente.
+        string? useModel = !string.IsNullOrWhiteSpace(model)
             ? model
             : (!string.IsNullOrWhiteSpace(agent)
-                ? AutoStandaloneModel(useAgent)
+                ? null
                 : (StandaloneModel.Length > 0 ? StandaloneModel : AutoStandaloneModel()));
         psi.ArgumentList.Add("run");
         psi.ArgumentList.Add("--standalone");   // servidor privado: nao depende do background service (evita "Timed out waiting for the background service to start")
         psi.ArgumentList.Add("--auto");         // headless: tool sem prompt de permissao (mesmo contrato do bridge)
         psi.ArgumentList.Add("--agent"); psi.ArgumentList.Add(useAgent);
-        psi.ArgumentList.Add("--model"); psi.ArgumentList.Add(useModel);
+        if (useModel is { Length: > 0 })
+        {
+            psi.ArgumentList.Add("--model"); psi.ArgumentList.Add(useModel);
+        }
         psi.ArgumentList.Add(prompt);
         Directory.CreateDirectory(psi.WorkingDirectory);
 
@@ -538,11 +543,11 @@ internal static class TestContext
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
         if (JourneyDir is { Length: > 0 } journeyDir && newIds.Length > 0)
-            RecordOpencodeJourney(journeyDir, psi.WorkingDirectory, newIds, useAgent, useModel,
+            RecordOpencodeJourney(journeyDir, psi.WorkingDirectory, newIds, useAgent, useModel ?? "",
                 prompt, outp + errp, sw.ElapsedMilliseconds, calls);
         OpencodeSessionsCleanup(psi.WorkingDirectory, before);
         // Tempo por chamada no log: cenario lento no opencode = loop do cliente.
-        Console.WriteLine($"  [opencode] {sw.Elapsed.TotalSeconds:0.0}s agent={useAgent} model={useModel} calls={calls.Count}");
+        Console.WriteLine($"  [opencode] {sw.Elapsed.TotalSeconds:0.0}s agent={useAgent} model={useModel ?? "(do agente)"} calls={calls.Count}");
         return (outp + errp, calls);
     }
 
