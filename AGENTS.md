@@ -1,5 +1,9 @@
 # AGENTS.md — como esta máquina usa o Qwen local
 
+> **Regra do usuário (2026-11-07): KISS + perguntar antes de criar.** C#/Python/shell
+> simples; menor solução que atende. Nada novo (arquivo, teste, script, classe, doc)
+> sem perguntar antes. Correção = editar o trecho, não acrescentar artefato.
+
 ## Garantia: tudo local, nada p/ nuvem
 - GPU `llama :4100`: `Qwen3.5-9B Q4_K_M` (drive persistente), ctx `159744` (156k),
   1 slot (`-np 1`), `--prio 2` → bridge `:4124` (`qwen3.5-9b`, saída `32768`).
