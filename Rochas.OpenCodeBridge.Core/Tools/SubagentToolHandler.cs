@@ -54,8 +54,11 @@ public sealed class SubagentToolHandler : IToolHandler
         // subagente rodava como "dev generico" e a role pedida (ex.: scripter,
         // que exige .sh com shebang/heredoc) nao existia no caminho bridge.
         string agentName = args["agent"]?.GetValue<string>() ?? args["subagent_type"]?.GetValue<string>() ?? "";
+        if (string.IsNullOrWhiteSpace(agentName))
+            return ToolResult.Fail("subagent: argumento 'agent' obrigatorio (nome ou parte do agente a executar); "
+                + "disponiveis: " + AgentCatalog.Describe());
         AgentSpec? agent = AgentCatalog.Resolve(agentName);
-        if (agentName.Length > 0 && agent is null)
+        if (agent is null)
             return ToolResult.Fail($"subagent: agente '{agentName}' nao existe no diretorio de agentes "
                 + $"({AgentCatalog.Dir()}); disponiveis: {AgentCatalog.Describe()}");
 
