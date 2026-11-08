@@ -323,7 +323,8 @@ internal static class E2EBeltsTests
                 string orchContent = "";
                 JsonArray tasks = new();
                 {
-                    string ask = OrchEnunciado(prompt.Replace("{ws}", ws));
+                    string ask = OrchEnunciado(prompt.Replace("{ws}", ws))
+                        + "\n\nResponda SOMENTE com o JSON array de tarefas (sem texto antes ou depois).";
                     if (TestContext.Mode == "opencode")
                     {
                         Log($"  [belt:{key}] 1/3 Orch via opencode (agent=orch)...");
