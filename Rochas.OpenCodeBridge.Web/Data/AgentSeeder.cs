@@ -11,7 +11,7 @@ public static class AgentSeeder
         double Tps, int Active, string Tools);
 
     // Snapshot da config atual: Gemma4 E4B **GK-Q4** (GGUF retreinado
-    // Gemma4-E4B-UCD-IT_Principal-GK-DS-Retrained-Q4_K_M-Imatrix) ctx 128k na GPU
+    // Gemma4-E4B-GK-Q4-Q4_K_M-Imatrix) ctx 128k na GPU
     // :4124; Gemma4 E4B UD-Q3 (GPU2, aposentada) ctx 128k em :4110/:4125; E4B Q4
     // CPU Forced em :4120/:4126. Temperaturas (2026-11-07): baixa 0.1
     // (Build/Scripter/Exec), média 0.2 (Plan/Orch), média-alta 0.4 (MoE).
@@ -122,7 +122,7 @@ public static class AgentSeeder
             UPDATE agents
             SET model = CASE model
                     WHEN 'gemma-4-12b' THEN 'Gemma4-E4B-GK-Q4'
-                    WHEN 'gemma-4-e2b' THEN 'Gemma4-E4B-Q4'
+                    WHEN 'gemma-4-e2b' THEN 'Gemma4-E4B-GK-Q4'
                     ELSE model END,
                 name = replace(replace(replace(name,
                     'Gemma4 12B', 'Gemma4 E4B'),
@@ -145,7 +145,7 @@ public static class AgentSeeder
 
     // Migração: a GPU (:4124) passou a servir o GGUF retreinado com alias
     // "Gemma4-E4B-GK-Q4". Agentes antigos apontando para :4124 com o id velho
-    // ("Gemma4-E4B-Q4") são renomeados; a linha CPU (:4126) mantém o id Q4.
+    // ("Gemma4-E4B-GK-Q4") são renomeados; a linha CPU (:4126) mantém o id Q4.
     private static void MigrateGpuModelId(SqliteConnection conn)
     {
         try
@@ -153,7 +153,9 @@ public static class AgentSeeder
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
                 UPDATE agents SET model = 'Gemma4-E4B-GK-Q4'
-                WHERE model = 'Gemma4-E4B-Q4'
+                WHERE model IN ('Gemma4-E4B-Q4', 'Gemma4-E4B-GK-Q4',
+                                'Gemma4-E4B-UCD-GK-Q4', 'Gemma4-E4B-UCD-IT_Principal-GK-DS-Retrained',
+                                'Gemma4-E4B-IT_Principal-GK-DS-Retrained')
                   AND (bridge_url LIKE '%:4124%' OR upstream_url LIKE '%:4100%');
                 """;
             cmd.ExecuteNonQuery();

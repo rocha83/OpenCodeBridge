@@ -434,7 +434,7 @@ internal static partial class Program
     /// <returns>True = coagir texto em tool_calls.</returns>
     static bool CoerceFor() => CoerceTextTools || UpstreamParser == "none";
 
-    // Perfis por sufixo no model (ex.: openai/Gemma4-E4B-Q4-plan): plan =
+    // Perfis por sufixo no model (ex.: openai/Gemma4-E4B-GK-Q4-plan): plan =
     // thinking ligado + temp media p/ planejar; build = thinking fundido +
     // temp media p/ executar; orch = coordena subagentes; moe = uso geral
     // hibrido; scripter = temp baixa (determinismo) e thinking off.
@@ -2071,7 +2071,7 @@ WriteJson(ctx, 200, new JsonObject
                     root = wsRoot;
                 }
                 // Role do pedido: 'role' explícito ou sufixo do model id (ex.:
-                // Gemma4-E4B-Q4-build => build). Sem role = política conservadora
+                // Gemma4-E4B-GK-Q4-build => build). Sem role = política conservadora
                 // (git somente leitura), como o Plan.
                 string role = req["role"]?.GetValue<string>() ?? "";
                 if (string.IsNullOrWhiteSpace(role))
@@ -2895,8 +2895,8 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         cap = 0;
         breakerTrip = null;
         breakerState = "none";
-        // O opencode manda "openai/Gemma4-E4B-Q4" mas o Llama so conhece o id
-        // servido ("Gemma4-E4B-Q4") e responde 404 p/ outro id. Por isso o
+        // O opencode manda "openai/Gemma4-E4B-GK-Q4" mas o Llama so conhece o id
+        // servido ("Gemma4-E4B-GK-Q4") e responde 404 p/ outro id. Por isso o
         // upstream SEMPRE usa o Model configurado; o id original so volta
         // como eco no campo "model" da resposta.
         requestedModel = req["model"]?.GetValue<string>() ?? Model;

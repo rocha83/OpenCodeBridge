@@ -173,7 +173,7 @@ internal static class Gate
     static string RunAgent(string repo, string prompt)
     {
         string escaped = prompt.Replace("'", "'\\''");
-        string cmd = "opencode run --standalone --thinking --auto --agent build --model openai/Gemma4-E4B-Q4-build"
+        string cmd = "opencode run --standalone --thinking --auto --agent build --model openai/Gemma4-E4B-GK-Q4-build"
             + $" '{escaped}' >> \"{LogPath()}\" 2>&1; echo \"agent exit=$?\"";
         // Log direto no arquivo (dialogo completo preservado fora do stdout).
         string marker = Guid.NewGuid().ToString("N")[..8];

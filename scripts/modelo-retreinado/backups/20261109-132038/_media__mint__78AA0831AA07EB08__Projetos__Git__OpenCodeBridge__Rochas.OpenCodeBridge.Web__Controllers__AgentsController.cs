@@ -1,0 +1,138 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Rochas.Data.Specification.Interfaces;
+using Rochas.OpenCodeBridge.Web.Models;
+
+namespace Rochas.OpenCodeBridge.Web.Controllers;
+
+// CRUD de agentes/modelos via GenericRepository. Comentarios pt-BR.
+[Authorize]
+public sealed class AgentsController(IGenericRepository<Agent> agents, IPersistenceRepository<Agent> agentsWrite) : Controller
+{
+    public async Task<IActionResult> Index(string? criteria = null, string[]? model = null, string[]? mode = null, string? thinking = null, string? active = null)
+    {
+        ViewBag.NewAgent = DefaultAgent();
+        var all = await agents.Query(new Agent());
+        ViewBag.Models = all.Select(a => a.Model ?? "").Where(s => s != "").Distinct().OrderByDescending(s => s).ToList();
+        ViewBag.Modes = all.Select(a => string.IsNullOrEmpty(a.Mode) ? "Build" : a.Mode).Distinct().OrderBy(s => s).ToList();
+        ViewBag.Criteria = criteria ?? "";
+        ViewBag.SelModels = model ?? [];
+        ViewBag.SelModes = mode ?? [];
+        ViewBag.ThinkingOn = thinking == "events";
+        ViewBag.ActiveOn = active == "1";
+        ViewBag.Total = all.Count;
+
+        // Critério: LIKE nas [Filterable] (nome, model, mode, thinking, prompt).
+        // Sem critério: Query exata na entidade (faceta única vai ao WHERE).
+        var f = new Agent();
+        if (active == "1") f.Active = true; // bool true entra no WHERE; false é ignorado
+        if ((model?.Length ?? 0) == 1) f.Model = model![0];
+        if ((mode?.Length ?? 0) == 1) f.Mode = mode![0];
+        if (thinking == "events") f.Thinking = "events";
+        IEnumerable<Agent> list = string.IsNullOrWhiteSpace(criteria)
+            ? await agents.Query(f)
+            : await agents.Search(criteria.Trim());
+        // Multi-valor e tri-state de ativo fora da entidade: interseção em memória.
+        if (active == "1") list = list.Where(a => a.Active);
+        if ((model?.Length ?? 0) > 1) list = list.Where(a => model!.Contains(a.Model ?? ""));
+        if ((mode?.Length ?? 0) > 1) list = list.Where(a => mode!.Contains(string.IsNullOrEmpty(a.Mode) ? "Build" : a.Mode));
+        return View(list.OrderByDescending(a => a.Model).ThenBy(a => a.Name).ToList());
+    }
+
+    // Preset do form "Novo agente": Build E4B GK-Q4 na GPU :4124 (temp baixa 0.1, thinking off).
+    // Catálogo cheio (`*`): a restrição é denylist (`-tool`) ou policy do role.
+    private static Agent DefaultAgent() =>
+        new() { Active = true, Model = "Gemma4-E4B-GK-Q4", BridgeUrl = "http://127.0.0.1:4124", UpstreamUrl = "http://127.0.0.1:4100", Temperature = 0.1, Thinking = "off", Tools = "*" };
+
+    // Presets do form -> tools reais (leitura=read+grep, escrita=write+edit).
+    private static string ExpandTools(string[]? selected, string? mode)
+    {
+        var want = new HashSet<string>(selected ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        // Plan nunca escreve, valida nem executa (fetch navega: fica; proc só lê: fica).
+        if (string.Equals(mode, "plan", StringComparison.OrdinalIgnoreCase)) { want.Remove("write"); want.Remove("shell"); want.Remove("exec"); }
+        // Catálogo cheio: seleção completa vira `*` (denylist), não lista de permitidas.
+        var presets = new[] { "glob", "read", "write", "git", "fetch", "proc", "shell", "exec", "subagent", "display" };
+        if (presets.All(want.Contains)) return "*";
+        var out_ = new List<string>();
+        if (want.Contains("glob")) out_.Add("glob");
+        if (want.Contains("read")) { out_.Add("read"); out_.Add("grep"); }
+        if (want.Contains("write")) { out_.Add("write"); out_.Add("edit"); }
+        foreach (var t in new[] { "git", "fetch", "proc", "shell", "exec", "subagent" }) if (want.Contains(t)) out_.Add(t);
+        if (want.Contains("display")) { out_.Add("read"); out_.Add("display"); }
+        var rank = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            { ["glob"] = 0, ["read"] = 1, ["grep"] = 2, ["git"] = 3, ["fetch"] = 4, ["display"] = 5, ["write"] = 6, ["edit"] = 7, ["proc"] = 8, ["shell"] = 9, ["exec"] = 10, ["subagent"] = 11 };
+        return string.Join(",", out_.Distinct().OrderBy(t => rank.TryGetValue(t, out int r) ? r : 99));
+    }
+
+    private bool IsAdmin => (User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User.FindFirst("IsAdmin")?.Value ?? "false").ToLower() == "true";
+
+    public IActionResult Create()
+    {
+        if (!IsAdmin) return Forbid();
+        return View(DefaultAgent());
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(Agent form, string[] selectedTools)
+    {
+        if (!IsAdmin) return Forbid();
+        Console.WriteLine($"[dbg] Name='{form.Name}' Model='{form.Model}' Bridge='{form.BridgeUrl}' Temp='{form.Temperature}' Valid={ModelState.IsValid}");
+        foreach (var kv in ModelState) foreach (var e in kv.Value.Errors) Console.WriteLine($"[dbg] {kv.Key}: {e.ErrorMessage}");
+        if (string.IsNullOrWhiteSpace(form.Name) || string.IsNullOrWhiteSpace(form.Model))
+        {
+            ViewBag.Error = "Nome e model obrigatórios.";
+            return View(form);
+        }
+        // Canônico: Plan/Build (primeira maiúscula); resto vira Build.
+        form.Mode = string.Equals(form.Mode, "plan", StringComparison.OrdinalIgnoreCase) ? "Plan" : "Build";
+        form.Thinking = string.Equals(form.Thinking, "events", StringComparison.OrdinalIgnoreCase) ? "events" : "off";
+        form.Tools = ExpandTools(selectedTools, form.Mode);
+        await agentsWrite.Add(form);
+        return RedirectToAction("Index");
+    }
+
+    public async Task<IActionResult> Edit(int id)
+    {
+        if (!IsAdmin) return Forbid();
+        var agent = await agents.Get(new Agent { Id = id });
+        if (agent is null) return RedirectToAction("Index");
+        ViewBag.List = (await agents.Query(new Agent()))
+            .OrderByDescending(a => a.Model).ThenBy(a => a.Name).ToList();
+        return View(agent);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Edit(Agent form, string[] selectedTools)
+    {
+        if (!IsAdmin) return Forbid();
+        // Nunca confia no binding integral: recarrega e aplica só os campos
+        // editáveis (preserva measured_tps e demais colunas).
+        if (form.Id is null) return RedirectToAction("Index");
+        var existing = await agents.Get(new Agent { Id = form.Id });
+        if (existing is null) return RedirectToAction("Index");
+        existing.Name = form.Name ?? "";
+        existing.Model = form.Model ?? "";
+        existing.BridgeUrl = form.BridgeUrl ?? "";
+        existing.UpstreamUrl = form.UpstreamUrl ?? "";
+        existing.Temperature = form.Temperature;
+        existing.Thinking = form.Thinking ?? "";
+        existing.SystemPrompt = form.SystemPrompt ?? "";
+        existing.Thinking = string.Equals(form.Thinking, "events", StringComparison.OrdinalIgnoreCase) ? "events" : "off";
+        existing.Mode = string.Equals(form.Mode, "plan", StringComparison.OrdinalIgnoreCase) ? "Plan" : "Build";
+        existing.Active = form.Active;
+        existing.Tools = ExpandTools(selectedTools, existing.Mode);
+        await agentsWrite.Update(existing, new Agent { Id = existing.Id });
+        return RedirectToAction("Index");
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(int id)
+    {
+        if (!IsAdmin) return Forbid();
+        await agentsWrite.Remove(new Agent { Id = id });
+        return RedirectToAction("Index");
+    }
+}

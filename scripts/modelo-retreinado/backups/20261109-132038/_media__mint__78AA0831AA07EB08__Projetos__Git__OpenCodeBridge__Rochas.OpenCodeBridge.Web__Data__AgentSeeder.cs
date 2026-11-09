@@ -1,0 +1,267 @@
+using Microsoft.Data.Sqlite;
+
+namespace Rochas.OpenCodeBridge.Web.Data;
+
+// Seed dos agentes como revisados na UI (snapshot; só insere o que falta e
+// migra ids legados mortos para a linha E4B atual — espelha o seed do admin em Program).
+public static class AgentSeeder
+{
+    private sealed record Seed(int Id, string Name, string Model, string Bridge,
+        double Temp, string Thinking, string Prompt, string Role, string Mode,
+        double Tps, int Active, string Tools);
+
+    // Snapshot da config atual: Gemma4 E4B **GK-Q4** (GGUF retreinado
+    // Gemma4-E4B-GK-Q4-Q4_K_M-Imatrix) ctx 128k na GPU
+    // :4124; Gemma4 E4B UD-Q3 (GPU2, aposentada) ctx 128k em :4110/:4125; E4B Q4
+    // CPU Forced em :4120/:4126. Temperaturas (2026-11-07): baixa 0.1
+    // (Build/Scripter/Exec), média 0.2 (Plan/Orch), média-alta 0.4 (MoE).
+    // Scripter e Exec compartilham o prompt; só o Exec tem 'exec' no harness
+    // (Scripter cria+valida com 'bash -n'; Exec valida e executa 'bash <arquivo>').
+    private static readonly Seed[] Seeds =
+    [
+        new(1, "Agente Generalista Global - MoE (GPU)", "Gemma4-E4B-GK-Q4", "http://127.0.0.1:4124",
+            0.4, "events",
+            "Voce e um agente autonomo generalista senior entende sobre todos assuntos em esfera global delega tarefas a subagentes quando entende que o contexto ficou moderado (128k), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
+            "planner", "Plan", 30.0, 1,
+            "fetch,display,subagent"),
+        new(2, "Engenheiro de Software - Plan (GPU)", "Gemma4-E4B-GK-Q4", "http://127.0.0.1:4124",
+            0.2, "events",
+            "Voce e um agente autonomo arquiteto engenheiro de software e dados (ML e NN) senior adepto das melhores praticas SOLID, design DDD clean arch e uso de ORM, delega tarefas a subagentes quando entende o contexto moderado (128k), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
+            "executor", "Plan", 30.0, 1,
+            "glob,read,grep,git,fetch,display,subagent"),
+        new(3, "Desenvolvedor de Software - Build (GPU)", "Gemma4-E4B-GK-Q4", "http://127.0.0.1:4124",
+            0.1, "off",
+            "Voce e um agente autonomo arquiteto desenvolvedor de software e dados (ML e NN) senior, executa todas as tools e implementa os artefatos e testes conforme enunciado seguindo as melhores praticas de desenvolvimento, delega tarefas a subagentes quando entende o contexto moderado (128k), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
+            "orchestrator", "Build", 30.0, 1,
+            "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec,install,subagent"),
+        new(4, "Engenheiro de Software - Orch (GPU)", "Gemma4-E4B-GK-Q4", "http://127.0.0.1:4124",
+            0.2, "events",
+            "Voce e um agente arquiteto engenheiro de software e dados (ML e NN) senior, analise o enunciado expanda o compreendido divida em fases e delegue para subagentes desenvolvedores senior (porem menor capacidade de inferencia), nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito. ",
+            "executor", "Build", 30.0, 1,
+            "glob,read,grep,git,fetch,display,subagent"),
+        new(6, "Desenvolvedor de Software - Scripter (GPU)", "Gemma4-E4B-GK-Q4", "http://127.0.0.1:4124",
+            0.1, "off",
+            "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto. Protocolo medido: um passo = uma tool call; texto intermediario o usuario nao ve — se falta tool, emita a call; so escreva apos a ultima tool, com o resumo do feito.",
+            "", "Build", 30.0, 1,
+            "glob,read,grep,git,fetch,display,write,edit,proc,shell,install"),
+        // Exec roda na GPU1 (GK-Q4, :4124). Mesmo prompt do Scripter, mas com
+        // 'Executar scripts' (exec) — valida ('bash -n') e ENTÃO executa
+        // ('bash <arquivo>'). Scripter cria+valida; Exec cria+valida+executa.
+        new(10, "Desenvolvedor de Software - Exec (GPU)", "Gemma4-E4B-GK-Q4", "http://127.0.0.1:4124",
+            0.1, "off",
+            "Voce e um agente desenvolvedor senior que constroi as solucoes enunciadas em diversas linguagens utilizando script shell linux bash ou windows .bat conforme solicitacao, os scripts devem ser interativos opcionalmente e (nao necessariamente) conter mais de um fluxo \"caminho\" tendo ao menos um como recomendado a seguir caso o usuario deseje executar o script como nao interativo, nunca se auto-apresente salvo pedido direto. Diferenca do Scripter: valide a sintaxe com 'bash -n <arquivo>' e ENTAO EXECUTE com 'bash <arquivo>', reportando a saida; se o script falhar, leia o erro, corrija e execute de novo ate passar.",
+            "", "Build", 30.0, 1,
+            "glob,read,grep,git,fetch,display,write,edit,proc,shell,exec"),
+    ];
+
+    public static void SeedIfEmpty(SqliteConnection conn)
+    {
+        foreach (var s in Seeds)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                INSERT OR IGNORE INTO agents
+                    (id, name, model, bridge_url, temperature, thinking, system_prompt, role, mode, measured_tps, active, tools)
+                VALUES
+                    (@id, @name, @model, @bridge, @temp, @thinking, @prompt, @role, @mode, @tps, @active, @tools);
+                """;
+            cmd.Parameters.AddWithValue("@id", s.Id);
+            cmd.Parameters.AddWithValue("@name", s.Name);
+            cmd.Parameters.AddWithValue("@model", s.Model);
+            cmd.Parameters.AddWithValue("@bridge", s.Bridge);
+            cmd.Parameters.AddWithValue("@temp", s.Temp);
+            cmd.Parameters.AddWithValue("@thinking", s.Thinking);
+            cmd.Parameters.AddWithValue("@prompt", s.Prompt);
+            cmd.Parameters.AddWithValue("@role", s.Role);
+            cmd.Parameters.AddWithValue("@mode", s.Mode);
+            cmd.Parameters.AddWithValue("@tps", s.Tps);
+            cmd.Parameters.AddWithValue("@active", s.Active);
+            cmd.Parameters.AddWithValue("@tools", s.Tools);
+            try { cmd.ExecuteNonQuery(); } catch { /* seed best-effort */ }
+        }
+        MigrateLegacyConfig(conn);
+        MigrateGpuModelId(conn);
+        MigrateUpstreamUrls(conn);
+        RenameQ3Agents(conn);
+        NormalizeAgentNames(conn);
+        NormalizeDelegationRules(conn);
+        PromoteRoleTemperatures(conn);
+    }
+
+    // Temperaturas por role (escala do lab 2026-11-07): plan/orch 0.2,
+    // moe 0.4, build/scripter/exec 0.1. Idempotente: roda a cada boot e só
+    // toca agentes Gemma4 E4B ativos; modelo base e agentes custom ficam intactos.
+    private static void PromoteRoleTemperatures(SqliteConnection conn)
+    {
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                UPDATE agents SET temperature = CASE
+                    WHEN name LIKE '%MoE%' THEN 0.4
+                    WHEN name LIKE '%Plan%' OR name LIKE '%Orch%' THEN 0.2
+                    WHEN name LIKE '%Build%' OR name LIKE '%Exec%' THEN 0.1
+                    WHEN name LIKE '%Scripter%' THEN 0.1
+                    ELSE temperature END
+                WHERE model LIKE 'Gemma4-E4B%' AND active = 1
+                  AND (temperature IN (0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.8));
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        catch { /* migração best-effort */ }
+    }
+
+    // Ids mortos (gemma-4-12b / gemma-4-e2b) não existem mais nas units. A linha
+    // 12B vira a GPU atual (GK-Q4, GGUF retreinado); o E2B (executor barato) vira
+    // a linha CPU Forced (E4B Q4, :4120/:4126). Escala baixa 0.1 / média 0.2 /
+    // média-alta 0.4; preserva prompts/tools/edições fora de nome/modelo/temp/ctx.
+    private static void MigrateLegacyConfig(SqliteConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            UPDATE agents
+            SET model = CASE model
+                    WHEN 'gemma-4-12b' THEN 'Gemma4-E4B-GK-Q4'
+                    WHEN 'gemma-4-e2b' THEN 'Gemma4-E4B-GK-Q4'
+                    ELSE model END,
+                name = replace(replace(replace(name,
+                    'Gemma4 12B', 'Gemma4 E4B'),
+                    'Gemma4 E2B', 'Gemma4 E4B'),
+                    'Gemma4 E4B Q3', 'Gemma4 E4B UD-Q3'),
+                temperature = CASE
+                    WHEN name LIKE '%MoE%' THEN 0.4
+                    WHEN name LIKE '%Plan%' OR name LIKE '%Orch%' THEN 0.2
+                    WHEN name LIKE '%Build%' OR name LIKE '%Exec%' THEN 0.1
+                    WHEN name LIKE '%Scripter%' THEN 0.1
+                    ELSE 0.1 END,
+                system_prompt = replace(replace(replace(system_prompt,
+                    '(192k)', '(128k)'),
+                    '(160k)', '(128k)'),
+                    '(80k)', '(128k)')
+            WHERE model IN ('gemma-4-12b', 'gemma-4-e2b');
+            """;
+        try { cmd.ExecuteNonQuery(); } catch { /* migração best-effort */ }
+    }
+
+    // Migração: a GPU (:4124) passou a servir o GGUF retreinado com alias
+    // "Gemma4-E4B-GK-Q4". Agentes antigos apontando para :4124 com o id velho
+    // ("Gemma4-E4B-GK-Q4") são renomeados; a linha CPU (:4126) mantém o id Q4.
+    private static void MigrateGpuModelId(SqliteConnection conn)
+    {
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                UPDATE agents SET model = 'Gemma4-E4B-GK-Q4'
+                WHERE model IN ('Gemma4-E4B-Q4', 'Gemma4-E4B-GK-Q4',
+                                'Gemma4-E4B-UCD-GK-Q4', 'Gemma4-E4B-UCD-IT_Principal-GK-DS-Retrained',
+                                'Gemma4-E4B-IT_Principal-GK-DS-Retrained')
+                  AND (bridge_url LIKE '%:4124%' OR upstream_url LIKE '%:4100%');
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        catch { /* migração best-effort */ }
+    }
+
+    // Migração: UD-Q3 é a linha GPU2 (:4110/:4125), não CPU. O CPU Forced é
+    // Q4 em :4120/:4126. Corrige nomes antigos ("CPU") sem tocar no prompt.
+    private static void RenameQ3Agents(SqliteConnection conn)
+    {
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                UPDATE agents SET name = replace(name, ' UD-Q3 CPU', ' UD-Q3 GPU2')
+                WHERE model LIKE '%UD-Q3%' AND name LIKE '% UD-Q3 CPU%';
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        catch { /* migração best-effort */ }
+    }
+
+
+    // Migração de nomes: remove o sufixo redundante do modelo e mantém só a
+    // linha (GPU)/(GPU2). Roda depois de RenameQ3Agents.
+    private static void NormalizeAgentNames(SqliteConnection conn)
+    {
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                UPDATE agents
+                SET name = replace(replace(replace(name,
+                    ' - Gemma4 E4B UD-Q3 GPU2', ' (GPU2)'),
+                    ' - Gemma4 E4B GK-Q4 GPU', ' (GPU)'),
+                    ' - Gemma4 E4B Q4 GPU', ' (GPU)')
+                WHERE name LIKE '% - Gemma4 E4B %';
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        catch { /* migração best-effort */ }
+    }
+
+    // Migração: o caminho Web fala DIRETO com o llama (núcleo in-process).
+    // upstream_url vazio recebe o servidor do modelo (Q3 :4110, resto :4100);
+    // bridge_url volta ao par canônico do OpenCode (4124/4125), sem 4131/4132.
+    private static void MigrateUpstreamUrls(SqliteConnection conn)
+    {
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                UPDATE agents SET upstream_url = CASE
+                    WHEN model LIKE '%UD-Q3%' THEN 'http://127.0.0.1:4110'
+                    ELSE 'http://127.0.0.1:4100' END
+                WHERE upstream_url IS NULL OR upstream_url = '';
+                UPDATE agents SET bridge_url = 'http://127.0.0.1:4124'
+                WHERE bridge_url = 'http://127.0.0.1:4131';
+                UPDATE agents SET bridge_url = 'http://127.0.0.1:4125'
+                WHERE bridge_url = 'http://127.0.0.1:4132';
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        catch { /* migração best-effort */ }
+    }
+
+    // Regra unica de delegacao (vale para seed novo e DB existente):
+    //  - MoE e CHAT-ONLY: so fetch/display/subagent (sem disco, sem git, sem shell);
+    //  - todos os demais ganham 'subagent' (inclusive Exec/Scripter);
+    //  - todo agente recebe a clausula de delegacao a 90% do contexto.
+    private static void NormalizeDelegationRules(SqliteConnection conn)
+    {
+        const string clause = " DELEGACAO POR CONTEXTO (obrigatoria): quando o contexto desta sessao atingir 90% da janela, nao continue a tarefa no mesmo fio: divida o restante em sub-tarefas atomicas e delegue via tool subagent, uma por chamada, com micro-enunciado OBJETIVO + ESCOPO + PROIBIDO + ACEITE. Delegue SOMENTE para subagentes do seu proprio role e da sua propria familia de modelo. Agregue os resultados, re-execute o ACEITE e conclua com o resumo.";
+        // EXCECAO ORCH: a clausula generica acima ("somente mesmo role/familia")
+        // contradiz a regra do Orch, que e' o UNICO role que delega para OUTRO role
+        // (o Scripter, de menor capacidade) — a permissao do agente ja' limita
+        // subagent a resource "scripter". Sem esta excecao o Orch tentaria delegar
+        // para outro Orch e a cadeia Orch -> Scripter quebra.
+        const string orchClause = " DELEGACAO POR CONTEXTO (obrigatoria): quando o contexto desta sessao atingir 90% da janela, nao continue a tarefa no mesmo fio: divida o restante em sub-tarefas atomicas e delegue via tool subagent, uma por chamada, com micro-enunciado OBJETIVO + ESCOPO + PROIBIDO + ACEITE. EXCECAO ORCH: o Orch NAO executa a tarefa nem delega para outro Orch — segmenta e delega OBRIGATORIAMENTE ao role Scripter (menor modelo) via tool subagent, uma chamada por tarefa. Agregue os resultados, re-execute o ACEITE e conclua com o resumo.";
+        const string moeRule = " MODO CHAT: nao acessa disco (sem read/glob/grep/git/shell), apenas internet (fetch) e subagentes do proprio role.";
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                DELETE FROM agents WHERE name LIKE '%(CPU Forced)%';
+                UPDATE agents SET tools = 'fetch,display,subagent' WHERE name LIKE '%MoE%';
+                UPDATE agents SET tools = tools || ',subagent'
+                 WHERE name NOT LIKE '%MoE%' AND tools NOT LIKE '%subagent%';
+                UPDATE agents SET system_prompt = system_prompt || @moe
+                 WHERE name LIKE '%MoE%' AND system_prompt NOT LIKE '%MODO CHAT%';
+                -- Orch: corta qualquer versao da clausula generica (incompativel com a
+                -- excecao Orch->Scripter) e grava a excecao. Idempotente: o corte tira
+                -- tambem a propria excecao, que e' regravada logo abaixo.
+                UPDATE agents SET system_prompt = substr(system_prompt, 1, instr(system_prompt, ' DELEGACAO POR CONTEXTO') - 1)
+                 WHERE name LIKE '%Orch%' AND instr(system_prompt, ' DELEGACAO POR CONTEXTO') > 0;
+                UPDATE agents SET system_prompt = system_prompt || @orch
+                 WHERE name LIKE '%Orch%' AND system_prompt NOT LIKE '%EXCECAO ORCH%';
+                UPDATE agents SET system_prompt = system_prompt || @clause
+                 WHERE name NOT LIKE '%Orch%' AND system_prompt NOT LIKE '%DELEGACAO POR CONTEXTO%';
+                """;
+            cmd.Parameters.AddWithValue("@moe", moeRule);
+            cmd.Parameters.AddWithValue("@clause", clause);
+            cmd.Parameters.AddWithValue("@orch", orchClause);
+            cmd.ExecuteNonQuery();
+        }
+        catch { /* migracao best-effort */ }
+    }
+}

@@ -1,0 +1,36 @@
+{
+  "_comment": "Perfis Plan 0.2/events + Build 0.1/off + Orch 0.2/events + MoE 0.4/events + Scripter 0.1/off (escala baixa 0.1, media 0.2, alta 0.4; espelhada do opencode.json). Porta/upstream/model vem da CLI dos units. maxTokens 0 = SEM TETO: a infra/llama controla a saida (-c/--n-predict) e o cliente decide via max_tokens.",
+  "thinking": "events",
+  "temperature": 0.2,
+  "maxTokens": 0,
+  "toolOutputLimit": 0,
+  "logPath": "/tmp/bridge-gpu.log",
+  "profiles": {
+    "plan": {
+      "temperature": 0.2,
+      "thinking": "events"
+    },
+    "build": {
+      "temperature": 0.1,
+      "thinking": "off"
+    },
+    "orch": {
+      "temperature": 0.2,
+      "thinking": "events"
+    },
+    "moe": {
+      "temperature": 0.4,
+      "thinking": "events"
+    },
+    "scripter": {
+      "temperature": 0.1,
+      "thinking": "off"
+    }
+  },
+  "port": 4124,
+  "upstream": "http://127.0.0.1:4100",
+  "model": "Gemma4-E4B-GK-Q4",
+  "contextGuard": { "enabled": true, "threshold": 0.95, "contextTokens": 131072 },
+  "apiKey": "guest@123",
+  "passthroughResponses": true
+}

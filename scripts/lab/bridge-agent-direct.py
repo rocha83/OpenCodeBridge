@@ -27,7 +27,7 @@ from pathlib import Path
 
 BRIDGE = "http://127.0.0.1:4124"
 KEY = "guest@123"
-MODEL = "Gemma4-E4B-GK-Q4"
+MODEL = "Gemma4-E4B-UCD-GK-Q4"
 
 # Guarda do piloto (mesma ideia da belt do mini-bridge-python): comando
 # destrutivo nao roda, volta como FAIL para o modelo.

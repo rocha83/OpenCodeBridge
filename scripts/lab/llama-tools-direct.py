@@ -25,7 +25,7 @@ from pathlib import Path
 
 URL = "http://127.0.0.1:4100/v1/chat/completions"
 KEY = "guest@123"
-MODEL = "Gemma4-E4B-GK-Q4"
+MODEL = "Gemma4-E4B-UCD-GK-Q4"
 
 # Dashboard (Grafana -> Infinity -> bridge). O script publica sonda e veredito
 # nos mesmos endpoints que o driver de teste usa; os paineis ja' existem.

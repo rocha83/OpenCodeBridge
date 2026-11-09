@@ -1,0 +1,17 @@
+apiVersion: 1
+
+# Grafana lendo o collector DIRETO (JSON em memoria), sem TSDB no meio.
+# O observer vive no collector.py; a rodada so vai para o disco no dump.
+datasources:
+  - name: llama-collector
+    type: yesoreyeram-infinity-datasource
+    uid: llama-json
+    access: proxy
+    url: http://127.0.0.1:4199
+    isDefault: true
+    editable: true
+    jsonData:
+      auth_method: none
+      allowedHosts:
+        - http://127.0.0.1:4199
+      global_queries: []

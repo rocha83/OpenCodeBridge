@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+# Bateria WAR pelo TUNEL: opencode -> collector :4199 -> llama :4100.
+# So enunciados: nenhuma dependencia de harness externo.
+#   tools : casos que EXIGEM ferramenta (tools-full, mission-tools, belts azul/verde)
+#           -> agent 'tools', permissao completa, prompt original do CLI.
+#   ent   : sequencia Plan de conhecimento (produto/customer/saleinvoice/worker/
+#           redis/bus/erp/dashboard) em TEXTO puro, sem tool -> agent 'plan'.
+# Uso: ./battery-war.sh <chat|responses> <tools|ent> [caso ...]
+set -uo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+PROTO="${1:-chat}"; MODO="${2:-tools}"
+[ $# -ge 2 ] && shift 2 || shift $#
+CASES=("$@")
+ROOT="/tmp/opencode/llama-pure"
+WS="$ROOT/war-$MODO-$PROTO"
+LLAMA="${LLAMA:-http://127.0.0.1:4199}"
+MODEL="llamapure/Gemma4-E4B-GK-Q4"                 # plan: thinking ON, temp 0.2
+MODEL_BUILD="llamapure/Gemma4-E4B-GK-Q4-nothink"  # build/tools: thinking OFF, temp 0.1
+LOG="$ROOT/war-$MODO-$PROTO.log"
+START=$(date +%s)
+# Observer em memoria: zera a rodada no coletor e so grava no fim (dump).
+COLLECTOR="${COLLECTOR:-http://127.0.0.1:4199}"
+curl -s -m 3 -X POST "$COLLECTOR/api/reset" >/dev/null 2>&1 || true
+pass=0; fail=0
+export GIT_AUTHOR_NAME="war" GIT_AUTHOR_EMAIL="war@local"
+export GIT_COMMITTER_NAME="war" GIT_COMMITTER_EMAIL="war@local"
+CASE_DIR="$WS"
+
+AGENTS_FILE="${HOME}/.config/opencode/AGENTS.md"
+restore_agents() { [ -f "${AGENTS_FILE}.battery-bak" ] && mv "${AGENTS_FILE}.battery-bak" "$AGENTS_FILE"; }
+if [ -f "$AGENTS_FILE" ]; then mv "$AGENTS_FILE" "${AGENTS_FILE}.battery-bak"; fi
+tempo_final() { [ -n "${CASE_NAME:-}" ] && tempo_caso "$CASE_NAME"; }
+trap 'restore_agents; tempo_final' EXIT INT TERM
+
+case "$PROTO" in
+  chat)      PKG="@opencode/ai/providers/openai-compatible" ;;
+  responses) PKG="@opencode/ai/providers/openai" ;;
+  *) echo "protocolo invalido: $PROTO (chat|responses)" >&2; exit 2 ;;
+esac
+case "$MODO" in tools|ent) ;; *) echo "modo invalido: $MODO (tools|ent)" >&2; exit 2 ;; esac
+
+rm -rf "$WS"; mkdir -p "$WS"
+
+cat > "$WS/opencode.json" <<JSON
+{
+  "\$schema": "https://opencode.ai/config.json",
+  "experimental": { "subagent_depth": 3 },
+  "providers": {
+    "llamapure": {
+      "name": "Llama pure",
+      "package": "$PKG",
+      "settings": { "baseURL": "$LLAMA/v1", "apiKey": "guest@123" },
+      "models": {
+        "Gemma4-E4B-GK-Q4": {
+          "name": "Gemma4 E4B GK (plan: thinking on, temp 0.2)",
+          "tool_call": true,
+          "body": { "temperature": 0.2, "chat_template_kwargs": { "enable_thinking": true } },
+          "limit": { "context": 131072, "output": 16384 }
+        },
+        "Gemma4-E4B-GK-Q4-nothink": {
+          "name": "Gemma4 E4B GK (build: thinking off, temp 0.1)",
+          "tool_call": true,
+          "body": { "temperature": 0.1, "chat_template_kwargs": { "enable_thinking": false } },
+          "limit": { "context": 131072, "output": 16384 }
+        }
+      }
+    }
+  },
+  "model": "$MODEL",
+  "agents": {
+    "tools": {
+      "description": "Trilha build: permissao completa, prompt original do CLI",
+      "mode": "primary",
+      "model": "$MODEL_BUILD",
+      "steps": 60
+    },
+    "build": {
+      "description": "Build: executa micro-enunciados com tools, thinking off temp 0.1",
+      "mode": "all",
+      "model": "$MODEL_BUILD",
+      "steps": 60
+    },
+    "scripter": {
+      "description": "Scripter: compoe scripts shell/bash e construtores de artefatos; valida com bash -n, nao executa",
+      "mode": "all",
+      "model": "$MODEL_BUILD",
+      "steps": 60,
+      "system": "Voce e o Scripter. Escreva os scripts shell/bash e os construtores de artefatos pedidos, completos e sem placeholder. Codigo C# vai SEMPRE em arquivo .cs (nunca .csx, nunca dentro do .csproj); DDL vai em .sql. Valide cada script com 'bash -n arquivo.sh' e corrija ate passar. NAO execute os scripts (sem bash arquivo.sh, sem dotnet run): apenas crie os arquivos e valide a sintaxe. Responda so com tool calls."
+    },
+    "orch": {
+      "description": "Orch: planeja, delega ao subagente build e verifica o aceite, thinking on temp 0.2",
+      "mode": "primary",
+      "model": "$MODEL",
+      "steps": 60,
+      "permissions": [ { "action": "subagent", "resource": "*", "effect": "deny" },
+                       { "action": "subagent", "resource": "scripter", "effect": "allow" },
+                       { "action": "edit", "resource": "*", "effect": "deny" },
+                       { "action": "shell", "resource": "*", "effect": "deny" },
+                       { "action": "execute", "resource": "*", "effect": "deny" } ]
+    },
+    "plan": {
+      "description": "Plan: artefato em texto, sem tools",
+      "mode": "primary",
+      "model": "$MODEL",
+      "steps": 2,
+      "capabilities": { "tools": false },
+      "system": "Voce e um arquiteto e engenheiro de software senior. Entregue o artefato COMPLETO em texto, sem placeholders, sem elipses e sem tool calls: nao existe ferramenta nesta sessao. Responda em portugues, direto, sem narrar plano.",
+      "permissions": [ { "action": "*", "resource": "*", "effect": "deny" } ]
+    }
+  }
+}
+JSON
+
+run_agent() {
+  local agent="$1" prompt="$2" secs="${3:-900}"
+  # plan pensa (temp 0.2); build/tools com tools nao pensa (temp 0.1)
+  local model="$MODEL_BUILD"
+  case "$agent" in plan|orch) model="$MODEL" ;; esac
+  local t0=$(date +%s)
+  (cd "$CASE_DIR" && timeout "$secs" opencode run --standalone --auto \
+     --agent "$agent" --model "$model" "$prompt") > "$CASE_DIR/.last.txt" 2>&1
+  local dur=$(( $(date +%s) - t0 ))
+  # Tempo e referencia de COMPORTAMENTO (nao corta nada): muito acima = possivel laco.
+  if [ "$dur" -gt "${EXPECT:-300}" ]; then
+    echo "(run $agent: ${dur}s > referencia ${EXPECT}s = SUSPEITO, possivel laco)"
+  else
+    echo "(run $agent: ${dur}s, referencia ${EXPECT}s)"
+  fi
+  tail -8 "$CASE_DIR/.last.txt"
+}
+
+tempo_caso() {
+  local dur=$(( $(date +%s) - ${CASE_T0:-$(date +%s)} ))
+  if grep -q 'MSB1008' "$CASE_DIR/.last.txt" 2>/dev/null; then
+    echo "AVISO [$1]: modelo passou .cs ao dotnet build (MSB1008)"
+  fi
+  if [ "$dur" -gt "${EXPECT:-300}" ]; then
+    echo "TEMPO [$1]: ${dur}s (referencia <=${EXPECT}s) SUSPEITO: possivel laco"
+  else
+    echo "TEMPO [$1]: ${dur}s (referencia <=${EXPECT}s) ok"
+  fi
+}
+
+new_case() {
+  [ -n "${CASE_NAME:-}" ] && tempo_caso "$CASE_NAME"
+  CASE_NAME="$1"; CASE_T0=$(date +%s)
+  case "$1" in
+    mission-tools) EXPECT=300 ;;   # referencia: < 5 min
+    *)             EXPECT=480 ;;   # referencia: < 8 min
+  esac
+  CASE_DIR="$WS/$1"; rm -rf "$CASE_DIR"; mkdir -p "$CASE_DIR"
+  cp "$WS/opencode.json" "$CASE_DIR/opencode.json"
+}
+
+clean_nested() { find "$1" -mindepth 2 -type d \( -name obj -o -name bin \) -prune -exec rm -rf {} + 2>/dev/null; }
+build_err() { clean_nested "$1"; ( cd "$1" || return 1; p="$(ls *.csproj 2>/dev/null | head -1)"; if [ -n "$p" ]; then dotnet build "$p" -v q 2>&1 | grep -m3 -E ': error '; else dotnet build -v q 2>&1 | grep -m3 -E ': error '; fi ); }
+build_rc()  { clean_nested "$1"; ( cd "$1" || return 1; p="$(ls *.csproj 2>/dev/null | head -1)"; if [ -n "$p" ]; then dotnet build "$p" -v q >/dev/null 2>&1; else dotnet build -v q >/dev/null 2>&1; fi ); }
+
+check() {
+  if eval "$2"; then echo "RESULTADO [$1]: PASS"; pass=$((pass+1));
+  else echo "RESULTADO [$1]: FAIL"; fail=$((fail+1)); fi
+}
+
+quer() { [ -z "${CASES[*]:-}" ] && return 0; local c; for c in "${CASES[@]}"; do [ "$c" = "$1" ] && return 0; done; return 1; }
+
+P_TF1="$(cat <<'EOT'
+Trabalhe na pasta atual, que ja tem um projeto console em C# chamado App.csproj com o app. O codigo esta no arquivo Program.cs na raiz desta pasta (nao crie subpasta nem outro projeto). Compile e execute com o dotnet e confirme a mensagem exibida. O Program.cs deve exibir exatamente Hello World, com a linha Console.WriteLine("Hello World"); — nao troque a capitalizacao nem reescreva o arquivo com outra mensagem. Inicialize um repositorio git nesta mesma pasta, adicione os arquivos e faca o commit com a mensagem 'hello world console' (git commit -m 'hello world console'); confirme com git log. A ULTIMA tool call da resposta deve ser o commit: nao encerre antes do repositorio ter o commit. Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.
+EOT
+)"
+P_TF2="$(cat <<'EOT'
+Na pasta atual existe um app console em C# (App.csproj) que exibe Hello World, ja compilado e commitado. O codigo esta no arquivo Program.cs na raiz desta pasta. Nao escreva codigo C# dentro de App.csproj (ele e o XML do projeto; codigo so no Program.cs). Leia esse arquivo e troque a mensagem exibida para Hello World v2, mantendo o resto do programa: a linha deve ficar Console.WriteLine("Hello World v2"); (mesma capitalizacao). Recompile e execute de novo, confirmando a nova mensagem na saida. Adicione a mudanca e faca o commit com a mensagem 'hello world v2'; confirme com git log. A ULTIMA tool call da resposta deve ser o commit. Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.
+EOT
+)"
+P_MT="$(cat <<EOT
+Em $WS/mission-tools/mcs existe o projeto mcs.csproj. Escreva Program.cs para calcular e imprimir, um valor por linha e sem rotulos, tres numeros inteiros: o fatorial de 10; o maximo divisor comum de 1071 e 462; e quantos numeros primos existem de 1 a 50. O programa tem que compilar e rodar com \`dotnet run --project $WS/mission-tools/mcs/mcs.csproj\` sem erro e imprimir exatamente esses tres numeros, nessa ordem (calcule, nao copie os numeros). Responda somente com tool calls, sem prosa.
+EOT
+)"
+P_AZUL="$(cat <<'EOT'
+Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Aja com tool calls, uma por vez; nao narre plano nem repita o enunciado. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie um arquivo de projeto com nome (ex.: Reembolsos.csproj, net10.0, nao .csproj sem nome) e os .cs com implementacao efetiva (classes concretas com logica real, nao apenas especificacao de interfaces), interfaces e repositorios; compilar usando dotnet build ate rc=0. Persistencia com Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 — versoes EXATAS do cache NuGet local, use essas versoes no PackageReference; nao use EF Core.
+EOT
+)"
+P_VERDE="$(cat <<'EOT'
+Implemente o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ. Escopo: dominio + banco SQL. Premissas: backend .NET C#. Aja com tool calls, uma por vez; nao narre plano nem repita o enunciado. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie um .csproj com nome (ex.: Dominio.csproj, net10.0, nao .csproj sem nome) e os .cs com implementacao efetiva (classes concretas com logica real, nao apenas interfaces) e os .sql (DDL); compilar usando dotnet build ate rc=0. Dominio POCO sem atributos de ORM (sem [Table], sem EF Core): o SQL vai nos arquivos .sql.
+EOT
+)"
+
+SUF=" Implementacao completa, sem placeholders. ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS."
+P_PROD="C# .NET 9 Minimal API + Dapper + Postgres: CRUD completo de Product (Id, Name, Price, Stock). Entregue: DDL da tabela, GET /api/products (lista), GET /api/products/{id} (404 se ausente), POST (400 se Name vazio ou Price <= 0), PUT (404 se ausente) e DELETE (204), com log por operacao. Entregue o codigo completo + 3 bullets de borda.$SUF"
+P_CUST="C# .NET 9 Minimal API + Dapper + Postgres: CRUD de Customer (Id, Name, Email, CreatedAt). Entregue: GET /api/customers com paginacao SQL usando LIMIT ? OFFSET ? (?page, ?pageSize, max 100) e filtro ?q por nome/email (ILIKE), POST rejeitando email duplicado pela constraint UNIQUE(email) respondendo 409 (Results.Conflict) e email invalido respondendo 400, PUT e DELETE com 404, indice no email. So codigo + 3 bullets de borda.$SUF"
+P_SALE="C# .NET 9 + Dapper + Postgres: POST /api/saleinvoices cria SaleInvoice (header: CustomerId, Date) + Items (detail: ProductId, Qty, UnitPrice) em UMA transacao (BEGIN/COMMIT/ROLLBACK): total = soma(Qty*UnitPrice), valida estoque suficiente de cada produto (409 se faltar, com rollback total) e da baixa no estoque no mesmo commit. GET /api/saleinvoices/{id} retorna header + items. Entregue o codigo COMPLETO: DDL das 2 tabelas + o handler POST inteiro (BeginTransaction/Commit/Rollback) + o SELECT do GET; nao resuma nem use elipses. Mostre tambem o que acontece se o 3o item estourar o estoque. So codigo + 3 bullets.$SUF"
+P_WORKER="C# .NET 9 + Postgres: entregue UMA classe OutboxWorker que HERDA BackgroundService (Microsoft.Extensions.Hosting) e sobrescreve protected override async Task ExecuteAsync(CancellationToken stoppingToken): drena a tabela outbox (payload jsonb) em lote de 50 a cada 5s, publica no barramento com retry exponencial + jitter (max 5 tentativas, depois dead-letter), passa o stoppingToken em TODO await (stop gracioso sem perder a mensagem da vez) e registra throughput no log a cada minuto. NAO use loop proprio em classe IAsyncDisposable nem Task.Run solto: o host controla o ciclo de vida. Entregue o worker completo + DDL da dead-letter. So codigo + 3 bullets.$SUF"
+P_REDIS="C# .NET 9 + Redis (StackExchange.Redis): repositorio ProductRepository com cache-aside (IDistributedCache, sliding 5min): GetAsync le do cache, em miss cai no Postgres (Dapper) e repopula; SetAsync e DeleteAsync do repositorio INVALIDAM a chave com cache.RemoveAsync; stampede controlado por lock por chave e circuit-breaker simples (3 falhas) quando o Redis cai. Entregue SO O BLOCO (1): a classe do repositorio COMPLETA (usings, construtor, GetAsync, SetAsync, DeleteAsync com RemoveAsync, lock e breaker) + 3 bullets do que acontece quando o Redis esta fora.$SUF"
+P_DI_HEAD="CONTINUACAO do step anterior. O bloco (1) ja esta pronto (repositorio ProductRepository com IDistributedCache e cache.RemoveAsync) e vai abaixo como CONTEXTO — NAO reescreva, NAO repita e NAO resuma esse repositorio. Entregue SO O BLOCO (2): o trecho de Program.cs de uma Minimal API .NET 9 que registra Redis e repositorio no DI, exatamente com builder.Services.AddStackExchangeRedisCache(options => { options.Configuration = builder.Configuration.GetConnectionString(\"Redis\"); options.InstanceName = \"ProductCache:\"; }) e builder.Services.AddScoped<IProductRepository, ProductRepository>(); (o construtor recebe IDistributedCache e a connection string do Postgres). Formato: comecar a resposta com \`\`\`csharp e a linha var builder = WebApplication.CreateBuilder(args);, sem explicacao antes do codigo, e terminar com 3 bullets de configuracao/ambiente (ConnectionStrings:Redis, InstanceName, Redis fora).$SUF"
+P_DASH="React 19 + TS + Tailwind: Dashboard que consome GET /api/saleinvoices?days=30 do ASP.NET e exibe: 3 cards (faturamento, ticket medio, itens vendidos), grafico de barras por dia (SVG proprio, sem lib), tabela das 10 maiores notas com link p/ detalhe, skeleton durante load, erro com retry por widget independente e AbortController no filtro de periodo. Entregue o codigo .tsx completo + 3 bullets.$SUF"
+P_BUS="C# .NET 9 + Dapper: endpoint POST /api/schedule publica Clinic.Schedule no barramento via outbox transacional (mesma transacao do INSERT). Desenhe: tabela outbox (colunas), publisher em background com retry exponencial + jitter, consumidor idempotente por message-id (tabela processed_messages), e o que acontece quando o broker cai por 10 minutos. Responda em bullets curtos + DDL da outbox.$SUF"
+P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e min(desconto_pedido, teto_categoria) e imposto incide sobre (base - desconto) com aliquota por UF, exceto itens isentos (NCM inicia com 8471). Dê: funcao pura em C# ou Python + tabela com 4 casos de borda (desconto acima do teto, UF sem aliquota, item isento, base zero) e o valor esperado de cada um.$SUF"
+
+{ if [ "$MODO" = tools ]; then
+
+  if quer tools-full; then
+    new_case tools-full
+    ( cd "$CASE_DIR" && dotnet new console -n App -o . --force >/dev/null 2>&1
+      printf 'Console.WriteLine("Hello World");\n' > Program.cs )
+    echo "----- [tools-full:create]"; run_agent tools "$P_TF1" 900
+    check tools-full-create "[ -f '$CASE_DIR/App.csproj' ] && grep -qi 'hello world' '$CASE_DIR/Program.cs' && (cd '$CASE_DIR' && git log --format=%s 2>/dev/null | grep -qi 'hello world console')"
+    echo "----- [tools-full:adjust]"; run_agent tools "$P_TF2" 900
+    check tools-full-adjust "grep -q 'Hello World v2' '$CASE_DIR/Program.cs' && [ \$(cd '$CASE_DIR' && git log --oneline | wc -l) -ge 2 ] && (cd '$CASE_DIR' && git log --format=%s | grep -qi 'hello world v2') && (cd '$CASE_DIR' && dotnet build App.csproj -v q >/dev/null 2>&1)"
+    check tools-full-run "( cd '$CASE_DIR' && dotnet run --project App.csproj -v q 2>&1 | grep -qi 'hello world v2' )"
+  fi
+
+  if quer mission-tools; then
+    new_case mission-tools; mkdir -p "$CASE_DIR/mcs"
+    ( cd "$CASE_DIR/mcs" && dotnet new console -n mcs -o . --force >/dev/null 2>&1 )
+    echo "----- [mission-tools] (build)"; run_agent build "$P_MT" 900
+    nums="$( cd "$CASE_DIR/mcs" && dotnet run --project mcs.csproj 2>/dev/null | grep -E '^-?[0-9]+$' | head -3 | tr '\n' ' ' )"
+    [ "$nums" = "3628800 21 15 " ] || echo "(aceite: nums='$nums')"
+    check mission-tools "[ '$nums' = '3628800 21 15 ' ]"
+    check mission-tools-hardcode "! grep -rq --include='*.cs' '3628800' '$CASE_DIR'"
+  fi
+
+  for belt in azul verde; do
+    quer "belts-$belt" || continue
+    if [ "$belt" = azul ]; then P="$P_AZUL"; else P="$P_VERDE"; fi
+    AG=build  # belts sao trabalho de implementacao: build faz sozinho ou chama subagent build
+    new_case "belts-$belt"
+    echo "----- [belts-$belt] ($AG)"; run_agent "$AG" "$P" 1800
+    proj="$(find "$CASE_DIR" -maxdepth 2 -name '*.csproj' ! -path '*/obj/*' 2>/dev/null | head -1)"
+    rc=1; [ -n "$proj" ] && { build_rc "$(dirname "$proj")"; rc=$?; }
+    if [ $rc -ne 0 ] && [ -n "$proj" ]; then
+      echo "(build rc=$rc: $(build_err "$(dirname "$proj")" | head -1))"
+    fi
+    check "belts-$belt" "[ $rc -eq 0 ] && grep -rqiE 'reembolso|reimbursement' '$CASE_DIR' --include='*.cs'"
+    if [ "$belt" = verde ]; then check belts-verde-sql "find '$CASE_DIR' -name '*.sql' | grep -q ."; fi
+  done
+
+else
+
+  ent_case() {
+    local id="$1" p="$2" extra="${3:-true}"
+    quer "$id" || return 0
+    CASE_DIR="$WS"
+    echo "----- [$id]"; run_agent plan "$p" 600
+    cp "$CASE_DIR/.last.txt" "$WS/$id.txt"
+    check "$id" "[ \$(wc -c < '$WS/$id.txt' ) -gt 400 ] && ! grep -qE 'NotImplementedException|TODO[[:space:]:]' '$WS/$id.txt' && $extra"
+  }
+
+  ent_case crud-product "$P_PROD" "grep -qE 'MapPost|HttpPost' '$WS/crud-product.txt'"
+  ent_case crud-customer "$P_CUST" "grep -qiE 'LIMIT|OFFSET|pageSize' '$WS/crud-customer.txt' && grep -qE '409|Conflict' '$WS/crud-customer.txt'"
+  ent_case crud-saleinvoice "$P_SALE" "grep -qiE 'BeginTransaction|Transaction' '$WS/crud-saleinvoice.txt' && grep -qiE 'Items|ProductId' '$WS/crud-saleinvoice.txt'"
+  ent_case worker "$P_WORKER" "grep -q 'BackgroundService' '$WS/worker.txt' && grep -q 'ExecuteAsync' '$WS/worker.txt'"
+  ent_case redis-cache "$P_REDIS" "grep -qE 'IDistributedCache|ConnectionMultiplexer' '$WS/redis-cache.txt' && grep -qE 'RemoveAsync|Remove\(|KeyDelete' '$WS/redis-cache.txt'"
+  if quer redis-di; then
+    ctx="$(cat "$WS/redis-cache.txt" 2>/dev/null)"
+    ent_case redis-di "REPOSITORIO DO STEP ANTERIOR (bloco 1, CONTEXTO)
+$ctx
+FIM DO CONTEXTO.
+
+$P_DI_HEAD" "grep -qE 'AddStackExchangeRedisCache|AddDistributedRedisCache|IConnectionMultiplexer' '$WS/redis-di.txt' && grep -q 'AddScoped' '$WS/redis-di.txt'"
+  fi
+  ent_case bus "$P_BUS" "grep -qi 'outbox' '$WS/bus.txt' && grep -qi 'idempotente' '$WS/bus.txt'"
+  ent_case erp "$P_ERP" "grep -q '8471' '$WS/erp.txt'"
+  ent_case dashboard "$P_DASH" "grep -q 'AbortController' '$WS/dashboard.txt' && grep -qE 'useEffect|useLayoutEffect' '$WS/dashboard.txt'"
+
+fi
+  echo "== RESUMO: PASS=$pass FAIL=$fail  (log: $LOG)"
+} 2>&1 | tee "$LOG"
+
+curl -s -m 10 -X POST "$COLLECTOR/api/dump" >/dev/null 2>&1 || true
+
+python3 "$HERE/report.py" --since "$START" --proto "$PROTO" --log "$LOG" \
+  --title "Bateria WAR ($MODO) - opencode -> llama (tunel)" --out-dir "$HERE/reports"
+
+
+

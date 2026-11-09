@@ -1,0 +1,505 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "providers": {
+    "openai": {
+      "api": "openai-chat",
+      "settings": {
+        "baseURL": "http://127.0.0.1:4124/v1",
+        "apiKey": "guest@123"
+      },
+      "models": {
+        "Gemma4-E4B-GK-Q4": {
+          "name": "Gemma4 E4B GK-Q4 GPU",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.3
+        },
+        "Gemma4-E4B-GK-Q4-plan": {
+          "name": "Gemma4 E4B GK-Q4 — Plan (Thinking On, 0.3)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.3
+        },
+        "Gemma4-E4B-GK-Q4-build": {
+          "name": "Gemma4 E4B GK-Q4 — Build (Thinking Off, 0.1)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.1
+        },
+        "Gemma4-E4B-GK-Q4-orch": {
+          "name": "Gemma4 E4B GK-Q4 — Orch (Thinking On, 0.3)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.3
+        },
+        "Gemma4-E4B-GK-Q4-moe": {
+          "name": "Gemma4 E4B GK-Q4 — MoE (Thinking On, 0.5)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.5
+        },
+        "Gemma4-E4B-GK-Q4-scripter": {
+          "name": "Gemma4 E4B GK-Q4 — Scripter (Thinking Off, 0.1)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.1
+        },
+        "gpt-6.1-sol": {
+          "disabled": true
+        },
+        "gpt-6.1-sol-fast": {
+          "disabled": true
+        },
+        "gpt-6.1-sol-pro": {
+          "disabled": true
+        },
+        "gpt-6.1-sol-ultrafast": {
+          "disabled": true
+        },
+        "gpt-6-luna": {
+          "disabled": true
+        },
+        "gpt-6-luna-fast": {
+          "disabled": true
+        },
+        "gpt-6-luna-pro": {
+          "disabled": true
+        },
+        "gpt-6-sol": {
+          "disabled": true
+        },
+        "gpt-6-sol-fast": {
+          "disabled": true
+        },
+        "gpt-6-sol-pro": {
+          "disabled": true
+        },
+        "gpt-6-astra": {
+          "disabled": true
+        },
+        "gpt-6-astra-fast": {
+          "disabled": true
+        },
+        "gpt-6-astra-pro": {
+          "disabled": true
+        },
+        "gpt-6-astra-ultrafast": {
+          "disabled": true
+        },
+        "gpt-daybreak-blue-latest": {
+          "disabled": true
+        },
+        "gpt-daybreak-red-latest": {
+          "disabled": true
+        },
+        "gpt-5.6-sol": {
+          "disabled": true
+        },
+        "gpt-5.6-sol-fast": {
+          "disabled": true
+        },
+        "gpt-5.6-sol-pro": {
+          "disabled": true
+        },
+        "gpt-5.6": {
+          "disabled": true
+        },
+        "gpt-5.6-fast": {
+          "disabled": true
+        },
+        "gpt-5.6-pro": {
+          "disabled": true
+        },
+        "gpt-5.6-luna": {
+          "disabled": true
+        },
+        "gpt-5.6-luna-fast": {
+          "disabled": true
+        },
+        "gpt-5.6-luna-pro": {
+          "disabled": true
+        },
+        "gpt-5.6-terra": {
+          "disabled": true
+        },
+        "gpt-5.6-terra-fast": {
+          "disabled": true
+        },
+        "gpt-5.6-terra-pro": {
+          "disabled": true
+        },
+        "gpt-realtime-2.1": {
+          "disabled": true
+        },
+        "gpt-5.5": {
+          "disabled": true
+        },
+        "gpt-5.5-fast": {
+          "disabled": true
+        },
+        "gpt-5.5-pro": {
+          "disabled": true
+        },
+        "gpt-image-2": {
+          "disabled": true
+        },
+        "gpt-5.4-nano": {
+          "disabled": true
+        },
+        "gpt-5.4-nano-flex": {
+          "disabled": true
+        },
+        "gpt-5.4-mini": {
+          "disabled": true
+        },
+        "gpt-5.4-mini-fast": {
+          "disabled": true
+        },
+        "gpt-5.4-mini-flex": {
+          "disabled": true
+        },
+        "gpt-5.4": {
+          "disabled": true
+        },
+        "gpt-5.4-fast": {
+          "disabled": true
+        },
+        "gpt-5.4-pro": {
+          "disabled": true
+        },
+        "gpt-5.3-codex": {
+          "disabled": true
+        },
+        "gpt-5.3-codex-fast": {
+          "disabled": true
+        },
+        "gpt-5.3-codex-spark": {
+          "disabled": true
+        },
+        "chatgpt-image-latest": {
+          "disabled": true
+        },
+        "gpt-5.2": {
+          "disabled": true
+        },
+        "gpt-5.2-fast": {
+          "disabled": true
+        },
+        "gpt-5.2-flex": {
+          "disabled": true
+        },
+        "gpt-5.2-pro": {
+          "disabled": true
+        },
+        "gpt-image-1.5": {
+          "disabled": true
+        },
+        "gpt-5.1": {
+          "disabled": true
+        },
+        "gpt-5.1-fast": {
+          "disabled": true
+        },
+        "gpt-5.1-flex": {
+          "disabled": true
+        },
+        "gpt-5-pro": {
+          "disabled": true
+        },
+        "gpt-image-1-mini": {
+          "disabled": true
+        },
+        "gpt-5": {
+          "disabled": true
+        },
+        "gpt-5-fast": {
+          "disabled": true
+        },
+        "gpt-5-flex": {
+          "disabled": true
+        },
+        "gpt-5-nano": {
+          "disabled": true
+        },
+        "gpt-5-nano-flex": {
+          "disabled": true
+        },
+        "gpt-5-mini": {
+          "disabled": true
+        },
+        "gpt-5-mini-fast": {
+          "disabled": true
+        },
+        "gpt-5-mini-flex": {
+          "disabled": true
+        },
+        "o3-pro": {
+          "disabled": true
+        },
+        "o3": {
+          "disabled": true
+        },
+        "o3-fast": {
+          "disabled": true
+        },
+        "o3-flex": {
+          "disabled": true
+        },
+        "gpt-4.1": {
+          "disabled": true
+        },
+        "gpt-4.1-fast": {
+          "disabled": true
+        },
+        "gpt-4.1-mini": {
+          "disabled": true
+        },
+        "gpt-4.1-mini-fast": {
+          "disabled": true
+        },
+        "gpt-4o-2024-11-20": {
+          "disabled": true
+        },
+        "gpt-4o-2024-08-06": {
+          "disabled": true
+        },
+        "gpt-4o-mini": {
+          "disabled": true
+        },
+        "gpt-4o-mini-fast": {
+          "disabled": true
+        },
+        "gpt-4o": {
+          "disabled": true
+        },
+        "gpt-4o-fast": {
+          "disabled": true
+        },
+        "text-embedding-3-small": {
+          "disabled": true
+        },
+        "text-embedding-3-large": {
+          "disabled": true
+        },
+        "text-embedding-ada-002": {
+          "disabled": true
+        }
+      }
+    },
+    "llama": {
+      "package": "@ai-sdk/openai-compatible",
+      "settings": {
+        "baseURL": "http://127.0.0.1:4125/v1",
+        "apiKey": "guest@123"
+      },
+      "options": {
+        "timeout": 1800000,
+        "headerTimeout": 900000,
+        "chunkTimeout": 900000
+      },
+      "models": {
+        "Gemma4-E4B-UD-Q3": {
+          "name": "Gemma4 E4B UD-Q3 GPU2",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 57344,
+            "output": 16384
+          },
+          "temperature": 0.3
+        },
+        "Gemma4-E4B-UD-Q3-exec": {
+          "name": "Gemma4 E4B UD-Q3 — Exec (Thinking Off, 0.1)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 57344,
+            "output": 16384
+          },
+          "temperature": 0.1
+        },
+        "Gemma4-E4B-UD-Q3-build": {
+          "name": "Gemma4 E4B UD-Q3 — Build (Thinking Off, 0.1)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 57344,
+            "output": 16384
+          },
+          "temperature": 0.1
+        },
+        "Gemma4-E4B-UD-Q3-plan": {
+          "name": "Gemma4 E4B UD-Q3 — Plan (Thinking On, 0.3)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 57344,
+            "output": 16384
+          },
+          "temperature": 0.3
+        },
+        "Gemma4-E4B-UD-Q3-moe": {
+          "name": "Gemma4 E4B UD-Q3 — MoE (Thinking On, 0.5)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 57344,
+            "output": 16384
+          },
+          "temperature": 0.5
+        },
+        "Gemma4-E4B-UD-Q3-scripter": {
+          "name": "Gemma4 E4B UD-Q3 — Scripter (Thinking Off, 0.1)",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 57344,
+            "output": 16384
+          },
+          "temperature": 0.1
+        }
+      }
+    },
+    "cpu": {
+      "package": "@ai-sdk/openai-compatible",
+      "settings": {
+        "baseURL": "http://127.0.0.1:4126/v1",
+        "apiKey": "guest@123"
+      },
+      "models": {
+        "Gemma4-E4B-Q4": {
+          "name": "Gemma4 E4B Q4 CPU — Geral",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.3
+        },
+        "Gemma4-E4B-Q4-plan": {
+          "name": "Gemma4 E4B Q4 CPU — Plan",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.3
+        },
+        "Gemma4-E4B-Q4-build": {
+          "name": "Gemma4 E4B Q4 CPU — Build",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.1
+        },
+        "Gemma4-E4B-Q4-orch": {
+          "name": "Gemma4 E4B Q4 CPU — Orch",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.3
+        },
+        "Gemma4-E4B-Q4-moe": {
+          "name": "Gemma4 E4B Q4 CPU — MoE",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.5
+        },
+        "Gemma4-E4B-Q4-scripter": {
+          "name": "Gemma4 E4B Q4 CPU — Scripter",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.1
+        },
+        "Gemma4-E4B-Q4-exec": {
+          "name": "Gemma4 E4B Q4 CPU — Exec",
+          "tool_call": true,
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          },
+          "temperature": 0.1
+        }
+      }
+    }
+  }
+}
