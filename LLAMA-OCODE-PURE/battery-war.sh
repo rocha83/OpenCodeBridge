@@ -113,7 +113,7 @@ cat > "$WS/opencode.json" <<JSON
 JSON
 
 run_agent() {
-  local agent="$1" prompt="$2" secs="${3:-900}"
+  local agent="$1" prompt="$2" secs="${3:-300}"    # teto de 5 min por caso: passou disso e suspeita de laco/divagacao
   # plan pensa (temp 0.2); build/tools com tools nao pensa (temp 0.1)
   local model="$MODEL_BUILD"
   case "$agent" in plan|orch) model="$MODEL" ;; esac
@@ -185,6 +185,7 @@ Implemente o dominio backend C# de um CRUD de reembolsos corporativos (entidades
 EOT
 )"
 
+
 SUF=" Implementacao completa, sem placeholders. ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS."
 P_PROD="C# .NET 9 Minimal API + Dapper + Postgres: CRUD completo de Product (Id, Name, Price, Stock). Entregue: DDL da tabela, GET /api/products (lista), GET /api/products/{id} (404 se ausente), POST (400 se Name vazio ou Price <= 0), PUT (404 se ausente) e DELETE (204), com log por operacao. Entregue o codigo completo + 3 bullets de borda.$SUF"
 P_CUST="C# .NET 9 Minimal API + Dapper + Postgres: CRUD de Customer (Id, Name, Email, CreatedAt). Entregue: GET /api/customers com paginacao SQL usando LIMIT ? OFFSET ? (?page, ?pageSize, max 100) e filtro ?q por nome/email (ILIKE), POST rejeitando email duplicado pela constraint UNIQUE(email) respondendo 409 (Results.Conflict) e email invalido respondendo 400, PUT e DELETE com 404, indice no email. So codigo + 3 bullets de borda.$SUF"
@@ -219,19 +220,33 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
     check mission-tools-hardcode "! grep -rq --include='*.cs' '3628800' '$CASE_DIR'"
   fi
 
+  # matriz 2x2: belts-<agente>-<cor>  (legado belts-azul/verde = build)
+  quer_belt() {
+    local caso="$1" cor="${1#belts-build-}"
+    quer "$caso" && return 0
+    [ "$cor" != "$caso" ] && quer "belts-$cor" && return 0
+    return 1
+  }
   for belt in azul verde; do
-    quer "belts-$belt" || continue
     if [ "$belt" = azul ]; then P="$P_AZUL"; else P="$P_VERDE"; fi
-    AG=build  # belts sao trabalho de implementacao: build faz sozinho ou chama subagent build
-    new_case "belts-$belt"
-    echo "----- [belts-$belt] ($AG)"; run_agent "$AG" "$P" 1800
-    proj="$(find "$CASE_DIR" -maxdepth 2 -name '*.csproj' ! -path '*/obj/*' 2>/dev/null | head -1)"
-    rc=1; [ -n "$proj" ] && { build_rc "$(dirname "$proj")"; rc=$?; }
-    if [ $rc -ne 0 ] && [ -n "$proj" ]; then
-      echo "(build rc=$rc: $(build_err "$(dirname "$proj")" | head -1))"
-    fi
-    check "belts-$belt" "[ $rc -eq 0 ] && grep -rqiE 'reembolso|reimbursement' '$CASE_DIR' --include='*.cs'"
-    if [ "$belt" = verde ]; then check belts-verde-sql "find '$CASE_DIR' -name '*.sql' | grep -q ."; fi
+    for AG in build orch; do
+      caso="belts-$AG-$belt"
+      quer_belt "$caso" || continue
+      new_case "$caso"
+      echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" 300
+      proj="$(find "$CASE_DIR" -maxdepth 2 -name '*.csproj' ! -path '*/obj/*' 2>/dev/null | head -1)"
+      rc=1; [ -n "$proj" ] && { build_rc "$(dirname "$proj")"; rc=$?; }
+      if [ $rc -ne 0 ] && [ -n "$proj" ]; then
+        echo "(build rc=$rc: $(build_err "$(dirname "$proj")" | head -1))"
+      fi
+      # um aceite por caso: build rc=0 + fonte .cs REAL (fora de obj/bin) + o contrato da faixa
+      src="find '$CASE_DIR' -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' | grep -q ."
+      if [ "$belt" = verde ]; then
+        check "$caso" "[ $rc -eq 0 ] && $src && grep -rqiE 'reembolso|reimbursement' '$CASE_DIR' --include='*.cs' --exclude-dir=obj --exclude-dir=bin && find '$CASE_DIR' -name '*.sql' -not -path '*/obj/*' | grep -q ."
+      else
+        check "$caso" "[ $rc -eq 0 ] && $src && grep -rqiE 'reembolso|reimbursement' '$CASE_DIR' --include='*.cs' --exclude-dir=obj --exclude-dir=bin"
+      fi
+    done
   done
 
 else
