@@ -116,3 +116,37 @@ Falha que **é** do modelo, e persiste: no `belts-azul` o orch devolve o micro-e
 **JSON cru no texto** (`[{"title":"Create project file","prompt":"..."}]`) em vez de chamar a
 tool `subagent`; no `belts-verde` cria `src/Domain/*.cs` e não cria `.csproj`/`.sql` → build
 rc≠0. Ou seja: repetição caiu a zero, delegação estruturada do orch continua furada.
+
+## Rodada das faixas (09/11/2026, noite) — roxa, marrom, preta
+
+Matriz `belts-<agente>-<cor>` pelo túnel `:4199 -> :4100`, `Gemma4-E4B-GK-Q4-nothink` (build)
+e `Gemma4-E4B-GK-Q4` (orch). Relatórios: `reports/chat-20261109-182440.md` (roxa),
+`reports/chat-20261109-194251.md` + `...-194424.md` (marrom) e `...-195356.md` (preta).
+
+| faixa | build | orch | sinal |
+| --- | --- | --- | --- |
+| roxa | **PASS** | **PASS** | 18:24; ambos fecharam |
+| marrom | **PASS** | **PASS** | build 19:44 (`csharp ok | sql ok | react ok`); orch 19:42 (`csharp ok | sql ok | react nao`, PASS pelo aceite mínimo) |
+| preta | **FAIL** | **PASS** | build: `CS8954` em `ColaboradorService.cs` (namespace repetido) e anti-repeat cortou após 6 builds idênticos; orch: `csharp ok | sql nao | ml-nn nao` (PASS pelo aceite mínimo) |
+
+Correções de harness que destravaram a rodada:
+
+- `opencode.json` gerado com aspas duplas não escapadas no system do Scripter → JSON inválido
+  e `Model unavailable` em 1s. Trocado por aspas simples + caminho `/` e validado com `jq`.
+- `clean_nested` agora `-mindepth 1` e todo `dotnet build` do aceite usa
+  `DefaultItemExcludes='obj/**;bin/**;**/obj/**;**/bin/**'` (`%3B` na CLI). Isso elimina
+  `CS0579` falso causado por `obj/` da raiz e por projeto aninhado.
+- anti-repeat: `".cs" in comando` casava com `.csproj` e cortava `dotnet build Nome.csproj`
+  como se fosse build de `.cs`. Trocado por regex `\.cs(?![A-Za-z])`, com mensagem para
+  editar o arquivo antes de repetir.
+- `question` negado nos agentes (run não-interativo); `steps` build/orch = 80; watchdog do
+  orch = 180s (60s matava antes da primeira delegação).
+- system do build: `.csproj` válido, versões do cache (`SqlClient 5.1.5`, nunca 8.x),
+  `CS1061 QueryAsync -> using Dapper;` e proibição de parar na primeira etapa/build vazio.
+- system do orch/scripter: projeto único, arquivos exclusivos, sem `CS0101`, `.cs` sempre
+  com um tipo, e só concluir com build rc=0.
+
+Pendência conhecida: o aceite dos `belts-*` só exige `.csproj` compilando + `.cs` fonte fora
+de `obj/bin`; por isso `belts-orch-preta` PASSou com `sql nao | ml-nn nao`. Para a preta, o
+aceite precisa reprovar quando faltar `.sql` com DDL ou `.py` executável — o `partial_report`
+já mede os dois, mas ainda não entra no `check`.

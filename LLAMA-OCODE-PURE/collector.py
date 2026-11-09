@@ -359,10 +359,10 @@ def _nudge_for(sig, n):
     if t.startswith("write"):
         return (f"[anti-repeat] write repetiu {n}x e falhou. Se o arquivo ja existe, use edit; se o erro "
                 "e de caminho, crie a pasta (mkdir -p) e escreva de novo uma unica vez.")
-    if "dotnet build" in t and ".cs" in t:
+    if "dotnet build" in t and re.search(r"\.cs(?![A-Za-z])", t):
         return (f"[anti-repeat] o comando dotnet build repetiu {n}x. NUNCA passe arquivos .cs como "
                 "argumento do comando dotnet build: use 'dotnet build Nome.csproj' (ou 'dotnet build' "
-                "na pasta do .csproj).")
+                "na pasta do .csproj). Se o build falha, edite o arquivo que causa o erro antes de repetir.")
     return NUDGE_TOOL.format(sig=_short(sig), n=n)
 
 

@@ -21,6 +21,8 @@ LOG="$ROOT/war-$MODO-$PROTO.log"
 START=$(date +%s)
 # Observer em memoria: zera a rodada no coletor e so grava no fim (dump).
 COLLECTOR="${COLLECTOR:-http://127.0.0.1:4199}"
+# exclusao de fontes geradas: projeto na raiz que varre **/*.cs nao pode compilar obj/bin de projeto aninhado
+DOTNET_SRC_EXCLUDE=(-p:DefaultItemExcludes='obj/**%3Bbin/**%3B**/obj/**%3B**/bin/**')
 curl -s -m 3 -X POST "$COLLECTOR/api/reset" >/dev/null 2>&1 || true
 pass=0; fail=0
 export GIT_AUTHOR_NAME="war" GIT_AUTHOR_EMAIL="war@local"
@@ -73,28 +75,33 @@ cat > "$WS/opencode.json" <<JSON
       "description": "Trilha build: permissao completa, prompt original do CLI",
       "mode": "primary",
       "model": "$MODEL_BUILD",
-      "steps": 60
+      "steps": 60,
+      "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
     },
     "build": {
       "description": "Build: executa micro-enunciados com tools, thinking off temp 0.1",
       "mode": "all",
       "model": "$MODEL_BUILD",
-      "steps": 60
+      "steps": 80,
+      "system": "Voce e o Build. Execute o enunciado no diretorio atual com tools, sem narrar plano. Um .csproj valido comeca exatamente com <Project Sdk='Microsoft.NET.Sdk'> e termina com </Project>; nao use xmlns 2003, nao escreva XML dentro de .cs e nunca passe .cs ao dotnet build. Se o .csproj estiver quebrado, reescreva o arquivo inteiro com a tool write (nao tente edit parcial). Antes de concluir, rode dotnet build no .csproj e so responda quando rc=0; se falhar, leia o erro e corrija. Versoes do cache NuGet local: Dapper 2.1.89, Microsoft.Data.Sqlite 10.0.12, Microsoft.Data.SqlClient 5.1.5, System.Text.Json 8.0.4. Nunca use Microsoft.Data.SqlClient 8.x (NU1102): use 5.1.5 ou remova a dependencia. Se CS1061 em SqliteConnection.QueryAsync, adicione using Dapper; no topo do arquivo e edite antes de recompilar; nao repita dotnet build sem alterar o arquivo. Nao pare na primeira etapa nem com um build verde de projeto vazio/parcial: entregue todos os artefatos do escopo (dominio, SQL, repositorios, servicos, API, bus e ML quando pedido) e so conclua com o build rc=0 e os arquivos no disco.",
+      "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
     },
     "scripter": {
       "description": "Scripter: compoe scripts shell/bash e construtores de artefatos; valida com bash -n, nao executa",
       "mode": "all",
       "model": "$MODEL_BUILD",
       "steps": 60,
-      "system": "Voce e o Scripter. Escreva os arquivos de artefato pedidos, completos e sem placeholder: C# em .cs, DDL em .sql, projeto em .csproj. Cada tipo tem seu verificador: .cs/.sql/.csproj se verificam com 'dotnet build' (o build acusa o erro com arquivo e linha); 'bash -n arquivo.sh' vale apenas para script .sh com shebang (#!/usr/bin/env bash). Exemplo: para entregar um repositorio C#, escreva Reembolso.cs e o .csproj; a conferencia e dotnet build. Responda so com tool calls."
+      "system": "Voce e o Scripter. Escreva os arquivos de artefato pedidos, completos e sem placeholder: C# em .cs, DDL em .sql, projeto em .csproj. Cada tipo tem seu verificador: .cs/.sql/.csproj se verificam com 'dotnet build' (o build acusa o erro com arquivo e linha); 'bash -n arquivo.sh' vale apenas para script .sh com shebang (#!/usr/bin/env bash). Exemplo de .csproj que compila: <Project Sdk='Microsoft.NET.Sdk'><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>. Dois projetos que se usam entram como <ProjectReference Include='../Dominio/Dominio.csproj' />. Pacotes com versao que existe: Dapper 2.1.89, Microsoft.Data.Sqlite 10.0.12; ASP.NET Core em .NET 8+ entra como <FrameworkReference Include='Microsoft.AspNetCore.App' />. Todo arquivo .cs precisa de pelo menos uma declaracao de tipo (class, interface, record ou enum): nunca entregue um .cs so com using; se o tipo ja existe em outro arquivo, nao duplique. Responda so com tool calls.",
+      "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
     },
     "orch": {
       "description": "Orch: segmenta e delega ao Scripter pela tool subagent, thinking on temp 0.2",
       "mode": "primary",
       "model": "$MODEL",
-      "steps": 60,
-      "system": "Voce e o Orch: divida o enunciado em tarefas menores (max 5) e delegue cada uma ao Scripter chamando a tool subagent com agent \"scripter\". Exemplo: subagent(agent=\"scripter\", description=\"dominio e DDL\", prompt=\"OBJETIVO: dominio POCO e DDL; ESCOPO: Reembolso.cs e db.sql; ACEITE: dotnet build Reembolsos.csproj ate 0 erro(s)\"). Regra do projeto unico: existe UM so .csproj na raiz (Reembolsos.csproj) e todos os micro-enunciados repetem esse caminho; o Scripter entrega um script shell com shebang que materializa os arquivos. Depois agregue os resultados e confira o aceite de cada um. Aja com tool calls, sem narrar plano.",
-      "permissions": [ { "action": "subagent", "resource": "*", "effect": "deny" },
+      "steps": 80,
+      "system": "Voce e o Orch: divida o enunciado em tarefas menores (max 5) e delegue cada uma ao Scripter chamando a tool subagent com agent \"scripter\". Exemplo: subagent(agent=\"scripter\", description=\"dominio e DDL\", prompt=\"OBJETIVO: dominio POCO e DDL; ESCOPO: Reembolso.cs e db.sql; ACEITE: dotnet build Reembolsos.csproj ate 0 erro(s)\"). Regra do projeto unico: existe UM so .csproj na raiz (Reembolsos.csproj) e todos os micro-enunciados repetem esse caminho; o Scripter entrega um script shell com shebang que materializa os arquivos. Depois agregue os resultados e confira o aceite de cada um. Arquivos exclusivos: cada micro-enunciado lista os arquivos que pode criar e nenhuma classe pode existir em dois arquivos; um unico .csproj na raiz, sem subprojeto. Se aparecer CS0101 (classe duplicada) ou um segundo .csproj, consolide antes de concluir; rode dotnet build no .csproj da raiz e so conclua com rc=0. Nao encerre com tarefas pendentes: se faltar tipo (CS0246) ou arquivo, delegue de novo ao Scripter e repita ate o build passar. Aja com tool calls, sem narrar plano.",
+      "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
+                       { "action": "subagent", "resource": "*", "effect": "deny" },
                        { "action": "subagent", "resource": "scripter", "effect": "allow" },
                        { "action": "write", "resource": "*", "effect": "deny" },
                        { "action": "edit", "resource": "*", "effect": "deny" },
@@ -119,16 +126,34 @@ run_agent() {
   # plan pensa (temp 0.2); build/tools com tools nao pensa (temp 0.1)
   local model="$MODEL_BUILD"
   case "$agent" in plan|orch) model="$MODEL" ;; esac
-  local t0=$(date +%s)
-  # instancia propria por caso: XDG_DATA_HOME/XDG_CONFIG_HOME isolados, nao toca a sessao do TUI
-  (cd "$CASE_DIR" && XDG_DATA_HOME="$CASE_DIR/.data" timeout "$secs" opencode run --standalone --auto \
-     --agent "$agent" --model "$model" "$prompt") > "$CASE_DIR/.last.txt" 2>&1
+  local t0=$(date +%s) pid w=0 wd=60
+  case "$agent" in orch) wd=180 ;; esac   # orch pensa/delega antes do 1o artefato
+  (cd "$CASE_DIR" && timeout "$secs" opencode run --standalone --auto \
+     --agent "$agent" --model "$model" "$prompt") > "$CASE_DIR/.last.txt" 2>&1 &
+  pid=$!
+  # watchdog: sem nenhum artefato no caso = rodada perdida, nao deixa rodar ate o fim
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 5; w=$((w+5))
+    if [ "$w" -ge "$wd" ] && ! find "$CASE_DIR" -maxdepth 4 -type f \
+         \( -name '*.cs' -o -name '*.sql' -o -name '*.csproj' -o -name '*.tsx' -o -name '*.py' \) \
+         -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then
+      kill "$pid" 2>/dev/null
+      echo "(abortado em ${w}s: nenhum artefato no caso)"
+      break
+    fi
+  done
+  wait "$pid" 2>/dev/null
   local dur=$(( $(date +%s) - t0 ))
   # Tempo e referencia de COMPORTAMENTO (nao corta nada): muito acima = possivel laco.
   if [ "$dur" -gt "${EXPECT:-300}" ]; then
     echo "(run $agent: ${dur}s > referencia ${EXPECT}s = SUSPEITO, possivel laco)"
   else
     echo "(run $agent: ${dur}s, referencia ${EXPECT}s)"
+  fi
+  if grep -q 'Model unavailable' "$CASE_DIR/.last.txt" 2>/dev/null; then
+    echo "ABORTO: provider/modelo indisponivel (llamapure) - confira o collector :4199"
+    tail -2 "$CASE_DIR/.last.txt"
+    exit 2
   fi
   tail -8 "$CASE_DIR/.last.txt"
 }
@@ -156,7 +181,7 @@ new_case() {
   cp "$WS/opencode.json" "$CASE_DIR/opencode.json"
 }
 
-clean_nested() { find "$1" -mindepth 2 -type d \( -name obj -o -name bin \) -prune -exec rm -rf {} + 2>/dev/null; }
+clean_nested() { find "$1" -mindepth 1 -type d \( -name obj -o -name bin \) -prune -exec rm -rf {} + 2>/dev/null; }
 # --- tabela de erros -> exemplo otimista (mesmo padrao do tails das tools) ---
 error_hints() {
   local errs="$1" c ex
@@ -168,11 +193,14 @@ error_hints() {
     case "$c" in
       CS1674)  ex='IEnumerable<T> nao e IDisposable: var lista = await conn.QueryAsync<Reembolso>(sql); foreach (var r in lista) { ... }';;
       CS0246)  ex='tipo sem assembly no projeto que compila o arquivo: using Dapper; + <PackageReference Include="Dapper" Version="2.1.89" />';;
-      CS0234)  ex='projeto separado sem referencia: <ProjectReference Include="..\Reembolsos.Domain\Reembolsos.Domain.csproj" /> no .csproj que consome; ou um unico .csproj com tudo';;
+      CS0234)  ex='namespace/tipo sem assembly: projeto separado -> <ProjectReference Include="..\Dominio\Dominio.csproj" /> no .csproj que consome; pacote NuGet -> <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" /> (using Microsoft.Data.Sqlite) ou dotnet add package Microsoft.Data.Sqlite --version 10.0.12; ou um unico .csproj com tudo';;
       CS0103)  ex='nome fora de escopo: declare antes de usar -> var parametros = new { Id = id };';;
       CS1013)  ex='numero invalido: o _ vai entre digitos -> 100_000m (nao 100_m)';;
       CS8124)  ex='tupla com 1 elemento: use (int Id, decimal Valor) ou so decimal Valor, sem parenteses';;
       CS1022)  ex='falta fechar o tipo/namespace: } no fim do arquivo';;
+      CS0101)  ex='tipo declarado duas vezes: dois arquivos com a mesma class -> renomeie ou apague a duplicata';;
+      CS0111)  ex='membro duplicado: dois metodos com a mesma assinatura na mesma class -> mantenha um';;
+      CS8863)  ex='partial conflitante: so uma declaracao parcial pode ter parametros -> deixe uma class unica';;
       CS8803)  ex='top-level statements antes de namespace: mova o namespace para depois ou use class Program { static void Main() { ... } }';;
       CS8954)  ex='namespace repetido: declare uma vez no topo -> namespace Dominio; e escreva os tipos abaixo';;
       CS1525)  ex='parentese/operador fora de lugar: return (await conn.ExecuteScalarAsync<int>(sql)) > 0;';;
@@ -193,16 +221,42 @@ error_hints() {
       MSB4040) ex='csproj sem SDK (sem destino): <Project Sdk="Microsoft.NET.Sdk"> ... </Project> — o Sdk fica no Project, sem xmlns';;
       NETSDK1045) ex='SDK nao suporta o alvo: use <TargetFramework>net8.0</TargetFramework>';;
       NU1101)  ex='pacote fora do cache: dotnet add package Dapper --version 2.1.89';;
-      NU1102)  ex='pacote/versao inexistente: ASP.NET Core em .NET 8+ vem do framework -> <FrameworkReference Include="Microsoft.AspNetCore.App" />; pacote comum use a versao do cache (Dapper 2.1.89)';;
+      NU1102)  ex='versao nao existe no feed: Microsoft.AspNetCore.Http 2.4.0 -> em .NET 8+ e framework, use <FrameworkReference Include="Microsoft.AspNetCore.App" />; Microsoft.Data.SqlClient 8.0.4 nao existe, use 5.1.5';;
       NU1605)  ex='downgrade de pacote: alinhe ao target -> <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />';;
+      NU1301)  ex='falha de conexao com o feed (transitoria): repita o build -> dotnet build MeuProjeto.csproj; se persistir, teste curl -I https://api.nuget.org/v3/index.json';;
+      NU1101)  ex='pacote inexistente no feed: use o nome real do pacote (ex.: FluentValidation 11.9.0) ou um que ja esteja no cache';;
       *)       ex='abre o arquivo na linha:coluna do erro e corrige ali (o compilador aponta o token exato)';;
     esac
     printf '  %-9s %s\n' "$c" "$ex"
   done
 }
-build_errors() { find "$1" -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null | while IFS= read -r pj; do ( cd "$(dirname "$pj")" && dotnet build "$(basename "$pj")" -v q 2>&1 | grep -E 'error (CS|MSB|NETSDK|NU)[0-9]+' ); done; }
-build_err() { clean_nested "$1"; ( cd "$1" || return 1; p="$(ls *.csproj 2>/dev/null | head -1)"; if [ -n "$p" ]; then dotnet build "$p" -v q 2>&1 | grep -m3 -E ': error '; else dotnet build -v q 2>&1 | grep -m3 -E ': error '; fi ); }
-build_rc()  { clean_nested "$1"; ( cd "$1" || return 1; p="$(ls *.csproj 2>/dev/null | head -1)"; if [ -n "$p" ]; then dotnet build "$p" -v q >/dev/null 2>&1; else dotnet build -v q >/dev/null 2>&1; fi ); }
+build_errors() { find "$1" -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null | while IFS= read -r pj; do ( cd "$(dirname "$pj")" && dotnet build "$(basename "$pj")" -v q "${DOTNET_SRC_EXCLUDE[@]}" 2>&1 | grep -E 'error (CS|MSB|NETSDK|NU)[0-9]+' ); done; }
+build_err() { clean_nested "$1"; ( cd "$1" || return 1; p="$(ls *.csproj 2>/dev/null | head -1)"; if [ -n "$p" ]; then dotnet build "$p" -v q "${DOTNET_SRC_EXCLUDE[@]}" 2>&1 | grep -m3 -E ': error '; else dotnet build -v q "${DOTNET_SRC_EXCLUDE[@]}" 2>&1 | grep -m3 -E ': error '; fi ); }
+build_rc()  { clean_nested "$1"; ( cd "$1" || return 1; p="$(ls *.csproj 2>/dev/null | head -1)"; if [ -n "$p" ]; then dotnet build "$p" -v q "${DOTNET_SRC_EXCLUDE[@]}" >/dev/null 2>&1; else dotnet build -v q "${DOTNET_SRC_EXCLUDE[@]}" >/dev/null 2>&1; fi ); }
+
+# nota parcial por artefato (faixa cheia nao esconde o que ja foi entregue)
+partial_report() {
+  local caso="$1" key="$2" cs="FAIL" sq="nao" rx="nao" ml="nao" f pj any=0 all=1 projs
+  projs="$(find "$CASE_DIR" -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null)"
+  while IFS= read -r pj; do
+    [ -z "$pj" ] && continue
+    any=1
+    clean_nested "$CASE_DIR"
+    ( cd "$(dirname "$pj")" && dotnet build "$(basename "$pj")" -v q "${DOTNET_SRC_EXCLUDE[@]}" >/dev/null 2>&1 ) || all=0
+  done <<< "$projs"
+  [ "$any" -eq 1 ] && [ "$all" -eq 1 ] && cs="ok"
+  f="$(find "$CASE_DIR" -name '*.sql' -not -path '*/.data/*' | head -1)"
+  [ -n "$f" ] && grep -qiE 'create[[:space:]]+table' "$f" && sq="ok"
+  if [ "$key" = marrom ]; then
+    f="$(find "$CASE_DIR" -name '*.tsx' -not -path '*/.data/*' -not -path '*/node_modules/*' | head -1)"
+    [ -n "$f" ] && grep -qE 'export default function|export function|useState' "$f" && rx="ok"
+    echo "PARCIAL [$caso]: csharp $cs | sql $sq | react $rx"
+  else
+    f="$(find "$CASE_DIR" -name '*.py' -not -path '*/.data/*' | head -1)"
+    [ -n "$f" ] && python3 -m py_compile "$f" 2>/dev/null && ml="ok"
+    echo "PARCIAL [$caso]: csharp $cs | sql $sq | ml-nn $ml"
+  fi
+}
 
 check() {
   if eval "$2"; then echo "RESULTADO [$1]: PASS"; pass=$((pass+1));
@@ -334,8 +388,8 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
         rc=0
         while IFS= read -r pj; do
           [ -z "$pj" ] && continue
-          clean_nested "$(dirname "$pj")"
-          ( cd "$(dirname "$pj")" && dotnet build "$(basename "$pj")" -v q >/dev/null 2>&1 ) || rc=1
+          clean_nested "$CASE_DIR"
+          ( cd "$(dirname "$pj")" && dotnet build "$(basename "$pj")" -v q "${DOTNET_SRC_EXCLUDE[@]}" >/dev/null 2>&1 ) || rc=1
         done <<< "$projs"
       fi
       if [ $rc -ne 0 ]; then
@@ -344,6 +398,7 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
         error_hints "$errs"
       fi
       check "$caso" "[ $rc -eq 0 ] && $src"
+      case "$belt" in marrom|preta) partial_report "$caso" "$belt" ;; esac
     done
   done
 
