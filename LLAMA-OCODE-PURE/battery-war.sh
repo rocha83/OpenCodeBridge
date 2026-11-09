@@ -86,15 +86,17 @@ cat > "$WS/opencode.json" <<JSON
       "mode": "all",
       "model": "$MODEL_BUILD",
       "steps": 60,
-      "system": "Voce e o Scripter. Escreva os scripts shell/bash e os construtores de artefatos pedidos, completos e sem placeholder. Codigo C# vai SEMPRE em arquivo .cs (nunca .csx, nunca dentro do .csproj); DDL vai em .sql. Valide cada script com 'bash -n arquivo.sh' e corrija ate passar. NAO execute os scripts (sem bash arquivo.sh, sem dotnet run): apenas crie os arquivos e valide a sintaxe. Responda so com tool calls."
+      "system": "Voce e o Scripter. Escreva os arquivos de artefato pedidos, completos e sem placeholder: C# em .cs, DDL em .sql, projeto em .csproj. Cada tipo tem seu verificador: .cs/.sql/.csproj se verificam com 'dotnet build' (o build acusa o erro com arquivo e linha); 'bash -n arquivo.sh' vale apenas para script .sh com shebang (#!/usr/bin/env bash). Exemplo: para entregar um repositorio C#, escreva Reembolso.cs e o .csproj; a conferencia e dotnet build. Responda so com tool calls."
     },
     "orch": {
-      "description": "Orch: planeja, delega ao subagente build e verifica o aceite, thinking on temp 0.2",
+      "description": "Orch: segmenta e delega ao Scripter pela tool subagent, thinking on temp 0.2",
       "mode": "primary",
       "model": "$MODEL",
       "steps": 60,
+      "system": "Voce e o Orch: divida o enunciado em tarefas menores (max 5) e delegue cada uma ao Scripter chamando a tool subagent com agent \"scripter\". Exemplo: subagent(agent=\"scripter\", description=\"dominio e DDL\", prompt=\"OBJETIVO: dominio POCO e DDL; ESCOPO: Reembolso.cs e db.sql; ACEITE: dotnet build Reembolsos.csproj ate 0 erro(s)\"). Regra do projeto unico: existe UM so .csproj na raiz (Reembolsos.csproj) e todos os micro-enunciados repetem esse caminho; o Scripter entrega um script shell com shebang que materializa os arquivos. Depois agregue os resultados e confira o aceite de cada um. Aja com tool calls, sem narrar plano.",
       "permissions": [ { "action": "subagent", "resource": "*", "effect": "deny" },
                        { "action": "subagent", "resource": "scripter", "effect": "allow" },
+                       { "action": "write", "resource": "*", "effect": "deny" },
                        { "action": "edit", "resource": "*", "effect": "deny" },
                        { "action": "shell", "resource": "*", "effect": "deny" },
                        { "action": "execute", "resource": "*", "effect": "deny" } ]
@@ -118,7 +120,8 @@ run_agent() {
   local model="$MODEL_BUILD"
   case "$agent" in plan|orch) model="$MODEL" ;; esac
   local t0=$(date +%s)
-  (cd "$CASE_DIR" && timeout "$secs" opencode run --standalone --auto \
+  # instancia propria por caso: XDG_DATA_HOME/XDG_CONFIG_HOME isolados, nao toca a sessao do TUI
+  (cd "$CASE_DIR" && XDG_DATA_HOME="$CASE_DIR/.data" timeout "$secs" opencode run --standalone --auto \
      --agent "$agent" --model "$model" "$prompt") > "$CASE_DIR/.last.txt" 2>&1
   local dur=$(( $(date +%s) - t0 ))
   # Tempo e referencia de COMPORTAMENTO (nao corta nada): muito acima = possivel laco.
@@ -154,6 +157,50 @@ new_case() {
 }
 
 clean_nested() { find "$1" -mindepth 2 -type d \( -name obj -o -name bin \) -prune -exec rm -rf {} + 2>/dev/null; }
+# --- tabela de erros -> exemplo otimista (mesmo padrao do tails das tools) ---
+error_hints() {
+  local errs="$1" c ex
+  local codes
+  codes="$(printf '%s\n' "$errs" | grep -oE '(CS|MSB|NETSDK|NU)[0-9]{4,5}' | sort -u | head -6)"
+  [ -z "$codes" ] && return 0
+  echo "  --- tabela de erros (codigo -> exemplo que compila) ---"
+  for c in $codes; do
+    case "$c" in
+      CS1674)  ex='IEnumerable<T> nao e IDisposable: var lista = await conn.QueryAsync<Reembolso>(sql); foreach (var r in lista) { ... }';;
+      CS0246)  ex='tipo sem assembly no projeto que compila o arquivo: using Dapper; + <PackageReference Include="Dapper" Version="2.1.89" />';;
+      CS0234)  ex='projeto separado sem referencia: <ProjectReference Include="..\Reembolsos.Domain\Reembolsos.Domain.csproj" /> no .csproj que consome; ou um unico .csproj com tudo';;
+      CS0103)  ex='nome fora de escopo: declare antes de usar -> var parametros = new { Id = id };';;
+      CS1013)  ex='numero invalido: o _ vai entre digitos -> 100_000m (nao 100_m)';;
+      CS8124)  ex='tupla com 1 elemento: use (int Id, decimal Valor) ou so decimal Valor, sem parenteses';;
+      CS1022)  ex='falta fechar o tipo/namespace: } no fim do arquivo';;
+      CS8803)  ex='top-level statements antes de namespace: mova o namespace para depois ou use class Program { static void Main() { ... } }';;
+      CS8954)  ex='namespace repetido: declare uma vez no topo -> namespace Dominio; e escreva os tipos abaixo';;
+      CS1525)  ex='parentese/operador fora de lugar: return (await conn.ExecuteScalarAsync<int>(sql)) > 0;';;
+      CS1026)  ex='falta fechar a chamada antes de comparar: return (await conn.ExecuteScalarAsync<int>(sql)) > 0;';;
+      CS1002)  ex='falta ponto e virgula: var total = await conn.ExecuteScalarAsync<int>(sql);';;
+      CS1513)  ex='falta fechar bloco: } no fim do metodo e da classe';;
+      CS1519)  ex='token invalido no membro: declare dentro da classe -> public async Task<int> ContarAsync() { ... }';;
+      CS0201)  ex='expressao sem efeito: atribua ou retorne -> var n = await conn.ExecuteScalarAsync<int>(sql);';;
+      CS4033)  ex='await exige async: public async Task<bool> ExisteAsync(int id) { return await conn.ExecuteScalarAsync<int>(sql) > 0; }';;
+      CS0116)  ex='membro solto: top-level statements nao combinam com namespace -> tire namespace X; e deixe var builder = ... no topo, ou ponha o codigo dentro de class Program';;
+      CS0161)  ex='nem todo caminho retorna: feche com return default; ou throw new InvalidOperationException();';;
+      CS0535)  ex='classe nao implementa a interface: implemente todos os membros ou remova a interface';;
+      CS1061)  ex='membro inexistente: confira o using da extensao -> using Dapper; para conn.QueryAsync';;
+      MSB1008) ex='dotnet build recebeu .cs: passe o projeto -> dotnet build MeuProjeto.csproj';;
+      MSB1009) ex='projeto inexistente: dotnet build ./MinhaPasta/MeuProjeto.csproj';;
+      MSB4025) ex='csproj nao e XML de projeto: reescreva o arquivo inteiro -> <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>';;
+      MSB4068) ex='elemento <project> minusculo/atributo errado: <Project Sdk="Microsoft.NET.Sdk"> (P maiusculo, Sdk como atributo)';;
+      MSB4040) ex='csproj sem SDK (sem destino): <Project Sdk="Microsoft.NET.Sdk"> ... </Project> — o Sdk fica no Project, sem xmlns';;
+      NETSDK1045) ex='SDK nao suporta o alvo: use <TargetFramework>net8.0</TargetFramework>';;
+      NU1101)  ex='pacote fora do cache: dotnet add package Dapper --version 2.1.89';;
+      NU1102)  ex='pacote/versao inexistente: ASP.NET Core em .NET 8+ vem do framework -> <FrameworkReference Include="Microsoft.AspNetCore.App" />; pacote comum use a versao do cache (Dapper 2.1.89)';;
+      NU1605)  ex='downgrade de pacote: alinhe ao target -> <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />';;
+      *)       ex='abre o arquivo na linha:coluna do erro e corrige ali (o compilador aponta o token exato)';;
+    esac
+    printf '  %-9s %s\n' "$c" "$ex"
+  done
+}
+build_errors() { find "$1" -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null | while IFS= read -r pj; do ( cd "$(dirname "$pj")" && dotnet build "$(basename "$pj")" -v q 2>&1 | grep -E 'error (CS|MSB|NETSDK|NU)[0-9]+' ); done; }
 build_err() { clean_nested "$1"; ( cd "$1" || return 1; p="$(ls *.csproj 2>/dev/null | head -1)"; if [ -n "$p" ]; then dotnet build "$p" -v q 2>&1 | grep -m3 -E ': error '; else dotnet build -v q 2>&1 | grep -m3 -E ': error '; fi ); }
 build_rc()  { clean_nested "$1"; ( cd "$1" || return 1; p="$(ls *.csproj 2>/dev/null | head -1)"; if [ -n "$p" ]; then dotnet build "$p" -v q >/dev/null 2>&1; else dotnet build -v q >/dev/null 2>&1; fi ); }
 
@@ -177,7 +224,7 @@ Em $WS/mission-tools/mcs existe o projeto mcs.csproj. Escreva Program.cs para ca
 EOT
 )"
 P_AZUL="$(cat <<'EOT'
-Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#. Aja com tool calls, uma por vez; nao narre plano nem repita o enunciado. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie um arquivo de projeto com nome (ex.: Reembolsos.csproj, net10.0, nao .csproj sem nome) e os .cs com implementacao efetiva (classes concretas com logica real, nao apenas especificacao de interfaces), interfaces e repositorios; compilar usando dotnet build ate rc=0. Persistencia com Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 — versoes EXATAS do cache NuGet local, use essas versoes no PackageReference; nao use EF Core.
+Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API).
 EOT
 )"
 P_VERDE="$(cat <<'EOT'
@@ -185,6 +232,45 @@ Implemente o dominio backend C# de um CRUD de reembolsos corporativos (entidades
 EOT
 )"
 
+
+# enunciados ORIGINAIS da trilha orch (Rochas.OpenCodeBridge.Test/E2EBeltsTests.cs)
+P_AZUL_ORCH="$(cat <<'EOT'
+Aplicacao backend .NET C# que realize uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#.
+EOT
+)"
+# enunciados ORIGINAIS das belts roxa/marrom/preta (trilha build: E2EBeltsBuildTests.cs)
+P_ROXA="$(cat <<'EOT'
+Trabalhe em {ws}. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Crie os arquivos .cs e .sql com caminho relativo a raiz do workspace, usando a tool write. Comece pelo dominio, depois o SQL e depois repositorios/servicos; nao escreva plano, va direto ao write. Inclua um .csproj com nome (ex.: Cadastros.csproj, net10.0, nao .csproj sem nome) e implemente classes concretas com logica real (nao apenas interfaces); compilar usando dotnet build ate rc=0. Ao terminar responda apenas BUILD-OK com a lista dos arquivos.
+EOT
+)"
+P_MARROM="$(cat <<'EOT'
+Implemente o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL, os repositorios e servicos (Dapper), a API REST e o frontend React. Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Cada arquivo deve conter UMA responsabilidade (um artefato por arquivo: um .cs de dominio, um .sql de DDL, um .tsx de frontend); nao misture dominio, banco, API e frontend no mesmo arquivo. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie um .csproj com nome (ex.: Reembolsos.csproj, net10.0, nao .csproj sem nome) para o backend .NET, os .cs com implementacao efetiva (classes concretas, nao apenas interfaces), .sql e .tsx/.jsx; compilar usando dotnet build ate rc=0 no backend.
+EOT
+)"
+P_PRETA="$(cat <<'EOT'
+Implemente a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador, banco de dados SQL, repositorios e servicos, API REST, servicos bus, pipeline de Big Data com ML (regressao, classificacao, rede neural perceptron). Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Cada arquivo deve conter UMA responsabilidade (um artefato por arquivo: um .cs de dominio, um .sql de DDL, um .py de treino); nao misture dominio, banco, API, bus e ML no mesmo arquivo. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie um .csproj com nome (ex.: Portal.csproj, net10.0, nao .csproj sem nome) para o backend .NET, os .cs com implementacao efetiva (classes concretas, nao apenas interfaces), .sql e scripts de treino; compilar usando dotnet build ate rc=0 no backend .NET.
+EOT
+)"
+# enunciados ORIGINAIS das belts roxa/marrom/preta (trilha orch: E2EBeltsTests.cs)
+P_ROXA_ORCH="$(cat <<'EOT'
+Trabalhe no workspace da tarefa. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Entregue a implementacao completa no workspace da tarefa (backend .NET C# + banco SQL).
+EOT
+)"
+P_MARROM_ORCH="$(cat <<'EOT'
+Especifique o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL, os repositorios e servicos (Dapper), a API REST e o frontend React. Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br.
+EOT
+)"
+P_PRETA_ORCH="$(cat <<'EOT'
+Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador, banco de dados SQL, repositorios e servicos, API REST, servicos bus, pipeline de Big Data com ML (regressao, classificacao, rede neural perceptron). Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br.
+EOT
+)"
+
+P_VERDE_ORCH="$(cat <<'EOT'
+Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ. Escopo: dominio + banco SQL. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br.
+EOT
+)"
+# aceite levado ao orch pelo harness (o enunciado do orch nao traz criterio de aceite)
+ORCH_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Persistencia com Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 (versoes do cache NuGet local)."
 
 SUF=" Implementacao completa, sem placeholders. ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS."
 P_PROD="C# .NET 9 Minimal API + Dapper + Postgres: CRUD completo de Product (Id, Name, Price, Stock). Entregue: DDL da tabela, GET /api/products (lista), GET /api/products/{id} (404 se ausente), POST (400 se Name vazio ou Price <= 0), PUT (404 se ausente) e DELETE (204), com log por operacao. Entregue o codigo completo + 3 bullets de borda.$SUF"
@@ -227,25 +313,37 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
     [ "$cor" != "$caso" ] && quer "belts-$cor" && return 0
     return 1
   }
-  for belt in azul verde; do
-    if [ "$belt" = azul ]; then P="$P_AZUL"; else P="$P_VERDE"; fi
+  for belt in azul verde roxa marrom preta; do
     for AG in build orch; do
+      cor="$(printf '%s' "$belt" | tr a-z A-Z)"
+      if [ "$AG" = orch ]; then var="P_${cor}_ORCH"; P="${!var}$ORCH_ACEITE"
+      else var="P_${cor}"; P="${!var}"; fi
+      P="${P//\{ws\}/.}"   # enunciado original usa {ws}: aqui o cwd ja e' o workspace do caso
       caso="belts-$AG-$belt"
       quer_belt "$caso" || continue
       new_case "$caso"
       echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" 300
-      proj="$(find "$CASE_DIR" -maxdepth 2 -name '*.csproj' ! -path '*/obj/*' 2>/dev/null | head -1)"
-      rc=1; [ -n "$proj" ] && { build_rc "$(dirname "$proj")"; rc=$?; }
-      if [ $rc -ne 0 ] && [ -n "$proj" ]; then
-        echo "(build rc=$rc: $(build_err "$(dirname "$proj")" | head -1))"
-      fi
-      # um aceite por caso: build rc=0 + fonte .cs REAL (fora de obj/bin) + o contrato da faixa
+      # projeto unico: dois .csproj na mesma pasta fazem o build compilar tudo e falhar sem sentido
+      # aceite minimo: todo .csproj da arvore compila (rc=0) e existe fonte .cs real fora de obj/bin
       src="find '$CASE_DIR' -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' | grep -q ."
-      if [ "$belt" = verde ]; then
-        check "$caso" "[ $rc -eq 0 ] && $src && grep -rqiE 'reembolso|reimbursement' '$CASE_DIR' --include='*.cs' --exclude-dir=obj --exclude-dir=bin && find '$CASE_DIR' -name '*.sql' -not -path '*/obj/*' | grep -q ."
+      rc=1
+      projs="$(find "$CASE_DIR" -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null)"
+      if [ -z "$projs" ]; then
+        echo "(nenhum .csproj na arvore)"
       else
-        check "$caso" "[ $rc -eq 0 ] && $src && grep -rqiE 'reembolso|reimbursement' '$CASE_DIR' --include='*.cs' --exclude-dir=obj --exclude-dir=bin"
+        rc=0
+        while IFS= read -r pj; do
+          [ -z "$pj" ] && continue
+          clean_nested "$(dirname "$pj")"
+          ( cd "$(dirname "$pj")" && dotnet build "$(basename "$pj")" -v q >/dev/null 2>&1 ) || rc=1
+        done <<< "$projs"
       fi
+      if [ $rc -ne 0 ]; then
+        errs="$(build_errors "$CASE_DIR")"
+        printf '%s\n' "$errs" | grep -v '^$' | head -3 | sed 's/^/  /'
+        error_hints "$errs"
+      fi
+      check "$caso" "[ $rc -eq 0 ] && $src"
     done
   done
 
