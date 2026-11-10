@@ -16,7 +16,7 @@ ROOT="/tmp/opencode/llama-pure"
 WS="$ROOT/war-$MODO-$PROTO"
 LLAMA="${LLAMA:-http://127.0.0.1:4199}"
 MODEL="llamapure/Gemma4-E4B-GK-Q4"                 # plan: thinking ON, temp 0.2
-MODEL_BUILD="llamapure/Gemma4-E4B-GK-Q4-nothink"  # build/tools: thinking OFF, temp 0.1
+MODEL_BUILD="llamapure/Gemma4-E4B-GK-Q4-nothink"  # build: thinking OFF, temp 0.1
 LOG="$ROOT/war-$MODO-$PROTO.log"
 START=$(date +%s)
 # Observer em memoria: zera a rodada no coletor e so grava no fim (dump).
@@ -83,7 +83,7 @@ cat > "$WS/opencode.json" <<JSON
       "mode": "all",
       "model": "$MODEL_BUILD",
       "steps": 80,
-      "system": "Voce e o Build. Execute o enunciado no diretorio atual com tools, sem narrar plano. Um .csproj valido comeca exatamente com <Project Sdk='Microsoft.NET.Sdk'> e termina com </Project>; nao use xmlns 2003, nao escreva XML dentro de .cs e nunca passe .cs ao dotnet build. Se o .csproj estiver quebrado, reescreva o arquivo inteiro com a tool write (nao tente edit parcial). Antes de concluir, rode dotnet build no .csproj e so responda quando rc=0; se falhar, leia o erro e corrija. Versoes do cache NuGet local: Dapper 2.1.89, Microsoft.Data.Sqlite 10.0.12, Microsoft.Data.SqlClient 5.1.5, System.Text.Json 8.0.4. Nunca use Microsoft.Data.SqlClient 8.x (NU1102): use 5.1.5 ou remova a dependencia. Se CS1061 em SqliteConnection.QueryAsync, adicione using Dapper; no topo do arquivo e edite antes de recompilar; nao repita dotnet build sem alterar o arquivo. Nao pare na primeira etapa nem com um build verde de projeto vazio/parcial: entregue todos os artefatos do escopo (dominio, SQL, repositorios, servicos, API, bus e ML quando pedido) e so conclua com o build rc=0 e os arquivos no disco.",
+      "system": "Voce e o Build. Execute o enunciado no diretorio atual com tools, sem narrar plano e sem responder bloco de codigo: use a tool write. Nao rode dotnet new. Use UM unico .csproj na raiz chamado Portal.csproj; se existir outro .csproj na raiz, remova SO esse arquivo extra com rm NomeDoExtra.csproj; nunca use rm -rf e nunca apague Portal.csproj nem src/. O Portal.csproj usa <Project Sdk='Microsoft.NET.Sdk'> com <OutputType>Exe</OutputType>, <ImplicitUsings>enable</ImplicitUsings>, <TargetFramework>net10.0</TargetFramework> e PackageReference Dapper 2.1.89 + Microsoft.Data.Sqlite 10.0.12. Para preta, NAO use API/AspNetCore e NAO use top-level statements: crie um console app. Crie src/Program.cs com class PortalApp e static void Main (pode usar namespace Portal; sem class Program) que instancia o repositorio e o servico e imprime uma linha; declare abaixo os tipos Colaborador, IColaboradorRepository, ColaboradorRepository (use using Dapper; e QueryAsync), IColaboradorService e ColaboradorService. Nao crie src/Api, controllers nem bus. Para as demais faixas, todos os .cs usam o MESMO namespace no topo; nunca use Portal.Domain/Portal.Repository/Portal.Service. Use using Dapper; e using Microsoft.Data.Sqlite; no arquivo que acessa o banco. Se CS0246 em IEnumerable ou Task, adicione using System.Collections.Generic; e using System.Threading.Tasks; no topo de src/Program.cs e rode dotnet build de novo. Em src/Program.cs cada tipo aparece UMA vez e nunca cole o arquivo duas vezes. Se CS0101, apague a segunda copia do tipo com edit. Se usar namespace, o Main deve estar dentro dele; nao repita namespace Portal; de arquivo (CS8954). Crie src/Data/schema.sql com CREATE TABLE Colaboradores e src/ml/train.py com perceptron simples. Rode dotnet build Portal.csproj ate 0 Erro(s). Se CS1003/CS1026/CS1513, leia a linha e corrija a lambda para (Tipo nome). Nao use top-level statements; use class PortalApp com static void Main, com os using no topo, a class PortalApp e os tipos abaixo. Nao conclua com erro.",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
     },
     "scripter": {
@@ -126,7 +126,7 @@ run_agent() {
   # plan pensa (temp 0.2); build/tools com tools nao pensa (temp 0.1)
   local model="$MODEL_BUILD"
   case "$agent" in plan|orch) model="$MODEL" ;; esac
-  local t0=$(date +%s) pid w=0 wd=60
+  local t0=$(date +%s) pid w=0 wd=180
   case "$agent" in orch) wd=180 ;; esac   # orch pensa/delega antes do 1o artefato
   (cd "$CASE_DIR" && timeout "$secs" opencode run --standalone --auto \
      --agent "$agent" --model "$model" "$prompt") > "$CASE_DIR/.last.txt" 2>&1 &
@@ -230,19 +230,19 @@ error_hints() {
     printf '  %-9s %s\n' "$c" "$ex"
   done
 }
-build_errors() { find "$1" -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null | while IFS= read -r pj; do ( cd "$(dirname "$pj")" && dotnet build "$(basename "$pj")" -v q "${DOTNET_SRC_EXCLUDE[@]}" 2>&1 | grep -E 'error (CS|MSB|NETSDK|NU)[0-9]+' ); done; }
+build_errors() { find "$1" -maxdepth 1 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null | while IFS= read -r pj; do ( cd "$1" && dotnet build "$(basename "$pj")" -v q "${DOTNET_SRC_EXCLUDE[@]}" 2>&1 | grep -E 'error (CS|MSB|NETSDK|NU)[0-9]+' ); done; }
 build_err() { clean_nested "$1"; ( cd "$1" || return 1; p="$(ls *.csproj 2>/dev/null | head -1)"; if [ -n "$p" ]; then dotnet build "$p" -v q "${DOTNET_SRC_EXCLUDE[@]}" 2>&1 | grep -m3 -E ': error '; else dotnet build -v q "${DOTNET_SRC_EXCLUDE[@]}" 2>&1 | grep -m3 -E ': error '; fi ); }
 build_rc()  { clean_nested "$1"; ( cd "$1" || return 1; p="$(ls *.csproj 2>/dev/null | head -1)"; if [ -n "$p" ]; then dotnet build "$p" -v q "${DOTNET_SRC_EXCLUDE[@]}" >/dev/null 2>&1; else dotnet build -v q "${DOTNET_SRC_EXCLUDE[@]}" >/dev/null 2>&1; fi ); }
 
 # nota parcial por artefato (faixa cheia nao esconde o que ja foi entregue)
 partial_report() {
   local caso="$1" key="$2" cs="FAIL" sq="nao" rx="nao" ml="nao" f pj any=0 all=1 projs
-  projs="$(find "$CASE_DIR" -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null)"
+  projs="$(find "$CASE_DIR" -maxdepth 1 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null)"
   while IFS= read -r pj; do
     [ -z "$pj" ] && continue
     any=1
     clean_nested "$CASE_DIR"
-    ( cd "$(dirname "$pj")" && dotnet build "$(basename "$pj")" -v q "${DOTNET_SRC_EXCLUDE[@]}" >/dev/null 2>&1 ) || all=0
+    ( cd "$CASE_DIR" && dotnet build "$(basename "$pj")" -v q "${DOTNET_SRC_EXCLUDE[@]}" >/dev/null 2>&1 ) || all=0
   done <<< "$projs"
   [ "$any" -eq 1 ] && [ "$all" -eq 1 ] && cs="ok"
   f="$(find "$CASE_DIR" -name '*.sql' -not -path '*/.data/*' | head -1)"
@@ -302,7 +302,7 @@ Implemente o dominio backend C# de um CRUD de reembolsos corporativos, o banco d
 EOT
 )"
 P_PRETA="$(cat <<'EOT'
-Implemente a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador, banco de dados SQL, repositorios e servicos, API REST, servicos bus, pipeline de Big Data com ML (regressao, classificacao, rede neural perceptron). Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Cada arquivo deve conter UMA responsabilidade (um artefato por arquivo: um .cs de dominio, um .sql de DDL, um .py de treino); nao misture dominio, banco, API, bus e ML no mesmo arquivo. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie um .csproj com nome (ex.: Portal.csproj, net10.0, nao .csproj sem nome) para o backend .NET, os .cs com implementacao efetiva (classes concretas, nao apenas interfaces), .sql e scripts de treino; compilar usando dotnet build ate rc=0 no backend .NET.
+Implemente o build do backend C# do Portal do Colaborador como um console app. Escopo: dominio, repositorio Dapper e servico de aplicacao, banco SQL e script ML simples. Crie um unico Portal.csproj na raiz (Microsoft.NET.Sdk, OutputType Exe, net10.0, ImplicitUsings enable, Dapper 2.1.89, Microsoft.Data.Sqlite 10.0.12) e um unico src/Program.cs com class PortalApp e static void Main (pode usar namespace Portal; nao use class Program) que instancia o repositorio e o servico e imprime uma linha; declare abaixo os tipos Colaborador, IColaboradorRepository, ColaboradorRepository, IColaboradorService e ColaboradorService. NAO use top-level statements, class Program, API REST, servicos bus, controllers, src/Api nem subpastas de camadas; nao crie outro .cs com os mesmos tipos. Crie src/Data/schema.sql com CREATE TABLE Colaboradores e src/ml/train.py com perceptron simples. Rode dotnet build Portal.csproj ate 0 Erro(s). Aja com tools, sem narrar plano; use write, nao responda bloco de codigo.
 EOT
 )"
 # enunciados ORIGINAIS das belts roxa/marrom/preta (trilha orch: E2EBeltsTests.cs)
@@ -376,21 +376,26 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       caso="belts-$AG-$belt"
       quer_belt "$caso" || continue
       new_case "$caso"
-      echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" 300
-      # projeto unico: dois .csproj na mesma pasta fazem o build compilar tudo e falhar sem sentido
-      # aceite minimo: todo .csproj da arvore compila (rc=0) e existe fonte .cs real fora de obj/bin
+      echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" 420
+      # projeto unico na raiz: subprojeto aninhado compila vazio e mascara fonte nao compilada
+      # aceite minimo: o .csproj da raiz compila (rc=0) e existe fonte .cs real fora de obj/bin
       src="find '$CASE_DIR' -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' | grep -q ."
       rc=1
-      projs="$(find "$CASE_DIR" -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null)"
-      if [ -z "$projs" ]; then
-        echo "(nenhum .csproj na arvore)"
+      root_projs="$(find "$CASE_DIR" -maxdepth 1 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null)"
+      nested_projs="$(find "$CASE_DIR" -mindepth 2 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null)"
+      nroot=$(printf '%s\n' "$root_projs" | grep -c . || true)
+      if [ -z "$root_projs" ]; then
+        echo "(nenhum .csproj na raiz)"
+      elif [ -n "$nested_projs" ]; then
+        echo "(csproj aninhado: mantenha um unico .csproj na raiz)"
+        printf '%s\n' "$nested_projs" | sed 's/^/  /' | head -3
+      elif [ "$nroot" -ne 1 ]; then
+        echo "(mais de um .csproj na raiz: $nroot)"
       else
+        pj="$(printf '%s\n' "$root_projs" | head -1)"
+        clean_nested "$CASE_DIR"
         rc=0
-        while IFS= read -r pj; do
-          [ -z "$pj" ] && continue
-          clean_nested "$CASE_DIR"
-          ( cd "$(dirname "$pj")" && dotnet build "$(basename "$pj")" -v q "${DOTNET_SRC_EXCLUDE[@]}" >/dev/null 2>&1 ) || rc=1
-        done <<< "$projs"
+        ( cd "$CASE_DIR" && dotnet build "$(basename "$pj")" -v q "${DOTNET_SRC_EXCLUDE[@]}" >/dev/null 2>&1 ) || rc=1
       fi
       if [ $rc -ne 0 ]; then
         errs="$(build_errors "$CASE_DIR")"

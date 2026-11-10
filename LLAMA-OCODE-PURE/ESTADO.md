@@ -150,3 +150,34 @@ Pendência conhecida: o aceite dos `belts-*` só exige `.csproj` compilando + `.
 de `obj/bin`; por isso `belts-orch-preta` PASSou com `sql nao | ml-nn nao`. Para a preta, o
 aceite precisa reprovar quando faltar `.sql` com DDL ou `.py` executável — o `partial_report`
 já mede os dois, mas ainda não entra no `check`.
+
+## Preta build PASS (10/11/2026) — escopo de build fechado
+
+`belts-build-preta` **PASS** (`reports/chat-20261110-041331.md`), `PARCIAL csharp ok | sql ok |
+ml-nn ok`, run de 55s, `PASS=1 FAIL=0`. O workspace final tem um único `Portal.csproj` na raiz
+(sem aninhado), `src/Program.cs` com `class PortalApp`/`Main`, `src/Data/schema.sql` e
+`src/ml/train.py`; `dotnet build Portal.csproj` = 0 erros.
+
+O que mudou para destravar:
+
+- aceite root-only: exige exatamente 1 `.csproj` na raiz, falha se houver aninhado, e compila
+  só o `.csproj` da raiz; `partial_report`/`build_errors` também root-only. (O nested
+  `Portal/Portal.csproj` compilava uma biblioteca vazia e gerava falso PASS.)
+- `rc=0` explícito no sucesso do build: antes o aceite iniciava `rc=1` e só fazia `|| rc=1`,
+  então um build com **0 Erros** ainda dava `FAIL`.
+- `StartupObject` removido do `Portal.csproj`: o `CS1555` era mismatch do prompt/harness (o
+  modelo colocava `PortalApp` dentro de `namespace Portal`); sem `StartupObject` o compilador
+  acha o `Main` único, e o namespace (bloco ou file-scoped, uma vez) é permitido.
+- prompt/system do build preta alinhados no escopo de console app: sem API/bus/controllers,
+  um `Portal.csproj` (`Microsoft.NET.Sdk`, `OutputType Exe`, `net10.0`, `ImplicitUsings`,
+  Dapper 2.1.89, `Microsoft.Data.Sqlite` 10.0.12), um `src/Program.cs` com `class PortalApp`
+  + `Main` e os tipos, `schema.sql` e `train.py`. Hints para `CS0246`
+  (`System.Collections.Generic`/`System.Threading.Tasks`), `CS0101` (sem duplicar tipos) e
+  sem top-level statements.
+- heredoc do `opencode.json` sem backtick/`$` cru; `bash -n`, `py_compile` e `jq -e .` verdes.
+
+Limite conhecido: o `dotnet run` do caso falha em runtime porque o `portal.db` local não tem a
+tabela `Colaboradores` (o modelo cria o DDL mas não aplica). O aceite do build é **compilar**
+(`compilando` no enunciado), então o PASS é legítimo; o `partial_report` confirma o DDL em
+`src/Data/schema.sql`. O escopo completo da preta (API/bus) continua coberto pelo
+`belts-orch-preta` (PASS).
