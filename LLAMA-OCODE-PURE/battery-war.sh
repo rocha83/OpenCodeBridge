@@ -353,6 +353,17 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
     [ "$cor" != "$caso" ] && quer "belts-$cor" && return 0
     return 1
   }
+  # dominio que o artefato precisa citar (impede PASS com outro CRUD/artefato alheio)
+  belt_scope() {
+    case "$1" in
+      *-roxa)   echo "Cliente Fornecedor" ;;
+      *-marrom) echo "Reembolso" ;;
+      *-preta)  echo "Colaborador" ;;
+      *-azul)   echo "Consulta" ;;
+      *-verde)  echo "Reembolso" ;;
+      *) echo "" ;;
+    esac
+  }
   for belt in azul verde roxa marrom preta; do
     for AG in build orch; do
       cor="$(printf '%s' "$belt" | tr a-z A-Z)"
@@ -404,6 +415,12 @@ $hints0" 180
         printf '%s\n' "$errs" | grep -v '^$' | head -3 | sed 's/^/  /'
         error_hints "$errs"
       fi
+      # escopo: o artefato tem de citar o dominio do enunciado (compilar outro CRUD nao vale)
+      for w in $(belt_scope "$caso"); do
+        if ! grep -rqi --include='*.cs' --include='*.sql' --exclude-dir=obj --exclude-dir=bin -- "$w" "$CASE_DIR" 2>/dev/null; then
+          echo "(escopo: falta '$w' nos .cs/.sql)"; rc=1
+        fi
+      done
       check "$caso" "[ $rc -eq 0 ] && $src"
       case "$belt" in marrom|preta) partial_report "$caso" "$belt" ;; esac
     done
