@@ -258,3 +258,22 @@ especificado. Por isso, o proximo passo e testar cenarios independentes que exij
 Objetivo: PASS sem nudge nesses cenarios; o nudge fica apenas para falha transitoria de
 build/arquivo. A matriz atual das 10 belts roda em
 `/tmp/opencode/llama-pure/belts-stabilize.sh` (TSV em `metrics/belts-stabilize.tsv`).
+
+## Hints de build fora do harness (2026-11-10)
+
+A tabela de erros saiu do `battery-war.sh` e virou `hints.py` (switch hardcode que
+devolve `descricao` + `exemplo que compila`). O harness so imprime os codigos que
+apareceram (`error_hints()` chama `python3 hints.py -`), e o `collector.py` ganhou
+`build_hint()`: quando o ultimo tool result traz `error CS/MSB/NU`, ele injeta **um**
+alerta `[build-hint]` no request com o erro exato (`arquivo(linha,col)`) e o exemplo —
+dedupe por `codigo@arquivo(linha,col)` por conversa (teto 8). A mensagem sintetica leva
+`x-injected: true`, entao nao infla `messages` nem substitui o enunciado no painel
+(`_prompt_of` e `_new_user_count` ignoram). Detalhes: `reports/hints-build.md`.
+
+Motivo: a tabela completa custava contexto em toda rodada e acoplava o harness global a
+cada correcao (risco de regressao com rodada ativa). Agora a fonte e' unica e o suporte
+chega no ponto de falha.
+
+Ativacao: `BUILD_HINT=off` desliga; `HINT_MAX=N` muda o teto por conversa. O restart do
+collector segue no boundary entre attempts (`collector-restart.log`).
+

@@ -15,6 +15,11 @@ kwarg o llama-server LIGA o thinking por padrao. Contador: thinking_blocked.
 import atexit, difflib, http.server, json, os, re, signal, socketserver, sys, threading, time, urllib.error, urllib.request
 from collections import Counter, deque
 
+try:                                  # tabela de hints compartilhada (hints.py)
+    import hints as _hints
+except Exception:                     # ausente/quebrada: o tunel continua passthrough
+    _hints = None
+
 UP = os.environ.get("UPSTREAM", "http://127.0.0.1:4100")
 PORT = int(os.environ.get("PORT", "4199"))
 METRICS_PORT = int(os.environ.get("METRICS_PORT", "9091"))
@@ -78,6 +83,10 @@ ANTI = os.environ.get("ANTI_REPEAT", "stop")          # nudge | stop | off
 NUDGE_AT = int(os.environ.get("NUDGE_AT", "3"))        # mesma tool+args 3x
 STOP_AT = int(os.environ.get("STOP_AT", "6"))          # 6x = corta
 NUDGES = STOPS = 0
+HINTS = 0             # alertas [build-hint] injetados (erro de compilacao + exemplo)
+HINT_SEEN = {}        # conversa -> assinaturas de erro ja alertadas (anti-spam)
+BUILD_HINT = os.environ.get("BUILD_HINT", "on").strip().lower()
+HINT_MAX = int(os.environ.get("HINT_MAX", "8"))   # alertas por conversa
 THINK_BLOCKED = 0   # requests que pediram reasoning e foram forcados a thinking off
 RECENT_N = int(os.environ.get("RECENT_N", "30"))
 
@@ -188,7 +197,8 @@ def _new_user_count(msgs):
     PREV_MSGS[key] = sigs
     while len(PREV_MSGS) > 64:
         PREV_MSGS.pop(next(iter(PREV_MSGS)))
-    return sum(1 for m in new if isinstance(m, dict) and (m.get("role") == "user"))
+    return sum(1 for m in new if isinstance(m, dict) and (m.get("role") == "user")
+               and not m.get("x-injected"))
 
 
 def _prompt_of(body):
@@ -199,6 +209,8 @@ def _prompt_of(body):
         return "", 1
     last = ""
     for m in msgs:
+        if isinstance(m, dict) and m.get("x-injected"):
+            continue          # alerta sintetico nao e' o enunciado do caso
         t = _text(m.get("content") if isinstance(m, dict) else m)
         if t.strip():
             last = t
@@ -541,6 +553,65 @@ def force_thinking(body):
     return changed
 
 
+def _tail_tool_text(msgs, n=3):
+    """Texto das ultimas mensagens que NAO sao do assistente (tool results)."""
+    parts = []
+    tail = msgs[-6:] if isinstance(msgs, list) else []
+    for m in reversed(tail):
+        if not isinstance(m, dict):
+            continue
+        if str(m.get("role")) == "assistant":
+            continue
+        if m.get("x-injected"):
+            break            # ja alertamos neste ponto da conversa
+        t = _text(m.get("content"))
+        if t.strip():
+            parts.append(t)
+        if len(parts) >= n:
+            break
+    return "\n".join(reversed(parts))
+
+
+def build_hint(body):
+    """Detecta erro de compilacao no ultimo tool result e injeta o alerta pontual.
+
+    Substitui a tabela inteira no harness: o modelo recebe so o erro exato
+    (arquivo:linha + codigo + mensagem) e o exemplo otimista do `hints.py`.
+    Nao repete o mesmo alerta (codigo@arquivo:linha) na mesma conversa.
+    """
+    global HINTS
+    if _hints is None or BUILD_HINT == "off":
+        return False
+    msgs = body.get("messages")
+    if not isinstance(msgs, list) or not msgs:
+        return False
+    txt = _tail_tool_text(msgs)
+    if not txt or "error" not in txt.lower():
+        return False
+    if "tabela de erros" in txt or "[build-hint]" in txt:
+        return False
+    sigs = {ln[1] + "@" + ln[0] for ln in _hints.error_lines(txt, 6)}
+    if not sigs:
+        sigs = set(_hints.codes_in(txt, 6))
+    if not sigs:
+        return False
+    key = _conv_key(msgs)
+    with LOCK:
+        seen = HINT_SEEN.setdefault(key, set())
+        novos = sigs - seen
+        if not novos or len(seen) >= HINT_MAX:
+            return False
+        seen |= novos
+        HINTS += 1
+        while len(HINT_SEEN) > 64:
+            HINT_SEEN.pop(next(iter(HINT_SEEN)))
+    msg = _hints.alert(txt)
+    if not msg:
+        return False
+    msgs.append({"role": "user", "content": msg, "x-injected": True})
+    return True
+
+
 def anti_repeat(body, raw_body):
     """Anti-repeat de texto e de tool. Devolve (raw, stop_payload, nudged, stopped).
 
@@ -693,6 +764,7 @@ def summary():
         "tool_cycle_max": CYCLE_MAX,
         "tool_loop_hits": sum(1 for r in rows if (r.get("tool_sig_streak") or 0) >= 3),
         "nudges": NUDGES, "stops": STOPS, "anti_repeat": ANTI,
+        "build_hints": HINTS, "build_hint": BUILD_HINT,
         "nudge_at": NUDGE_AT, "stop_at": STOP_AT,
     }
 
@@ -770,7 +842,7 @@ class Proxy(http.server.BaseHTTPRequestHandler):
 
     def _local(self):
         """Endpoints proprios do coletor (nao vao para o llama)."""
-        global TOOL_CALLS, SIG_MAX, SIG_STREAK, CYCLE, CYCLE_MAX, NUDGES, STOPS, LAST_SIG, LAST_PROMPT, STREAK, ERR
+        global TOOL_CALLS, SIG_MAX, SIG_STREAK, CYCLE, CYCLE_MAX, NUDGES, STOPS, LAST_SIG, LAST_PROMPT, STREAK, ERR, HINTS
         path = self.path.split("?")[0].rstrip("/")
         qs = self.path.split("?")[1] if "?" in self.path else ""
         n = RECENT_N
@@ -787,6 +859,8 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                 RUN["started"] = time.time()
                 TOOL_CALLS = SIG_MAX = SIG_STREAK = CYCLE = CYCLE_MAX = 0
                 NUDGES = STOPS = 0
+                HINTS = 0
+                HINT_SEEN.clear()
                 LAST_SIG = ""
                 LAST_PROMPT = ""
                 STREAK = 0
@@ -855,6 +929,8 @@ class Proxy(http.server.BaseHTTPRequestHandler):
             pass
         nudged = stopped = False
         if body and self.command == "POST" and self.path.startswith("/v1/chat"):
+            if build_hint(body):
+                raw_body = json.dumps(body, ensure_ascii=False).encode()
             raw_body, stop, nudged, stopped = anti_repeat(body, raw_body)
             if stop is not None:
                 # laco de tool cortado: nao vai ao llama, resposta sintetica
