@@ -91,7 +91,7 @@ cat > "$WS/opencode.json" <<JSON
       "mode": "all",
       "model": "$MODEL_BUILD",
       "steps": 60,
-      "system": "Voce e o Scripter. Escreva os arquivos de artefato pedidos, completos e sem placeholder: C# em .cs, DDL em .sql, projeto em .csproj. Cada tipo tem seu verificador: .cs/.sql/.csproj se verificam com 'dotnet build' (o build acusa o erro com arquivo e linha); 'bash -n arquivo.sh' vale apenas para script .sh com shebang (#!/usr/bin/env bash). Exemplo de .csproj que compila: <Project Sdk='Microsoft.NET.Sdk'><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>. Dois projetos que se usam entram como <ProjectReference Include='../Dominio/Dominio.csproj' />. Pacotes com versao que existe: Dapper 2.1.89, Microsoft.Data.Sqlite 10.0.12; ASP.NET Core em .NET 8+ entra como <FrameworkReference Include='Microsoft.AspNetCore.App' />. Todo arquivo .cs precisa de pelo menos uma declaracao de tipo (class, interface, record ou enum): nunca entregue um .cs so com using; se o tipo ja existe em outro arquivo, nao duplique. Responda so com tool calls.",
+      "system": "Voce e o Scripter. Escreva os arquivos de artefato pedidos, completos e sem placeholder: C# em .cs, DDL em .sql, projeto em .csproj. Cada tipo tem seu verificador: .cs/.sql/.csproj se verificam com 'dotnet build' (o build acusa o erro com arquivo e linha); 'bash -n arquivo.sh' vale apenas para script .sh com shebang (#!/usr/bin/env bash). Exemplo de .csproj que compila: <Project Sdk='Microsoft.NET.Sdk'><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>. Dois projetos que se usam entram como <ProjectReference Include='../Dominio/Dominio.csproj' />. Pacotes com versao que existe: Dapper 2.1.89, Microsoft.Data.Sqlite 10.0.12; ASP.NET Core em .NET 8+ entra como <FrameworkReference Include='Microsoft.AspNetCore.App' />. Todo arquivo .cs precisa de pelo menos uma declaracao de tipo (class, interface, record ou enum): nunca entregue um .cs so com using; se o tipo ja existe em outro arquivo, nao duplique. Namespace: declarado UMA vez no topo do arquivo (nunca repita namespace X; antes de cada tipo) e cada tipo declarado UMA unica vez (class OU record, nunca os dois). O .csproj precisa de nome (ex.: Dominio.csproj), nunca um arquivo chamado so .csproj. Responda so com tool calls.",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
     },
     "orch": {
@@ -309,7 +309,7 @@ Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidade
 EOT
 )"
 # aceite levado ao orch pelo harness (o enunciado do orch nao traz criterio de aceite)
-ORCH_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Se o escopo pedir ORM/persistencia com Dapper, use Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 e use using Dapper; no arquivo que chama QueryAsync."
+ORCH_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto) e ele precisa de NOME (ex.: Cadastros.csproj; arquivo chamado so .csproj falha no restore), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Se o escopo pedir ORM/persistencia com Dapper, use Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 e use using Dapper; no arquivo que chama QueryAsync."
 BUILD_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Se o escopo pedir ORM/persistencia com Dapper, use Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 e use using Dapper; no arquivo que chama QueryAsync. Cada tipo e' declarado uma unica vez no projeto (nao redeclare a mesma classe em outro arquivo e nao use partial conflitante). Se o escopo pedir API REST, o .csproj precisa de <FrameworkReference Include=\"Microsoft.AspNetCore.App\" /> (ASP.NET no .NET 8+ e framework, nao pacote); se pedir frontend, entregue os .tsx mas o aceite e' o build do backend."
 
 SUF=" Implementacao completa, sem placeholders. ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS."
@@ -356,11 +356,11 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
   # dominio que o artefato precisa citar (impede PASS com outro CRUD/artefato alheio)
   belt_scope() {
     case "$1" in
-      *-roxa)   echo "Cliente Fornecedor" ;;
-      *-marrom) echo "Reembolso" ;;
-      *-preta)  echo "Colaborador" ;;
-      *-azul)   echo "Consulta" ;;
-      *-verde)  echo "Reembolso" ;;
+      *-roxa)   echo "Cliente|Customer Fornecedor|Supplier" ;;
+      *-marrom) echo "Reembolso|Refund|Reimbursement" ;;
+      *-preta)  echo "Colaborador|Employee" ;;
+      *-azul)   echo "Consult" ;;
+      *-verde)  echo "Reembolso|Refund|Reimbursement" ;;
       *) echo "" ;;
     esac
   }
@@ -417,7 +417,7 @@ $hints0" 180
       fi
       # escopo: o artefato tem de citar o dominio do enunciado (compilar outro CRUD nao vale)
       for w in $(belt_scope "$caso"); do
-        if ! grep -rqi --include='*.cs' --include='*.sql' --exclude-dir=obj --exclude-dir=bin -- "$w" "$CASE_DIR" 2>/dev/null; then
+        if ! grep -rqiE --include='*.cs' --include='*.sql' --exclude-dir=obj --exclude-dir=bin -- "$w" "$CASE_DIR" 2>/dev/null; then
           echo "(escopo: falta '$w' nos .cs/.sql)"; rc=1
         fi
       done
