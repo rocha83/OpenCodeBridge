@@ -29,6 +29,8 @@ ERR_LINE_RE = re.compile(
     r"\s*:\s*(?P<msg>.+?)(?:\s*\[[^\]]+\])?\s*$",
     re.IGNORECASE,
 )
+# erro conhecido do protocolo de tool: args quebrados (texto com <tool_call>, schema errado)
+TOOL_ARG_ERR = re.compile(r'Invalid arguments for tool \\?"([A-Za-z_]+)', re.IGNORECASE)
 
 
 def hint_for(code):
@@ -41,10 +43,10 @@ def hint_for(code):
                 "public interface IClienteRepository { Task<Cliente?> ObterAsync(int id); } "
                 "public sealed class Cliente { ... }")
     if code == "CS0234":
-        return ("namespace pai nao existe (aninhado por declaracao repetida)",
-                "um namespace por arquivo, uma vez no topo: namespace Cadastros.Repositorio; "
-                "para usar tipo de outra camada: using Cadastros.Dominio; — se a mensagem mostra "
-                "NamespaceA.NamespaceB, o arquivo declarou namespace duas vezes (CS8954)")
+        return ("namespace/assembly ausente",
+                "duas causas: pai NamespaceA.NamespaceB = namespace declarado 2x no arquivo -> deixe "
+                "namespace X; uma vez e use using Cadastros.Dominio; para tipo de outra camada; "
+                "AspNetCore/Extensions ausente = <FrameworkReference Include=\"Microsoft.AspNetCore.App\" /> no .csproj")
     if code == "CS0122":
         return ("membro inacessivel por nivel de protecao",
                 "use o membro public/internal compativel: public sealed class Cliente { public int Id { get; init; } }")
@@ -234,6 +236,7 @@ def render(errors_text, max_codes=6):
 def alert(errors_text, max_codes=3):
     """Alerta compacto de retry: o erro exato + o exemplo que compila."""
     all_lines = error_lines(errors_text, 12)
+    tool_err = TOOL_ARG_ERR.search(errors_text or "")
     # uma linha por (codigo,arquivo): 4 CS8954 do mesmo arquivo viram 1 exemplo
     uniq, seen_keys = [], set()
     for where, code, msg in all_lines:
@@ -245,6 +248,9 @@ def alert(errors_text, max_codes=3):
         uniq.append((where, code, msg))
     lines = uniq[:max_codes]
     texts = [ln[0] + ": error " + ln[1] + ": " + ln[2] for ln in lines]
+    if tool_err and not texts:
+        texts.append('tool.execution: "Invalid arguments for tool \\"%s\\"" (os args chegaram '
+                     'quebrados; o texto nao pode conter <tool_call>)' % tool_err.group(1))
     if not texts:
         for c in codes_in(errors_text, max_codes):
             desc, ex = hint_for(c)
@@ -276,6 +282,19 @@ def alert(errors_text, max_codes=3):
         sel = ";".join("%dd" % n for n in sorted(lns))
         ops.append("  - apague as linhas de namespace repetido: sed -i '%s' %s" % (sel, arq))
     ops.extend(dups[:2])
+    # erro conhecido do protocolo de tool (args invalidos): o texto veio quebrado
+    for m in TOOL_ARG_ERR.finditer(errors_text or ""):
+        tool = (m.group(1) or "").lower()
+        if tool == "edit":
+            ops.append("  - edit exige {filePath, oldString, newString} e o texto NAO pode conter "
+                       "<tool_call>; se o trecho nao casa, use write com o arquivo inteiro")
+        elif tool == "write":
+            ops.append("  - write exige {filePath, content} completos (sem <tool_call> no conteudo)")
+        elif tool == "shell":
+            ops.append("  - shell exige {command:\"...\"} com UM comando por chamada")
+        else:
+            ops.append("  - args do tool %s invalidos: repita a chamada com o schema {filePath,...}" % tool)
+        break
     if ops:
         body += "\n" + "\n".join(ops[:4])
     return ("[build-hint] o ultimo build falhou. Corrija EXATAMENTE estes erros e so entao rode "

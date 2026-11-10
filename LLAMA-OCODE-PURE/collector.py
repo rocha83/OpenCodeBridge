@@ -594,6 +594,10 @@ def build_hint(body):
     if not sigs:
         sigs = set(_hints.codes_in(txt, 6))
     if not sigs:
+        te = _hints.TOOL_ARG_ERR.search(txt)
+        if te:
+            sigs = {"toolargs@" + (te.group(1) or "").lower()}
+    if not sigs:
         return False
     key = _conv_key(msgs)
     with LOCK:

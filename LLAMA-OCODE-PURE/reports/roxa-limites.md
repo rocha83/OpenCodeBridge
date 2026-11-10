@@ -35,10 +35,18 @@ e uma variante "class" para o mesmo conceito e repete a linha `namespace`.
 
 ## O que ficou no lugar da receita
 1. `hints.py` + collector `build_hint`: no erro real, o modelo recebe o `arquivo(linha,col)`
-   e a acao objetiva — para CS8954, `sed -i '<linha>d' <arquivo>`; para CS0101/CS0111/
-   CS8863, "apague a segunda declaracao em arquivo:linha, nao reescreva o arquivo".
-2. Regra permanente no system prompt do agente `build`: nunca declarar o mesmo tipo duas
+   e a acao objetiva — para CS8954, **um unico** `sed -i '21d;22d;24d' arquivo` (todas as
+   linhas de namespace repetido do arquivo, sem repetir erro); para CS0101/CS0111/CS8863,
+   "apague a segunda declaracao em arquivo:linha, nao reescreva o arquivo".
+2. CS0234 e desambiguado no texto: pai `NamespaceA.NamespaceB` = namespace declarado 2x
+   (mesma causa do CS8954); `AspNetCore/Extensions` ausente = `FrameworkReference`.
+3. CS0246 cobre as duas causas: `using <Namespace do tipo>;` quando o tipo existe em outra
+   camada, ou a declaracao do tipo quando nao existe.
+4. Regra permanente no system prompt do agente `build`: nunca declarar o mesmo tipo duas
    vezes no arquivo (class OU record) e `namespace X;` uma unica vez.
+
+O erro "duplicar declaracao/namespace no mesmo arquivo" e' conhecido e agora tem hint por
+codigo (CS8954/CS0101/CS0111/CS8863) com acao executavel — nao precisa entrar no enunciado.
 
 ## Aceite (asserts)
 O assert da belt continua o mais simples que cobre o enunciado de build:
