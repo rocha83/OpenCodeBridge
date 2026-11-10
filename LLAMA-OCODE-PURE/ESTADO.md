@@ -341,3 +341,22 @@ de args de tool no system do `build` (dentro do heredoc).
 Outro achado operacional: rodada iniciada com `nohup ... &` morria quando a tool call que a
 lancou terminava (runner+battery no mesmo PGID/sessao). `rerun.sh` agora usa `setsid nohup`
 para collector e runner: a rodada fica em sessao propria (PPID=1) e sobrevive.
+
+## Placar do gate 10 belts (2026-11-10 19:18)
+
+| belt | status | tentativas | tempo | evidencia |
+| --- | --- | --- | --- | --- |
+| build roxa | PASS | 3 | 379s | Cadastros.csproj unico, 4 .cs, 0 erros |
+| build marrom | PASS | 3 | 955s | Reembolsos.csproj unico, DDL + 3 .cs, 0 erros |
+| build preta | PASS | 2 | 405s | Portal.csproj + src/Program.cs, 0 erros |
+| build azul | PASS | 1 | 49s | Consulta.csproj, 0 erros |
+| build verde | PASS | 1 | 93s | 0 erros |
+| orch azul | PASS | 1 | 53s | Reembolsos.csproj raiz + DDL + repo + servico, 0 erros |
+| orch roxa | FAIL | 3 | 1644s | ver reports/orch-limites.md (multi-entidade) |
+| orch verde | FAIL | 3 | 969s | DDL .sql ausente + erro de compilacao na 3a |
+| orch preta | em curso | - | - | - |
+| orch marrom | pendente | - | - | - |
+
+Leitura: a trilha `build` esta 5/5. A trilha `orch` passa quando o enunciado tem uma entidade
+(azul) e falha quando exige coordenar varias (roxa) ou entregar DDL (verde). Nao e' hint que
+falta: e' o orquestrador 4B distribuindo o mesmo workspace entre scripters sem dono de arquivo.
