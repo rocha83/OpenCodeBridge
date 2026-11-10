@@ -35,14 +35,16 @@ def hint_for(code):
     """switch hardcode: (descricao curta, exemplo que compila) para o codigo."""
     code = (code or "").strip().upper()
     if code == "CS0246":
-        return ("tipo/interface nao declarado no projeto que compila",
-                "declare o tipo no MESMO .csproj e namespace que o usa: "
-                "namespace Cadastros; public interface IClienteRepository { "
-                "Task<Cliente?> ObterAsync(int id); } public sealed class Cliente { ... }")
+        return ("tipo/interface nao encontrado neste arquivo",
+                "se o tipo existe em outro namespace: using Cadastros.Dominio; no topo (nome exato do "
+                "namespace do tipo); se nao existe: declare no mesmo .csproj -> "
+                "public interface IClienteRepository { Task<Cliente?> ObterAsync(int id); } "
+                "public sealed class Cliente { ... }")
     if code == "CS0234":
-        return ("namespace existe em outro assembly/framework",
-                "console puro nao tem ASP.NET: no .csproj <ItemGroup><FrameworkReference "
-                "Include=\"Microsoft.AspNetCore.App\" /></ItemGroup>; se nao ha API, remova o using")
+        return ("namespace pai nao existe (aninhado por declaracao repetida)",
+                "um namespace por arquivo, uma vez no topo: namespace Cadastros.Repositorio; "
+                "para usar tipo de outra camada: using Cadastros.Dominio; — se a mensagem mostra "
+                "NamespaceA.NamespaceB, o arquivo declarou namespace duas vezes (CS8954)")
     if code == "CS0122":
         return ("membro inacessivel por nivel de protecao",
                 "use o membro public/internal compativel: public sealed class Cliente { public int Id { get; init; } }")
@@ -231,7 +233,17 @@ def render(errors_text, max_codes=6):
 
 def alert(errors_text, max_codes=3):
     """Alerta compacto de retry: o erro exato + o exemplo que compila."""
-    lines = error_lines(errors_text, max_codes)
+    all_lines = error_lines(errors_text, 12)
+    # uma linha por (codigo,arquivo): 4 CS8954 do mesmo arquivo viram 1 exemplo
+    uniq, seen_keys = [], set()
+    for where, code, msg in all_lines:
+        m = re.match(r"(.+?)\(\d+,\d+\)", where)
+        key = (code, m.group(1) if m else where)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        uniq.append((where, code, msg))
+    lines = uniq[:max_codes]
     texts = [ln[0] + ": error " + ln[1] + ": " + ln[2] for ln in lines]
     if not texts:
         for c in codes_in(errors_text, max_codes):
@@ -247,18 +259,25 @@ def alert(errors_text, max_codes=3):
     if not texts:
         return ""
     body = "\n".join("  - " + t for t in texts)
-    ops = []
-    for where, code, _msg in lines:
+    # acao objetiva: CS8954 repete a MESMA linha de namespace -> apaga todas de uma vez
+    ns_lines, dups, ops = {}, [], []
+    for where, code, _msg in all_lines:
         m = re.match(r"(.+?)\((\d+),\d+\)", where)
         if not m:
             continue
-        arq, ln = m.group(1), m.group(2)
+        arq, ln = m.group(1), int(m.group(2))
         if code == "CS8954":
-            ops.append("  - apague a linha repetida: sed -i '%sd' %s" % (ln, arq))
+            ns_lines.setdefault(arq, [])
+            if ln not in ns_lines[arq]:
+                ns_lines[arq].append(ln)
         elif code in ("CS0101", "CS0111", "CS8863"):
-            ops.append("  - apague a segunda declaracao em %s:%s (nao reescreva o arquivo)" % (arq, ln))
+            dups.append("  - apague a segunda declaracao em %s:%s (nao reescreva o arquivo)" % (arq, ln))
+    for arq, lns in list(ns_lines.items())[:2]:
+        sel = ";".join("%dd" % n for n in sorted(lns))
+        ops.append("  - apague as linhas de namespace repetido: sed -i '%s' %s" % (sel, arq))
+    ops.extend(dups[:2])
     if ops:
-        body += "\n" + "\n".join(ops[:3])
+        body += "\n" + "\n".join(ops[:4])
     return ("[build-hint] o ultimo build falhou. Corrija EXATAMENTE estes erros e so entao rode "
             "dotnet build Nome.csproj de novo (nao repita o comando sem editar o arquivo):\n" + body)
 

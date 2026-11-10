@@ -297,4 +297,13 @@ estruturais no enunciado/agente — nao transporte:
 Comando do reteste focado: `/tmp/opencode/llama-pure/belts-run.sh belts-build-roxa`
 (TSV em `metrics/focus-roxa.tsv`). O harness nao e' mais editado com rodada ativa.
 
+Correcao de rumo (15:25): a "receita" arquivo-a-arquivo **nao** garantiu PASS — com ela a
+roxa falhou igual, porque o modelo grava duas declaracoes do mesmo tipo no mesmo arquivo
+(`record struct Cep` + `class Cep`) e repete `namespace` (CS8954/CS0101). A receita saiu do
+enunciado; no lugar ficaram (a) a regra permanente no system prompt do `build` (um tipo
+declarado uma vez, namespace uma vez) e (b) o alerta do collector com acao objetiva
+(`sed -i '<linha>d'`, "apague a segunda declaracao em arquivo:linha"). Analise completa:
+`reports/roxa-limites.md`. Logs de rodada agora ficam em `logs/` (gitignored), nao em /tmp.
+
+
 
