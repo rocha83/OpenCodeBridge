@@ -1109,7 +1109,7 @@
     },
     {
       "id": 16,
-      "type": "stat",
+      "type": "table",
       "title": "Teste em execucao",
       "description": "",
       "gridPos": {
@@ -1153,18 +1153,17 @@
         }
       ],
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "count"
           ],
-          "fields": "",
-          "values": false
+          "countRows": false,
+          "fields": ""
         },
-        "orientation": "horizontal",
-        "textMode": "value_and_name",
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto"
+        "sortBy": []
       },
       "fieldConfig": {
         "defaults": {
