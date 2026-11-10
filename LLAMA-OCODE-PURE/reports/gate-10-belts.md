@@ -17,9 +17,9 @@ Modelo em teste: `llamapure/Gemma4-E4B-GK-Q4` (GPU1 :4100, 524k ctx, temp 0.1 pa
 | 7 | orch roxa | FAIL | 3 | 1644s | 6 rodadas de ajuste; multi-entidade nao fecha |
 | 8 | orch verde | FAIL | 3 | 969s | DDL ausente + erro de compilacao na 3a |
 | 9 | orch preta | FAIL | 3 | 1614s | 3a sem `Colaborador`; orch relata "nao posso verificar com as ferramentas desabilitadas" |
-| 10 | orch marrom | (rodada 19:45) | - | - | escopo mais pesado (dominio+DDL+Dapper+API+React) |
+| 10 | orch marrom | FAIL | 3 | 1843s | erro de compilacao nas 3 tentativas |
 
-**Build: 5/5 PASS. Orch: 1/4 PASS** (azul, escopo de uma entidade).
+**Build: 5/5 PASS. Orch: 1/5 PASS** (azul, escopo de uma entidade). Gate completo medido: 6/10.
 
 ## Por que a trilha orch falha (causa medida, nao suposta)
 

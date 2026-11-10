@@ -360,3 +360,10 @@ para collector e runner: a rodada fica em sessao propria (PPID=1) e sobrevive.
 Leitura: a trilha `build` esta 5/5. A trilha `orch` passa quando o enunciado tem uma entidade
 (azul) e falha quando exige coordenar varias (roxa) ou entregar DDL (verde). Nao e' hint que
 falta: e' o orquestrador 4B distribuindo o mesmo workspace entre scripters sem dono de arquivo.
+
+### Fechamento do gate (2026-11-10 20:16)
+
+Build 5/5 PASS; orch 1/5 PASS (azul). Placar completo e causas em `reports/gate-10-belts.md` e
+`reports/orch-limites.md`. Blocked: orquestrador 4B nao coordena multi-entidade e nao pode verificar
+(sem shell). Tres caminhos de liberacao propostos no relatorio (shell restrito ao orch, orquestrador
+maior, ou receita de arquivos no enunciado).
