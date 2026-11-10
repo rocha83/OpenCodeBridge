@@ -405,39 +405,21 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       quer_belt "$caso" || continue
       new_case "$caso"
       echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" 420
-      # nudge unico: belt sem .csproj na raiz nao tem como compilar; pede o projeto
-      if ! find "$CASE_DIR" -maxdepth 1 -name '*.csproj' 2>/dev/null | grep -q .; then
-        echo "----- [$caso] nudge: sem .csproj na raiz"
-        run_agent "$AG" "Faltou o arquivo .csproj na raiz do workspace. Crie AGORA um unico .csproj na raiz (Microsoft.NET.Sdk, net10.0, ImplicitUsings enable; se o escopo pedir banco, PackageReference Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12) e rode dotnet build <arquivo>.csproj ate rc=0. Nao reescreva os .cs/.sql existentes; crie/corrija apenas o .csproj e o que o build exigir. Responda somente com tool calls." 300
-      fi
-      # nudge de build: existe .csproj mas nao compila -> devolve o erro e pede correcao
-      if find "$CASE_DIR" -maxdepth 1 -name '*.csproj' 2>/dev/null | grep -q .; then
-        errs0="$(build_errors "$CASE_DIR")"
-        if [ -n "$errs0" ]; then
-          echo "----- [$caso] nudge build: $(printf '%s\n' "$errs0" | grep -c 'error') erro(s)"
-          printf '%s\n' "$errs0" | head -5 | sed 's/^/  /'
-          hints0="$(error_hints "$errs0")"
-          sed_fix=""
-          if printf '%s\n' "$errs0" | grep -q 'CS8954'; then
-            cs_line=$(printf '%s\n' "$errs0" | sed -nE 's/^([^:]+\.cs)\(([0-9]+),[0-9]+\).*/\2/p' | head -1)
-            cs_file=$(printf '%s\n' "$errs0" | sed -nE 's/^([^:]+\.cs)\(([0-9]+),[0-9]+\).*/\1/p' | head -1)
-            [ -n "$cs_line" ] && [ -n "$cs_file" ] && sed_fix=" REPARO CS8954: execute sed -i '${cs_line}d' '${cs_file}' e rode dotnet build; nao use edit."
-          fi
-          run_agent "$AG" "O build do .csproj da raiz falhou. Corrija AGORA o erro e rode dotnet build <arquivo>.csproj ate rc=0. Nao repita read/build e nao rode dotnet run.${sed_fix} Se CS4032, troque 'static void Main' por 'static async Task Main'. Se CS0103 QueryAsync, chame na conexao: conn.QueryAsync<T>(sql). Se CS1519/CS1513, use write para reescrever o arquivo com TODO metodo dentro de uma classe e chaves balanceadas; nao use edit.
+      # nudge unico: repara o aceite (sem .csproj, sem fonte ou build quebrado) com enunciado + erro + tabela
+      missing=""
+      if ! find "$CASE_DIR" -maxdepth 1 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="sem .csproj na raiz"; fi
+      if ! find "$CASE_DIR" -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="$missing sem fonte .cs"; fi
+      errs0="$(build_errors "$CASE_DIR")"
+      if [ -n "$missing" ] || [ -n "$errs0" ]; then
+        echo "----- [$caso] nudge build: ${missing:-erro de compilacao}"
+        hints0="$(error_hints "$errs0")"
+        run_agent "$AG" "ENUNCIADO:
+$P
+
+O aceite do enunciado nao foi cumprido ($missing). Corrija o .csproj na raiz e/ou os .cs, compile com dotnet build ate rc=0 e nao repita read/build nem rode dotnet run. Use a tabela abaixo.
 ERROS:
 $(printf '%s\n' "$errs0" | head -8)
-$hints0" 120
-        fi
-        # segundo nudge: CS8954 residual (a linha pode mudar depois do rewrite)
-        errs1="$(build_errors "$CASE_DIR")"
-        if [ -n "$errs1" ] && printf '%s\n' "$errs1" | grep -q 'CS8954'; then
-          cs_line1=$(printf '%s\n' "$errs1" | sed -nE 's/^([^:]+\.cs)\(([0-9]+),[0-9]+\).*/\2/p' | head -1)
-          cs_file1=$(printf '%s\n' "$errs1" | sed -nE 's/^([^:]+\.cs)\(([0-9]+),[0-9]+\).*/\1/p' | head -1)
-          if [ -n "$cs_line1" ] && [ -n "$cs_file1" ]; then
-            echo "----- [$caso] nudge CS8954 direto: linha $cs_line1"
-            run_agent "$AG" "O build ainda falha com CS8954. Execute EXATAMENTE: sed -i '${cs_line1}d' '${cs_file1}' ; depois dotnet build <arquivo>.csproj ate rc=0. Nao use edit; nao rode dotnet run. Responda somente com tool calls." 90
-          fi
-        fi
+$hints0" 180
       fi
       # projeto unico na raiz: subprojeto aninhado compila vazio e mascara fonte nao compilada
       # aceite minimo: o .csproj da raiz compila (rc=0) e existe fonte .cs real fora de obj/bin
