@@ -210,3 +210,29 @@ PAT anterior encontrado é inválido; o commit fica local até haver credencial 
 campanha sequencial 2x (ent -> mission-tools -> tools-full -> 10 belts) e, depois, paralelo
 aleatório em 4 slots x112k.
 
+
+## Ajuste de observabilidade (2026-11-10, pos-rodada ent)
+
+Problemas vistos no Grafana: `Arquivos gerados` mostrava 2553 (dumps em
+`metrics/responses`), o grid nao tinha `status` (a coluna `tail sim` ocupava o lugar),
+nao aparecia o teste em execucao nem a resposta do modelo por step.
+
+Correcoes:
+
+- `battery-war.sh`: `new_case()` grava `metrics/current.json` (`case/status=RUN/dir/ts`);
+  `record_case()` atualiza o mesmo arquivo com `PASS/FAIL`. `ROOT/metrics` e criado.
+- `collector.py`: le `current.json`; `/api/summary` publica `current_case`,
+  `current_status`, `current_started` e `files_generated` contando o workspace do caso
+  atual (exclui `obj/bin/.git/node_modules/.data/opencode.json/.last.txt`); cada linha de
+  `/api/recent` leva `case`, `status` (enriquecido pelo ultimo `cases.jsonl`) e
+  `response` (primeiros 500 chars); o `tail_sim` continua no dado/Prometheus, mas saiu do
+  grid.
+- dashboard: painel 11 agora tem `caso`, `resposta do modelo` e `status` no lugar de
+  `tail sim` (override color-text PASS/FAIL/RUN); painel 16 `Teste em execucao`
+  (`current_case`/`current_status`); painel 15 renomeado `Arquivos gerados (caso atual)`.
+- `bus`: o check exigia a palavra exata `idempotente`, mas a resposta correta trouxe
+  `Idempotencia`; trocado para o prefixo `idempot` (evita falso FAIL).
+
+Validacao: `bash -n`, `py_compile` e JSON ok; contador testado com 3 arquivos reais
+(`obj/opencode.json/.last.txt` ignorados); dashboard recarregado via provisioning
+(`oc-llama-pure`, paineis 14/15/16). Campanha 2x reiniciada em seguida.

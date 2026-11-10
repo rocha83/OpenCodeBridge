@@ -179,6 +179,9 @@ new_case() {
   esac
   CASE_DIR="$WS/$1"; rm -rf "$CASE_DIR"; mkdir -p "$CASE_DIR"
   cp "$WS/opencode.json" "$CASE_DIR/opencode.json"
+  mkdir -p "$ROOT/metrics"
+  printf '{"case":"%s","status":"RUN","dir":"%s","ts":%s}\n' \
+    "$1" "$CASE_DIR" "$(date +%s)" > "$ROOT/metrics/current.json"
 }
 
 clean_nested() { find "$1" -mindepth 1 -type d \( -name obj -o -name bin \) -prune -exec rm -rf {} + 2>/dev/null; }
@@ -263,6 +266,8 @@ record_case() {
   mkdir -p "$ROOT/metrics"
   printf '{"case":"%s","status":"%s","duration":%s,"proto":"%s","modo":"%s","run":"%s","ts":%s}\n' \
     "$caso" "$status" "$dur" "$PROTO" "$MODO" "$START" "$(date +%s)" >> "$ROOT/metrics/cases.jsonl"
+  printf '{"case":"%s","status":"%s","dir":"%s","ts":%s}\n' \
+    "$caso" "$status" "${CASE_DIR:-}" "$(date +%s)" > "$ROOT/metrics/current.json"
 }
 
 check() {
@@ -442,7 +447,7 @@ FIM DO CONTEXTO.
 
 $P_DI_HEAD" "grep -qE 'AddStackExchangeRedisCache|AddDistributedRedisCache|IConnectionMultiplexer' '$WS/redis-di.txt' && grep -q 'AddScoped' '$WS/redis-di.txt'"
   fi
-  ent_case bus "$P_BUS" "grep -qi 'outbox' '$WS/bus.txt' && grep -qi 'idempotente' '$WS/bus.txt'"
+  ent_case bus "$P_BUS" "grep -qi 'outbox' '$WS/bus.txt' && grep -qi 'idempot' '$WS/bus.txt'"
   ent_case erp "$P_ERP" "grep -q '8471' '$WS/erp.txt'"
   ent_case dashboard "$P_DASH" "grep -q 'AbortController' '$WS/dashboard.txt' && grep -qE 'useEffect|useLayoutEffect' '$WS/dashboard.txt'"
 

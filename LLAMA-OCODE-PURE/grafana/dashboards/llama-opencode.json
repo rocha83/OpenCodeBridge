@@ -602,7 +602,7 @@
         "h": 14,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 16
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -626,8 +626,18 @@
               "type": "number"
             },
             {
+              "selector": "case",
+              "text": "caso",
+              "type": "string"
+            },
+            {
               "selector": "prompt",
               "text": "enunciado",
+              "type": "string"
+            },
+            {
+              "selector": "response",
+              "text": "resposta do modelo",
               "type": "string"
             },
             {
@@ -641,9 +651,9 @@
               "type": "number"
             },
             {
-              "selector": "tail_sim",
-              "text": "tail sim",
-              "type": "number"
+              "selector": "status",
+              "text": "status",
+              "type": "string"
             },
             {
               "selector": "dup",
@@ -694,35 +704,36 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "tail sim"
+              "options": "status"
             },
             "properties": [
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
+                  "type": "color-text"
                 }
               },
               {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "orange",
-                      "value": 0.7
-                    },
-                    {
-                      "color": "red",
-                      "value": 0.9
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "PASS": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "FAIL": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "RUN": {
+                        "color": "yellow",
+                        "index": 2
+                      }
                     }
-                  ]
-                }
+                  }
+                ]
               }
             ]
           },
@@ -934,7 +945,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 30
       },
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -1029,8 +1040,8 @@
     {
       "id": 15,
       "type": "stat",
-      "title": "Arquivos gerados",
-      "description": "Contador de arquivos de resposta gravados em metrics/responses.",
+      "title": "Arquivos gerados (caso atual)",
+      "description": "Arquivos no workspace do caso atual (sem obj/bin/.git/opencode.json/.last.txt)",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -1094,6 +1105,112 @@
           }
         },
         "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Teste em execucao",
+      "description": "",
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "llama-json"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "http://127.0.0.1:4199/api/summary",
+          "url_options": {
+            "method": "GET"
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "current_case",
+              "text": "caso",
+              "type": "string"
+            },
+            {
+              "selector": "current_status",
+              "text": "status",
+              "type": "string"
+            }
+          ],
+          "parser": "backend",
+          "json_options": {
+            "root_is_not_array": true,
+            "columnar": false
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "PASS": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "FAIL": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "RUN": {
+                        "color": "yellow",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       }
     }
   ]

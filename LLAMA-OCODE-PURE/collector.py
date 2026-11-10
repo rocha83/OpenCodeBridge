@@ -21,9 +21,57 @@ METRICS_PORT = int(os.environ.get("METRICS_PORT", "9091"))
 EVENTS = os.environ.get("EVENTS", "/tmp/opencode/llama-pure/metrics/events.jsonl")
 CASES = os.environ.get("CASES", "/tmp/opencode/llama-pure/metrics/cases.jsonl")
 RESP_DIR = os.environ.get("RESP_DIR", "/tmp/opencode/llama-pure/metrics/responses")
+CURRENT = os.environ.get("CURRENT", "/tmp/opencode/llama-pure/metrics/current.json")
 # Sem request por IDLE_S segundos, as gauges "vivas" voltam a zero (nada rodando
 # nao deve aparecer como numero congelado no painel).
 IDLE_S = int(os.environ.get("IDLE_S", "60"))
+
+
+GEN_SKIP_DIRS = {".git", "obj", "bin", "node_modules", ".data", ".battery-bak", "__pycache__"}
+GEN_SKIP_FILES = {"opencode.json", ".last.txt"}
+
+
+def _read_current():
+    try:
+        with open(CURRENT, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def _count_generated(root):
+    """Conta arquivos do workspace do caso atual, sem artefatos de harness/build."""
+    if not root or not os.path.isdir(root):
+        return 0
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in GEN_SKIP_DIRS]
+        for name in filenames:
+            if name in GEN_SKIP_FILES or name.endswith(".pyc"):
+                continue
+            total += 1
+    return total
+
+
+def _latest_cases():
+    latest = {}
+    try:
+        with open(CASES, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                case = row.get("case")
+                if case:
+                    latest[case] = row
+    except OSError:
+        pass
+    return latest
+
 # Anti-repeat enxuto: "nudge" injeta um aviso no request; "stop" tambem corta o
 # laco de tool (nao repassa ao llama e devolve uma resposta sintetica).
 ANTI = os.environ.get("ANTI_REPEAT", "stop")          # nudge | stop | off
@@ -264,7 +312,11 @@ def record(endpoint, body, raw, flags=None):
         LAST_REQ_TS = time.time()
         IDLED = False
         SEQ += 1
+        cur = _read_current()
         RECENT.append({"seq": SEQ, "prompt": prompt[:60], "streak": streak,
+                       "case": cur.get("case", "") or "",
+                       "status": cur.get("status", "") or "",
+                       "response": resp[:500],
                        "resp_chars": len(resp), "think_chars": len(think),
                        "tail_sim": probe["tail_sim"], "dup": probe["dup_lines"],
                        "meta": probe["meta"], "tools": ",".join(resp_tools[:3]),
@@ -536,11 +588,11 @@ def summary():
         run = RUN["id"]
         started = RUN["started"]
     tps = [r.get("tps") or 0 for r in rows if (r.get("tps") or 0) > 0]
-    try:
-        with os.scandir(RESP_DIR) as it:
-            files_generated = sum(1 for e in it if e.is_file())
-    except OSError:
-        files_generated = 0
+    cur = _read_current()
+    current_case = cur.get("case", "") or ""
+    current_status = cur.get("status", "") or ""
+    current_started = cur.get("ts", 0) or 0
+    files_generated = _count_generated(cur.get("dir", ""))
     return {
         "run": run, "started": round(started, 1), "idle": IDLED,
         # o Infinity nao converte bool para coluna number; o painel usa idle_i (0/1)
@@ -555,6 +607,9 @@ def summary():
         "errors": ERR,
         "tool_calls": TOOL_CALLS,
         "files_generated": files_generated,
+        "current_case": current_case,
+        "current_status": current_status,
+        "current_started": current_started,
         "streak_max": max((r.get("prompt_streak") or 0) for r in rows) if rows else 0,
         "tail_sim_max": max((r.get("tail_sim") or 0) for r in rows) if rows else 0,
         "dup_max": max((r.get("dup_lines") or 0) for r in rows) if rows else 0,
@@ -671,9 +726,17 @@ class Proxy(http.server.BaseHTTPRequestHandler):
             body = summary()
         elif path == "/api/recent":
             if IDLED and not RECENT and LAST_RUN_ROWS:
-                body = {"run": RUN["id"], "requests": LAST_RUN_ROWS[-n:], "last_run": True}
+                rows = [dict(r) for r in LAST_RUN_ROWS[-n:]]
+                last_run = True
             else:
-                body = {"run": RUN["id"], "requests": list(RECENT)[-n:]}
+                rows = [dict(r) for r in RECENT[-n:]]
+                last_run = False
+            latest = _latest_cases()
+            for row in rows:
+                final = latest.get(row.get("case", ""))
+                if final and final.get("status"):
+                    row["status"] = final["status"]
+            body = {"run": RUN["id"], "requests": rows, "last_run": last_run}
         elif path == "/api/cases":
             latest = {}
             try:
