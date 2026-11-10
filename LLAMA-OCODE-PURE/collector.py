@@ -726,10 +726,10 @@ class Proxy(http.server.BaseHTTPRequestHandler):
             body = summary()
         elif path == "/api/recent":
             if IDLED and not RECENT and LAST_RUN_ROWS:
-                rows = [dict(r) for r in LAST_RUN_ROWS[-n:]]
+                rows = [dict(r) for r in list(LAST_RUN_ROWS)[-n:]]
                 last_run = True
             else:
-                rows = [dict(r) for r in RECENT[-n:]]
+                rows = [dict(r) for r in list(RECENT)[-n:]]
                 last_run = False
             latest = _latest_cases()
             for row in rows:
