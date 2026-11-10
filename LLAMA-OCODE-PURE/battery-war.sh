@@ -99,7 +99,7 @@ cat > "$WS/opencode.json" <<JSON
       "mode": "primary",
       "model": "$MODEL",
       "steps": 140,
-      "system": "Voce e o Orch: divida o enunciado em tarefas menores (max 5) e delegue cada uma ao Scripter chamando a tool subagent com agent \"scripter\". Forma do prompt (o EXEMPLO e' FORMA, nao conteudo: troque nomes/arquivos/csproj pelos do ENUNCIADO, nunca copie o literal): subagent(agent=\"scripter\", description=\"<parte do escopo>\", prompt=\"OBJETIVO: <parte do escopo>; ESCOPO: <arquivos exatos>; ACEITE: <comando de verificacao>\"). Regra do projeto unico: existe UM so .csproj na raiz e o nome dele e' o do enunciado (ou o nome do dominio do enunciado + .csproj); todos os micro-enunciados repetem esse caminho; o Scripter entrega um script shell com shebang que materializa os arquivos. Depois agregue os resultados e confira o aceite de cada um. Arquivos exclusivos: cada micro-enunciado lista os arquivos que pode criar e nenhuma classe pode existir em dois arquivos; um unico .csproj na raiz, sem subprojeto. Se aparecer CS0101 (classe duplicada) ou um segundo .csproj, consolide antes de concluir; rode dotnet build no .csproj da raiz e so conclua com rc=0. Nao encerre com tarefas pendentes: se faltar tipo (CS0246) ou arquivo, delegue de novo ao Scripter e repita ate o build passar. Aja com tool calls, sem narrar plano.",
+      "system": "Voce e o Orch: ANTES de delegar, liste as entidades do enunciado (ex.: "clientes e fornecedores" = DUAS entidades; "reembolsos" = uma) e garanta que CADA uma tera o seu proprio .cs, mais DDL, repositorio e servico. Divida o enunciado em tarefas menores (max 5) e delegue cada uma ao Scripter chamando a tool subagent com agent \"scripter\". Forma do prompt (o EXEMPLO e' FORMA, nao conteudo: troque nomes/arquivos/csproj pelos do ENUNCIADO, nunca copie o literal): subagent(agent=\"scripter\", description=\"<parte do escopo>\", prompt=\"OBJETIVO: <parte do escopo>; ESCOPO: <arquivos exatos>; ACEITE: <comando de verificacao>\"). Regra do projeto unico: existe UM so .csproj na raiz e o nome dele e' o do enunciado (ou o nome do dominio do enunciado + .csproj); todos os micro-enunciados repetem esse caminho; o Scripter entrega um script shell com shebang que materializa os arquivos. Depois agregue os resultados e confira o aceite de cada um. Arquivos exclusivos: cada micro-enunciado lista os arquivos que pode criar e nenhuma classe pode existir em dois arquivos; um unico .csproj na raiz, sem subprojeto. Se aparecer CS0101 (classe duplicada) ou um segundo .csproj, consolide antes de concluir; rode dotnet build no .csproj da raiz e so conclua com rc=0. Nao encerre com tarefas pendentes: se faltar tipo (CS0246), arquivo ou entidade do enunciado, delegue de novo ao Scripter e repita ate o build passar. No fim, confira arquivo por arquivo que todas as entidades listadas existem e que o build da raiz passou; so entao responda. Aja com tool calls, sem narrar plano.",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
                        { "action": "subagent", "resource": "*", "effect": "deny" },
                        { "action": "subagent", "resource": "scripter", "effect": "allow" },
@@ -378,6 +378,11 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       missing=""
       if ! find "$CASE_DIR" -maxdepth 1 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="sem .csproj na raiz"; fi
       if ! find "$CASE_DIR" -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="$missing sem fonte .cs"; fi
+      miss_kw=""
+      for w in $(belt_scope "$caso"); do
+        grep -rqiE --include='*.cs' --include='*.sql' --exclude-dir=obj --exclude-dir=bin -- "$w" "$CASE_DIR" 2>/dev/null || miss_kw="$miss_kw $w"
+      done
+      [ -n "$miss_kw" ] && missing="$missing; escopo faltando:$miss_kw"
       errs0="$(build_errors "$CASE_DIR")"
       if [ -n "$missing" ] || [ -n "$errs0" ]; then
         echo "----- [$caso] nudge build: ${missing:-erro de compilacao}"
