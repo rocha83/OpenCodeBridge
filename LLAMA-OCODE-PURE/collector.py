@@ -19,6 +19,7 @@ UP = os.environ.get("UPSTREAM", "http://127.0.0.1:4100")
 PORT = int(os.environ.get("PORT", "4199"))
 METRICS_PORT = int(os.environ.get("METRICS_PORT", "9091"))
 EVENTS = os.environ.get("EVENTS", "/tmp/opencode/llama-pure/metrics/events.jsonl")
+CASES = os.environ.get("CASES", "/tmp/opencode/llama-pure/metrics/cases.jsonl")
 RESP_DIR = os.environ.get("RESP_DIR", "/tmp/opencode/llama-pure/metrics/responses")
 # Sem request por IDLE_S segundos, as gauges "vivas" voltam a zero (nada rodando
 # nao deve aparecer como numero congelado no painel).
@@ -535,6 +536,11 @@ def summary():
         run = RUN["id"]
         started = RUN["started"]
     tps = [r.get("tps") or 0 for r in rows if (r.get("tps") or 0) > 0]
+    try:
+        with os.scandir(RESP_DIR) as it:
+            files_generated = sum(1 for e in it if e.is_file())
+    except OSError:
+        files_generated = 0
     return {
         "run": run, "started": round(started, 1), "idle": IDLED,
         # o Infinity nao converte bool para coluna number; o painel usa idle_i (0/1)
@@ -547,7 +553,8 @@ def summary():
         "tps_avg": round(sum(tps) / len(tps), 2) if tps else 0,
         "tps_max": round(max(tps), 2) if tps else 0,
         "errors": ERR,
-        "tool_calls": sum(len(r.get("resp_tools") or []) for r in rows),
+        "tool_calls": TOOL_CALLS,
+        "files_generated": files_generated,
         "streak_max": max((r.get("prompt_streak") or 0) for r in rows) if rows else 0,
         "tail_sim_max": max((r.get("tail_sim") or 0) for r in rows) if rows else 0,
         "dup_max": max((r.get("dup_lines") or 0) for r in rows) if rows else 0,
@@ -636,6 +643,7 @@ class Proxy(http.server.BaseHTTPRequestHandler):
 
     def _local(self):
         """Endpoints proprios do coletor (nao vao para o llama)."""
+        global TOOL_CALLS, SIG_MAX, SIG_STREAK, CYCLE, CYCLE_MAX, NUDGES, STOPS, LAST_SIG, LAST_PROMPT, STREAK, ERR
         path = self.path.split("?")[0].rstrip("/")
         qs = self.path.split("?")[1] if "?" in self.path else ""
         n = RECENT_N
@@ -650,6 +658,14 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                 RUN["requests"].clear()
                 RUN["id"] = time.strftime("%Y%m%d-%H%M%S")
                 RUN["started"] = time.time()
+                TOOL_CALLS = SIG_MAX = SIG_STREAK = CYCLE = CYCLE_MAX = 0
+                NUDGES = STOPS = 0
+                LAST_SIG = ""
+                LAST_PROMPT = ""
+                STREAK = 0
+                ERR = 0
+                SIG_HIST.clear()
+                LAST.clear()
             body = {"reset": True, "run": RUN["id"]}
         elif path == "/api/summary":
             body = summary()
@@ -658,6 +674,24 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                 body = {"run": RUN["id"], "requests": LAST_RUN_ROWS[-n:], "last_run": True}
             else:
                 body = {"run": RUN["id"], "requests": list(RECENT)[-n:]}
+        elif path == "/api/cases":
+            latest = {}
+            try:
+                with open(CASES, "r", encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            row = json.loads(line)
+                        except Exception:
+                            continue
+                        case = row.get("case")
+                        if case:
+                            latest[case] = row
+            except OSError:
+                pass
+            body = {"cases": [latest[k] for k in sorted(latest)]}
         elif path == "/api/status":
             body = {"run": RUN["id"], "requests": len(RUN["requests"]),
                     "idle": IDLED, "events": EVENTS, "idle_s": IDLE_S}

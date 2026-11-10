@@ -15,7 +15,7 @@
   },
   "refresh": "10s",
   "schemaVersion": 39,
-  "version": 8,
+  "version": 10,
   "panels": [
     {
       "id": 1,
@@ -632,7 +632,7 @@
             },
             {
               "selector": "streak",
-              "text": "streak",
+              "text": "repetição do enunciado",
               "type": "number"
             },
             {
@@ -917,6 +917,177 @@
             "steps": [
               {
                 "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Resultados da bateria (PASS/FAIL)",
+      "description": "Último status por caso gravado por battery-war.sh em metrics/cases.jsonl.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "llama-json"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "http://127.0.0.1:4199/api/cases",
+          "url_options": {
+            "method": "GET"
+          },
+          "root_selector": "cases",
+          "columns": [
+            {
+              "selector": "case",
+              "text": "caso",
+              "type": "string"
+            },
+            {
+              "selector": "status",
+              "text": "status",
+              "type": "string"
+            }
+          ],
+          "parser": "backend",
+          "json_options": {}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "filterable": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "PASS": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "FAIL": {
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "case",
+            "desc": false
+          }
+        ]
+      },
+      "transformations": []
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Arquivos gerados",
+      "description": "Contador de arquivos de resposta gravados em metrics/responses.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 14,
+        "y": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "llama-json"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "http://127.0.0.1:4199/api/summary",
+          "url_options": {
+            "method": "GET"
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "files_generated",
+              "text": "arquivos",
+              "type": "number"
+            }
+          ],
+          "parser": "backend",
+          "json_options": {
+            "root_is_not_array": true,
+            "columnar": false
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
                 "value": null
               }
             ]

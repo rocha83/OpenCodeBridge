@@ -181,3 +181,32 @@ tabela `Colaboradores` (o modelo cria o DDL mas não aplica). O aceite do build 
 (`compilando` no enunciado), então o PASS é legítimo; o `partial_report` confirma o DDL em
 `src/Data/schema.sql`. O escopo completo da preta (API/bus) continua coberto pelo
 `belts-orch-preta` (PASS).
+
+## Grafana: PASS/FAIL, tool calls e arquivos gerados (10/11/2026)
+
+O painel do Grafana era só telemetria do collector: não mostrava o resultado dos casos,
+`Tool calls` ficava zerado enquanto `Maior laço` conservava o valor da rodada anterior, e
+não havia contador de arquivos. Correções:
+
+- `battery-war.sh`: `check()` grava `case/status/duration/proto/modo/run/ts` em
+  `/tmp/opencode/llama-pure/metrics/cases.jsonl`; o modo `ent` agora usa `new_case`
+  (workspace isolado por caso) e `EXPECT` com default, corrigindo o crash
+  `EXPECT: variável não associada` (`f22bf6c`).
+- `collector.py`: `GET /api/cases` devolve o último status por caso; `/api/reset` zera
+  `TOOL_CALLS`, `SIG_MAX`, `SIG_STREAK`, `CYCLE*`, `NUDGES/STOPS`, `ERR` e `LAST_PROMPT`,
+  para `Tool calls` e `Maior laço` serem sempre da mesma rodada; `summary()` publica
+  `tool_calls` e `files_generated` (contagem de `metrics/responses`).
+- dashboard: painel `Resultados da bateria (PASS/FAIL)` (caso/status), painel
+  `Arquivos gerados` (contador) e label `streak` traduzido para `repetição do enunciado`.
+
+Validação: `crud-product` PASS em 80s (`reports/chat-20261110-112944.md`); `/api/cases`
+responde `crud-product PASS`; `/api/summary` responde `files_generated=2540`; dashboard
+com painéis 14/15 (`dashboard=200`); `bash -n`, `py_compile`, `json.tool` e `stack-up`
+verdes. Infra: Grafana `http://127.0.0.1:4800` (`admin` / `guest@123`), collector
+`:4199/:9091`, Prometheus `:9090`, llama `:4100`.
+
+Push: o remote é HTTPS (`rocha83/OpenCodeBridge`), não há `gh` nem credential helper, e o
+PAT anterior encontrado é inválido; o commit fica local até haver credencial válida. Próximo:
+campanha sequencial 2x (ent -> mission-tools -> tools-full -> 10 belts) e, depois, paralelo
+aleatório em 4 slots x112k.
+

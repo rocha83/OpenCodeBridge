@@ -258,9 +258,20 @@ partial_report() {
   fi
 }
 
+record_case() {
+  local caso="$1" status="$2" dur="${3:-0}"
+  mkdir -p "$ROOT/metrics"
+  printf '{"case":"%s","status":"%s","duration":%s,"proto":"%s","modo":"%s","run":"%s","ts":%s}\n' \
+    "$caso" "$status" "$dur" "$PROTO" "$MODO" "$START" "$(date +%s)" >> "$ROOT/metrics/cases.jsonl"
+}
+
 check() {
-  if eval "$2"; then echo "RESULTADO [$1]: PASS"; pass=$((pass+1));
-  else echo "RESULTADO [$1]: FAIL"; fail=$((fail+1)); fi
+  local st dur
+  if eval "$2"; then st=PASS; pass=$((pass+1));
+  else st=FAIL; fail=$((fail+1)); fi
+  echo "RESULTADO [$1]: $st"
+  dur=$(( $(date +%s) - ${CASE_T0:-$(date +%s)} ))
+  record_case "$1" "$st" "$dur"
 }
 
 quer() { [ -z "${CASES[*]:-}" ] && return 0; local c; for c in "${CASES[@]}"; do [ "$c" = "$1" ] && return 0; done; return 1; }
