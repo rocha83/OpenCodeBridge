@@ -323,3 +323,21 @@ que passa (`filePath/oldString/newString`), no lugar do laco de
 virou `/tmp/opencode/llama-pure/rerun.sh <belt>`.
 
 Proxima na ordem: marrom (CS0234/FrameworkReference, CS0051, CS1513).
+
+## Harness: prompts dos agentes vivem no heredoc do battery-war.sh (17:16)
+
+Descoberta da rodada orch: `battery-war.sh` **gera** `$WS/opencode.json` a cada execucao
+(`cat > "$WS/opencode.json" <<JSON`), entao editar `war-tools-chat/opencode.json` nao muda
+nada — o arquivo e' saida, nao fonte. Fonte real: o heredoc em `battery-war.sh` (linhas ~47-120).
+
+Consequencia medida: o system do `orch` trazia `Reembolso.cs`/`Reembolsos.csproj` como
+exemplo literal e o 4B copiava o exemplo como conteudo -> `belts-orch-roxa` "passou" com um
+CRUD de reembolsos. Correcoes: (a) exemplo do orch virou placeholder `<parte do escopo>` +
+regra "EXEMPLO e' FORMA, nao conteudo"; (b) aceite passou a exigir o **dominio do enunciado**
+nos `.cs/.sql` (`belt_scope`: roxa Cliente/Fornecedor, marrom/verde Reembolso, preta
+Colaborador, azul Consulta); (c) `steps` do orch 80 -> 140; (d) regras de declaracao unica e
+de args de tool no system do `build` (dentro do heredoc).
+
+Outro achado operacional: rodada iniciada com `nohup ... &` morria quando a tool call que a
+lancou terminava (runner+battery no mesmo PGID/sessao). `rerun.sh` agora usa `setsid nohup`
+para collector e runner: a rodada fica em sessao propria (PPID=1) e sobrevive.
