@@ -197,7 +197,7 @@ error_hints() {
       CS1674)  ex='IEnumerable<T> nao e IDisposable: var lista = await conn.QueryAsync<Reembolso>(sql); foreach (var r in lista) { ... }';;
       CS0246)  ex='tipo sem assembly no projeto que compila o arquivo: using Dapper; + <PackageReference Include="Dapper" Version="2.1.89" />';;
       CS0234)  ex='namespace/tipo sem assembly: projeto separado -> <ProjectReference Include="..\Dominio\Dominio.csproj" /> no .csproj que consome; pacote NuGet -> <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" /> (using Microsoft.Data.Sqlite) ou dotnet add package Microsoft.Data.Sqlite --version 10.0.12; ou um unico .csproj com tudo';;
-      CS0103)  ex='nome fora de escopo: declare antes de usar -> var parametros = new { Id = id };';;
+      CS0103)  ex='QueryAsync nao existe solto: e extensao de IDbConnection -> using Dapper; using var conn = new SqliteConnection(cs); var lista = await conn.QueryAsync<T>(sql);';;
       CS1013)  ex='numero invalido: o _ vai entre digitos -> 100_000m (nao 100_m)';;
       CS8124)  ex='tupla com 1 elemento: use (int Id, decimal Valor) ou so decimal Valor, sem parenteses';;
       CS1022)  ex='falta fechar o tipo/namespace: } no fim do arquivo';;
@@ -206,6 +206,7 @@ error_hints() {
       CS8863)  ex='partial conflitante: so uma declaracao parcial pode ter parametros -> deixe uma class unica';;
       CS8803)  ex='top-level statements antes de namespace: mova o namespace para depois ou use class Program { static void Main() { ... } }';;
       CS8954)  ex='namespace repetido: declare uma vez no topo -> namespace Dominio; e escreva os tipos abaixo';;
+      CS8955)  ex='namespace normal + file-scoped no mesmo arquivo: use so namespace X; no topo ou so namespace X { ... }';;
       CS0542)  ex='membro com o mesmo nome do tipo: renomeie a classe ou o metodo -> class Program { static void Main() { ... } }';;
       CS1525)  ex='parentese/operador fora de lugar: return (await conn.ExecuteScalarAsync<int>(sql)) > 0;';;
       CS1026)  ex='falta fechar a chamada antes de comparar: return (await conn.ExecuteScalarAsync<int>(sql)) > 0;';;
