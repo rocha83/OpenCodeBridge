@@ -2,3 +2,4 @@ data	ordem	caso	status	tentativas	tempo_s	obs
 2026-11-10	1	belts-build-roxa	PASS	3	379	tool-hint (args de tool) + build-hint; csproj unico, 4 .cs, 0 erros
 2026-11-10	2	belts-build-marrom	PASS	3	955	tool-hint 10x; Reembolsos.csproj unico, DDL + 3 .cs, 0 erros
 2026-11-10	3	belts-build-preta	PASS	2	405	tool-hint 5x
+2026-11-10	4	belts-build-azul	PASS	1	49
