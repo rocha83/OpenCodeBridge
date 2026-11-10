@@ -294,7 +294,7 @@ Em $WS/mission-tools/mcs existe o projeto mcs.csproj. Escreva Program.cs para ca
 EOT
 )"
 P_AZUL="$(cat <<'EOT'
-Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API).
+Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Criterio de aceite: crie um unico .csproj na raiz (ex.: Consulta.csproj, net10.0, nao .csproj sem nome) e os .cs com implementacao efetiva; se houver banco, inclua o DDL em .sql. Compile com dotnet build ate rc=0. Aja com tools, use write, nao narre plano.
 EOT
 )"
 P_VERDE="$(cat <<'EOT'
@@ -393,6 +393,24 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       quer_belt "$caso" || continue
       new_case "$caso"
       echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" 420
+      # nudge unico: belt sem .csproj na raiz nao tem como compilar; pede o projeto
+      if ! find "$CASE_DIR" -maxdepth 1 -name '*.csproj' 2>/dev/null | grep -q .; then
+        echo "----- [$caso] nudge: sem .csproj na raiz"
+        run_agent "$AG" "Faltou o arquivo .csproj na raiz do workspace. Crie AGORA um unico .csproj na raiz (Microsoft.NET.Sdk, net10.0, ImplicitUsings enable; se o escopo pedir banco, PackageReference Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12) e rode dotnet build <arquivo>.csproj ate rc=0. Nao reescreva os .cs/.sql existentes; crie/corrija apenas o .csproj e o que o build exigir. Responda somente com tool calls." 300
+      fi
+      # nudge de build: existe .csproj mas nao compila -> devolve o erro e pede correcao
+      if find "$CASE_DIR" -maxdepth 1 -name '*.csproj' 2>/dev/null | grep -q .; then
+        errs0="$(build_errors "$CASE_DIR")"
+        if [ -n "$errs0" ]; then
+          echo "----- [$caso] nudge build: $(printf '%s\n' "$errs0" | grep -c 'error') erro(s)"
+          printf '%s\n' "$errs0" | head -5 | sed 's/^/  /'
+          hints0="$(error_hints "$errs0")"
+          run_agent "$AG" "O build do .csproj da raiz falhou. Corrija AGORA o erro no arquivo/linha indicado e rode dotnet build <arquivo>.csproj ate rc=0. Nao repita o mesmo par read/build: leia uma vez, edite o arquivo e compile. Nao reescreva arquivos que ja compilam.
+ERROS:
+$(printf '%s\n' "$errs0" | head -8)
+$hints0" 300
+        fi
+      fi
       # projeto unico na raiz: subprojeto aninhado compila vazio e mascara fonte nao compilada
       # aceite minimo: o .csproj da raiz compila (rc=0) e existe fonte .cs real fora de obj/bin
       src="find '$CASE_DIR' -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' | grep -q ."
