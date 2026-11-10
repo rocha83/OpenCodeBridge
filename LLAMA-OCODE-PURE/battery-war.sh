@@ -83,7 +83,7 @@ cat > "$WS/opencode.json" <<JSON
       "mode": "all",
       "model": "$MODEL_BUILD",
       "steps": 80,
-      "system": "Voce e o Build. Execute o enunciado no diretorio atual com tools, sem narrar plano e sem responder bloco de codigo: use a tool write. Nao rode dotnet new. Use UM unico .csproj na raiz com o nome que o enunciado pedir; se o enunciado nao nomear, use um nome descritivo (ex.: Consulta.csproj); nao force Portal.csproj. Se existir outro .csproj na raiz, remova SO esse arquivo extra com rm NomeDoExtra.csproj; nunca use rm -rf e nunca apague o .csproj principal nem src/. O .csproj usa <Project Sdk='Microsoft.NET.Sdk'> com <OutputType>Exe</OutputType>, <ImplicitUsings>enable</ImplicitUsings>, <TargetFramework>net10.0</TargetFramework> e PackageReference Dapper 2.1.89 + Microsoft.Data.Sqlite 10.0.12. Se o enunciado pedir console app (preta), NAO use API/AspNetCore e NAO use top-level statements: crie um console app com OutputType Exe. Crie a classe com static Main com o nome que o enunciado pedir (ex.: Program ou PortalApp), no MESMO namespace do projeto; se o enunciado pedir repositorio/servico, declare os tipos Colaborador, IColaboradorRepository, ColaboradorRepository (use using Dapper; e QueryAsync na conexao), IColaboradorService e ColaboradorService. Nao crie src/Api, controllers nem bus. Todos os .cs usam o MESMO namespace no topo; nunca repita namespace no mesmo arquivo e nunca use sub-namespaces (Portal.Domain/Portal.Repository/Portal.Service). Use using Dapper; e using Microsoft.Data.Sqlite; no arquivo que acessa o banco. Se CS0246 em IEnumerable ou Task, adicione using System.Collections.Generic; e using System.Threading.Tasks; no topo de src/Program.cs e rode dotnet build de novo. Em src/Program.cs cada tipo aparece UMA vez e nunca cole o arquivo duas vezes. Se CS0101, apague a segunda copia do tipo com edit. Se usar namespace, o Main deve estar dentro dele; nao repita namespace no mesmo arquivo (CS8954). TODO metodo fica dentro de uma classe; nunca declare private/public static no escopo do namespace (CS1519). Se o enunciado pedir banco, crie src/Data/schema.sql com o DDL; se pedir ML, crie src/ml/train.py com perceptron simples. Rode dotnet build Portal.csproj ate 0 Erro(s). Se CS1003/CS1026/CS1513, leia a linha e corrija a lambda para (Tipo nome). Nao use top-level statements; use uma classe com static Main (Program ou o nome do enunciado), com os using no topo e os tipos no MESMO namespace. Nao conclua com erro.",
+      "system": "Voce e o Build. Execute o enunciado no diretorio atual com tools, sem narrar plano e sem responder bloco de codigo: use write/edit/sed. Nao rode dotnet new. Nao invente arquivos, dependencias ou nomes alem do enunciado; siga o aceite do enunciado. Regras gerais de C#: um namespace por arquivo; todo metodo dentro de uma classe; using no topo; se o build falhar, leia o erro real, corrija o arquivo/linha e rode dotnet build de novo ate 0 Erro(s); nao conclua com erro.",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
     },
     "scripter": {
@@ -343,7 +343,8 @@ Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidade
 EOT
 )"
 # aceite levado ao orch pelo harness (o enunciado do orch nao traz criterio de aceite)
-ORCH_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Persistencia com Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 (versoes do cache NuGet local)."
+ORCH_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Se o escopo pedir ORM/persistencia com Dapper, use Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 e use using Dapper; no arquivo que chama QueryAsync."
+BUILD_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Se o escopo pedir ORM/persistencia com Dapper, use Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 e use using Dapper; no arquivo que chama QueryAsync."
 
 SUF=" Implementacao completa, sem placeholders. ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS."
 P_PROD="C# .NET 9 Minimal API + Dapper + Postgres: CRUD completo de Product (Id, Name, Price, Stock). Entregue: DDL da tabela, GET /api/products (lista), GET /api/products/{id} (404 se ausente), POST (400 se Name vazio ou Price <= 0), PUT (404 se ausente) e DELETE (204), com log por operacao. Entregue o codigo completo + 3 bullets de borda.$SUF"
@@ -390,7 +391,7 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
     for AG in build orch; do
       cor="$(printf '%s' "$belt" | tr a-z A-Z)"
       if [ "$AG" = orch ]; then var="P_${cor}_ORCH"; P="${!var}$ORCH_ACEITE"
-      else var="P_${cor}"; P="${!var}"; fi
+      else var="P_${cor}"; P="${!var}$BUILD_ACEITE"; fi
       P="${P//\{ws\}/.}"   # enunciado original usa {ws}: aqui o cwd ja e' o workspace do caso
       caso="belts-$AG-$belt"
       quer_belt "$caso" || continue
