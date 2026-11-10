@@ -205,7 +205,8 @@ error_hints() {
       CS0111)  ex='membro duplicado: dois metodos com a mesma assinatura na mesma class -> mantenha um';;
       CS8863)  ex='partial conflitante: so uma declaracao parcial pode ter parametros -> deixe uma class unica';;
       CS8803)  ex='top-level statements antes de namespace: mova o namespace para depois ou use class Program { static void Main() { ... } }';;
-      CS8954)  ex='namespace repetido: declare uma vez no topo -> namespace Dominio; e escreva os tipos abaixo';;
+      CS8954)  ex='namespace repetido: remova a segunda linha indicada e mantenha uma so -> sed -i "<linha>d" src/Program.cs';;
+      CS4032)  ex='await em Main sincrono: troque static void Main por static async Task Main() { ... }';;
       CS8955)  ex='namespace normal + file-scoped no mesmo arquivo: use so namespace X; no topo ou so namespace X { ... }';;
       CS0542)  ex='membro com o mesmo nome do tipo: renomeie a classe ou o metodo -> class Program { static void Main() { ... } }';;
       CS1525)  ex='parentese/operador fora de lugar: return (await conn.ExecuteScalarAsync<int>(sql)) > 0;';;
@@ -407,7 +408,7 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
           echo "----- [$caso] nudge build: $(printf '%s\n' "$errs0" | grep -c 'error') erro(s)"
           printf '%s\n' "$errs0" | head -5 | sed 's/^/  /'
           hints0="$(error_hints "$errs0")"
-          run_agent "$AG" "O build do .csproj da raiz falhou. Corrija AGORA o erro no arquivo/linha indicado e rode dotnet build <arquivo>.csproj ate rc=0. Nao repita o mesmo par read/build: leia uma vez, edite o arquivo e compile. Nao reescreva arquivos que ja compilam. A tool edit exige oldString+newString; para remover declaracao duplicada de namespace, use write e deixe UMA unica linha 'namespace X;' no topo.
+          run_agent "$AG" "O build do .csproj da raiz falhou. Corrija AGORA o erro e rode dotnet build <arquivo>.csproj ate rc=0. Nao repita read/build e nao rode dotnet run. Se CS8954, use shell: sed -i '<linha>d' <arquivo> para remover a segunda linha 'namespace X;' e mantenha uma so; nao use edit. Se CS4032, troque 'static void Main' por 'static async Task Main'. Se CS0103 QueryAsync, chame na conexao: conn.QueryAsync<T>(sql).
 ERROS:
 $(printf '%s\n' "$errs0" | head -8)
 $hints0" 300
