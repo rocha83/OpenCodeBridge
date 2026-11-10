@@ -361,7 +361,7 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       *-roxa)   echo "Cliente|Customer Fornecedor|Supplier" ;;
       *-marrom) echo "Reembolso|Refund|Reimbursement" ;;
       *-preta)  echo "Colaborador|Employee" ;;
-      *-azul)   echo "Consult" ;;
+      *-azul)   echo "Repositor|Repository" ;;
       *-verde)  echo "Reembolso|Refund|Reimbursement" ;;
       *) echo "" ;;
     esac
