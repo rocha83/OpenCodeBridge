@@ -417,7 +417,7 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
           run_agent "$AG" "O build do .csproj da raiz falhou. Corrija AGORA o erro e rode dotnet build <arquivo>.csproj ate rc=0. Nao repita read/build e nao rode dotnet run.${sed_fix} Se CS4032, troque 'static void Main' por 'static async Task Main'. Se CS0103 QueryAsync, chame na conexao: conn.QueryAsync<T>(sql). Se CS1519/CS1513, use write para reescrever o arquivo com TODO metodo dentro de uma classe e chaves balanceadas; nao use edit.
 ERROS:
 $(printf '%s\n' "$errs0" | head -8)
-$hints0" 300
+$hints0" 120
         fi
         # segundo nudge: CS8954 residual (a linha pode mudar depois do rewrite)
         errs1="$(build_errors "$CASE_DIR")"
