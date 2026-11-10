@@ -89,6 +89,10 @@ META = ("vou ", "agora vou", "em seguida", "proximo passo", "vamos ", "plano:")
 
 LOCK = threading.Lock()
 REQ = ERR = MSG = PROMPT_T = OUT_T = RESP_T = TOOL_CALLS = 0
+# Mensagens de conversa (user + assistant), sem tool calls/resultados:
+# contadas por DELTA da lista de mensagens do request; tools ficam em TOOL_CALLS.
+USER_MSGS = ASSIST_MSGS = 0
+PREV_MSGS = {}  # conversa -> assinaturas ja vistas (para contar so o delta)
 TPS = 0.0
 LAST_SIM = 0.0
 LAST = {}  # prompt -> (ts_seen, n_messages)
@@ -131,6 +135,60 @@ def _text(v):
     if isinstance(v, dict):
         return _text(v.get("content") or v.get("text") or "")
     return ""
+
+
+def _msg_sig(m):
+    """Assinatura estavel de uma mensagem para achar o delta entre requests."""
+    if not isinstance(m, dict):
+        return ("", hash(_text(m)))
+    role = str(m.get("role") or "")
+    return (role, hash(_text(m.get("content"))))
+
+
+def _conv_key(msgs):
+    """Identifica a conversa (system + primeiro user) para nao misturar casos."""
+    system, first_user = "", ""
+    for m in msgs:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role") or ""
+        if role in ("system", "developer") and not system:
+            system = _text(m.get("content"))[:200]
+        elif role == "user" and not first_user:
+            first_user = _text(m.get("content"))[:200]
+            break
+    return (system + "\x00" + first_user)[:500]
+
+
+def _new_user_count(msgs):
+    """Quantas mensagens *novas* de role=user entraram neste request.
+
+    A lista do request e' cumulativa; comparar com a anterior evita contar o
+    contexto inteiro a cada chamada (o bug do painel 'Mensagens').
+    """
+    if not isinstance(msgs, list) or not msgs:
+        return 0
+    key = _conv_key(msgs)
+    sigs = [_msg_sig(m) for m in msgs]
+    prev = PREV_MSGS.get(key, [])
+    k = 0
+    for a, b in zip(prev, sigs):
+        if a != b:
+            break
+        k += 1
+    if not prev:
+        new = msgs
+    elif len(sigs) >= len(prev) and k == len(prev):
+        new = msgs[len(prev):]
+    elif k:
+        new = msgs[k:]
+    else:
+        # contexto compactado/trocado: nao inventa mensagens novas
+        new = []
+    PREV_MSGS[key] = sigs
+    while len(PREV_MSGS) > 64:
+        PREV_MSGS.pop(next(iter(PREV_MSGS)))
+    return sum(1 for m in new if isinstance(m, dict) and (m.get("role") == "user"))
 
 
 def _prompt_of(body):
@@ -274,8 +332,10 @@ def _dump(text, kind):
 def record(endpoint, body, raw, flags=None):
     global REQ, ERR, MSG, PROMPT_T, OUT_T, TPS, TOOL_CALLS, LAST_PROMPT, STREAK
     global LAST_REQ_TS, IDLED, SEQ, LAST_SIG, SIG_STREAK, SIG_MAX, CYCLE, CYCLE_MAX
+    global USER_MSGS, ASSIST_MSGS
     usage, timings = _parse(raw)
     prompt, nmsg = _prompt_of(body)
+    msgs = body.get("messages") or body.get("input") or []
     pt = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
     ct = usage.get("completion_tokens") or usage.get("output_tokens") or 0
     tps = float(timings.get("predicted_per_second") or 0)
@@ -288,8 +348,12 @@ def record(endpoint, body, raw, flags=None):
     probe_t = _probe(think)
     streak = 0
     with LOCK:
+        new_user = _new_user_count(msgs)
+        assistant_msg = 1 if resp.strip() else 0
         REQ += 1
-        MSG += nmsg
+        USER_MSGS += new_user
+        ASSIST_MSGS += assistant_msg
+        MSG += new_user + assistant_msg
         PROMPT_T += int(pt)
         OUT_T += int(ct)
         TOOL_CALLS += len(resp_tools)
@@ -351,7 +415,9 @@ def record(endpoint, body, raw, flags=None):
             CYCLE = 0
         CYCLE_MAX = max(CYCLE_MAX, CYCLE)
     ev = {"ts": round(time.time(), 3), "endpoint": endpoint,
-          "model": body.get("model"), "messages": nmsg, "prompt": prompt,
+          "model": body.get("model"), "messages": nmsg,
+          "user_messages": new_user, "assistant_messages": assistant_msg,
+          "prompt": prompt,
           "tools": len(body.get("tools") or []), "system_chars": sys_chars,
           "prompt_tokens": pt, "completion_tokens": ct, "tps": tps,
           # sonda de repeticao/devagacao (observacao, nao contencao)
@@ -598,7 +664,11 @@ def summary():
         # o Infinity nao converte bool para coluna number; o painel usa idle_i (0/1)
         "idle_i": 1 if IDLED else 0,
         "requests": len(rows),
-        "messages": sum(r.get("messages") or 0 for r in rows),
+        # Mensagens de conversa: user + assistant, sem tool calls/resultados.
+        "messages": sum((r.get("user_messages") or 0) + (r.get("assistant_messages") or 0) for r in rows),
+        "user_messages": sum(r.get("user_messages") or 0 for r in rows),
+        "assistant_messages": sum(r.get("assistant_messages") or 0 for r in rows),
+        "context_messages": sum(r.get("messages") or 0 for r in rows),
         "prompt_tokens": sum(r.get("prompt_tokens") or 0 for r in rows),
         "completion_tokens": sum(r.get("completion_tokens") or 0 for r in rows),
         "tps_last": round(tps[-1], 2) if tps else 0,
@@ -657,6 +727,8 @@ def metrics():
            "# TYPE oc_requests_total counter", f"oc_requests_total {REQ}",
            "# TYPE oc_errors_total counter", f"oc_errors_total {ERR}",
            "# TYPE oc_messages_total counter", f"oc_messages_total {MSG}",
+           "# TYPE oc_user_messages_total counter", f"oc_user_messages_total {USER_MSGS}",
+           "# TYPE oc_assistant_messages_total counter", f"oc_assistant_messages_total {ASSIST_MSGS}",
            "# TYPE oc_prompt_tokens_total counter", f"oc_prompt_tokens_total {PROMPT_T}",
            "# TYPE oc_completion_tokens_total counter", f"oc_completion_tokens_total {OUT_T}",
            "# TYPE oc_tokens_per_second gauge", f"oc_tokens_per_second {tps}",
@@ -721,6 +793,7 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                 ERR = 0
                 SIG_HIST.clear()
                 LAST.clear()
+                PREV_MSGS.clear()
             body = {"reset": True, "run": RUN["id"]}
         elif path == "/api/summary":
             body = summary()

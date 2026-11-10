@@ -160,8 +160,8 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Mensagens",
-      "description": "",
+      "title": "Mensagens (user + modelo)",
+      "description": "Soma de mensagens de usuário + respostas de texto do modelo; tool calls ficam no painel Tool calls.",
       "gridPos": {
         "h": 4,
         "w": 6,
