@@ -205,7 +205,7 @@ error_hints() {
       CS0111)  ex='membro duplicado: dois metodos com a mesma assinatura na mesma class -> mantenha um';;
       CS8863)  ex='partial conflitante: so uma declaracao parcial pode ter parametros -> deixe uma class unica';;
       CS8803)  ex='top-level statements antes de namespace: mova o namespace para depois ou use class Program { static void Main() { ... } }';;
-      CS8954)  ex='namespace repetido: remova a segunda linha indicada e mantenha uma so -> sed -i "<linha>d" src/Program.cs';;
+      CS8954)  ex='namespace repetido: remova a segunda linha indicada e mantenha uma so -> sed -i "<linha>d" <arquivo>';;
       CS4032)  ex='await em Main sincrono: troque static void Main por static async Task Main() { ... }';;
       CS8955)  ex='namespace normal + file-scoped no mesmo arquivo: use so namespace X; no topo ou so namespace X { ... }';;
       CS0542)  ex='membro com o mesmo nome do tipo: renomeie a classe ou o metodo -> class Program { static void Main() { ... } }';;
@@ -213,13 +213,16 @@ error_hints() {
       CS1026)  ex='falta fechar a chamada antes de comparar: return (await conn.ExecuteScalarAsync<int>(sql)) > 0;';;
       CS1002)  ex='falta ponto e virgula: var total = await conn.ExecuteScalarAsync<int>(sql);';;
       CS1513)  ex='falta fechar bloco: } no fim do metodo e da classe';;
-      CS1519)  ex='metodo fora da classe: coloque dentro dela -> public static class PortalApp { static async Task Buscar() { ... } }';;
+      CS1519)  ex='metodo fora da classe: coloque dentro dela -> public class Program { static async Task Buscar() { ... } }';;
+      CS1529)  ex='using depois de namespace/tipo: mova todos os using para o topo, antes do namespace e das classes';;
+      CS0579)  ex='atributo duplicado: apague obj/bin e rode dotnet clean/build; nao inclua obj/bin no .csproj';;
+      CS5001)  ex='sem ponto de entrada: adicione static async Task Main ou use OutputType Library';;
       CS0201)  ex='expressao sem efeito: atribua ou retorne -> var n = await conn.ExecuteScalarAsync<int>(sql);';;
       CS4033)  ex='await exige async: public async Task<bool> ExisteAsync(int id) { return await conn.ExecuteScalarAsync<int>(sql) > 0; }';;
       CS0116)  ex='membro solto: top-level statements nao combinam com namespace -> tire namespace X; e deixe var builder = ... no topo, ou ponha o codigo dentro de class Program';;
       CS0161)  ex='nem todo caminho retorna: feche com return default; ou throw new InvalidOperationException();';;
       CS0535)  ex='classe nao implementa a interface: implemente todos os membros ou remova a interface';;
-      CS1061)  ex='membro inexistente: confira o using da extensao -> using Dapper; para conn.QueryAsync';;
+      CS1061)  ex='membro inexistente: use using Dapper; e PackageReference Dapper 2.1.89; chame conn.QueryAsync<T>(sql)';;
       MSB1008) ex='dotnet build recebeu .cs: passe o projeto -> dotnet build MeuProjeto.csproj';;
       MSB1009) ex='projeto inexistente: dotnet build ./MinhaPasta/MeuProjeto.csproj';;
       MSB4025) ex='csproj nao e XML de projeto: reescreva o arquivo inteiro -> <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>';;
@@ -236,7 +239,12 @@ error_hints() {
     printf '  %-9s %s\n' "$c" "$ex"
   done
 }
-build_errors() { find "$1" -maxdepth 1 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null | while IFS= read -r pj; do ( cd "$1" && dotnet build "$(basename "$pj")" -v q "${DOTNET_SRC_EXCLUDE[@]}" 2>&1 | grep -E 'error (CS|MSB|NETSDK|NU)[0-9]+' ); done; }
+build_errors() {
+  local d="$1" all src
+  all="$(find "$d" -maxdepth 1 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.data/*' 2>/dev/null | while IFS= read -r pj; do ( cd "$d" && dotnet build "$(basename "$pj")" -v q "${DOTNET_SRC_EXCLUDE[@]}" 2>&1 | grep -E 'error (CS|MSB|NETSDK|NU)[0-9]+' ); done | sort -u)"
+  src="$(printf '%s\n' "$all" | grep -v '/obj/' | grep -v '/bin/')"
+  if [ -n "$src" ]; then printf '%s\n' "$src"; else printf '%s\n' "$all"; fi
+}
 build_err() { clean_nested "$1"; ( cd "$1" || return 1; p="$(ls *.csproj 2>/dev/null | head -1)"; if [ -n "$p" ]; then dotnet build "$p" -v q "${DOTNET_SRC_EXCLUDE[@]}" 2>&1 | grep -m3 -E ': error '; else dotnet build -v q "${DOTNET_SRC_EXCLUDE[@]}" 2>&1 | grep -m3 -E ': error '; fi ); }
 build_rc()  { clean_nested "$1"; ( cd "$1" || return 1; p="$(ls *.csproj 2>/dev/null | head -1)"; if [ -n "$p" ]; then dotnet build "$p" -v q "${DOTNET_SRC_EXCLUDE[@]}" >/dev/null 2>&1; else dotnet build -v q "${DOTNET_SRC_EXCLUDE[@]}" >/dev/null 2>&1; fi ); }
 
