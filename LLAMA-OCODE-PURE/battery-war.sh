@@ -279,13 +279,7 @@ EOT
 )"
 # enunciados ORIGINAIS das belts roxa/marrom/preta (trilha build: E2EBeltsBuildTests.cs)
 P_ROXA="$(cat <<'EOT'
-Trabalhe em {ws}. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP.
-
-Arquivos (exatamente estes, caminho relativo a raiz): Cadastros.csproj (unico projeto, Microsoft.NET.Sdk, net10.0, Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12), Dominio/Cliente.cs, Dominio/Fornecedor.cs, Dominio/Email.cs, Dominio/TelefoneBr.cs, Dominio/Cep.cs, Repositorio/IClienteRepository.cs, Repositorio/IFornecedorRepository.cs, Repositorio/ClienteRepository.cs, Repositorio/FornecedorRepository.cs, Servico/CadastroService.cs, Sql/schema.sql.
-
-Regras de codigo: cada tipo declarado UMA unica vez no projeto (Cliente, Fornecedor, Email, TelefoneBr, Cep e cada interface em um so arquivo; nao redeclare o mesmo tipo em outro arquivo e nao use partial); cada arquivo comeca com a unica linha namespace Cadastros; (sem segundo namespace e sem bloco namespace { }); using no topo; toda classe/interface fecha com } no fim do arquivo.
-
-Crie os arquivos com a tool write, comecando pelo dominio, depois o SQL e depois repositorios/servicos; nao escreva plano. Implemente classes concretas com logica real (nao apenas interfaces): Dapper para o CRUD e as mascaras/validacoes nos value objects. Compile usando dotnet build Cadastros.csproj ate rc=0. Ao terminar responda apenas BUILD-OK com a lista dos arquivos.
+Trabalhe em {ws}. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Organize o codigo em pastas por camada (ex.: Dominio, Repositorio, Servico, Sql), com um tipo por arquivo. Crie os arquivos .cs e .sql com caminho relativo a raiz do workspace, usando a tool write. Comece pelo dominio, depois o SQL e depois repositorios/servicos; nao escreva plano, va direto ao write. Inclua um .csproj com nome (ex.: Cadastros.csproj, net10.0, nao .csproj sem nome) e implemente classes concretas com logica real (nao apenas interfaces); compilar usando dotnet build ate rc=0. Ao terminar responda apenas BUILD-OK com a lista dos arquivos.
 EOT
 )"
 P_MARROM="$(cat <<'EOT'

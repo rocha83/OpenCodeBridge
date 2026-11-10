@@ -247,6 +247,18 @@ def alert(errors_text, max_codes=3):
     if not texts:
         return ""
     body = "\n".join("  - " + t for t in texts)
+    ops = []
+    for where, code, _msg in lines:
+        m = re.match(r"(.+?)\((\d+),\d+\)", where)
+        if not m:
+            continue
+        arq, ln = m.group(1), m.group(2)
+        if code == "CS8954":
+            ops.append("  - apague a linha repetida: sed -i '%sd' %s" % (ln, arq))
+        elif code in ("CS0101", "CS0111", "CS8863"):
+            ops.append("  - apague a segunda declaracao em %s:%s (nao reescreva o arquivo)" % (arq, ln))
+    if ops:
+        body += "\n" + "\n".join(ops[:3])
     return ("[build-hint] o ultimo build falhou. Corrija EXATAMENTE estes erros e so entao rode "
             "dotnet build Nome.csproj de novo (nao repita o comando sem editar o arquivo):\n" + body)
 

@@ -1,0 +1,4 @@
+# artefatos locais de execucao (nao versionar): logs de rodada ficam em logs/
+logs/
+__pycache__/
+*.pyc
