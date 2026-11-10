@@ -408,7 +408,13 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
           echo "----- [$caso] nudge build: $(printf '%s\n' "$errs0" | grep -c 'error') erro(s)"
           printf '%s\n' "$errs0" | head -5 | sed 's/^/  /'
           hints0="$(error_hints "$errs0")"
-          run_agent "$AG" "O build do .csproj da raiz falhou. Corrija AGORA o erro e rode dotnet build <arquivo>.csproj ate rc=0. Nao repita read/build e nao rode dotnet run. Se CS8954, use shell: sed -i '<linha>d' <arquivo> para remover a segunda linha 'namespace X;' e mantenha uma so; nao use edit. Se CS4032, troque 'static void Main' por 'static async Task Main'. Se CS0103 QueryAsync, chame na conexao: conn.QueryAsync<T>(sql).
+          sed_fix=""
+          if printf '%s\n' "$errs0" | grep -q 'CS8954'; then
+            cs_line=$(printf '%s\n' "$errs0" | sed -nE 's/^([^:]+\.cs)\(([0-9]+),[0-9]+\).*/\2/p' | head -1)
+            cs_file=$(printf '%s\n' "$errs0" | sed -nE 's/^([^:]+\.cs)\(([0-9]+),[0-9]+\).*/\1/p' | head -1)
+            [ -n "$cs_line" ] && [ -n "$cs_file" ] && sed_fix=" REPARO CS8954: execute sed -i '${cs_line}d' '${cs_file}' e rode dotnet build; nao use edit."
+          fi
+          run_agent "$AG" "O build do .csproj da raiz falhou. Corrija AGORA o erro e rode dotnet build <arquivo>.csproj ate rc=0. Nao repita read/build e nao rode dotnet run.${sed_fix} Se CS4032, troque 'static void Main' por 'static async Task Main'. Se CS0103 QueryAsync, chame na conexao: conn.QueryAsync<T>(sql).
 ERROS:
 $(printf '%s\n' "$errs0" | head -8)
 $hints0" 300
