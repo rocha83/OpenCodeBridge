@@ -146,9 +146,9 @@ run_agent() {
   local dur=$(( $(date +%s) - t0 ))
   # Tempo e referencia de COMPORTAMENTO (nao corta nada): muito acima = possivel laco.
   if [ "$dur" -gt "${EXPECT:-300}" ]; then
-    echo "(run $agent: ${dur}s > referencia ${EXPECT}s = SUSPEITO, possivel laco)"
+    echo "(run $agent: ${dur}s > referencia ${EXPECT:-300}s = SUSPEITO, possivel laco)"
   else
-    echo "(run $agent: ${dur}s, referencia ${EXPECT}s)"
+    echo "(run $agent: ${dur}s, referencia ${EXPECT:-300}s)"
   fi
   if grep -q 'Model unavailable' "$CASE_DIR/.last.txt" 2>/dev/null; then
     echo "ABORTO: provider/modelo indisponivel (llamapure) - confira o collector :4199"
@@ -164,9 +164,9 @@ tempo_caso() {
     echo "AVISO [$1]: modelo passou .cs ao dotnet build (MSB1008)"
   fi
   if [ "$dur" -gt "${EXPECT:-300}" ]; then
-    echo "TEMPO [$1]: ${dur}s (referencia <=${EXPECT}s) SUSPEITO: possivel laco"
+    echo "TEMPO [$1]: ${dur}s (referencia <=${EXPECT:-300}s) SUSPEITO: possivel laco"
   else
-    echo "TEMPO [$1]: ${dur}s (referencia <=${EXPECT}s) ok"
+    echo "TEMPO [$1]: ${dur}s (referencia <=${EXPECT:-300}s) ok"
   fi
 }
 
@@ -412,7 +412,7 @@ else
   ent_case() {
     local id="$1" p="$2" extra="${3:-true}"
     quer "$id" || return 0
-    CASE_DIR="$WS"
+    new_case "$id"
     echo "----- [$id]"; run_agent plan "$p" 600
     cp "$CASE_DIR/.last.txt" "$WS/$id.txt"
     check "$id" "[ \$(wc -c < '$WS/$id.txt' ) -gt 400 ] && ! grep -qE 'NotImplementedException|TODO[[:space:]:]' '$WS/$id.txt' && $extra"
