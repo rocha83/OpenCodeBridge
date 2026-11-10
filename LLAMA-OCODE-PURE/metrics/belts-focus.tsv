@@ -1,0 +1,2 @@
+data	ordem	caso	status	tentativas	tempo_s	obs
+2026-11-10	1	belts-build-roxa	PASS	3	379	tool-hint (args de tool) + build-hint; csproj unico, 4 .cs, 0 erros

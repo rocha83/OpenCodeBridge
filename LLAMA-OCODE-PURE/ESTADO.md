@@ -307,3 +307,19 @@ declarado uma vez, namespace uma vez) e (b) o alerta do collector com acao objet
 
 
 
+
+## Roxa: PASS (2026-11-10 16:01)
+
+Rodada focada com o harness novo (`rerun.sh belts-build-roxa`, enunciado natural, sem
+receita de arquivos) fechou **PASS** na 3a tentativa em 379s: `Cadastros.csproj` unico na
+raiz, 4 `.cs` (`Cliente`, `Fornecedor`, `ClienteRepository`, `ClienteService`),
+`dotnet build` 0 erro / 0 aviso, aceite `rc=0 && fontes .cs`.
+
+O que destravou (medido na mesma rodada): `tool_hints: 10` e `build_hints: 2`. O validador
+de args da tool (`hints.py::tool_call_problem` + `collector::tool_arg_hint`, porte enxuto
+do `ToolCallRepair`/`ToolHelp`/`ToolContentGuard` da bridge C#) devolve ao modelo a forma
+que passa (`filePath/oldString/newString`), no lugar do laco de
+`Invalid arguments for tool "edit"` que consumia os 160 passos. A regra "editou, reiniciou"
+virou `/tmp/opencode/llama-pure/rerun.sh <belt>`.
+
+Proxima na ordem: marrom (CS0234/FrameworkReference, CS0051, CS1513).
