@@ -185,59 +185,17 @@ new_case() {
 }
 
 clean_nested() { find "$1" -mindepth 1 -type d \( -name obj -o -name bin \) -prune -exec rm -rf {} + 2>/dev/null; }
-# --- tabela de erros -> exemplo otimista (mesmo padrao do tails das tools) ---
+# --- erro de compilacao -> exemplo otimista (fonte unica: hints.py) ---
+# O harness nao carrega mais a tabela: imprime so os codigos que apareceram.
 error_hints() {
-  local errs="$1" c ex
-  local codes
-  codes="$(printf '%s\n' "$errs" | grep -oE '(CS|MSB|NETSDK|NU)[0-9]{4,5}' | sort -u | head -6)"
-  [ -z "$codes" ] && return 0
-  echo "  --- tabela de erros (codigo -> exemplo que compila) ---"
-  for c in $codes; do
-    case "$c" in
-      CS1674)  ex='IEnumerable<T> nao e IDisposable: var lista = await conn.QueryAsync<Reembolso>(sql); foreach (var r in lista) { ... }';;
-      CS0246)  ex='tipo sem assembly no projeto que compila o arquivo: using Dapper; + <PackageReference Include="Dapper" Version="2.1.89" />';;
-      CS0234)  ex='namespace/tipo sem assembly: projeto separado -> <ProjectReference Include="..\Dominio\Dominio.csproj" /> no .csproj que consome; pacote NuGet -> <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" /> (using Microsoft.Data.Sqlite) ou dotnet add package Microsoft.Data.Sqlite --version 10.0.12; ou um unico .csproj com tudo';;
-      CS0103)  ex='QueryAsync nao existe solto: e extensao de IDbConnection -> using Dapper; using var conn = new SqliteConnection(cs); var lista = await conn.QueryAsync<T>(sql);';;
-      CS1013)  ex='numero invalido: o _ vai entre digitos -> 100_000m (nao 100_m)';;
-      CS8124)  ex='tupla com 1 elemento: use (int Id, decimal Valor) ou so decimal Valor, sem parenteses';;
-      CS1022)  ex='falta fechar o tipo/namespace: } no fim do arquivo';;
-      CS0101)  ex='tipo declarado duas vezes: dois arquivos com a mesma class -> renomeie ou apague a duplicata';;
-      CS0111)  ex='membro duplicado: dois metodos com a mesma assinatura na mesma class -> mantenha um';;
-      CS8863)  ex='partial conflitante: so uma declaracao parcial pode ter parametros -> deixe uma class unica';;
-      CS8803)  ex='top-level statements antes de namespace: mova o namespace para depois ou use class Program { static void Main() { ... } }';;
-      CS8954)  ex='namespace repetido: remova a segunda linha indicada e mantenha uma so -> sed -i "<linha>d" <arquivo>';;
-      CS4032)  ex='await em Main sincrono: troque static void Main por static async Task Main() { ... }';;
-      CS8955)  ex='namespace normal + file-scoped no mesmo arquivo: use so namespace X; no topo ou so namespace X { ... }';;
-      CS0542)  ex='membro com o mesmo nome do tipo: renomeie a classe ou o metodo -> class Program { static void Main() { ... } }';;
-      CS1525)  ex='parentese/operador fora de lugar: return (await conn.ExecuteScalarAsync<int>(sql)) > 0;';;
-      CS1026)  ex='falta fechar a chamada antes de comparar: return (await conn.ExecuteScalarAsync<int>(sql)) > 0;';;
-      CS1002)  ex='falta ponto e virgula: var total = await conn.ExecuteScalarAsync<int>(sql);';;
-      CS1513)  ex='falta fechar bloco: } no fim do metodo e da classe';;
-      CS1519)  ex='metodo fora da classe: coloque dentro dela -> public class Program { static async Task Buscar() { ... } }';;
-      CS1529)  ex='using depois de namespace/tipo: mova todos os using para o topo, antes do namespace e das classes';;
-      CS0579)  ex='atributo duplicado: apague obj/bin e rode dotnet clean/build; nao inclua obj/bin no .csproj';;
-      CS5001)  ex='sem ponto de entrada: adicione static async Task Main ou use OutputType Library';;
-      CS0201)  ex='expressao sem efeito: atribua ou retorne -> var n = await conn.ExecuteScalarAsync<int>(sql);';;
-      CS4033)  ex='await exige async: public async Task<bool> ExisteAsync(int id) { return await conn.ExecuteScalarAsync<int>(sql) > 0; }';;
-      CS0116)  ex='membro solto: top-level statements nao combinam com namespace -> tire namespace X; e deixe var builder = ... no topo, ou ponha o codigo dentro de class Program';;
-      CS0161)  ex='nem todo caminho retorna: feche com return default; ou throw new InvalidOperationException();';;
-      CS0535)  ex='classe nao implementa a interface: implemente todos os membros ou remova a interface';;
-      CS1061)  ex='membro inexistente: use using Dapper; e PackageReference Dapper 2.1.89; chame conn.QueryAsync<T>(sql)';;
-      MSB1008) ex='dotnet build recebeu .cs: passe o projeto -> dotnet build MeuProjeto.csproj';;
-      MSB1009) ex='projeto inexistente: dotnet build ./MinhaPasta/MeuProjeto.csproj';;
-      MSB4025) ex='csproj nao e XML de projeto: reescreva o arquivo inteiro -> <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>';;
-      MSB4068) ex='elemento <project> minusculo/atributo errado: <Project Sdk="Microsoft.NET.Sdk"> (P maiusculo, Sdk como atributo)';;
-      MSB4040) ex='csproj sem SDK (sem destino): <Project Sdk="Microsoft.NET.Sdk"> ... </Project> — o Sdk fica no Project, sem xmlns';;
-      NETSDK1045) ex='SDK nao suporta o alvo: use <TargetFramework>net8.0</TargetFramework>';;
-      NU1101)  ex='pacote fora do cache: dotnet add package Dapper --version 2.1.89';;
-      NU1102)  ex='versao nao existe no feed: Microsoft.AspNetCore.Http 2.4.0 -> em .NET 8+ e framework, use <FrameworkReference Include="Microsoft.AspNetCore.App" />; Microsoft.Data.SqlClient 8.0.4 nao existe, use 5.1.5';;
-      NU1605)  ex='downgrade de pacote: alinhe ao target -> <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />';;
-      NU1301)  ex='falha de conexao com o feed (transitoria): repita o build -> dotnet build MeuProjeto.csproj; se persistir, teste curl -I https://api.nuget.org/v3/index.json';;
-      NU1101)  ex='pacote inexistente no feed: use o nome real do pacote (ex.: FluentValidation 11.9.0) ou um que ja esteja no cache';;
-      *)       ex='abre o arquivo na linha:coluna do erro e corrige ali (o compilador aponta o token exato)';;
-    esac
-    printf '  %-9s %s\n' "$c" "$ex"
-  done
+  local errs="$1" hints
+  [ -z "$errs" ] && return 0
+  hints="$(printf '%s\n' "$errs" | python3 "$HERE/hints.py" - 2>/dev/null)"
+  [ -z "$hints" ] && hints="$(printf '%s\n' "$errs" \
+    | grep -oE '(CS|MSB|NETSDK|NU)[0-9]{4,5}' | sort -u | head -6 | sed 's/^/  /')"
+  [ -z "$hints" ] && return 0
+  echo "  --- erro -> exemplo que compila (hints.py) ---"
+  printf '%s\n' "$hints"
 }
 build_errors() {
   local d="$1" all src
@@ -321,7 +279,13 @@ EOT
 )"
 # enunciados ORIGINAIS das belts roxa/marrom/preta (trilha build: E2EBeltsBuildTests.cs)
 P_ROXA="$(cat <<'EOT'
-Trabalhe em {ws}. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Crie os arquivos .cs e .sql com caminho relativo a raiz do workspace, usando a tool write. Comece pelo dominio, depois o SQL e depois repositorios/servicos; nao escreva plano, va direto ao write. Inclua um .csproj com nome (ex.: Cadastros.csproj, net10.0, nao .csproj sem nome) e implemente classes concretas com logica real (nao apenas interfaces); compilar usando dotnet build ate rc=0. Ao terminar responda apenas BUILD-OK com a lista dos arquivos.
+Trabalhe em {ws}. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP.
+
+Arquivos (exatamente estes, caminho relativo a raiz): Cadastros.csproj (unico projeto, Microsoft.NET.Sdk, net10.0, Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12), Dominio/Cliente.cs, Dominio/Fornecedor.cs, Dominio/Email.cs, Dominio/TelefoneBr.cs, Dominio/Cep.cs, Repositorio/IClienteRepository.cs, Repositorio/IFornecedorRepository.cs, Repositorio/ClienteRepository.cs, Repositorio/FornecedorRepository.cs, Servico/CadastroService.cs, Sql/schema.sql.
+
+Regras de codigo: cada tipo declarado UMA unica vez no projeto (Cliente, Fornecedor, Email, TelefoneBr, Cep e cada interface em um so arquivo; nao redeclare o mesmo tipo em outro arquivo e nao use partial); cada arquivo comeca com a unica linha namespace Cadastros; (sem segundo namespace e sem bloco namespace { }); using no topo; toda classe/interface fecha com } no fim do arquivo.
+
+Crie os arquivos com a tool write, comecando pelo dominio, depois o SQL e depois repositorios/servicos; nao escreva plano. Implemente classes concretas com logica real (nao apenas interfaces): Dapper para o CRUD e as mascaras/validacoes nos value objects. Compile usando dotnet build Cadastros.csproj ate rc=0. Ao terminar responda apenas BUILD-OK com a lista dos arquivos.
 EOT
 )"
 P_MARROM="$(cat <<'EOT'
@@ -352,7 +316,7 @@ EOT
 )"
 # aceite levado ao orch pelo harness (o enunciado do orch nao traz criterio de aceite)
 ORCH_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Se o escopo pedir ORM/persistencia com Dapper, use Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 e use using Dapper; no arquivo que chama QueryAsync."
-BUILD_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Se o escopo pedir ORM/persistencia com Dapper, use Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 e use using Dapper; no arquivo que chama QueryAsync."
+BUILD_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Se o escopo pedir ORM/persistencia com Dapper, use Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 e use using Dapper; no arquivo que chama QueryAsync. Cada tipo e' declarado uma unica vez no projeto (nao redeclare a mesma classe em outro arquivo e nao use partial conflitante). Se o escopo pedir API REST, o .csproj precisa de <FrameworkReference Include=\"Microsoft.AspNetCore.App\" /> (ASP.NET no .NET 8+ e framework, nao pacote); se pedir frontend, entregue os .tsx mas o aceite e' o build do backend."
 
 SUF=" Implementacao completa, sem placeholders. ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS."
 P_PROD="C# .NET 9 Minimal API + Dapper + Postgres: CRUD completo de Product (Id, Name, Price, Stock). Entregue: DDL da tabela, GET /api/products (lista), GET /api/products/{id} (404 se ausente), POST (400 se Name vazio ou Price <= 0), PUT (404 se ausente) e DELETE (204), com log por operacao. Entregue o codigo completo + 3 bullets de borda.$SUF"

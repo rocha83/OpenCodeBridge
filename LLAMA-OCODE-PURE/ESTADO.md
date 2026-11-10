@@ -277,3 +277,24 @@ chega no ponto de falha.
 Ativacao: `BUILD_HINT=off` desliga; `HINT_MAX=N` muda o teto por conversa. O restart do
 collector segue no boundary entre attempts (`collector-restart.log`).
 
+## Aceite de producao: o que faltava nas belts (2026-11-10)
+
+Matriz interrompida em roxa 3x FAIL, marrom 3x FAIL (build). Causas mapeadas, todas
+estruturais no enunciado/agente — nao transporte:
+
+- **Roxa**: o modelo escrevia o mesmo tipo em varios arquivos (`src/Domain/Models.cs`
+  regravado), repetia `namespace` (CS8954) e chegava a `max steps` sem build. Correcao:
+  `P_ROXA` agora fixa a lista de arquivos (um tipo por arquivo), exige `namespace
+  Cadastros;` unico por arquivo e proibe `partial`/redeclaracao.
+- **Marrom**: escrevia API ASP.NET dentro de projeto console (CS0234) e misturava
+  acessibilidade (CS0051). Correcao: `BUILD_ACEITE` passou a exigir
+  `<FrameworkReference Include="Microsoft.AspNetCore.App" />` quando o escopo pedir API e
+  a declarar cada tipo uma unica vez; o `hints.py` cobre CS0234/CS0051 com exemplo.
+- **Agente**: `build` chegou a `maximum steps` (80). Subido para 160; tools 80, scripter
+  100, orch 140 em `/tmp/opencode/llama-pure/war-tools-chat/opencode.json` (o harness copia
+  por caso).
+
+Comando do reteste focado: `/tmp/opencode/llama-pure/belts-run.sh belts-build-roxa`
+(TSV em `metrics/focus-roxa.tsv`). O harness nao e' mais editado com rodada ativa.
+
+
