@@ -84,6 +84,7 @@ NUDGE_AT = int(os.environ.get("NUDGE_AT", "3"))        # mesma tool+args 3x
 STOP_AT = int(os.environ.get("STOP_AT", "6"))          # 6x = corta
 NUDGES = STOPS = 0
 HINTS = 0             # alertas [build-hint] injetados (erro de compilacao + exemplo)
+TOOL_HINTS = 0        # alertas [tool-hint] injetados (args fora do schema)
 HINT_SEEN = {}        # conversa -> assinaturas de erro ja alertadas (anti-spam)
 BUILD_HINT = os.environ.get("BUILD_HINT", "on").strip().lower()
 HINT_MAX = int(os.environ.get("HINT_MAX", "8"))   # alertas por conversa
@@ -616,6 +617,53 @@ def build_hint(body):
     return True
 
 
+def tool_arg_hint(body):
+    """Valida os args da ULTIMA tool call do request e injeta UM aviso otimista.
+
+    Espelha o ToolCallRepair/ToolHelp da bridge C#: quando o args veio cortado,
+    com `<tool_call>` colado, campo fora do schema (`path`) ou faltando, o modelo
+    recebe a forma EXATA que passa antes do proximo turno — sem esperar o
+    "Invalid arguments" virar laco. Anti-spam por (tool, tipo do defeito).
+    """
+    global TOOL_HINTS
+    if _hints is None or BUILD_HINT == "off":
+        return False
+    msgs = body.get("messages")
+    if not isinstance(msgs, list) or not msgs:
+        return False
+    call = None
+    for m in reversed(msgs[-8:]):
+        if isinstance(m, dict) and str(m.get("role")) == "assistant":
+            calls = m.get("tool_calls") or []
+            call = calls[-1] if isinstance(calls, list) and calls else None
+            break
+    if not isinstance(call, dict):
+        return False
+    fn = call.get("function") if isinstance(call.get("function"), dict) else {}
+    name = (fn.get("name") or call.get("name") or "").lower()
+    raw = fn.get("arguments", fn.get("input", call.get("arguments")))
+    prob = _hints.tool_call_problem(name, raw)
+    if not prob:
+        return False
+    kind, problema, exemplo = prob
+    key = _conv_key(msgs)
+    with LOCK:
+        seen = HINT_SEEN.setdefault(key, set())
+        sig = "toolarg@%s:%s" % (name, kind)
+        if sig in seen or len(seen) >= HINT_MAX:
+            return False
+        seen.add(sig)
+        TOOL_HINTS += 1
+        while len(HINT_SEEN) > 64:
+            HINT_SEEN.pop(next(iter(HINT_SEEN)))
+    msg = ('[tool-hint] a ultima tool call nao casa com o schema do opencode: %s. '
+           'Reenvie UMA chamada valida, com os args COMPLETOS:\n  %s\n'
+           "O exemplo e' FORMA, nao conteudo: troque caminho e texto pelos do seu pedido "
+           'e nunca escreva <tool_call> dentro do argumento.' % (problema, exemplo))
+    msgs.append({"role": "user", "content": msg, "x-injected": True})
+    return True
+
+
 def anti_repeat(body, raw_body):
     """Anti-repeat de texto e de tool. Devolve (raw, stop_payload, nudged, stopped).
 
@@ -768,7 +816,7 @@ def summary():
         "tool_cycle_max": CYCLE_MAX,
         "tool_loop_hits": sum(1 for r in rows if (r.get("tool_sig_streak") or 0) >= 3),
         "nudges": NUDGES, "stops": STOPS, "anti_repeat": ANTI,
-        "build_hints": HINTS, "build_hint": BUILD_HINT,
+        "build_hints": HINTS, "tool_hints": TOOL_HINTS, "build_hint": BUILD_HINT,
         "nudge_at": NUDGE_AT, "stop_at": STOP_AT,
     }
 
@@ -933,7 +981,7 @@ class Proxy(http.server.BaseHTTPRequestHandler):
             pass
         nudged = stopped = False
         if body and self.command == "POST" and self.path.startswith("/v1/chat"):
-            if build_hint(body):
+            if tool_arg_hint(body) or build_hint(body):
                 raw_body = json.dumps(body, ensure_ascii=False).encode()
             raw_body, stop, nudged, stopped = anti_repeat(body, raw_body)
             if stop is not None:

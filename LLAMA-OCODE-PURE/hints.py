@@ -17,6 +17,7 @@ Uso:
   python3 hints.py --codes -         # so os codigos encontrados
   python3 hints.py --alert -         # alerta compacto pronto para injetar
 """
+import json
 import re
 import sys
 
@@ -31,6 +32,65 @@ ERR_LINE_RE = re.compile(
 )
 # erro conhecido do protocolo de tool: args quebrados (texto com <tool_call>, schema errado)
 TOOL_ARG_ERR = re.compile(r'Invalid arguments for tool \\?"([A-Za-z_]+)', re.IGNORECASE)
+
+# --- contrato minimo dos args de tool (espelha o schema do opencode) ---
+# Fonte unica, como ToolHelp/ToolCallRepair da bridge C#: o collector valida a
+# call ANTERIOR no request e devolve UM aviso com a forma que passa.
+TOOL_REQUIRED = {
+    "write": ("filePath", "content"),
+    "edit": ("filePath", "oldString", "newString"),
+    "read": ("filePath",),
+    "shell": ("command",),
+}
+TOOL_ALIAS = {  # como o modelo costuma escrever -> nome do schema
+    "path": "filePath", "file": "filePath", "file_path": "filePath",
+    "filename": "filePath", "old_string": "oldString", "old_text": "oldString",
+    "new_string": "newString", "new_text": "newString",
+    "replace_all": "replaceAll", "cmd": "command", "command_line": "command",
+}
+TOOL_EXAMPLE = {  # exemplo OTIMISTA: a chamada inteira, pronta para reenviar
+    "write": ('{"filePath":"src/Dominio/Cliente.cs","content":"namespace Cadastros.Dominio;\\n\\n'
+              'public sealed class Cliente { public int Id { get; init; } }"}'),
+    "edit": ('{"filePath":"src/Dominio/Cliente.cs","oldString":"public sealed class Cliente { }",'
+             '"newString":"public sealed class Cliente { public int Id { get; init; } }"}'),
+    "read": '{"filePath":"src/Dominio/Cliente.cs"}',
+    "shell": '{"command":"dotnet build Cadastros.csproj"}',
+}
+
+
+def tool_call_problem(name, args):
+    """Valida os args de UMA tool call. (kind, problema, exemplo) ou None se ok.
+
+    O `args` pode vir dict (opencode) ou string JSON (formato OpenAI/bridge).
+    Cobre o que o 4B erra de fato: JSON cortado, `<tool_call>` colado no texto,
+    nome de campo fora do schema (`path`/`old_string`) e campo obrigatorio ausente.
+    """
+    name = (name or "").strip().lower()
+    req = TOOL_REQUIRED.get(name)
+    if not req:
+        return None
+    obj = args
+    if isinstance(obj, str):
+        if "<tool_call" in obj:
+            return ("colado", "o argumento veio com <tool_call> colado no texto", TOOL_EXAMPLE[name])
+        try:
+            obj = json.loads(obj)
+        except ValueError:
+            return ("json", "o JSON veio invalido/truncado (chaves e aspas precisam fechar)",
+                    TOOL_EXAMPLE[name])
+    if not isinstance(obj, dict):
+        return ("tipo", "os args precisam ser um objeto JSON {campo: valor}", TOOL_EXAMPLE[name])
+    if any("<tool_call" in str(v) for v in obj.values()):
+        return ("colado", "um campo veio com <tool_call> colado no texto", TOOL_EXAMPLE[name])
+    al = {k: TOOL_ALIAS[k] for k in obj if k in TOOL_ALIAS and TOOL_ALIAS[k] in req}
+    if al:
+        return ("alias", "campo com nome fora do schema: use " + ", ".join(
+            "%s (nao %s)" % (v, k) for k, v in al.items()), TOOL_EXAMPLE[name])
+    falta = [k for k in req if k not in obj]
+    if falta:
+        return ("faltando", "faltam os campos obrigatorios: " + ", ".join(falta),
+                TOOL_EXAMPLE[name])
+    return None
 
 
 def hint_for(code):
