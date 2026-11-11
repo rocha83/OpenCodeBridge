@@ -309,7 +309,7 @@ EOT
 )"
 
 P_VERDE_ORCH="$(cat <<'EOT'
-Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ. Escopo: dominio + banco SQL. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br.
+Escreva um aplicativo .NET C# (criar o arquivo .csproj de definicao do projeto na pasta raiz) de um CRUD de reembolsos corporativos, entidade principal Refund, com value objects e regras de aprovacao por faixa de valor. Valide CPF e CNPJ. O dominio e POCO, sem atributos de ORM. Entregue tambem o banco de dados SQL em arquivo .sql: DDL das tabelas com indices e constraints e seeds de exemplo. Organize o codigo em camadas de dominio e de servicos de aplicacao. Utilize .NET versao 10. Utilize dotnet build no final para garantir a integridade da implementacao, o aplicativo deve compilar. Segmente a implementacao em tarefas menores por responsabilidade (dominio com Refund e value objects; DDL, indices, constraints e seeds; servicos de aplicacao), utilizando a tool subagent, utilize os agentes que contenham no nome o termo "scripter".
 EOT
 )"
 # aceite levado ao orch pelo harness (o enunciado do orch nao traz criterio de aceite)

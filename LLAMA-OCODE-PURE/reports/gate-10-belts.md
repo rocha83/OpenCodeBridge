@@ -13,7 +13,7 @@ Modelo em teste: `llamapure/Gemma4-E4B-GK-Q4` (GPU1 :4100, 524k ctx, temp 0.1 pa
 | 3 | build preta | **PASS** | 2 | 405s | `Portal.csproj` + `src/Program.cs`, 0 erros |
 | 4 | build azul | **PASS** | 1 | 49s | `Consulta.csproj`, 0 erros |
 | 5 | build verde | **PASS** | 1 | 93s | 0 erros |
-| 6 | orch azul | **PASS** | 1 | 53s | `Reembolsos.csproj` raiz + `Reembolso.sql` + repo generico + servico, 0 erros |
+| 6 | orch azul | **PASS** | 1 | 59s | Rev 4: `CorporateData.csproj` na raiz + `src/Dominio` + `src/Aplicacao`, 0 erros (scripter nao gerou .zip/.sh do passo final) |
 | 7 | orch roxa | FAIL | 3 | 1644s | 6 rodadas de ajuste; multi-entidade nao fecha |
 | 8 | orch verde | FAIL | 3 | 969s | DDL ausente + erro de compilacao na 3a |
 | 9 | orch preta | FAIL | 3 | 1614s | 3a sem `Colaborador`; orch relata "nao posso verificar com as ferramentas desabilitadas" |
