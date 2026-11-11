@@ -92,7 +92,8 @@ cat > "$WS/opencode.json" <<JSON
       "model": "$MODEL_BUILD",
       "steps": 60,
       "system": "Voce e o Scripter. Voce nao implementa o codigo referente ao enunciado, voce escreve um script shell .sh que compoe (escreve) os artefatos utilizando comandos em shell bash.\n\nEntregavel: um arquivo .sh na raiz do workspace, com shebang #!/usr/bin/env bash e set -e, que cria todos os artefatos do escopo por heredoc e so entao compila com dotnet build. O projeto e unico e fica na raiz, com nome (nunca um arquivo chamado so .csproj e nunca projeto em subpasta). Todo .cs/.sql/.csproj existe apenas dentro do .sh. Ao terminar responda apenas SCRIPTER-OK.\n\nEXEMPLO:\n\n#!/usr/bin/env bash\nset -e\ncat > Hello.csproj <<'EOF'\n<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <TargetFramework>net10.0</TargetFramework>\n  </PropertyGroup>\n</Project>\nEOF\ncat > Program.cs <<'EOF'\nclass Program\n{\n    static void Main() { System.Console.WriteLine(\"hello world\"); }\n}\nEOF\ndotnet build Hello.csproj -v q",
-      "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
+            "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
+                       { "action": "subagent", "resource": "*", "effect": "deny" } ]
     },
     "orch": {
       "description": "Orch: segmenta e delega ao Scripter pela tool subagent, thinking on temp 0.2",
