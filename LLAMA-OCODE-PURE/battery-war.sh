@@ -91,7 +91,7 @@ cat > "$WS/opencode.json" <<JSON
       "mode": "all",
       "model": "$MODEL_BUILD",
       "steps": 60,
-      "system": "Voce e o Scripter. Escreva os arquivos de artefato pedidos, completos e sem placeholder: C# em .cs, DDL em .sql, projeto em .csproj. Cada tipo tem seu verificador: .cs/.sql/.csproj se verificam com 'dotnet build' (o build acusa o erro com arquivo e linha); 'bash -n arquivo.sh' vale apenas para script .sh com shebang (#!/usr/bin/env bash). Exemplo de .csproj que compila: <Project Sdk='Microsoft.NET.Sdk'><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>. Dois projetos que se usam entram como <ProjectReference Include='../Dominio/Dominio.csproj' />. Pacotes com versao que existe: Dapper 2.1.89, Microsoft.Data.Sqlite 10.0.12; ASP.NET Core em .NET 8+ entra como <FrameworkReference Include='Microsoft.AspNetCore.App' />. Todo arquivo .cs precisa de pelo menos uma declaracao de tipo (class, interface, record ou enum): nunca entregue um .cs so com using; se o tipo ja existe em outro arquivo, nao duplique. Namespace: declarado UMA vez no topo do arquivo (nunca repita namespace X; antes de cada tipo) e cada tipo declarado UMA unica vez (class OU record, nunca os dois). O .csproj precisa de nome (ex.: Dominio.csproj), nunca um arquivo chamado so .csproj. Responda so com tool calls.",
+      "system": "Voce e o Scripter. Voce nao executa a tarefa: voce escreve o script shell que a executa. Entregavel: um arquivo .sh na raiz do workspace, com shebang (#!/usr/bin/env bash), que cria TODOS os arquivos do escopo por heredoc (cat > Arquivo.cs <<'EOF' ... EOF), roda dotnet build no .csproj da raiz e termina com exit 1 se o build falhar. Todo .cs/.sql/.csproj existe apenas dentro do .sh; nunca grave .cs solto. Ao terminar responda apenas SCRIPTER-OK.",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
     },
     "orch": {
@@ -99,10 +99,11 @@ cat > "$WS/opencode.json" <<JSON
       "mode": "primary",
       "model": "$MODEL",
       "steps": 140,
-      "system": "Voce e o Orch: ANTES de delegar, liste as entidades do enunciado (ex.: 'clientes e fornecedores' = DUAS entidades; 'reembolsos' = uma) e garanta que CADA uma tera o seu proprio .cs, mais DDL, repositorio e servico. Divida o enunciado em tarefas menores (max 5) e delegue cada uma ao Scripter chamando a tool subagent com agent \"scripter\". Forma do prompt (o EXEMPLO e' FORMA, nao conteudo: troque nomes/arquivos/csproj pelos do ENUNCIADO, nunca copie o literal): subagent(agent=\"scripter\", description=\"<parte do escopo>\", prompt=\"OBJETIVO: <parte do escopo>; ESCOPO: <arquivos exatos>; ACEITE: <comando de verificacao>\"). Regra do projeto unico: existe UM so .csproj na raiz e o nome dele e' o do enunciado (ou o nome do dominio do enunciado + .csproj); todos os micro-enunciados repetem esse caminho; o Scripter entrega um script shell com shebang que materializa os arquivos. Depois agregue os resultados e confira o aceite de cada um. Arquivos exclusivos: cada micro-enunciado lista os arquivos que pode criar e nenhuma classe pode existir em dois arquivos; um unico .csproj na raiz, sem subprojeto. Se aparecer CS0101 (classe duplicada) ou um segundo .csproj, consolide antes de concluir; rode dotnet build no .csproj da raiz e so conclua com rc=0. Nao encerre com tarefas pendentes: se faltar tipo (CS0246), arquivo ou entidade do enunciado, delegue de novo ao Scripter e repita ate o build passar. No fim, confira arquivo por arquivo que todas as entidades listadas existem e que o build da raiz passou; so entao responda.  Layout obrigatorio: o .csproj COM NOME fica na RAIZ do workspace e TODOS os arquivos de todos os micro-enunciados ficam sob essa raiz (ex.: src/Domain/Cliente.cs), nunca em subpasta com outro .csproj; os conjuntos de arquivos de dois micro-enunciados nunca se repetem. Delegue UM micro-enunciado por vez e so delegue o proximo depois que o anterior terminar. Se um Scripter criou projeto fora da raiz, delegue a correcao (mover/reescrever no caminho certo) antes de seguir. Aja com tool calls, sem narrar plano.",
+      "system": "Voce e um agente que nao escreve codigo, nao cria arquivo, nao roda shell, apenas segmenta o enunciado principal em tarefas menores e delega a subagentes, o enunciado deve informar o nome do agente a utilizar quando nao, utilize o agente que contenha \"build\" em seu nome.",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
                        { "action": "subagent", "resource": "*", "effect": "deny" },
                        { "action": "subagent", "resource": "scripter", "effect": "allow" },
+                       { "action": "subagent", "resource": "build", "effect": "allow" },
                        { "action": "write", "resource": "*", "effect": "deny" },
                        { "action": "edit", "resource": "*", "effect": "deny" },
                        { "action": "shell", "resource": "*", "effect": "deny" },
@@ -276,7 +277,7 @@ EOT
 
 # enunciados ORIGINAIS da trilha orch (Rochas.OpenCodeBridge.Test/E2EBeltsTests.cs)
 P_AZUL_ORCH="$(cat <<'EOT'
-Aplicacao backend .NET C# que realize uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Premissas: backend .NET C#.
+Escreva um aplicativo .NET C# (criar o arquivo .csproj de definicao do projeto na pasta raiz) que resolva uma consulta de dados corporativos, entidade principal AuditEntry. O escopo e somente .NET: entidades, value objects, interfaces e servicos de consulta - sem camada de infraestrutura, sem banco de dados e sem API. A origem dos dados e abstraida por uma interface de repositorio, e a consulta devolve resultado paginado com filtros por periodo e por tipo de evento. Organize o codigo em camadas de dominio e de servicos de aplicacao. Utilize .NET versao 10 e Dapper apenas como abstracao de acesso quando o servico precisar descrever a consulta. Utilize dotnet build no final para garantir a integridade da implementacao, o aplicativo deve compilar. Segmente a implementacao em tarefas menores por responsabilidade (dominio com as entidades e value objects; servicos de aplicacao com a consulta e a paginacao), utilizando a tool subagent, utilize os agentes que contenham no nome o termo "scripter".
 EOT
 )"
 # enunciados ORIGINAIS das belts roxa/marrom/preta (trilha build: E2EBeltsBuildTests.cs)
@@ -311,7 +312,7 @@ Especifique o dominio backend C# de um CRUD de reembolsos corporativos (entidade
 EOT
 )"
 # aceite levado ao orch pelo harness (o enunciado do orch nao traz criterio de aceite)
-ORCH_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto) e ele precisa de NOME (ex.: Cadastros.csproj; arquivo chamado so .csproj falha no restore), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Se o escopo pedir ORM/persistencia com Dapper, use Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 e use using Dapper; no arquivo que chama QueryAsync."
+ORCH_ACEITE=""
 BUILD_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Se o escopo pedir ORM/persistencia com Dapper, use Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 e use using Dapper; no arquivo que chama QueryAsync. Cada tipo e' declarado uma unica vez no projeto (nao redeclare a mesma classe em outro arquivo e nao use partial conflitante). Se o escopo pedir API REST, o .csproj precisa de <FrameworkReference Include=\"Microsoft.AspNetCore.App\" /> (ASP.NET no .NET 8+ e framework, nao pacote); se pedir frontend, entregue os .tsx mas o aceite e' o build do backend."
 
 SUF=" Implementacao completa, sem placeholders. ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS."
@@ -361,11 +362,21 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       *-roxa)   echo "Cliente|Customer Fornecedor|Supplier" ;;
       *-marrom) echo "Reembolso|Refund|Reimbursement" ;;
       *-preta)  echo "Colaborador|Employee" ;;
-      *-azul)   echo "Repositor|Repository" ;;
+      *-azul)   echo "AuditEntry" ;;
       *-verde)  echo "Reembolso|Refund|Reimbursement" ;;
       *) echo "" ;;
     esac
   }
+  # Scripter entrega .sh (shebang + heredoc): executa os scripts da raiz antes de compilar
+  run_scripts() {
+    local f
+    for f in "$CASE_DIR"/*.sh; do
+      [ -f "$f" ] || continue
+      echo "(exec $(basename "$f"))"
+      ( cd "$CASE_DIR" && timeout 180 bash "$f" ) >/dev/null 2>&1 || echo "(script falhou: $(basename "$f"))"
+    done
+  }
+
   for belt in azul verde roxa marrom preta; do
     for AG in build orch; do
       cor="$(printf '%s' "$belt" | tr a-z A-Z)"
@@ -376,6 +387,7 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       quer_belt "$caso" || continue
       new_case "$caso"
       echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" 420
+      run_scripts
       # nudge unico: repara o aceite (sem .csproj, sem fonte ou build quebrado) com enunciado + erro + tabela
       missing=""
       if ! find "$CASE_DIR" -maxdepth 1 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="sem .csproj na raiz"; fi
@@ -392,11 +404,12 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
         run_agent "$AG" "ENUNCIADO:
 $P
 
-O aceite do enunciado nao foi cumprido ($missing). Corrija o .csproj na raiz e/ou os .cs, compile com dotnet build ate rc=0 e nao repita read/build nem rode dotnet run. Use a tabela abaixo.
+O aceite do enunciado nao foi cumprido ($missing). Corrija o script .sh e/ou o .csproj na raiz e os .cs, compile com dotnet build ate rc=0 e nao repita read/build nem rode dotnet run. Use a tabela abaixo.
 ERROS:
 $(printf '%s\n' "$errs0" | head -8)
 $hints0" 180
       fi
+      run_scripts
       # projeto unico na raiz: subprojeto aninhado compila vazio e mascara fonte nao compilada
       # aceite minimo: o .csproj da raiz compila (rc=0) e existe fonte .cs real fora de obj/bin
       src="find '$CASE_DIR' -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' | grep -q ."
