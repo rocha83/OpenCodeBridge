@@ -11,3 +11,4 @@ data	ordem	caso	status	tentativas	tempo_s	obs
 2026-11-10	9	belts-orch-preta	FAIL	3	1614	3a: escopo sem Colaborador; o proprio orch diz que nao pode verificar (shell negado)
 2026-11-10	10	belts-orch-marrom	FAIL	3	1843	erro de compilacao nas 3 tentativas (escopo mais pesado: dominio+DDL+Dapper+API+React)
 2026-11-10	11	belts-orch-azul	PASS	1	59	Rev4: scripter implementa direto (CorporateData.csproj na raiz, src/Dominio + src/Aplicacao), 0 erros; .zip/.sh do passo final nao foram produzidos
+2026-11-10	12	belts-orch-verde	FAIL	3	779	Rev4: csproj raiz + db/schema.sql ok; CS0234/CS0246 (namespace por pasta), CS8954 (namespace 2x), CS0101 (Cnpj duplicado), CS1002/CS1525 (switch malformado), ValueObject inexistente
