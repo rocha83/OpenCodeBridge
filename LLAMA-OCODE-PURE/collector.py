@@ -88,6 +88,7 @@ STOP_AT = int(os.environ.get("STOP_AT", "6"))          # 6x = corta
 BREAKER_SOFT = int(os.environ.get("BREAKER_SOFT", "3"))
 BREAKER_HARD = int(os.environ.get("BREAKER_HARD", "6"))
 NUDGES = STOPS = 0
+BREAKER_TRIPS = BREAKER_NUDGES = 0   # ToolsBreaker (porte do C#)
 HINTS = 0             # alertas [build-hint] injetados (erro de compilacao + exemplo)
 TOOL_HINTS = 0        # alertas [tool-hint] injetados (args fora do schema)
 HINT_SEEN = {}        # conversa -> assinaturas de erro ja alertadas (anti-spam)
@@ -539,36 +540,82 @@ def _tool_history(msgs):
     return hist
 
 
-def _breaker_scan(msgs):
-    """(contagem, alvos) = max(streak, mesmo erro, mesmo alvo) + nº de alvos com falha."""
+def _breaker_info(msgs):
+    """Diagnostico do loop: contagem max(streak, mesmo erro, mesmo alvo) + alvos + falhas."""
     hist = _tool_history(msgs)
+    info = {"cont": 0, "alvos": 0, "fails": [], "hist": hist, "mesma": 0, "streak": 0}
     if not hist:
-        return 0, 0
+        return info
     streak = 0
     for _n, _a, c in reversed(hist):
         if not _looks_failure(c):
             break
         streak += 1
-    keys = {}
-    for _n, _a, c in hist:
+    keys, fails = {}, []
+    for nm, ar, c in hist:
         if not _looks_failure(c):
             continue
+        fails.append((nm, ar, c))
         k = _failure_key(c)
         if k:
             keys[k] = keys.get(k, 0) + 1
     mesma = max(keys.values()) if keys else 0
     janela = max(BREAKER_HARD, BREAKER_SOFT) * 2
     alvo, do_alvo = None, 0
-    for nm, ar, c in reversed(hist[-janela:]):
+    for _nm, _ar, c in reversed(hist[-janela:]):
         if not _looks_failure(c):
             continue
-        tg = _norm_target(nm, ar)
+        tg = _norm_target(_nm, _ar)
         if alvo is None:
             alvo = tg
         if tg == alvo:
             do_alvo += 1
-    alvos = len({_norm_target(nm, ar) for nm, ar, c in hist if _looks_failure(c)})
-    return max(streak, mesma, do_alvo), alvos
+    alvos = len({_norm_target(nm, ar) for nm, ar, _c in fails})
+    info.update({"cont": max(streak, mesma, do_alvo), "alvos": alvos, "fails": fails,
+                 "mesma": mesma, "streak": streak})
+    return info
+
+
+def _breaker_scan(msgs):
+    """(contagem, alvos) — atalho de `_breaker_info`."""
+    i = _breaker_info(msgs)
+    return i["cont"], i["alvos"]
+
+
+def _degenerate_edit(fails):
+    """Nudge cirurgico quando o `edit` falhou com oldString curto/ambiguo (ex.: ';')."""
+    for tool, args, content in reversed(fails):
+        if (tool or "").strip().lower() not in ("edit", "edit_file"):
+            continue
+        if not re.search(r"(?i)(Found \d+ matches|Could not find oldString)", content or ""):
+            continue
+        try:
+            obj = json.loads(args or "{}")
+        except (TypeError, ValueError):
+            return ""
+        olds = obj.get("oldString") or obj.get("old_string") or ""
+        if not olds or "\n" in olds or len(olds.strip()) > 8:
+            return ""
+        return ("[anti-repeat] o edit falhou porque o oldString (%r) casa em mais de um ponto. "
+                "Copie do arquivo a LINHA INTEIRA com a indentacao (ou duas linhas) e edite so ela; "
+                "nao repita esse trecho curto." % olds.strip()[:12])
+    return ""
+
+
+def _write_paths(hist, min_count=3):
+    """Paths de `write` repetidos: reescrita do mesmo arquivo fura o anti-repeat de assinatura."""
+    counts = {}
+    for tool, args, _c in hist:
+        if (tool or "").strip().lower() not in ("write", "write_file"):
+            continue
+        try:
+            obj = json.loads(args or "{}")
+        except (TypeError, ValueError):
+            continue
+        p = obj.get("filePath") or obj.get("path") or ""
+        if p:
+            counts[p] = counts.get(p, 0) + 1
+    return {p: n for p, n in counts.items() if n >= min_count}
 
 
 def _breaker_text(n):
@@ -788,7 +835,7 @@ def anti_repeat(body, raw_body):
       em modo "stop", a partir de STOP_AT nem chama o llama (corta o laco).
     - texto repetido (dup_lines >= 4 ou tail_sim >= 0.9): injeta aviso de texto.
     """
-    global NUDGES, STOPS
+    global NUDGES, STOPS, BREAKER_TRIPS, BREAKER_NUDGES
     msgs = body.get("messages")
     if not isinstance(msgs, list) or ANTI == "off":
         return raw_body, None, False, False
@@ -796,12 +843,16 @@ def anti_repeat(body, raw_body):
         sig, streak, cyc = LAST_SIG, SIG_STREAK, CYCLE
         dup, sim = PROBE["dup_lines"], PROBE["tail_sim"]
     # ToolsBreaker (porte do C#): conta FALHAS por alvo/erro no historico do request.
-    brk, _alvos = _breaker_scan(msgs)
+    bi = _breaker_info(msgs)
+    brk, alvos = bi["cont"], bi["alvos"]
+    rewrites = _write_paths(bi["hist"])
     loop_tool = bool(sig) and streak >= NUDGE_AT
     loop_cycle = cyc >= NUDGE_AT
     loop_text = (dup >= 4) or (sim >= 0.9)
-    loop_break = brk >= BREAKER_SOFT
-    if not (loop_tool or loop_cycle or loop_text or loop_break):
+    # 3+ alvos distintos com falha = progresso real, nao laco: nao avisa.
+    loop_break = brk >= BREAKER_SOFT and (alvos <= 2 or brk >= BREAKER_HARD)
+    loop_rewrite = bool(rewrites)
+    if not (loop_tool or loop_cycle or loop_text or loop_break or loop_rewrite):
         return raw_body, None, False, False
     if ANTI == "stop" and (brk >= BREAKER_HARD
                            or (loop_tool and streak >= STOP_AT)
@@ -809,6 +860,7 @@ def anti_repeat(body, raw_body):
         with LOCK:
             STOPS += 1
         if brk >= BREAKER_HARD:
+            BREAKER_TRIPS += 1
             return raw_body, _stop_body(body, sig, brk, txt=_breaker_text(brk)), False, True
         if loop_tool:
             return raw_body, _stop_body(body, sig, streak), False, True
@@ -818,13 +870,20 @@ def anti_repeat(body, raw_body):
         return raw_body, None, False, False
     if loop_cycle and not loop_tool and (cyc - NUDGE_AT) % 2:
         return raw_body, None, False, False
+    txt = ""
+    if loop_break:
+        BREAKER_NUDGES += 1
     if loop_break and not loop_tool and not loop_cycle:
-        txt = _breaker_text(brk)
+        txt = _degenerate_edit(bi["fails"]) or _breaker_text(brk)
     elif loop_tool:
         txt = _nudge_for(sig, streak)
     elif loop_cycle:
         txt = _nudge_cycle(cyc)
-    else:
+    if not txt and loop_rewrite:
+        p, n = max(rewrites.items(), key=lambda kv: kv[1])
+        txt = (f"[anti-repeat] write no MESMO arquivo {n}x ({_short(p, 60)}): reescrever de novo nao "
+               "avanca. Edite o trecho com edit (copiando do read) ou corrija a causa do erro.")
+    if not txt:
         txt = NUDGE_TEXT
     nb = dict(body)
     nb["messages"] = list(msgs) + [{"role": "user", "content": txt}]
@@ -942,6 +1001,8 @@ def summary():
         "tool_cycle_max": CYCLE_MAX,
         "tool_loop_hits": sum(1 for r in rows if (r.get("tool_sig_streak") or 0) >= 3),
         "nudges": NUDGES, "stops": STOPS, "anti_repeat": ANTI,
+        "breaker_soft": BREAKER_SOFT, "breaker_hard": BREAKER_HARD,
+        "breaker_nudges": BREAKER_NUDGES, "breaker_trips": BREAKER_TRIPS,
         "build_hints": HINTS, "tool_hints": TOOL_HINTS, "build_hint": BUILD_HINT,
         "nudge_at": NUDGE_AT, "stop_at": STOP_AT,
     }
@@ -1020,7 +1081,7 @@ class Proxy(http.server.BaseHTTPRequestHandler):
 
     def _local(self):
         """Endpoints proprios do coletor (nao vao para o llama)."""
-        global TOOL_CALLS, SIG_MAX, SIG_STREAK, CYCLE, CYCLE_MAX, NUDGES, STOPS, LAST_SIG, LAST_PROMPT, STREAK, ERR, HINTS
+        global TOOL_CALLS, SIG_MAX, SIG_STREAK, CYCLE, CYCLE_MAX, NUDGES, STOPS, LAST_SIG, LAST_PROMPT, STREAK, ERR, HINTS, BREAKER_TRIPS, BREAKER_NUDGES
         path = self.path.split("?")[0].rstrip("/")
         qs = self.path.split("?")[1] if "?" in self.path else ""
         n = RECENT_N
@@ -1037,6 +1098,7 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                 RUN["started"] = time.time()
                 TOOL_CALLS = SIG_MAX = SIG_STREAK = CYCLE = CYCLE_MAX = 0
                 NUDGES = STOPS = 0
+                BREAKER_TRIPS = BREAKER_NUDGES = 0
                 HINTS = 0
                 HINT_SEEN.clear()
                 LAST_SIG = ""
