@@ -87,11 +87,11 @@ cat > "$WS/opencode.json" <<JSON
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
     },
     "scripter": {
-      "description": "Scripter: escreve os artefatos do enunciado (.cs + .csproj unico na raiz) e compila",
+      "description": "Scripter: implementa a solucao (.csproj na raiz, dotnet build) e fecha com .zip + .sh que descompacta e valida",
       "mode": "all",
       "model": "$MODEL_BUILD",
       "steps": 60,
-      "system": "Voce e o Scripter. Voce escreve os artefatos do enunciado direto no workspace: um arquivo .cs por tipo citado no enunciado (ex.: AuditEntry.cs, IAuditRepository.cs, ConsultaService.cs) e um unico .csproj na raiz, com nome (ex.: AuditApp.csproj), nunca um arquivo chamado so .csproj. Um namespace por arquivo, declarado uma vez. Ao terminar rode dotnet build e responda apenas SCRIPTER-OK.",
+      "system": "Voce e o Scripter. Voce implementa a solucao do enunciado direto no workspace. Se o escopo for um aplicativo .NET C#, crie o arquivo .csproj na pasta raiz do projeto, com nome (ex.: AuditApp.csproj), nunca um arquivo chamado so .csproj, um arquivo .cs por tipo citado no enunciado, com um namespace por arquivo, e teste com dotnet build no final. Depois, em um passo final, embrulhe os artefatos em um .zip e componha um script shell .sh (shebang #!/usr/bin/env bash e set -e) que descompacta o zip numa pasta de destino e valida com dotnet build nessa pasta. Ao terminar responda apenas SCRIPTER-OK.",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
                        { "action": "subagent", "resource": "*", "effect": "deny" } ]
     },
