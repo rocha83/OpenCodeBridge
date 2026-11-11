@@ -6,6 +6,8 @@
 #   ent   : sequencia Plan de conhecimento (produto/customer/saleinvoice/worker/
 #           redis/bus/erp/dashboard) em TEXTO puro, sem tool -> agent 'plan'.
 # Uso: ./battery-war.sh <chat|responses> <tools|ent> [caso ...]
+# Fail-fast: WAR_STOP_ON_FAIL=1 (default) para no primeiro FAIL; =0 mede placar completo.
+# Skills do caso: WAR_SKILLS=1 instala harness/skills em <caso>/.opencode/skills (default 0).
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -25,7 +27,13 @@ COLLECTOR="${COLLECTOR:-http://127.0.0.1:4199}"
 # exclusao de fontes geradas: projeto na raiz que varre **/*.cs nao pode compilar obj/bin de projeto aninhado
 DOTNET_SRC_EXCLUDE=(-p:DefaultItemExcludes='obj/**%3Bbin/**%3B**/obj/**%3B**/bin/**')
 [ "${WAR_RESET:-0}" = 1 ] && { curl -s -m 3 -X POST "$COLLECTOR/api/reset" >/dev/null 2>&1 || true; }
-pass=0; fail=0
+pass=0; fail=0; skipped=0
+# Fail-fast: o primeiro FAIL encerra a rodada (VRAM/energia/token). Para medir
+# placar completo use WAR_STOP_ON_FAIL=0 (consciente, nunca "ver quantos passam").
+STOP_ON_FAIL="${WAR_STOP_ON_FAIL:-1}"
+ABORT=0; FIRST_FAIL=""
+ff_stop() { [ "$STOP_ON_FAIL" = 1 ] && [ "$ABORT" = 1 ]; }
+ff_skipped() { local n; for n in $1; do echo "RESULTADO [$n]: SKIP (fail-fast)"; skipped=$((skipped+1)); done; }
 export GIT_AUTHOR_NAME="war" GIT_AUTHOR_EMAIL="war@local"
 export GIT_COMMITTER_NAME="war" GIT_COMMITTER_EMAIL="war@local"
 CASE_DIR="$WS"
@@ -165,7 +173,7 @@ new_case() {
   # Skills do caso: trilha sob demanda, roteada pela descricao (semantic routing).
   # O catalogo chega ao modelo pelo system do cliente e e preservado no tuneis
   # (collector.apply_harness mantem <available_skills>).
-  if [ "${WAR_SKILLS:-1}" = "1" ] && [ -d "$HERE/harness/skills" ]; then
+  if [ "${WAR_SKILLS:-0}" = "1" ] && [ -d "$HERE/harness/skills" ]; then
     mkdir -p "$CASE_DIR/.opencode"
     cp -r "$HERE/harness/skills" "$CASE_DIR/.opencode/skills"
   fi
@@ -236,10 +244,17 @@ record_case() {
 check() {
   local st dur
   if eval "$2"; then st=PASS; pass=$((pass+1));
-  else st=FAIL; fail=$((fail+1)); fi
+  else
+    st=FAIL; fail=$((fail+1))
+    if [ -z "$FIRST_FAIL" ]; then FIRST_FAIL="$1"; fi
+    [ "$STOP_ON_FAIL" = 1 ] && ABORT=1
+  fi
   echo "RESULTADO [$1]: $st"
   dur=$(( $(date +%s) - ${CASE_T0:-$(date +%s)} ))
   record_case "$1" "$st" "$dur"
+  if [ "$st" = FAIL ] && [ "$STOP_ON_FAIL" = 1 ]; then
+    echo "ABORTO [fail-fast]: $1 falhou - rodada encerrada (WAR_STOP_ON_FAIL=0 mede placar completo)"
+  fi
 }
 
 quer() { [ -z "${CASES[*]:-}" ] && return 0; local c; for c in "${CASES[@]}"; do [ "$c" = "$1" ] && return 0; done; return 1; }
@@ -302,19 +317,25 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
     new_case tools-full
     echo "----- [tools-full:create]"; run_agent tools "$TOOLS_FULL_CRIAR_HELLO" 900
     check tools-full-create "[ -f '$CASE_DIR/App.csproj' ] && grep -qi 'hello world' '$CASE_DIR/Program.cs' && (cd '$CASE_DIR' && git log --format=%s 2>/dev/null | grep -qi 'hello world console')"
+    if ff_stop; then ff_skipped "tools-full-adjust tools-full-run"; else
     echo "----- [tools-full:adjust]"; run_agent tools "$TOOLS_FULL_AJUSTAR_V2" 900
     check tools-full-adjust "grep -qi 'Hello World v2' '$CASE_DIR/Program.cs' && [ \$(cd '$CASE_DIR' && git log --oneline | wc -l) -ge 2 ] && (cd '$CASE_DIR' && git log --format=%s | grep -qi 'hello world v2') && (cd '$CASE_DIR' && dotnet build App.csproj -v q >/dev/null 2>&1)"
+    if ff_stop; then ff_skipped "tools-full-run"; else
     check tools-full-run "( cd '$CASE_DIR' && dotnet run --project App.csproj -v q 2>&1 | grep -qi 'hello world v2' )"
+    fi
+    fi
   fi
 
   if quer mission-tools; then
     new_case mission-tools
     echo "----- [mission-tools:create] (build)"; run_agent build "$MISSION_TOOLS_CRIAR_PROJETO" 900
     check mission-tools-create "[ -f '$CASE_DIR/mcs/mcs.csproj' ] && ( cd '$CASE_DIR/mcs' && dotnet build mcs.csproj -v q >/dev/null 2>&1 )"
+    if ff_stop; then ff_skipped "mission-tools-code"; else
     echo "----- [mission-tools:code] (build)"; run_agent build "$MISSION_TOOLS_ESCREVER_PROGRAMA" 900
     nums="$( cd "$CASE_DIR/mcs" && dotnet run --project mcs.csproj 2>/dev/null | grep -E '^-?[0-9]+$' | head -3 | tr '\n' ' ' )"
     [ "$nums" = "3628800 21 15 " ] || echo "(aceite: nums='$nums')"
     check mission-tools-code "[ '$nums' = '3628800 21 15 ' ]"
+    fi
   fi
 
   # matriz 2x2: belts-<agente>-<cor>  (legado belts-azul/verde = build)
@@ -341,6 +362,7 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       var="P_${cor}"; P="${!var}"
       caso="belts-$AG-$belt"
       quer_belt "$caso" || continue
+      if ff_stop; then ff_skipped "$caso"; continue; fi
       new_case "$caso"
       secs=420; case "$caso" in *-verde|*-azul) secs=180 ;; esac
       echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" "$secs"
@@ -402,6 +424,7 @@ else
   ent_case() {
     local id="$1" p="$2" extra="${3:-true}"
     quer "$id" || return 0
+    if ff_stop; then ff_skipped "$id"; return 0; fi
     new_case "$id"
     echo "----- [$id]"; run_agent plan "$p" 600
     cp "$CASE_DIR/.last.txt" "$WS/$id.txt"
@@ -426,7 +449,8 @@ $P_DI_HEAD" "grep -qE 'AddStackExchangeRedisCache|AddDistributedRedisCache|IConn
   ent_case dashboard "$P_DASH" "grep -q 'AbortController' '$WS/dashboard.txt' && grep -qE 'useEffect|useLayoutEffect' '$WS/dashboard.txt'"
 
 fi
-  echo "== RESUMO: PASS=$pass FAIL=$fail  (log: $LOG)"
+  echo "== RESUMO: PASS=$pass FAIL=$fail SKIP=$skipped  (log: $LOG)"
+  [ "$ABORT" = 1 ] && echo "== ABORTADO (fail-fast) no primeiro FAIL: $FIRST_FAIL"
 } 2>&1 | tee "$LOG"
 
 curl -s -m 10 -X POST "$COLLECTOR/api/dump" >/dev/null 2>&1 || true

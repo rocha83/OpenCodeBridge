@@ -593,3 +593,59 @@ o corpo montado, o que impedia ver o que o cliente tinha mandado.
 - Medir a raia **com skills** nos mesmos casos e comparar passo/token/PASS com a
   raia sem skills; decidir se o caso aberto usa skill e o gate usa
   `HARNESS_STACK` deterministico.
+
+## Fail-fast na esteira (2026-11-11, noite)
+
+`battery-war.sh` passou a **encerrar a rodada no primeiro FAIL** (`WAR_STOP_ON_FAIL`
+default 1). Antes, `tools-full:create` podia falhar e a esteira seguia para as
+belts grandes (6 casos, ~1h de GPU) sem chance de verde — so consumo.
+
+- Cada passo nao executado sai como `RESULTADO [<caso>]: SKIP (fail-fast)` e o
+  resumo vira `PASS=n FAIL=m SKIP=k`, com `== ABORTADO (fail-fast) no primeiro FAIL: <caso>`
+  e exit 1.
+- `belts`/`ent`/`tools-full`/`mission-tools`: o guarda e no passo (create falhou
+  -> nao roda adjust nem run) e no caso (belt falhou -> as seguintes sao SKIP).
+- `WAR_STOP_ON_FAIL=0` e a unica forma de medir placar completo (uso consciente).
+- Dentro do caso, o "direcionamento" (segunda passada que repara aceite) continua
+  acontecendo **antes** do `check`: e o mecanismo que as vezes salva o caso, e e
+  limitado (90-180s).
+
+Prova sem GPU (stub de `opencode` que nao escreve nada, llama parado):
+
+```
+$ PATH=/tmp/opencode/stub:$PATH WAR_RESET=0 ./battery-war.sh chat tools tools-full
+----- [tools-full:create]
+RESULTADO [tools-full-create]: FAIL
+ABORTO [fail-fast]: tools-full-create falhou - rodada encerrada (WAR_STOP_ON_FAIL=0 mede placar completo)
+RESULTADO [tools-full-adjust]: SKIP (fail-fast)
+RESULTADO [tools-full-run]: SKIP (fail-fast)
+== RESUMO: PASS=0 FAIL=1 SKIP=2
+== ABORTADO (fail-fast) no primeiro FAIL: tools-full-create
+```
+
+```
+$ PATH=/tmp/opencode/stub:$PATH WAR_RESET=0 ./battery-war.sh chat tools belts-azul belts-verde belts-roxa
+RESULTADO [belts-build-azul]: FAIL
+RESULTADO [belts-build-verde]: SKIP (fail-fast)
+RESULTADO [belts-build-roxa]: SKIP (fail-fast)
+== ABORTADO (fail-fast) no primeiro FAIL: belts-build-azul
+```
+
+### Skills: medicao negativa neste modelo (default OFF)
+
+O catalogo de skills foi preservado no system, as 13 skills apareceram no
+`orig_system` e a tool `skill` estava no array — e mesmo assim:
+
+| medicao | resultado |
+| --- | --- |
+| chamadas a `skill` em 45 requests da bateria | **0** |
+| mesmo com instrucao explicita no system ("TRILHA SOB DEMANDA: chame `skill`…") | **0** (`focusB`) |
+| `tools-full:create` sem catalogo (raia base) | PASS |
+| `tools-full:create` com catalogo instalado | **FAIL** (CS1026: `namespace App;` + top-level statement) |
+
+Leitura: o 4B nao usa roteamento por descricao; e o catalogo (11 descricoes,
+~2,2k ch) volta a ser texto de stack no prefixo — exatamente o que a medicao de
+proporcao condenou. Por isso `WAR_SKILLS` passou a **0** (instala so com
+`WAR_SKILLS=1`) e `SKILL_NUDGE` (instrucao no system) ficou atras de
+`SKILL_NUDGE=1`. As skills, o `14-formas.md` e o `HARNESS_STACK` deterministico
+ficam no repo como caminho medido, nao como default.

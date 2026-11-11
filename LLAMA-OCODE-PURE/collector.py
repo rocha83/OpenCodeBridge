@@ -1127,6 +1127,15 @@ ENV_BLOCK = re.compile(r"<env>.*?</env>", re.S)
 # senão o modelo vê a tool `skill` sem nenhuma skill para rotear.
 SKILL_BLOCK = re.compile(
     r"(?:Skills provide specialized instructions.*?\n)?<available_skills>.*?</available_skills>", re.S)
+# Instrução de trilha: o catálogo sozinho não faz o 4B escolher (medido: 0/45
+# chamadas nos dumps). A dica ensina a forma certa sem citar skill do caso.
+SKILL_NUDGE = (
+    "TRILHA SOB DEMANDA: se o pedido for de .NET/SQL/EF/CQRS/bus/React/ML e a "
+    "conversa ainda nao mostrou a forma, chame a tool `skill` com o id da skill "
+    "cuja descricao casa (ex.: dotnet-api) ANTES de escrever o primeiro arquivo. "
+    "A trilha e forma, nao codigo a copiar: escreva o que o pedido pede."
+)
+SKILL_NUDGE_ON = os.environ.get("SKILL_NUDGE", "1") != "0"
 ENV_LINES = ("Working directory:", "Workspace root folder:", "Is directory a git repo:",
              "Platform:", "Today's date:")
 
@@ -1190,6 +1199,8 @@ def apply_harness(body):
     text = base + ("\n\n" + env if env else "")
     skills = SKILL_BLOCK.search(original)
     if skills:
+        if SKILL_NUDGE_ON:
+            text += "\n\n" + SKILL_NUDGE
         text += "\n\n" + skills.group(0)
     if original == text:
         return False

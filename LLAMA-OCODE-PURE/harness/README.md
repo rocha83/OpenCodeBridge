@@ -97,7 +97,18 @@ system). Prova no dump (`reqs/*.json`, campo `orig_system`):
 O stream do modelo continua repassado sem edição (passthrough); a única
 intervenção no corpo é essa troca de system e a re-serialização que a acompanha.
 
-## Skills: trilha sob demanda (default desde 2026-11-11)
+## Skills: medido negativa neste modelo (default OFF)
+
+Testado com o catalogo preservado no system e as 13 skills instaladas no
+workspace: **0 chamadas a `skill` em 45 requests**, mesmo com instrucao explicita
+no system, e `tools-full:create` que passava na raia base voltou a **FAIL**
+(CS1026: `namespace App;` + top-level statement). O 4B nao roteia por descricao;
+o catalogo (11 descricoes, ~2,2k ch) e texto de stack no prefixo outra vez.
+Por isso a bateria instala skill so com `WAR_SKILLS=1` e a instrucao de trilha
+so sai com `SKILL_NUDGE=1`. O caminho deterministico (`HARNESS_STACK`) e o
+default para caso conhecido.
+
+## Skills: trilha sob demanda (mecanismo, com opt-in em 2026-11-11)
 
 A trilha saiu do prefixo fixo e virou **skill** — o modelo carrega só a que o
 pedido pede, chamando a tool `skill` com o id. O prefixo passou a ter o
