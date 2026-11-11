@@ -82,6 +82,11 @@ def _latest_cases():
 ANTI = os.environ.get("ANTI_REPEAT", "stop")          # nudge | stop | off
 NUDGE_AT = int(os.environ.get("NUDGE_AT", "3"))        # mesma tool+args 3x
 STOP_AT = int(os.environ.get("STOP_AT", "6"))          # 6x = corta
+# Porte do ToolsBreaker do OpenCodeBridge (C#): conta FALHAS no historico de
+# resultados que o cliente reenvia, nao a assinatura da chamada. 3 = aviso,
+# 6 = curto-circuito (nao chama o modelo). Ver EvaluateFailureLoop.
+BREAKER_SOFT = int(os.environ.get("BREAKER_SOFT", "3"))
+BREAKER_HARD = int(os.environ.get("BREAKER_HARD", "6"))
 NUDGES = STOPS = 0
 HINTS = 0             # alertas [build-hint] injetados (erro de compilacao + exemplo)
 TOOL_HINTS = 0        # alertas [tool-hint] injetados (args fora do schema)
@@ -462,6 +467,115 @@ NUDGE_TEXT = ("[anti-repeat] A resposta anterior repetiu o mesmo trecho/plano. N
 ERR_HINT = re.compile(r"MSB\d{4}|Could not find oldString|error CS\d+|Exited with code [1-9]|"
                       r"tool.execution")
 
+# ---------------------------------------------------------------------------
+# Porte do ToolsBreaker (Rochas.OpenCodeBridge.Core.ToolsAntiRepeat).
+# O vies do collector antigo: comparar a ASSINATURA da chamada (tool+args) e so
+# a ultima (consecutiva). Isso perde 3 lacoes reais medidos:
+#   1. "Found 9 matches for oldString" (args minimos, mudam a cada volta)
+#   2. mesmo erro de compilacao com a LINHA mudando (assinatura diferente)
+#   3. edit<->build alternado (streak nunca passa de 1)
+# O breaker olha o RESULTADO da tool no historico e conta falhas por alvo/erro.
+# ---------------------------------------------------------------------------
+FAIL_RE = re.compile(r"(?i)(error\s+[A-Z]{2}\d{4}|MSB\d{4}|NU\d{4}|Could not find oldString|"
+                     r"Found \d+ matches|\bInvalid arguments\b|tool\.execution|"
+                     r"permission denied|access denied|no such file or directory|"
+                     r"n[aã]o encontrado|could not find|command not found|"
+                     r"\bfailed\b|Exited with code [1-9])")
+OK_RE = re.compile(r"(?i)(0\s+Erro\(s\)|0\s+Error\(s\)|Build succeeded|Compila[çc][aã]o com [êe]xito)")
+
+
+def _looks_failure(txt):
+    """Falha de tool: marca de erro presente e sem sinal de sucesso (0 Erro(s))."""
+    t = txt or ""
+    if not t.strip():
+        return False
+    return bool(FAIL_RE.search(t)) and not bool(OK_RE.search(t))
+
+
+def _norm_target(name, args):
+    """Alvo estavel: mesmo arquivo/comando com numeros e espacos normalizados."""
+    a = re.sub(r"\d+", "#", args or "")
+    a = re.sub(r"\s+", "", a)
+    return (name or "").strip().lower() + "::" + a[:140]
+
+
+def _failure_key(txt):
+    """Assinatura do ERRO sem caminho/posicao/numero: 'mesmo erro, outra linha' agrupa."""
+    k = re.sub(r"\([^)\r\n]*\)", "()", txt or "")
+    k = re.sub(r"[A-Za-z]:[\\/][^\s:;]+", "<path>", k)
+    k = re.sub(r"(?:\.{0,2}/)?(?:[\w.\-]+/)+[\w.\-]+\.(?:cs|fs|sql|tsx?|jsx?|py|json|csproj)", "<file>", k)
+    k = re.sub(r"[A-Za-z0-9_\-]*\d[A-Za-z0-9_\-]*", "<id>", k)
+    k = re.sub(r"\s+", " ", k).strip()
+    return k[:180]
+
+
+def _tool_history(msgs):
+    """[(tool, args, resultado)] na ordem do historico, tolerante a OpenAI e a partes."""
+    hist, pending = [], []
+    for m in msgs or []:
+        if not isinstance(m, dict):
+            continue
+        role = str(m.get("role") or "").lower()
+        if role == "assistant":
+            for tc in (m.get("tool_calls") or []):
+                fn = (tc or {}).get("function") or {}
+                pending.append((fn.get("name") or "", fn.get("arguments") or ""))
+            cont = m.get("content")
+            if isinstance(cont, list):
+                for p in cont:
+                    if not isinstance(p, dict):
+                        continue
+                    t = p.get("type")
+                    if t in ("tool-call", "tool_call", "function_call", "tool_use"):
+                        pending.append((p.get("name") or p.get("toolName") or "",
+                                        json.dumps(p.get("input") or p.get("args") or {},
+                                                   ensure_ascii=False)))
+                    elif t in ("tool_result", "tool-result", "tool_result_part"):
+                        nm, ar = pending.pop(0) if pending else ("", "")
+                        hist.append((nm, ar, _text(p.get("content") or p.get("result") or p.get("output"))))
+        elif role in ("tool", "function"):
+            nm, ar = pending.pop(0) if pending else ("", "")
+            hist.append((nm, ar, _text(m.get("content"))))
+    return hist
+
+
+def _breaker_scan(msgs):
+    """(contagem, alvos) = max(streak, mesmo erro, mesmo alvo) + nº de alvos com falha."""
+    hist = _tool_history(msgs)
+    if not hist:
+        return 0, 0
+    streak = 0
+    for _n, _a, c in reversed(hist):
+        if not _looks_failure(c):
+            break
+        streak += 1
+    keys = {}
+    for _n, _a, c in hist:
+        if not _looks_failure(c):
+            continue
+        k = _failure_key(c)
+        if k:
+            keys[k] = keys.get(k, 0) + 1
+    mesma = max(keys.values()) if keys else 0
+    janela = max(BREAKER_HARD, BREAKER_SOFT) * 2
+    alvo, do_alvo = None, 0
+    for nm, ar, c in reversed(hist[-janela:]):
+        if not _looks_failure(c):
+            continue
+        tg = _norm_target(nm, ar)
+        if alvo is None:
+            alvo = tg
+        if tg == alvo:
+            do_alvo += 1
+    alvos = len({_norm_target(nm, ar) for nm, ar, c in hist if _looks_failure(c)})
+    return max(streak, mesma, do_alvo), alvos
+
+
+def _breaker_text(n):
+    return (f"[anti-repeat] {n} falhas sobre o mesmo alvo/erro nesta rodada. Repetir a mesma chamada "
+            "nao resolve: troque de abordagem (outro caminho, outra forma de escrever, outra "
+            "ferramenta) ou relate o erro exato e o que ja tentou.")
+
 
 def _cycle_len():
     """Sufixo com <=2 assinaturas distintas contando so as chamadas que FALHARAM."""
@@ -503,9 +617,12 @@ def _short(sig, n=90):
     return sig[:n] + ("..." if len(sig) > n else "")
 
 
-def _stop_body(body, sig, n, cyc=False):
+def _stop_body(body, sig, n, cyc=False, txt=None):
     """Resposta sintetica de corte (mesmo formato do llama, stream ou nao)."""
-    txt = ("[anti-repeat] Interrompido. " + (_nudge_cycle(n) if cyc else _nudge_for(sig, n)))
+    if txt:
+        txt = "Interrompido. " + txt
+    else:
+        txt = ("[anti-repeat] Interrompido. " + (_nudge_cycle(n) if cyc else _nudge_for(sig, n)))
     model = body.get("model")
     if body.get("stream"):
         ev = [{"id": "anti-repeat", "object": "chat.completion.chunk", "created": int(time.time()),
@@ -678,14 +795,21 @@ def anti_repeat(body, raw_body):
     with LOCK:
         sig, streak, cyc = LAST_SIG, SIG_STREAK, CYCLE
         dup, sim = PROBE["dup_lines"], PROBE["tail_sim"]
+    # ToolsBreaker (porte do C#): conta FALHAS por alvo/erro no historico do request.
+    brk, _alvos = _breaker_scan(msgs)
     loop_tool = bool(sig) and streak >= NUDGE_AT
     loop_cycle = cyc >= NUDGE_AT
     loop_text = (dup >= 4) or (sim >= 0.9)
-    if not (loop_tool or loop_cycle or loop_text):
+    loop_break = brk >= BREAKER_SOFT
+    if not (loop_tool or loop_cycle or loop_text or loop_break):
         return raw_body, None, False, False
-    if ANTI == "stop" and ((loop_tool and streak >= STOP_AT) or (loop_cycle and cyc >= STOP_AT)):
+    if ANTI == "stop" and (brk >= BREAKER_HARD
+                           or (loop_tool and streak >= STOP_AT)
+                           or (loop_cycle and cyc >= STOP_AT)):
         with LOCK:
             STOPS += 1
+        if brk >= BREAKER_HARD:
+            return raw_body, _stop_body(body, sig, brk, txt=_breaker_text(brk)), False, True
         if loop_tool:
             return raw_body, _stop_body(body, sig, streak), False, True
         return raw_body, _stop_body(body, sig, cyc, cyc=True), False, True
@@ -694,7 +818,9 @@ def anti_repeat(body, raw_body):
         return raw_body, None, False, False
     if loop_cycle and not loop_tool and (cyc - NUDGE_AT) % 2:
         return raw_body, None, False, False
-    if loop_tool:
+    if loop_break and not loop_tool and not loop_cycle:
+        txt = _breaker_text(brk)
+    elif loop_tool:
         txt = _nudge_for(sig, streak)
     elif loop_cycle:
         txt = _nudge_cycle(cyc)
