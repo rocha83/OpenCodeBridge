@@ -368,15 +368,6 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       *) echo "" ;;
     esac
   }
-  # Scripter entrega .sh (shebang + heredoc): executa os scripts da raiz antes de compilar
-  run_scripts() {
-    local f
-    for f in "$CASE_DIR"/*.sh; do
-      [ -f "$f" ] || continue
-      echo "(exec $(basename "$f"))"
-      ( cd "$CASE_DIR" && timeout 180 bash "$f" ) >/dev/null 2>&1 || echo "(script falhou: $(basename "$f"))"
-    done
-  }
 
   for belt in azul verde roxa marrom preta; do
     for AG in build orch; do
@@ -388,11 +379,12 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       quer_belt "$caso" || continue
       new_case "$caso"
       echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" 420
-      run_scripts
       # nudge unico: repara o aceite (sem .csproj, sem fonte ou build quebrado) com enunciado + erro + tabela
       missing=""
       if ! find "$CASE_DIR" -maxdepth 1 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="sem .csproj na raiz"; fi
       if ! find "$CASE_DIR" -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="$missing sem fonte .cs"; fi
+      if ! find "$CASE_DIR" -maxdepth 1 -name '*.zip' 2>/dev/null | grep -q .; then missing="$missing sem .zip dos artefatos"; fi
+      if ! find "$CASE_DIR" -maxdepth 1 -name '*.sh' 2>/dev/null | grep -q .; then missing="$missing sem .sh de resgate"; fi
       miss_kw=""
       for w in $(belt_scope "$caso"); do
         grep -rqiE --include='*.cs' --include='*.sql' --exclude-dir=obj --exclude-dir=bin -- "$w" "$CASE_DIR" 2>/dev/null || miss_kw="$miss_kw $w"
@@ -405,12 +397,11 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
         run_agent "$AG" "ENUNCIADO:
 $P
 
-O aceite do enunciado nao foi cumprido ($missing). Corrija o script .sh e/ou o .csproj na raiz e os .cs, compile com dotnet build ate rc=0 e nao repita read/build nem rode dotnet run. Use a tabela abaixo.
+O aceite do enunciado nao foi cumprido ($missing). Corrija o .csproj na raiz e os .cs, compile com dotnet build ate rc=0, e entregue o .zip dos artefatos e o .sh que descompacta e valida. Nao repita read/build nem rode dotnet run. Use a tabela abaixo.
 ERROS:
 $(printf '%s\n' "$errs0" | head -8)
 $hints0" 180
       fi
-      run_scripts
       # projeto unico na raiz: subprojeto aninhado compila vazio e mascara fonte nao compilada
       # aceite minimo: o .csproj da raiz compila (rc=0) e existe fonte .cs real fora de obj/bin
       src="find '$CASE_DIR' -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' | grep -q ."
@@ -442,7 +433,10 @@ $hints0" 180
           echo "(escopo: falta '$w' nos .cs/.sql)"; rc=1
         fi
       done
-      check "$caso" "[ $rc -eq 0 ] && $src"
+      art="ls '$CASE_DIR'/*.zip >/dev/null 2>&1 && ls '$CASE_DIR'/*.sh >/dev/null 2>&1 && bash -n \$(ls '$CASE_DIR'/*.sh | head -1)"
+      ls "$CASE_DIR"/*.zip >/dev/null 2>&1 || echo "(entregavel: falta .zip dos artefatos)"
+      ls "$CASE_DIR"/*.sh  >/dev/null 2>&1 || echo "(entregavel: falta .sh de resgate)"
+      check "$caso" "[ $rc -eq 0 ] && $src && $art"
       case "$belt" in marrom|preta) partial_report "$caso" "$belt" ;; esac
     done
   done
