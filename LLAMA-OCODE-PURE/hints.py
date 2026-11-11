@@ -123,6 +123,15 @@ def hint_for(code):
         return ("IEnumerable<T> nao e IDisposable",
                 "var lista = await conn.QueryAsync<Reembolso>(sql); foreach (var r in lista) { ... } "
                 "(using var so para conexao/reader/transacao)")
+    if code == "CS1929":
+        return ("tipo generico aplicado em metodo que nao e generico",
+                "so o QueryAsync do Dapper e generico e so existe em IDbConnection: "
+                "conn.QueryAsync<Reembolso>(sql, parametros). No SEU repositorio chame sem <T>: "
+                "await repositorio.QueryAsync(sql, parametros);")
+    if code == "CS1501":
+        return ("nenhuma sobrecarga aceita essa quantidade de argumentos",
+                "copie a assinatura declarada: Task<IEnumerable<Reembolso>> QueryAsync(string sql, object? p) "
+                "-- a chamada tem que passar exatamente (string, object?)")
     if code == "CS1013":
         return ("literal numerico invalido",
                 "o _ so vai entre digitos: 100_000m (nao 100_m)")

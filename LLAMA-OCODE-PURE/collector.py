@@ -937,7 +937,9 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                     row["status"] = final["status"]
             body = {"run": RUN["id"], "requests": rows, "last_run": last_run}
         elif path == "/api/cases":
-            latest = {}
+            # SOMENTE a rodada corrente (run de metrics/current.json), mais recente
+            # primeiro e com data/hora legivel. `latest` = ultimo registro por caso.
+            rows = []
             try:
                 with open(CASES, "r", encoding="utf-8") as fh:
                     for line in fh:
@@ -948,12 +950,31 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                             row = json.loads(line)
                         except Exception:
                             continue
-                        case = row.get("case")
-                        if case:
-                            latest[case] = row
+                        if row.get("case"):
+                            rows.append(row)
             except OSError:
                 pass
-            body = {"cases": [latest[k] for k in sorted(latest)]}
+            run = str(_read_current().get("run") or "")
+            if not run:
+                runs = [str(r.get("run")) for r in rows if r.get("run")]
+                run = runs[-1] if runs else ""
+            mine = [r for r in rows if str(r.get("run") or "") == run] if run else []
+            seq = []
+            for row in mine[-n:]:
+                r = dict(row)
+                try:
+                    r["ts"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(r.get("ts"))))
+                except (TypeError, ValueError):
+                    r["ts"] = "-"
+                seq.append(r)
+            latest = {}
+            for r in seq:
+                latest[r["case"]] = r
+            body = {"run": run,
+                    "cases": list(reversed(seq)),
+                    "latest": [latest[k] for k in sorted(latest)],
+                    "count": len(seq),
+                    "run_total": len(mine)}
         elif path == "/api/status":
             body = {"run": RUN["id"], "requests": len(RUN["requests"]),
                     "idle": IDLED, "events": EVENTS, "idle_s": IDLE_S}

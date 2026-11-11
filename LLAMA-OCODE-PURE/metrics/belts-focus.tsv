@@ -13,3 +13,4 @@ data	ordem	caso	status	tentativas	tempo_s	obs
 2026-11-10	11	belts-orch-azul	PASS	1	59	Rev4: scripter implementa direto (CorporateData.csproj na raiz, src/Dominio + src/Aplicacao), 0 erros; .zip/.sh do passo final nao foram produzidos
 2026-11-10	12	belts-orch-verde	FAIL	3	779	Rev4: csproj raiz + db/schema.sql ok; CS0234/CS0246 (namespace por pasta), CS8954 (namespace 2x), CS0101 (Cnpj duplicado), CS1002/CS1525 (switch malformado), ValueObject inexistente
 2026-11-10	13	belts-orch-verde	FAIL	3	1088	Rev4: csproj raiz ok; CS1022 (chaves desbalanceadas), CS1513, CS0101/CS0111 (tipos duplicados no mesmo arquivo), CS8863
+2026-11-10	14	belts-orch-azul	REABERTO	-	-	aceite novo: PASS de 23:05 sem .zip/.sh nao vale mais (missao do scripter inclui os dois)

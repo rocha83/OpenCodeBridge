@@ -83,27 +83,17 @@ cat > "$WS/opencode.json" <<JSON
       "mode": "all",
       "model": "$MODEL_BUILD",
       "steps": 80,
-      "system": "Voce e o Build. Execute o enunciado no diretorio atual com tools, sem narrar plano e sem responder bloco de codigo: use write/edit/sed. Nao rode dotnet new. Nao invente arquivos, dependencias ou nomes alem do enunciado; siga o aceite do enunciado. Regras gerais de C#: um namespace por arquivo, declarado UMA vez no topo (nunca repita namespace X; antes de cada tipo); todo metodo dentro de uma classe; using no topo; cada tipo declarado UMA unica vez no projeto (class OU record, nunca os dois). Corrija com edit/sed no trecho exato, nunca reescrevendo o arquivo inteiro; write so para arquivo novo. Argumentos de tool: edit {filePath, oldString, newString}, write {filePath, content}, shell {command}; nunca escreva <tool_call> dentro do argumento — se edit falhar com Invalid arguments, use write com o arquivo inteiro. Se o build falhar, leia o erro real, corrija o arquivo/linha e rode dotnet build de novo ate 0 Erro(s); nao conclua com erro.",
+      "system": "Voce e um agente autonomo desenvolvedor de software senior, utiliza tools para implementar os artefatos referentes ao enunciado, se comunica de forma concisa e pragmatica no idioma do usuario. Corrija com edit/sed no trecho exato; write so para arquivo novo. Voce lida com contextos de no maximo 128k, se preciso em tarefas grandes utilize delegacao utilizando a tool subagent.",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
     },
-    "scripter": {
-      "description": "Scripter: implementa o enunciado com tools (csproj na raiz, dotnet build) e fecha com .zip + .sh que descompacta e valida",
-      "mode": "all",
-      "model": "$MODEL_BUILD",
-      "steps": 80,
-      "system": "Voce e o Scripter. Implemente o enunciado no diretorio atual com tools, sem narrar plano e sem responder bloco de codigo: use write/edit/sed. Nao rode dotnet new. Nao invente arquivos, dependencias ou nomes alem do enunciado; siga o aceite do enunciado. Regras gerais de C#: um namespace por arquivo, declarado UMA vez no topo (nunca repita namespace X; antes de cada tipo); o namespace e o mesmo em todos os arquivos; todo metodo dentro de uma classe; using no topo; cada tipo declarado UMA unica vez no projeto (class OU record, nunca os dois); nao crie heranca entre seus tipos. Se o escopo for um aplicativo .NET C#, o .csproj fica na pasta raiz do projeto, com nome (ex.: CorporateRefund.csproj), nunca um arquivo chamado so .csproj. Corrija com edit/sed no trecho exato, nunca reescrevendo o arquivo inteiro; write so para arquivo novo. Se o build falhar, leia o erro real, corrija o arquivo/linha e rode dotnet build de novo ate 0 Erro(s); nao conclua com erro. No passo final, embrulhe os artefatos em um .zip e componha um script .sh (shebang #!/usr/bin/env bash e set -e) cuja unica funcao e extrair o conteudo do zip numa pasta de destino e garantir dotnet build nesse destino. Ao terminar responda apenas SCRIPTER-OK.",
-      "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
-                       { "action": "subagent", "resource": "*", "effect": "deny" } ]
-    },
     "orch": {
-      "description": "Orch: segmenta e delega ao Scripter pela tool subagent, thinking on temp 0.2",
+      "description": "Orch: segmenta em camadas e delega cada camada a um subagente build",
       "mode": "primary",
       "model": "$MODEL",
       "steps": 140,
-      "system": "Voce e um agente que nao escreve codigo, nao cria arquivo, nao roda shell, apenas segmenta o enunciado principal em tarefas menores e delega a subagentes, o enunciado deve informar o nome do agente a utilizar quando nao, utilize o agente que contenha \"build\" em seu nome.",
+      "system": "Voce e um agente que nao escreve codigo, nao cria arquivo e nao roda shell: apenas segmenta o enunciado em tarefas menores, uma camada por subagente (dominio, servicos de aplicacao, banco SQL, API, frontend), e delega cada camada a um subagente da tool subagent usando sempre o agente build. Ao terminar responda apenas ORCH-OK.",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
                        { "action": "subagent", "resource": "*", "effect": "deny" },
-                       { "action": "subagent", "resource": "scripter", "effect": "allow" },
                        { "action": "subagent", "resource": "build", "effect": "allow" },
                        { "action": "write", "resource": "*", "effect": "deny" },
                        { "action": "edit", "resource": "*", "effect": "deny" },
@@ -184,8 +174,8 @@ new_case() {
   CASE_DIR="$WS/$1"; rm -rf "$CASE_DIR"; mkdir -p "$CASE_DIR"
   cp "$WS/opencode.json" "$CASE_DIR/opencode.json"
   mkdir -p "$ROOT/metrics"
-  printf '{"case":"%s","status":"RUN","dir":"%s","ts":%s}\n' \
-    "$1" "$CASE_DIR" "$(date +%s)" > "$ROOT/metrics/current.json"
+  printf '{"case":"%s","status":"RUN","dir":"%s","run":"%s","ts":%s}\n' \
+    "$1" "$CASE_DIR" "$START" "$(date +%s)" > "$ROOT/metrics/current.json"
 }
 
 clean_nested() { find "$1" -mindepth 1 -type d \( -name obj -o -name bin \) -prune -exec rm -rf {} + 2>/dev/null; }
@@ -239,8 +229,8 @@ record_case() {
   mkdir -p "$ROOT/metrics"
   printf '{"case":"%s","status":"%s","duration":%s,"proto":"%s","modo":"%s","run":"%s","ts":%s}\n' \
     "$caso" "$status" "$dur" "$PROTO" "$MODO" "$START" "$(date +%s)" >> "$ROOT/metrics/cases.jsonl"
-  printf '{"case":"%s","status":"%s","dir":"%s","ts":%s}\n' \
-    "$caso" "$status" "${CASE_DIR:-}" "$(date +%s)" > "$ROOT/metrics/current.json"
+  printf '{"case":"%s","status":"%s","dir":"%s","run":"%s","ts":%s}\n' \
+    "$caso" "$status" "${CASE_DIR:-}" "$START" "$(date +%s)" > "$ROOT/metrics/current.json"
 }
 
 check() {
@@ -278,7 +268,7 @@ EOT
 
 # enunciados ORIGINAIS da trilha orch (Rochas.OpenCodeBridge.Test/E2EBeltsTests.cs)
 P_AZUL_ORCH="$(cat <<'EOT'
-Escreva um aplicativo .NET C# (criar o arquivo .csproj de definicao do projeto na pasta raiz) que resolva uma consulta de dados corporativos, entidade principal AuditEntry. O escopo e somente .NET: entidades, value objects, interfaces e servicos de consulta - sem camada de infraestrutura, sem banco de dados e sem API. A origem dos dados e abstraida por uma interface de repositorio (contrato no dominio, sem implementacao), e a consulta devolve resultado paginado com filtros por periodo e por tipo de evento. Organize o codigo em camadas de dominio e de servicos de aplicacao. Utilize .NET versao 10. Utilize dotnet build no final para garantir a integridade da implementacao, o aplicativo deve compilar. Segmente a implementacao em tarefas menores por responsabilidade (dominio com as entidades e value objects; servicos de aplicacao com a consulta e a paginacao), utilizando a tool subagent, utilize os agentes que contenham no nome o termo "scripter".
+Escreva um aplicativo .NET C# (criar o arquivo .csproj de definicao do projeto na pasta raiz) que resolva uma consulta de dados corporativos, entidade principal AuditEntry. O escopo e somente .NET: entidades, value objects, interfaces e servicos de consulta - sem camada de infraestrutura, sem banco de dados e sem API. A origem dos dados e abstraida por uma interface de repositorio (contrato no dominio, sem implementacao), e a consulta devolve resultado paginado com filtros por periodo e por tipo de evento. Organize o codigo em camadas de dominio e de servicos de aplicacao. Utilize .NET versao 10. Utilize dotnet build no final para garantir a integridade da implementacao, o aplicativo deve compilar. Segmente a implementacao em tarefas menores por responsabilidade (dominio com as entidades e value objects; servicos de aplicacao com a consulta e a paginacao), utilizando a tool subagent, utilize os agentes que contenham no nome o termo "build".
 EOT
 )"
 # enunciados ORIGINAIS das belts roxa/marrom/preta (trilha build: E2EBeltsBuildTests.cs)
@@ -309,7 +299,7 @@ EOT
 )"
 
 P_VERDE_ORCH="$(cat <<'EOT'
-Escreva um aplicativo .NET C# (criar o arquivo .csproj de definicao do projeto na pasta raiz) de um CRUD de reembolsos corporativos, entidade principal Refund, com value objects e regras de aprovacao por faixa de valor. Valide CPF e CNPJ. O dominio e POCO, sem atributos de ORM. Entregue tambem o banco de dados SQL em arquivo .sql: DDL das tabelas com indices e constraints e seeds de exemplo. Organize o codigo em camadas de dominio e de servicos de aplicacao. Utilize .NET versao 10. Utilize dotnet build no final para garantir a integridade da implementacao, o aplicativo deve compilar. Segmente a implementacao em tarefas menores por responsabilidade (dominio com Refund e value objects; DDL, indices, constraints e seeds; servicos de aplicacao), utilizando a tool subagent, utilize os agentes que contenham no nome o termo "scripter".
+Escreva um aplicativo .NET C# (criar o arquivo .csproj de definicao do projeto na pasta raiz) de um CRUD de reembolsos corporativos, entidade principal Refund, com value objects e regras de aprovacao por faixa de valor. Valide CPF e CNPJ. O dominio e POCO, sem atributos de ORM. Entregue tambem o banco de dados SQL em arquivo .sql: DDL das tabelas com indices e constraints e seeds de exemplo. Organize o codigo em camadas de dominio e de servicos de aplicacao. Utilize .NET versao 10. Utilize dotnet build no final para garantir a integridade da implementacao, o aplicativo deve compilar. Segmente a implementacao em tarefas menores por responsabilidade (dominio com Refund e value objects; DDL, indices, constraints e seeds; servicos de aplicacao), utilizando a tool subagent, utilize os agentes que contenham no nome o termo "build".
 EOT
 )"
 # aceite levado ao orch pelo harness (o enunciado do orch nao traz criterio de aceite)
@@ -358,12 +348,26 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
     return 1
   }
   # dominio que o artefato precisa citar (impede PASS com outro CRUD/artefato alheio)
+  seg_check() {
+    local caso="$1" n
+    n=$(python3 - "$CASE_DIR" "${SEG_T0:-0}" <<'PY'
+import os, sqlite3, sys
+d, t0 = os.path.realpath(sys.argv[1]), int(sys.argv[2]) * 1000
+db = os.path.expanduser("~/.local/share/opencode/opencode.db")
+c = sqlite3.connect(db)
+print(c.execute("select count(distinct id) from session_v2 where agent='build' and parent_id is not null "
+                "and time_created >= ? and directory = ?", (t0 - 5000, d)).fetchone()[0])
+PY
+)
+    echo "(segmentacao: ${n:-0} subagente(s) build, esperado >= 2)"
+    check "$caso" "[ ${n:-0} -ge 2 ]"
+  }
   belt_scope() {
     case "$1" in
       *-roxa)   echo "Cliente|Customer Fornecedor|Supplier" ;;
       *-marrom) echo "Reembolso|Refund|Reimbursement" ;;
       *-preta)  echo "Colaborador|Employee" ;;
-      *-azul)   echo "AuditEntry" ;;
+      *-azul)   echo "Consulta" ;;
       *-verde)  echo "Reembolso|Refund|Reimbursement" ;;
       *) echo "" ;;
     esac
@@ -372,35 +376,21 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
   for belt in azul verde roxa marrom preta; do
     for AG in build orch; do
       cor="$(printf '%s' "$belt" | tr a-z A-Z)"
-      if [ "$AG" = orch ]; then var="P_${cor}_ORCH"; P="${!var}$ORCH_ACEITE"
-      else var="P_${cor}"; P="${!var}$BUILD_ACEITE"; fi
+      var="P_${cor}"; P="${!var}"
+      [ "$AG" = build ] && P="$P$BUILD_ACEITE"
       P="${P//\{ws\}/.}"   # enunciado original usa {ws}: aqui o cwd ja e' o workspace do caso
       caso="belts-$AG-$belt"
       quer_belt "$caso" || continue
       new_case "$caso"
+      SEG_T0=$(date +%s)
       echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" 420
+      if [ "$AG" = orch ]; then
+        seg_check "$caso"
+      else
       # nudge unico: repara o aceite (sem .csproj, sem fonte ou build quebrado) com enunciado + erro + tabela
       missing=""
       if ! find "$CASE_DIR" -maxdepth 1 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="sem .csproj na raiz"; fi
       if ! find "$CASE_DIR" -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="$missing sem fonte .cs"; fi
-      if ! find "$CASE_DIR" -maxdepth 1 -name '*.zip' 2>/dev/null | grep -q .; then missing="$missing sem .zip dos artefatos"; fi
-      if ! find "$CASE_DIR" -maxdepth 1 -name '*.sh' 2>/dev/null | grep -q .; then missing="$missing sem .sh de resgate"; fi
-      shf0="$(ls "$CASE_DIR"/*.sh 2>/dev/null | head -1)"; zf0="$(ls "$CASE_DIR"/*.zip 2>/dev/null | head -1)"
-      if [ -n "$shf0" ]; then
-        grep -q 'unzip' "$shf0" || missing="$missing; .sh nao extrai o zip"
-        grep -q 'dotnet build' "$shf0" || missing="$missing; .sh nao roda dotnet build no destino"
-      fi
-      if [ -n "$zf0" ]; then
-        unzip -l "$zf0" 2>/dev/null | grep -qi '\.csproj' || missing="$missing; .zip sem .csproj"
-        ncs=$(find "$CASE_DIR" -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | wc -l)
-        zcs=$(unzip -l "$zf0" 2>/dev/null | grep -c '\.cs$')
-        [ "${zcs:-0}" -lt "${ncs:-0}" ] && missing="$missing; .zip incompleto ($zcs de $ncs .cs)"
-      fi
-      miss_kw=""
-      for w in $(belt_scope "$caso"); do
-        grep -rqiE --include='*.cs' --include='*.sql' --exclude-dir=obj --exclude-dir=bin -- "$w" "$CASE_DIR" 2>/dev/null || miss_kw="$miss_kw $w"
-      done
-      [ -n "$miss_kw" ] && missing="$missing; escopo faltando:$miss_kw"
       errs0="$(build_errors "$CASE_DIR")"
       if [ -n "$missing" ] || [ -n "$errs0" ]; then
         echo "----- [$caso] nudge build: ${missing:-erro de compilacao}"
@@ -408,7 +398,7 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
         run_agent "$AG" "ENUNCIADO:
 $P
 
-O aceite do enunciado nao foi cumprido ($missing). Corrija o .csproj na raiz e os .cs, compile com dotnet build ate rc=0, e entregue o .zip dos artefatos e o .sh que descompacta e valida. Nao repita read/build nem rode dotnet run. Use a tabela abaixo.
+O aceite do enunciado nao foi cumprido ($missing). Corrija o .csproj na raiz e os .cs, compile com dotnet build ate rc=0 e nao repita read/build nem rode dotnet run. Use a tabela abaixo.
 ERROS:
 $(printf '%s\n' "$errs0" | head -8)
 $hints0" 180
@@ -444,11 +434,9 @@ $hints0" 180
           echo "(escopo: falta '$w' nos .cs/.sql)"; rc=1
         fi
       done
-      art="shf=\$(ls '$CASE_DIR'/*.sh 2>/dev/null | head -1); zf=\$(ls '$CASE_DIR'/*.zip 2>/dev/null | head -1); [ -n \"\$shf\" ] && [ -n \"\$zf\" ] && bash -n \"\$shf\" && grep -q unzip \"\$shf\" && grep -q 'dotnet build' \"\$shf\" && unzip -l \"\$zf\" | grep -qi '\.csproj'"
-      ls "$CASE_DIR"/*.zip >/dev/null 2>&1 || echo "(entregavel: falta .zip dos artefatos)"
-      ls "$CASE_DIR"/*.sh  >/dev/null 2>&1 || echo "(entregavel: falta .sh de resgate)"
-      check "$caso" "[ $rc -eq 0 ] && $src && $art"
+      check "$caso" "[ $rc -eq 0 ] && $src"
       case "$belt" in marrom|preta) partial_report "$caso" "$belt" ;; esac
+      fi
     done
   done
 

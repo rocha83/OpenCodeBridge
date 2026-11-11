@@ -15,7 +15,7 @@
   },
   "refresh": "10s",
   "schemaVersion": 39,
-  "version": 10,
+  "version": 12,
   "panels": [
     {
       "id": 1,
@@ -939,8 +939,8 @@
     {
       "id": 14,
       "type": "table",
-      "title": "Resultados da bateria (PASS/FAIL)",
-      "description": "Último status por caso gravado por battery-war.sh em metrics/cases.jsonl.",
+      "title": "Sequencia da bateria (data/hora, PASS/FAIL)",
+      "description": "Somente a rodada corrente (run de metrics/current.json), mais recente primeiro, com data/hora.",
       "gridPos": {
         "h": 10,
         "w": 24,
@@ -964,6 +964,11 @@
           "root_selector": "cases",
           "columns": [
             {
+              "selector": "ts",
+              "text": "data/hora",
+              "type": "string"
+            },
+            {
               "selector": "case",
               "text": "caso",
               "type": "string"
@@ -971,6 +976,21 @@
             {
               "selector": "status",
               "text": "status",
+              "type": "string"
+            },
+            {
+              "selector": "modo",
+              "text": "modo",
+              "type": "string"
+            },
+            {
+              "selector": "duration",
+              "text": "seg",
+              "type": "number"
+            },
+            {
+              "selector": "run",
+              "text": "rodada",
               "type": "string"
             }
           ],
@@ -1030,8 +1050,8 @@
         },
         "sortBy": [
           {
-            "displayName": "case",
-            "desc": false
+            "displayName": "data/hora",
+            "desc": true
           }
         ]
       },
@@ -1211,6 +1231,122 @@
           }
         ]
       }
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Estado atual por caso (ultimo registro)",
+      "description": "Ultimo registro por caso DENTRO da rodada corrente (aba latest de /api/cases).",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "llama-json"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "http://127.0.0.1:4199/api/cases",
+          "url_options": {
+            "method": "GET"
+          },
+          "root_selector": "latest",
+          "columns": [
+            {
+              "selector": "case",
+              "text": "caso",
+              "type": "string"
+            },
+            {
+              "selector": "status",
+              "text": "status",
+              "type": "string"
+            },
+            {
+              "selector": "ts",
+              "text": "ultimo registro",
+              "type": "string"
+            },
+            {
+              "selector": "modo",
+              "text": "modo",
+              "type": "string"
+            },
+            {
+              "selector": "duration",
+              "text": "seg",
+              "type": "number"
+            }
+          ],
+          "parser": "backend",
+          "json_options": {}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "filterable": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "PASS": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "FAIL": {
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "caso",
+            "desc": false
+          }
+        ]
+      },
+      "transformations": []
     }
   ]
 }
