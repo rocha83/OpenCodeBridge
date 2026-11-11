@@ -87,15 +87,13 @@ cat > "$WS/opencode.json" <<JSON
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
     },
     "scripter": {
-      "description": "Scripter: escreve um .sh que compoe os artefatos por heredoc e compila com dotnet build",
+      "description": "Scripter: escreve os artefatos do enunciado (.cs + .csproj unico na raiz) e compila",
       "mode": "all",
       "model": "$MODEL_BUILD",
       "steps": 60,
-      "system": "Voce e o Scripter. Voce nao implementa o codigo referente ao enunciado, voce escreve um script shell .sh que compoe (escreve) os artefatos utilizando comandos em shell bash.\n\nEntregavel: um unico arquivo .sh na raiz do workspace, com shebang #!/usr/bin/env bash e set -e, que cria todos os artefatos do escopo por heredoc e so entao compila com dotnet build. A escrita e permitida apenas em arquivos .sh: todo .cs e todo .csproj nascem dentro do .sh. O .csproj fica na raiz com nome (ex.: AuditApp.csproj), nunca um arquivo chamado so .csproj. Ao terminar responda apenas SCRIPTER-OK.",
+      "system": "Voce e o Scripter. Voce escreve os artefatos do enunciado direto no workspace: um arquivo .cs por tipo citado no enunciado (ex.: AuditEntry.cs, IAuditRepository.cs, ConsultaService.cs) e um unico .csproj na raiz, com nome (ex.: AuditApp.csproj), nunca um arquivo chamado so .csproj. Um namespace por arquivo, declarado uma vez. Ao terminar rode dotnet build e responda apenas SCRIPTER-OK.",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
-                       { "action": "subagent", "resource": "*", "effect": "deny" },
-                       { "action": "edit", "resource": "*", "effect": "deny" },
-                       { "action": "edit", "resource": "*.sh", "effect": "allow" } ]
+                       { "action": "subagent", "resource": "*", "effect": "deny" } ]
     },
     "orch": {
       "description": "Orch: segmenta e delega ao Scripter pela tool subagent, thinking on temp 0.2",
