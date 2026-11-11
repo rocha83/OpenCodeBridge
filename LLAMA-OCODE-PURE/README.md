@@ -12,8 +12,16 @@ opencode ──HTTP──> collector.py :4199 ──> llama-server :4100
                         └── dump no fim da rodada ──> events.jsonl ──> report.py ──> reports/*.md
 ```
 
-O `collector.py` **não** é bridge: repassa o request intacto e só mede
-(endpoint, modelo, nº de mensagens, enunciado, tokens de prompt/saída, tokens/s).
+O `collector.py` **não** é bridge de protocolo: não converte request/response nem
+inventa argumento. Ele **mede** (endpoint, modelo, nº de mensagens, enunciado,
+tokens de prompt/saída, tokens/s) e faz **uma** substituição declarada: quando
+`HARNESS_MODE=assembled` (default), o `messages[0]` (role=system) é trocado pelo
+texto montado de `harness/*.md` via `harness_loader.py`, preservando o bloco
+`<env>` do cliente. `HARNESS_MODE=off` desliga e repassa o system original.
+
+A troca só chega ao llama porque o corpo é **re-serializado** no `_forward`
+quando `apply_harness` devolve `True`; sem isso o texto montado ficava só na
+memória do proxy (medido: `prompt_n=94` com 8.167 tok de harness).
 
 O coletor e um **observer em memoria**: cada request vira um dict dentro de
 `RUN["requests"]` (sem I/O por request). O disco so e tocado no **dump**
@@ -39,6 +47,7 @@ config global do usuário.
 
 | Arquivo | Para que serve |
 | --- | --- |
+| `harness_loader.py` + `harness/` | monta o system do túnel a partir de `parts/` + `examples/dotnet/` com teto de tokens (`--report`) |
 | `collector.py` | proxy medidor (:4199), observer em memoria, `/api/*`, `/metrics` (:9091) e dump no fim |
 | `battery-chat.sh <chat\|responses>` | 6 perguntas de cultura geral com agente sem nenhuma tool |
 | `battery-tools.sh <chat\|responses>` | `write`, `edit`, `git`, `webfetch`, `subagent` — PASS conferido no disco |
@@ -68,6 +77,8 @@ Endpoints do coletor (nao vao para o llama):
 | `GET /api/summary` | agregado da rodada (requests, tokens, tps last/avg/max, erros, streak max, prosa) |
 | `GET /api/recent?n=30` | ultimos N requests (a tabela do dashboard) |
 | `GET /api/status` | run id, quantos requests em memoria, idle, `IDLE_S` |
+| `GET /api/harness` | relatório do harness ativo (arquivos, chars, tokens, teto, folga, cortados) |
+| `POST /api/harness/reload` | remonta o harness depois de editar `harness/*.md` |
 | `POST /api/dump` | grava a rodada em disco (`events.jsonl` + `runs/<id>.jsonl`) |
 | `POST /api/reset` | zera a rodada em memoria e abre um novo run id |
 
@@ -121,6 +132,20 @@ processo C#, nenhuma "receita" de execucao). Duas trilhas:
 
 Aceite de cada caso roda no disco/log (arquivo, `git log`, `dotnet build`,
 `dotnet run`, greps de contrato) — nenhum veredito vem do texto do modelo.
+
+## Harness e skills
+
+- O system vem de `harness/*.md` montado por `collector.py`; texto de system
+  dentro de `.sh` ou de string em Python nao existe mais.
+- A troca e cirurgica: do system original o tunel preserva **so** `<env>` e
+  `<available_skills>`; o resto (inclusive o `AGENTS.md` do cliente) e
+  descartado de proposito, porque o harness **e** o system.
+- As trilhas de stack sao **skills** (`.opencode/skills/<id>/SKILL.md`, com
+  `name`/`description` no frontmatter — descricao entre aspas, senao o YAML
+  quebra e a skill some em silencio). A bateria instala `harness/skills` no
+  workspace de cada caso (`WAR_SKILLS=0` desliga).
+- O dump de request (`REQ_DIR`) grava `orig_system` e o `body` pos-harness: e
+  assim que se mede que o catalogo de skills sobreviveu a substituicao.
 
 ## Medido
 

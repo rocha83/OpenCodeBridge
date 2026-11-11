@@ -20,6 +20,16 @@ try:                                  # tabela de hints compartilhada (hints.py)
 except Exception:                     # ausente/quebrada: o tunel continua passthrough
     _hints = None
 
+try:                                  # harness montado a partir de harness/*.md
+    import harness_loader as _harness_loader
+except Exception:                     # ausente: o tunel segue com o system do cliente
+    _harness_loader = None
+
+# assembled = substitui o system do cliente pelo texto montado (default);
+# off = repassa o system do cliente intacto.
+HARNESS_MODE = str(os.environ.get("HARNESS_MODE", "assembled") or "assembled").strip().lower()
+HARNESS_STACK = os.environ.get("HARNESS_STACK", "base")
+
 UP = os.environ.get("UPSTREAM", "http://127.0.0.1:4100")
 PORT = int(os.environ.get("PORT", "4199"))
 METRICS_PORT = int(os.environ.get("METRICS_PORT", "9091"))
@@ -81,6 +91,7 @@ def _latest_cases():
 # laco de tool (nao repassa ao llama e devolve uma resposta sintetica).
 ANTI = os.environ.get("ANTI_REPEAT", "stop")          # nudge | stop | off
 NUDGE_AT = int(os.environ.get("NUDGE_AT", "3"))        # mesma tool+args 3x
+NUDGE_MAX = int(os.environ.get("NUDGE_MAX", "5"))      # teto de nudges por conversa
 STOP_AT = int(os.environ.get("STOP_AT", "6"))          # 6x = corta
 # Porte do ToolsBreaker do OpenCodeBridge (C#): conta FALHAS no historico de
 # resultados que o cliente reenvia, nao a assinatura da chamada. 3 = aviso,
@@ -88,12 +99,15 @@ STOP_AT = int(os.environ.get("STOP_AT", "6"))          # 6x = corta
 BREAKER_SOFT = int(os.environ.get("BREAKER_SOFT", "3"))
 BREAKER_HARD = int(os.environ.get("BREAKER_HARD", "6"))
 NUDGES = STOPS = 0
+NUDGE_TOTAL = {}   # conv -> nudges injetados (teto NUDGE_MAX)
 BREAKER_TRIPS = BREAKER_NUDGES = 0   # ToolsBreaker (porte do C#)
 HINTS = 0             # alertas [build-hint] injetados (erro de compilacao + exemplo)
 TOOL_HINTS = 0        # alertas [tool-hint] injetados (args fora do schema)
 HINT_SEEN = {}        # conversa -> assinaturas de erro ja alertadas (anti-spam)
 BUILD_HINT = os.environ.get("BUILD_HINT", "on").strip().lower()
-HINT_MAX = int(os.environ.get("HINT_MAX", "8"))   # alertas por conversa
+HINT_MAX = int(os.environ.get("HINT_MAX", "30"))  # alertas por conversa (hints distintos)
+HINT_LAST = {}        # conversa -> (assinatura atual, repeticoes seguidas)
+HINT_TOTAL = {}       # conversa -> total de alertas injetados
 THINK_BLOCKED = 0   # requests que pediram reasoning e foram forcados a thinking off
 RECENT_N = int(os.environ.get("RECENT_N", "30"))
 
@@ -346,6 +360,28 @@ def _dump(text, kind):
     except Exception:
         pass
 
+
+
+REQ_DIR = os.environ.get("REQ_DIR", "")
+REQ_N = 0
+
+
+def _dump_req(path, body, orig_system=""):
+    """Sonda: grava o request (system do cliente + corpo montado); so leitura."""
+    global REQ_N
+    if not REQ_DIR:
+        return
+    try:
+        os.makedirs(REQ_DIR, exist_ok=True)
+        with LOCK:
+            REQ_N += 1
+            n = REQ_N
+        name = "%d-%04d.json" % (int(time.time() * 1000), n)
+        with open(os.path.join(REQ_DIR, name), "w") as f:
+            json.dump({"path": path, "orig_system": orig_system, "body": body}, f,
+                      ensure_ascii=False)
+    except Exception:
+        pass
 
 
 def record(endpoint, body, raw, flags=None):
@@ -654,8 +690,12 @@ def _nudge_for(sig, n):
                 "e de caminho, crie a pasta (mkdir -p) e escreva de novo uma unica vez.")
     if "dotnet build" in t and re.search(r"\.cs(?![A-Za-z])", t):
         return (f"[anti-repeat] o comando dotnet build repetiu {n}x. NUNCA passe arquivos .cs como "
-                "argumento do comando dotnet build: use 'dotnet build Nome.csproj' (ou 'dotnet build' "
+                "argumento do comando dotnet build: use 'dotnet build' na pasta do .csproj "
                 "na pasta do .csproj). Se o build falha, edite o arquivo que causa o erro antes de repetir.")
+    if t.startswith("dotnet build") or t.startswith("dotnet restore"):
+        return (f"[anti-repeat] dotnet build repetiu {n}x e o erro NAO mudou. Nao compile de novo: "
+                "abra o arquivo:linha do erro, corrija com edit e so entao rode o build. "
+                "Se o erro e de pacote/csproj, edite o .csproj e faca o restore antes de compilar.")
     return NUDGE_TOOL.format(sig=_short(sig), n=n)
 
 
@@ -736,13 +776,12 @@ def _tail_tool_text(msgs, n=3):
             break
     return "\n".join(reversed(parts))
 
-
 def build_hint(body):
-    """Detecta erro de compilacao no ultimo tool result e injeta o alerta pontual.
+    """Detecta erro de compilacao no ultimo tool result e ANEXA o alerta pontual.
 
-    Substitui a tabela inteira no harness: o modelo recebe so o erro exato
-    (arquivo:linha + codigo + mensagem) e o exemplo otimista do `hints.py`.
-    Nao repete o mesmo alerta (codigo@arquivo:linha) na mesma conversa.
+    O tool result original (mensagem do compilador) fica intacto; o modelo
+    recebe alem dele uma mensagem com arquivo:linha + codigo + o exemplo
+    otimista do `hints.py`.
     """
     global HINTS
     if _hints is None or BUILD_HINT == "off":
@@ -766,14 +805,20 @@ def build_hint(body):
         return False
     key = _conv_key(msgs)
     with LOCK:
-        seen = HINT_SEEN.setdefault(key, set())
-        novos = sigs - seen
-        if not novos or len(seen) >= HINT_MAX:
+        cur = "|".join(sorted(sigs))
+        last_sig, rep = HINT_LAST.get(key, ("", 0))
+        rep = rep + 1 if cur == last_sig else 1
+        if rep > 5:                      # mesmo hint 6x seguido: para
             return False
-        seen |= novos
+        if HINT_TOTAL.get(key, 0) >= HINT_MAX:   # teto total (hints distintos)
+            return False
+        HINT_LAST[key] = (cur, rep)
+        HINT_TOTAL[key] = HINT_TOTAL.get(key, 0) + 1
         HINTS += 1
-        while len(HINT_SEEN) > 64:
-            HINT_SEEN.pop(next(iter(HINT_SEEN)))
+        while len(HINT_LAST) > 64:
+            HINT_LAST.pop(next(iter(HINT_LAST)))
+        while len(HINT_TOTAL) > 64:
+            HINT_TOTAL.pop(next(iter(HINT_TOTAL)))
     msg = _hints.alert(txt)
     if not msg:
         return False
@@ -885,6 +930,13 @@ def anti_repeat(body, raw_body):
                "avanca. Edite o trecho com edit (copiando do read) ou corrija a causa do erro.")
     if not txt:
         txt = NUDGE_TEXT
+    key = _conv_key(msgs)
+    with LOCK:
+        if NUDGE_TOTAL.get(key, 0) >= NUDGE_MAX:
+            return raw_body, None, False, False
+        NUDGE_TOTAL[key] = NUDGE_TOTAL.get(key, 0) + 1
+        while len(NUDGE_TOTAL) > 64:
+            NUDGE_TOTAL.pop(next(iter(NUDGE_TOTAL)))
     nb = dict(body)
     nb["messages"] = list(msgs) + [{"role": "user", "content": txt}]
     with LOCK:
@@ -1069,6 +1121,82 @@ def metrics():
     return ("\n".join(out) + "\n").encode()
 
 
+HARNESS = {"text": None, "report": None}
+ENV_BLOCK = re.compile(r"<env>.*?</env>", re.S)
+# Catálogo de skills do cliente (opencode): o harness não pode engolir a lista,
+# senão o modelo vê a tool `skill` sem nenhuma skill para rotear.
+SKILL_BLOCK = re.compile(
+    r"(?:Skills provide specialized instructions.*?\n)?<available_skills>.*?</available_skills>", re.S)
+ENV_LINES = ("Working directory:", "Workspace root folder:", "Is directory a git repo:",
+             "Platform:", "Today's date:")
+
+
+def _harness_build():
+    """Monta uma vez; o texto fica byte-identico entre requests (cache de prefixo)."""
+    res = _harness_loader.assemble(stack=HARNESS_STACK)
+    HARNESS["text"] = res["text"]
+    HARNESS["report"] = {k: v for k, v in res.items() if k != "text"}
+    return HARNESS["report"]
+
+
+def harness_report():
+    with LOCK:
+        if HARNESS["report"] is not None and HARNESS["text"] is not None:
+            return HARNESS["report"]
+        if HARNESS_MODE != "assembled":
+            HARNESS["report"] = {"mode": HARNESS_MODE, "active": False}
+            return HARNESS["report"]
+        try:
+            if _harness_loader is None:
+                raise RuntimeError("harness_loader.py ausente")
+            rep = _harness_build()
+        except Exception as exc:      # nunca derruba o tunel: cai no system do cliente
+            HARNESS["text"] = None
+            HARNESS["report"] = {"mode": HARNESS_MODE, "active": False, "error": str(exc)}
+            rep = HARNESS["report"]
+        rep["mode"] = HARNESS_MODE
+        rep["active"] = HARNESS["text"] is not None
+        return rep
+
+
+def harness_reload():
+    with LOCK:
+        HARNESS["text"] = None
+        HARNESS["report"] = None
+    return harness_report()
+
+
+def apply_harness(body):
+    """Troca o system do cliente pelo harness montado, preservando o bloco <env>."""
+    if HARNESS_MODE != "assembled":
+        return False
+    msgs = body.get("messages")
+    if not isinstance(msgs, list) or not msgs:
+        return False
+    idx = next((i for i, m in enumerate(msgs) if m.get("role") == "system"), None)
+    if idx is None:
+        return False
+    harness_report()
+    base = HARNESS["text"]
+    if not base:
+        return False
+    original = msgs[idx].get("content") or ""
+    found = ENV_BLOCK.search(original)
+    if found:
+        env = found.group(0)
+    else:
+        keep = [ln for ln in original.splitlines() if ln.startswith(ENV_LINES)]
+        env = "<env>\n" + "\n".join(keep) + "\n</env>" if keep else ""
+    text = base + ("\n\n" + env if env else "")
+    skills = SKILL_BLOCK.search(original)
+    if skills:
+        text += "\n\n" + skills.group(0)
+    if original == text:
+        return False
+    msgs[idx] = {**msgs[idx], "content": text}
+    return True
+
+
 class Proxy(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -1101,6 +1229,8 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                 BREAKER_TRIPS = BREAKER_NUDGES = 0
                 HINTS = 0
                 HINT_SEEN.clear()
+                HINT_LAST.clear()
+                HINT_TOTAL.clear()
                 LAST_SIG = ""
                 LAST_PROMPT = ""
                 STREAK = 0
@@ -1163,6 +1293,10 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                     "latest": [latest[k] for k in sorted(latest)],
                     "count": len(seq),
                     "run_total": len(mine)}
+        elif path == "/api/harness":
+            body = harness_report()
+        elif path == "/api/harness/reload":
+            body = harness_reload()
         elif path == "/api/status":
             body = {"run": RUN["id"], "requests": len(RUN["requests"]),
                     "idle": IDLED, "events": EVENTS, "idle_s": IDLE_S}
@@ -1188,6 +1322,22 @@ class Proxy(http.server.BaseHTTPRequestHandler):
             body = json.loads(raw_body) if raw_body else {}
         except Exception:
             pass
+        harnessed = False
+        orig_system = ""
+        if body:
+            for m in body.get("messages") or []:
+                if m.get("role") == "system":
+                    orig_system = m.get("content") or ""
+                    break
+            try:
+                harnessed = bool(apply_harness(body))
+            except Exception:
+                pass                  # harness quebrado nao pode derrubar o repasse
+        if harnessed and raw_body:
+            # o system montado so chega ao llama se o corpo for re-serializado
+            raw_body = json.dumps(body, ensure_ascii=False).encode()
+        if raw_body:
+            _dump_req(self.path, body, orig_system)
         nudged = stopped = False
         if body and self.command == "POST" and self.path.startswith("/v1/chat"):
             if tool_arg_hint(body) or build_hint(body):
@@ -1277,4 +1427,14 @@ if __name__ == "__main__":
     threading.Thread(target=_idle_loop, daemon=True).start()
     print(f"proxy :{PORT} -> {UP} | metrics :{METRICS_PORT}/metrics | events {EVENTS}"
           f" | idle reset {IDLE_S}s", flush=True)
+    _rep = harness_report()
+    if _rep.get("active"):
+        print(f"harness: {_rep['mode']} stack={_rep['stack']} "
+              f"system={_rep['chars']} ch ~{_rep['tokens']:.0f} tok "
+              f"teto={_rep['budget']['max_total_tokens']} folga="
+              f"{_rep['budget']['max_total_tokens'] - (_rep['tokens'] + _rep['budget']['tools_reserve_tokens']):.0f}"
+              + (f" cortados={len(_rep['dropped'])}" if _rep.get("dropped") else ""), flush=True)
+    else:
+        print(f"harness: inativo ({_rep.get('error') or _rep.get('mode')}); system do cliente",
+              flush=True)
     serve(Proxy, PORT)

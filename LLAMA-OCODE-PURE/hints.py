@@ -94,9 +94,28 @@ def tool_call_problem(name, args):
     return None
 
 
+# modelo canonico de projeto: o harness nunca roda `dotnet new`, o modelo escreve este arquivo
+CSPROJ_MIN = """      <Project Sdk=\"Microsoft.NET.Sdk\">
+        <PropertyGroup>
+          <TargetFramework>net10.0</TargetFramework>
+          <ImplicitUsings>enable</ImplicitUsings>
+          <Nullable>enable</Nullable>
+        </PropertyGroup>
+      </Project>
+      (rode dotnet build no diretorio do .csproj; so acrescente <OutputType>Exe</OutputType> se o
+      enunciado pedir dotnet run, e PackageReference apenas do que o enunciado exigir)"""
+
+CSPROJ_CODES = {"MSB4025", "MSB1003", "MSB1009", "MSB4068", "MSB4040", "NETSDK1004",
+                "NETSDK1045", "NU1202", "NU1605", "NU1101", "NU1102", "NU1603"}
+
+
 def hint_for(code):
     """switch hardcode: (descricao curta, exemplo que compila) para o codigo."""
     code = (code or "").strip().upper()
+    if code == "CS0080":
+        return ("clausula where em algo nao generico",
+                "where T : ... so vale em tipo/metodo generico: declare class Repositorio<T> onde T : class "
+                "ou apague a clausula where do tipo/metodo nao generico")
     if code == "CS0246":
         return ("tipo/interface nao encontrado neste arquivo",
                 "se o tipo existe em outro namespace: using Cadastros.Dominio; no topo (nome exato do "
@@ -113,12 +132,15 @@ def hint_for(code):
                 "use o membro public/internal compativel: public sealed class Cliente { public int Id { get; init; } }")
     if code == "CS0103":
         return ("nome nao existe no escopo",
-                "QueryAsync e extensao de IDbConnection: using Dapper; "
-                "using var conn = new SqliteConnection(cs); var lista = await conn.QueryAsync<T>(sql);")
+                "3 causas comuns: (a) Ok/BadRequest/NotFound = ControllerBase do MVC -> use "
+                "Results.Ok(...)/Results.NotFound() (Minimal API) ou herde ControllerBase; "
+                "(b) QueryAsync/ExecuteAsync = extensao do Dapper -> using Dapper; e conn tipado "
+                "IDbConnection; (c) QueryAllAsync/QueryListAsync nao existem no Dapper -> use "
+                "conn.QueryAsync<T>(sql, p)")
     if code == "CS1061":
-        return ("membro nao existe no tipo",
-                "o metodo e extensao do Dapper: using Dapper; + PackageReference Dapper 2.1.89; "
-                "chame conn.QueryAsync<T>(sql) com conn tipado como IDbConnection")
+        return ("membro nao existe no tipo (ou faltou o using)",
+                "ou o tipo nao tem esse membro, ou falta o using do ORM escolhido: adicione "
+                "using <Namespace do seu ORM>; e chame o metodo no tipo certo")
     if code == "CS1674":
         return ("IEnumerable<T> nao e IDisposable",
                 "var lista = await conn.QueryAsync<Reembolso>(sql); foreach (var r in lista) { ... } "
@@ -132,6 +154,11 @@ def hint_for(code):
         return ("nenhuma sobrecarga aceita essa quantidade de argumentos",
                 "copie a assinatura declarada: Task<IEnumerable<Reembolso>> QueryAsync(string sql, object? p) "
                 "-- a chamada tem que passar exatamente (string, object?)")
+    if code == "CS0411":
+        return ("argumentos de tipo nao puderam ser inferidos",
+                "passe o tipo explicito na chamada generica: await conn.QueryAsync<Reembolso>(sql, p); "
+                "e confira a assinatura do SEU metodo: Task<IEnumerable<T>> QueryAsync<T>(string sql, object? p) "
+                "-- ao chamar o seu, sem <T>: await repositorio.QueryAsync(sql, p)")
     if code == "CS1013":
         return ("literal numerico invalido",
                 "o _ so vai entre digitos: 100_000m (nao 100_m)")
@@ -159,8 +186,8 @@ def hint_for(code):
                 "namespace Cadastros; public static class Program { static void Main() { ... } }")
     if code == "CS8954":
         return ("namespace declarado duas vezes no arquivo",
-                "namespace file-scoped UMA vez, na primeira linha: namespace Cadastros; "
-                "sem repetir a linha e sem segundo namespace no mesmo arquivo")
+                "mantenha exatamente UMA linha 'namespace X;' no topo, com todos os tipos abaixo; "
+                "NUNCA apague o namespace: remova so a linha repetida")
     if code == "CS8955":
         return ("namespace normal + file-scoped no mesmo arquivo",
                 "escolha um: namespace Cadastros; no topo (file-scoped) OU namespace Cadastros { ... }")
@@ -179,6 +206,10 @@ def hint_for(code):
     if code == "CS1026":
         return ("falta fechar a chamada",
                 "return (await conn.ExecuteScalarAsync<int>(sql)) > 0;")
+    if code == "CS1056":
+        return ("caractere inesperado no fonte",
+                "voce colou cerca de markdown dentro do .cs: apague as linhas com ``` e qualquer texto "
+                "fora de codigo; o arquivo tem que conter apenas C#")
     if code == "CS1002":
         return ("falta ponto e virgula",
                 "var total = await conn.ExecuteScalarAsync<int>(sql);")
@@ -214,6 +245,10 @@ def hint_for(code):
         return ("acessibilidade inconsistente no parametro",
                 "tipo do parametro tao publico quanto o metodo: public interface IReembolsoRepository { } "
                 "+ public sealed class ReembolsoService(IReembolsoRepository repo) { ... }")
+    if code == "CS0266":
+        return ("conversao implicita nao permitida",
+                "o valor nao cabe no tipo destino: converta explicitamente ((decimal)x, (int)x, (long)x) "
+                "ou declare a variavel com o tipo que a expressao devolve")
     if code == "CS0029":
         return ("tipos incompativeis na atribuicao",
                 "converta no ponto do erro: int id = Convert.ToInt32(await conn.ExecuteScalarAsync<long>(sql));")
@@ -226,33 +261,51 @@ def hint_for(code):
     if code == "MSB1008":
         return ("dotnet build recebeu arquivo .cs",
                 "passe o projeto: dotnet build MeuProjeto.csproj (ou dotnet build na pasta dele)")
+    if code == "MSB1003":
+        return ("dotnet build sem projeto no diretorio atual",
+                "rode no diretorio do .csproj: dotnet build MeuProjeto.csproj (ou cd na pasta dele). "
+                "Se nao existir .csproj, crie um unico na raiz, com nome")
     if code == "MSB1009":
         return ("projeto/arquivo inexistente",
                 "use o caminho real: dotnet build ./MinhaPasta/MeuProjeto.csproj")
     if code == "MSB4025":
         return ("csproj nao e XML de projeto",
                 "reescreva o arquivo inteiro: <Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
-                "<TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>")
+                "<TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>")
     if code == "MSB4068":
         return ("elemento <project> minusculo/atributo errado",
                 "<Project Sdk=\"Microsoft.NET.Sdk\"> (P maiusculo, Sdk como atributo)")
     if code == "MSB4040":
         return ("csproj sem SDK",
                 "<Project Sdk=\"Microsoft.NET.Sdk\"> ... </Project> (Sdk no Project, sem xmlns)")
+    if code == "NETSDK1004":
+        return ("faltam os ativos do restore (project.assets.json)",
+                "rode dotnet restore antes do build: dotnet restore MeuProjeto.csproj && dotnet build "
+                "MeuProjeto.csproj --no-restore (ou dotnet build sem --no-restore)")
     if code == "NETSDK1045":
         return ("SDK nao suporta o alvo",
-                "use <TargetFramework>net8.0</TargetFramework> (ou o alvo que o SDK instalado suporta)")
+                "use <TargetFramework>net10.0</TargetFramework> (SDK 10 instalado; net8.0 so com o targeting pack)")
     if code == "NU1101":
         return ("pacote nao encontrado no feed",
-                "nome/versao reais: dotnet add package Dapper --version 2.1.89 "
-                "(Microsoft.Data.Sqlite 10.0.12, Microsoft.Data.SqlClient 5.1.5)")
+                "esse ID de pacote nao existe: System.* do .NET nao sao pacotes (DataAnnotations/ComponentModel "
+                "vem do framework). Para ASP.NET use <FrameworkReference Include=\"Microsoft.AspNetCore.App\" /> "
+                "e para ORM use Microsoft.EntityFrameworkCore (+ .SqlServer ou .Sqlite)")
     if code == "NU1102":
         return ("versao do pacote nao existe",
-                "ASP.NET no .NET 8+ e framework: <FrameworkReference Include=\"Microsoft.AspNetCore.App\" />; "
-                "Microsoft.Data.SqlClient 5.1.5 (nao 8.0.4)")
+                "Microsoft.AspNetCore.* NAO sao pacotes desde o .NET Core 3: no net8.0/net10.0 vem do SDK. "
+                "Remova a PackageReference de Microsoft.AspNetCore.Http/App e, se precisar de ASP.NET numa "
+                "biblioteca, use <FrameworkReference Include=\"Microsoft.AspNetCore.App\" />. "
+                "Para EF escolha a versao maior compativel com o TFM")
+    if code == "NU1202":
+        return ("pacote incompativel com o TargetFramework do projeto",
+                "EF Core 10 exige net10.0: ou ajuste <TargetFramework>net10.0</TargetFramework> no .csproj, "
+                "ou use a versao do pacote para o seu TFM (EF Core 8.x para net8.0). Nao misture net8.0 com "
+                "pacote 10.x")
     if code == "NU1605":
-        return ("downgrade de pacote",
-                "alinhe a versao ao target: <PackageReference Include=\"Microsoft.Extensions.DependencyInjection\" Version=\"9.0.0\" />")
+        return ("downgrade de pacote detectado",
+                "um pacote transitivo exige versao maior: alinhe TODAS as referencias do ORM na mesma "
+                "versao maior compativel com o TFM (net8.0 -> EF 8.x, net10.0 -> EF 10.x); nao misture "
+                "8.x/9.x/10.x e remova a referencia que nao usa")
     if code == "NU1301":
         return ("feed NuGet indisponivel (transitorio)",
                 "repita depois de corrigir: dotnet build MeuProjeto.csproj; se persistir, "
@@ -348,7 +401,12 @@ def alert(errors_text, max_codes=3):
         seen_keys.add(key)
         uniq.append((where, code, msg))
     lines = uniq[:max_codes]
-    texts = [ln[0] + ": error " + ln[1] + ": " + ln[2] for ln in lines]
+    # cada linha SEMPRE leva arquivo:linha + erro + o exemplo que compila
+    texts = []
+    for _where, _code, _msg in lines:
+        _desc, _ex = hint_for(_code)
+        texts.append(_where + ": error " + _code + ": " + _msg +
+                     "\n      corrigir: " + _desc + " -> " + _ex)
     if tool_err and not texts:
         texts.append('tool.execution: "Invalid arguments for tool \\"%s\\"" (os args chegaram '
                      'quebrados; o texto nao pode conter <tool_call>)' % tool_err.group(1))
@@ -401,8 +459,11 @@ def alert(errors_text, max_codes=3):
         ops.extend("  -" + ln.strip(" ")[0:] if False else "  - " + ln.strip() for ln in br.splitlines())
     if ops:
         body += "\n" + "\n".join(ops[:5])
+    # problema no arquivo de projeto: ensina o csproj valido (nada de dotnet new)
+    if any(ln[1] in CSPROJ_CODES for ln in all_lines) or "csproj" in (errors_text or "").lower():
+        body += "\n  - csproj minimo que compila (escreva com write, nao use dotnet new):\n" + CSPROJ_MIN
     return ("[build-hint] o ultimo build falhou. Corrija EXATAMENTE estes erros e so entao rode "
-            "dotnet build Nome.csproj de novo (nao repita o comando sem editar o arquivo):\n" + body)
+            "dotnet build de novo na pasta do .csproj (nao crie outro .csproj e nao repita o comando sem editar o arquivo):\n" + body)
 
 
 def _main(argv):

@@ -367,3 +367,229 @@ Build 5/5 PASS; orch 1/5 PASS (azul). Placar completo e causas em `reports/gate-
 `reports/orch-limites.md`. Blocked: orquestrador 4B nao coordena multi-entidade e nao pode verificar
 (sem shell). Tres caminhos de liberacao propostos no relatorio (shell restrito ao orch, orquestrador
 maior, ou receita de arquivos no enunciado).
+
+## Harness em arquivos: o system vem de `harness/`, montado pelo túnel (2026-11-11)
+
+### Decisão
+
+O system prompt deixou de ser texto colado no `battery-war.sh` (campo `system` do
+agente, 914 ch) e de ser o prompt nativo do opencode (6.855 ch, dos quais 5.825 ch
+eram o bloco `## Available tools` — catálogo TypeScript que duplica o JSON de
+`tools` que já vai no request). Agora o texto vive em `harness/*.md`, é ordenado
+por `harness/manifest.json` e montado por `harness_loader.py`; o `collector.py`
+substitui `messages[0]` (role=system) pelo texto montado.
+
+Motivo medido no dump (`reqs/mt1/*-0002.json`): system 6.855 ch = 699 (nosso texto)
++ 129 (`# Your Model`) + 202 (`# Code Mode`) + **5.825 (`## Available tools`)**;
+`tools` JSON = 12.165 ch com 11 tools. O catálogo TS era 32% do prefixo fixo e não
+ensinava comportamento nenhum.
+
+### Estrutura
+
+| caminho | papel |
+| --- | --- |
+| `harness/manifest.json` | ordem de montagem + orçamento (fonte única da sequência) |
+| `harness/parts/00-papel.md … 13-exemplos.md` | 14 seções de comportamento universal |
+| `harness/examples/dotnet/00 … 09` | 10 trilhas de forma (onde cada coisa mora) |
+| `harness/README.md` | como editar, orçamento e regras de escrita |
+| `harness_loader.py` | lê, ordena, mede tokens, aplica teto e gera relatório |
+
+MoE e "roles e pipeline" **não existem mais** no pacote (nem como tails): a role já
+chega no prompt do agente do cliente, e o texto antigo repetia as 7 roles a cada
+request. `tails/` foi removido.
+
+### Orçamento (`manifest.json` → `budget`)
+
+- `max_total_tokens: 12000` (prefixo fixo = system + catálogo de tools);
+- `tools_reserve_tokens: 3500` (catálogo medido: 12.165 ch);
+- `chars_per_token: 3.5` (estimador **conservador**; nos dumps medidos o real ficou
+  entre 4,1 e 4,5 ch/tok — ex.: 20.070 ch → 4.529 tok);
+- `on_overflow: drop_examples` (corta do fim das trilhas e registra em `dropped`;
+  **nunca** corta `parts`).
+
+Medido em 2026-11-11 (`python3 harness_loader.py --report`):
+
+| grupo | chars | tok (3.5) |
+| --- | --- | --- |
+| parts (14) | 4711 | 1346 |
+| trilhas (00-09) | 23828 | 6808 |
+| system | 28586 | 8167 |
+| tools (reserva) | 12.165 | 3.500 |
+| **total** | **40751** | **11667** |
+
+Folga: 333 tok sobre o teto de 12k pelo estimador de 3,5. Pelo ch/tok real (≥4,1)
+o total fica em ~9,7k. No pior caso teórico (3,3) daria 12.349 — 349 acima; por
+isso o estimador de 3,5 é o número de trabalho e 3,3 é só alerta.
+
+### Como o túnel aplica (`collector.py`)
+
+- `HARNESS_MODE=assembled` (default): troca o system do cliente pelo montado.
+  `HARNESS_MODE=off` repassa o system do cliente intacto.
+- `HARNESS_STACK` (default `dotnet`), `HARNESS_MAX_TOKENS`,
+  `HARNESS_TOOLS_RESERVE`, `HARNESS_CHARS_PER_TOKEN`, `HARNESS_ON_OVERFLOW`
+  sobrescrevem o manifesto por ambiente.
+- O bloco `<env>` do system original (cwd, workspace, plataforma, data) é
+  **preservado** e reanexado ao fim; sem `<env>`, as linhas conhecidas são copiadas.
+- O texto é montado **uma vez por processo**: bytes idênticos entre requests, então
+  o cache de prefixo do llama continua válido. Editar `harness/` exige
+  `POST /api/harness/reload` (ou restart do collector).
+- Endpoints novos: `GET /api/harness` (relatório: arquivos, chars, tokens, folga,
+  cortados) e `POST /api/harness/reload`.
+- Harness quebrado (arquivo faltando, JSON inválido, orçamento estourado) **não
+  derruba o proxy**: `active=false` + `error` no relatório e o system do cliente é
+  usado como fallback.
+
+### Trilhas (exemplos de forma, não de resposta)
+
+| # | trilha | chars |
+| --- | --- | --- |
+| 00 | comandos base dotnet (net10, EF 10, build/run, sem `dotnet new` em projeto existente) | 736 |
+| 01 | DDD + EF + repositório genérico (contratos no domínio) | 2.941 |
+| 02 | git flow sobre projeto existente | 635 |
+| 03 | serviços de app: cálculo + CPF/CNPJ (spec no domínio) | 2.123 |
+| 04 | minimal API + guideline Microsoft | 1.711 |
+| 05 | CQRS + cache resiliente (alimenta no insert, invalida na edição) | 3.208 |
+| 06 | bus em tópicos (publisher, consumer com retry/backoff e idempotência) | 3.594 |
+| 07 | SQL: DDL + DML casando com a trilha 01 | 1.609 |
+| 08 | React 19 + TypeScript + Bootstrap 5 | 3.934 |
+| 09 | entidade composta header+details (aggregate root, `OwnsMany`, transação) | 3.337 |
+
+### Enunciados e belts
+
+- `tools-full` (create/adjust), `mission-tools` (create/code) e belts **azul a preta**
+  agora rodam **somente build**, com enunciado simples (sem receita, sem versão de
+  pacote, sem `Criterio de aceite:` apensado, sem placeholder `{ws}`).
+- `BUILD_ACEITE` (824 ch repetidos em 5 enunciados) e os 5 enunciados `P_*_ORCH`
+  foram removidos; o agente `orch` saiu do `opencode.json` do caso (nada o usava).
+- `build.system` caiu de 914 → 224 ch: é só ponteiro/fallback; a fonte é o harness.
+- O aceite continua no `check` do `battery-war.sh` (build rc=0, fonte real, escopo,
+  números exatos do mission-tools, `git log` do tools-full).
+
+### Aceite executado
+
+```
+python3 -m py_compile collector.py harness_loader.py     -> OK
+python3 harness_loader.py --report                       -> 11.443 tok, folga 557
+bash -n battery-war.sh                                   -> OK
+opencode.json (heredoc expandido)                        -> JSON válido, agentes: tools/build/plan
+apply_harness(body) com <env>                            -> preserva cwd, idempotente
+collector em porta alternativa + GET /api/harness        -> relatório com active=true
+```
+
+### Riscos e limites
+
+- Estimador 3,5 é conservador; se um dia o tokenizer real cair a 3,3 o teto estoura
+  em ~110 tok — o `drop_examples` cobre isso cortando a última trilha e registrando.
+- Mudar `harness/` sem reload mantém o texto antigo em memória (por design: cache).
+- O texto é pin de comportamento, não de versão do opencode; subir a versão não
+  invalida o harness, mas o `system` do cliente continua sendo descartado.
+- Resposta do modelo conta para o teto de contexto do llama (131k), não para o teto
+  de 12k, que é só do prefixo fixo.
+
+## Queda de infra e reerguimento (2026-11-11, tarde)
+
+O host voltou em live CD: `/` é overlay em tmpfs, então **units, prometheus,
+collector e /tmp/opencode sumiram** — sobraram o Grafana (na imagem) e os
+arquivos do repo. O que foi feito, e como conferir:
+
+| passo | comando | prova |
+| --- | --- | --- |
+| unit do modelo da FT | `install -m 644 LAB-FT/toolchain/llama/llama-gk.service /etc/systemd/system/` + `systemctl enable --now llama-gk` | `llama-gk` active |
+| pesos | `FT/models/gguf/Gemma4-E4B-UCD-IT_Principal-GK-DS-Retrained-Q4_K_M-Imatrix.gguf` + mmproj bf16 + template canônico | `/v1/models` = `Gemma4-E4B-GK-Q4` |
+| contexto | `-c 131072 -np 1` (turbo3) | `/props` = `n_ctx 131072`, VRAM 8.209/12.288 MiB |
+| túnel puro | `python3 collector.py` (`:4199` → `:4100`, métricas `:9091`) | `/api/status` e `/api/harness` |
+| resto da stack | `./stack-up.sh --with-llama` (prometheus, scrape, plugin Infinity, dashboard e pin) | `== STACK OK (0 falhas) ==` |
+
+Ajuste no alias: a unit persistida servia `Gemma4-E4B-UCD-GK-Q4`, enquanto
+scripts e `stack-up.sh` esperam `Gemma4-E4B-GK-Q4`. Ficou `--alias
+Gemma4-E4B-GK-Q4,Gemma4-E4B-UCD-GK-Q4` (lista, sem duplicar unit).
+
+`start-llama-gpu.sh --defaults` **não** serve para isto: ele reescreve a unit e
+aponta para `/opt/models/gemma4-e4b-base` (modelo base). O caminho é a unit
+`llama-gk`, que carrega os pesos da FT.
+
+### Bug corrigido: o harness montado não chegava ao llama
+
+`apply_harness(body)` alterava o dict, mas `raw_body` (os bytes enviados) só era
+re-serializado quando um hint disparava; em request sem hint o llama recebia o
+system **original do cliente**. Medição: `prompt_n=94` com o texto de 8.167 tok
+montado. Correção em `collector.py::_forward` (re-serializa quando
+`apply_harness` devolve `True`). Prova depois do fix: `prompt_n=7.955` no 1º
+request e `64` no 2º (só o delta — cache de prefixo do llama preservado).
+
+### Medição A/B do prefixo (2026-11-11, tarde)
+
+Mesmo enunciado, `temperature 0.1`, 1 chamada direta ao llama com duas
+variantes de system:
+
+| system | prompt | 1ª ação do modelo |
+| --- | --- | --- |
+| curto (132 ch) | 216 tok | `write` com `path`/`content` (Program.cs) — correto |
+| harness montado (28.586 ch) | 8.116 tok | `write` com `{"command":…}` — argumento de `shell` na tool errada |
+
+Composição do prefixo: **parts 4.711 ch (1.346 tok) e trilhas 23.828 ch
+(6.808 tok) = 83% em trilhas de código**. Em enunciado de uma frase
+(`tools-full`, hello world) a rodada com o harness gravou
+`src/api/customers.ts` + `src/Domain/Cliente.cs` — ou seja, copiou a trilha 08
+(React) e não o pedido. Sem harness, os logs de 09/11 fazem esse mesmo caso
+passar. Conclusão parcial: o teto de 12k está certo, a **proporção** não — as
+trilhas dominam o prefixo e o modelo pequeno as copia.
+
+## Harness enxuto + skills (2026-11-11, noite)
+
+O prefixo fixo deixou de carregar trilha de codigo: `examples/dotnet/*` (23.828
+ch) saiu do default e virou **skill** (`.opencode/skills/<id>/SKILL.md`), que o
+modelo carrega sob demanda pela tool `skill`. No lugar ficou o **contrato** do
+stack (`harness/parts/14-formas.md`, uma linha por capacidade, sem arquivo
+pronto para copiar).
+
+| camada | conteudo | custo |
+| --- | --- | --- |
+| `parts/` + `14-formas.md` | papel, ambiente, disciplina, contrato do stack | 2.087 tok |
+| `tools` (catalogo) | reserva medida | 3.500 tok |
+| total do prefixo fixo | — | **5.587 tok** (teto 12.000, folga 6.413) |
+| `HARNESS_STACK=dotnet-api` | trilha fixa (`api` + `sql-ddl`) | 3.147 tok de system |
+| `HARNESS_STACK=dotnet` | todas as 11 skills | 11.988 tok (**folga 12**; corta `ml-nn` e `dotnet-aggregate` pelo teto) |
+
+### Raia sem skills (8 FAIL em 10 casos)
+
+`WAR_RESET=1 ./battery-war.sh chat tools tools-full mission-tools belts-azul
+belts-verde belts-roxa belts-marrom belts-preta`, harness base:
+
+```
+tools-full-create     PASS   (com o harness cheio era FAIL: gravava src/api/customers.ts)
+tools-full-adjust     FAIL   (criou src/app/App.csproj com raiz invalida -> MSB4025; anti-repeat 6)
+tools-full-run        FAIL
+mission-tools-create  PASS
+mission-tools-code    FAIL   (edit com oldString obsoleto -> anti-repeat 6)
+belts-build-azul      FAIL   (CS0029 + await foreach em List; projeto em src/ e nao na raiz)
+belts-build-verde     FAIL
+belts-build-roxa      FAIL   (direcionamento build: sem .csproj na raiz, sem fonte .cs)
+belts-build-marrom    FAIL   (idem)
+belts-build-preta     FAIL   (idem)
+```
+
+Leitura: o enxuto conserta o caso ingenuo e o de texto, mas **forma de stack**
+(onde mora o `.csproj`, como editar, como compilar) e o que falta nos casos
+grandes — exatamente o papel da skill sob demanda.
+
+### Skill: dois bugs medidos
+
+1. **`description` com dois-pontos e espaco** (`... ASP.NET Core: Minimal API`)
+   e YAML invalido: a skill era descartada em silencio e o catalogo saia so com
+   as builtin (`OpenCode`, `Report`). Correcao: descricao **entre aspas**.
+   Prova: `reqs/*.json` com `orig_system` de 10.321 ch listando 13 skills.
+2. **O harness engolia o catalogo**: `apply_harness` trocava o system inteiro e
+   so preservava `<env>`, entao a tool `skill` chegava sem nenhuma skill para
+   rotear. Correcao: preservar tambem o bloco `<available_skills>` (com a linha
+   "Skills provide specialized instructions..." que o precede). Prova: o mesmo
+   `orig_system` e o `body` pos-harness contem o bloco.
+
+O dump de request agora grava `orig_system` **e** `body` (pos-harness); antes so
+o corpo montado, o que impedia ver o que o cliente tinha mandado.
+
+### Pendente
+
+- Medir a raia **com skills** nos mesmos casos e comparar passo/token/PASS com a
+  raia sem skills; decidir se o caso aberto usa skill e o gate usa
+  `HARNESS_STACK` deterministico.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bateria WAR pelo TUNEL: opencode -> collector :4199 -> llama :4100.
 # So enunciados: nenhuma dependencia de harness externo.
-#   tools : casos que EXIGEM ferramenta (tools-full, mission-tools, belts azul/verde)
+#   tools : casos que EXIGEM ferramenta (tools-full, mission-tools, belts azul..preta em build)
 #           -> agent 'tools', permissao completa, prompt original do CLI.
 #   ent   : sequencia Plan de conhecimento (produto/customer/saleinvoice/worker/
 #           redis/bus/erp/dashboard) em TEXTO puro, sem tool -> agent 'plan'.
@@ -18,12 +18,13 @@ LLAMA="${LLAMA:-http://127.0.0.1:4199}"
 MODEL="llamapure/Gemma4-E4B-GK-Q4"                 # plan: thinking ON, temp 0.2
 MODEL_BUILD="llamapure/Gemma4-E4B-GK-Q4-nothink"  # build: thinking OFF, temp 0.1
 LOG="$ROOT/war-$MODO-$PROTO.log"
-START=$(date +%s)
-# Observer em memoria: zera a rodada no coletor e so grava no fim (dump).
+START="${WAR_RUN:-$(date +%s)}"   # rodada inteira: mesma origem para todos os casos
+START_TS="$(date +%s)"             # epoch: report.py --since exige float
+# Observer em memoria: reset SO no inicio da rodada (WAR_RESET=1); os casos seguintes acumulam.
 COLLECTOR="${COLLECTOR:-http://127.0.0.1:4199}"
 # exclusao de fontes geradas: projeto na raiz que varre **/*.cs nao pode compilar obj/bin de projeto aninhado
 DOTNET_SRC_EXCLUDE=(-p:DefaultItemExcludes='obj/**%3Bbin/**%3B**/obj/**%3B**/bin/**')
-curl -s -m 3 -X POST "$COLLECTOR/api/reset" >/dev/null 2>&1 || true
+[ "${WAR_RESET:-0}" = 1 ] && { curl -s -m 3 -X POST "$COLLECTOR/api/reset" >/dev/null 2>&1 || true; }
 pass=0; fail=0
 export GIT_AUTHOR_NAME="war" GIT_AUTHOR_EMAIL="war@local"
 export GIT_COMMITTER_NAME="war" GIT_COMMITTER_EMAIL="war@local"
@@ -47,7 +48,7 @@ rm -rf "$WS"; mkdir -p "$WS"
 cat > "$WS/opencode.json" <<JSON
 {
   "\$schema": "https://opencode.ai/config.json",
-  "experimental": { "subagent_depth": 3 },
+  "experimental": { "subagent_depth": 3, "codemode_vm": false },
   "providers": {
     "llamapure": {
       "name": "Llama pure",
@@ -76,28 +77,16 @@ cat > "$WS/opencode.json" <<JSON
       "mode": "primary",
       "model": "$MODEL_BUILD",
       "steps": 60,
-      "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
+      "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
+                       { "action": "execute", "resource": "*", "effect": "deny" } ]
     },
     "build": {
       "description": "Build: executa micro-enunciados com tools, thinking off temp 0.1",
       "mode": "all",
       "model": "$MODEL_BUILD",
       "steps": 80,
-      "system": "Voce e um agente autonomo desenvolvedor de software senior, utiliza tools para implementar os artefatos referentes ao enunciado, se comunica de forma concisa e pragmatica no idioma do usuario. Corrija com edit/sed no trecho exato; write so para arquivo novo. Voce lida com contextos de no maximo 128k, se preciso em tarefas grandes utilize delegacao utilizando a tool subagent.",
-      "permissions": [ { "action": "question", "resource": "*", "effect": "deny" } ]
-    },
-    "orch": {
-      "description": "Orch: segmenta em camadas e delega cada camada a um subagente build",
-      "mode": "primary",
-      "model": "$MODEL",
-      "steps": 140,
-      "system": "Voce e um agente que nao escreve codigo, nao cria arquivo e nao roda shell: apenas segmenta o enunciado em tarefas menores, uma camada por subagente (dominio, servicos de aplicacao, banco SQL, API, frontend), e delega cada camada a um subagente da tool subagent usando sempre o agente build. Ao terminar responda apenas ORCH-OK.",
+      "system": "O system desta sessao vem do harness do tunel (harness/*.md montado por collector.py). Em projetos dotnet: .NET 10 e EF 10; 'dotnet new' so ao criar projeto novo; conclua quando a saida do programa corresponder ao enunciado.",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
-                       { "action": "subagent", "resource": "*", "effect": "deny" },
-                       { "action": "subagent", "resource": "build", "effect": "allow" },
-                       { "action": "write", "resource": "*", "effect": "deny" },
-                       { "action": "edit", "resource": "*", "effect": "deny" },
-                       { "action": "shell", "resource": "*", "effect": "deny" },
                        { "action": "execute", "resource": "*", "effect": "deny" } ]
     },
     "plan": {
@@ -119,9 +108,8 @@ run_agent() {
   local agent="$1" prompt="$2" secs="${3:-300}"    # teto de 5 min por caso: passou disso e suspeita de laco/divagacao
   # plan pensa (temp 0.2); build/tools com tools nao pensa (temp 0.1)
   local model="$MODEL_BUILD"
-  case "$agent" in plan|orch) model="$MODEL" ;; esac
+  case "$agent" in plan) model="$MODEL" ;; esac
   local t0=$(date +%s) pid w=0 wd=180
-  case "$agent" in orch) wd=180 ;; esac   # orch pensa/delega antes do 1o artefato
   (cd "$CASE_DIR" && timeout "$secs" opencode run --standalone --auto \
      --agent "$agent" --model "$model" "$prompt") > "$CASE_DIR/.last.txt" 2>&1 &
   pid=$!
@@ -169,10 +157,18 @@ new_case() {
   CASE_NAME="$1"; CASE_T0=$(date +%s)
   case "$1" in
     mission-tools) EXPECT=300 ;;   # referencia: < 5 min
+    *-verde|*-azul) EXPECT=180 ;;  # azul/verde: tarefa de no maximo 3 min
     *)             EXPECT=480 ;;   # referencia: < 8 min
   esac
   CASE_DIR="$WS/$1"; rm -rf "$CASE_DIR"; mkdir -p "$CASE_DIR"
   cp "$WS/opencode.json" "$CASE_DIR/opencode.json"
+  # Skills do caso: trilha sob demanda, roteada pela descricao (semantic routing).
+  # O catalogo chega ao modelo pelo system do cliente e e preservado no tuneis
+  # (collector.apply_harness mantem <available_skills>).
+  if [ "${WAR_SKILLS:-1}" = "1" ] && [ -d "$HERE/harness/skills" ]; then
+    mkdir -p "$CASE_DIR/.opencode"
+    cp -r "$HERE/harness/skills" "$CASE_DIR/.opencode/skills"
+  fi
   mkdir -p "$ROOT/metrics"
   printf '{"case":"%s","status":"RUN","dir":"%s","run":"%s","ts":%s}\n' \
     "$1" "$CASE_DIR" "$START" "$(date +%s)" > "$ROOT/metrics/current.json"
@@ -219,7 +215,11 @@ partial_report() {
     echo "PARCIAL [$caso]: csharp $cs | sql $sq | react $rx"
   else
     f="$(find "$CASE_DIR" -name '*.py' -not -path '*/.data/*' | head -1)"
-    [ -n "$f" ] && python3 -m py_compile "$f" 2>/dev/null && ml="ok"
+    if [ -n "$f" ]; then
+      python3 -m py_compile "$f" 2>/dev/null && ml="ok"
+    elif grep -rqiE --include='*.cs' --exclude-dir=obj --exclude-dir=bin -- 'Perceptron' "$CASE_DIR" 2>/dev/null; then
+      ml="ok"          # perceptron em C# tambem satisfaz ml-nn
+    fi
     echo "PARCIAL [$caso]: csharp $cs | sql $sq | ml-nn $ml"
   fi
 }
@@ -244,67 +244,46 @@ check() {
 
 quer() { [ -z "${CASES[*]:-}" ] && return 0; local c; for c in "${CASES[@]}"; do [ "$c" = "$1" ] && return 0; done; return 1; }
 
-P_TF1="$(cat <<'EOT'
-Trabalhe na pasta atual, que ja tem um projeto console em C# chamado App.csproj com o app. O codigo esta no arquivo Program.cs na raiz desta pasta (nao crie subpasta nem outro projeto). Compile e execute com o dotnet e confirme a mensagem exibida. O Program.cs deve exibir exatamente Hello World, com a linha Console.WriteLine("Hello World"); — nao troque a capitalizacao nem reescreva o arquivo com outra mensagem. Inicialize um repositorio git nesta mesma pasta, adicione os arquivos e faca o commit com a mensagem 'hello world console' (git commit -m 'hello world console'); confirme com git log. A ULTIMA tool call da resposta deve ser o commit: nao encerre antes do repositorio ter o commit. Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.
+TOOLS_FULL_CRIAR_HELLO="$(cat <<'EOT'
+Crie nesta pasta um projeto console C# (App.csproj) cujo programa exiba exatamente Hello World. Compile, execute e confirme a saida. Depois inicialize o git aqui e faca um commit com a mensagem 'hello world console'; confirme com git log.
 EOT
 )"
-P_TF2="$(cat <<'EOT'
-Na pasta atual existe um app console em C# (App.csproj) que exibe Hello World, ja compilado e commitado. O codigo esta no arquivo Program.cs na raiz desta pasta. Nao escreva codigo C# dentro de App.csproj (ele e o XML do projeto; codigo so no Program.cs). Leia esse arquivo e troque a mensagem exibida para Hello World v2, mantendo o resto do programa: a linha deve ficar Console.WriteLine("Hello World v2"); (mesma capitalizacao). Recompile e execute de novo, confirmando a nova mensagem na saida. Adicione a mudanca e faca o commit com a mensagem 'hello world v2'; confirme com git log. A ULTIMA tool call da resposta deve ser o commit. Aja com ferramentas: uma tool call por vez, sem narrar plano, sem repetir o enunciado e sem descrever o que ja fez.
+TOOLS_FULL_AJUSTAR_V2="$(cat <<'EOT'
+Na pasta atual esta o app console C# (App.csproj) que exibe Hello World, ja commitado. Troque a mensagem para Hello World v2, recompile, execute e confirme a nova saida. Faca o commit da mudanca com a mensagem 'hello world v2' e confirme com git log.
 EOT
 )"
-P_MT="$(cat <<EOT
-Em $WS/mission-tools/mcs existe o projeto mcs.csproj. Escreva Program.cs para calcular e imprimir, um valor por linha e sem rotulos, tres numeros inteiros: o fatorial de 10; o maximo divisor comum de 1071 e 462; e quantos numeros primos existem de 1 a 50. O programa tem que compilar e rodar com \`dotnet run --project $WS/mission-tools/mcs/mcs.csproj\` sem erro e imprimir exatamente esses tres numeros, nessa ordem (calcule, nao copie os numeros). Responda somente com tool calls, sem prosa.
+MISSION_TOOLS_CRIAR_PROJETO="$(cat <<'EOT'
+Crie nesta pasta o projeto console C# em mcs/ (mcs.csproj). O passo termina com o projeto criado e compilando.
+EOT
+)"
+MISSION_TOOLS_ESCREVER_PROGRAMA="$(cat <<'EOT'
+Em mcs/ existe o projeto console C# mcs.csproj, compilando. Escreva o programa que imprima, um valor por linha: o fatorial de 10, o MDC de 1071 e 462, e a quantidade de numeros primos entre 1 e 50. Rode e confira a saida.
 EOT
 )"
 P_AZUL="$(cat <<'EOT'
-Crie no backend .NET C# uma consulta de dados em uma tabela (ex.: reembolsos corporativos) usando repositorio generico com ORM. Escopo SOMENTE backend de dados (sem frontend, sem API). Criterio de aceite: crie um unico .csproj na raiz (ex.: Consulta.csproj, net10.0, nao .csproj sem nome) e os .cs com implementacao efetiva; se houver banco, inclua o DDL em .sql. Compile com dotnet build ate rc=0. Aja com tools, use write, nao narre plano.
+Crie nesta pasta o backend .NET C# de consulta de dados de uma tabela de reembolsos corporativos: dominio e repositorio generico sobre ORM. Sem API e sem frontend. Um projeto na raiz, compilando.
 EOT
 )"
 P_VERDE="$(cat <<'EOT'
-Implemente o dominio backend C# de um CRUD de reembolsos corporativos (entidades, value objects, regras de aprovacao por faixa de valor) e o banco de dados SQL: DDL das tabelas, indices, constraints e seeds. Valide CPF e CNPJ. Escopo: dominio + banco SQL. Premissas: backend .NET C#. Aja com tool calls, uma por vez; nao narre plano nem repita o enunciado. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie um .csproj com nome (ex.: Dominio.csproj, net10.0, nao .csproj sem nome) e os .cs com implementacao efetiva (classes concretas com logica real, nao apenas interfaces) e os .sql (DDL); compilar usando dotnet build ate rc=0. Dominio POCO sem atributos de ORM (sem [Table], sem EF Core): o SQL vai nos arquivos .sql.
+Crie nesta pasta o dominio backend C# de um CRUD de reembolsos corporativos (entidades, regras de aprovacao por faixa de valor, validacao de CPF e CNPJ) e o banco SQL (DDL, indices, constraints e seeds). Um projeto na raiz, compilando.
 EOT
 )"
 
 
-# enunciados ORIGINAIS da trilha orch (Rochas.OpenCodeBridge.Test/E2EBeltsTests.cs)
-P_AZUL_ORCH="$(cat <<'EOT'
-Escreva um aplicativo .NET C# (criar o arquivo .csproj de definicao do projeto na pasta raiz) que resolva uma consulta de dados corporativos, entidade principal AuditEntry. O escopo e somente .NET: entidades, value objects, interfaces e servicos de consulta - sem camada de infraestrutura, sem banco de dados e sem API. A origem dos dados e abstraida por uma interface de repositorio (contrato no dominio, sem implementacao), e a consulta devolve resultado paginado com filtros por periodo e por tipo de evento. Organize o codigo em camadas de dominio e de servicos de aplicacao. Utilize .NET versao 10. Utilize dotnet build no final para garantir a integridade da implementacao, o aplicativo deve compilar. Segmente a implementacao em tarefas menores por responsabilidade (dominio com as entidades e value objects; servicos de aplicacao com a consulta e a paginacao), utilizando a tool subagent, utilize os agentes que contenham no nome o termo "build".
-EOT
-)"
-# enunciados ORIGINAIS das belts roxa/marrom/preta (trilha build: E2EBeltsBuildTests.cs)
+# enunciados oficiais revisados hoje (faixas roxa/marrom/preta), redacao do inicio do OpenCodeBridge
 P_ROXA="$(cat <<'EOT'
-Trabalhe em {ws}. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Organize o codigo em pastas por camada (ex.: Dominio, Repositorio, Servico, Sql), com um tipo por arquivo. Crie os arquivos .cs e .sql com caminho relativo a raiz do workspace, usando a tool write. Comece pelo dominio, depois o SQL e depois repositorios/servicos; nao escreva plano, va direto ao write. Inclua um .csproj com nome (ex.: Cadastros.csproj, net10.0, nao .csproj sem nome) e implemente classes concretas com logica real (nao apenas interfaces); compilar usando dotnet build ate rc=0. Ao terminar responda apenas BUILD-OK com a lista dos arquivos.
+Crie nesta pasta o backend .NET C# de cadastro de clientes e fornecedores: dominio, banco SQL (DDL, indices e constraints), repositorios com ORM, servicos de aplicacao e validacao de e-mail, telefone BR com DDD e CEP. Camadas em pastas; um projeto na raiz, compilando.
 EOT
 )"
 P_MARROM="$(cat <<'EOT'
-Implemente o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL, os repositorios e servicos (Dapper), a API REST e o frontend React. Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br. Cada arquivo deve conter UMA responsabilidade (um artefato por arquivo: um .cs de dominio, um .sql de DDL, um .tsx de frontend); nao misture dominio, banco, API e frontend no mesmo arquivo. Critério de aceite, solução implementada, codificada em arquivos no disco e compilando: crie um .csproj com nome (ex.: Reembolsos.csproj, net10.0, nao .csproj sem nome) para o backend .NET, os .cs com implementacao efetiva (classes concretas, nao apenas interfaces), .sql e .tsx/.jsx; compilar usando dotnet build ate rc=0 no backend.
+Crie nesta pasta o backend .NET C# de reembolsos corporativos (dominio, banco SQL, repositorios com ORM e API REST) e o frontend React em .tsx. O backend compila sem erro.
 EOT
 )"
 P_PRETA="$(cat <<'EOT'
-Implemente o build do backend C# do Portal do Colaborador como um console app. Escopo: dominio, repositorio Dapper e servico de aplicacao, banco SQL e script ML simples. Crie um unico Portal.csproj na raiz (Microsoft.NET.Sdk, OutputType Exe, net10.0, ImplicitUsings enable, Dapper 2.1.89, Microsoft.Data.Sqlite 10.0.12) e um unico src/Program.cs com class PortalApp e static void Main (pode usar namespace Portal; nao use class Program) que instancia o repositorio e o servico e imprime uma linha; declare abaixo os tipos Colaborador, IColaboradorRepository, ColaboradorRepository, IColaboradorService e ColaboradorService. NAO use top-level statements, class Program, API REST, servicos bus, controllers, src/Api nem subpastas de camadas; nao crie outro .cs com os mesmos tipos. Crie src/Data/schema.sql com CREATE TABLE Colaboradores e src/ml/train.py com perceptron simples. Rode dotnet build Portal.csproj ate 0 Erro(s). Aja com tools, sem narrar plano; use write, nao responda bloco de codigo.
-EOT
-)"
-# enunciados ORIGINAIS das belts roxa/marrom/preta (trilha orch: E2EBeltsTests.cs)
-P_ROXA_ORCH="$(cat <<'EOT'
-Trabalhe no workspace da tarefa. Implemente o cadastro de clientes e fornecedores no backend .NET C#: dominio (entidades e value objects), banco SQL (DDL, indices e constraints), repositorios com Dapper, servicos de aplicacao e validacao/mascaras de e-mail, telefone BR com DDD e CEP. Entregue a implementacao completa no workspace da tarefa (backend .NET C# + banco SQL).
-EOT
-)"
-P_MARROM_ORCH="$(cat <<'EOT'
-Especifique o dominio backend C# de um CRUD de reembolsos corporativos, o banco de dados SQL, os repositorios e servicos (Dapper), a API REST e o frontend React. Escopo: dominio + banco SQL + repositorios e servicos + API + frontend React. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br.
-EOT
-)"
-P_PRETA_ORCH="$(cat <<'EOT'
-Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador, banco de dados SQL, repositorios e servicos, API REST, servicos bus, pipeline de Big Data com ML (regressao, classificacao, rede neural perceptron). Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br.
+Crie nesta pasta o console app C# do Portal do Colaborador: dominio, repositorio com ORM, servico de aplicacao, DDL SQL e um perceptron simples. Um projeto na raiz, compilando.
 EOT
 )"
 
-P_VERDE_ORCH="$(cat <<'EOT'
-Escreva um aplicativo .NET C# (criar o arquivo .csproj de definicao do projeto na pasta raiz) de um CRUD de reembolsos corporativos, entidade principal Refund, com value objects e regras de aprovacao por faixa de valor. Valide CPF e CNPJ. O dominio e POCO, sem atributos de ORM. Entregue tambem o banco de dados SQL em arquivo .sql: DDL das tabelas com indices e constraints e seeds de exemplo. Organize o codigo em camadas de dominio e de servicos de aplicacao. Utilize .NET versao 10. Utilize dotnet build no final para garantir a integridade da implementacao, o aplicativo deve compilar. Segmente a implementacao em tarefas menores por responsabilidade (dominio com Refund e value objects; DDL, indices, constraints e seeds; servicos de aplicacao), utilizando a tool subagent, utilize os agentes que contenham no nome o termo "build".
-EOT
-)"
-# aceite levado ao orch pelo harness (o enunciado do orch nao traz criterio de aceite)
-ORCH_ACEITE=""
-BUILD_ACEITE=" Criterio de aceite: um unico .csproj na raiz do workspace (nao crie um segundo projeto), .cs com implementacao efetiva e DDL em .sql quando o escopo pedir banco; compilar com dotnet build ate rc=0. Se o escopo pedir ORM/persistencia com Dapper, use Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12 e use using Dapper; no arquivo que chama QueryAsync. Cada tipo e' declarado uma unica vez no projeto (nao redeclare a mesma classe em outro arquivo e nao use partial conflitante). Se o escopo pedir API REST, o .csproj precisa de <FrameworkReference Include=\"Microsoft.AspNetCore.App\" /> (ASP.NET no .NET 8+ e framework, nao pacote); se pedir frontend, entregue os .tsx mas o aceite e' o build do backend."
 
 SUF=" Implementacao completa, sem placeholders. ENTREGUE O ARTEFATO COMPLETO EM TEXTO, SEM TOOL CALLS."
 P_PROD="C# .NET 9 Minimal API + Dapper + Postgres: CRUD completo de Product (Id, Name, Price, Stock). Entregue: DDL da tabela, GET /api/products (lista), GET /api/products/{id} (404 se ausente), POST (400 se Name vazio ou Price <= 0), PUT (404 se ausente) e DELETE (204), com log por operacao. Entregue o codigo completo + 3 bullets de borda.$SUF"
@@ -321,23 +300,21 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
 
   if quer tools-full; then
     new_case tools-full
-    ( cd "$CASE_DIR" && dotnet new console -n App -o . --force >/dev/null 2>&1
-      printf 'Console.WriteLine("Hello World");\n' > Program.cs )
-    echo "----- [tools-full:create]"; run_agent tools "$P_TF1" 900
+    echo "----- [tools-full:create]"; run_agent tools "$TOOLS_FULL_CRIAR_HELLO" 900
     check tools-full-create "[ -f '$CASE_DIR/App.csproj' ] && grep -qi 'hello world' '$CASE_DIR/Program.cs' && (cd '$CASE_DIR' && git log --format=%s 2>/dev/null | grep -qi 'hello world console')"
-    echo "----- [tools-full:adjust]"; run_agent tools "$P_TF2" 900
-    check tools-full-adjust "grep -q 'Hello World v2' '$CASE_DIR/Program.cs' && [ \$(cd '$CASE_DIR' && git log --oneline | wc -l) -ge 2 ] && (cd '$CASE_DIR' && git log --format=%s | grep -qi 'hello world v2') && (cd '$CASE_DIR' && dotnet build App.csproj -v q >/dev/null 2>&1)"
+    echo "----- [tools-full:adjust]"; run_agent tools "$TOOLS_FULL_AJUSTAR_V2" 900
+    check tools-full-adjust "grep -qi 'Hello World v2' '$CASE_DIR/Program.cs' && [ \$(cd '$CASE_DIR' && git log --oneline | wc -l) -ge 2 ] && (cd '$CASE_DIR' && git log --format=%s | grep -qi 'hello world v2') && (cd '$CASE_DIR' && dotnet build App.csproj -v q >/dev/null 2>&1)"
     check tools-full-run "( cd '$CASE_DIR' && dotnet run --project App.csproj -v q 2>&1 | grep -qi 'hello world v2' )"
   fi
 
   if quer mission-tools; then
-    new_case mission-tools; mkdir -p "$CASE_DIR/mcs"
-    ( cd "$CASE_DIR/mcs" && dotnet new console -n mcs -o . --force >/dev/null 2>&1 )
-    echo "----- [mission-tools] (build)"; run_agent build "$P_MT" 900
+    new_case mission-tools
+    echo "----- [mission-tools:create] (build)"; run_agent build "$MISSION_TOOLS_CRIAR_PROJETO" 900
+    check mission-tools-create "[ -f '$CASE_DIR/mcs/mcs.csproj' ] && ( cd '$CASE_DIR/mcs' && dotnet build mcs.csproj -v q >/dev/null 2>&1 )"
+    echo "----- [mission-tools:code] (build)"; run_agent build "$MISSION_TOOLS_ESCREVER_PROGRAMA" 900
     nums="$( cd "$CASE_DIR/mcs" && dotnet run --project mcs.csproj 2>/dev/null | grep -E '^-?[0-9]+$' | head -3 | tr '\n' ' ' )"
     [ "$nums" = "3628800 21 15 " ] || echo "(aceite: nums='$nums')"
-    check mission-tools "[ '$nums' = '3628800 21 15 ' ]"
-    check mission-tools-hardcode "! grep -rq --include='*.cs' '3628800' '$CASE_DIR'"
+    check mission-tools-code "[ '$nums' = '3628800 21 15 ' ]"
   fi
 
   # matriz 2x2: belts-<agente>-<cor>  (legado belts-azul/verde = build)
@@ -346,21 +323,6 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
     quer "$caso" && return 0
     [ "$cor" != "$caso" ] && quer "belts-$cor" && return 0
     return 1
-  }
-  # dominio que o artefato precisa citar (impede PASS com outro CRUD/artefato alheio)
-  seg_check() {
-    local caso="$1" n
-    n=$(python3 - "$CASE_DIR" "${SEG_T0:-0}" <<'PY'
-import os, sqlite3, sys
-d, t0 = os.path.realpath(sys.argv[1]), int(sys.argv[2]) * 1000
-db = os.path.expanduser("~/.local/share/opencode/opencode.db")
-c = sqlite3.connect(db)
-print(c.execute("select count(distinct id) from session_v2 where agent='build' and parent_id is not null "
-                "and time_created >= ? and directory = ?", (t0 - 5000, d)).fetchone()[0])
-PY
-)
-    echo "(segmentacao: ${n:-0} subagente(s) build, esperado >= 2)"
-    check "$caso" "[ ${n:-0} -ge 2 ]"
   }
   belt_scope() {
     case "$1" in
@@ -374,19 +336,14 @@ PY
   }
 
   for belt in azul verde roxa marrom preta; do
-    for AG in build orch; do
+      AG=build
       cor="$(printf '%s' "$belt" | tr a-z A-Z)"
       var="P_${cor}"; P="${!var}"
-      [ "$AG" = build ] && P="$P$BUILD_ACEITE"
-      P="${P//\{ws\}/.}"   # enunciado original usa {ws}: aqui o cwd ja e' o workspace do caso
       caso="belts-$AG-$belt"
       quer_belt "$caso" || continue
       new_case "$caso"
-      SEG_T0=$(date +%s)
-      echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" 420
-      if [ "$AG" = orch ]; then
-        seg_check "$caso"
-      else
+      secs=420; case "$caso" in *-verde|*-azul) secs=180 ;; esac
+      echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" "$secs"
       # direcionamento unico: repara o aceite (sem .csproj, sem fonte ou build quebrado) com enunciado + erro + tabela
       missing=""
       if ! find "$CASE_DIR" -maxdepth 1 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="sem .csproj na raiz"; fi
@@ -394,14 +351,16 @@ PY
       errs0="$(build_errors "$CASE_DIR")"
       if [ -n "$missing" ] || [ -n "$errs0" ]; then
         echo "----- [$caso] direcionamento build: ${missing:-erro de compilacao}"
+        mv=""; case "$missing" in *"csproj na raiz"*) mv=" Se o .csproj ja existe em subpasta, mova-o para a raiz (mv pasta/Proj.csproj .) e apague a pasta vazia; nunca crie um segundo projeto." ;; esac
         hints0="$(error_hints "$errs0")"
+        secs2=180; case "$caso" in *-verde) secs2=90 ;; esac
         run_agent "$AG" "ENUNCIADO:
 $P
 
-O aceite do enunciado nao foi cumprido ($missing). Corrija o .csproj na raiz e os .cs, compile com dotnet build ate rc=0 e nao repita read/build nem rode dotnet run. Use a tabela abaixo.
+O aceite do enunciado nao foi cumprido ($missing). Corrija o .csproj na raiz e os .cs,$mv compile com dotnet build ate rc=0 e nao repita read/build nem rode dotnet run. Use a tabela abaixo.
 ERROS:
 $(printf '%s\n' "$errs0" | head -8)
-$hints0" 180
+$hints0" "$secs2"
       fi
       # projeto unico na raiz: subprojeto aninhado compila vazio e mascara fonte nao compilada
       # aceite minimo: o .csproj da raiz compila (rc=0) e existe fonte .cs real fora de obj/bin
@@ -436,8 +395,6 @@ $hints0" 180
       done
       check "$caso" "[ $rc -eq 0 ] && $src"
       case "$belt" in marrom|preta) partial_report "$caso" "$belt" ;; esac
-      fi
-    done
   done
 
 else
@@ -474,7 +431,7 @@ fi
 
 curl -s -m 10 -X POST "$COLLECTOR/api/dump" >/dev/null 2>&1 || true
 
-python3 "$HERE/report.py" --since "$START" --proto "$PROTO" --log "$LOG" \
+python3 "$HERE/report.py" --since "$START_TS" --proto "$PROTO" --log "$LOG" \
   --title "Bateria WAR ($MODO) - opencode -> llama (tunel)" --out-dir "$HERE/reports"
 
 

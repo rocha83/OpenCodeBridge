@@ -1,0 +1,56 @@
+{
+  "$comment": "Ordem e orcamento do harness montado pelo tunel (harness_loader.py). Edite os .md; o JSON so diz a sequencia.",
+  "budget": {
+    "max_total_tokens": 12000,
+    "tools_reserve_tokens": 3500,
+    "chars_per_token": 3.5,
+    "on_overflow": "drop_examples"
+  },
+  "parts": [
+    "parts/00-papel.md",
+    "parts/01-ambiente.md",
+    "parts/02-principios.md",
+    "parts/03-ferramentas.md",
+    "parts/04-tools.md",
+    "parts/05-disciplina.md",
+    "parts/06-caminhos.md",
+    "parts/07-erros.md",
+    "parts/08-operacoes.md",
+    "parts/09-escrita.md",
+    "parts/10-delegacao.md",
+    "parts/11-seguranca.md",
+    "parts/12-formato.md",
+    "parts/13-exemplos.md",
+    "parts/14-formas.md"
+  ],
+  "examples": {
+    "base": [],
+    "dotnet": [
+      "skills/dotnet-base/SKILL.md",
+      "skills/dotnet-gitflow/SKILL.md",
+      "skills/dotnet-ddd-ef/SKILL.md",
+      "skills/dotnet-services/SKILL.md",
+      "skills/dotnet-api/SKILL.md",
+      "skills/dotnet-cqrs-cache/SKILL.md",
+      "skills/dotnet-bus/SKILL.md",
+      "skills/sql-ddl/SKILL.md",
+      "skills/react-ts/SKILL.md",
+      "skills/dotnet-aggregate/SKILL.md",
+      "skills/ml-nn/SKILL.md"
+    ],
+    "dotnet-api": [
+      "skills/dotnet-api/SKILL.md",
+      "skills/sql-ddl/SKILL.md"
+    ],
+    "dotnet-bus": [
+      "skills/dotnet-bus/SKILL.md",
+      "skills/sql-ddl/SKILL.md"
+    ],
+    "dotnet-react": [
+      "skills/react-ts/SKILL.md"
+    ],
+    "dotnet-ml": [
+      "skills/ml-nn/SKILL.md"
+    ]
+  }
+}
