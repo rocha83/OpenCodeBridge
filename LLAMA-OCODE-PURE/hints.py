@@ -18,6 +18,7 @@ Uso:
   python3 hints.py --alert -         # alerta compacto pronto para injetar
 """
 import json
+import os
 import re
 import sys
 
@@ -281,6 +282,34 @@ def error_lines(text, limit=3):
     return out
 
 
+def brace_report(errors_text, limit=2):
+    """Contagem deterministica de chaves nos arquivos citados no erro.
+
+    O 4B le "feche um } por bloco" e nao conta; aqui vai o numero exato do arquivo.
+    """
+    out, seen = [], set()
+    for where, _code, _msg in error_lines(errors_text, 12):
+        m = re.match(r"(.+?)\(\d+,\d+\)$", where)
+        if not m:
+            continue
+        path = m.group(1)
+        if path in seen or not os.path.isfile(path):
+            continue
+        seen.add(path)
+        try:
+            src = open(path, encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        op, cl = src.count("{"), src.count("}")
+        if op == cl:
+            continue
+        falta = ("falta %d }" % (op - cl)) if op > cl else ("sobram %d }" % (cl - op))
+        out.append("  chaves %s: %d '{' e %d '}' -> %s" % (os.path.basename(path), op, cl, falta))
+        if len(out) >= limit:
+            break
+    return "\n".join(out)
+
+
 def render(errors_text, max_codes=6):
     """Linhas '  CODIGO  descricao: exemplo' para os codigos presentes no texto."""
     codes = codes_in(errors_text, max_codes)
@@ -290,6 +319,9 @@ def render(errors_text, max_codes=6):
     for c in codes:
         desc, ex = hint_for(c)
         rows.append("  %-9s %s: %s" % (c, desc, ex))
+    br = brace_report(errors_text)
+    if br:
+        rows.append(br)
     return "\n".join(rows)
 
 
@@ -355,8 +387,11 @@ def alert(errors_text, max_codes=3):
         else:
             ops.append("  - args do tool %s invalidos: repita a chamada com o schema {filePath,...}" % tool)
         break
+    br = brace_report(errors_text)
+    if br:
+        ops.extend("  -" + ln.strip(" ")[0:] if False else "  - " + ln.strip() for ln in br.splitlines())
     if ops:
-        body += "\n" + "\n".join(ops[:4])
+        body += "\n" + "\n".join(ops[:5])
     return ("[build-hint] o ultimo build falhou. Corrija EXATAMENTE estes erros e so entao rode "
             "dotnet build Nome.csproj de novo (nao repita o comando sem editar o arquivo):\n" + body)
 
