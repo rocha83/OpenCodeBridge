@@ -52,7 +52,7 @@ tem regex/escapes. Ambos sao limitacao de modelo/template, nao de especificacao.
 ## Terceiro achado: args de tool invalidos (coberto por codigo, nao por enumerado)
 
 Referencia na bridge C#: `ToolCallRepair` (tira do historico a assistant com args
-invalido e devolve UM nudge com a regra de JSON), `ToolArgsParser` (le JSON5
+invalido e devolve UM direcionamento com a regra de JSON), `ToolArgsParser` (le JSON5
 tolerante), `ToolHelp` (contrato de uso por tool + exemplo) e `ToolContentGuard`
 (recusa conteudo elidido / reescrita total no `edit`).
 

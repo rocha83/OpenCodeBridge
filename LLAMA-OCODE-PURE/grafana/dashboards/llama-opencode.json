@@ -866,8 +866,8 @@
     {
       "id": 13,
       "type": "stat",
-      "title": "Anti-repeat (nudges / lacos cortados)",
-      "description": "nudge: aviso injetado no request quando a mesma tool+args (ou o mesmo texto) se repete. corte: em modo stop, o laco nao vai ao llama e recebe resposta sintetica.",
+      "title": "Anti-repeat (direcionamentos / lacos cortados)",
+      "description": "direcionamento: aviso injetado no request quando a mesma tool+args (ou o mesmo texto) se repete. corte: em modo stop, o laco nao vai ao llama e recebe resposta sintetica.",
       "gridPos": {
         "h": 4,
         "w": 8,
@@ -897,7 +897,7 @@
           "columns": [
             {
               "selector": "nudges",
-              "text": "nudges",
+              "text": "direcionamentos",
               "type": "number"
             },
             {

@@ -237,15 +237,15 @@ Validacao: `bash -n`, `py_compile` e JSON ok; contador testado com 3 arquivos re
 (`obj/opencode.json/.last.txt` ignorados); dashboard recarregado via provisioning
 (`oc-llama-pure`, paineis 14/15/16). Campanha 2x reiniciada em seguida.
 
-## Nudges de belt: decisao e limite (2026-11-10)
+## Direcionamentos de belt: decisao e limite (2026-11-10)
 
-Os dois nudges de belt (falta de `.csproj` e erro de build) foram mantidos como **rede de
+Os dois direcionamentos de belt (falta de `.csproj` e erro de build) foram mantidos como **rede de
 seguranca**, nao como forma de ensinar a resposta do teste. Eles so reenviam ao agente o
 erro real do compilador e exigem `dotnet build` ate `rc=0`; nao contem o resultado esperado
 nem o nome do caso. O comportamento desejado continua sendo o modelo derivar a solucao do
 system prompt + enunciado + tabela de erros com exemplos otimistas.
 
-Limite conhecido: um nudge que sempre cria o projeto pode mascarar um enunciado mal
+Limite conhecido: um direcionamento que sempre cria o projeto pode mascarar um enunciado mal
 especificado. Por isso, o proximo passo e testar cenarios independentes que exijam
 `.csproj` sem o texto do belt, por exemplo:
 
@@ -255,7 +255,7 @@ especificado. Por isso, o proximo passo e testar cenarios independentes que exij
 - workspace com `.csproj` aninhado que precisa ser consolidado na raiz;
 - dois `.csproj` na raiz, exigindo manter apenas um.
 
-Objetivo: PASS sem nudge nesses cenarios; o nudge fica apenas para falha transitoria de
+Objetivo: PASS sem direcionamento nesses cenarios; o direcionamento fica apenas para falha transitoria de
 build/arquivo. A matriz atual das 10 belts roda em
 `/tmp/opencode/llama-pure/belts-stabilize.sh` (TSV em `metrics/belts-stabilize.tsv`).
 

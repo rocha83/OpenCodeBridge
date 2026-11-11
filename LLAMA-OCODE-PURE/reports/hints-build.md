@@ -2,7 +2,7 @@
 
 ## Problema
 A tabela de erros vivia dentro do `battery-war.sh` (case gigante, ~40 codigos) e era
-impressa inteira no nudge do harness. Isso custa contexto, acopla a tabela ao harness
+impressa inteira no direcionamento do harness. Isso custa contexto, acopla a tabela ao harness
 global (qualquer edicao arrisca regressao durante uma rodada ativa) e nao ajuda o modelo
 no momento em que ele realmente precisa: **quando o build falha dentro do loop de tool**.
 

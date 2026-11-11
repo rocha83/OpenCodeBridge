@@ -387,13 +387,13 @@ PY
       if [ "$AG" = orch ]; then
         seg_check "$caso"
       else
-      # nudge unico: repara o aceite (sem .csproj, sem fonte ou build quebrado) com enunciado + erro + tabela
+      # direcionamento unico: repara o aceite (sem .csproj, sem fonte ou build quebrado) com enunciado + erro + tabela
       missing=""
       if ! find "$CASE_DIR" -maxdepth 1 -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="sem .csproj na raiz"; fi
       if ! find "$CASE_DIR" -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="$missing sem fonte .cs"; fi
       errs0="$(build_errors "$CASE_DIR")"
       if [ -n "$missing" ] || [ -n "$errs0" ]; then
-        echo "----- [$caso] nudge build: ${missing:-erro de compilacao}"
+        echo "----- [$caso] direcionamento build: ${missing:-erro de compilacao}"
         hints0="$(error_hints "$errs0")"
         run_agent "$AG" "ENUNCIADO:
 $P

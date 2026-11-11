@@ -54,8 +54,8 @@ def render(n):
           f"requests em laco {color(s.get('tool_loop_hits') or 0, 1, 3)} | "
           f"streak max {color(s.get('streak_max') or 0, 3, 6)} | "
           f"prosa {s.get('meta_total')} | thinking chars {s.get('think_chars')}")
-    print(f"   anti-repeat {s.get('anti_repeat')} (nudge>={s.get('nudge_at')}, stop>={s.get('stop_at')}): "
-          f"nudges {color(s.get('nudges') or 0, 1, 3)} | lacos cortados {color(s.get('stops') or 0, 1, 3)}")
+    print(f"   anti-repeat {s.get('anti_repeat')} (direcionamento>={s.get('nudge_at')}, stop>={s.get('stop_at')}): "
+          f"direcionamentos {color(s.get('nudges') or 0, 1, 3)} | lacos cortados {color(s.get('stops') or 0, 1, 3)}")
     rows = recent.get("requests") or []
     if not rows:
         print(f"   {DIM}(nenhum request na memoria — collector ocioso ou recem-reiniciado){OFF}")
@@ -68,7 +68,7 @@ def render(n):
         if r.get("stopped"):
             flag += f" {RED}CORTADO{OFF}"
         elif r.get("nudged"):
-            flag += f" {YEL}nudge{OFF}"
+            flag += f" {YEL}direcionamento{OFF}"
         print(f"   {r['seq']:>3} {color(r.get('streak') or 0, 3, 6):>6} {color(ts, 3, 6):>4} "
               f"{color(r.get('tail_sim') or 0, 0.7, 0.9):>5} {color(r.get('dup') or 0, 3, 5):>3} "
               f"{r.get('meta') or 0:>5} {r.get('resp_chars') or 0:>5} {r.get('think_chars') or 0:>5} "

@@ -8,10 +8,10 @@
    **mesmo quando o cliente pede `true`** (sem o kwarg o llama-server liga o
    thinking por padrão). Medição: `thinking_blocked` no `/api/summary` e
    `oc_thinking_blocked_total` em `:9091/metrics`.
-2. **Túnel é passthrough**, com duas exceções declaradas: o nudge do anti-repeat
+2. **Túnel é passthrough**, com duas exceções declaradas: o direcionamento do anti-repeat
    (1 mensagem `user` a mais) e o corte sintético (não chama o llama).
-3. **Anti-repeat**: assinatura de tool consecutiva (nudge 3 / corte 6) e ciclo de
-   2 chamadas alternadas **que falham** (nudge 3 / corte 6). `read`↔`write` sem
+3. **Anti-repeat**: assinatura de tool consecutiva (direcionamento 3 / corte 6) e ciclo de
+   2 chamadas alternadas **que falham** (direcionamento 3 / corte 6). `read`↔`write` sem
    erro é edição normal e não conta.
 4. **Tempo é referência de comportamento**, não corte: mission-tools 300 s,
    belts/tools-full 480 s; acima disso o caso é marcado `SUSPEITO: possivel laco`.

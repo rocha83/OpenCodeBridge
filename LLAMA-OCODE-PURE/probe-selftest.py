@@ -134,7 +134,7 @@ check("tool-loop: resposta sem tool zera", last_event()["tool_sig_streak"] == 0,
 check("tool-loop: hits contados no summary", collector.summary()["tool_loop_hits"] >= 1,
       collector.summary()["tool_loop_hits"])
 
-# 4c) anti-repeat: nudge no laco de tool (texto e tool) e corte em modo stop
+# 4c) anti-repeat: direcionamento no laco de tool (texto e tool) e corte em modo stop
 collector.ANTI, collector.NUDGE_AT, collector.STOP_AT = "nudge", 3, 6
 for _ in range(3):
     collector.record("/v1/chat/completions", body("loop"),
@@ -144,13 +144,13 @@ b["messages"] = [{"role": "user", "content": "loop"}]
 b["stream"] = True
 raw = json.dumps(b).encode()
 out, stop, nudged, stopped = collector.anti_repeat(b, raw)
-check("anti-repeat: nudge injetado no laco de tool", nudged and stop is None and not stopped)
+check("anti-repeat: direcionamento injetado no laco de tool", nudged and stop is None and not stopped)
 nj = json.loads(out)
 check("anti-repeat: aviso vai como mensagem extra",
       "[anti-repeat]" in nj["messages"][-1]["content"], nj["messages"][-1]["content"][:50])
 check("anti-repeat: aviso cita a tool repetida", "shell" in nj["messages"][-1]["content"])
 check("anti-repeat: request original preservado", nj["messages"][0]["content"] == "loop")
-check("anti-repeat: contador de nudge", collector.NUDGES >= 1, collector.NUDGES)
+check("anti-repeat: contador de direcionamento", collector.NUDGES >= 1, collector.NUDGES)
 
 collector.ANTI = "stop"
 for _ in range(4):

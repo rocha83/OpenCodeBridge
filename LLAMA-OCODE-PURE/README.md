@@ -195,7 +195,7 @@ de texto.
 | laco de tool em modo `stop` | mesma assinatura >= `STOP_AT` (6) | **nao chama o llama**: devolve resposta sintetica (SSE/JSON) dizendo que o laco foi cortado |
 
 ```bash
-ANTI_REPEAT=stop python3 collector.py   # padrao: nudge em 3, corte em 6
+ANTI_REPEAT=stop python3 collector.py   # padrao: direcionamento em 3, corte em 6
 ANTI_REPEAT=nudge python3 collector.py  # so avisa
 ANTI_REPEAT=off  python3 collector.py   # so observa
 NUDGE_AT=3 STOP_AT=6                    # limiares
@@ -203,7 +203,7 @@ NUDGE_AT=3 STOP_AT=6                    # limiares
 
 Contadores: `oc_anti_repeat_nudges_total`, `oc_anti_repeat_stops_total`,
 `nudges`/`stops` no `/api/summary`, flags `nudged`/`stopped` no evento e no
-`/api/recent` (coluna `CORTADO`/`nudge` no `probe-watch.py`).
+`/api/recent` (coluna `CORTADO`/`direcionamento` no `probe-watch.py`).
 
 ### Thinking e temperatura por modo
 

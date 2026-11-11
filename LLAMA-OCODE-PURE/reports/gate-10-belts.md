@@ -44,7 +44,7 @@ Modelo em teste: `llamapure/Gemma4-E4B-GK-Q4` (GPU1 :4100, 524k ctx, temp 0.1 pa
 - Aceite por belt exige o **dominio do enunciado** nos `.cs/.sql`, aceitando PT/EN
   (`Cliente|Customer`, `Fornecedor|Supplier`, `Reembolso|Refund|Reimbursement`,
   `Colaborador|Employee`, azul `Repositor|Repository`) e `.csproj` **com nome**.
-- Nudge do harness informa o que falta (`escopo faltando: Fornecedor|Supplier`) e os erros de build.
+- Direcionamento do harness informa o que falta (`escopo faltando: Fornecedor|Supplier`) e os erros de build.
 - `rerun.sh` com `setsid`: a rodada fica em sessao propria e sobrevive ao fim da tool call que a
   lancou (antes o runner+battery morriam e o `opencode` ficava orfao).
 

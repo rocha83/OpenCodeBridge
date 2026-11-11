@@ -24,7 +24,7 @@ de tools proprio). O aceite e' identico ao das belts build: um `.csproj` com nom
 - Exemplo do orch virou placeholder (`<parte do escopo>`), com a regra "EXEMPLO e' FORMA, nao conteudo".
 - `orch.steps` 80 -> 140; `build` e `scripter` com a regra "namespace e tipo declarados uma unica vez".
 - Aceite: escopo aceita PT/EN (`Cliente|Customer`, `Fornecedor|Supplier`) e exige `.csproj` com nome.
-- Nudge do harness passa o que falta do escopo (`escopo faltando: Fornecedor|Supplier`).
+- Direcionamento do harness passa o que falta do escopo (`escopo faltando: Fornecedor|Supplier`).
 - Orch instruido a: listar as entidades antes de delegar, um micro-enunciado por vez, arquivos
   disjuntos, `.csproj` na raiz e nada em subpasta com outro projeto.
 

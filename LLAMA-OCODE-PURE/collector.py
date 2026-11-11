@@ -77,7 +77,7 @@ def _latest_cases():
         pass
     return latest
 
-# Anti-repeat enxuto: "nudge" injeta um aviso no request; "stop" tambem corta o
+# Anti-repeat enxuto: no modo "nudge" injeta um aviso no request; "stop" tambem corta o
 # laco de tool (nao repassa ao llama e devolve uma resposta sintetica).
 ANTI = os.environ.get("ANTI_REPEAT", "stop")          # nudge | stop | off
 NUDGE_AT = int(os.environ.get("NUDGE_AT", "3"))        # mesma tool+args 3x
@@ -583,7 +583,7 @@ def _breaker_scan(msgs):
 
 
 def _degenerate_edit(fails):
-    """Nudge cirurgico quando o `edit` falhou com oldString curto/ambiguo (ex.: ';')."""
+    """Direcionamento cirurgico quando o `edit` falhou com oldString curto/ambiguo (ex.: ';')."""
     for tool, args, content in reversed(fails):
         if (tool or "").strip().lower() not in ("edit", "edit_file"):
             continue
@@ -643,7 +643,7 @@ def _nudge_cycle(n):
 
 
 def _nudge_for(sig, n):
-    """Nudge especifico por ferramenta: o generico ('confira o caminho') nao serve para edit."""
+    """Direcionamento especifico por ferramenta: o generico ('confira o caminho') nao serve para edit."""
     t = (sig or "").lstrip()
     if t.startswith("edit"):
         return (f"[anti-repeat] edit repetiu {n}x com o mesmo oldString e falhou. O trecho nao existe "
@@ -865,7 +865,7 @@ def anti_repeat(body, raw_body):
         if loop_tool:
             return raw_body, _stop_body(body, sig, streak), False, True
         return raw_body, _stop_body(body, sig, cyc, cyc=True), False, True
-    # nudge: no maximo a cada 2 respostas repetidas, para nao virar spam
+    # direcionamento: no maximo a cada 2 respostas repetidas, para nao virar spam
     if loop_tool and (streak - NUDGE_AT) % 2:
         return raw_body, None, False, False
     if loop_cycle and not loop_tool and (cyc - NUDGE_AT) % 2:
