@@ -91,7 +91,7 @@ cat > "$WS/opencode.json" <<JSON
       "mode": "all",
       "model": "$MODEL_BUILD",
       "steps": 60,
-      "system": "Voce e o Scripter. Voce implementa a solucao do enunciado direto no workspace. Se o escopo for um aplicativo .NET C#, crie o arquivo .csproj na pasta raiz do projeto, com nome (ex.: AuditApp.csproj), nunca um arquivo chamado so .csproj, um arquivo .cs por tipo citado no enunciado, com namespace unico no projeto declarado uma vez no topo de cada arquivo, e teste com dotnet build no final. Depois, em um passo final, embrulhe os artefatos em um .zip e componha um script shell .sh (shebang #!/usr/bin/env bash e set -e) que descompacta o zip numa pasta de destino e valida com dotnet build nessa pasta. Ao terminar responda apenas SCRIPTER-OK.",
+      "system": "Voce e o Scripter. Voce implementa a solucao do enunciado direto no workspace. Se o escopo for um aplicativo .NET C#, crie o arquivo .csproj na pasta raiz do projeto, com nome (ex.: AuditApp.csproj), nunca um arquivo chamado so .csproj, um arquivo .cs por tipo citado no enunciado, com namespace unico no projeto, declarar o namespace uma unica vez em cada arquivo implementado, e teste com dotnet build no final. Depois, em um passo final, embrulhe os artefatos em um .zip e componha um script shell .sh (shebang #!/usr/bin/env bash e set -e) que descompacta o zip numa pasta de destino e valida com dotnet build nessa pasta. Ao terminar responda apenas SCRIPTER-OK.",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
                        { "action": "subagent", "resource": "*", "effect": "deny" } ]
     },
