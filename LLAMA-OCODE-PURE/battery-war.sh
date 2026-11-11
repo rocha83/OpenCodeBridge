@@ -385,6 +385,17 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       if ! find "$CASE_DIR" -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | grep -q .; then missing="$missing sem fonte .cs"; fi
       if ! find "$CASE_DIR" -maxdepth 1 -name '*.zip' 2>/dev/null | grep -q .; then missing="$missing sem .zip dos artefatos"; fi
       if ! find "$CASE_DIR" -maxdepth 1 -name '*.sh' 2>/dev/null | grep -q .; then missing="$missing sem .sh de resgate"; fi
+      shf0="$(ls "$CASE_DIR"/*.sh 2>/dev/null | head -1)"; zf0="$(ls "$CASE_DIR"/*.zip 2>/dev/null | head -1)"
+      if [ -n "$shf0" ]; then
+        grep -q 'unzip' "$shf0" || missing="$missing; .sh nao extrai o zip"
+        grep -q 'dotnet build' "$shf0" || missing="$missing; .sh nao roda dotnet build no destino"
+      fi
+      if [ -n "$zf0" ]; then
+        unzip -l "$zf0" 2>/dev/null | grep -qi '\.csproj' || missing="$missing; .zip sem .csproj"
+        ncs=$(find "$CASE_DIR" -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | wc -l)
+        zcs=$(unzip -l "$zf0" 2>/dev/null | grep -c '\.cs$')
+        [ "${zcs:-0}" -lt "${ncs:-0}" ] && missing="$missing; .zip incompleto ($zcs de $ncs .cs)"
+      fi
       miss_kw=""
       for w in $(belt_scope "$caso"); do
         grep -rqiE --include='*.cs' --include='*.sql' --exclude-dir=obj --exclude-dir=bin -- "$w" "$CASE_DIR" 2>/dev/null || miss_kw="$miss_kw $w"
@@ -433,7 +444,7 @@ $hints0" 180
           echo "(escopo: falta '$w' nos .cs/.sql)"; rc=1
         fi
       done
-      art="ls '$CASE_DIR'/*.zip >/dev/null 2>&1 && ls '$CASE_DIR'/*.sh >/dev/null 2>&1 && bash -n \$(ls '$CASE_DIR'/*.sh | head -1)"
+      art="shf=\$(ls '$CASE_DIR'/*.sh 2>/dev/null | head -1); zf=\$(ls '$CASE_DIR'/*.zip 2>/dev/null | head -1); [ -n \"\$shf\" ] && [ -n \"\$zf\" ] && bash -n \"\$shf\" && grep -q unzip \"\$shf\" && grep -q 'dotnet build' \"\$shf\" && unzip -l \"\$zf\" | grep -qi '\.csproj'"
       ls "$CASE_DIR"/*.zip >/dev/null 2>&1 || echo "(entregavel: falta .zip dos artefatos)"
       ls "$CASE_DIR"/*.sh  >/dev/null 2>&1 || echo "(entregavel: falta .sh de resgate)"
       check "$caso" "[ $rc -eq 0 ] && $src && $art"
