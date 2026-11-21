@@ -30,9 +30,9 @@ códigos únicos). `dotnet build -c Release` do Core: 0 avisos / 0 erros;
 `.csproj`. No FT, os cards `error-recovery-aspnet-core-0131`/`-0132` cobrem os dois
 (`docs/ERROR-RECOVERY.md` §28) e as fatias 1536/2240/3241 foram atualizadas.
 
-**Pendências:** tokenizers 12B (`models/hf/gemma-4-12B-it`) e E2B
-(`scratch/e2b-text`) ausentes do disco — o GGUF 12B Q4 baixou (6,79 GB) mas não
-remonta fatia; oráculo de `electro` (LaTeX/`\approx`); `dashboard`/`crud-product`
+**Pendências:** tokenizers 12B/E2B — **fechada** (baixados e verificados em 20/11
+23:4x; pesos de treino do 12B/E2B ainda não baixados, só quando for treinar
+essas torres); oráculo de `electro` (LaTeX/`\approx`); `dashboard`/`crud-product`
 reprovam sem código de compilador no log; DPO só com pares verificados por build.
 
 
