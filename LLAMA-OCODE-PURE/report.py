@@ -36,7 +36,7 @@ def main():
     ap.add_argument("--proto", default="chat")
     ap.add_argument("--log", default="")
     ap.add_argument("--title", default="Rodada opencode -> llama")
-    ap.add_argument("--events", default="/tmp/opencode/llama-pure/metrics/events.jsonl")
+    ap.add_argument("--events", default="/media/mint/FT/logs/collector/metrics/events.jsonl")
     ap.add_argument("--out-dir", default="reports")
     a = ap.parse_args()
 

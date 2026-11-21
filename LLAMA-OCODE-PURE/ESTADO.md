@@ -2,6 +2,79 @@
 
 Ponteiro de retomada. Atualizado em 09/11/2026, antes da rodada do retrain.
 
+## 2026-11-20 23:00 — estado do treino FT e fechamento MSB5010/MSB1011
+
+**Treino da torre E4B: concluído depois de 11 lançamentos e 8 mortes.** A rodada
+`#11` (04:18) retomou de `checkpoint-1650` e fechou **2.989/2.989 passos** às 11:55:
+`loss_final` 1,3619, 453,6 min, 478,8 tok/s supervisionados, VRAM pico 10,83 GB,
+34.881.536 treináveis (0,633 %). Merge → `Q4_K_M-Imatrix` (5,34 GB) + `Q6_K`
+(6,22 GB), ACEITE OK. As 8 mortes nunca deixaram `Traceback`: uma evicção de
+instância provada (`docs/INCIDENTE-2026-11-19-treino-e4b.md`), um `SIGKILL`
+(`Morto`), uma variável de dataset vazia no launcher e o resto é o mesmo padrão —
+job filho do servidor OpenCode. Série completa em
+`/media/mint/FT/docs/TREINO-LINHA-DO-TEMPO.md` (hora, passo de parada, log).
+
+**Avaliação do Q4 cru (20/11):** baseline WAR 3× = **83 PASS / 25 FAIL** em 108
+casos; 5 `belts-build` falham nas três rodadas. Golden congelado `Q4-base` =
+**78/124** (telecom 44/44, space 33/39, electro 1/32 por limitação do oráculo
+numérico, comportamento-dev 0/9 por formato). Probe SFT two-pass em curso
+(130 cards × 2 amostras) — `known` só com as duas passando.
+
+**Fechamento dos dois códigos que derrubavam os belts:** `MSB5010` e `MSB1011`
+não existiam na tabela. Entraram em `Rochas.OpenCodeBridge.Core/CsSyntaxRepair.cs`
+(32 → **33 regras**; a cauda `HarnessTails.CsErrorTableLine` é derivada por LINQ,
+sem edição manual) e em `LLAMA-OCODE-PURE/hints.py` (56 → **58 cláusulas**, 57
+códigos únicos). `dotnet build -c Release` do Core: 0 avisos / 0 erros;
+`py_compile` ok; `hint_for("MSB5010"/"MSB1011")` devolve as cláusulas. Ficaram
+**fora** de `CSPROJ_CODES`: a reparação é de `.sln`/ambiguidade de alvo, não de
+`.csproj`. No FT, os cards `error-recovery-aspnet-core-0131`/`-0132` cobrem os dois
+(`docs/ERROR-RECOVERY.md` §28) e as fatias 1536/2240/3241 foram atualizadas.
+
+**Pendências:** tokenizers 12B (`models/hf/gemma-4-12B-it`) e E2B
+(`scratch/e2b-text`) ausentes do disco — o GGUF 12B Q4 baixou (6,79 GB) mas não
+remonta fatia; oráculo de `electro` (LaTeX/`\approx`); `dashboard`/`crud-product`
+reprovam sem código de compilador no log; DPO só com pares verificados por build.
+
+
+## 2026-11-20 — retomada do tuning WAR/RAG
+
+- Persistência: `collector.py` e `battery-war.sh` agora gravam em
+  `/media/mint/FT/logs/collector/` (zero `/tmp/opencode/llama-pure`).
+- Gate nominal: **11 passos** (tools-full 3 + mission-tools 3 + belts 5), 3× com
+  `WAR_STOP_ON_FAIL=0`.
+- Plano detalhado, auditoria dos retornos globais e micro-enunciados:
+  `/media/mint/FT/docs/ARENA-TUNING-WAR-RAG.md`.
+- Traces filtráveis: `tools/factory/check_trace.py`; saída
+  `data/sft/treino-behavior.jsonl` (31.700 aceitos de 31.939).
+- RAG: 56 leis em `data/leis/txt`; índice em 311 fontes/126.616 chunks; smoke 9/9.
+
+### 2026-11-20 22:55 — baseline 3× fechada, golden Q4-base e lacuna MSB5010/MSB1011
+
+- **Baseline WAR 3×** (`WAR_STOP_ON_FAIL=0`, Q4 cru): 108 casos, **83 PASS / 25 FAIL**,
+  3h17m. Os 25 FAILs são 8 casos repetidos, com os 5 `belts-build` falhando nas **três**
+  rodadas (15/25). Diagnóstico estrutural, não de lógica: `.sln` inventado (`MSB5010`,
+  10×), segundo `.csproj` em subpasta (`MSB1011`, 3×), código anexado ao fim de arquivo
+  existente (`CS1529`, 8×).
+- **Golden Q4-base**: **78/124** (telecom 44/44, space 33/39, electro 1/32,
+  comportamento-dev 0/9). `electro` reprova por oráculo, não por conta: 28 casos com
+  «amostra numérica sem nenhuma igualdade aritmética verificável» — resposta em LaTeX
+  (`\frac`, `\approx`) que o verificador não lê. Não discrimina enquanto o juiz não
+  aceitar notação matemática.
+- **Lacuna da tabela de hints:** `LLAMA-OCODE-PURE/hints.py` cobre 7 códigos `MSB`
+  (1001, 1003, 1008, 1009, 4025, 4040, 4068) e **não cobre `MSB5010` nem `MSB1011`**,
+  exatamente os dois que derrubaram `belts-build-azul` e `belts-build-roxa`. O FT fechou
+  a lacuna na trilha SFT (`error-recovery-aspnet-core-0131/-0132`, doc
+  `docs/ERROR-RECOVERY.md` §28). **Implementado também no harness em 20/11**:
+  `hints.py` passou de 56 para **58 cláusulas** (`if code == "MSB5010"` / `"MSB1011"`,
+  57 códigos únicos) e `CsSyntaxRepair.RuleTable` de 32 para **33 regras** — a cauda
+  `HarnessTails.CsErrorTableLine` é derivada da tabela (LINQ em `Rules`), então não
+  precisou de edição manual. Evidência: `python3 -m py_compile hints.py` ok,
+  `hint_for("MSB5010"/"MSB1011")` retorna as duas cláusulas, `dotnet build -c Release`
+  do `Rochas.OpenCodeBridge.Core`: **0 avisos, 0 erros**. Os dois códigos **não** entraram
+  em `CSPROJ_CODES` (a reparação é de `.sln`/ambiguidade, não de `.csproj`).
+- Pipeline: golden fechou 22:41; `run-two-pass-pipeline.sh` iniciou 22:41:52 e o probe
+  SFT (130 × 2) roda no `:4100`.
+
 ## Onde a rotina parou
 
 Última rodada registrada: **08/11/2026 19:00** — `battery-war.sh chat tools`

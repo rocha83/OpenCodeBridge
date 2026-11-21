@@ -5,20 +5,24 @@
 #           -> agent 'tools', permissao completa, prompt original do CLI.
 #   ent   : sequencia Plan de conhecimento (produto/customer/saleinvoice/worker/
 #           redis/bus/erp/dashboard) em TEXTO puro, sem tool -> agent 'plan'.
-# Uso: ./battery-war.sh <chat|responses> <tools|ent> [caso ...]
+# Uso: ./battery-war.sh <chat|responses> <tools|ent|enterprise> [caso ...]
 # Fail-fast: WAR_STOP_ON_FAIL=1 (default) para no primeiro FAIL; =0 mede placar completo.
 # Skills do caso: WAR_SKILLS=1 instala harness/skills em <caso>/.opencode/skills (default 0).
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# Toolchain e caches persistentes da arena (NUGET_PACKAGES/DOTNET_CLI_HOME/PATH).
+export LAB_ENV_QUIET=1
+. /media/mint/FT/scripts/lab-env.sh
 PROTO="${1:-chat}"; MODO="${2:-tools}"
 [ $# -ge 2 ] && shift 2 || shift $#
 CASES=("$@")
-ROOT="/tmp/opencode/llama-pure"
+ROOT="/media/mint/FT/logs/collector/war"
 WS="$ROOT/war-$MODO-$PROTO"
 LLAMA="${LLAMA:-http://127.0.0.1:4199}"
 MODEL="llamapure/Gemma4-E4B-GK-Q4"                 # plan: thinking ON, temp 0.2
 MODEL_BUILD="llamapure/Gemma4-E4B-GK-Q4-nothink"  # build: thinking OFF, temp 0.1
+SYS_TESTE="Voce e um agente desenvolvedor .net senior, responde de forma concisa na lingua do usuario"
 LOG="$ROOT/war-$MODO-$PROTO.log"
 START="${WAR_RUN:-$(date +%s)}"   # rodada inteira: mesma origem para todos os casos
 START_TS="$(date +%s)"             # epoch: report.py --since exige float
@@ -49,9 +53,9 @@ case "$PROTO" in
   responses) PKG="@opencode/ai/providers/openai" ;;
   *) echo "protocolo invalido: $PROTO (chat|responses)" >&2; exit 2 ;;
 esac
-case "$MODO" in tools|ent) ;; *) echo "modo invalido: $MODO (tools|ent)" >&2; exit 2 ;; esac
+case "$MODO" in tools|ent|enterprise) ;; *) echo "modo invalido: $MODO (tools|ent|enterprise)" >&2; exit 2 ;; esac
 
-rm -rf "$WS"; mkdir -p "$WS"
+mkdir -p "$WS"   # sem wipe global: new_case limpa o diretorio do proprio caso (permite rodadas em paralelo)
 
 cat > "$WS/opencode.json" <<JSON
 {
@@ -85,6 +89,7 @@ cat > "$WS/opencode.json" <<JSON
       "mode": "primary",
       "model": "$MODEL_BUILD",
       "steps": 60,
+      "system": "$SYS_TESTE",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
                        { "action": "execute", "resource": "*", "effect": "deny" } ]
     },
@@ -93,7 +98,7 @@ cat > "$WS/opencode.json" <<JSON
       "mode": "all",
       "model": "$MODEL_BUILD",
       "steps": 80,
-      "system": "O system desta sessao vem do harness do tunel (harness/*.md montado por collector.py). Em projetos dotnet: .NET 10 e EF 10; 'dotnet new' so ao criar projeto novo; conclua quando a saida do programa corresponder ao enunciado.",
+      "system": "$SYS_TESTE",
       "permissions": [ { "action": "question", "resource": "*", "effect": "deny" },
                        { "action": "execute", "resource": "*", "effect": "deny" } ]
     },
@@ -103,7 +108,7 @@ cat > "$WS/opencode.json" <<JSON
       "model": "$MODEL",
       "steps": 2,
       "capabilities": { "tools": false },
-      "system": "Voce e um arquiteto e engenheiro de software senior. Entregue o artefato COMPLETO em texto, sem placeholders, sem elipses e sem tool calls: nao existe ferramenta nesta sessao. Responda em portugues, direto, sem narrar plano.",
+      "system": "$SYS_TESTE",
       "permissions": [ { "action": "*", "resource": "*", "effect": "deny" } ]
     }
   }
@@ -118,6 +123,8 @@ run_agent() {
   local model="$MODEL_BUILD"
   case "$agent" in plan) model="$MODEL" ;; esac
   local t0=$(date +%s) pid w=0 wd=180
+  # plan responde texto (sem artefato): 180s de watchdog mataria a resposta no meio.
+  [ "$agent" = plan ] && wd=300
   (cd "$CASE_DIR" && timeout "$secs" opencode run --standalone --auto \
      --agent "$agent" --model "$model" "$prompt") > "$CASE_DIR/.last.txt" 2>&1 &
   pid=$!
@@ -164,9 +171,9 @@ new_case() {
   [ -n "${CASE_NAME:-}" ] && tempo_caso "$CASE_NAME"
   CASE_NAME="$1"; CASE_T0=$(date +%s)
   case "$1" in
-    mission-tools) EXPECT=300 ;;   # referencia: < 5 min
-    *-verde|*-azul) EXPECT=180 ;;  # azul/verde: tarefa de no maximo 3 min
-    *)             EXPECT=480 ;;   # referencia: < 8 min
+    mission-tools) EXPECT=240 ;;   # referencia de comportamento (nao corta nada)
+    *-verde|*-azul) EXPECT=240 ;;  # referencia unica de comportamento
+    *)             EXPECT=240 ;;   # referencia unica: muito acima = possivel laco
   esac
   CASE_DIR="$WS/$1"; rm -rf "$CASE_DIR"; mkdir -p "$CASE_DIR"
   cp "$WS/opencode.json" "$CASE_DIR/opencode.json"
@@ -259,24 +266,34 @@ check() {
 
 quer() { [ -z "${CASES[*]:-}" ] && return 0; local c; for c in "${CASES[@]}"; do [ "$c" = "$1" ] && return 0; done; return 1; }
 
+tools_full_proj() { find "$CASE_DIR" -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' 2>/dev/null | head -1; }
+tools_full_proj_ok() { [ -n "$(tools_full_proj)" ]; }
+tools_full_src_has() { grep -rqi --include='*.cs' --exclude-dir=obj --exclude-dir=bin -- "$1" "$CASE_DIR" 2>/dev/null; }
+tools_full_build_ok() { local pj; pj="$(tools_full_proj)"; [ -n "$pj" ] && ( cd "$CASE_DIR" && dotnet build "$pj" -v q >/dev/null 2>&1 ); }
+tools_full_run_ok() { local pj; pj="$(tools_full_proj)"; [ -n "$pj" ] && ( cd "$CASE_DIR" && dotnet run --project "$pj" -v q 2>&1 | grep -qi 'hello world v2' ); }
+
 TOOLS_FULL_CRIAR_HELLO="$(cat <<'EOT'
-Crie nesta pasta um projeto console C# (App.csproj) cujo programa exiba exatamente Hello World. Compile, execute e confirme a saida. Depois inicialize o git aqui e faca um commit com a mensagem 'hello world console'; confirme com git log.
+Use `dotnet new console` para criar o projeto nesta pasta (nao escreva o .csproj a mao). Ajuste o Program.cs para exibir exatamente Hello World (o template cria "Hello, World!"; troque para "Hello World"). Rode o build e o run; a saida deve ser Hello World. Depois rode git init, git add, git commit -m "hello world console" e confirme com git log.
 EOT
 )"
 TOOLS_FULL_AJUSTAR_V2="$(cat <<'EOT'
-Na pasta atual esta o app console C# (App.csproj) que exibe Hello World, ja commitado. Troque a mensagem para Hello World v2, recompile, execute e confirme a nova saida. Faca o commit da mudanca com a mensagem 'hello world v2' e confirme com git log.
+Na pasta atual esta o app console C# que exibe Hello World, ja commitado. Localize o .csproj existente (nao crie um segundo projeto). Troque a mensagem no Program.cs para Hello World v2, rode o build e o run com esse .csproj; confirme a nova saida. Faca o commit da mudanca com a mensagem 'hello world v2' e confirme com git log.
 EOT
 )"
 MISSION_TOOLS_CRIAR_PROJETO="$(cat <<'EOT'
-Crie nesta pasta o projeto console C# em mcs/ (mcs.csproj). O passo termina com o projeto criado e compilando.
+Use `dotnet new console -n mcs` para criar o projeto em mcs/ (mcs/mcs.csproj). Nao escreva o .csproj a mao. O passo termina com mcs/mcs.csproj existindo e `dotnet build mcs/mcs.csproj` retornando 0.
 EOT
 )"
 MISSION_TOOLS_ESCREVER_PROGRAMA="$(cat <<'EOT'
-Em mcs/ existe o projeto console C# mcs.csproj, compilando. Escreva o programa que imprima, um valor por linha: o fatorial de 10, o MDC de 1071 e 462, e a quantidade de numeros primos entre 1 e 50. Rode e confira a saida.
+Em mcs/ existe o projeto console C# mcs/mcs.csproj. Edite mcs/Program.cs para calcular e imprimir, um valor por linha e sem rotulos: o fatorial de 10; o MDC de 1071 e 462; e a quantidade de numeros primos de 1 a 50. Compile com `dotnet build mcs/mcs.csproj` ate rc=0. Nao rode o programa ainda.
+EOT
+)"
+MISSION_TOOLS_RODAR_PROGRAMA="$(cat <<'EOT'
+Rode `dotnet run --project mcs/mcs.csproj` e confirme a saida, um valor por linha: 3628800, 21, 15.
 EOT
 )"
 P_AZUL="$(cat <<'EOT'
-Crie nesta pasta o backend .NET C# de consulta de dados de uma tabela de reembolsos corporativos: dominio e repositorio generico sobre ORM. Sem API e sem frontend. Um projeto na raiz, compilando.
+Crie nesta pasta o backend .NET C# de consulta de dados de uma tabela de reembolsos corporativos: dominio e repositorio generico sobre ORM, mais a camada de leitura nomeada Consulta (classe ConsultaService com o metodo que devolve os reembolsos). Sem API e sem frontend. Um projeto na raiz, compilando.
 EOT
 )"
 P_VERDE="$(cat <<'EOT'
@@ -311,30 +328,39 @@ P_DASH="React 19 + TS + Tailwind: Dashboard que consome GET /api/saleinvoices?da
 P_BUS="C# .NET 9 + Dapper: endpoint POST /api/schedule publica Clinic.Schedule no barramento via outbox transacional (mesma transacao do INSERT). Desenhe: tabela outbox (colunas), publisher em background com retry exponencial + jitter, consumidor idempotente por message-id (tabela processed_messages), e o que acontece quando o broker cai por 10 minutos. Responda em bullets curtos + DDL da outbox.$SUF"
 P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e min(desconto_pedido, teto_categoria) e imposto incide sobre (base - desconto) com aliquota por UF, exceto itens isentos (NCM inicia com 8471). Dê: funcao pura em C# ou Python + tabela com 4 casos de borda (desconto acima do teto, UF sem aliquota, item isento, base zero) e o valor esperado de cada um.$SUF"
 
+P_REACT_SENIOR="React 19 + TS: componente que busca painel e detalhe em paralelo de /api/panel e /api/detail/:id. Exija: AbortController cancelando o detalhe quando o id muda, sem setState apos unmount, useMemo/useCallback onde evita re-render real, e tratamento de erro por fonte independente. Responda so com o codigo .tsx e 3 bullets de por que cada decisao evita bug em producao.$SUF"
+P_ARM="ARM Cortex-M4 bare-metal em C: le sensor via ADC a cada 100ms (SysTick), envia pacote de 16 bytes por UART com DMA em 115200 8N1, dorme em STOP entre amostras (wake por RTC), e nunca bloqueia em ISR. Entregue: main.c essencial (init, loop, ISR curta) + 3 bullets do que quebraria sem DMA e sem STOP.$SUF"
+
 { if [ "$MODO" = tools ]; then
 
   if quer tools-full; then
     new_case tools-full
     echo "----- [tools-full:create]"; run_agent tools "$TOOLS_FULL_CRIAR_HELLO" 900
-    check tools-full-create "[ -f '$CASE_DIR/App.csproj' ] && grep -qi 'hello world' '$CASE_DIR/Program.cs' && (cd '$CASE_DIR' && git log --format=%s 2>/dev/null | grep -qi 'hello world console')"
+    check tools-full-create "tools_full_proj_ok && tools_full_src_has 'hello world' && (cd '$CASE_DIR' && git log --format=%s 2>/dev/null | grep -qi 'hello world console')"
     if ff_stop; then ff_skipped "tools-full-adjust tools-full-run"; else
     echo "----- [tools-full:adjust]"; run_agent tools "$TOOLS_FULL_AJUSTAR_V2" 900
-    check tools-full-adjust "grep -qi 'Hello World v2' '$CASE_DIR/Program.cs' && [ \$(cd '$CASE_DIR' && git log --oneline | wc -l) -ge 2 ] && (cd '$CASE_DIR' && git log --format=%s | grep -qi 'hello world v2') && (cd '$CASE_DIR' && dotnet build App.csproj -v q >/dev/null 2>&1)"
+    check tools-full-adjust "tools_full_src_has 'hello world v2' && [ \$(cd '$CASE_DIR' && git log --oneline | wc -l) -ge 2 ] && (cd '$CASE_DIR' && git log --format=%s | grep -qi 'hello world v2') && tools_full_build_ok"
     if ff_stop; then ff_skipped "tools-full-run"; else
-    check tools-full-run "( cd '$CASE_DIR' && dotnet run --project App.csproj -v q 2>&1 | grep -qi 'hello world v2' )"
+    check tools-full-run "tools_full_run_ok"
     fi
     fi
   fi
 
   if quer mission-tools; then
+    if ff_stop; then ff_skipped "mission-tools-create mission-tools-code mission-tools-run"; else
     new_case mission-tools
     echo "----- [mission-tools:create] (build)"; run_agent build "$MISSION_TOOLS_CRIAR_PROJETO" 900
     check mission-tools-create "[ -f '$CASE_DIR/mcs/mcs.csproj' ] && ( cd '$CASE_DIR/mcs' && dotnet build mcs.csproj -v q >/dev/null 2>&1 )"
-    if ff_stop; then ff_skipped "mission-tools-code"; else
+    if ff_stop; then ff_skipped "mission-tools-code mission-tools-run"; else
     echo "----- [mission-tools:code] (build)"; run_agent build "$MISSION_TOOLS_ESCREVER_PROGRAMA" 900
+    check mission-tools-code "[ -f '$CASE_DIR/mcs/Program.cs' ] && ( cd '$CASE_DIR/mcs' && dotnet build mcs.csproj -v q >/dev/null 2>&1 )"
+    if ff_stop; then ff_skipped "mission-tools-run"; else
+    echo "----- [mission-tools:run] (build)"; run_agent build "$MISSION_TOOLS_RODAR_PROGRAMA" 900
     nums="$( cd "$CASE_DIR/mcs" && dotnet run --project mcs.csproj 2>/dev/null | grep -E '^-?[0-9]+$' | head -3 | tr '\n' ' ' )"
     [ "$nums" = "3628800 21 15 " ] || echo "(aceite: nums='$nums')"
-    check mission-tools-code "[ '$nums' = '3628800 21 15 ' ]"
+    check mission-tools-run "[ '$nums' = '3628800 21 15 ' ]"
+    fi
+    fi
     fi
   fi
 
@@ -364,7 +390,7 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       quer_belt "$caso" || continue
       if ff_stop; then ff_skipped "$caso"; continue; fi
       new_case "$caso"
-      secs=420; case "$caso" in *-verde|*-azul) secs=180 ;; esac
+      secs=600   # teto unico de 10 min por passo de belt
       echo "----- [$caso] ($AG)"; run_agent "$AG" "$P" "$secs"
       # direcionamento unico: repara o aceite (sem .csproj, sem fonte ou build quebrado) com enunciado + erro + tabela
       missing=""
@@ -373,9 +399,9 @@ P_ERP="ERP: regra de preco final = base - desconto + imposto, onde desconto e mi
       errs0="$(build_errors "$CASE_DIR")"
       if [ -n "$missing" ] || [ -n "$errs0" ]; then
         echo "----- [$caso] direcionamento build: ${missing:-erro de compilacao}"
-        mv=""; case "$missing" in *"csproj na raiz"*) mv=" Se o .csproj ja existe em subpasta, mova-o para a raiz (mv pasta/Proj.csproj .) e apague a pasta vazia; nunca crie um segundo projeto." ;; esac
+        mv=""; case "$missing" in *"csproj na raiz"*) mv=" Se o projeto ja existe em subpasta, mova o conteudo INTEIRO dela para a raiz preservando as fontes (mv pasta/* . ; rm -rf pasta vazia); nunca mova apenas o .csproj e nunca crie um segundo projeto." ;; esac
         hints0="$(error_hints "$errs0")"
-        secs2=180; case "$caso" in *-verde) secs2=90 ;; esac
+        secs2=600  # mesmo teto no reparo
         run_agent "$AG" "ENUNCIADO:
 $P
 
@@ -419,7 +445,7 @@ $hints0" "$secs2"
       case "$belt" in marrom|preta) partial_report "$caso" "$belt" ;; esac
   done
 
-else
+elif [ "$MODO" = ent ]; then
 
   ent_case() {
     local id="$1" p="$2" extra="${3:-true}"
@@ -448,7 +474,41 @@ $P_DI_HEAD" "grep -qE 'AddStackExchangeRedisCache|AddDistributedRedisCache|IConn
   ent_case erp "$P_ERP" "grep -q '8471' '$WS/erp.txt'"
   ent_case dashboard "$P_DASH" "grep -q 'AbortController' '$WS/dashboard.txt' && grep -qE 'useEffect|useLayoutEffect' '$WS/dashboard.txt'"
 
+elif [ "$MODO" = enterprise ]; then
+
+  ent_case() {
+    local id="$1" p="$2" extra="${3:-true}"
+    quer "$id" || return 0
+    if ff_stop; then ff_skipped "$id"; return 0; fi
+    new_case "$id"
+    echo "----- [$id]"; run_agent plan "$p" 600
+    cp "$CASE_DIR/.last.txt" "$WS/$id.txt"
+    check "$id" "[ \$(wc -c < '$WS/$id.txt' ) -gt 400 ] && ! grep -qE 'NotImplementedException|TODO[[:space:]:]' '$WS/$id.txt' && $extra"
+  }
+
+  ent_case senior-react "$P_REACT_SENIOR" "grep -q 'AbortController' '$WS/senior-react.txt'"
+  ent_case senior-bus "$P_BUS" "grep -qi 'outbox' '$WS/senior-bus.txt' && grep -qi 'idempot' '$WS/senior-bus.txt'"
+  ent_case senior-erp "$P_ERP" "grep -q '8471' '$WS/senior-erp.txt'"
+  ent_case senior-arm "$P_ARM" "grep -qi 'DMA' '$WS/senior-arm.txt' && grep -qi 'STOP' '$WS/senior-arm.txt'"
+  ent_case crud-product "$P_PROD" "grep -qE 'MapPost|HttpPost' '$WS/crud-product.txt'"
+  ent_case crud-customer "$P_CUST" "grep -qiE 'LIMIT|OFFSET|pageSize' '$WS/crud-customer.txt' && grep -qE '409|Conflict' '$WS/crud-customer.txt'"
+  ent_case crud-saleinvoice "$P_SALE" "grep -qiE 'BeginTransaction|Transaction' '$WS/crud-saleinvoice.txt' && grep -qiE 'Items|ProductId' '$WS/crud-saleinvoice.txt'"
+  ent_case worker "$P_WORKER" "grep -q 'BackgroundService' '$WS/worker.txt' && grep -q 'ExecuteAsync' '$WS/worker.txt'"
+  ent_case redis-cache "$P_REDIS" "grep -qE 'IDistributedCache|ConnectionMultiplexer' '$WS/redis-cache.txt' && grep -qE 'RemoveAsync|Remove\(|KeyDelete' '$WS/redis-cache.txt'"
+  if quer redis-di; then
+    ctx="$(cat "$WS/redis-cache.txt" 2>/dev/null)"
+    ent_case redis-di "REPOSITORIO DO STEP ANTERIOR (bloco 1, CONTEXTO)
+$ctx
+FIM DO CONTEXTO.
+
+$P_DI_HEAD" "grep -qE 'AddStackExchangeRedisCache|AddDistributedRedisCache|IConnectionMultiplexer' '$WS/redis-di.txt' && grep -q 'AddScoped' '$WS/redis-di.txt'"
+  fi
+  ent_case bus "$P_BUS" "grep -qi 'outbox' '$WS/bus.txt' && grep -qi 'idempot' '$WS/bus.txt'"
+  ent_case erp "$P_ERP" "grep -q '8471' '$WS/erp.txt'"
+  ent_case dashboard "$P_DASH" "grep -q 'AbortController' '$WS/dashboard.txt' && grep -qE 'useEffect|useLayoutEffect' '$WS/dashboard.txt'"
+
 fi
+
   echo "== RESUMO: PASS=$pass FAIL=$fail SKIP=$skipped  (log: $LOG)"
   [ "$ABORT" = 1 ] && echo "== ABORTADO (fail-fast) no primeiro FAIL: $FIRST_FAIL"
 } 2>&1 | tee "$LOG"

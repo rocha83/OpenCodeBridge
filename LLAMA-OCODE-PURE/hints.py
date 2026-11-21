@@ -116,6 +116,16 @@ def hint_for(code):
         return ("clausula where em algo nao generico",
                 "where T : ... so vale em tipo/metodo generico: declare class Repositorio<T> onde T : class "
                 "ou apague a clausula where do tipo/metodo nao generico")
+    if code == "MSB1001":
+        return ("opcao invalida na linha de comando do dotnet",
+                "rode apenas `dotnet build App.csproj -v q` (o .csproj do proprio diretorio); flags inventadas "
+                "como --no-warn nao existem: para silenciar aviso use <NoWarn>CS0168</NoWarn> no .csproj "
+                "ou -p:NoWarn=CS0168")
+    if code == "CS0305":
+        return ("tipo generico usado sem argumento de tipo",
+                "Result<T> exige o parametro: declare uma vez `public sealed class Result<T> { ... }` e use "
+                "`Result<Reembolso>` nos metodos/servicos; nunca escreva `Result` solto (se nao precisa de "
+                "generico, troque por uma classe simples `Result` com as propriedades de sucesso/erro)")
     if code == "CS0246":
         return ("tipo/interface nao encontrado neste arquivo",
                 "se o tipo existe em outro namespace: using Cadastros.Dominio; no topo (nome exato do "
@@ -278,6 +288,17 @@ def hint_for(code):
     if code == "MSB4040":
         return ("csproj sem SDK",
                 "<Project Sdk=\"Microsoft.NET.Sdk\"> ... </Project> (Sdk no Project, sem xmlns)")
+    if code == "MSB5010":
+        return ("arquivo de solucao .sln inventado, sem cabecalho de formato",
+                "o .sln e' artefato GERADO: gere com o SDK (dotnet new sln -n App && dotnet sln App.sln add "
+                "App.csproj) ou apague o .sln e construa o projeto (dotnet build App.csproj). O cabecalho "
+                "Microsoft Visual Studio Solution File, Format Version 12.00 tem de ser a PRIMEIRA linha; "
+                "nunca cole solucao de outro repositorio nem remova o cabecalho")
+    if code == "MSB1011":
+        return ("mais de um .csproj/.sln na pasta (build ambiguo)",
+                "mantenha UM projeto na raiz: mova o conteudo da subpasta para a raiz (mv mcs/* . && rm -rf mcs) "
+                "e rode dotnet build App.csproj; se os dois projetos sao intencionais, gere a solucao "
+                "(dotnet new sln && dotnet sln add ...) e construa pela .sln; nunca rode dotnet build sem argumento")
     if code == "NETSDK1004":
         return ("faltam os ativos do restore (project.assets.json)",
                 "rode dotnet restore antes do build: dotnet restore MeuProjeto.csproj && dotnet build "
@@ -421,6 +442,11 @@ def alert(errors_text, max_codes=3):
                 continue
             desc, ex = hint_for(c)
             texts.append(c + ": " + desc + " -> " + ex)
+    if not texts and re.search(r"op[cç][õo]es inv[aá]lidas|unknown switch|n[aã]o [eé] uma op[cç][aã]o|is not a recognized",
+                               errors_text or "", re.I):
+        texts.append("cli: opcao invalida no dotnet build -> rode `dotnet build App.csproj -v q` sem flags "
+                     "extras (para silenciar aviso: <NoWarn>CS0168</NoWarn> no .csproj ou -p:NoWarn=CS0168); "
+                     "nunca --no-warn")
     if not texts:
         return ""
     body = "\n".join("  - " + t for t in texts)

@@ -8,6 +8,9 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# Toolchain e caches persistentes da arena (NUGET_PACKAGES/DOTNET_CLI_HOME/PATH).
+export LAB_ENV_QUIET=1
+. /media/mint/FT/scripts/lab-env.sh
 PROTO="${1:-chat}"
 ROOT="/tmp/opencode/llama-pure"
 WS="$ROOT/battery-tools-$PROTO"

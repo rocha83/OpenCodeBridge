@@ -155,6 +155,14 @@ public static class CsSyntaxRepair
         new("MSB4025", "`.csproj` malformado/truncado (XML sem fechar)",
             "o `.csproj` e' XML completo, do `<Project Sdk=\"Microsoft.NET.Sdk\">` ao `</Project>`:\n"
             + "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <TargetFramework>net10.0</TargetFramework>\n  </PropertyGroup>\n</Project>"),
+        new("MSB5010", "arquivo de solucao `.sln` inventado, sem cabecalho de formato",
+            "o `.sln` e' artefato GERADO, nao texto colado: gere com o SDK (`dotnet new sln -n App` e " +
+            "`dotnet sln App.sln add App.csproj`) ou apague o `.sln` e construa o projeto (`dotnet build App.csproj`); " +
+            "o cabecalho `Microsoft Visual Studio Solution File, Format Version 12.00` tem de ser a PRIMEIRA linha do arquivo"),
+        new("MSB1011", "mais de um `.csproj`/`.sln` na pasta; `dotnet build` sem alvo ficou ambiguo",
+            "mantenha UM projeto na raiz: mova o conteudo da subpasta para a raiz (`mv mcs/* . && rm -rf mcs`) e rode " +
+            "`dotnet build App.csproj`; se os dois projetos sao intencionais, gere a solucao (`dotnet new sln` + " +
+            "`dotnet sln add`) e construa pela `.sln`; nunca rode `dotnet build` sem argumento"),
         new("NETSDK1045", "TargetFramework acima do SDK instalado",
             "use `net10.0` (SDK da maquina) no `.csproj`: <TargetFramework>net10.0</TargetFramework>"),
     };

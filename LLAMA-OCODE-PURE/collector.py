@@ -33,10 +33,10 @@ HARNESS_STACK = os.environ.get("HARNESS_STACK", "base")
 UP = os.environ.get("UPSTREAM", "http://127.0.0.1:4100")
 PORT = int(os.environ.get("PORT", "4199"))
 METRICS_PORT = int(os.environ.get("METRICS_PORT", "9091"))
-EVENTS = os.environ.get("EVENTS", "/tmp/opencode/llama-pure/metrics/events.jsonl")
-CASES = os.environ.get("CASES", "/tmp/opencode/llama-pure/metrics/cases.jsonl")
-RESP_DIR = os.environ.get("RESP_DIR", "/tmp/opencode/llama-pure/metrics/responses")
-CURRENT = os.environ.get("CURRENT", "/tmp/opencode/llama-pure/metrics/current.json")
+EVENTS = os.environ.get("EVENTS", "/media/mint/FT/logs/collector/metrics/events.jsonl")
+CASES = os.environ.get("CASES", "/media/mint/FT/logs/collector/metrics/cases.jsonl")
+RESP_DIR = os.environ.get("RESP_DIR", "/media/mint/FT/logs/collector/metrics/responses")
+CURRENT = os.environ.get("CURRENT", "/media/mint/FT/logs/collector/metrics/current.json")
 # Sem request por IDLE_S segundos, as gauges "vivas" voltam a zero (nada rodando
 # nao deve aparecer como numero congelado no painel).
 IDLE_S = int(os.environ.get("IDLE_S", "60"))
@@ -98,6 +98,10 @@ STOP_AT = int(os.environ.get("STOP_AT", "6"))          # 6x = corta
 # 6 = curto-circuito (nao chama o modelo). Ver EvaluateFailureLoop.
 BREAKER_SOFT = int(os.environ.get("BREAKER_SOFT", "3"))
 BREAKER_HARD = int(os.environ.get("BREAKER_HARD", "6"))
+# Reescrita do MESMO arquivo (`write` varias vezes, sempre "sucesso") fura o anti-repeat
+# de assinatura porque a sig inclui o conteudo: 1 byte diferente zera o streak.
+# Aqui a contagem e por PATH (o que de fato importa) e corta no churn.
+REWRITE_STOP = int(os.environ.get("REWRITE_STOP", "5"))   # 5 writes no mesmo path = corta
 NUDGES = STOPS = 0
 NUDGE_TOTAL = {}   # conv -> nudges injetados (teto NUDGE_MAX)
 BREAKER_TRIPS = BREAKER_NUDGES = 0   # ToolsBreaker (porte do C#)
@@ -654,6 +658,37 @@ def _write_paths(hist, min_count=3):
     return {p: n for p, n in counts.items() if n >= min_count}
 
 
+def _write_noext(hist):
+    """Paths de `write` sem extensao de arquivo (ex.: `Pasta/Pasta`) — o write devolve
+    'sucesso' e o modelo reescreve: o alvo tem que ser arquivo com extensao."""
+    out = []
+    for tool, args, _c in hist:
+        if (tool or "").strip().lower() not in ("write", "write_file"):
+            continue
+        try:
+            obj = json.loads(args or "{}")
+        except (TypeError, ValueError):
+            continue
+        p = (obj.get("filePath") or obj.get("path") or "").strip()
+        if not p:
+            continue
+        base = re.split(r"[\\/]", p)[-1]
+        if base and "." not in base and p not in out:
+            out.append(p)
+    return out
+
+
+def _rewrite_text(path, n):
+    return (f"[anti-repeat] {n} writes no MESMO arquivo ({_short(path, 60)}) nesta rodada, todos "
+            "'sucesso'. Nao escreva de novo: o arquivo ja esta gravado. Rode o build e, se houver "
+            "erro, corrija com edit no arquivo:linha indicado.")
+
+
+def _noext_text(path):
+    return (f"[tool] o write foi para '{path}', que nao tem extensao de arquivo. Arquivo de projeto "
+            "ou de fonte precisa de extensao: <Nome>.csproj na raiz, <Nome>.cs, .json, .sql.")
+
+
 def _breaker_text(n):
     return (f"[anti-repeat] {n} falhas sobre o mesmo alvo/erro nesta rodada. Repetir a mesma chamada "
             "nao resolve: troque de abordagem (outro caminho, outra forma de escrever, outra "
@@ -891,22 +926,28 @@ def anti_repeat(body, raw_body):
     bi = _breaker_info(msgs)
     brk, alvos = bi["cont"], bi["alvos"]
     rewrites = _write_paths(bi["hist"])
+    churn = max(rewrites.values()) if rewrites else 0
+    noext = _write_noext(bi["hist"])
     loop_tool = bool(sig) and streak >= NUDGE_AT
     loop_cycle = cyc >= NUDGE_AT
     loop_text = (dup >= 4) or (sim >= 0.9)
     # 3+ alvos distintos com falha = progresso real, nao laco: nao avisa.
     loop_break = brk >= BREAKER_SOFT and (alvos <= 2 or brk >= BREAKER_HARD)
-    loop_rewrite = bool(rewrites)
-    if not (loop_tool or loop_cycle or loop_text or loop_break or loop_rewrite):
+    loop_rewrite = churn >= NUDGE_AT
+    if not (loop_tool or loop_cycle or loop_text or loop_break or loop_rewrite or noext):
         return raw_body, None, False, False
     if ANTI == "stop" and (brk >= BREAKER_HARD
                            or (loop_tool and streak >= STOP_AT)
-                           or (loop_cycle and cyc >= STOP_AT)):
+                           or (loop_cycle and cyc >= STOP_AT)
+                           or (churn >= REWRITE_STOP)):
         with LOCK:
             STOPS += 1
         if brk >= BREAKER_HARD:
             BREAKER_TRIPS += 1
             return raw_body, _stop_body(body, sig, brk, txt=_breaker_text(brk)), False, True
+        if churn >= REWRITE_STOP:
+            p, n = max(rewrites.items(), key=lambda kv: kv[1])
+            return raw_body, _stop_body(body, sig, n, txt=_rewrite_text(p, n)), False, True
         if loop_tool:
             return raw_body, _stop_body(body, sig, streak), False, True
         return raw_body, _stop_body(body, sig, cyc, cyc=True), False, True
@@ -924,10 +965,11 @@ def anti_repeat(body, raw_body):
         txt = _nudge_for(sig, streak)
     elif loop_cycle:
         txt = _nudge_cycle(cyc)
+    if not txt and noext:
+        txt = _noext_text(noext[0])
     if not txt and loop_rewrite:
         p, n = max(rewrites.items(), key=lambda kv: kv[1])
-        txt = (f"[anti-repeat] write no MESMO arquivo {n}x ({_short(p, 60)}): reescrever de novo nao "
-               "avanca. Edite o trecho com edit (copiando do read) ou corrija a causa do erro.")
+        txt = _rewrite_text(p, n)
     if not txt:
         txt = NUDGE_TEXT
     key = _conv_key(msgs)
