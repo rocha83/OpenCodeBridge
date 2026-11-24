@@ -90,18 +90,18 @@ def _latest_cases():
 # Anti-repeat enxuto: no modo "nudge" injeta um aviso no request; "stop" tambem corta o
 # laco de tool (nao repassa ao llama e devolve uma resposta sintetica).
 ANTI = os.environ.get("ANTI_REPEAT", "off")           # desligado: so harness basico do opencode
-NUDGE_AT = int(os.environ.get("NUDGE_AT", "3"))        # mesma tool+args 3x
-NUDGE_MAX = int(os.environ.get("NUDGE_MAX", "5"))      # teto de nudges por conversa
-STOP_AT = int(os.environ.get("STOP_AT", "6"))          # 6x = corta
+NUDGE_AT = int(os.environ.get("NUDGE_AT", "1000000"))        # mesma tool+args 3x
+NUDGE_MAX = int(os.environ.get("NUDGE_MAX", "0"))      # teto de nudges por conversa
+STOP_AT = int(os.environ.get("STOP_AT", "1000000"))          # 6x = corta
 # Porte do ToolsBreaker do OpenCodeBridge (C#): conta FALHAS no historico de
 # resultados que o cliente reenvia, nao a assinatura da chamada. 3 = aviso,
 # 6 = curto-circuito (nao chama o modelo). Ver EvaluateFailureLoop.
-BREAKER_SOFT = int(os.environ.get("BREAKER_SOFT", "3"))
-BREAKER_HARD = int(os.environ.get("BREAKER_HARD", "6"))
+BREAKER_SOFT = int(os.environ.get("BREAKER_SOFT", "1000000"))
+BREAKER_HARD = int(os.environ.get("BREAKER_HARD", "1000000"))
 # Reescrita do MESMO arquivo (`write` varias vezes, sempre "sucesso") fura o anti-repeat
 # de assinatura porque a sig inclui o conteudo: 1 byte diferente zera o streak.
 # Aqui a contagem e por PATH (o que de fato importa) e corta no churn.
-REWRITE_STOP = int(os.environ.get("REWRITE_STOP", "5"))   # 5 writes no mesmo path = corta
+REWRITE_STOP = int(os.environ.get("REWRITE_STOP", "1000000"))   # 5 writes no mesmo path = corta
 NUDGES = STOPS = 0
 NUDGE_TOTAL = {}   # conv -> nudges injetados (teto NUDGE_MAX)
 BREAKER_TRIPS = BREAKER_NUDGES = 0   # ToolsBreaker (porte do C#)
@@ -109,7 +109,7 @@ HINTS = 0             # alertas [build-hint] injetados (erro de compilacao + exe
 TOOL_HINTS = 0        # alertas [tool-hint] injetados (args fora do schema)
 HINT_SEEN = {}        # conversa -> assinaturas de erro ja alertadas (anti-spam)
 BUILD_HINT = os.environ.get("BUILD_HINT", "off").strip().lower()
-HINT_MAX = int(os.environ.get("HINT_MAX", "30"))  # alertas por conversa (hints distintos)
+HINT_MAX = int(os.environ.get("HINT_MAX", "0"))  # alertas por conversa (hints distintos)
 HINT_LAST = {}        # conversa -> (assinatura atual, repeticoes seguidas)
 HINT_TOTAL = {}       # conversa -> total de alertas injetados
 THINK_BLOCKED = 0   # requests que pediram reasoning e foram forcados a thinking off
