@@ -89,7 +89,7 @@ def _latest_cases():
 
 # Anti-repeat enxuto: no modo "nudge" injeta um aviso no request; "stop" tambem corta o
 # laco de tool (nao repassa ao llama e devolve uma resposta sintetica).
-ANTI = os.environ.get("ANTI_REPEAT", "stop")          # nudge | stop | off
+ANTI = os.environ.get("ANTI_REPEAT", "off")           # desligado: so harness basico do opencode
 NUDGE_AT = int(os.environ.get("NUDGE_AT", "3"))        # mesma tool+args 3x
 NUDGE_MAX = int(os.environ.get("NUDGE_MAX", "5"))      # teto de nudges por conversa
 STOP_AT = int(os.environ.get("STOP_AT", "6"))          # 6x = corta
@@ -108,7 +108,7 @@ BREAKER_TRIPS = BREAKER_NUDGES = 0   # ToolsBreaker (porte do C#)
 HINTS = 0             # alertas [build-hint] injetados (erro de compilacao + exemplo)
 TOOL_HINTS = 0        # alertas [tool-hint] injetados (args fora do schema)
 HINT_SEEN = {}        # conversa -> assinaturas de erro ja alertadas (anti-spam)
-BUILD_HINT = os.environ.get("BUILD_HINT", "on").strip().lower()
+BUILD_HINT = os.environ.get("BUILD_HINT", "off").strip().lower()
 HINT_MAX = int(os.environ.get("HINT_MAX", "30"))  # alertas por conversa (hints distintos)
 HINT_LAST = {}        # conversa -> (assinatura atual, repeticoes seguidas)
 HINT_TOTAL = {}       # conversa -> total de alertas injetados
