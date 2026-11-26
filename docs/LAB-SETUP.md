@@ -678,7 +678,15 @@ vem de **enunciado e correção de compilação**, não de mais mexida no sampli
   tools e 900 s para texto disparam aborto com nudge e temperatura de desvio
   (`upstream-abort-retry.timeout=true`). Sem isso um turno rodou 21k tokens /
   ~16 min com GPU em 95% e nenhum breaker — breakers só enxergam turnos
-  concluídos.
+  concluídos. **Timeout não tem retry**: falha rápida com causa explícita, para
+  não repetir os 300 s seguintes gerando prosa sem tool call (medido no
+  `belts-verde`: 2 timeouts, 26 min, 1 arquivo). **Regressão medida**: mover
+  "criar arquivo = tool `write`", "um tipo por `.cs`" e o `.csproj` canônico
+  para o `MainHarness.Text` fez o `azul-build` subir de 90–161 s para
+  942–1017 s e depois falhar por watchdog. As três regras voltaram para o
+  **enunciado do belt** (config verde); o harness-base fica só com o que é
+  realmente abstrato. Mantidos: aceite de `record`/`struct`/`interface` e
+  watchdog sem retry.
 - **`ToolArgGuard` normalize escapes**: `JsonNode.ToJsonString()` escreve `<` como
   `\u003C`; sem normalizar, `<|tool_call|>` colado no fim de um `path` passava pelo
   guard e o `write` criava arquivo com nome podre (medido no belt-build azul:

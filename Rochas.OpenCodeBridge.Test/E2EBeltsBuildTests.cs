@@ -86,7 +86,12 @@ internal static class E2EBeltsBuildTests
         }
         string all = sb.ToString();
         if (all.Trim().Length == 0) return false;
-        bool hasClass = all.Contains("class ", StringComparison.Ordinal);
+        // Tipo de dominio pode ser class, record, struct ou interface — o
+        // enunciado pede entidades/value objects, nao uma palavra-chave especifica.
+        bool hasClass = all.Contains("class ", StringComparison.Ordinal)
+                     || all.Contains("record ", StringComparison.Ordinal)
+                     || all.Contains("struct ", StringComparison.Ordinal)
+                     || all.Contains("interface ", StringComparison.Ordinal);
         bool hasTable = all.Contains("CREATE TABLE", StringComparison.OrdinalIgnoreCase);
         bool hasRepo = all.Contains("Repository", StringComparison.OrdinalIgnoreCase)
                     || all.Contains("Repositorio", StringComparison.OrdinalIgnoreCase);
@@ -176,7 +181,9 @@ REGRAS OBRIGATORIAS (uma por linha):
 8. So responda BUILD-OK depois de dotnet build rc=0; nunca com build quebrado.
 9. Dapper: use apenas connection.Query<T>(sql, new {{ }}) e connection.Execute(sql, new {{ }}); nao use AddDynamicParameters, DbContext nem APIs de EF.
 Use caminhos relativos a raiz do workspace." },
-                    new JsonObject { ["role"]="user", ["content"]=prompt.Replace("{ws}", ws) });
+                    new JsonObject { ["role"]="user", ["content"]=
+                        "Use SEMPRE a tool `write` para CRIAR cada arquivo: codigo so' no arquivo, nunca na resposta de texto.\n\n"
+                        + prompt.Replace("{ws}", ws) });
                 if (ownStep) await TestContext.PublishEnunciado(step, prompt.Replace("{ws}", ws));
                 int filesCreated = 0;
                 int totalChars = 0;

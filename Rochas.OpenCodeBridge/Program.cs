@@ -4488,6 +4488,12 @@ var shape = new StringBuilder();
         }
         catch (Exception ex) when (RetryNudge.IsUpstreamAbort(ex))
         {
+            // Timeout do watchdog NAO ganha retry: medido no belt-build verde,
+            // dois turnos de 300 s geraram prosa sem tool call e o retry so
+            // multiplicou o gasto de GPU. Falha rapida com causa explicita.
+            if (ex is TaskCanceledException || ex is OperationCanceledException)
+                throw new RetryNudge.UpstreamAbortException(
+                    $"watchdog: upstream nao respondeu em {watchdogSec}s (sem tool call)", ex);
             double current = Temperature;
             try { current = JsonNode.Parse(body)?["temperature"]?.GetValue<double>() ?? Temperature; } catch { }
             // Mesma precedencia da temperatura do turno: role resolvido manda;
