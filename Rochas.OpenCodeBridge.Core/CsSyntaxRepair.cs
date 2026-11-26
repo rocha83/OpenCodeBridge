@@ -125,8 +125,11 @@ public static class CsSyntaxRepair
         new("CS1001", "identificador esperado (cabecalho do arquivo recomecado dentro do corpo)",
             "`using`, `namespace` e `class` ficam UMA vez, no TOPO do arquivo, e dentro de um metodo so entram instrucoes — " +
             "o arquivo nao recomeca no meio; para trocar tudo, mande o arquivo COMPLETO com `write`, do topo ao ultimo `}`, uma unica vez"),
-        new("CS0246", "tipo/namespace nao encontrado (falta `using`, falta `PackageReference`, ou o tipo nao existe na biblioteca)",
-            "importe o namespace do tipo e so use API que existe no pacote referenciado; sem EF Core, use Dapper + Microsoft.Data.Sqlite:\n"
+        new("CS0246", "tipo/namespace nao encontrado (falta `using` do projeto, falta `PackageReference`, ou o tipo nao existe)",
+            "para TIPO DO PROPRIO PROJETO: leia o .cs que o define, copie o namespace exato e coloque o using no arquivo que o usa — "
+            + "ex.: `namespace Cadastros.Repositorio;` no repository exige `using Cadastros.Repositorio;` no service. "
+            + "Conferia a grafia do nome da classe no arquivo. Para API externa: "
+            + "use apenas o que existe no pacote referenciado; sem EF Core, use Dapper + Microsoft.Data.Sqlite:\n"
             + "using Dapper;\nusing Microsoft.Data.Sqlite;\n"
             + "var conn = new SqliteConnection(\"Data Source=app.db\");\n"
             + "var itens = conn.Query<Reembolso>(\"SELECT id, valor FROM reembolsos\").ToList();\n"
@@ -185,6 +188,10 @@ public static class CsSyntaxRepair
             "copie a assinatura: `Task<IEnumerable<Reembolso>> QueryAsync(string sql, object? p)` — a chamada passa exatamente `(string, object?)`"),
         new("CS0411", "argumentos de tipo nao puderam ser inferidos",
             "`await conn.QueryAsync<Reembolso>(sql, p);` com `Task<IEnumerable<T>> QueryAsync<T>(string sql, object? p)`; ao chamar o seu metodo, sem `<T>`"),
+        new("CS0426", "nome de tipo usado como namespace (ou namespace com grafia errada)",
+            "depois de `using Reembolsos.Domain;` use o tipo direto: `IEnumerable<Reembolso>` "
+            + "(nunca `Reembolso.Domain.Reembolso`). Confira no arquivo que define o tipo se e' "
+            + "`Reembolsos.Domain` ou outro namespace e copie o nome exato"),
         new("CS1013", "literal numerico invalido",
             "o `_` so vai entre digitos: `100_000m` (nunca `100_m`)"),
         new("CS8124", "tupla com 1 elemento",

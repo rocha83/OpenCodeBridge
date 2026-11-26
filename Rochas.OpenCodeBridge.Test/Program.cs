@@ -236,6 +236,7 @@ internal static class Program
         TestContext.Run("U-edit-anchor", UnitEditAnchorTests.RefusalShowsRealAnchor);
         TestContext.Run("U-help-copy-safe", UnitHelpCopySafeTests.ExamplesAreSafeToCopy);
         TestContext.Run("U-cs-repair-missing-brace", UnitToolBreakerTests.CsRepairMissingBrace);
+        TestContext.Run("U-cs-repair-local-namespace", UnitToolBreakerTests.CsRepairLocalNamespace);
         TestContext.Run("U-cs-repair-applies-brace", UnitToolBreakerTests.CsRepairAppliesMissingBrace);
         TestContext.Run("U-cs-repair-unexpected-token", UnitToolBreakerTests.CsRepairUnexpectedToken);
         TestContext.Run("U-cs-hint-counts-call-args", UnitToolBreakerTests.CsHintCountsCallArgs);

@@ -628,6 +628,25 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    /// <summary>CS0246 de tipo do proprio projeto: a dica manda copiar o namespace do arquivo que define o tipo.</summary>
+    public static Task CsRepairLocalNamespace()
+    {
+        const string err = "ERRO: /tmp/ws/Cadastros.Servicos.Service.cs(10,22): error CS0246: "
+                         + "The type or namespace name 'CadastroRepository' could not be found";
+        string hint = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
+            "namespace Cadastros.Servicos;\npublic class CadastroService { }\n", err);
+        TestContext.Check(hint.Contains("namespace Cadastros.Repositorio", StringComparison.Ordinal)
+                       && hint.Contains("using Cadastros.Repositorio", StringComparison.Ordinal),
+            "CS0246 ensina a copiar o using do namespace local (saiu: '" + hint.Replace("\n", " | ") + "')");
+        string h2 = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
+            "using Reembolsos.Domain;\npublic class ReembolsoRepository { }\n",
+            "ERRO: /tmp/ws/Reembolsos.Repository.cs(13,34): error CS0426: The type name 'Domain' does not exist in the type 'Reembolso'");
+        TestContext.Check(h2.Contains("IEnumerable<Reembolso>", StringComparison.Ordinal)
+                       && !h2.Contains("Reembolso.Domain.Reembolso>", StringComparison.Ordinal),
+            "CS0426 ensina a usar o tipo direto apos o using, sem prefixar com o tipo");
+        return Task.CompletedTask;
+    }
+
     /// <summary>
     /// Salvage determinístico do CS1513 = FALLBACK, só depois de 2 entregas da MESMA
     /// dica (o modelo fraco ignora a instrução: 2026-10-30, Q4 Base gastou 26 turnos

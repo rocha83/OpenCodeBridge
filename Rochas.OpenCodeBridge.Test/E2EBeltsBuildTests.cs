@@ -33,7 +33,21 @@ internal static class E2EBeltsBuildTests
         {
             try
             {
-                return await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", body);
+                var r = await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", body);
+                // Parada precoce do 12B: resposta sem tool call e sem BUILD-OK
+                // final. Reenvio IDENTICO (sem nudge, sem prompt novo) — o
+                // cliente nao cutuca o tunel, apenas reapresenta o mesmo turno.
+                var msg = r["choices"]?[0]?["message"]?.AsObject();
+                bool noCall = msg?["tool_calls"] is not JsonArray calls || calls.Count == 0;
+                string txt = msg?["content"]?.GetValue<string>() ?? "";
+                if (noCall && attempt < maxAttempts && txt.Length < 2000
+                    && !txt.Contains("BUILD-OK", StringComparison.OrdinalIgnoreCase))
+                {
+                    Log($"  [belt-build:{key}] turno {turn}: sem tool call ({txt.Length} chars) — retry identico {attempt}/{maxAttempts}");
+                    await Task.Delay(400);
+                    continue;
+                }
+                return r;
             }
             catch (Exception ex) when (attempt < maxAttempts && IsUpstreamFormatFailure(ex))
             {
@@ -204,7 +218,9 @@ Use caminhos relativos a raiz do workspace." },
                     new JsonObject { ["role"]="user", ["content"]=
                         "Use SEMPRE a tool `write` para CRIAR cada arquivo: codigo so' no arquivo, nunca na resposta de texto. " +
                         "A PRIMEIRA acao do turno 0 DEVE ser uma tool call `write` criando o `.csproj` na raiz do workspace: " +
-                        "sem texto, plano ou narrativa antes dessa call.\n\n"
+                        "sem texto, plano ou narrativa antes dessa call. " +
+                        "DEPOIS de cada gravacao, EMITA A PROXIMA tool call sem parar para explicar: " +
+                        "nao encerre com texto enquanto faltar artefato ou o build nao estiver verde.\n\n"
                         + prompt.Replace("{ws}", ws) });
                 if (ownStep) await TestContext.PublishEnunciado(step, prompt.Replace("{ws}", ws));
                 int filesCreated = 0;
