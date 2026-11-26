@@ -5789,11 +5789,13 @@ prompt do Scripter volta a nomear `.sh`/`.md`. Testes de unidadePinados com a
 verdade da fonte única (`U-tails-sem-tabela-cs`, `U-belt-scripter-prompt`,
 `U-tool-help`) passam.
 
-A bridge foi reiniciada com `--temperature 0.9` e o llama `:4120` com os args da
-bateria anterior (`--repeat-penalty 1.10 --repeat-last-n 4096 --dry-multiplier 0
---dry-penalty-last-n 0 --presence-penalty 0.05`), thinking off, ctx 131072. WAR
-com fail-fast parou em STALE por rebuild durante o run; os passos
-`tools-full`/`mission-tools`/belts estão sendo medidos um a um.
+A bridge foi reiniciada com `--temperature 0.9` e o llama da porta **produtiva
+`:4100`** com os args da bateria anterior (`--jinja` vazio, template de julho/2026
+embutido no GGUF, `--repeat-penalty 1.10 --repeat-last-n 4096 --dry-multiplier 0
+--dry-penalty-last-n 0 --presence-penalty 0.05`), thinking off, ctx 131072. As
+instâncias `:4120`/`:4125` eram específicas do túnel Python e foram aposentadas.
+WAR com fail-fast parou em STALE por rebuild durante o run; os passos
+`tools-full`/`mission-tools`/belts estão sendo medidos na trilha focada L1/L2.
 
 <!-- INVARIANTE-TUNEL-LLAMA:v1 -->
 ## Invariante — túnel de stream do llama é exclusivo da bridge/core

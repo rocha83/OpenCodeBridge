@@ -51,6 +51,18 @@ public static class RetryNudge
     }
 
     /// <summary>
+    /// Erro 500 do parser peg-gemma4 do llama: a saída do modelo não casou com o
+    /// template de tool call. Reaproveita o mesmo preparo de retry com nudge de
+    /// <see cref="WithAbortNudge"/>, sem criar nova mecânica no consumidor.
+    /// </summary>
+    /// <param name="body">Corpo da resposta de erro do upstream.</param>
+    /// <returns>True quando o retry com nudge pode contornar a falha de formato.</returns>
+    public static bool IsPegFormatFailure(string? body) =>
+        !string.IsNullOrEmpty(body) &&
+        (body.Contains("peg-gemma4", StringComparison.OrdinalIgnoreCase)
+         || body.Contains("does not match the expected", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
     /// A mensagem MAIS RECENTE é um nudge de retry/reconsideração? A temperatura
     /// efetiva sobe para a do role de desvio só nesse turno (ver
     /// <see cref="Sampling.ForRetry"/>). É deliberadamente a última mensagem e

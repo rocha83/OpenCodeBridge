@@ -4395,7 +4395,41 @@ var shape = new StringBuilder();
     {
         try
         {
-            return RecoverOverflow(ctx, Http.Send(forward, option), body, forward, option);
+            var first = RecoverOverflow(ctx, Http.Send(forward, option), body, forward, option);
+            // 500 do parser peg-gemma4: o modelo escreveu tool call fora do
+            // template de julho/2026. Mesma mecanica do retry por aborto — nudge
+            // + temperatura de desvio — so que a falha veio no CORPO da resposta.
+            if (!first.IsSuccessStatusCode && option == HttpCompletionOption.ResponseContentRead)
+            {
+                string err = "";
+                try { err = first.Content.ReadAsStringAsync().GetAwaiter().GetResult(); } catch { }
+                if (RetryNudge.IsPegFormatFailure(err))
+                {
+                    double current = Temperature;
+                    try { current = JsonNode.Parse(body)?["temperature"]?.GetValue<double>() ?? Temperature; } catch { }
+                    bool hasRole = !string.IsNullOrEmpty(requestedModel) && TryProfile(requestedModel, out _, out _);
+                    double detour = Sampling.DetourReference(hasRole, Profiles, AuxTemp);
+                    string? retryBody = RetryNudge.WithAbortNudge(body, current, detour);
+                    if (retryBody is not null)
+                    {
+                        first.Dispose();
+                        Metrics.CountUpstreamAbort(true);
+                        Log(new JsonObject
+                        {
+                            ["event"] = "upstream-format-retry", ["path"] = ctx.Request.Url?.AbsolutePath ?? "",
+                            ["error"] = Truncate(err, 300), ["temperature"] = Sampling.ForRetry(current, detour),
+                            ["nudged"] = true
+                        });
+                        var retry = new HttpRequestMessage(forward.Method, forward.RequestUri)
+                        {
+                            Content = new StringContent(retryBody, Encoding.UTF8, "application/json")
+                        };
+                        WithAuth(retry, ctx);
+                        return RecoverOverflow(ctx, Http.Send(retry, option), retryBody, retry, option);
+                    }
+                }
+            }
+            return first;
         }
         catch (Exception ex) when (RetryNudge.IsUpstreamAbort(ex))
         {

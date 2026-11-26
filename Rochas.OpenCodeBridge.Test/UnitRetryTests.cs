@@ -172,6 +172,11 @@ internal static class UnitRetryTests
         TestContext.Check(!global::Rochas.OpenCodeBridge.Core.RetryNudge.IsUpstreamAbort(
                 new HttpRequestException("Connection refused")),
             "recusa de conexao nao e' aborto de geracao");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.RetryNudge.IsPegFormatFailure(
+                "500 The model produced output that does not match the expected peg-gemma4 format"),
+            "500 do parser peg-gemma4 entra no mesmo retry com nudge");
+        TestContext.Check(!global::Rochas.OpenCodeBridge.Core.RetryNudge.IsPegFormatFailure("500 outro erro"),
+            "500 sem formato peg nao dispara retry de formato");
 
         var withHint = new JsonArray(
             new JsonObject { ["role"] = "user", ["content"] = "pedido" },

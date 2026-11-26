@@ -6,12 +6,13 @@
 
 | item | valor |
 |---|---|
-| único modelo | `Gemma4 12B IT Q4` (`gemma-4-12B-it-Q4_K_M.gguf`), llama em `127.0.0.1:4120`, ctx `131072`, 1 slot |
-| llama args (ON) | `--repeat-penalty 1.10 --repeat-last-n 4096 --dry-multiplier 0 --dry-penalty-last-n 0 --presence-penalty 0.05`, `--temp 0.9` |
+| único modelo | `Gemma4 12B IT Q4` (`gemma-4-12B-it-Q4_K_M.gguf`), llama em `127.0.0.1:4100`, ctx `131072`, 1 slot |
+| llama args (ON) | `--jinja` (template de julho/2026 embutido no GGUF, sem `--chat-template-file`), `--repeat-penalty 1.10 --repeat-last-n 4096 --dry-multiplier 0 --dry-penalty-last-n 0 --presence-penalty 0.05`, `--temp 0.9` |
 | bridge C# `:4124` | `--mode bridge --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-abort 1 --anti-repeat-retry 1 --breaker-soft 3 --breaker-hard 6 --coerce-text-tools 1 --coerce-narrated 1 --thinking off --temperature 0.9 --context-tokens 131072 --max-tokens 16384` |
-| upstream da bridge | `http://127.0.0.1:4120` (alias servido pelo llama: `Gemma4-E4B-GK-Q4`; id do cliente: `Gemma4-12B-IT-Q4`) |
-| opencode | um único provider `openai` em `http://127.0.0.1:4124/v1` com 7 ids (geral + 6 papéis), todos o mesmo 12B. E4B, E2B, CPU e os modelos online foram removidos |
-| WAR | `dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-all --war-upstream http://127.0.0.1:4120 --war-bridge http://127.0.0.1:4124` |
+| upstream da bridge | `http://127.0.0.1:4100` (porta produtiva; alias servido pelo llama: `Gemma4-E4B-GK-Q4`; id do cliente: `Gemma4-12B-IT-Q4`) |
+| opencode | um único provider `openai` em `http://127.0.0.1:4124/v1` com 7 ids (geral + 6 papéis), todos o mesmo 12B. E4B, E2B, CPU e os modelos online foram removidos. Temperaturas dos roles: `plan`/`orch`/`moe` 0.9, `build` 0.4, `scripter`/`exec` 0.1 (geral 0.9) |
+| modo da WAR | `bridge` (padrão; `--war-modes opencode` só se pedido explicitamente) |
+| WAR | `dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-all --war-upstream http://127.0.0.1:4100 --war-bridge http://127.0.0.1:4124` |
 
 O preflight da WAR exige coerção ON (`--coerce-text-tools 1 --coerce-narrated 1`),
 harness/tails ON e `context_tokens == n_ctx` do slot. O id `Gemma4-12B-IT-Q4`
