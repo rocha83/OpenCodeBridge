@@ -154,14 +154,26 @@ internal static class E2EBeltsBuildTests
             bool ownStep = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAR_STEP"))
                         && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAR_PANEL_STEP"));
             if (ownStep) await TestContext.PublishStep(step, "RUN", 0);
-            try
-            {
-                var history = new JsonArray(
-                    new JsonObject { ["role"]="system", ["content"]=$@"Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Trabalhe em {ws}.
-REGRAS OBRIGATORIAS (uma por linha):
-1. Entregue apenas artefatos de DADOS: dominio, repositorio e o .csproj. Nao crie Programa.cs, Main, console, demo, teste ou README.
-2. Comece pelo .csproj na raiz, com nome explicito. Copie ESTE arquivo INTEIRO, com TODAS as tags de abertura e fechamento identicas (nao troque </ItemGroup> por </PackageReference>):
-<Project Sdk=""Microsoft.NET.Sdk"">
+            string escopoRegra = key is "marrom" or "preta"
+                ? "Entregue TODOS os artefatos que o enunciado pede: dominio, SQL (.sql), repositorios/servicos, API e frontend/ML, com o .csproj. " +
+                  "NAO PARE apos o primeiro arquivo: continue emitindo tool calls `write` ate TODOS os artefatos estarem no workspace. " +
+                  "Nao escreva resumo de progresso, README, demo ou teste."
+                : "Entregue apenas artefatos de DADOS: dominio, repositorio e o .csproj. Nao crie Programa.cs, Main, console, demo, teste ou README.";
+            // Marrom/preta incluem API: o .csproj precisa ser Sdk.Web (com
+            // FrameworkReference implicito), senao CS0234 Microsoft.AspNetCore.
+            string csprojRegra = key is "marrom" or "preta"
+                ? @"<Project Sdk=""Microsoft.NET.Sdk.Web"">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include=""Dapper"" Version=""2.1.89"" />
+    <PackageReference Include=""Microsoft.Data.Sqlite"" Version=""10.0.12"" />
+  </ItemGroup>
+</Project>."
+                : @"<Project Sdk=""Microsoft.NET.Sdk"">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -172,7 +184,15 @@ REGRAS OBRIGATORIAS (uma por linha):
     <PackageReference Include=""Dapper"" Version=""2.1.89"" />
     <PackageReference Include=""Microsoft.Data.Sqlite"" Version=""10.0.12"" />
   </ItemGroup>
-</Project>.
+</Project>.";
+            try
+            {
+                var history = new JsonArray(
+                    new JsonObject { ["role"]="system", ["content"]=$@"Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Trabalhe em {ws}.
+REGRAS OBRIGATORIAS (uma por linha):
+1. {escopoRegra}
+2. Comece pelo .csproj na raiz, com nome explicito. Copie ESTE arquivo INTEIRO, com TODAS as tags de abertura e fechamento identicas (nao troque </ItemGroup> por </PackageReference>):
+{csprojRegra}
 3. O .csproj leva PackageReference Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12.
 4. Cada .cs tem apenas codigo: uma declaracao de namespace de escopo de arquivo, um tipo principal, sem crase e sem markdown.
 5. Arquivo que usa IDbConnection/QueryAsync/ExecuteAsync: using System.Data; using Dapper; using Microsoft.Data.Sqlite; no topo.
@@ -182,7 +202,9 @@ REGRAS OBRIGATORIAS (uma por linha):
 9. Dapper: use apenas connection.Query<T>(sql, new {{ }}) e connection.Execute(sql, new {{ }}); nao use AddDynamicParameters, DbContext nem APIs de EF.
 Use caminhos relativos a raiz do workspace." },
                     new JsonObject { ["role"]="user", ["content"]=
-                        "Use SEMPRE a tool `write` para CRIAR cada arquivo: codigo so' no arquivo, nunca na resposta de texto.\n\n"
+                        "Use SEMPRE a tool `write` para CRIAR cada arquivo: codigo so' no arquivo, nunca na resposta de texto. " +
+                        "A PRIMEIRA acao do turno 0 DEVE ser uma tool call `write` criando o `.csproj` na raiz do workspace: " +
+                        "sem texto, plano ou narrativa antes dessa call.\n\n"
                         + prompt.Replace("{ws}", ws) });
                 if (ownStep) await TestContext.PublishEnunciado(step, prompt.Replace("{ws}", ws));
                 int filesCreated = 0;
