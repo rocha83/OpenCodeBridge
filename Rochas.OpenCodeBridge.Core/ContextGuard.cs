@@ -46,6 +46,18 @@ public static class ContextGuard
     public const double DefaultThreshold = 0.95;
 
     /// <summary>
+    /// Classifica a resposta de erro do upstream como "contexto cheio". Regra do
+    /// Core (llama: exceed_context_size / exceeds available context; outros:
+    /// maximum context) — consumidor nao repete o casamento de texto.
+    /// </summary>
+    /// <param name="body">Corpo da resposta de erro.</param>
+    /// <returns>True quando o erro pede compactacao de contexto.</returns>
+    public static bool IsOverflowError(string? body) =>
+        !string.IsNullOrEmpty(body) &&
+        (body.Contains("maximum context", StringComparison.OrdinalIgnoreCase)
+         || body.Contains("exceed", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
     /// Fator chars-&gt;tokens calibrado no proprio llama (<c>/tokenize</c>, 2026-10-31):
     /// prosa 3.83, C# 3.66, C# denso 3.22. O <c>chars/4</c> anterior (calibrado em
     /// prosa) subestimava ate' 1.24x em codigo: o estimado ficava abaixo do teto e a

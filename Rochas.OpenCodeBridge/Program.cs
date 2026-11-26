@@ -3014,9 +3014,37 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 Metrics.CountLoopBreakerVerdict(verdict.Verdict.ToString().ToLowerInvariant());
                 breakerState = verdict.Verdict.ToString().ToLowerInvariant();
                 if (verdict.Verdict == BreakerVerdict.Nudge)
-                    loopGuard.ApplyNudge(messages, verdict.Notice);
+                {
+                    // Direcionamento cirurgico do tunel Python (agora no Core):
+                    // oldString curto ou write sem extensao tem prioridade sobre
+                    // o aviso generico do breaker — um so texto canonico.
+                    string surgical = AntiRepeat ? ToolsAntiRepeat.FindDegenerateEdit(messages) : "";
+                    if (surgical.Length == 0 && AntiRepeat)
+                    {
+                        string extless = RepeatedWritePath.FindExtensionless(messages);
+                        if (extless.Length > 0) surgical = RepeatedWritePath.ExtensionlessText(extless);
+                    }
+                    loopGuard.ApplyNudge(messages, surgical.Length > 0 ? surgical : verdict.Notice);
+                }
                 else
                     breakerTrip = verdict.Notice;
+            }
+        }
+        // Mesmos direcionamentos quando o breaker nao disparou: o modelo ainda
+        // nao falhou N vezes, mas o padrao (path sem extensao / oldString curto)
+        // ja esta no historico. Reusa as regras do Core, sem texto novo aqui.
+        if (AntiRepeat && breakerState == "none")
+        {
+            string surgical = ToolsAntiRepeat.FindDegenerateEdit(messages);
+            if (surgical.Length == 0)
+            {
+                string extless = RepeatedWritePath.FindExtensionless(messages);
+                if (extless.Length > 0) surgical = RepeatedWritePath.ExtensionlessText(extless);
+            }
+            if (surgical.Length > 0)
+            {
+                new ToolsBreaker(0, 0).ApplyNudge(messages, surgical);
+                breakerState = "nudge";
             }
         }
         // Converte as tools Responses (formato "chato") -> formato chat
@@ -4119,37 +4147,33 @@ var shape = new StringBuilder();
                 try { cts.Cancel(); } catch { }
             }
 
-            // Salvage: entra toda call que tenha nome E args JSON parseavel. Args
-            // truncado (o abort corta no meio) NAO pode virar tool call: o cliente
-            // reenvia essa assistant e o llama responde 500 no parse, repetindo para
-            // sempre. Nesse caso o texto avisa e pede o reenvio correto.
-            var keep = new JsonArray();
-            var brokenArgs = new List<string>();
-            foreach (var kv in calls)
-            {
-                if (string.IsNullOrEmpty(kv.Value.Name)) continue;
-                string a = kv.Value.Args.ToString();
-                if (!ToolCallRepair.ArgsOk(a)) { brokenArgs.Add(kv.Value.Name); continue; }
-                keep.Add(new JsonObject
-                {
-                    ["id"] = string.IsNullOrEmpty(kv.Value.Id) ? "call_" + kv.Key : kv.Value.Id,
-                    ["type"] = "function",
-                    ["function"] = new JsonObject { ["name"] = kv.Value.Name, ["arguments"] = a }
-                });
-            }
-            string cbody = content.ToString();
-            if (brokenArgs.Count > 0)
-            {
-                cbody = (cbody.Length > 0 ? cbody + "\n\n" : "")
-                        + ToolCallRepair.Notice(brokenArgs);
-                Log(new JsonObject { ["event"] = "salvage-args-rejected", ["tools"] = string.Join(",", brokenArgs) });
-            }
+            // Salvage (Core): unica mecanica de recuperacao parcial. Args truncado
+            // NAO pode virar tool call: o cliente reenvia e o llama responde 500.
+            var plan = ToolCallRepair.Salvage(
+                calls.Select(kv => new ToolCallRepair.SalvageCall(
+                    string.IsNullOrEmpty(kv.Value.Id) ? "call_" + kv.Key : kv.Value.Id,
+                    kv.Value.Name,
+                    kv.Value.Args.ToString())),
+                content.ToString());
+            if (plan.Rejected.Count > 0)
+                Log(new JsonObject { ["event"] = "salvage-args-rejected", ["tools"] = string.Join(",", plan.Rejected) });
             // Sem nada recebido (stream vazio) e sem trip: cai no caminho normal.
             // Qualquer delta vira resposta — nunca re-gerar (dobraria o custo).
             if (!gotAnything) { resp.Dispose(); return false; }
 
-            var msg = new JsonObject { ["role"] = "assistant", ["content"] = cbody };
-            if (keep.Count > 0) msg["tool_calls"] = keep;
+            var msg = new JsonObject { ["role"] = "assistant", ["content"] = plan.Content };
+            if (plan.Kept.Count > 0)
+            {
+                var keep = new JsonArray();
+                foreach (var k in plan.Kept)
+                    keep.Add(new JsonObject
+                    {
+                        ["id"] = k.Id,
+                        ["type"] = "function",
+                        ["function"] = new JsonObject { ["name"] = k.Name, ["arguments"] = k.Args }
+                    });
+                msg["tool_calls"] = keep;
+            }
             var outObj = new JsonObject
             {
                 ["id"] = "chatcmpl-bridge-" + Guid.NewGuid().ToString("N")[..12],
@@ -4159,7 +4183,7 @@ var shape = new StringBuilder();
                 ["choices"] = new JsonArray(new JsonObject
                 {
                     ["index"] = 0,
-                    ["finish_reason"] = keep.Count > 0 ? "tool_calls" : "stop",
+                    ["finish_reason"] = plan.FinishReason,
                     ["message"] = msg
                 }),
                 ["usage"] = new JsonObject
@@ -4181,7 +4205,7 @@ var shape = new StringBuilder();
             // re-gerava o turno inteiro e degenerava de novo (medido). Ficamos
             // com o SALVAGE dos tool calls ja fechados + content acumulado.
             if (tripped)
-                Log(new JsonObject { ["event"] = "anti-repeat-salvage", ["where"] = "stream-abort", ["calls"] = keep.Count });
+                Log(new JsonObject { ["event"] = "anti-repeat-salvage", ["where"] = "stream-abort", ["calls"] = plan.Kept.Count });
 
             var payload = JsonNode.Parse(json)?.AsObject();
             if (payload is null) { resp.Dispose(); return false; }

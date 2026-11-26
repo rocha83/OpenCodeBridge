@@ -123,6 +123,16 @@ uma segunda versão da mesma responsabilidade.
 - **Exceção legítima:** lógica exclusiva do cenário de teste (gerar
   enunciado, preparar fixture, controlar serviço, checar saída) não é Core;
   ainda assim, não duplique uma responsabilidade que o Core já tem.
+- **Fonte única do loop agente (2026-11-26):** `Core/TurnLoopGuard` + `Core/LoopNudges`
+  (anti-giro, ping-pong, prosa, turno vazio e tools-coerce) e `Core/ThinkTags`,
+  `Core/SubagentScopeGate`, `Core/ContextGuard.IsOverflowError`. Controller Web e
+  bridge só chamam: não existe contador ou texto duplicado nos dois loops.
+- **Salvage único (2026-11-26):** `Core/ToolCallRepair.Salvage` atende abort de
+  stream e as duas fronteiras de execução (chat/Responses). Não reimplementar.
+- **Portes do túnel Python (2026-11-26):** `ToolsAntiRepeat.FindDegenerateEdit`
+  (oldString curto/ambíguo) e `RepeatedWritePath.FindExtensionless` (write sem
+  extensão) vivem no Core e são aplicados em `BuildChatRequest`, com prioridade
+  sobre o aviso genérico do breaker.
 
 ## Regra: identificadores em en-US, comentários e docs em pt-BR (primordial)
 

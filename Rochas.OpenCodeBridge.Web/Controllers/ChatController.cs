@@ -605,7 +605,7 @@ public sealed class ChatController(
         try
         {
             if (session?.Id is not int sid) return;
-            string text = StripThinkTags(content.ToString(), thinking).Trim();
+            string text = ThinkTags.Strip(content.ToString(), thinking).Trim();
             if (text.Length == 0 && thinking.Length == 0) return;
             long ms = sw.ElapsedMilliseconds;
             int msgId = await sessionService.AddMessageAsync(sid, "assistant", text + "\n\n[interrompido]", thinking.ToString(), null, null, ms, null);
@@ -949,18 +949,10 @@ public sealed class ChatController(
         // Fechamento silencioso: turno final vazio após tools ganha nota de conclusão.
         bool anyToolRan = false;
         bool anySubRan = false;
-        // Anti-giro: turnos só-leitura sem texto nem delegate disparam
-        // enunciado corretivo (máx 2); sem progresso, aborta honesto.
-        int idleTurns = 0, giroFixes = 0, repeatSig = 0;
-        string lastToolSig = "";
+        // Contencao do loop (Core): anti-giro, ping-pong e prosa num so guard.
+        var loopGuard = new TurnLoopGuard();
         bool giroAbort = false;
-        // Corta-espiral de prosa (loop boa-noite/encerrando): turnos curtos
-        // sem tools, ou texto igual 2x, encerram com nota honesta.
-        var chatter = new ChatterGuard();
         bool chatterAbort = false;
-        // Declarações seguidas DEPOIS de executar: teto curto (2). Antes de
-        // executar, texto sem tool é a própria resposta e encerra o turno.
-        int prosaTurns = 0;
         // Flag mestra na bridge (fonte unica): sem ela, tubo puro.
         bool harness = true;
         // Vínculo tool->bolha: ids de tools gravadas sem mensagem dona (turno sem
@@ -1102,7 +1094,7 @@ public sealed class ChatController(
                 // Contexto cheio: compacta e tenta o turno de novo (1 vez).
                 string errBody = "";
                 try { errBody = await res.Content.ReadAsStringAsync(ct); } catch { }
-                if (!compactRetried && (errBody.Contains("maximum context", StringComparison.OrdinalIgnoreCase) || errBody.Contains("exceed", StringComparison.OrdinalIgnoreCase))
+                if (!compactRetried && ContextGuard.IsOverflowError(errBody)
                     && session?.Id is int sidCtx)
                 {
                     compactRetried = true;
@@ -1250,14 +1242,11 @@ public sealed class ChatController(
                     && dsqNudges < 2 && assistantContent.Length > 0)
                 {
                     dsqNudges++;
-                    string prose = StripThinkTags(assistantContent.ToString(), assistantThinking);
+                    string prose = ThinkTags.Strip(assistantContent.ToString(), assistantThinking);
                     if (!string.IsNullOrWhiteSpace(prose))
                         messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = prose });
-                    messages.Add(new JsonObject { ["role"] = "user", ["content"] =
-                        $"[tools-coerce {dsqNudges}/2] Você respondeu em prosa sem chamar tools. " +
-                        "As tools estão no seu contexto (bloco # Tools). Para agir, emita a chamada " +
-                        "no formato exato, sem prosa junto. Para delegar uma fase: " +
-                        "<tool_call>{\"name\": \"subagent\", \"arguments\": {\"prompt\": \"enunciado da fase\"}}</tool_call>" });
+                    messages.Add(new JsonObject { ["role"] = "user",
+                        ["content"] = LoopNudges.ToolsCoerce(dsqNudges) });
                     assistantContent.Clear();
                     assistantThinking.Clear();
                     continue;
@@ -1276,28 +1265,21 @@ public sealed class ChatController(
             var seenCall = new HashSet<string>();
             toolCalls = toolCalls.Where(t => seenCall.Add(t.Name + ":" + t.Args)).ToList();
 
-            // Anti-giro: 3 turnos só-leitura sem texto nem delegate, ou a mesma
-            // chamada 3x seguidas. Corrige com enunciado (2x) ou aborta honesto.
-            // As leituras do turno são descartadas (nunca executaram).
+            // Anti-giro (Core): leitura sem producao ou turno repetido. Corrige
+            // 2x com enunciado canonico; sem progresso, aborta honesto.
             bool hasSubCall = toolCalls.Any(t => t.Name == "subagent");
             bool readOnlyCall = toolCalls.Count > 0 && toolCalls.All(t =>
                 t.Name is "read" or "grep" or "glob" or "fetch" or "git" or "shell");
-            string turnTxt0 = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
-            if (!hasSubCall && readOnlyCall && turnTxt0.Length == 0) idleTurns++; else idleTurns = 0;
+            string turnTxt0 = ThinkTags.Strip(assistantContent.ToString(), assistantThinking).Trim();
             string sig = string.Join(";", toolCalls.Select(t => ToolSig.Of(t.Name, t.Args)));
-            if (sig == lastToolSig) repeatSig++; else { repeatSig = 1; lastToolSig = sig; }
-            // Anti-giro inibivel (harness): sem ele, o loop segue puro.
-            if (harness && (idleTurns >= 3 || repeatSig >= 3))
+            var turnDecision = loopGuard.ObserveTurn(sig, !hasSubCall && readOnlyCall && turnTxt0.Length == 0);
+            if (harness && turnDecision.Verdict != TurnLoopVerdict.None)
             {
-                if (giroFixes < 2)
+                if (turnDecision.Verdict == TurnLoopVerdict.Nudge)
                 {
-                    giroFixes++;
-                    messages.Add(new JsonObject { ["role"] = "user",
-                        ["content"] = $"[Anti-giro {giroFixes}/2] Voce esta ha varios turnos so navegando (leitura) sem produzir texto nem delegar. PARE de chamar tools de leitura: resuma o que ja achou em 3 linhas e delegue a proxima fase via subagent tool." });
+                    messages.Add(new JsonObject { ["role"] = "user", ["content"] = turnDecision.Notice });
                     assistantContent.Clear();
                     assistantThinking.Clear();
-                    idleTurns = 0;
-                    repeatSig = 0;
                     continue;
                 }
                 giroAbort = true;
@@ -1307,7 +1289,7 @@ public sealed class ChatController(
             // Ao contexto volta texto + tool_calls + outputs truncados: o modelo
             // vê o resultado real da tool e não repete a mesma chamada às cegas.
             // O par assistant(tool_calls)/tool(tool_call_id) é exigido pela API.
-            string turnContent = StripThinkTags(assistantContent.ToString(), assistantThinking);
+            string turnContent = ThinkTags.Strip(assistantContent.ToString(), assistantThinking);
             if (!string.IsNullOrWhiteSpace(turnContent) || toolCalls.Count > 0)
             {
                 var assistantTurn = new JsonObject
@@ -1341,7 +1323,7 @@ public sealed class ChatController(
                 messages.Add(new JsonObject
                 {
                     ["role"] = "user",
-                    ["content"] = "[harness] responda em texto agora: o raciocínio não é exibido ao usuário.",
+                    ["content"] = LoopNudges.EmptyTurn,
                 });
                 assistantContent.Clear();
                 assistantThinking.Clear();
@@ -1353,7 +1335,7 @@ public sealed class ChatController(
             // sem esperar o fim do loop com as tools. Turno só-com-espaço e sem
             // thinking não grava (evita bolhas vazias no reload).
             // <think> vazado no content: move p/ thinking (não suja bolha/contexto).
-            string turnText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
+            string turnText = ThinkTags.Strip(assistantContent.ToString(), assistantThinking).Trim();
             int turnMsgId = 0;
             if (session?.Id is int sidTurn && (turnText.Length > 0 || assistantThinking.Length > 0))
             {
@@ -1373,12 +1355,12 @@ public sealed class ChatController(
             // repetir a mesma verificacao em cada uso.
             foreach ((string id, string name, string args) in toolCalls)
             {
-                // Tools salvage (Core): args truncado/não-JSON não chega ao executor —
-                // a call devolve o aviso canônico e o modelo refaz, em vez de virar erro
-                // de tool repetido. Mesmo critério da raia bridge (ToolCallRepair).
-                if (!ToolCallRepair.ArgsOk(args))
+                // Salvage (Core): mesma mecanica da raia bridge. Args quebrado
+                // nunca chega ao executor; devolve o aviso canonico e o modelo refaz.
+                var salvagePlan = ToolCallRepair.Salvage(id, name, args);
+                if (salvagePlan.Rejected.Count > 0)
                 {
-                    string salvage = ToolCallRepair.Notice([name]);
+                    string salvage = salvagePlan.Content;
                     if (session?.Id is int sidSalv)
                         await sessionService.LogToolAsync(sidSalv, agent.Name, name, args, false, salvage, 0);
                     await WriteProgressAsync(outputStream, "tool_done", name, false, ct, salvage, 0, "", args);
@@ -1395,9 +1377,9 @@ public sealed class ChatController(
                         await sessionService.LogToolAsync(sidEmpty, agent.Name, "subagent", args, false, "recusado: prompt vazio", 0);
                     // Fecha o tool_call_id mesmo na recusa: a API exige a resposta.
                     messages.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = id,
-                        ["content"] = "[subagent] recusado: prompt vazio. Reenvie a fase com objetivo, arquivos e o que fazer." });
+                        ["content"] = LoopNudges.SubagentEmptyPrompt });
                     messages.Add(new JsonObject { ["role"] = "user",
-                        ["content"] = "[subagent] recusado: prompt vazio. Reenvie a fase com objetivo, arquivos e o que fazer." });
+                        ["content"] = LoopNudges.SubagentEmptyPrompt });
                     continue;
                 }
                 await WriteProgressAsync(outputStream, "tool_start", name, null, ct, "", 0, "", args);
@@ -1520,13 +1502,13 @@ public sealed class ChatController(
             if (toolCalls.Count == 0)
             {
                 if (!anyToolRan) break;
-                prosaTurns++;
-                if (harness && (chatter.Note(turnText, 0) || prosaTurns >= 2))
+                if (harness && loopGuard.ObserveProse(turnText, anyToolRan).Verdict == TurnLoopVerdict.Trip)
                 {
                     chatterAbort = true;
                     break;
                 }
             }
+            else loopGuard.ResetProse();
 
             // Reseta para próxima iteração
             assistantContent.Clear();
@@ -1546,7 +1528,7 @@ public sealed class ChatController(
         if (giroAbort)
         {
             assistantContent.Clear();
-            assistantContent.Append("Interrompido por giro em leitura: o agente navegou sem produzir texto nem delegar após 2 correções automáticas.");
+            assistantContent.Append(LoopNudges.AntiGiroStop);
             assistantThinking.Clear();
         }
         if (chatterAbort)
@@ -1557,11 +1539,11 @@ public sealed class ChatController(
             assistantContent.Append(ChatterGuard.StopNoteFor(anyToolRan));
             assistantThinking.Clear();
         }
-        string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
+        string finalText = ThinkTags.Strip(assistantContent.ToString(), assistantThinking).Trim();
         // Se content vazio mas thinking tem resposta, usa thinking (limpando tags) como content.
         if (string.IsNullOrWhiteSpace(finalText) && assistantThinking.Length > 0)
         {
-            finalText = StripThinkTags(assistantThinking.ToString(), new System.Text.StringBuilder()).Trim();
+            finalText = ThinkTags.Strip(assistantThinking.ToString(), new System.Text.StringBuilder()).Trim();
             assistantThinking.Clear();
         }
         bool silentClose = false;
@@ -1672,17 +1654,11 @@ public sealed class ChatController(
         // Trava de call idêntica: mesma tool + mesmos args 3x seguidas =
         // controle ping-pong no input (máx 2), depois disjuntor encerra.
         // Sem nota na bolha: só o que foi realmente produzido aparece.
-        string lastToolSig = "";
-        int sameToolStreak = 0;
-        int toolFixes = 0;
         bool toolLoopAbort = false;
         // Flag mestra na bridge (fonte unica): sem ela, tubo puro.
         bool harness = true;
-        // Prosa DEPOIS de executar: teto curto (2) + corte por repetição. Antes
-        // de qualquer tool executar, texto sem call é a própria resposta e
-        // encerra o request (o reenvio do mesmo input só repetia saudação).
-        int prosaTurns = 0;
-        var chatter = new ChatterGuard();
+        // Contencao do loop (Core): mesma maquina do loop chat.
+        var loopGuard = new TurnLoopGuard();
         bool chatterAbort = false;
         // Turno só-raciocínio (sem content e sem tool): 1 cutucada por resposta,
         // paridade com o loop chat (sem isso o loop reenvia o mesmo input).
@@ -1746,8 +1722,7 @@ public sealed class ChatController(
                 string errBody = "";
                 try { errBody = await res.Content.ReadAsStringAsync(ct); } catch { }
                 if (!compactRetried && session is not null && session.Id.HasValue
-                    && (errBody.Contains("maximum context", StringComparison.OrdinalIgnoreCase)
-                        || errBody.Contains("exceed", StringComparison.OrdinalIgnoreCase)))
+                    && ContextGuard.IsOverflowError(errBody))
                 {
                     compactRetried = true;
                     int removed = 0;
@@ -1876,7 +1851,7 @@ public sealed class ChatController(
                 // nada e o loop repetiria o MESMO input até o teto. Paridade com o
                 // loop chat: cutuca uma vez pedindo texto.
                 if (harness && emptyNudges < 1
-                    && StripThinkTags(assistantContent.ToString(), assistantThinking).Trim().Length == 0)
+                    && ThinkTags.Strip(assistantContent.ToString(), assistantThinking).Trim().Length == 0)
                 {
                     emptyNudges++;
                     LoopTrace("empty-nudge", session?.Id, turn, "");
@@ -1886,14 +1861,13 @@ public sealed class ChatController(
                         ["content"] = new JsonArray(new JsonObject
                         {
                             ["type"] = "input_text",
-                            ["text"] = "[harness] responda em texto agora: o raciocínio não é exibido ao usuário.",
+                            ["text"] = LoopNudges.EmptyTurn,
                         }),
                     });
                     continue;
                 }
                 // Só conta prosa de verdade (turno vazio foi cutucado acima): o
                 // teto não pode comer a resposta que veio depois da cutucada.
-                prosaTurns++;
                 LoopTrace("turno-prosa", session?.Id, turn, "");
                 // AntiRepeat do lado do MODELO: repetição no acumulado = aviso
                 // de contenção no input + retry do turno (o veneno sai da bolha).
@@ -1942,16 +1916,16 @@ public sealed class ChatController(
                 // declaração segue no máximo 1 turno extra, e prosa curta repetida
                 // é cortada pelo ChatterGuard (nota honesta: houve execução).
                 if (!anyToolRan) break;
-                if (harness && (chatter.Note(turnText, 0) || prosaTurns >= 2))
+                if (harness && loopGuard.ObserveProse(turnText, anyToolRan).Verdict == TurnLoopVerdict.Trip)
                 {
                     chatterAbort = true;
-                    LoopTrace("prosa-abort", session?.Id, turn, $"prosaTurns={prosaTurns}");
+                    LoopTrace("prosa-abort", session?.Id, turn, "");
                     break;
                 }
                 continue;
             }
             // Tool executou: conversa saudável, zera o teto de prosa.
-            prosaTurns = 0;
+            loopGuard.ResetProse();
             // Executa cada call e devolve outputs no próximo turno (a API exige
             // function_call_output p/ toda call; sem isso o modelo trava).
             foreach (var call in accum.Calls)
@@ -1960,11 +1934,11 @@ public sealed class ChatController(
                 // possivelmente nulo. Afirma-se na fronteira do laco, uma vez, em vez
                 // de repetir a verificacao em cada uso.
                 string id = call.Id, name = call.Name, args = call.Args!;
-                // Tools salvage (Core): idem loop chat — o args que não fecha não
-                // executa; a call recebe o aviso canônico e o modelo refaz.
-                if (!ToolCallRepair.ArgsOk(args))
+                // Salvage (Core): idem loop chat — args que nao fecha nao executa.
+                var salvagePlan = ToolCallRepair.Salvage(id, name, args);
+                if (salvagePlan.Rejected.Count > 0)
                 {
-                    string salvage = ToolCallRepair.Notice([name]);
+                    string salvage = salvagePlan.Content;
                     if (session?.Id is int sidSalv2)
                         await sessionService.LogToolAsync(sidSalv2, agent.Name, name, args, false, salvage, 0);
                     await WriteProgressAsync(outputStream, "tool_done", name, false, ct, salvage, 0, "", args);
@@ -1977,21 +1951,17 @@ public sealed class ChatController(
                     LoopTrace("salvage-args", session?.Id, turn, name);
                     continue;
                 }
-                // Trava de call idêntica (ping-pong): 3x mesma tool+args
-                // seguidas = controle no input + retry do turno (a repetida
-                // não executa, sem nota na bolha). Após 2 controles, disjuntor.
-                string toolSig = name + "\n" + args;
-                if (toolSig == lastToolSig) sameToolStreak++;
-                else { lastToolSig = toolSig; sameToolStreak = 1; }
-                if (harness && sameToolStreak >= 3)
+                // Ping-pong (Core): mesma ferramenta+args repetida 3x. Corrige
+                // 2x no input (sem nota na bolha), depois disjuntor.
+                var callDecision = loopGuard.ObserveCall(name, args);
+                if (harness && callDecision.Verdict != TurnLoopVerdict.None)
                 {
                     if (session?.Id is int sidTrip)
                         await sessionService.LogToolAsync(sidTrip, agent.Name, name, args ?? "", false,
                             "contenção: mesma chamada 3x seguidas, não executada", 0);
-                    if (toolFixes < 2)
+                    if (callDecision.Verdict == TurnLoopVerdict.Nudge)
                     {
-                        toolFixes++;
-                        LoopTrace("anti-toolloop", session?.Id, turn, $"{name} fix={toolFixes}");
+                        LoopTrace("anti-toolloop", session?.Id, turn, $"{name} correcao");
                         assistantContent.Length = turnStartLen;
                         assistantThinking.Length = thinkStartLen;
                         turnTripped = true;
@@ -2000,7 +1970,7 @@ public sealed class ChatController(
                         {
                             ["type"] = "message", ["role"] = "user",
                             ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text",
-                                ["text"] = $"Aqui é a ponte de contenção OpenCodeBridge: você repetiu a mesma chamada da tool '{name}' 3 vezes seguidas com os mesmos argumentos ({CutForContext(args ?? "", 200)}). Não repita: varie os argumentos, use outra tool ou conclua a tarefa com o que você já tem. Responda com uma ação diferente." }),
+                                ["text"] = callDecision.Notice }),
                         });
                         break;
                     }
@@ -2017,7 +1987,7 @@ public sealed class ChatController(
                     {
                         ["type"] = "message", ["role"] = "user",
                         ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text",
-                            ["text"] = "[subagent] recusado: prompt vazio. Reenvie a fase com objetivo, arquivos e o que fazer." }),
+                            ["text"] = LoopNudges.SubagentEmptyPrompt }),
                     });
                     continue;
                 }
@@ -2132,7 +2102,7 @@ public sealed class ChatController(
                 // duplicadas no reload. Subagentes têm linhas próprias.
                 try
                 {
-                    string progText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
+                    string progText = ThinkTags.Strip(assistantContent.ToString(), assistantThinking).Trim();
                     if (session?.Id is int sidProg && (progText.Length > 0 || assistantThinking.Length > 0))
                     {
                         if (liveMsgId <= 0)
@@ -2165,7 +2135,7 @@ public sealed class ChatController(
             assistantContent.Append(ChatterGuard.StopNoteFor(anyToolRan));
             assistantThinking.Clear();
         }
-        string finalText = StripThinkTags(assistantContent.ToString(), assistantThinking).Trim();
+        string finalText = ThinkTags.Strip(assistantContent.ToString(), assistantThinking).Trim();
         // Retorno silencioso (inibivel): sem harness, sem nota — mostra o real.
         if (harness && finalText.Length == 0 && assistantThinking.Length == 0 && anyToolRan)
         {
@@ -2247,29 +2217,6 @@ public sealed class ChatController(
     {
         if (string.IsNullOrWhiteSpace(text) || elapsedMs <= 0) return null;
         return Math.Round((text.Trim().Length / 4.0) / (elapsedMs / 1000.0), 1);
-    }
-
-    // <think> vazado no content (modelo/hermes): extrai p/ thinking e limpa o texto.
-    // Idem <thinking> (padrão DeepSeek): vai para o dropdown Raciocínio.
-    private static string StripThinkTags(string content, System.Text.StringBuilder thinking)
-    {
-        if (string.IsNullOrEmpty(content)) return content;
-        string s = content;
-        if (s.Contains("<thinking>", StringComparison.Ordinal))
-        {
-            s = System.Text.RegularExpressions.Regex.Replace(s, "<thinking>([\\s\\S]*?)</thinking>",
-                m => { thinking.Append(m.Groups[1].Value); return ""; });
-            int oi = s.IndexOf("<thinking>", StringComparison.Ordinal);
-            if (oi >= 0) { thinking.Append(s[(oi + 10)..]); s = s[..oi]; }
-        }
-        if (s.Contains("<think>", StringComparison.Ordinal))
-        {
-            s = System.Text.RegularExpressions.Regex.Replace(s, "<think>([\\s\\S]*?)</think>",
-                m => { thinking.Append(m.Groups[1].Value); return ""; });
-            int oi = s.IndexOf("<think>", StringComparison.Ordinal);
-            if (oi >= 0) { thinking.Append(s[(oi + 7)..]); s = s[..oi]; }
-        }
-        return s.Replace("</think>", "", StringComparison.Ordinal);
     }
 
     // Evento de progresso ao cliente (a UI mostra "Executando [tool]..." / details com retorno).

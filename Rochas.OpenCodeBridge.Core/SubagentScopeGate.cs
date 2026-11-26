@@ -1,15 +1,21 @@
 using System.Text;
 
-namespace Rochas.OpenCodeBridge.Web.Services;
+namespace Rochas.OpenCodeBridge.Core;
 
-// Gate de escopo da tool "subagent": o chamador deve dividir o trabalho em
-// fases e delegar UMA fase por chamada. Repassar o enunciado integral (ou
-// quase) ao subagente faz o sub repetir a tarefa inteira — sempre reprovado.
-// Sem tocar prompts: é checagem mecânica sobre os argumentos da chamada.
+/// <summary>
+/// Gate de escopo da tool "subagent": o chamador deve dividir o trabalho em
+/// fases e delegar UMA fase por chamada. Repassar o enunciado integral (ou
+/// quase) ao subagente faz o sub repetir a tarefa inteira — sempre reprovado.
+/// Sem tocar prompts: é checagem mecânica sobre os argumentos da chamada.
+/// </summary>
+/// <remarks>Regra de politica de tool: mora no Core, consumidor so chama.</remarks>
 public static class SubagentScopeGate
 {
-    // Prompt é "o enunciado original" quando cobre >= 70% das palavras dele
-    // e tem tamanho >= 70% do original (fase de verdade é curta e específica).
+    /// <summary>Prompt é "o enunciado original" quando cobre >= 70% das palavras dele e tem tamanho >= 70% do original.</summary>
+    /// <param name="originalTask">Enunciado original do usuario.</param>
+    /// <param name="prompt">Prompt passado ao subagente.</param>
+    /// <param name="minCover">Cobertura minima de palavras (default 0.7).</param>
+    /// <returns>True quando a chamada repassa a tarefa inteira.</returns>
     public static bool IsFullTaskPass(string? originalTask, string? prompt, double minCover = 0.7)
     {
         if (string.IsNullOrWhiteSpace(originalTask) || string.IsNullOrWhiteSpace(prompt)) return false;
@@ -23,8 +29,9 @@ public static class SubagentScopeGate
         return cover >= minCover && len >= 0.7;
     }
 
-    // Corretivo devolvido ao modelo quando a chamada é recusada (chega como
-    // mensagem de contexto, não como system prompt).
+    /// <summary>Corretivo devolvido ao modelo quando a chamada é recusada (contexto, nunca system).</summary>
+    /// <param name="attempt">Numero da recusa (1 ou 2).</param>
+    /// <returns>Texto do aviso.</returns>
     public static string RejectMessage(int attempt) =>
         $"[subagente {attempt}/2] recusado: o prompt repassa o enunciado original inteiro. " +
         "Divida o trabalho em fases (plano em texto) e delegue APENAS a FASE 1, com o enunciado " +

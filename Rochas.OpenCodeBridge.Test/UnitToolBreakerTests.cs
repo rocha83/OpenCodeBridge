@@ -1272,6 +1272,49 @@ internal static class UnitToolBreakerTests
         return Task.CompletedTask;
     }
 
+    // ---- portes do tunel Python: regras vivem no Core, consumidor so chama ----
+
+    public static Task PythonPortsUseCoreRules()
+    {
+        var editHist = new JsonArray
+        {
+            new JsonObject { ["role"] = "assistant", ["content"] = "", ["tool_calls"] = new JsonArray(new JsonObject
+            {
+                ["id"] = "c1", ["type"] = "function",
+                ["function"] = new JsonObject { ["name"] = "edit",
+                    ["arguments"] = "{\"path\":\"Program.cs\",\"oldString\":\";\"}" }
+            }) },
+            new JsonObject { ["role"] = "tool", ["tool_call_id"] = "c1", ["content"] = "ERRO: Found 3 matches" }
+        };
+        string deg = global::Rochas.OpenCodeBridge.Core.ToolsAntiRepeat.FindDegenerateEdit(editHist);
+        TestContext.Check(deg.Contains("LINHA INTEIRA") && deg.Contains("';'"),
+            "oldString curto/ambiguo direciona para a linha inteira: " + deg);
+
+        var writeHist = new JsonArray
+        {
+            new JsonObject { ["role"] = "assistant", ["content"] = "", ["tool_calls"] = new JsonArray(new JsonObject
+            {
+                ["id"] = "c2", ["type"] = "function",
+                ["function"] = new JsonObject { ["name"] = "write",
+                    ["arguments"] = "{\"filePath\":\"Pasta/Pasta\",\"content\":\"x\"}" }
+            }) }
+        };
+        string path = global::Rochas.OpenCodeBridge.Core.RepeatedWritePath.FindExtensionless(writeHist);
+        TestContext.Check(path == "Pasta/Pasta", "write sem extensao detectado: " + path);
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.RepeatedWritePath.ExtensionlessText(path).Contains(".csproj"),
+            "aviso de extensao ensina a forma certa");
+
+        var plan = global::Rochas.OpenCodeBridge.Core.ToolCallRepair.Salvage(new[]
+        {
+            new global::Rochas.OpenCodeBridge.Core.ToolCallRepair.SalvageCall("a", "edit", "{\"x\":"),
+            new global::Rochas.OpenCodeBridge.Core.ToolCallRepair.SalvageCall("b", "read", "{}")
+        }, "txt");
+        TestContext.Check(plan.Kept.Count == 1 && plan.Rejected.Count == 1
+            && plan.FinishReason == "tool_calls" && plan.Content.Contains("BRIDGE"),
+            "salvage unico (Core): call valida mantida, quebrada vira aviso canonico");
+        return Task.CompletedTask;
+    }
+
     // ---- aviso da bridge: prefixo, tag e dedupe num lugar so' ----
 
     public static Task BridgeNoticeFormatIsSingleSource()

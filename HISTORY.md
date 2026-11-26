@@ -5744,6 +5744,25 @@ com o git log e `dotnet run` imprimindo `hello brazil`. Detalhe:
 `docs/DRIVER-FIXES.md` (2026-11-07).
 
 
+## Dedup de responsabilidades Web→Core e portes do túnel Python (2026-11-26)
+
+A Controller Web tinha anti-giro, ping-pong, prosa, textos de nudge e salvage
+duplicados entre os loops chat/Responses. Tudo passou para o Core:
+`TurnLoopGuard`/`LoopNudges`, `ThinkTags`, `SubagentScopeGate`,
+`ContextGuard.IsOverflowError` e `ToolCallRepair.Salvage` (uma mecânica para
+abort de stream e as duas fronteiras de execução). A cópia em
+`Web/Services/SubagentScopeGate.cs` foi removida.
+
+Os dois mecanismos que só existiam no túnel Python foram portados sem cópia:
+`ToolsAntiRepeat.FindDegenerateEdit` (oldString curto/ambíguo) e
+`RepeatedWritePath.FindExtensionless` (write sem extensão), aplicados em
+`BuildChatRequest` com prioridade sobre o aviso genérico do breaker.
+
+Verificação: 5 projetos em Release com 0 erros e 0 warnings;
+`U-python-ports-single-source` PASS (1/1). Pendência pré-existente (fora do
+escopo): `U-sem-tipos-duplicados` acusa `Verdict` duplicado em
+`Tools/ShellGate.cs` x `Services/CalibrationProbe.cs`.
+
 <!-- INVARIANTE-TUNEL-LLAMA:v1 -->
 ## Invariante — túnel de stream do llama é exclusivo da bridge/core
 

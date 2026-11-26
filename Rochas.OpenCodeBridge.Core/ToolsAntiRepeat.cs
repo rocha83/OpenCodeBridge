@@ -145,6 +145,51 @@ public abstract class ToolsAntiRepeat
         => !string.IsNullOrWhiteSpace(content) && FailureMarkers.IsMatch(content);
 
     /// <summary>
+    /// Direcionamento cirurgico quando `edit` falhou com oldString curto/ambiguo
+    /// (ex.: ';'): ensina a copiar a linha inteira, nunca o trecho curto.
+    /// </summary>
+    /// <param name="oldString">Trecho curto que o modelo insistiu em usar.</param>
+    /// <returns>Aviso canonico a injetar no contexto.</returns>
+    public static string DegenerateEditText(string oldString)
+    {
+        string shown = oldString.Trim();
+        if (shown.Length > 12) shown = shown[..12];
+        return "[anti-repeat] o edit falhou porque o oldString ('" + shown + "') casa em mais de um ponto. " +
+               "Copie do arquivo a LINHA INTEIRA com a indentacao (ou duas linhas) e edite so ela; " +
+               "nao repita esse trecho curto.";
+    }
+
+    /// <summary>
+    /// Localiza o ultimo `edit` que falhou por oldString curto/ambiguo no historico.
+    /// Reaproveita <see cref="LooksLikeFailure"/> e a leitura de resultados do breaker.
+    /// </summary>
+    /// <param name="messages">Mensagens no formato chat.</param>
+    /// <returns>Texto do aviso, ou vazio quando nao ha o padrao.</returns>
+    public static string FindDegenerateEdit(JsonArray? messages)
+    {
+        if (messages is null || messages.Count == 0) return "";
+        var calls = CollectCalls(messages);
+        var results = CollectResults(messages, calls);
+        for (int i = results.Count - 1; i >= 0; i--)
+        {
+            var r = results[i];
+            if ((r.Tool ?? "").Trim().ToLowerInvariant() is not ("edit" or "edit_file")) continue;
+            if (!Regex.IsMatch(r.Content ?? "", "(Found [0-9]+ matches|Could not find oldString)",
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) continue;
+            string olds;
+            try
+            {
+                var o = JsonNode.Parse(r.Arguments ?? "")?.AsObject();
+                olds = o?["oldString"]?.GetValue<string>() ?? o?["old_string"]?.GetValue<string>() ?? "";
+            }
+            catch { return ""; }   // args ilegivel: nao ha como direcionar
+            if (olds.Length == 0 || olds.Contains('\n') || olds.Trim().Length > 8) continue;
+            return DegenerateEditText(olds);
+        }
+        return "";
+    }
+
+    /// <summary>
     /// Assinatura de uma falha: o conteudo sem posicao (linha/coluna) e com espaco
     /// colapsado. Dois builds que devolvem o MESMO diagnostico em linhas diferentes
     /// sao a mesma falha (o modelo so' empurrou o codigo adiante) — e' o sinal do
@@ -462,10 +507,43 @@ public sealed class RepeatedWritePath : ToolsAntiRepeat
                                    StringComparer.Ordinal);
     }
 
-    /// <summary>Extrai `path` dos argumentos (JSON) sem lancar.</summary>
+    /// <summary>Primeiro `write` com path sem extensao de arquivo (ex.: Pasta/Pasta).</summary>
+    /// <param name="messages">Mensagens no formato chat.</param>
+    /// <returns>Path sem extensao, ou vazio quando nao ha.</returns>
+    public static string FindExtensionless(JsonNode? messages)
+    {
+        if (messages is not JsonArray arr) return "";
+        foreach (var m in arr)
+        {
+            if (m is not JsonObject mo || mo["tool_calls"] is not JsonArray calls) continue;
+            foreach (var c in calls)
+            {
+                if (c is not JsonObject co || co["function"] is not JsonObject fn) continue;
+                if ((fn["name"]?.GetValue<string>() ?? "").Trim().ToLowerInvariant() is not ("write" or "write_file")) continue;
+                string path = PathOf(fn["arguments"]?.GetValue<string>() ?? "").Trim();
+                if (path.Length == 0) continue;
+                string fileName = path.Split('/', '\\').Last();
+                if (fileName.Length > 0 && !fileName.Contains('.')) return path;
+            }
+        }
+        return "";
+    }
+
+    /// <summary>Aviso canonico para write sem extensao (o write 'sucesso' nao avanca).</summary>
+    /// <param name="path">Path sem extensao encontrado.</param>
+    /// <returns>Texto a injetar no contexto.</returns>
+    public static string ExtensionlessText(string path) =>
+        "[tool] o write foi para '" + path + "', que não tem extensão de arquivo. " +
+        "Arquivo de projeto ou de fonte precisa de extensão: <Nome>.csproj na raiz, <Nome>.cs, .json, .sql.";
+
+    /// <summary>Extrai `path`/`filePath` dos argumentos (JSON) sem lancar.</summary>
     static string PathOf(string args)
     {
-        try { return JsonNode.Parse(args)?["path"]?.GetValue<string>() ?? ""; }
+        try
+        {
+            var o = JsonNode.Parse(args)?.AsObject();
+            return o?["path"]?.GetValue<string>() ?? o?["filePath"]?.GetValue<string>() ?? "";
+        }
         catch { return ""; }
     }
 }

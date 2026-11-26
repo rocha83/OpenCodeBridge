@@ -222,6 +222,7 @@ internal static class Program
         TestContext.Run("U-flow-gate-no-request", UnitToolBreakerTests.FlowGateNoRequest);
         TestContext.Run("U-flow-gate-applies", UnitToolBreakerTests.FlowGateApplies);
         TestContext.Run("U-tools-antireply-helpers", UnitToolBreakerTests.ToolScopeUsesHelperSubclasses);
+        TestContext.Run("U-python-ports-single-source", UnitToolBreakerTests.PythonPortsUseCoreRules);
         TestContext.Run("U-toolargs-literal-newline", UnitToolBreakerTests.FixesLiteralNewlineEscape);
         TestContext.Run("U-tails-path-simulation-rules", UnitToolBreakerTests.ToolsTailCarriesPathAndSimulationRules);
         TestContext.Run("U-tails-sem-tabela-cs", UnitToolBreakerTests.ToolsTailHasNoCsErrorTable);

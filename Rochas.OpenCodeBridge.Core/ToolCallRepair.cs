@@ -119,4 +119,58 @@ public static class ToolCallRepair
         BridgeNotice.Append(history, Notice(tools));
         return dropped;
     }
+
+    /// <summary>Parte de uma tool call capturada no stream (antes do reparo).</summary>
+    /// <param name="Id">Id da call no protocolo.</param>
+    /// <param name="Name">Nome da tool.</param>
+    /// <param name="Args">Argumentos crus acumulados.</param>
+    public readonly record struct SalvageCall(string Id, string Name, string Args);
+
+    /// <summary>
+    /// Resultado do salvage: calls aproveitaveis, nomes recusados, texto final
+    /// (com o aviso quando houve args quebrado) e o finish_reason da resposta.
+    /// </summary>
+    /// <param name="Kept">Calls com nome e args JSON completos.</param>
+    /// <param name="Rejected">Nomes das calls com args invalidos/truncados.</param>
+    /// <param name="Content">Texto da assistant, com o aviso anexado quando necessario.</param>
+    /// <param name="FinishReason">"tool_calls" quando ha calls aproveitaveis; "stop" quando nao ha.</param>
+    public sealed record SalvagePlan(
+        IReadOnlyList<SalvageCall> Kept,
+        IReadOnlyList<string> Rejected,
+        string Content,
+        string FinishReason);
+
+    /// <summary>
+    /// Salvage de resposta parcial: entra toda call com nome e args JSON parseavel;
+    /// args truncado vira aviso canonico (nunca tool call — o cliente reenvia e o
+    /// llama responde 500 no parse). Unica mecanica para abort de stream e para o
+    /// limite de execucao dos loops (chat e Responses).
+    /// </summary>
+    /// <param name="calls">Calls capturadas (stream ou acumulador).</param>
+    /// <param name="content">Texto ja acumulado da assistant.</param>
+    /// <returns>Plano de resposta ja montado.</returns>
+    public static SalvagePlan Salvage(IEnumerable<SalvageCall> calls, string content)
+    {
+        var kept = new List<SalvageCall>();
+        var rejected = new List<string>();
+        foreach (var c in calls)
+        {
+            if (string.IsNullOrEmpty(c.Name)) continue;
+            if (!ArgsOk(c.Args)) { rejected.Add(c.Name); continue; }
+            kept.Add(c);
+        }
+        string body = content;
+        if (rejected.Count > 0)
+            body = (body.Length > 0 ? body + "\n\n" : "") + Notice(rejected);
+        return new SalvagePlan(kept, rejected, body, kept.Count > 0 ? "tool_calls" : "stop");
+    }
+
+    /// <summary>Salvage de uma unica call (fronteira de execucao dos loops).</summary>
+    /// <param name="id">Id da call.</param>
+    /// <param name="name">Nome da tool.</param>
+    /// <param name="args">Argumentos crus.</param>
+    /// <param name="content">Texto da assistant (vazio na fronteira de execucao).</param>
+    /// <returns>Plano com a call em <see cref="SalvagePlan.Kept"/> ou o aviso em <see cref="SalvagePlan.Content"/>.</returns>
+    public static SalvagePlan Salvage(string id, string name, string args, string content = "") =>
+        Salvage(new[] { new SalvageCall(id, name, args) }, content);
 }
