@@ -155,12 +155,24 @@ internal static class E2EBeltsBuildTests
                     new JsonObject { ["role"]="system", ["content"]=$@"Voce e arquiteto desenvolvedor senior (role build), dialogo em pt-br. Trabalhe em {ws}.
 REGRAS OBRIGATORIAS (uma por linha):
 1. Entregue apenas artefatos de DADOS: dominio, repositorio e o .csproj. Nao crie Programa.cs, Main, console, demo, teste ou README.
-2. Comece pelo .csproj na raiz, com nome explicito, TargetFramework net10.0 e OutputType Library.
+2. Comece pelo .csproj na raiz, com nome explicito. Copie ESTE arquivo INTEIRO, com TODAS as tags de abertura e fechamento identicas (nao troque </ItemGroup> por </PackageReference>):
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include=""Dapper"" Version=""2.1.89"" />
+    <PackageReference Include=""Microsoft.Data.Sqlite"" Version=""10.0.12"" />
+  </ItemGroup>
+</Project>.
 3. O .csproj leva PackageReference Dapper 2.1.89 e Microsoft.Data.Sqlite 10.0.12.
 4. Cada .cs tem apenas codigo: uma declaracao de namespace de escopo de arquivo, um tipo principal, sem crase e sem markdown.
 5. Arquivo que usa IDbConnection/QueryAsync/ExecuteAsync: using System.Data; using Dapper; using Microsoft.Data.Sqlite; no topo.
 6. Cada write tem no maximo 120 linhas; arquivo maior completa com edit.
-7. Rode dotnet build no .csproj e corrija o erro CSxxxx apontado ate rc=0.
+7. Rode dotnet build no .csproj e corrija o erro CSxxxx ou MSBxxxx apontado ate rc=0.
 8. So responda BUILD-OK depois de dotnet build rc=0; nunca com build quebrado.
 9. Dapper: use apenas connection.Query<T>(sql, new {{ }}) e connection.Execute(sql, new {{ }}); nao use AddDynamicParameters, DbContext nem APIs de EF.
 Use caminhos relativos a raiz do workspace." },
@@ -173,7 +185,11 @@ Use caminhos relativos a raiz do workspace." },
                 // Sem nudge no cliente (docs/TUNEL-LLAMA.md): turno sem tool call
                 // ou com args invalidos encerra a coleta e o aceite (conteudo +
                 // `dotnet build`) decide. Nada de meta de quantidade.
-                for (int turn = 0; turn < 14; turn++)
+                // Turnos de.tools extraidos em funcao local para o ciclo de repair
+                // de compilacao poder devolver o erro ao modelo sem duplicar codigo.
+                async Task RunTurns(int firstTurn, int lastTurn)
+                {
+                for (int turn = firstTurn; turn < lastTurn; turn++)
                 {
                     var r = await PostChat(key, turn,
                         new JsonObject { ["model"]=model, ["stream"]=false, ["max_tokens"]=24576, ["messages"]=history.DeepClone(), ["tools"]=tools.DeepClone() }, "write");
@@ -265,16 +281,22 @@ Use caminhos relativos a raiz do workspace." },
                     lastFiles = filesCreated;
                     if (stall >= 4) { Log($"  [belt-build:{key}] stall detectado (4 turnos sem progresso), encerrando"); break; }
                 }
+                }
+                await RunTurns(0, 14);
 
                 // Aceite por CONTEUDO + build. Quantidade de artefatos NAO e' assert:
                 // o que vale e' o codigo atender o enunciado e compilar. O projeto
                 // pode ter sido criado em subpasta: compila-se o `.csproj` que
                 // existir, onde ele estiver (sem obrigar layout).
                 var projects = System.IO.Directory.GetFiles(ws, "*.csproj", System.IO.SearchOption.AllDirectories);
-                int brc; string bout;
-                if (projects.Length == 0) { brc = 1; bout = "nenhum .csproj no workspace"; }
-                else
+                int brc = 1; string bout = "";
+                // Ciclo de repair: o erro do compilador volta para o modelo com a
+                // dica canonica do CsSyntaxRepair (ex.: CS0101 tipo duplicado) e
+                // ele tem 2 turnos extras para corrigir o trecho — sem nudge de
+                // cliente, apenas o erro real como novo enunciado.
+                for (int repair = 0; repair < 3; repair++)
                 {
+                    if (projects.Length == 0) { brc = 1; bout = "nenhum .csproj no workspace"; break; }
                     brc = 0; bout = "";
                     foreach (string pj in projects)
                     {
@@ -282,6 +304,17 @@ Use caminhos relativos a raiz do workspace." },
                             "build", System.IO.Path.GetFileName(pj), "--nologo", "-v:q");
                         if (rc != 0) { brc = rc; bout = pj + ": " + o; break; }
                     }
+                    if (brc == 0 || repair == 2) break;
+                    var src = new System.Text.StringBuilder();
+                    foreach (var f in System.IO.Directory.GetFiles(ws, "*.cs", System.IO.SearchOption.AllDirectories))
+                        src.AppendLine(System.IO.File.ReadAllText(f));
+                    string hint = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
+                        src.ToString(), bout, repair + 1);
+                    Log($"  [belt-build:{key}] build rc={brc} — repair {repair + 1}/2 com dica do compilador");
+                    history.Add(new JsonObject { ["role"] = "user", ["content"] =
+                        "dotnet build falhou: " + bout.Replace("\n", " | ") + "\n" + hint +
+                        "\nCorrija com UMA tool call edit/write no trecho exato; nao reescreva arquivos sem necessidade." });
+                    await RunTurns(20 + repair * 5, 25 + repair * 5);
                 }
                 bool buildOk = brc == 0;
                 bool contentOk = ContentMatchesEnunciado(key, ws);

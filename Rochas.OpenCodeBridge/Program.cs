@@ -3133,7 +3133,12 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // geracao passou de 4.246 tok e seguia aos 100s (o teto de 16k permitia
         // ~6 min por turno antes do retry degenerado entrar). 4k cobre qualquer
         // call (args < 2k) + prosa final e limita o pior caso a ~100s.
-        if (toolCount > 0 && ToolMaxTokens > 0 && (cap == 0 || cap > ToolMaxTokens)) cap = ToolMaxTokens;
+        // Teto por request com tools — usa o array CRU do cliente também: o
+        // sanitizador pode derrubar toolCount a zero e, sem isso, o turno fugia
+        // para 16.384 tokens / 20 min em loop de prosa (medido 2026-11-26).
+        bool rawHasTools = req["tools"] is JsonArray rawTools && rawTools.Count > 0;
+        if ((toolCount > 0 || rawHasTools) && ToolMaxTokens > 0
+            && (cap == 0 || cap > ToolMaxTokens)) cap = ToolMaxTokens;
         // tool_choice=required/function: o turno TEM que ser uma tool call. Prosa
         // longa nesse estado e' degenerada por definicao (medido: 4096 tok sem
         // call, ~100s). 768 cobre args de call normal e corta em ~18s.
@@ -4434,9 +4439,17 @@ var shape = new StringBuilder();
         string body, HttpCompletionOption option = HttpCompletionOption.ResponseContentRead,
         string? requestedModel = null)
     {
+        // Watchdog: turno com tools tem teto de 300 s; texto puro, 900 s. Sem
+        // isso um loop de prosa ficou 20 min com 21k tokens em voo, sem nenhum
+        // breaker disparar (breakers so veem turnos CONCLUIDOS). O timeout entra
+        // no mesmo retry de aborto, com nudge e temperatura de desvio.
+        bool watchdogTools = false;
+        try { watchdogTools = JsonNode.Parse(body)?["tools"] is JsonArray wta && wta.Count > 0; } catch { }
+        int watchdogSec = watchdogTools ? 300 : 900;
+        using var firstCts = new CancellationTokenSource(TimeSpan.FromSeconds(watchdogSec));
         try
         {
-            var first = RecoverOverflow(ctx, Http.Send(forward, option), body, forward, option);
+            var first = RecoverOverflow(ctx, Http.Send(forward, option, firstCts.Token), body, forward, option);
             // 500 do parser peg-gemma4: o modelo escreveu tool call fora do
             // template de julho/2026. Mesma mecanica do retry por aborto — nudge
             // + temperatura de desvio — so que a falha veio no CORPO da resposta.
@@ -4466,7 +4479,8 @@ var shape = new StringBuilder();
                             Content = new StringContent(retryBody, Encoding.UTF8, "application/json")
                         };
                         WithAuth(retry, ctx);
-                        return RecoverOverflow(ctx, Http.Send(retry, option), retryBody, retry, option);
+                        using var pegCts = new CancellationTokenSource(TimeSpan.FromSeconds(watchdogSec));
+                        return RecoverOverflow(ctx, Http.Send(retry, option, pegCts.Token), retryBody, retry, option);
                     }
                 }
             }
@@ -4489,7 +4503,8 @@ var shape = new StringBuilder();
                 ["path"] = ctx.Request.Url?.AbsolutePath ?? "",
                 ["error"] = Truncate(ex.Message, 300),
                 ["temperature"] = Sampling.ForRetry(current, detour),
-                ["nudged"] = retryBody is not null
+                ["nudged"] = retryBody is not null,
+                ["timeout"] = ex is TaskCanceledException || ex is OperationCanceledException
             });
             if (retryBody is null) throw new RetryNudge.UpstreamAbortException(ex.Message, ex);
             var retry = new HttpRequestMessage(forward.Method, forward.RequestUri)
@@ -4499,7 +4514,8 @@ var shape = new StringBuilder();
             WithAuth(retry, ctx);
             try
             {
-                return RecoverOverflow(ctx, Http.Send(retry, option), retryBody, retry, option);
+                using var abortCts = new CancellationTokenSource(TimeSpan.FromSeconds(watchdogSec));
+                return RecoverOverflow(ctx, Http.Send(retry, option, abortCts.Token), retryBody, retry, option);
             }
             catch (Exception ex2) when (RetryNudge.IsUpstreamAbort(ex2))
             {

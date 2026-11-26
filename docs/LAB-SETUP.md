@@ -654,7 +654,17 @@ vem de **enunciado e correção de compilação**, não de mais mexida no sampli
   `NETSDK`/`NU`) e a fonte das dicas em fluxo. Cada regra traz **exemplo
   otimista e compilável**, nunca o literal errado (o modelo copia o que vê).
   Complemento recente: `CS0117`, `CS0120`, `CS0121`, `CS0136`, `CS0191`,
-  `CS0841`, `CS8600/8602/8604/8625`, `CS1998`, `CS4014`, `CS8370`.
+  `CS0841`, `CS8600/8602/8604/8625`, `CS1998`, `CS4014`, `CS8370` e `MSB4025`
+  (tag de abertura/fechamento diferente no `.csproj`: medidos
+  `<ImplicitUsings>enable</ImplicitUsys>` e `</PackageReference>` no lugar de
+  `</ItemGroup>` nos belt-builds azul/verde). O enunciado do belt-build agora
+  traz o **`.csproj` inteiro** para cópia literal, e a dica do `MSB4025` mostra
+  o arquivo completo com os pares de tags corretos.
+- **Ciclo de repair no belt-build**: quando `dotnet build` falha, o erro real do
+  compilador volta ao modelo junto da dica canônica (`CsSyntaxRepair.Suggest`)
+  em até 2 turnos extras, com instrução de corrigir o trecho exato via
+  `edit`/`write` — sem nudge de cliente e sem reescrita gratuita. Medido no
+  `belts-verde`: `CS0101` (tipo duplicado) antes virava FAIL imediato.
 - Mudanças em system prompt só em cenários **abstratos** que afetem vários
   testes de uma vez; o preferencial é corrigir o **enunciado** do step.
 - **Cautela com breakers**: conter loop e prosa excessiva é desejável, mas um
@@ -662,6 +672,13 @@ vem de **enunciado e correção de compilação**, não de mais mexida no sampli
   `tool-error-breaker`, `anti-repeat-*`, `upstream_degenerate_retry` e
   `tool-error-escalation` na sonda (`--diagnostic 1`) e nos logs de cada step;
   prefira `nudge` e escalonamento de um turno a abortos permanentes.
+- **Teto e watchdog de request preso**: turnos com tools recebem
+  `max_tokens <= 4096` mesmo se o sanitizador zerar `toolCount` (o array cru do
+  cliente decide). Nenhum request fica mais em voo indefinidamente: 300 s para
+  tools e 900 s para texto disparam aborto com nudge e temperatura de desvio
+  (`upstream-abort-retry.timeout=true`). Sem isso um turno rodou 21k tokens /
+  ~16 min com GPU em 95% e nenhum breaker — breakers só enxergam turnos
+  concluídos.
 - **`ToolArgGuard` normalize escapes**: `JsonNode.ToJsonString()` escreve `<` como
   `\u003C`; sem normalizar, `<|tool_call|>` colado no fim de um `path` passava pelo
   guard e o `write` criava arquivo com nome podre (medido no belt-build azul:

@@ -219,6 +219,13 @@ public static class CsSyntaxRepair
             "`<Project Sdk=\"Microsoft.NET.Sdk\">` com P maiusculo e Sdk como atributo"),
         new("MSB4040", "csproj sem SDK",
             "`<Project Sdk=\"Microsoft.NET.Sdk\"> ... </Project>` (Sdk no Project, sem xmlns)"),
+        new("MSB4025", "tag XML do .csproj com abertura e fechamento diferentes",
+            "copie o arquivo inteiro com pares idênticos (fechar ItemGroup com </ItemGroup>, "
+            + "nao com </PackageReference>): "
+            + "`<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework>"
+            + "<ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><OutputType>Library</OutputType>"
+            + "</PropertyGroup><ItemGroup><PackageReference Include=\"Dapper\" Version=\"2.1.89\" />"
+            + "<PackageReference Include=\"Microsoft.Data.Sqlite\" Version=\"10.0.12\" /></ItemGroup></Project>`"),
         new("NETSDK1004", "faltam os ativos do restore",
             "`dotnet restore MeuProjeto.csproj && dotnet build MeuProjeto.csproj --no-restore`"),
         new("NU1101", "pacote nao encontrado no feed",

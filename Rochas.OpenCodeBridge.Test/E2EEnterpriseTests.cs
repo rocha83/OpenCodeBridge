@@ -236,7 +236,9 @@ internal static class E2EEnterpriseTests
             "a mensagem da vez) e registra throughput no log a cada minuto. " +
             "Comece com a declaracao `public sealed class OutboxWorker : BackgroundService` e o metodo " +
             "`protected override async Task ExecuteAsync(CancellationToken stoppingToken)`; " +
-            "o host controla o ciclo de vida. Depois do codigo, entregue o DDL da dead-letter. So codigo + 3 bullets.";
+            "o host controla o ciclo de vida. Depois do codigo, entregue o DDL da dead-letter. So codigo + 3 bullets. " +
+            "FORMATO (obrigatorio): comeco IMEDIATO com `using` ou `public sealed class OutboxWorker : BackgroundService`; " +
+            "sem cerca markdown, sem ```csharp, sem introducao e sem explicacao — codigo e DDL vao CRUS, nao cercados.";
         // Ciclo de vida do host: base BackgroundService + ExecuteAsync + token.
         // Forma certa primeiro no enunciado (a dica nunca mostra o literal errado).
         static bool Lifecycle(string t) => t.Contains("BackgroundService")

@@ -58,6 +58,9 @@ public static class RetryNudge
         for (Exception? e = ex; e is not null; e = e.InnerException)
         {
             if (e is System.Net.Http.HttpIOException) return true;
+            // Timeout do watchdog de request preso (CancellationTokenSource):
+            // trata como aborto para entrar no retry com nudge.
+            if (e is TaskCanceledException || e is OperationCanceledException) return true;
             string m = e.Message;
             if (m.Contains("ResponseEnded", StringComparison.Ordinal)
                 || m.Contains("response ended prematurely", StringComparison.OrdinalIgnoreCase))
