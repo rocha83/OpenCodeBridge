@@ -5763,6 +5763,38 @@ Verificação: 5 projetos em Release com 0 erros e 0 warnings;
 escopo): `U-sem-tipos-duplicados` acusa `Verdict` duplicado em
 `Tools/ShellGate.cs` x `Services/CalibrationProbe.cs`.
 
+## Só 12B na ponte: recursos C# ON + llama args ON (2026-11-26)
+
+O `opencode.json` foi reduzido a um provider (`openai` → bridge `:4124`) com o
+modelo `Gemma4-12B-IT-Q4` e seus 6 ids de papel (plan/build/orch/moe/scripter/exec),
+todos o mesmo GGUF. E4B, E2B, CPU e os modelos online foram removidos; os
+`agents/*.md` agora referenciam o novo id. A bridge C# sobe em `--mode bridge`
+com main harness, tails, anti-repeat/abort, breaker (3/6) e coerção ligados; o
+llama `:4120` roda com repeat/presence/dry penalties ligados.
+
+A WAR foi iniciada com `--war-all --war-upstream http://127.0.0.1:4120
+--war-bridge http://127.0.0.1:4124`. A primeira tentativa parou no preflight
+`bridge_coercao` (coerção OFF); a bridge foi reiniciada com coerção ON e a trilha
+foi relançada. Config e comando canônicos: `docs/LAB-SETUP.md` (snapshot 2026-11-26).
+
+## Hints de build migrados do túnel Python para o Core (2026-11-26)
+
+A tabela mestra de erro (66/71 = `MSB1011`) era lida no `hints.py` do túnel
+puro, mas a bridge C# só reconhecia códigos `CSxxxx`: `FirstCode` e
+`HasDiagnostic` ignoravam `MSB`, `NETSDK` e `NU`, então a dica nunca chegava ao
+modelo. `CsSyntaxRepair` agora tem a tabela completa (inclui `MSB1011`,
+`NETSDK1004`, `NU1101/1102/1202/1605/1301`) e lê qualquer código de diagnóstico.
+`HarnessTails` trocou o literal `<pasta>` por um exemplo copiável (`./src`), e o
+prompt do Scripter volta a nomear `.sh`/`.md`. Testes de unidadePinados com a
+verdade da fonte única (`U-tails-sem-tabela-cs`, `U-belt-scripter-prompt`,
+`U-tool-help`) passam.
+
+A bridge foi reiniciada com `--temperature 0.9` e o llama `:4120` com os args da
+bateria anterior (`--repeat-penalty 1.10 --repeat-last-n 4096 --dry-multiplier 0
+--dry-penalty-last-n 0 --presence-penalty 0.05`), thinking off, ctx 131072. WAR
+com fail-fast parou em STALE por rebuild durante o run; os passos
+`tools-full`/`mission-tools`/belts estão sendo medidos um a um.
+
 <!-- INVARIANTE-TUNEL-LLAMA:v1 -->
 ## Invariante — túnel de stream do llama é exclusivo da bridge/core
 

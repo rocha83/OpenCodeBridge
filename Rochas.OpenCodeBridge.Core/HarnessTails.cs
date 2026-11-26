@@ -181,10 +181,10 @@ public static class HarnessTails
     public const string BuilderScriptLine =
         "SCRIPT CONSTRUTOR (pedido de .sh que cria os artefatos): forma que roda em pasta VAZIA — " +
         "primeira linha `#!/usr/bin/env bash`, depois `set -e`; " +
-        "`mkdir -p <pasta>` (sempre -p); " +
-        "`cat > <pasta>/<projeto>.csproj <<'EOF' ... <Project Sdk='Microsoft.NET.Sdk'> ... EOF`; " +
-        "um heredoc por arquivo: `cat > <pasta>/<Arquivo>.cs <<'EOF' ... EOF`; " +
-        "fecha com `dotnet build <pasta>/<projeto>.csproj -c Release` (o .csproj vai como argumento posicional; `dotnet build` NAO aceita `--project`) e `exit 1` se falhar. " +
+        "`mkdir -p ./src` (sempre -p); " +
+        "`cat > ./src/App.csproj <<'EOF' ... <Project Sdk='Microsoft.NET.Sdk'> ... EOF`; " +
+        "um heredoc por arquivo: `cat > ./src/Program.cs <<'EOF' ... EOF`; " +
+        "fecha com `dotnet build ./src/App.csproj -c Release` (o .csproj vai como argumento posicional; `dotnet build` NAO aceita `--project`) e `exit 1` se falhar. " +
         "O artefato solto (.cs/.csproj/.sql) nao e' a entrega: a entrega e' o .sh que os cria.";
 
     /// <summary>

@@ -439,6 +439,12 @@ internal static class UnitToolBreakerTests
         // A fonte unica nao foi apagada: o reparo do retry continua gerando dica.
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Rules.Count > 0,
             "CsSyntaxRepair.Rules preservado (a tabela volta sem copia manual)");
+        foreach (string code in new[] { "MSB1011", "NETSDK1004", "NU1101", "NU1102", "NU1202", "NU1605" })
+        {
+            string dica = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
+                "class P { }", "error " + code + ": falha de build");
+            TestContext.Check(dica.Length > 0, "dica do tunel Python migrada para o Core: " + code);
+        }
         string hint = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
             "class P { void M() {", "error CS1513: } expected");
         TestContext.Check(hint.Length > 0, "reparo in-flow do retry continua ativo");

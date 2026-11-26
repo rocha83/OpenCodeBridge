@@ -52,7 +52,7 @@ public static class CsSyntaxRepair
     /// <returns>True quando existe um código CSxxxx na saída.</returns>
     public static bool HasDiagnostic(string output)
         => !string.IsNullOrEmpty(output)
-           && Regex.IsMatch(output, @"(?:error|warning) CS\d{4}");
+           && Regex.IsMatch(output, @"(?:error|warning)\s+(?:CS|MSB|NETSDK|NU)\d{4}");
 
     /// <summary>Linha da tabela de reparo C#: código, causa (pt-BR) e a forma CERTA.</summary>
     public sealed record Rule(string Code, string Cause, string CorrectForm);
@@ -165,6 +165,72 @@ public static class CsSyntaxRepair
             "`dotnet sln add`) e construa pela `.sln`; nunca rode `dotnet build` sem argumento"),
         new("NETSDK1045", "TargetFramework acima do SDK instalado",
             "use `net10.0` (SDK da maquina) no `.csproj`: <TargetFramework>net10.0</TargetFramework>"),
+        // Tabela do tunel Python (hints.py) migrada para a fonte unica do Core.
+        // Cada CERTO e' copiavel e compila; a dica nunca mostra o literal errado.
+        new("CS0080", "clausula where em tipo/metodo nao generico",
+            "`where T : ...` so vale em generico: `public sealed class Repositorio<T> where T : class { ... }` ou apague a clausula"),
+        new("MSB1001", "opcao invalida na linha de comando do dotnet",
+            "rode `dotnet build App.csproj -v q`; flags inventadas como `--no-warn` nao existem — use `<NoWarn>CS0168</NoWarn>` no `.csproj`"),
+        new("CS0305", "tipo generico usado sem argumento de tipo",
+            "declare `public sealed class Result<T> { ... }` e use `Result<Reembolso>`; se nao precisa de generico, use uma classe `Result` simples"),
+        new("CS0234", "namespace/assembly ausente",
+            "declare `namespace X;` uma vez no topo, use `using Cadastros.Dominio;` para types de outra camada e `<FrameworkReference Include=\"Microsoft.AspNetCore.App\" />` no `.csproj` quando for ASP.NET"),
+        new("CS0122", "membro inacessivel por nivel de protecao",
+            "use o membro publico: `public sealed class Cliente { public int Id { get; init; } }`"),
+        new("CS1674", "IEnumerable<T> nao e IDisposable",
+            "`var lista = await conn.QueryAsync<Reembolso>(sql); foreach (var r in lista) { ... }` — `using var` so para conexao/reader/transacao"),
+        new("CS1929", "tipo generico aplicado em metodo nao generico",
+            "so `conn.QueryAsync<Reembolso>(sql, p)` e generico; no SEU repositorio chame `await repositorio.QueryAsync(sql, p)` sem `<T>`"),
+        new("CS1501", "nenhuma sobrecarga aceita essa quantidade de argumentos",
+            "copie a assinatura: `Task<IEnumerable<Reembolso>> QueryAsync(string sql, object? p)` — a chamada passa exatamente `(string, object?)`"),
+        new("CS0411", "argumentos de tipo nao puderam ser inferidos",
+            "`await conn.QueryAsync<Reembolso>(sql, p);` com `Task<IEnumerable<T>> QueryAsync<T>(string sql, object? p)`; ao chamar o seu metodo, sem `<T>`"),
+        new("CS1013", "literal numerico invalido",
+            "o `_` so vai entre digitos: `100_000m` (nunca `100_m`)"),
+        new("CS8124", "tupla com 1 elemento",
+            "use `(int Id, decimal Valor)` com 2+ campos, ou apenas `decimal Valor` sem parenteses"),
+        new("CS0111", "membro duplicado na mesma classe",
+            "uma assinatura por metodo: mantenha `public Task<int> SalvarAsync(Fornecedor f) { ... }` e remova a repeticao"),
+        new("CS8863", "declaracao partial/reord conflitante",
+            "uma unica declaracao, sem `partial`: `public sealed record Fornecedor(int Id, string Nome);`"),
+        new("CS8955", "namespace normal e file-scoped no mesmo arquivo",
+            "escolha um: `namespace Cadastros;` no topo OU `namespace Cadastros { ... }`"),
+        new("CS4032", "await em Main sincrono",
+            "`static async Task Main(string[] args) { await ...; }`"),
+        new("CS4033", "await exige metodo async",
+            "`public async Task<bool> ExisteAsync(int id) { return await conn.ExecuteScalarAsync<int>(sql) > 0; }`"),
+        new("CS0542", "membro com o mesmo nome do tipo",
+            "renomeie um dos dois: `public sealed class Program { public static void Main() { ... } }`"),
+        new("CS5001", "sem ponto de entrada",
+            "uma das duas: `public static void Main()` na classe ou `<OutputType>Library</OutputType>` no `.csproj`"),
+        new("CS0201", "expressao sem efeito",
+            "atribua ou retorne: `var n = await conn.ExecuteScalarAsync<int>(sql);`"),
+        new("CS1529", "using depois de namespace/tipo",
+            "todos os `using` no topo do arquivo, antes do namespace e das classes"),
+        new("CS0579", "atributo/assembly duplicado",
+            "`rm -rf obj bin && dotnet build MeuProjeto.csproj`"),
+        new("CS0051", "acessibilidade inconsistente no parametro",
+            "o tipo do parametro e' tao publico quanto o metodo: `public interface IReembolsoRepository { }` + `public sealed class ReembolsoService(IReembolsoRepository repo) { ... }`"),
+        new("MSB1008", "dotnet build recebeu arquivo .cs",
+            "passe o projeto: `dotnet build MeuProjeto.csproj`"),
+        new("MSB1009", "projeto/arquivo inexistente",
+            "use o caminho real: `dotnet build ./MinhaPasta/MeuProjeto.csproj`"),
+        new("MSB4068", "elemento <project> minusculo/atributo errado",
+            "`<Project Sdk=\"Microsoft.NET.Sdk\">` com P maiusculo e Sdk como atributo"),
+        new("MSB4040", "csproj sem SDK",
+            "`<Project Sdk=\"Microsoft.NET.Sdk\"> ... </Project>` (Sdk no Project, sem xmlns)"),
+        new("NETSDK1004", "faltam os ativos do restore",
+            "`dotnet restore MeuProjeto.csproj && dotnet build MeuProjeto.csproj --no-restore`"),
+        new("NU1101", "pacote nao encontrado no feed",
+            "System.* do .NET nao sao pacotes; para ASP.NET use `<FrameworkReference Include=\"Microsoft.AspNetCore.App\" />` e para ORM `Microsoft.EntityFrameworkCore`"),
+        new("NU1102", "versao do pacote nao existe",
+            "Microsoft.AspNetCore.* NAO sao pacotes desde o .NET Core 3: use `<FrameworkReference Include=\"Microsoft.AspNetCore.App\" />`; para EF escolha a versao maior compativel com o TFM"),
+        new("NU1202", "pacote incompativel com o TargetFramework",
+            "EF Core 10 exige `net10.0`: ajuste `<TargetFramework>net10.0</TargetFramework>` ou use EF 8.x para net8.0"),
+        new("NU1605", "downgrade de pacote detectado",
+            "aline todas as referencias do ORM na mesma versao maior: net8.0 -> EF 8.x, net10.0 -> EF 10.x"),
+        new("NU1301", "feed NuGet indisponivel (transitorio)",
+            "repita `dotnet build MeuProjeto.csproj`; se persistir, e rede: `curl -I https://api.nuget.org/v3/index.json`"),
     };
 
     static string SuggestForCode(string source, string compilerError)
@@ -560,9 +626,10 @@ public static class CsSyntaxRepair
 
     static string FirstCode(string compilerError)
     {
-        var m = Regex.Match(compilerError, @"error (CS\d{4})");
-        if (m.Success) return m.Groups[1].Value;
-        m = Regex.Match(compilerError, @"warning (CS\d{4})");
+        // O Python do tunel puro lê QUALQUER código de diagnóstico do build
+        // (CS, MSB, NETSDK, NU). Limitava-se a CS e por isso MSB1011 — a causa
+        // de 66/71 falhas na tabela mestra — nunca chegava à dica in-flow.
+        var m = Regex.Match(compilerError, @"(?:error|warning)\s+((?:CS|MSB|NETSDK|NU)\d{4})");
         return m.Success ? m.Groups[1].Value : "";
     }
 }
