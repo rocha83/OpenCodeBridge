@@ -5877,6 +5877,20 @@ system prompt apenas em cenários abstratos de largo impacto) e a **tabela
 Documentação canônica em `docs/LAB-SETUP.md` ("Viés de trabalho"). A sequência
 L1 → L2 → L3 foi relançada com `WAR_SKIP_RESTART=1` (units mascaradas).
 
+### Unit de produção replicada e belts completos (2026-11-26)
+
+`llama-gpu.service` foi desmascarada, restaurada e **replicada com os args
+exatos** do llama usado na bateria: 12B IT Q4, `--jinja` (template julho/2026
+embutido), ctx 131072, `temp 0.9 / top_p 0.95 / top_k 64`, args
+repeat/dry/presence ligados. Unit `enabled`/`active` e `:4100` servindo o alias
+`Gemma4-E4B-GK-Q4`. Não existe braço OFF — a comparação pedida era só replicar
+a config na unit produtiva. `bridge-gpu.service` segue mascarada; a bridge é
+externa e a WAR usa `WAR_SKIP_RESTART=1`.
+
+Cobertura de belts no braço atual: **L2 6/6** (azul/verde build+orch),
+**L3 3/3** (mission-tools + roxa build/orch) e **L4 4/4** (marrom/preta
+build+orch), todos PASS, sem breakers/watchdog na rodada final.
+
 <!-- INVARIANTE-TUNEL-LLAMA:v1 -->
 ## Invariante — túnel de stream do llama é exclusivo da bridge/core
 
