@@ -17,7 +17,7 @@ internal static class E2EBeltsTests
         ("preta", "Especifique a arquitetura de ecossistema: dominio backend C# do Portal do Colaborador, banco de dados SQL, repositorios e servicos, API REST, servicos bus, pipeline de Big Data com ML (regressao, classificacao, rede neural perceptron). Escopo: dominio + banco SQL + repositorios e servicos + API + servicos bus + redes neurais. Premissas: backend .NET C#. Divida a implementacao em etapas, dialogo em pt-br."),
     };
 
-    const string OrchSystem = "Voce e o Orch (role orch, E4B). Segmenta o enunciado em tarefas menores e atomicas (max 5) e delegue cada tarefa pela tool `subagent` (argumento `prompt` com OBJETIVO+ESCOPO+PROIBIDO+ACEITE, `description` = titulo curto). Nao execute nada. Nao nomeie arquivo, path nem extensao: descreva o escopo por dominio tecnico e stack (linguagem, framework, banco, API).";
+    const string OrchSystem = "Voce e o Orch (role orch). Segmenta o enunciado em tarefas menores e atomicas (max 5) e delegue cada tarefa pela tool `subagent` com agent=\"build\" (argumento `prompt` com OBJETIVO+ESCOPO+PROIBIDO+ACEITE, `description` = titulo curto). Nao execute nada e NAO especifique artefato, script, formato, path ou extensao: descreva o escopo por dominio tecnico e stack (linguagem, framework, banco, API).";
 
     /// <summary>
     /// Enunciado do Orch (ponta da cadeia de belts): o requisito entra no
@@ -25,8 +25,8 @@ internal static class E2EBeltsTests
     /// enunciado proprio (E2EBeltsBuildTests) e NAO usa este template.
     /// </summary>
     static string OrchEnunciado(string escopo) =>
-        "Componha scripts shell .sh com shebang que construam usando internamente comandos para escrita dos arquivos que atendam o requisito do enunciado a seguir:  *** " + escopo +
-        " ***, segmente em tarefas menores e delegue CADA UMA pela tool subagent com agent=\"scripter\" (o modelo vem do agente; description=titulo de 3 palavras ASCII, prompt=micro-enunciado completo da subtarefa), para a criacao de um script bash .sh que implemente o escopo da subtarefa enunciada";
+        "Analise o requisito a seguir:  *** " + escopo +
+        " ***, segmente em tarefas menores e delegue CADA UMA pela tool subagent com agent=\"build\" (description=titulo de 3 palavras ASCII, prompt=micro-enunciado completo da subtarefa). Voce apenas fatia: nao especifique artefato, script, formato ou nome de arquivo.";
 
     /// <summary>System do role Orch igual ao opencode: corpo do agents/orch.md
     /// (sem frontmatter). Sem isso a bridge usa so o OrchSystem curto, o main
@@ -195,8 +195,8 @@ internal static class E2EBeltsTests
             if (baseModel.EndsWith(r)) { baseModel = baseModel[..^r.Length]; break; }
         if (baseModel.Length == 0) baseModel = "Gemma4-E4B-Q4";
         string orchModel = baseModel + "-orch";
-        string scripterModel = baseModel + "-scripter";
-        Log($"[belts:direct] mode={TestContext.Mode} Orch={orchModel} Scripter={scripterModel} (Exec fora deste teste)");
+        string buildModel = baseModel + "-build";
+        Log($"[belts:direct] mode={TestContext.Mode} Orch={orchModel} Build={buildModel} (Orch so delega subtarefas)");
         int pass = 0, fail = 0;
         var keysEnv = string.IsNullOrWhiteSpace(TestContext.BeltsFilter) ? Environment.GetEnvironmentVariable("BELTS_KEYS") : TestContext.BeltsFilter;
         var beltsToRun = string.IsNullOrWhiteSpace(keysEnv)
@@ -367,7 +367,6 @@ internal static class E2EBeltsTests
                 // todo .sh restante passou no gate acima; alem disso o script tem
                 // que CONSTRUIR os artefatos .NET do enunciado (heredoc + codigo).
                 bool shOk = false;
-                string shWhy = "nenhum .sh constroi artefato .NET";
                 foreach (var f in System.IO.Directory.GetFiles(ws, "*.sh", System.IO.SearchOption.AllDirectories))
                 {
                     string body = System.IO.File.ReadAllText(f);
@@ -376,13 +375,28 @@ internal static class E2EBeltsTests
                                       || body.Contains("namespace ", StringComparison.Ordinal)
                                       || body.Contains(".csproj", StringComparison.OrdinalIgnoreCase)
                                       || body.Contains("dotnet ", StringComparison.Ordinal);
-                    if (heredoc && dotnetContent) { shOk = true; shWhy = ""; break; }
+                    if (heredoc && dotnetContent) { shOk = true; break; }
                 }
+                // Orch agora delega ao Build, que implementa a subtarefa em C#
+                // direto. O aceite aceita QUALQUER dos dois formatos: o .sh
+                // canonico do Scripter (shebang + heredoc) OU o .cs do Build.
+                bool csOk = false;
+                string csWhy = "nenhum .cs implementa tipo C#";
+                foreach (var f in System.IO.Directory.GetFiles(ws, "*.cs", System.IO.SearchOption.AllDirectories))
+                {
+                    string body = System.IO.File.ReadAllText(f);
+                    if (body.Contains("class ", StringComparison.Ordinal)
+                        || body.Contains("record ", StringComparison.Ordinal)
+                        || body.Contains("interface ", StringComparison.Ordinal))
+                    { csOk = true; csWhy = ""; break; }
+                }
+                bool artifactOk = shOk || csOk;
+                string whyNet = shOk ? "" : csWhy;
                 Log($"  [belt:{key}] artefatos: integros={integrityOk} descartados={discarded} " +
-                    $"conteudoNet={(shOk ? "ok" : shWhy)}");
-                TestContext.Check(shOk,
-                    $"[{key}] .sh atende ao enunciado (shebang, bash -n, heredoc criando artefato .NET)");
-                SaveResult(key, "PASS", $"integros={integrityOk} descartados={discarded} conteudoNet={(shOk ? "ok" : "nao")}");
+                    $"conteudoNet={(artifactOk ? "ok" : whyNet)} formato={(csOk && !shOk ? "cs" : "sh")}");
+                TestContext.Check(artifactOk,
+                    $"[{key}] artefato atende ao enunciado (.sh heredoc do Scripter OU .cs do Build)");
+                SaveResult(key, "PASS", $"integros={integrityOk} descartados={discarded} conteudoNet={(artifactOk ? "ok" : "nao")}");
                 if (ownStep) await TestContext.PublishStep(step, "PASS", 0);
                 pass++;
             }

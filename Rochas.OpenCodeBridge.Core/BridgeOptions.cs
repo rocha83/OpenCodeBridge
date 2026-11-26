@@ -16,7 +16,7 @@ public sealed record BridgeOptions
     public string ApiKey { get; init; } = "";
 
     /// <summary>Temperatura padrão quando o corpo não informa.</summary>
-    public double Temperature { get; init; } = 0.1;
+    public double Temperature { get; init; } = 0.9;
 
     /// <summary>Teto de saída quando o corpo não informa (0 = não injeta).</summary>
     public int MaxTokens { get; init; } = 16384;

@@ -231,6 +231,40 @@ public static class CsSyntaxRepair
             "aline todas as referencias do ORM na mesma versao maior: net8.0 -> EF 8.x, net10.0 -> EF 10.x"),
         new("NU1301", "feed NuGet indisponivel (transitorio)",
             "repita `dotnet build MeuProjeto.csproj`; se persistir, e rede: `curl -I https://api.nuget.org/v3/index.json`"),
+        new("CS0117", "membro inexistente no tipo",
+            "chame um membro que o tipo possui: `var linhas = File.ReadAllLines(caminho);` "
+            + "e `int n = int.Parse(texto);` — confirme o nome antes de chamar"),
+        new("CS0120", "membro de instancia usado como estatico",
+            "crie a instancia e chame: `var svc = new PedidoService(); svc.Gravar(pedido);` "
+            + "ou declare `public static void Gravar(Pedido p)` quando nao ha estado de instancia"),
+        new("CS0121", "chamada ambigua entre overloads",
+            "dê o tipo exato ao argumento: `double valor = 1.5; Calcular(valor);` "
+            + "ou nomeie o parametro: `Calcular(valor: 1.5)`"),
+        new("CS0136", "nome redeclarado no mesmo escopo",
+            "use nomes distintos: `int total = 0; foreach (var item in itens) { int subtotal = item.Valor; total += subtotal; }`"),
+        new("CS0191", "campo somente-leitura atribuido fora do construtor",
+            "atribua no construtor: `public sealed class Ponto { public int X { get; } public Ponto(int x) { X = x; } }`"),
+        new("CS0841", "variavel lida antes da declaracao",
+            "declare antes do uso: `int total = 0; total += 1; Console.WriteLine(total);`"),
+        new("CS8600", "conversao possivelmente nula para tipo nao anulavel",
+            "aceite nulo explicitamente e verifique: `string? nome = ObterNome(); if (nome is not null) Console.WriteLine(nome);`"),
+        new("CS8602", "desreferencia possivelmente nula",
+            "proteja com checagem: `if (pedido is not null) Console.WriteLine(pedido.Id);` "
+            + "ou use o operador de propagacao: `var id = pedido?.Id;`"),
+        new("CS8604", "argumento possivelmente nulo em parametro nao anulavel",
+            "verifique antes de passar: `if (texto is not null) Processar(texto);` "
+            + "ou aceite `string? texto` no parametro"),
+        new("CS8625", "literal nulo em parametro nao anulavel",
+            "passe um valor concreto ou torne o parametro anulavel: `Processar(\"\");` "
+            + "ou `void Processar(string? texto)`"),
+        new("CS1998", "metodo async sem await",
+            "remova `async` e devolva `Task.FromResult(valor)`, ou aguarde uma operacao real: "
+            + "`public async Task<string> Buscar() => await http.GetStringAsync(url);`"),
+        new("CS4014", "chamada assincrona nao aguardada",
+            "use await: `await GravarAsync(pedido);` — ou atribua a tarefa: `Task t = GravarAsync(pedido);`"),
+        new("CS8370", "recurso de linguagem indisponivel no TargetFramework",
+            "declare no .csproj: `<PropertyGroup><LangVersion>latest</LangVersion></PropertyGroup>` "
+            + "ou use sintaxe equivalente mais antiga"),
     };
 
     static string SuggestForCode(string source, string compilerError)

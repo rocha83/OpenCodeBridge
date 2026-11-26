@@ -248,6 +248,7 @@ internal static class Program
         TestContext.Run("U-ctx-recover", UnitToolBreakerTests.ContextRecoveryPolicy);
         TestContext.Run("U-tails-present-tools", UnitRetryTests.TailsOnlyPresentTools);
         TestContext.Run("U-retry-temp-detour", UnitRetryTests.RetryTemperatureUsesDetourRole);
+        TestContext.Run("U-role-temps", UnitRetryTests.RoleTempsMatchTable);
         TestContext.Run("U-upstream-abort-nudge", UnitRetryTests.AbortNudgeRewritesTurn);
         TestContext.Run("U-upstream-abort-detect", UnitRetryTests.DetectsAbortAndRetryHint);
         TestContext.Run("U-role-permissions", UnitRetryTests.RolePermissionsInSystem);

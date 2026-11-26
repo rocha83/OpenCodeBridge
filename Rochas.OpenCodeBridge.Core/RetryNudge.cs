@@ -29,9 +29,26 @@ public static class RetryNudge
         "apenas o necessario para esta etapa, e escrita mais concisa. " +
         "Reemita UMA tool call com argumentos JSON completos.";
 
+    /// <summary>
+    /// Aviso do retry de FORMATO: a saida anterior nao casou com o template
+    /// nativo de tool call (500 peg-gemma4 do llama). Ensina a forma certa e o
+    /// fechamento do turno; o aviso de aborto nao descreve formato e o modelo
+    /// repete a mesma saida rejeitada.
+    /// </summary>
+    public const string PegFormat =
+        "O upstream rejeitou o turno: a saida anterior nao casou com o template nativo de tool call. " +
+        "Reemita UMA unica tool call no formato do template, sem JSON: " +
+        "<|tool_call>call:NOME{chave:<|\"|>valor<|\"|>,numero:3}<tool_call|>. " +
+        "Strings sempre entre <|\"|> e nomes de chave sem aspas. " +
+        "Encerre no <tool_call|>: nada de canal de pensamento, prosa ou segundo marcador depois.";
+
     /// <summary>Aviso no padrão único da bridge (escopo <c>retry</c>).</summary>
     /// <returns>Texto do aviso.</returns>
     public static string Notice() => BridgeNotice.Notice("retry", Abort);
+
+    /// <summary>Aviso de formato no padrão único da bridge (escopo <c>retry</c>).</summary>
+    /// <returns>Texto do aviso.</returns>
+    public static string PegNotice() => BridgeNotice.Notice("retry", PegFormat);
 
     /// <summary>A exceção é aborto do upstream (conexão encerrada no meio)?</summary>
     /// <param name="ex">Exceção capturada no envio ao upstream.</param>
@@ -91,7 +108,23 @@ public static class RetryNudge
     /// desvio da tabela.</param>
     /// <returns>Corpo do retry ou null quando não dá para orientar o modelo.</returns>
     public static string? WithAbortNudge(string body, double currentTemperature,
-        double detourReference = double.NaN)
+        double detourReference = double.NaN) =>
+        WithNudge(body, Notice(), currentTemperature, detourReference);
+
+    /// <summary>
+    /// Corpo do retry de FORMATO (500 peg-gemma4): mesma mecânica do aborto, com
+    /// o aviso que ensina o dialeto nativo do template.
+    /// </summary>
+    /// <param name="body">Corpo JSON já transformado para o upstream.</param>
+    /// <param name="currentTemperature">Temperatura efetiva do turno que falhou.</param>
+    /// <param name="detourReference">Temperatura de referência do desvio já resolvida.</param>
+    /// <returns>Corpo do retry ou null quando não dá para orientar o modelo.</returns>
+    public static string? WithPegNudge(string body, double currentTemperature,
+        double detourReference = double.NaN) =>
+        WithNudge(body, PegNotice(), currentTemperature, detourReference);
+
+    static string? WithNudge(string body, string notice, double currentTemperature,
+        double detourReference)
     {
         JsonObject? node;
         try { node = JsonNode.Parse(body)?.AsObject(); }
@@ -101,7 +134,7 @@ public static class RetryNudge
         bool attached = false;
         if (node["messages"] is JsonArray msgs)
         {
-            msgs.Add(new JsonObject { ["role"] = "user", ["content"] = Notice() });
+            msgs.Add(new JsonObject { ["role"] = "user", ["content"] = notice });
             attached = true;
         }
         else if (node["input"] is JsonArray input)
@@ -110,7 +143,7 @@ public static class RetryNudge
             {
                 ["type"] = "message",
                 ["role"] = "user",
-                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = Notice() })
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = notice })
             });
             attached = true;
         }

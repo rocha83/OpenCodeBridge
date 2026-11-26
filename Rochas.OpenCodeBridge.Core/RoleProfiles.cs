@@ -27,15 +27,15 @@ public static class RoleProfiles
     /// <summary>Tabela default imutável (fonte única dos valores por role).</summary>
     static readonly Dictionary<string, RoleProfile> Defaults = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["plan"] = new(0.2, "events"),
-        ["build"] = new(0.1, "off"),
-        ["orch"] = new(0.2, "events"),
-        ["moe"] = new(0.4, "events"),
-        ["scripter"] = new(0.1, "off"),
-        ["exec"] = new(0.1, "off"),
+        ["plan"] = new(0.9, "events"),
+        ["build"] = new(0.4, "off"),
+        ["orch"] = new(0.9, "events"),
+        ["moe"] = new(0.9, "events"),
+        ["scripter"] = new(0.4, "off"),
+        ["exec"] = new(0.4, "off"),
     };
 
-    /// <summary>Tabela default: plan 0.2/events, build 0.1/off, orch 0.2/events, moe 0.4/events, scripter 0.1/off, exec 0.1/off.</summary>
+    /// <summary>Tabela default: plan 0.9/events, build 0.4/off, orch 0.9/events, moe 0.9/events, scripter 0.4/off, exec 0.4/off. scripter/exec seguem a temperatura do build (roles de execucao); thinking para planejamento/delegacao, OFF no tool loop determinístico.</summary>
     /// <returns>Cópia mutável da tabela.</returns>
     public static Dictionary<string, RoleProfile> DefaultCopy() => new(Defaults, StringComparer.OrdinalIgnoreCase);
 

@@ -63,7 +63,8 @@ public static class HarnessTails
     /// vez de emitir a call — medido no E-tools-full de 2026-11-06.
     /// </summary>
     public const string NativeCallLine =
-        "SAIDA = function_call NATIVO: a chamada vai no campo de tool call da resposta, com os args do schema; NUNCA escreva a chamada como texto nem como JSON de `tool_name`/`args` (o cliente executa a call, nao le JSON do chat).";
+        "SAIDA = function_call NATIVO do template: a chamada vai no campo de tool call da resposta, com os args do schema; o texto do chat nao carrega a chamada. " +
+        "O turno forcado termina na call: nada de canal de pensamento, prosa ou segundo marcador depois do fechamento.";
 
     const string OneStepLine =
         "Um passo = uma acao; argumentos JSON completos; leia o resultado antes de repetir.";

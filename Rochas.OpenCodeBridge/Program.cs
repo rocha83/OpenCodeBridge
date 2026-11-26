@@ -53,7 +53,7 @@ internal static partial class Program
     static string Upstream = "http://127.0.0.1:4100";              // vLLM
     static string Model = "Gemma4-E4B-GK-Q4";                        // id servido pelo Llama
     static string Thinking = "events";                             // "events" = mostra | "off" = descarta
-    static double Temperature = 0.2;                                 // global (sem role): escala baixa 0.1 / media 0.2 / alta 0.4; tool calling continua deterministico via tool_choice
+    static double Temperature = 0.9;                                 // global (sem role): escala baixa 0.1 / media 0.4 / alta 0.9; tool calling continua deterministico via tool_choice
     static double AuxTemp = double.NaN;                            // temperatura AUXILIAR do turno de retry/reconsideracao (--aux-temp); NaN = usa a do role de desvio (plan)
     static int MaxTokens;                                          // teto de saida da linha GPU: 0 = SEM TETO (a infra/llama controla via -c/--n-predict e o cliente decide via max_tokens); >0 = clamp
     static int ToolMaxTokens = 4096;                               // teto de turno COM tools (0 = desliga): divagacao de 16k tok custa ~6 min; 4k corta em ~100s
@@ -438,7 +438,7 @@ internal static partial class Program
     // thinking ligado + temp media p/ planejar; build = thinking fundido +
     // temp media p/ executar; orch = coordena subagentes; moe = uso geral
     // hibrido; scripter = temp baixa (determinismo) e thinking off.
-    // Escala: 0.1 (baixa: build/scripter/exec) / 0.3 (média: plan/orch) / 0.5 (alta: moe).
+    // Escala: 0.1 (baixa: scripter/exec) / 0.4 (media: build) / 0.9 (alta: plan/orch/moe).
     // Request sem sufixo usa os
     // globais. O caminho Gemma 4 padrao (sem sufixo) fica byte-identico.
     // Dinamica dos roles (temp/thinking) mora no Core: RoleProfiles.
@@ -978,10 +978,9 @@ internal static partial class Program
 
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(30) };
 
-    /// <summary>Auth no upstream: repassa o Authorization do cliente ou usa a ApiKey configurada.</summary>
-    /// <param name="req">Request upstream.</param>
-    /// <param name="ctx">Contexto com os headers originais.</param>
     /// <summary>Prefixo de um texto para log (sem estourar a linha).</summary>
+    /// <param name="text">Texto de origem (null/vazio = vazio).</param>
+    /// <param name="limit">Teto de caracteres.</param>
     static string Head(string? text, int limit) =>
         string.IsNullOrEmpty(text) ? "" : text.Length <= limit ? text : text[..limit];
 
@@ -1142,6 +1141,9 @@ internal static partial class Program
         }
     }
 
+    /// <summary>Auth no upstream: repassa o Authorization do cliente ou usa a ApiKey configurada.</summary>
+    /// <param name="req">Request upstream.</param>
+    /// <param name="ctx">Contexto com os headers originais (null = sem repasse).</param>
     static void WithAuth(HttpRequestMessage req, HttpListenerContext? ctx)
     {
         // A ApiKey da bridge e a credencial do UPSTREAM (llama --api-key).
@@ -2467,6 +2469,9 @@ WriteJson(ctx, 200, new JsonObject
             // O template pode ligar thinking sozinho; vale p/ todo cliente sem flag propria.
             if (node is not null && node["chat_template_kwargs"] is null)
             {
+                // Perfil do role manda: plan/orch/moe = events, build/scripter/
+                // exec = off. O escalonamento de erro de tool (breaker) liga por
+                // um turno no caminho gerenciado; aqui o cliente traz o seu.
                 bool wantThinking = profThinkMid.Length > 0 ? profThinkMid == "events" : Thinking == "events";
                 node["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = wantThinking };
                 outBody = node.ToJsonString(SerOpts);
@@ -2887,6 +2892,7 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
     /// <param name="tempSource">"profile" | "request" | "global".</param>
     /// <param name="breakerTrip">Aviso quando o breaker encerrou o turno (null = segue).</param>
     /// <param name="breakerState">Estado do breaker: "none" | "nudge" | "trip".</param>
+    /// <param name="cap">Teto de saida aplicado ao upstream (0 = sem teto).</param>
     /// <returns>Body p/ /v1/chat/completions.</returns>
     static JsonObject BuildChatRequest(JsonObject req, out string requestedModel, out double temperature,
         out string thinking, out int toolCount, out string tempSource, out string? breakerTrip, out string breakerState,
@@ -2914,6 +2920,18 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // Mesma regra do /v1/chat, em if: o cliente manda; sem ele, o perfil do
         // role; sem perfil, o global 0.3. --profile-temp-wins inverte o 1o par.
         (temperature, tempSource) = Sampling.Temperature(reqTemp, hasProfile, profTemp, Temperature);
+
+        // Thinking por natureza do role: plan/orch/moe = events (prosa/delegacao,
+        // Google: reasoning melhora function calling); build/scripter/exec = off
+        // (tool loop deterministico). Cliente pode pedir explicitamente.
+        bool wantThinking = thinking == "events";
+        try
+        {
+            var kw0 = req["chat_template_kwargs"]?.AsObject();
+            if (kw0?["enable_thinking"] is JsonValue ev0 && ev0.TryGetValue<bool>(out bool b0)) wantThinking = b0;
+        }
+        catch { }
+        bool escalate = false;   // erro repetido de tool: sobe temp + liga think por 1 turno
 
         // Converte a conversa Responses -> messages do formato chat
         var messages = InputToMessages(req["input"], req["instructions"], hasProfile,
@@ -3025,10 +3043,28 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                         if (extless.Length > 0) surgical = RepeatedWritePath.ExtensionlessText(extless);
                     }
                     loopGuard.ApplyNudge(messages, surgical.Length > 0 ? surgical : verdict.Notice);
+                    escalate = true;
                 }
                 else
                     breakerTrip = verdict.Notice;
             }
+        }
+        if (escalate)
+        {
+            // Escalonamento unico do tool loop: mesma referencia de desvio do
+            // retry de aborto (Sampling.ForRetry), mais reasoning por UM turno
+            // e teto curto — medido no 12B: 16.384 tokens sem call em 675 s.
+            double refTemp = Sampling.DetourReference(hasProfile, Profiles, AuxTemp);
+            temperature = Sampling.ForRetry(temperature, refTemp);
+            wantThinking = true;
+            int escCap = DegenerateRetryMaxTokens > 0 ? DegenerateRetryMaxTokens : 512;
+            cap = cap > 0 ? Math.Min(cap, escCap) : escCap;
+            Log(new JsonObject
+            {
+                ["event"] = "tool-error-escalation", ["model"] = requestedModel,
+                ["temperature"] = temperature, ["thinking"] = "events", ["cap"] = cap,
+                ["verdict"] = breakerState
+            });
         }
         // Mesmos direcionamentos quando o breaker nao disparou: o modelo ainda
         // nao falhou N vezes, mas o padrao (path sem extensao / oldString curto)
@@ -3112,15 +3148,6 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // um teto baixo do cliente (ex.: 100) zerava o content. Truncamento
         // ficou proibido por design — quem decide e o EOS do modelo.
         int? outTokens = cap > 0 ? cap : null;
-        // Thinking do cliente (Web manda o do cadastro; opencode não manda):
-        // presente vence o default da linha; ausente segue o flag --thinking.
-        bool wantThinking = thinking == "events";
-        try
-        {
-            var kw = req["chat_template_kwargs"]?.AsObject();
-            if (kw?["enable_thinking"] is JsonValue ev && ev.TryGetValue<bool>(out bool b)) wantThinking = b;
-        }
-        catch { }
         var chat = new JsonObject
         {
             ["model"] = Model,
@@ -3148,6 +3175,16 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
                 chat["tool_choice"] = wantedChoice.DeepClone();
             else
                 chat["tool_choice"] = IsCoder ? "required" : "auto";
+            // Gemma + --jinja: "required" liga a gramatica interna do llama, que
+            // produz args com aspas JSON (`path:"Program.cs"`); o parser
+            // peg-gemma4 exige o dialeto do template (`path:<|"|>Program.cs<|"|>`)
+            // e devolve 500 seco, sem corpo. Medido 2026-11-26 no 12B Q4 com o
+            // prompt real do WAR: required = 3/3 500; auto = 1 call nativa valida,
+            // mesmo body. Gemma decide sozinho (bake-off 3/3); Coder continua
+            // required. Nao afeta cliente que pede tool_choice explicito diferente.
+            if (!IsCoder && chat["tool_choice"] is JsonValue tcv
+                && tcv.TryGetValue<string>(out string? tcName) && tcName == "required")
+                chat["tool_choice"] = "auto";
             // parallel_tool_calls nao e forcado: o cliente/servidor decide.
             // (removida a ordem fixa de "1 call por resposta".)
         }
@@ -3166,6 +3203,10 @@ var forward = new HttpRequestMessage(new HttpMethod(ctx.Request.HttpMethod), Ups
         // NAO usar CoerceFor(): coercao de texto ligada na GPU injetaria stop em
         // request com tools e truncaria a tool call (U-translate-without-stop).
         else if (CpuMaxTokens > 0) chat["stop"] = new JsonArray("[END_OF_TEXT]");
+        // Sem stop de canal: com tool_choice=auto o modelo usa o dialeto nativo
+        // (<|"|>) e o parser do template fecha a call sozinho. O stop
+        // "<|channel>" cortava a PRIMEIRA geracao quando ela comecava pelo canal
+        // de pensamento (turno virava vazio, medido no E-tools-full-update).
         // Pino de slot: id_slot fixo no upstream (um level por slot). Sem pino
         // (-1) o llama continua escolhendo o slot livre.
         SlotPin.Apply(chat, Slot);
@@ -4409,7 +4450,7 @@ var shape = new StringBuilder();
                     try { current = JsonNode.Parse(body)?["temperature"]?.GetValue<double>() ?? Temperature; } catch { }
                     bool hasRole = !string.IsNullOrEmpty(requestedModel) && TryProfile(requestedModel, out _, out _);
                     double detour = Sampling.DetourReference(hasRole, Profiles, AuxTemp);
-                    string? retryBody = RetryNudge.WithAbortNudge(body, current, detour);
+                    string? retryBody = RetryNudge.WithPegNudge(body, current, detour);
                     if (retryBody is not null)
                     {
                         first.Dispose();

@@ -22,10 +22,26 @@ internal static class E2EBeltsBuildTests
 
     static void Log(string msg) { Console.WriteLine(msg); Console.Out.Flush(); }
 
-    // Uma chamada, sem retry: 500 peg-gemma4 / 502 upstream_aborted sao resultado
-    // do turno e viram FAIL honesto (invariante docs/TUNEL-LLAMA.md).
-    static Task<JsonObject> PostChat(string key, int turn, JsonObject body, string toolName) =>
-        TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", body);
+    // Turno com retry em falha de FORMATO do upstream (500 peg-gemma4 / 502):
+    // a bridge ja reenvia com o nudge de formato; repetir aqui impede que o belt
+    // meca o parser do llama em vez do modelo. Esgotado o retry, o FAIL e'
+    // honesto com a causa — falha de formato nao vira "resultado" silencioso.
+    static async Task<JsonObject> PostChat(string key, int turn, JsonObject body, string toolName)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await TestContext.PostObj(TestContext.Bridge + "/v1/chat/completions", body);
+            }
+            catch (Exception ex) when (attempt < maxAttempts && IsUpstreamFormatFailure(ex))
+            {
+                Log($"  [belt:{key}] turno {turn}: {FirstLine(ex.Message)} (retry {attempt}/{maxAttempts})");
+                await Task.Delay(500);
+            }
+        }
+    }
 
     /// <summary>500 de parser (peg-gemma4) ou 502 de aborto do upstream.</summary>
     static bool IsUpstreamFormatFailure(Exception ex)

@@ -10,7 +10,7 @@
 | llama args (ON) | `--jinja` (template de julho/2026 embutido no GGUF, sem `--chat-template-file`), `--repeat-penalty 1.10 --repeat-last-n 4096 --dry-multiplier 0 --dry-penalty-last-n 0 --presence-penalty 0.05`, `--temp 0.9` |
 | bridge C# `:4124` | `--mode bridge --main-harness 1 --harness-tails 1 --tail-scope all --legacy-harness 0 --anti-repeat 1 --anti-repeat-abort 1 --anti-repeat-retry 1 --breaker-soft 3 --breaker-hard 6 --coerce-text-tools 1 --coerce-narrated 1 --thinking off --temperature 0.9 --context-tokens 131072 --max-tokens 16384` |
 | upstream da bridge | `http://127.0.0.1:4100` (porta produtiva; alias servido pelo llama: `Gemma4-E4B-GK-Q4`; id do cliente: `Gemma4-12B-IT-Q4`) |
-| opencode | um único provider `openai` em `http://127.0.0.1:4124/v1` com 7 ids (geral + 6 papéis), todos o mesmo 12B. E4B, E2B, CPU e os modelos online foram removidos. Temperaturas dos roles: `plan`/`orch`/`moe` 0.9, `build` 0.4, `scripter`/`exec` 0.1 (geral 0.9) |
+| opencode | um único provider `openai` em `http://127.0.0.1:4124/v1` com 7 ids (geral + 6 papéis), todos o mesmo 12B. E4B, E2B, CPU e os modelos online foram removidos. Temperaturas dos roles: `plan`/`orch`/`moe` 0.9, `build`/`scripter`/`exec` 0.4 (geral 0.9); thinking `events` só em planejamento/delegação, `off` no tool loop |
 | modo da WAR | `bridge` (padrão; `--war-modes opencode` só se pedido explicitamente) |
 | WAR | `dotnet run --project Rochas.OpenCodeBridge.Test -c Release -- --war-all --war-upstream http://127.0.0.1:4100 --war-bridge http://127.0.0.1:4124` |
 
@@ -570,6 +570,106 @@ o modelo devolve `tool_calls[glob].arguments` com **2.574** marcadores
 llama rejeita o JSON no turno seguinte (`parse error at column 53567`).
 `E-responses-tools` passa, mas com `tool chamada: False` (8192 tokens em 363,7 s).
 Não é VRAM/ctx (2×96k + 868 MiB livres): é o tool calling do modelo abliterated.
+
+---
+
+### Causa raiz do `500 peg-gemma4` no 12B IT Q4 com `--jinja` (2026-11-26)
+
+Sonda com o **body real do WAR** (system de ~20,8k chars, 9 tools) replayado
+direto no llama `:4100`; só `tool_choice` variado:
+
+| corpo | resultado |
+|---|---|
+| `tool_choice: "required"` | 500 — `common_chat_peg_parse: unparsed peg-gemma4 output: <\|tool_call>call:read{path:"Program.cs"}<\|tool_call\|>` |
+| `tool_choice: "auto"` | 200, `finish_reason=tool_calls`, 1 call nativa válida |
+| `required` + exemplo `<\|"\|>` na mensagem do usuário | 500, saída **idêntica** (nudge textual não muda o dialeto) |
+| `required` + exemplo no system | 200 sem calls (`finish=stop`) |
+
+Diagnóstico: `required` liga a gramática de ferramentas interna do llama, que
+emite args com aspas JSON (`path:"Program.cs"`). O parser `peg-gemma4` do template
+exige strings entre `<|"|>` (macro `format_argument`, linha 128 do jinja extraído
+do GGUF). É incompatibilidade entre gramática gerada e parser do mesmo template —
+não é dialeto do modelo, nem prompt, nem VRAM.
+
+Correção na bridge (`BuildChatRequest`): `required` é rebaixado para `auto`
+quando o modelo não é Coder. Gemma decide sozinho (bake-off 3/3) e emite o
+dialeto nativo; Coder continua `required`. **`--jinja` segue sempre ligado.**
+
+O `<|channel>thought` residual era efeito da mesma gramática. Um
+`stop: ["<|channel>"]` chegou a zerar turnos que começavam pelo canal de
+pensamento e foi removido. Evidência: `E-tools-full-update` saiu de **3/3 500**
+para **PASS (82,4 s, zero 500)**.
+
+O retry de formato (`RetryNudge.WithPegNudge`, aviso `PegFormat`) ensina
+`<|tool_call>call:NOME{chave:<|"|>valor<|"|>}<tool_call|>` e usa a referência de
+desvio de 0.9; `U-retry-temp-detour` cobre a subida de temperatura.
+
+### Pegadinha operacional: `bridge-gpu.service` na porta 4124
+
+O unit systemd (root, `0.0.0.0:4124`, `--main-harness 0`,
+`--passthrough-responses true`, `--temperature 0.2`) pode estar ativo e
+sobrescrever a bridge manual: o script `:4124` morre com *address in use* e o WAR
+passa a medir a config errada. Antes de cada rodada:
+
+```bash
+sudo ss -ltnp | grep :4124
+systemctl is-active bridge-gpu.service llama-gpu.service
+```
+
+Para a trilha manual: `systemctl stop`/`disable` em ambos; restaurar só no fim —
+e com a config nova, senão o bridge antigo volta a servir.
+
+### Temperaturas por role (geral 0.9, build/scripter/exec 0.4)
+
+`RoleProfiles.Defaults`, `BridgeOptions.Temperature`, o default global em
+`Program.cs` **e** `appsettings.json` (override real do deployment) estão
+alinhados. `U-role-temps` trava a tabela e prova que `-scripter`/`-exec` **seguem
+a temperatura do build (0,4)**; `/api/translate` confirma
+`temperature_source=profile` para cada sufixo (`plan .9/events | build .4/off |
+orch .9/events | moe .9/events | scripter .4/off | exec .4/off`). Tabelas mais
+antigas neste arquivo são snapshots históricos — esta é a config canônica.
+
+### Viés de trabalho (2026-11-26): harness comportamental + CS syntax repair
+
+Com ambiente e sampling já alinhados às recomendações Google (`temp 1.0 /
+top_p 0.95 / top_k 64` é o padrão do fabricante; `top_k` e ctx 131072 ajustados
+aqui, temperatura 0.9 permanece a especificação do operador), o próximo ganho
+vem de **enunciado e correção de compilação**, não de mais mexida no sampling:
+
+- **Orch apenas fatia.** O prompt canônico é `Prompts/orch.md` (copiado para o
+  bin) espelhado em `~/.config/opencode/agents/orch.md`: o Orch **não escreve
+  código, não cria artefato e não especifica script/ shebang**; ele segmenta o
+  enunciado e delega ao role **Build** (`agent="build"`), que implementa a
+  subtarefa direto. O Scripter segue sendo o role de composição shell/shebang,
+  fora da cadeia do Orch. `E2EBeltsTests.OrchEnunciado` e `OrchSystem` refletem
+  o mesmo contrato, e o **aceite do belt Orch passa a valer `.sh` (shebang +
+  heredoc do Scripter) OU `.cs` com tipo C# (Build direto)** — o enunciado manda,
+  não o formato do artefato.
+- **Escalonamento do breaker**: em `Nudge` (3 erros repetidos de tool), o bridge
+  sobe a temperatura com `Sampling.ForRetry`, liga `enable_thinking` por **um**
+  turno e reduz o teto a 512 tokens; evento `tool-error-escalation` no log.
+  Isso substitui a tentativa de "desligar thinking para sempre", que era
+  workaround incorreto.
+- **`CsSyntaxRepair` é a tabela única** de códigos de build (`CS`/`MSB`/
+  `NETSDK`/`NU`) e a fonte das dicas em fluxo. Cada regra traz **exemplo
+  otimista e compilável**, nunca o literal errado (o modelo copia o que vê).
+  Complemento recente: `CS0117`, `CS0120`, `CS0121`, `CS0136`, `CS0191`,
+  `CS0841`, `CS8600/8602/8604/8625`, `CS1998`, `CS4014`, `CS8370`.
+- Mudanças em system prompt só em cenários **abstratos** que afetem vários
+  testes de uma vez; o preferencial é corrigir o **enunciado** do step.
+- **Cautela com breakers**: conter loop e prosa excessiva é desejável, mas um
+  `trip` que interrompe o fluxo impede o modelo de concluir a subtarefa. Acompanhe
+  `tool-error-breaker`, `anti-repeat-*`, `upstream_degenerate_retry` e
+  `tool-error-escalation` na sonda (`--diagnostic 1`) e nos logs de cada step;
+  prefira `nudge` e escalonamento de um turno a abortos permanentes.
+- **`ToolArgGuard` normalize escapes**: `JsonNode.ToJsonString()` escreve `<` como
+  `\u003C`; sem normalizar, `<|tool_call|>` colado no fim de um `path` passava pelo
+  guard e o `write` criava arquivo com nome podre (medido no belt-build azul:
+  `Reembolsos.csproj`}<tool_call|>_thought...`, que alimentou 6 turnos de
+  `MSB1009`). `U-arg-guard` cobre a forma escapada.
+- **Fail-fast** no nível do run; retry fica limitado a 3 tentativas dentro do
+  step. Com units systemd mascaradas, use `WAR_SKIP_RESTART=1` na WAR para não
+  deixar o runner reiniciar a unit antiga.
 
 ---
 

@@ -180,6 +180,16 @@ internal static class TestContext
     /// <summary>Reinicia a bridge alvo antes de cada step E2E e espera o status.</summary>
     public static void RestartBridge()
     {
+        // Operador pode declarar a bridge como externa/gerenciada a mao (unit
+        // mascarada, config canonica subida por script). Restart por systemd
+        // traria a unit antiga e contaminaria a medicao — mesmo motivo da raia
+        // opencode pura.
+        if (Environment.GetEnvironmentVariable("WAR_SKIP_RESTART") == "1")
+        {
+            Console.WriteLine("  [restart] skip: bridge externa (WAR_SKIP_RESTART=1)");
+            ResetHttp();
+            return;
+        }
         // Raia opencode pura: a bridge e' tubo e quem define as flags e' o
         // operador. Restart pela unit traria main harness/tails de volta e
         // contaminaria a medicao do caminho livre.

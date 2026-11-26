@@ -293,4 +293,38 @@ internal static class UnitRetryTests
             "main harness nao duplica a cauda de tools (fonte unica)");
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// Trava a tabela de temperaturas pedida (plan/orch/moe 0.9, build 0.4,
+    /// scripter/exec 0.1) e prova que scripter/exec resolvem o PROPRIO perfil,
+    /// sem herdar a temperatura do build.
+    /// </summary>
+    public static Task RoleTempsMatchTable()
+    {
+        var p = global::Rochas.OpenCodeBridge.Core.RoleProfiles.DefaultCopy();
+        TestContext.Check(Math.Abs(p["plan"].Temperature - 0.9) < 0.0001, "plan 0.9");
+        TestContext.Check(Math.Abs(p["orch"].Temperature - 0.9) < 0.0001, "orch 0.9");
+        TestContext.Check(Math.Abs(p["moe"].Temperature - 0.9) < 0.0001, "moe 0.9");
+        TestContext.Check(Math.Abs(p["build"].Temperature - 0.4) < 0.0001, "build 0.4");
+        TestContext.Check(Math.Abs(p["scripter"].Temperature - 0.4) < 0.0001, "scripter 0.4 (= build)");
+        TestContext.Check(Math.Abs(p["exec"].Temperature - 0.4) < 0.0001, "exec 0.4 (= build)");
+
+        foreach (string role in new[] { "plan", "build", "orch", "moe", "scripter", "exec" })
+        {
+            bool ok = global::Rochas.OpenCodeBridge.Core.RoleProfiles.TryResolve(
+                "modelo-servido-" + role, p, out string resolved, out var rp);
+            TestContext.Check(ok && resolved.Equals(role, StringComparison.OrdinalIgnoreCase),
+                "sufixo -" + role + " resolve o proprio role");
+            TestContext.Check(rp is not null
+                && Math.Abs(rp.Temperature - p[role].Temperature) < 0.0001,
+                "sufixo -" + role + " traz a temperatura do proprio perfil");
+            string expectThink = role is "plan" or "orch" or "moe" ? "events" : "off";
+            TestContext.Check(rp is not null && rp.Thinking == expectThink,
+                "sufixo -" + role + " usa thinking " + expectThink);
+        }
+        TestContext.Check(p["scripter"].Temperature == p["build"].Temperature
+            && p["exec"].Temperature == p["build"].Temperature,
+            "scripter e exec seguem a temperatura do build");
+        return Task.CompletedTask;
+    }
 }

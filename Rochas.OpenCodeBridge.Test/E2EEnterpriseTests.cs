@@ -233,10 +233,12 @@ internal static class E2EEnterpriseTests
             "protected override async Task ExecuteAsync(CancellationToken stoppingToken): drena a tabela outbox " +
             "(payload jsonb) em lote de 50 a cada 5s, publica no barramento com retry exponencial + jitter " +
             "(max 5 tentativas, depois dead-letter), passa o stoppingToken em TODO await (stop gracioso sem perder " +
-            "a mensagem da vez) e registra throughput no log a cada minuto. NAO use loop proprio em classe " +
-            "IAsyncDisposable nem Task.Run solto: o host controla o ciclo de vida. Entregue o worker completo + " +
-            "DDL da dead-letter. So codigo + 3 bullets.";
+            "a mensagem da vez) e registra throughput no log a cada minuto. " +
+            "Comece com a declaracao `public sealed class OutboxWorker : BackgroundService` e o metodo " +
+            "`protected override async Task ExecuteAsync(CancellationToken stoppingToken)`; " +
+            "o host controla o ciclo de vida. Depois do codigo, entregue o DDL da dead-letter. So codigo + 3 bullets.";
         // Ciclo de vida do host: base BackgroundService + ExecuteAsync + token.
+        // Forma certa primeiro no enunciado (a dica nunca mostra o literal errado).
         static bool Lifecycle(string t) => t.Contains("BackgroundService")
             && t.Contains("ExecuteAsync") && t.Contains("CancellationToken");
         var (text, status) = await Ask("worker", prompt,

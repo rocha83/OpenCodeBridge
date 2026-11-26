@@ -29,8 +29,13 @@ public static class ToolArgGuard
     {
         if (string.IsNullOrEmpty(argumentsJson)) return null;
         if (argumentsJson.Length > MaxChars) return "args>" + MaxChars;
+        // System.Text.Json (JsonNode.ToJsonString) escapa '<' como \u003C por
+        // default. Sem normalizar, o lixo `<|tool_call|>...` passava pelo guard
+        // e o write gravava arquivo com nome podre (medido no belt-build azul de
+        // 2026-11-26: `Reembolsos.csproj`}<tool_call|>_thought...`).
+        string scan = argumentsJson.Replace("\\u003c", "<", System.StringComparison.OrdinalIgnoreCase);
         foreach (string m in Markers)
-            if (argumentsJson.Contains(m, System.StringComparison.Ordinal)) return m;
+            if (scan.Contains(m, System.StringComparison.Ordinal)) return m;
         return null;
     }
 }

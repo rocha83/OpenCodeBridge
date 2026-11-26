@@ -5797,6 +5797,86 @@ instâncias `:4120`/`:4125` eram específicas do túnel Python e foram aposentad
 WAR com fail-fast parou em STALE por rebuild durante o run; os passos
 `tools-full`/`mission-tools`/belts estão sendo medidos na trilha focada L1/L2.
 
+## `required` era a causa do 500 peg-gemma4; tabela de temperaturas travada (2026-11-26)
+
+Replay do body real do WAR contra `:4100` isolou o defeito: `tool_choice=required`
+faz o llama gerar args em JSON (`path:"Program.cs"`) pela gramática interna,
+enquanto o parser `peg-gemma4` exige `<|"|>` — 500 seco, 3/3. Com `auto`, o mesmo
+body devolve 200 com uma call válida. A bridge rebaixa `required` para `auto` em
+modelo não-Coder (`BuildChatRequest`); `--jinja` continua ligado. O nudge de
+formato no retry não adiantava (saída idêntica), e o `stop` de canal chegava a
+zerar o turno — ambos foram ajustados. MEDIÇÃO: `E-tools-full-update` de 3/3 500
+para PASS em 82,4 s, sem nenhum `unparsed peg-gemma4`.
+
+Temperaturas alinhadas em `Core/RoleProfiles.cs`, `BridgeOptions.cs`, default
+global e `appsettings.json` (que era o override efetivo): plan/orch/moe 0.9,
+build 0.4, scripter/exec 0.1. Novo `U-role-temps` prova que scripter/exec não
+herdam build. `RetryNudge.WithPegNudge` ganhou aviso específico de formato e a
+referência de desvio passou a 0.9. `E2EBeltsBuildTests.PostChat` agora repete
+500 peg/502 em vez de aceitá-los como resultado.
+
+Achado operacional: `bridge-gpu.service` (root, `0.0.0.0:4124`, config antiga)
+estava servindo as rodadas; a bridge manual caía com *address in use*. Unit
+parado/desabilitado; a trilha L3→L1→L2 está sendo repetida contra a bridge
+correta antes de qualquer conclusão de configuração.
+
+### Fail-fast como política de custo (2026-11-26)
+
+Comparação nas trilhas L1/L2: `stop_on_fail=1` aborta o run no primeiro step
+vermelho. Rodadas mal sucedidas que seguem até o fim consomem GPU, tempo e
+energia sem informação nova — o veredito daquele step já foi tomado. Regressões
+posteriores devem ser medidas em runs separados, com a causa corrigida. A trilha
+focada `run-focused-args-on.sh` mantém fail-fast; **dentro** de um step o retry é
+limitado (3 tentativas) e só muda prompt/temperatura pela política da bridge.
+
+### Correção: thinking é híbrido, não "off sempre" (2026-11-26)
+
+O Google **não** recomenda desligar thinking em tudo: a doc de function calling
+diz que o reasoning *"significantly enhances function-calling accuracy"* e usa
+`enable_thinking=True` no exemplo; as best practices tratam o modo como toggle
+e mandam preservar thinking no histórico de **turnos de tool call**. Afirmação
+anterior em sentido contrário estava errada e foi corrigida.
+
+Decisão aplicada: `plan`/`orch`/`moe` = `events` (prosa, segmentação, delegação),
+`build`/`scripter`/`exec` = `off` (tool loop determinístico). Quando o
+`ToolsBreaker` dá `Nudge` (3 erros repetidos), o turno é **escalonado uma vez**:
+`sampling.ForRetry` sobe a temperatura para a referência de desvio, o
+`enable_thinking` liga por aquele turno e o teto cai para 512 tokens — evitando
+os 16.384 tokens/675 s sem call medidos antes. Evento `tool-error-escalation`
+no log registra temp/thinking/cap.
+
+`CsSyntaxRepair`: completada a tabela única com `CS0117`, `CS0120`, `CS0121`,
+`CS0136`, `CS0191`, `CS0841`, `CS8600/8602/8604/8625`, `CS1998`, `CS4014` e
+`CS8370`, todas com exemplo **otimista e compilável** (nunca o literal errado).
+
+Operação: `llama-gpu.service`/`bridge-gpu.service` estavam em crash loop
+(restart counter 196) e roubavam `:4100`/`:4124` com a config antiga E4B; foram
+parados, os arquivos de unit movidos para backup e os units **mascarados**.
+Serviços manuais sobem o 12B com `--jinja`, ctx 131072 e `top_k 64` (padrão
+Google `temp 1.0 / top_p 0.95 / top_k 64`; temperatura segue a especificação
+do operador). Trilha única e sequencial L1 → L2 → L3, fail-fast, em andamento.
+
+### Orch delega ao Build; viés passa a ser enunciado + CsSyntaxRepair (2026-11-26)
+
+Decisão do operador: o **Orch apenas fatia o enunciado em tarefas menores** —
+não especifica artefato, script ou formato de saída. A delegação vai para o
+role **Build** (`agent="build"`), que implementa a subtarefa diretamente. O
+Scripter fica restrito à sua especificação de shell com shebang e sai da cadeia
+do Orch. Aplicado em `agents/orch.md`, `Prompts/orch.md` (source + cópia no bin)
+e `E2EBeltsTests` (`OrchSystem`/`OrchEnunciado`).
+
+`scripter`/`exec` passam a **0.4**, iguais ao build, em todas as camadas (Core,
+appsettings, `opencode.json`, frontmatter dos agentes); `U-role-temps` trava a
+igualdade. Thinking segue `events` em plan/orch/moe e `off` em build/scripter/
+exec, com o escalonamento único do breaker descrito acima.
+
+Como ambiente e sampling já seguem as recomendações Google, o trabalho a partir
+daqui privilegia **harness comportamental** (corrigir enunciados; mexer no
+system prompt apenas em cenários abstratos de largo impacto) e a **tabela
+`CsSyntaxRepair`**, completada com 13 códigos C# e exemplos otimistas.
+Documentação canônica em `docs/LAB-SETUP.md` ("Viés de trabalho"). A sequência
+L1 → L2 → L3 foi relançada com `WAR_SKIP_RESTART=1` (units mascaradas).
+
 <!-- INVARIANTE-TUNEL-LLAMA:v1 -->
 ## Invariante — túnel de stream do llama é exclusivo da bridge/core
 

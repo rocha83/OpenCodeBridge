@@ -12,6 +12,9 @@ internal static class UnitToolArgGuardTests
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.Tools.ToolArgGuard.InvalidReason(lixo) == "<tool_call",
             "detecta `<tool_call|>` dentro dos args");
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.Tools.ToolArgGuard.InvalidReason(
+            "{\"path\":\"Reembolsos.csproj\\u003c|tool_call|>lixo\"}") is not null,
+            "detecta marcador escapado \\u003C do System.Text.Json (write com nome podre)");
+        TestContext.Check(global::Rochas.OpenCodeBridge.Core.Tools.ToolArgGuard.InvalidReason(
             "{\"command\":\"add .\",\"path\":\"./\"}") is null,
             "args validos passam intactos");
         TestContext.Check(global::Rochas.OpenCodeBridge.Core.Tools.ToolArgGuard.InvalidReason(
