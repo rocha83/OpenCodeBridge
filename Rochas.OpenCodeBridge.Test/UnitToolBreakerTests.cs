@@ -635,9 +635,10 @@ internal static class UnitToolBreakerTests
                          + "The type or namespace name 'CadastroRepository' could not be found";
         string hint = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
             "namespace Cadastros.Servicos;\npublic class CadastroService { }\n", err);
-        TestContext.Check(hint.Contains("namespace Cadastros.Repositorio", StringComparison.Ordinal)
-                       && hint.Contains("using Cadastros.Repositorio", StringComparison.Ordinal),
-            "CS0246 ensina a copiar o using do namespace local (saiu: '" + hint.Replace("\n", " | ") + "')");
+        TestContext.Check(hint.Contains("namespace Reembolsos.Domain", StringComparison.Ordinal)
+                       && hint.Contains("using Reembolsos.Domain", StringComparison.Ordinal)
+                       && hint.Contains("CADA namespace", StringComparison.Ordinal),
+            "CS0246 ensina a copiar o using de cada namespace local (saiu: '" + hint.Replace("\n", " | ") + "')");
         string h2 = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
             "using Reembolsos.Domain;\npublic class ReembolsoRepository { }\n",
             "ERRO: /tmp/ws/Reembolsos.Repository.cs(13,34): error CS0426: The type name 'Domain' does not exist in the type 'Reembolso'");

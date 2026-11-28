@@ -126,10 +126,10 @@ public static class CsSyntaxRepair
             "`using`, `namespace` e `class` ficam UMA vez, no TOPO do arquivo, e dentro de um metodo so entram instrucoes — " +
             "o arquivo nao recomeca no meio; para trocar tudo, mande o arquivo COMPLETO com `write`, do topo ao ultimo `}`, uma unica vez"),
         new("CS0246", "tipo/namespace nao encontrado (falta `using` do projeto, falta `PackageReference`, ou o tipo nao existe)",
-            "para TIPO DO PROPRIO PROJETO: leia o .cs que o define, copie o namespace exato e coloque o using no arquivo que o usa — "
-            + "ex.: `namespace Cadastros.Repositorio;` no repository exige `using Cadastros.Repositorio;` no service. "
-            + "Conferia a grafia do nome da classe no arquivo. Para API externa: "
-            + "use apenas o que existe no pacote referenciado; sem EF Core, use Dapper + Microsoft.Data.Sqlite:\n"
+            "para TIPO DO PROPRIO PROJETO: ABRA o .cs que define o tipo, copie o namespace EXATO dele e coloque esse using no topo do arquivo que usa o tipo. "
+            + "Se o erro citar varios tipos, adicione UM using para CADA namespace. Exemplo: `IRepositorio.cs` com `namespace Reembolsos.Domain;` exige "
+            + "`using Reembolsos.Domain;` em quem escreve `IRepositorio<Reembolso>`. Confira a grafia do nome no arquivo. "
+            + "Para API externa use so o que existe no pacote referenciado; sem EF Core, Dapper + Microsoft.Data.Sqlite:\n"
             + "using Dapper;\nusing Microsoft.Data.Sqlite;\n"
             + "var conn = new SqliteConnection(\"Data Source=app.db\");\n"
             + "var itens = conn.Query<Reembolso>(\"SELECT id, valor FROM reembolsos\").ToList();\n"
