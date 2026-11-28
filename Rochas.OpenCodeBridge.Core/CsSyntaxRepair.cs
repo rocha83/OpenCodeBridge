@@ -345,6 +345,9 @@ public static class CsSyntaxRepair
         string code = FirstCode(compilerError);
         // CS1513: o bloco mais externo não fechou no fim.
         if (code == "CS1513") return TryRepairMissingBrace(source, out repaired);
+        // CS1022 com bloco vazio solto no fim da linha (`class X { ... } { }`).
+        if (code == "CS1022" && TryRepairTrailingEmptyBlock(source, compilerError, out repaired)) return true;
+        if (code == "CS1022") return TryRepairMissingBrace(source, out repaired);
         // CS1003 tem duas formas: `for (x in y)` (C# nao tem for..in) e fechamento a
         // mais na linha do erro (medido no hanoi de 2026-10-31: `)` duplicado no fim
         // do `if` — o Roslyn esperava o `]` do índice seguinte).
@@ -387,6 +390,20 @@ public static class CsSyntaxRepair
     /// <param name="compilerError">Saída do build (traz a linha do diagnóstico).</param>
     /// <param name="repaired">Fonte com o fechamento excedente removido.</param>
     /// <returns>True quando o reparo se aplica.</returns>
+    static bool TryRepairTrailingEmptyBlock(string source, string compilerError, out string repaired)
+    {
+        repaired = source;
+        int lineNo = SourceLineNumber(compilerError);
+        string[] lines = source.Replace("\r\n", "\n").Split('\n');
+        if (lineNo < 1 || lineNo > lines.Length) return false;
+        string line = lines[lineNo - 1];
+        int at = line.LastIndexOf("{ }", StringComparison.Ordinal);
+        if (at < 0 || line[(at + 3)..].Trim().Length != 0) return false;
+        lines[lineNo - 1] = line[..at].TrimEnd();
+        repaired = string.Join("\n", lines);
+        return repaired != source;
+    }
+
     static bool TryRepairExtraClose(string source, string compilerError, out string repaired)
     {
         repaired = source;
