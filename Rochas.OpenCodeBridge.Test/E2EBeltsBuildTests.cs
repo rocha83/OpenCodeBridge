@@ -426,6 +426,32 @@ Use caminhos relativos a raiz do workspace." },
                                 }
                             }
                         }
+                        // CS0234 de namespace LOCAL inexistente: remove o using
+                        // apontando para um namespace que nenhum .cs declara.
+                        if (mError.Groups[2].Value == "CS0234" && System.IO.File.Exists(arquivoErro))
+                        {
+                            var mNsErro = System.Text.RegularExpressions.Regex.Match(
+                                bout, @"error CS0234: The type or namespace name '(\w+)' does not exist in the namespace '([\w.]+)'");
+                            if (mNsErro.Success)
+                            {
+                                string nsInexistente = mNsErro.Groups[2].Value + "." + mNsErro.Groups[1].Value;
+                                bool declarado = System.IO.Directory.GetFiles(ws, "*.cs", System.IO.SearchOption.AllDirectories)
+                                    .Any(f => System.IO.File.ReadAllText(f).Contains("namespace " + nsInexistente, StringComparison.Ordinal));
+                                if (!declarado)
+                                {
+                                    string alvo = System.IO.File.ReadAllText(arquivoErro);
+                                    string nova = System.Text.RegularExpressions.Regex.Replace(
+                                        alvo, @"^using " + System.Text.RegularExpressions.Regex.Escape(nsInexistente) + @";\r?\n", "",
+                                        System.Text.RegularExpressions.RegexOptions.Multiline);
+                                    if (nova != alvo)
+                                    {
+                                        System.IO.File.WriteAllText(arquivoErro, nova);
+                                        Log($"  [belt-build:{key}] using de namespace inexistente removido: {nsInexistente}");
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
                         // IDbConnection nao tem OpenAsync: quem abre e'
                         // SqliteConnection/DbConnection. Troca a declaracao.
                         if (mError.Groups[2].Value == "CS1061"
