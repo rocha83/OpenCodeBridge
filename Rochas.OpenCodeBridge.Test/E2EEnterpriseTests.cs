@@ -344,8 +344,9 @@ internal static class E2EEnterpriseTests
             "registra Redis e repositorio no DI, exatamente com builder.Services.AddStackExchangeRedisCache(options => { " +
             "options.Configuration = builder.Configuration.GetConnectionString(\"Redis\"); options.InstanceName = " +
             "\"ProductCache:\"; }) e builder.Services.AddScoped<IProductRepository, ProductRepository>(); (o construtor " +
-            "recebe IDistributedCache e a connection string do Postgres). Formato: comecar a resposta com ```csharp e a " +
-            "linha var builder = WebApplication.CreateBuilder(args);, sem explicacao antes do codigo, e terminar com " +
+            "recebe IDistributedCache e a connection string do Postgres). Formato: comecar a resposta DIRETAMENTE com a " +
+            "linha var builder = WebApplication.CreateBuilder(args); SEM cerca markdown, sem explicacao antes do codigo, " +
+            "sem metodo pendente/NotImplemented, e terminar com " +
             "3 bullets de configuracao/ambiente (ConnectionStrings:Redis, InstanceName, Redis fora).";
         // Contrato do bloco (2): registro de Redis no DI + repositorio scoped.
         // `builder.Services.Add` generico NAO prova Redis e nao fecha o contrato.
