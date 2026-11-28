@@ -139,6 +139,8 @@ public static class CsSyntaxRepair
             "implemente TODO membro da interface com a MESMA assinatura (nome, parametros e retorno):\n"
             + "public sealed class RepositorioItem : IRepositorio<Item>\n{\n"
             + "    public Task<List<Item>> BuscarAsync() => Task.FromResult(new List<Item>());\n}"),
+        new("CS0105", "using repetido no mesmo arquivo/namespace",
+            "deixe UM `using Namespace;` no topo do arquivo, antes de `namespace`; remova as linhas repetidas com `edit`"),
         new("CS0101", "o mesmo tipo foi declarado duas vezes (dois arquivos com a mesma classe)",
             "ACAO: leia os DOIS arquivos que o compilador citou, escolha UMA declaracao e REMOVA a outra com `edit` " +
             "(se o arquivo inteiro estiver duplicado, apague o arquivo repetido). Depois recompila. "

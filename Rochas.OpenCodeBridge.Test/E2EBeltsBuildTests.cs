@@ -339,7 +339,7 @@ Use caminhos relativos a raiz do workspace." },
                 // dica canonica do CsSyntaxRepair (ex.: CS0101 tipo duplicado) e
                 // ele tem 2 turnos extras para corrigir o trecho — sem nudge de
                 // cliente, apenas o erro real como novo enunciado.
-                for (int repair = 0; repair < 3; repair++)
+                for (int repair = 0; repair < 4; repair++)
                 {
                     if (projects.Length == 0) { brc = 1; bout = "nenhum .csproj no workspace"; break; }
                     brc = 0; bout = "";
@@ -349,16 +349,18 @@ Use caminhos relativos a raiz do workspace." },
                             "build", System.IO.Path.GetFileName(pj), "--nologo", "-v:q");
                         if (rc != 0) { brc = rc; bout = pj + ": " + o; break; }
                     }
-                    if (brc == 0 || repair == 2) break;
+                    if (brc == 0 || repair == 3) break;
                     var src = new System.Text.StringBuilder();
                     foreach (var f in System.IO.Directory.GetFiles(ws, "*.cs", System.IO.SearchOption.AllDirectories))
                         src.AppendLine(System.IO.File.ReadAllText(f));
                     string hint = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
                         src.ToString(), bout, repair + 1);
-                    Log($"  [belt-build:{key}] build rc={brc} — repair {repair + 1}/2 com dica do compilador");
+                    Log($"  [belt-build:{key}] build rc={brc} — repair {repair + 1}/3 com dica do compilador");
                     history.Add(new JsonObject { ["role"] = "user", ["content"] =
                         "dotnet build falhou: " + bout.Replace("\n", " | ") + "\n" + hint +
-                        "\nCorrija com UMA tool call edit/write no trecho exato; nao reescreva arquivos sem necessidade." });
+                        "\nCorrija TODOS os erros do build: use `read` no arquivo citado, copie o trecho/namespace EXATO e aplique `edit`. " +
+                        "Se houver erros em varios arquivos, emita UMA tool call por arquivo, ate o build fechar rc=0. " +
+                        "Nao reescreva arquivos sem necessidade." });
                     await RunTurns(20 + repair * 5, 25 + repair * 5);
                 }
                 bool buildOk = brc == 0;
