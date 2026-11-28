@@ -394,6 +394,37 @@ Use caminhos relativos a raiz do workspace." },
                                 if (usingAplicado) continue;
                             }
                         }
+                        // CS0101: tipo declarado em mais de um arquivo. Mantem
+                        // o arquivo dedicado (Fornecedor.cs) e remove a
+                        // declaracao repetida dos demais.
+                        if (mError.Groups[2].Value == "CS0101")
+                        {
+                            var mDup = System.Text.RegularExpressions.Regex.Match(
+                                bout, @"error CS0101: The namespace '[^']+' already contains a definition for '([A-Za-z_]\w*)'");
+                            if (mDup.Success)
+                            {
+                                string tipoDup = mDup.Groups[1].Value;
+                                var decl = @"\b(class|record|struct|interface)\s+" + tipoDup + @"\b";
+                                var arquivos = System.IO.Directory.GetFiles(ws, "*.cs", System.IO.SearchOption.AllDirectories)
+                                    .Where(f => System.Text.RegularExpressions.Regex.IsMatch(
+                                        System.IO.File.ReadAllText(f), decl))
+                                    .OrderBy(f => System.IO.Path.GetFileName(f).Equals(tipoDup + ".cs", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                                    .ThenBy(f => f, StringComparer.Ordinal)
+                                    .ToArray();
+                                if (arquivos.Length > 1)
+                                {
+                                    for (int k = 1; k < arquivos.Length; k++)
+                                    {
+                                        var linhas = new System.Collections.Generic.List<string>(
+                                            System.IO.File.ReadAllLines(arquivos[k]));
+                                        linhas.RemoveAll(l => System.Text.RegularExpressions.Regex.IsMatch(l, decl));
+                                        System.IO.File.WriteAllLines(arquivos[k], linhas);
+                                    }
+                                    Log($"  [belt-build:{key}] declaracao duplicada de {tipoDup} removida de {arquivos.Length - 1} arquivo(s)");
+                                    continue;
+                                }
+                            }
+                        }
                         // Metodos de extensao Dapper (ExecuteAsync/QueryAsync)
                         // exigem `using Dapper;` no arquivo que os chama.
                         if (mError.Groups[2].Value == "CS1061"
