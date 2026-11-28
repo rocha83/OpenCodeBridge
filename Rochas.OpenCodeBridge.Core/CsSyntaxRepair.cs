@@ -146,10 +146,13 @@ public static class CsSyntaxRepair
             "(se o arquivo inteiro estiver duplicado, apague o arquivo repetido). Depois recompila. "
             + "Cada tipo tem UM arquivo e UMA declaracao; para alterar, edite o arquivo que ja existe — "
             + "`write` num arquivo novo com a mesma classe duplica o tipo"),
-        new("CS1061", "membro inexistente no tipo (ex.: `IsMatch` chamado no `string`)",
+        new("CS1061", "membro inexistente no tipo (ex.: `IsMatch` no `string`, `ExecuteNonQueryAsync` na conexao)",
             "`IsMatch` pertence ao `Regex`, nao ao `string`:\n"
             + "using System.Text.RegularExpressions;\n"
-            + "bool ok = Regex.IsMatch(texto, @\"^\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}$\");"),
+            + "bool ok = Regex.IsMatch(texto, @\"^\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}$\");\n"
+            + "Para SQLite, `ExecuteNonQueryAsync` e' do `SqliteCommand`, nao da conexao:\n"
+            + "using var cmd = conn.CreateCommand(); cmd.CommandText = sql; await cmd.ExecuteNonQueryAsync();\n"
+            + "Ou use Dapper com `using Dapper;`: `await conn.ExecuteAsync(sql);`"),
         new("CS1503", "argumento com tipo incompativel (ex.: `string` onde o generico `T` e' esperado)",
             "no codigo generico nao passe literal `string` para `T`: crie o item com o tipo concreto ou construa o objeto inteiro:\n"
             + "var itens = new List<Reembolso> { new Reembolso { Id = 1 } };"),

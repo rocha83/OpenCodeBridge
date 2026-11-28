@@ -651,6 +651,12 @@ internal static class UnitToolBreakerTests
         TestContext.Check(h3.Contains("REMOVA a outra", StringComparison.Ordinal)
                        && h3.Contains("apague o arquivo repetido", StringComparison.Ordinal),
             "CS0101 manda remover a declaracao duplicada, nao so descreve o erro");
+        string h4 = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
+            "conn.ExecuteNonQueryAsync(sql);\n",
+            "ERRO: /tmp/ws/Program.cs(70,26): error CS1061: 'SqliteConnection' does not contain a definition for 'ExecuteNonQueryAsync'");
+        TestContext.Check(h4.Contains("SqliteCommand", StringComparison.Ordinal)
+                       && h4.Contains("CreateCommand()", StringComparison.Ordinal),
+            "CS1061 ensina a chamar ExecuteNonQueryAsync no SqliteCommand, nao na conexao");
         return Task.CompletedTask;
     }
 
