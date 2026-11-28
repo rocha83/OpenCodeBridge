@@ -192,7 +192,9 @@ internal static class E2EEnterpriseTests
             "suficiente de cada produto (409 se faltar, com rollback total) e da baixa no estoque no mesmo commit. " +
             "GET /api/saleinvoices/{id} retorna header + items. Entregue o codigo COMPLETO: DDL das 2 tabelas + " +
             "o handler POST inteiro (BeginTransaction/Commit/Rollback) + o SELECT do GET; nao resuma nem use elipses. " +
-            "Mostre tambem o que acontece se o 3o item estourar o estoque. So codigo + 3 bullets.";
+            "Mostre tambem o que acontece se o 3o item estourar o estoque. So codigo + 3 bullets. " +
+            "FORMATO (obrigatorio): comeco IMEDIATO com `using`/`CREATE TABLE`/`public`; sem cerca markdown, sem ```sql, " +
+            "sem introducao e sem explicacao — codigo, DDL e SELECT vao CRUS, nao cercados.";
         // Detalhe pode vir como Items, SaleInvoiceItems ou Item: o que importa e
         // a linha de detalhe existir (ProductId + Qty/Quantity) no codigo.
         static bool HasDetail(string t) => t.Contains("Items", StringComparison.OrdinalIgnoreCase)
