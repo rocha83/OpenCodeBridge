@@ -426,6 +426,23 @@ Use caminhos relativos a raiz do workspace." },
                                 }
                             }
                         }
+                        // IDbConnection nao tem OpenAsync: quem abre e'
+                        // SqliteConnection/DbConnection. Troca a declaracao.
+                        if (mError.Groups[2].Value == "CS1061"
+                            && System.IO.File.Exists(arquivoErro)
+                            && System.Text.RegularExpressions.Regex.IsMatch(
+                                bout, @"IDbConnection.*'OpenAsync'",
+                                System.Text.RegularExpressions.RegexOptions.Singleline))
+                        {
+                            string alvo = System.IO.File.ReadAllText(arquivoErro);
+                            if (alvo.Contains("IDbConnection"))
+                            {
+                                System.IO.File.WriteAllText(arquivoErro,
+                                    alvo.Replace("IDbConnection", "SqliteConnection"));
+                                Log($"  [belt-build:{key}] IDbConnection -> SqliteConnection para OpenAsync");
+                                continue;
+                            }
+                        }
                         // Metodos de extensao Dapper (ExecuteAsync/QueryAsync)
                         // exigem `using Dapper;` no arquivo que os chama.
                         if (mError.Groups[2].Value == "CS1061"

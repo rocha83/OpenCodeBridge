@@ -154,7 +154,8 @@ public static class CsSyntaxRepair
             + "bool ok = Regex.IsMatch(texto, @\"^\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}$\");\n"
             + "Para SQLite, `ExecuteNonQueryAsync` e' do `SqliteCommand`, nao da conexao:\n"
             + "using var cmd = conn.CreateCommand(); cmd.CommandText = sql; await cmd.ExecuteNonQueryAsync();\n"
-            + "Ou use Dapper com `using Dapper;`: `await conn.ExecuteAsync(sql);`"),
+            + "Ou use Dapper com `using Dapper;`: `await conn.ExecuteAsync(sql);`. "
+            + "`IDbConnection` nao tem `OpenAsync`: declare `SqliteConnection conn` (ou `DbConnection`) para abrir com `await conn.OpenAsync();`"),
         new("CS1503", "argumento com tipo incompativel (ex.: `string` onde o generico `T` e' esperado)",
             "no codigo generico nao passe literal `string` para `T`: crie o item com o tipo concreto ou construa o objeto inteiro:\n"
             + "var itens = new List<Reembolso> { new Reembolso { Id = 1 } };"),
