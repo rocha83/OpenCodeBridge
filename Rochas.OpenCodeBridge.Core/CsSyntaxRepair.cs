@@ -140,8 +140,10 @@ public static class CsSyntaxRepair
             + "public sealed class RepositorioItem : IRepositorio<Item>\n{\n"
             + "    public Task<List<Item>> BuscarAsync() => Task.FromResult(new List<Item>());\n}"),
         new("CS0101", "o mesmo tipo foi declarado duas vezes (dois arquivos com a mesma classe)",
-            "cada tipo tem UM arquivo e UMA declaracao; para alterar, use `edit` no arquivo que ja existe — " +
-            "`write` num arquivo novo com a mesma classe duplica o tipo"),
+            "ACAO: leia os DOIS arquivos que o compilador citou, escolha UMA declaracao e REMOVA a outra com `edit` " +
+            "(se o arquivo inteiro estiver duplicado, apague o arquivo repetido). Depois recompila. "
+            + "Cada tipo tem UM arquivo e UMA declaracao; para alterar, edite o arquivo que ja existe — "
+            + "`write` num arquivo novo com a mesma classe duplica o tipo"),
         new("CS1061", "membro inexistente no tipo (ex.: `IsMatch` chamado no `string`)",
             "`IsMatch` pertence ao `Regex`, nao ao `string`:\n"
             + "using System.Text.RegularExpressions;\n"
