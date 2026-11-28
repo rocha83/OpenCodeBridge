@@ -355,11 +355,39 @@ Use caminhos relativos a raiz do workspace." },
                     // compilador citou. Evita gastar turnos do modelo em
                     // erros mecanicos (CS1513/CS1003/...).
                     var mError = System.Text.RegularExpressions.Regex.Match(
-                        bout, @"(/tmp/[^\s(]+\.cs)\(\d+,\d+\): error CS\d+");
+                        bout, @"(/tmp/[^\s(]+\.cs)\(\d+,\d+\): error (CS\d+)");
                     if (mError.Success)
                     {
                         string arquivoErro = mError.Groups[1].Value;
-                        if (System.IO.File.Exists(arquivoErro)
+                        // CS0246 de tipo local: ache quem declara o tipo e
+                        // injete o using do namespace no arquivo que falhou.
+                        if (mError.Groups[2].Value == "CS0246" && System.IO.File.Exists(arquivoErro))
+                        {
+                            var mTipo = System.Text.RegularExpressions.Regex.Match(
+                                bout, @"error CS0246: The type or namespace name '([A-Za-z_]\w*)'");
+                            if (mTipo.Success)
+                            {
+                                string tipo = mTipo.Groups[1].Value;
+                                bool usingAplicado = false;
+                                foreach (var cand in System.IO.Directory.GetFiles(ws, "*.cs", System.IO.SearchOption.AllDirectories))
+                                {
+                                    if (usingAplicado) break;
+                                    string textoCand = System.IO.File.ReadAllText(cand);
+                                    if (!System.Text.RegularExpressions.Regex.IsMatch(
+                                            textoCand, @"\b(class|interface|record|struct)\s+" + System.Text.RegularExpressions.Regex.Escape(tipo) + @"\b")) continue;
+                                    var mNs = System.Text.RegularExpressions.Regex.Match(textoCand, @"namespace\s+([\w.]+)");
+                                    if (!mNs.Success) continue;
+                                    string ns = mNs.Groups[1].Value;
+                                    string alvo = System.IO.File.ReadAllText(arquivoErro);
+                                    if (alvo.Contains("using " + ns + ";")) continue;
+                                    System.IO.File.WriteAllText(arquivoErro, "using " + ns + ";\n" + alvo);
+                                    Log($"  [belt-build:{key}] using injetado: {ns} para {tipo}");
+                                    usingAplicado = true;
+                                }
+                                if (usingAplicado) continue;
+                            }
+                        }
+                        if (System.IO.File.Exists(arquivoErro))
                             && global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
                                 System.IO.File.ReadAllText(arquivoErro), bout, out string reparado, 2))
                         {
