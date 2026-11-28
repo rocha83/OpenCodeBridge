@@ -99,6 +99,22 @@ internal static class E2EMissionTests
             foreach (var f in Directory.GetFiles(dir, "*.csproj"))
                 if (!Path.GetFileName(f).Equals("mcs.csproj", StringComparison.OrdinalIgnoreCase))
                     { try { File.Delete(f); } catch { } }
+            // O scaffold e' nosso: regrava o TFM instalado (net10.0) mesmo se
+            // uma tentativa anterior do modelo tiver escrito net8.0 no csproj.
+            try
+            {
+                File.WriteAllText(Path.Combine(dir, "mcs.csproj"), """
+                    <Project Sdk="Microsoft.NET.Sdk">
+                      <PropertyGroup>
+                        <OutputType>Exe</OutputType>
+                        <TargetFramework>net10.0</TargetFramework>
+                        <ImplicitUsings>enable</ImplicitUsings>
+                        <Nullable>enable</Nullable>
+                      </PropertyGroup>
+                    </Project>
+                    """);
+            }
+            catch { }
             foreach (var d in new[] { "bin", "obj" })
             {
                 string p = Path.Combine(dir, d);
