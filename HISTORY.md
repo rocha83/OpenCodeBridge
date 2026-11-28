@@ -5903,6 +5903,11 @@ fallback com `--no-stop-on-fail` capturando só o stream na sonda. A bridge roda
 com `--diagnostic 1 --diagnostic-level dump` e a unit usa args Google
 (`temp 1.0 / top_p 0.95 / top_k 64`) com penalidade de repetição ligada.
 
+Bateria **normal** (15/15 correções, fail-fast off, sonda ligada): L1 5/5,
+L2 5/6, L3 2/3, L4 1/4 — 13/18 PASS. Falhas em `verde-build`, `roxa-build`,
+`marrom-build`, `preta-build` e `preta-orch`, todas com stack capturado na FT.
+A bateria **imatrix** roda em seguida com contador zerado e fail-fast ON.
+
 <!-- INVARIANTE-TUNEL-LLAMA:v1 -->
 ## Invariante — túnel de stream do llama é exclusivo da bridge/core
 
