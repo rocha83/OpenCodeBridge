@@ -665,7 +665,7 @@ internal static class UnitToolBreakerTests
             "CS1003 tambem cobre o ? de tipo anulavel colocado depois do nome");
         const string bloco = "public abstract class PessoaIdentificadora { public abstract bool IsValid(); } { }\n";
         bool reparado = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
-            bloco, "ERRO: /tmp/ws/Reembolso.cs(84,80): error CS1022: Type or namespace definition expected",
+            bloco, "ERRO: /tmp/ws/Reembolso.cs(1,80): error CS1022: Type or namespace definition expected",
             out string semBloco, 2);
         TestContext.Check(reparado && !semBloco.Contains("{ }", StringComparison.Ordinal),
             "CS1022 remove o bloco vazio solto apos a declaracao do tipo");
