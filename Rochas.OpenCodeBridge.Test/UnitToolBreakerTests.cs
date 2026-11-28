@@ -645,6 +645,12 @@ internal static class UnitToolBreakerTests
         TestContext.Check(h2.Contains("IEnumerable<Reembolso>", StringComparison.Ordinal)
                        && !h2.Contains("Reembolso.Domain.Reembolso>", StringComparison.Ordinal),
             "CS0426 ensina a usar o tipo direto apos o using, sem prefixar com o tipo");
+        string h3 = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
+            "public record Fornecedor(string Nome);\n",
+            "ERRO: /tmp/ws/Domain/Cliente.cs(3,15): error CS0101: The namespace 'Cadastros.Domain' already contains a definition for 'Fornecedor'");
+        TestContext.Check(h3.Contains("REMOVA a outra", StringComparison.Ordinal)
+                       && h3.Contains("apague o arquivo repetido", StringComparison.Ordinal),
+            "CS0101 manda remover a declaracao duplicada, nao so descreve o erro");
         return Task.CompletedTask;
     }
 
