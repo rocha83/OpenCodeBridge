@@ -305,7 +305,9 @@ internal static class E2EEnterpriseTests
             "SetAsync e DeleteAsync do repositorio INVALIDAM a chave com cache.RemoveAsync; stampede controlado " +
             "por lock por chave e circuit-breaker simples (3 falhas) quando o Redis cai. Entregue SO O BLOCO (1): " +
             "a classe do repositorio COMPLETA (usings, construtor, GetAsync, SetAsync, DeleteAsync com RemoveAsync, " +
-            "lock e breaker) + 3 bullets do que acontece quando o Redis esta fora.";
+            "lock e breaker) + 3 bullets do que acontece quando o Redis esta fora. " +
+            "FORMATO (obrigatorio): comeco IMEDIATO com `using`/`public class ProductRepository`; sem cerca markdown, " +
+            "sem introducao e sem metodo pendente — codigo vai CRU e COMPLETO, sem NotImplemented.";
         var (text, status) = await Ask("redis-cache", prompt,
             t => t.Length > 500 && StubReason(t) == "" && RedisHasCache(t) && RedisHasInvalidation(t));
         TestContext.Check(status == "completed", "redis-cache completed");
