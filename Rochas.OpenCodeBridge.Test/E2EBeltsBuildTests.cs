@@ -399,7 +399,7 @@ Use caminhos relativos a raiz do workspace." },
                         if (mError.Groups[2].Value == "CS1061"
                             && System.IO.File.Exists(arquivoErro)
                             && System.Text.RegularExpressions.Regex.IsMatch(
-                                bout, @"SqliteConnection.*'(ExecuteAsync|QueryAsync|QuerySingle|Execute)'",
+                                bout, @"(SqliteConnection|IDbConnection).*'(ExecuteAsync|QueryAsync|QuerySingle|Execute)'",
                                 System.Text.RegularExpressions.RegexOptions.Singleline))
                         {
                             string alvo = System.IO.File.ReadAllText(arquivoErro);
