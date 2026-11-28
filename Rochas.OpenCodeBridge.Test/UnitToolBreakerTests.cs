@@ -657,6 +657,12 @@ internal static class UnitToolBreakerTests
         TestContext.Check(h4.Contains("SqliteCommand", StringComparison.Ordinal)
                        && h4.Contains("CreateCommand()", StringComparison.Ordinal),
             "CS1061 ensina a chamar ExecuteNonQueryAsync no SqliteCommand, nao na conexao");
+        string h5 = global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.Suggest(
+            "public record Reembolso(PessoaJuridica Beneficiario?, int Id);\n",
+            "ERRO: /tmp/ws/Pessoas.cs(21,32): error CS1003: Syntax error, ',' expected");
+        TestContext.Check(h5.Contains("DEPOIS DO TIPO", StringComparison.Ordinal)
+                       && h5.Contains("PessoaJuridica?", StringComparison.Ordinal),
+            "CS1003 tambem cobre o ? de tipo anulavel colocado depois do nome");
         return Task.CompletedTask;
     }
 

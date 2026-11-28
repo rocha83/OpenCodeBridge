@@ -69,11 +69,13 @@ public static class CsSyntaxRepair
     {
         new("CS1513", "falta `}` para fechar um bloco",
             "cada `{` de bloco (namespace, classe, metodo, if, for, foreach) fecha com UM `}`; no fim do arquivo feche na ordem inversa em que abriu"),
-        new("CS1003", "token de fechamento a mais, ou `for` com `in` no lugar de `foreach`",
+        new("CS1003", "token inesperado: `)` a mais, `for..in`, ou `?` depois do nome do parametro",
             "cada `(` fecha com UM `)` e o `]` de um indice fecha ANTES do `)` da condicao:\n"
             + "if (flag[i] && flag[i + 2])\n    count++;\n"
             + "para percorrer colecao use `foreach` — C# nao tem `for` com `in`:\n"
-            + "foreach (var item in colecao)\n    Console.WriteLine(item);"),
+            + "foreach (var item in colecao)\n    Console.WriteLine(item);\n"
+            + "Em tipo anulavel o `?` vai DEPOIS DO TIPO, nunca depois do nome: "
+            + "`public record Reembolso(PessoaJuridica? Beneficiario, ...)`."),
         new("CS1026", "parentese aberto sem `)`",
             "feche o par na MESMA linha que o compilador aponta: Somar(a, b)"),
         new("CS1002", "instrucao sem `;`",

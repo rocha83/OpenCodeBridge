@@ -361,7 +361,7 @@ Use caminhos relativos a raiz do workspace." },
                         string arquivoErro = mError.Groups[1].Value;
                         if (System.IO.File.Exists(arquivoErro)
                             && global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
-                                System.IO.File.ReadAllText(arquivoErro), bout, out string reparado))
+                                System.IO.File.ReadAllText(arquivoErro), bout, out string reparado, 2))
                         {
                             System.IO.File.WriteAllText(arquivoErro, reparado);
                             Log($"  [belt-build:{key}] repair deterministico aplicado em "
