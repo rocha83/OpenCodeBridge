@@ -426,7 +426,8 @@ Use caminhos relativos a raiz do workspace." },
             }
             catch (Exception ex)
             {
-                Log($"  [belt-build:{key}] FAIL: {ex.Message.Split('\n')[0]}");
+                Log($"  [belt-build:{key}] FAIL: {ex.Message.Split('\n')[0]} | {ex.GetType().Name} | "
+                    + (ex.StackTrace?.Split('\n').FirstOrDefault() ?? "sem stack"));
                 SaveResult(key, "FAIL", ex.Message.Split('\n')[0]);
                 if (ownStep) await TestContext.PublishStep(step, "FAIL", 0, ex.Message.Split('\n')[0]);
                 fail++;
