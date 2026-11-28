@@ -387,7 +387,7 @@ Use caminhos relativos a raiz do workspace." },
                                 if (usingAplicado) continue;
                             }
                         }
-                        if (System.IO.File.Exists(arquivoErro))
+                        if (System.IO.File.Exists(arquivoErro)
                             && global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
                                 System.IO.File.ReadAllText(arquivoErro), bout, out string reparado, 2))
                         {
