@@ -387,6 +387,23 @@ Use caminhos relativos a raiz do workspace." },
                                 if (usingAplicado) continue;
                             }
                         }
+                        // Metodos de extensao Dapper (ExecuteAsync/QueryAsync)
+                        // exigem `using Dapper;` no arquivo que os chama.
+                        if (mError.Groups[2].Value == "CS1061"
+                            && System.IO.File.Exists(arquivoErro)
+                            && System.Text.RegularExpressions.Regex.IsMatch(
+                                bout, @"SqliteConnection.*'(ExecuteAsync|QueryAsync|QuerySingle|Execute)'",
+                                System.Text.RegularExpressions.RegexOptions.Singleline))
+                        {
+                            string alvo = System.IO.File.ReadAllText(arquivoErro);
+                            if (!alvo.Contains("using Dapper;"))
+                            {
+                                System.IO.File.WriteAllText(arquivoErro, "using Dapper;\n" + alvo);
+                                Log($"  [belt-build:{key}] using Dapper injetado em "
+                                    + System.IO.Path.GetFileName(arquivoErro));
+                                continue;
+                            }
+                        }
                         if (System.IO.File.Exists(arquivoErro)
                             && global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
                                 System.IO.File.ReadAllText(arquivoErro), bout, out string reparado, 2))
