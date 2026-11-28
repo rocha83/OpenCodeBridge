@@ -375,10 +375,17 @@ Use caminhos relativos a raiz do workspace." },
                                     string textoCand = System.IO.File.ReadAllText(cand);
                                     if (!System.Text.RegularExpressions.Regex.IsMatch(
                                             textoCand, @"\b(class|interface|record|struct)\s+" + System.Text.RegularExpressions.Regex.Escape(tipo) + @"\b")) continue;
-                                    var mNs = System.Text.RegularExpressions.Regex.Match(textoCand, @"namespace\s+([\w.]+)");
+                                    var mNs = System.Text.RegularExpressions.Regex.Match(textoCand, @"^\s*namespace\s+([\w.]+)",
+                                        System.Text.RegularExpressions.RegexOptions.Multiline);
                                     if (!mNs.Success) continue;
                                     string ns = mNs.Groups[1].Value;
+                                    // Nao injetar oNome do tipo como se fosse namespace
+                                    // (medido: `using IClienteRepository;` -> CS0138).
+                                    if (ns == tipo || !ns.Contains('.')) continue;
                                     string alvo = System.IO.File.ReadAllText(arquivoErro);
+                                    alvo = System.Text.RegularExpressions.Regex.Replace(
+                                        alvo, @"^using " + System.Text.RegularExpressions.Regex.Escape(tipo) + @";\r?\n", "",
+                                        System.Text.RegularExpressions.RegexOptions.Multiline);
                                     if (alvo.Contains("using " + ns + ";")) continue;
                                     System.IO.File.WriteAllText(arquivoErro, "using " + ns + ";\n" + alvo);
                                     Log($"  [belt-build:{key}] using injetado: {ns} para {tipo}");
