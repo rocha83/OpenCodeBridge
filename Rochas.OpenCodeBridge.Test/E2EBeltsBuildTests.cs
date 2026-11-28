@@ -171,6 +171,7 @@ internal static class E2EBeltsBuildTests
             string escopoRegra = key is "marrom" or "preta"
                 ? "Entregue TODOS os artefatos que o enunciado pede: dominio, SQL (.sql), repositorios/servicos, API e frontend/ML, com o .csproj. " +
                   "NAO PARE apos o primeiro arquivo: continue emitindo tool calls `write` ate TODOS os artefatos estarem no workspace. " +
+                  "NUNCA use EntityFrameworkCore, DbContext ou DbSet: este projeto usa Dapper com IDbConnection e `using System.Data;`. " +
                   "Nao escreva resumo de progresso, README, demo ou teste."
                 : "Entregue apenas artefatos de DADOS: dominio, repositorio e o .csproj. Nao crie Programa.cs, Main, console, demo, teste ou README.";
             // Marrom/preta incluem API: o .csproj precisa ser Sdk.Web (com

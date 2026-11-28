@@ -186,7 +186,9 @@ public static class CsSyntaxRepair
         new("CS0305", "tipo generico usado sem argumento de tipo",
             "declare `public sealed class Result<T> { ... }` e use `Result<Reembolso>`; se nao precisa de generico, use uma classe `Result` simples"),
         new("CS0234", "namespace/assembly ausente",
-            "declare `namespace X;` uma vez no topo, use `using Cadastros.Dominio;` para types de outra camada e `<FrameworkReference Include=\"Microsoft.AspNetCore.App\" />` no `.csproj` quando for ASP.NET"),
+            "declare `namespace X;` uma vez no topo, use `using Cadastros.Dominio;` para types de outra camada e `<FrameworkReference Include=\"Microsoft.AspNetCore.App\" />` no `.csproj` quando for ASP.NET. "
+            + "`Microsoft.EntityFrameworkCore` NAO esta referenciado neste projeto: NAO use DbContext/DbSet — reescreva com Dapper: "
+            + "`using System.Data; using Dapper;` e `IDbConnection conn` com `conn.Query<T>(sql)`"),
         new("CS0122", "membro inacessivel por nivel de protecao",
             "use o membro publico: `public sealed class Cliente { public int Id { get; init; } }`"),
         new("CS1674", "IEnumerable<T> nao e IDisposable",
