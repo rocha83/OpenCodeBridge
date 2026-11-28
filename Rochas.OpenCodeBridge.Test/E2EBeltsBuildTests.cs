@@ -350,6 +350,25 @@ Use caminhos relativos a raiz do workspace." },
                         if (rc != 0) { brc = rc; bout = pj + ": " + o; break; }
                     }
                     if (brc == 0 || repair == 3) break;
+                    // Reparo deterministico primeiro: o Core ja sabe inserir/
+                    // remover chave e corrigir tokens no arquivo que o
+                    // compilador citou. Evita gastar turnos do modelo em
+                    // erros mecanicos (CS1513/CS1003/...).
+                    var mError = System.Text.RegularExpressions.Regex.Match(
+                        bout, @"(/tmp/[^\s(]+\.cs)\(\d+,\d+\): error CS\d+");
+                    if (mError.Success)
+                    {
+                        string arquivoErro = mError.Groups[1].Value;
+                        if (System.IO.File.Exists(arquivoErro)
+                            && global::Rochas.OpenCodeBridge.Core.CsSyntaxRepair.TryRepair(
+                                System.IO.File.ReadAllText(arquivoErro), bout, out string reparado))
+                        {
+                            System.IO.File.WriteAllText(arquivoErro, reparado);
+                            Log($"  [belt-build:{key}] repair deterministico aplicado em "
+                                + System.IO.Path.GetFileName(arquivoErro));
+                            continue;
+                        }
+                    }
                     var src = new System.Text.StringBuilder();
                     foreach (var f in System.IO.Directory.GetFiles(ws, "*.cs", System.IO.SearchOption.AllDirectories))
                         src.AppendLine(System.IO.File.ReadAllText(f));
