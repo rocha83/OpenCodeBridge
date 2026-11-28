@@ -443,8 +443,8 @@ Use caminhos relativos a raiz do workspace." },
             }
             catch (Exception ex)
             {
-                Log($"  [belt-build:{key}] FAIL: {ex.Message.Split('\n')[0]} | {ex.GetType().Name} | "
-                    + (ex.StackTrace?.Split('\n').FirstOrDefault() ?? "sem stack"));
+                string stack = ex.ToString().Replace("\n", " | ");
+                Log($"  [belt-build:{key}] FAIL: {stack[..Math.Min(1600, stack.Length)]}");
                 SaveResult(key, "FAIL", ex.Message.Split('\n')[0]);
                 if (ownStep) await TestContext.PublishStep(step, "FAIL", 0, ex.Message.Split('\n')[0]);
                 fail++;
