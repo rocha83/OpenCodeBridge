@@ -5891,6 +5891,18 @@ Cobertura de belts no braço atual: **L2 6/6** (azul/verde build+orch),
 **L3 3/3** (mission-tools + roxa build/orch) e **L4 4/4** (marrom/preta
 build+orch), todos PASS, sem breakers/watchdog na rodada final.
 
+### E4B oficial na FT e bateria dupla normal x imatrix (2026-11-28)
+
+12B removido da FT (FP16 de 22 GB + Q4 normal/imatrix + cache HF). Novo pipeline
+na unidade persistente: tensores oficiais `google/gemma-4-E4B-it` → F16 →
+`Q4_K_M` normal (`sha 6a7dd4a9…`) e `Q4_K_M-Imatrix` (`sha f7fb5e1a…`) + mmproj
+Q8_0, todos com alias `Gemma4-E4B-IT-Q4`. A conversão F16 exigiu 16 GB de RAM
+livre; caches re-downloadáveis do overlay live foram limpos (swapon segfaulta
+neste live). `docs/ARENA.md` (FT) registra o limite de 15 correções por GGUF e o
+fallback com `--no-stop-on-fail` capturando só o stream na sonda. A bridge roda
+com `--diagnostic 1 --diagnostic-level dump` e a unit usa args Google
+(`temp 1.0 / top_p 0.95 / top_k 64`) com penalidade de repetição ligada.
+
 <!-- INVARIANTE-TUNEL-LLAMA:v1 -->
 ## Invariante — túnel de stream do llama é exclusivo da bridge/core
 

@@ -619,32 +619,33 @@ systemctl is-active bridge-gpu.service llama-gpu.service
 Para a trilha manual: `systemctl stop`/`disable` em ambos; restaurar só no fim —
 e com a config nova, senão o bridge antigo volta a servir.
 
-### Unidade de produção `llama-gpu.service` (replicada em 2026-11-26)
+### Unidade de produção `llama-gpu.service` (E4B oficial na FT, 2026-11-28)
 
-A unit saiu de `masked` e está **`enabled`/`active`** com o mesmo comando do
-llama manual usado na bateria (não há braço OFF):
+A unit está **`enabled`/`active`** e aponta para o `Q4_K_M` persistente na FT
+(o script `FT/scripts/bateria-e4b.sh` alterna entre a versão normal e imatrix):
 
 ```bash
-ExecStart=/opt/llama-turboquant/llama-server --alias Gemma4-E4B-GK-Q4 \
+ExecStart=/opt/llama-turboquant/llama-server --alias Gemma4-E4B-IT-Q4 \
   --host 127.0.0.1 --port 4100 \
-  -m /media/mint/FT/models/gguf/gemma-4-12B-it-Q4_K_M.gguf \
+  -m /media/mint/FT/models/gguf/gemma-4-E4B-it-Q4_K_M.gguf \
+  --mmproj /media/mint/FT/models/mmproj/mmproj-gemma-4-E4B-it-Q8_0.gguf \
   -c 131072 -np 1 -ngl 99 -fa on --jinja \
-  --cache-type-k turbo3 --cache-type-v turbo3 \
-  --no-host --load-mode none --op-offload -ot '.*=CUDA0' \
-  --fit off --prio 2 --prio-batch 2 --slots \
-  --temp 0.9 --top-p 0.95 --top-k 64 --min-p 0.05 \
+  --temp 1.0 --top-p 0.95 --top-k 64 --min-p 0.05 \
   --repeat-penalty 1.10 --repeat-last-n 4096 \
   --dry-multiplier 0 --dry-penalty-last-n 0 --presence-penalty 0.05 \
   --api-key guest@123
 ```
 
-- `--jinja` usa o template de julho/2026 **embutido no GGUF**; nunca
-  `--chat-template-file` externo.
-- `top_p 0.95` / `top_k 64` seguem o padrão Google; `temperature 0.9` permanece
-  a especificação do operador. Args de repetição (repeat/dry/presence) seguem
-  ligados, iguais aos da medição.
+- Os 12B (FP16/Q4/cache HF) foram apagados da FT. Os tensores E4B vêm do repo
+  oficial `google/gemma-4-E4B-it` (revisão `4ecc2ba…`, sha256 `cfbd3d2f…`),
+  convertidos para F16 e quantizados na FT — sem adapter e sem retreino.
+  Alias e `general.name` dos GGUF: **`Gemma4-E4B-IT-Q4`**.
+- `--jinja` usa o template de julho/2026 **embutido no GGUF**; o mmproj é um
+  GGUF separado (Q8_0, também na FT). `top_p 0.95` / `top_k 64` / `temp 1.0`
+  seguem o padrão Google; a bridge sobrescreve a temperatura por role
+  (0.9/0.4/0.1). Penalidade de repetição ligada (repeat/dry/presence).
 - `bridge-gpu.service` continua mascarada: a bridge `:4124` é gerida pelo script
-  e a WAR roda com `WAR_SKIP_RESTART=1`.
+  (sonda ligada) e a WAR roda com `WAR_SKIP_RESTART=1`.
 
 ### Temperaturas por role (geral 0.9, build/scripter/exec 0.4)
 
